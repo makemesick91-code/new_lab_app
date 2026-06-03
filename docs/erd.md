@@ -1931,7 +1931,378 @@ Delivery entities:
 
 ---
 
-# 16. V2 ERD Candidates
+# 16. Sprint 6 ERD - Delivery & Proof of Delivery
+
+Bagian ini memperluas ERD untuk **Sprint 6 - Delivery & Proof of
+Delivery (POD)**. Sprint 6 dimulai setelah Sprint 5 menghasilkan Lab Order
+berstatus `QC_PASSED`, lalu mengaktifkan delivery queue, courier assignment,
+delivery tracking, POD, receiver data, delivery evidence, dan delivery
+history.
+
+Sprint 6 tidak memodelkan Invoice, Payment, atau Reporting dashboard.
+Status `COMPLETED` hanya menjadi gate data yang bersih untuk sprint
+berikutnya.
+
+## 16.1 Tabel dalam Scope Sprint 6
+
+```text
+trx_lab_deliveries
+sys_attachments
+sys_audit_logs
+trx_lab_order_status_logs
+users
+trx_lab_orders
+```
+
+`trx_lab_deliveries` menjadi entity utama Sprint 6.
+
+Purpose:
+
+```text
+Stores delivery records, courier assignment, delivery status, receiver data,
+Proof of Delivery information, and delivery history for Lab Orders.
+```
+
+`sys_attachments`, `sys_audit_logs`, dan `trx_lab_order_status_logs` sudah
+disiapkan di sprint sebelumnya dan digunakan ulang pada Sprint 6.
+
+## 16.2 High-Level ERD Update
+
+```text
+trx_lab_orders
+|-- trx_lab_deliveries
+|-- sys_attachments (order-level delivery evidence via polymorphic)
+`-- sys_audit_logs
+
+trx_lab_deliveries
+|-- sys_attachments (POD evidence via polymorphic)
+`-- sys_audit_logs (delivery audit via polymorphic)
+```
+
+Catatan:
+
+```text
+1. trx_lab_orders already has polymorphic attachment support through sys_attachments.
+2. New Sprint 6 POD evidence should attach primarily to trx_lab_deliveries.
+3. Order-level delivery evidence remains allowed when evidence belongs to the whole Lab Order.
+```
+
+## 16.3 Required Relationships
+
+```text
+trx_lab_orders 1 -> many trx_lab_deliveries
+users          1 -> many trx_lab_deliveries as created_by
+users          1 -> many trx_lab_deliveries as courier
+trx_lab_deliveries polymorphic -> many sys_attachments as delivery evidence
+trx_lab_deliveries polymorphic -> many sys_audit_logs as audit trail
+trx_lab_orders      polymorphic -> many sys_attachments as order-level evidence
+trx_lab_orders      polymorphic -> many sys_audit_logs as order audit trail
+trx_lab_orders 1 -> many trx_lab_order_status_logs
+```
+
+## 16.4 Mermaid ERD - Sprint 6
+
+Diagram berikut adalah extension untuk digabungkan dengan ERD utama tanpa
+menghapus relasi Sprint 1 sampai Sprint 5.
+
+```mermaid
+erDiagram
+    trx_lab_orders ||--o{ trx_lab_deliveries : has_deliveries
+    users ||--o{ trx_lab_deliveries : creates
+    users ||--o{ trx_lab_deliveries : delivers
+    trx_lab_deliveries ||--o{ sys_attachments : has_pod_evidence
+    trx_lab_deliveries ||--o{ sys_audit_logs : audited_by
+```
+
+## 16.5 Entity Relationship Details
+
+### trx_lab_orders -> trx_lab_deliveries
+
+```text
+Relationship:
+trx_lab_orders 1 -> many trx_lab_deliveries
+
+Foreign key:
+trx_lab_deliveries.lab_order_id -> trx_lab_orders.id
+```
+
+Reason:
+
+```text
+One Lab Order can have many delivery records over time.
+```
+
+Examples:
+
+```text
+1. Normal one-time delivery.
+2. Rescheduled delivery after failed delivery attempt.
+3. Replacement delivery after operational correction.
+```
+
+### users -> trx_lab_deliveries as created_by
+
+```text
+Relationship:
+users 1 -> many trx_lab_deliveries
+
+Foreign key:
+trx_lab_deliveries.created_by -> users.id
+```
+
+Reason:
+
+```text
+Admin Lab or Delivery Coordinator creates the delivery record.
+```
+
+### users -> trx_lab_deliveries as courier
+
+```text
+Relationship:
+users 1 -> many trx_lab_deliveries
+
+Foreign key:
+trx_lab_deliveries.courier_id -> users.id
+```
+
+Reason:
+
+```text
+Courier is represented by users for V1.
+Separate courier master table is not required for small-to-medium lab delivery operations.
+```
+
+### trx_lab_deliveries -> sys_attachments
+
+```text
+Relationship:
+trx_lab_deliveries polymorphic -> many sys_attachments
+
+Polymorphic keys:
+sys_attachments.entity_type = trx_lab_deliveries
+sys_attachments.entity_id   = trx_lab_deliveries.id
+```
+
+Reason:
+
+```text
+Delivery evidence, receiver signature, receiver photo, and supporting POD files
+reuse Sprint 3 polymorphic attachment strategy.
+```
+
+### trx_lab_deliveries -> sys_audit_logs
+
+```text
+Relationship:
+trx_lab_deliveries polymorphic -> many sys_audit_logs
+
+Polymorphic keys:
+sys_audit_logs.entity_type = trx_lab_deliveries
+sys_audit_logs.entity_id   = trx_lab_deliveries.id
+```
+
+Reason:
+
+```text
+Every delivery action must be auditable without creating a delivery-specific
+audit table.
+```
+
+## 16.6 POD Data
+
+Required POD data:
+
+```text
+receiver_name
+receiver_signature_path
+receiver_photo_path
+received_at
+delivery_notes
+```
+
+Storage guidance:
+
+```text
+1. receiver_name is stored on trx_lab_deliveries.
+2. receiver_signature_path is stored as a file path, not binary data.
+3. receiver_photo_path is stored as a file path or represented by sys_attachments.
+4. received_at stores the timestamp when the receiver accepts the delivery.
+5. delivery_notes stores handoff notes, exception notes, or receiver context.
+```
+
+Schema compatibility notes:
+
+```text
+1. Existing schema may name the signature path as signature_file_path.
+2. Existing schema may name the received timestamp as delivered_at.
+3. Existing schema may name delivery_notes as notes.
+4. ERD semantics remain POD receiver signature, receiver photo, received timestamp, and delivery notes.
+```
+
+POD completion rule:
+
+```text
+POD data and evidence must be complete before the Lab Order can be completed.
+```
+
+## 16.7 Delivery Evidence Categories
+
+Sprint 6 delivery evidence reuses:
+
+```text
+sys_attachments
+```
+
+Recommended `category` values:
+
+```text
+DELIVERY_PHOTO
+POD_SIGNATURE
+POD_RECEIVER_PHOTO
+DELIVERY_EVIDENCE
+```
+
+Preferred target:
+
+```text
+entity_type = trx_lab_deliveries
+entity_id   = delivery_id
+```
+
+Order-level fallback:
+
+```text
+entity_type = trx_lab_orders
+entity_id   = lab_order_id
+```
+
+Rules:
+
+```text
+1. Do not create a new POD attachment system.
+2. Do not add trx_lab_delivery_photos for V1 Sprint 6 evidence.
+3. Existing trx_lab_delivery_photos references may remain for backward schema compatibility.
+4. New Sprint 6 POD evidence should use sys_attachments.
+5. Attachment upload, replacement, and soft delete must be audited.
+```
+
+## 16.8 Status Flow Notes
+
+Sprint 6 Lab Order status flow:
+
+```text
+QC_PASSED
+-> READY_FOR_DELIVERY
+-> IN_DELIVERY
+-> DELIVERED
+-> COMPLETED
+```
+
+Status ownership:
+
+```text
+1. QC_PASSED comes from Sprint 5.
+2. READY_FOR_DELIVERY is activated in Sprint 6.
+3. IN_DELIVERY is activated in Sprint 6.
+4. DELIVERED is activated in Sprint 6.
+5. COMPLETED is activated in Sprint 6 as delivery workflow closure.
+```
+
+Rules:
+
+```text
+1. Delivery can start only after QC_PASSED.
+2. READY_FOR_DELIVERY requires a delivery record.
+3. IN_DELIVERY requires a courier.
+4. DELIVERED requires complete POD data and evidence.
+5. COMPLETED requires delivery/POD review to be complete.
+6. Every status transition must create trx_lab_order_status_logs.
+7. Invoice is not created in Sprint 6.
+8. Payment is not created in Sprint 6.
+9. Reporting dashboard is not implemented in Sprint 6.
+```
+
+## 16.9 Foreign Key Additions
+
+```text
+trx_lab_deliveries.lab_order_id -> trx_lab_orders.id
+trx_lab_deliveries.courier_id   -> users.id
+trx_lab_deliveries.created_by   -> users.id
+```
+
+Optional existing relationship:
+
+```text
+trx_lab_deliveries.clinic_id -> mst_clinics.id
+```
+
+Polymorphic references:
+
+```text
+sys_attachments.entity_type / entity_id -> trx_lab_deliveries
+sys_audit_logs.entity_type / entity_id  -> trx_lab_deliveries
+```
+
+## 16.10 Index Additions
+
+Recommended indexes:
+
+```text
+trx_lab_deliveries.lab_order_id INDEX
+trx_lab_deliveries.courier_id INDEX
+trx_lab_deliveries.created_by INDEX
+trx_lab_deliveries.status INDEX
+trx_lab_deliveries.delivery_date INDEX
+trx_lab_deliveries.received_at INDEX
+sys_attachments.entity_type INDEX
+sys_attachments.entity_id INDEX
+sys_attachments.category INDEX
+sys_audit_logs.entity_type INDEX
+sys_audit_logs.entity_id INDEX
+```
+
+If existing physical schema uses `delivered_at` instead of `received_at`, index
+the physical timestamp column used for delivery completion queries.
+
+## 16.11 Sprint 6 ERD Decisions
+
+```text
+1. Delivery records are stored in trx_lab_deliveries.
+2. One Lab Order can have many delivery records over time.
+3. Courier is represented by users for V1.
+4. Separate courier master table is not required for V1.
+5. POD evidence reuses sys_attachments.
+6. trx_lab_delivery_photos is not used in V1 Sprint 6 evidence flow.
+7. Receiver signature is stored as a file path, not binary data.
+8. Receiver photo is stored as a file path, not binary data.
+9. Delivery audit uses sys_audit_logs.
+10. Delivery status changes use trx_lab_order_status_logs.
+11. Invoice is not part of Sprint 6.
+12. Payment is not part of Sprint 6.
+13. Reporting is not part of Sprint 6.
+```
+
+## 16.12 Sprint 6 ERD Validation Checklist
+
+```text
+- Delivery entity present
+- Delivery relationships documented
+- Courier relationship documented
+- POD fields documented
+- POD evidence uses sys_attachments
+- Delivery photo table excluded from V1 Sprint 6 evidence flow
+- Delivery status flow documented
+- Mermaid diagram updated
+- Existing Sprint 1-5 relationships preserved
+- Invoice excluded
+- Payment excluded
+- Reporting excluded
+```
+
+---
+
+# 17. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 
