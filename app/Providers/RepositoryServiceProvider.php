@@ -36,6 +36,16 @@ use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Policies\PatientPolicy;
 use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\Production\Interfaces\AssignmentRepositoryInterface;
+use App\Modules\Production\Interfaces\ProductionStepRepositoryInterface;
+use App\Modules\Production\Interfaces\WorkLogRepositoryInterface;
+use App\Modules\Production\Policies\AssignmentPolicy;
+use App\Modules\Production\Policies\ProductionPolicy;
+use App\Modules\Production\Policies\ProductionStepPolicy;
+use App\Modules\Production\Policies\WorkLogPolicy;
+use App\Modules\Production\Repositories\AssignmentRepository;
+use App\Modules\Production\Repositories\ProductionStepRepository;
+use App\Modules\Production\Repositories\WorkLogRepository;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Policies\TechnicianPolicy;
@@ -72,6 +82,30 @@ class RepositoryServiceProvider extends ServiceProvider
         AttachmentRepositoryInterface::class => AttachmentRepository::class,
         AuditLogRepositoryInterface::class => AuditLogRepository::class,
         StatusLogRepositoryInterface::class => StatusLogRepository::class,
+        AssignmentRepositoryInterface::class => AssignmentRepository::class,
+        WorkLogRepositoryInterface::class => WorkLogRepository::class,
+        ProductionStepRepositoryInterface::class => ProductionStepRepository::class,
+    ];
+
+    /**
+     * Production workflow gate abilities (LabOrder already has LabOrderPolicy,
+     * so production checks are registered as named gates instead of model policies).
+     *
+     * @var array<string, array{0: class-string, 1: string}>
+     */
+    private array $gates = [
+        'production.viewAny' => [ProductionPolicy::class, 'viewAny'],
+        'production.view' => [ProductionPolicy::class, 'view'],
+        'production.start' => [ProductionPolicy::class, 'start'],
+        'production.pause' => [ProductionPolicy::class, 'pause'],
+        'production.resume' => [ProductionPolicy::class, 'resume'],
+        'production.complete' => [ProductionPolicy::class, 'complete'],
+        'production.sendToQc' => [ProductionPolicy::class, 'sendToQc'],
+        'production.assign' => [AssignmentPolicy::class, 'assign'],
+        'production.reassign' => [AssignmentPolicy::class, 'reassign'],
+        'production.cancelAssignment' => [AssignmentPolicy::class, 'cancel'],
+        'production.steps.update' => [ProductionStepPolicy::class, 'update'],
+        'production.worklogs.view' => [WorkLogPolicy::class, 'view'],
     ];
 
     /**
@@ -107,6 +141,10 @@ class RepositoryServiceProvider extends ServiceProvider
 
         foreach ($this->policies as $model => $policy) {
             Gate::policy($model, $policy);
+        }
+
+        foreach ($this->gates as $ability => $callback) {
+            Gate::define($ability, $callback);
         }
 
         // Super Admin can do everything (PRD §5).

@@ -5,6 +5,7 @@ namespace App\Modules\Technician\Services;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class TechnicianService
@@ -16,6 +17,11 @@ class TechnicianService
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
     {
         return $this->technicians->paginate($filters, $perPage);
+    }
+
+    public function listAll(): Collection
+    {
+        return $this->technicians->listAll();
     }
 
     public function find(int $id): ?Technician

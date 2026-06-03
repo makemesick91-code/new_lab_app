@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             AdminUserSeeder::class,
             MasterDataSeeder::class,
             LabOrderSeeder::class,
+            ProductionSeeder::class,
         ]);
     }
 }

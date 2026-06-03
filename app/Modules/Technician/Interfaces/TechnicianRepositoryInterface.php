@@ -4,6 +4,7 @@ namespace App\Modules\Technician\Interfaces;
 
 use App\Modules\Technician\Models\Technician;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface TechnicianRepositoryInterface
 {
@@ -11,6 +12,8 @@ interface TechnicianRepositoryInterface
      * @param  array{search?: string|null}  $filters
      */
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator;
+
+    public function listAll(): Collection;
 
     public function findById(int $id): ?Technician;
 

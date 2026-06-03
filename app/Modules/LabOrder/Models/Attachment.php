@@ -17,11 +17,18 @@ class Attachment extends Model
     use SoftDeletes;
 
     public const CATEGORIES = [
+        // Sprint 3 — Lab Order
         'PRESCRIPTION',
         'CASE_PHOTO',
         'STL_FILE',
         'X_RAY',
         'OTHER_DOCUMENT',
+        // Sprint 4 — Production (reuse polymorphic sys_attachments)
+        'WORK_PHOTO',
+        'DESIGN_FILE',
+        'STL_REVISION',
+        'REFERENCE_IMAGE',
+        'PRODUCTION_NOTE',
     ];
 
     protected $table = 'sys_attachments';

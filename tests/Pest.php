@@ -47,8 +47,13 @@ expect()->extend('toBeOne', function () {
 use App\Models\User;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Production\Models\LabOrderAssignment;
+use App\Modules\Production\Services\AssignmentService;
+use App\Modules\Production\Services\ProductionWorkflowService;
+use App\Modules\Technician\Models\Technician;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 
@@ -58,6 +63,54 @@ use Database\Seeders\RoleSeeder;
 function seedAccessControl(): void
 {
     test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+}
+
+/**
+ * A Lab Order in RECEIVED status, ready for production assignment.
+ */
+function receivedOrder(): LabOrder
+{
+    return LabOrder::factory()->create(['status' => LabOrder::STATUS_RECEIVED]);
+}
+
+/**
+ * Assign a technician to an order through the real service (management actor).
+ */
+function assignOrder(LabOrder $order, ?Technician $technician = null, ?User $actor = null): LabOrderAssignment
+{
+    $technician = $technician ?? Technician::factory()->create();
+    $actor = $actor ?? superAdmin();
+
+    return app(AssignmentService::class)->assign($order->refresh(), $technician->id, 'assigned in test', $actor);
+}
+
+/**
+ * Move an order to IN_PRODUCTION (assign + start) and return [order, assignment].
+ *
+ * @return array{0: LabOrder, 1: LabOrderAssignment}
+ */
+function orderInProduction(?Technician $technician = null): array
+{
+    $order = receivedOrder();
+    $assignment = assignOrder($order, $technician);
+    app(ProductionWorkflowService::class)->startWork($order->refresh(), 'start', superAdmin());
+
+    return [$order->refresh(), $assignment->refresh()];
+}
+
+/**
+ * A user with a linked technician profile (for ownership tests).
+ *
+ * @param  array<int, string>  $permissions
+ * @return array{0: User, 1: Technician}
+ */
+function technicianActor(array $permissions): array
+{
+    $user = User::factory()->create();
+    $user->givePermissionTo($permissions);
+    $technician = Technician::factory()->create(['user_id' => $user->id]);
+
+    return [$user, $technician];
 }
 
 /**

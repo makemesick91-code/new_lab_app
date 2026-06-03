@@ -6,11 +6,14 @@ use App\Models\User;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Production\Models\LabOrderAssignment;
+use App\Modules\Production\Models\ProductionStep;
 use Database\Factories\LabOrderFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -24,6 +27,14 @@ class LabOrder extends Model
     public const STATUS_DRAFT = 'DRAFT';
 
     public const STATUS_RECEIVED = 'RECEIVED';
+
+    public const STATUS_ASSIGNED = 'ASSIGNED';
+
+    public const STATUS_IN_PRODUCTION = 'IN_PRODUCTION';
+
+    public const STATUS_ON_HOLD = 'ON_HOLD';
+
+    public const STATUS_QC_PENDING = 'QC_PENDING';
 
     public const STATUS_CANCELLED = 'CANCELLED';
 
@@ -126,6 +137,23 @@ class LabOrder extends Model
     public function auditLogs(): MorphMany
     {
         return $this->morphMany(AuditLog::class, 'entity');
+    }
+
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(LabOrderAssignment::class, 'lab_order_id');
+    }
+
+    public function activeAssignment(): HasOne
+    {
+        return $this->hasOne(LabOrderAssignment::class, 'lab_order_id')
+            ->whereIn('status', LabOrderAssignment::ACTIVE_STATUSES)
+            ->latestOfMany();
+    }
+
+    public function productionSteps(): HasMany
+    {
+        return $this->hasMany(ProductionStep::class, 'lab_order_id');
     }
 
     protected static function newFactory(): LabOrderFactory

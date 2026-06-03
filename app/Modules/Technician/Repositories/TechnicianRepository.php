@@ -5,9 +5,15 @@ namespace App\Modules\Technician\Repositories;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 class TechnicianRepository implements TechnicianRepositoryInterface
 {
+    public function listAll(): Collection
+    {
+        return Technician::query()->where('is_active', true)->orderBy('name')->get();
+    }
+
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator
     {
         $search = $filters['search'] ?? null;

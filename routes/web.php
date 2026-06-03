@@ -9,6 +9,10 @@ use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\Patient\Controllers\PatientController;
+use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
+use App\Modules\Production\Controllers\ProductionStepController;
+use App\Modules\Production\Controllers\ProductionWorkflowController;
+use App\Modules\Production\Controllers\WorkLogController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\User\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -120,6 +124,39 @@ Route::middleware('auth')->group(function () {
         ->name('lab-orders.attachments.upload');
     Route::delete('lab-orders/{labOrder}/attachments/{attachment}', [AttachmentController::class, 'destroy'])
         ->name('lab-orders.attachments.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 4 — Production Workflow
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('production')->name('production.')->group(function () {
+    Route::get('/', [ProductionWorkflowController::class, 'board'])
+        ->name('board')->middleware('permission:view_production|manage_production');
+    Route::get('/{labOrder}', [ProductionWorkflowController::class, 'show'])
+        ->name('show')->middleware('permission:view_production|manage_production');
+
+    Route::post('/{labOrder}/assign', [ProductionAssignmentController::class, 'store'])
+        ->name('assign')->middleware('permission:assign_technicians|manage_production');
+    Route::post('/{labOrder}/reassign', [ProductionAssignmentController::class, 'reassign'])
+        ->name('reassign')->middleware('permission:reassign_technicians|manage_production');
+
+    Route::post('/{labOrder}/start', [ProductionWorkflowController::class, 'start'])
+        ->name('start')->middleware('permission:start_production_work|manage_production');
+    Route::post('/{labOrder}/pause', [ProductionWorkflowController::class, 'pause'])
+        ->name('pause')->middleware('permission:pause_production_work|manage_production');
+    Route::post('/{labOrder}/resume', [ProductionWorkflowController::class, 'resume'])
+        ->name('resume')->middleware('permission:resume_production_work|manage_production');
+    Route::post('/{labOrder}/complete', [ProductionWorkflowController::class, 'complete'])
+        ->name('complete')->middleware('permission:complete_production_work|manage_production');
+    Route::post('/{labOrder}/send-to-qc', [ProductionWorkflowController::class, 'sendToQc'])
+        ->name('send-to-qc')->middleware('permission:send_to_qc|manage_production');
+
+    Route::get('/{labOrder}/work-logs', [WorkLogController::class, 'index'])
+        ->name('work-logs.index')->middleware('permission:view_production|manage_production');
+    Route::patch('/{labOrder}/steps/{step}', [ProductionStepController::class, 'update'])
+        ->name('steps.update');
 });
 
 require __DIR__.'/auth.php';

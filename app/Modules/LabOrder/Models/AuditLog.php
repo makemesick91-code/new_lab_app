@@ -26,6 +26,23 @@ class AuditLog extends Model
 
     public const ACTION_STATUS_CHANGE = 'STATUS_CHANGE';
 
+    // Sprint 4 — Production Workflow actions
+    public const ACTION_ASSIGN_TECHNICIAN = 'ASSIGN_TECHNICIAN';
+
+    public const ACTION_REASSIGN_TECHNICIAN = 'REASSIGN_TECHNICIAN';
+
+    public const ACTION_START_WORK = 'START_WORK';
+
+    public const ACTION_PAUSE_WORK = 'PAUSE_WORK';
+
+    public const ACTION_RESUME_WORK = 'RESUME_WORK';
+
+    public const ACTION_COMPLETE_WORK = 'COMPLETE_WORK';
+
+    public const ACTION_SEND_TO_QC = 'SEND_TO_QC';
+
+    public const ACTION_UPDATE_PRODUCTION_STEP = 'UPDATE_PRODUCTION_STEP';
+
     protected $table = 'sys_audit_logs';
 
     protected $fillable = [

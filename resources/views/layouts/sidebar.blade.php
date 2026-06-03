@@ -59,18 +59,23 @@
             @endcan
         @endcanany
 
-        @canany(['view_lab_orders', 'manage_lab_orders'])
+        @canany(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Operations</p>
-            <a href="{{ route('lab-orders.index') }}"
-               class="block px-3 py-2 rounded-md {{ request()->routeIs('lab-orders.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Lab Orders</a>
-            @hasanyrole('Super Admin|Admin Lab')
-                <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Assignments <span class="text-xs text-gray-400">(Sprint 4)</span></a>
-            @endhasanyrole
+            @canany(['view_lab_orders', 'manage_lab_orders'])
+                <a href="{{ route('lab-orders.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('lab-orders.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Lab Orders</a>
+            @endcanany
+            @canany(['view_production', 'manage_production'])
+                <a href="{{ route('production.board') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('production.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Production</a>
+            @endcanany
         @endcanany
 
         @role('Technician')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Production</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Assignments <span class="text-xs text-gray-400">(Sprint 4)</span></a>
+            @can('view_production')
+                <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">My Work</p>
+                <a href="{{ route('production.board') }}" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Assignments</a>
+            @endcan
         @endrole
 
         @role('Quality Control')
