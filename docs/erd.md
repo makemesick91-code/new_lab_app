@@ -42,6 +42,8 @@ Lab Order
 Order Items
 ↓
 Assignment Teknisi
+-> Work Logs
+-> Production Steps
 ↓
 Status Log
 ↓
@@ -120,6 +122,23 @@ trx_invoices
 
 ---
 
+Sprint 4 high-level ERD additions:
+
+```text
+trx_lab_orders
+├── trx_lab_order_items
+├── trx_lab_order_status_logs
+├── trx_lab_order_assignments
+├── trx_lab_production_steps
+├── sys_attachments (polymorphic)
+└── sys_audit_logs (polymorphic)
+
+trx_lab_order_assignments
+└── trx_lab_work_logs
+```
+
+---
+
 # 4. Mermaid ERD Diagram
 
 ```mermaid
@@ -129,6 +148,7 @@ erDiagram
     users ||--o{ trx_lab_orders : "creates"
     users ||--o{ trx_lab_order_status_logs : "changes status"
     users ||--o{ trx_lab_order_assignments : "assigns"
+    users ||--o{ trx_lab_work_logs : "records"
     users ||--o{ trx_lab_quality_controls : "performs qc"
     users ||--o{ trx_lab_deliveries : "courier/created_by"
     users ||--o{ trx_invoices : "creates invoice"
@@ -150,16 +170,19 @@ erDiagram
 
     mst_lab_services ||--o{ trx_lab_order_items : "used in items"
 
-    mst_technicians ||--o{ trx_lab_order_assignments : "assigned to orders"
+    mst_technicians ||--o{ trx_lab_order_assignments : "receives"
 
     trx_lab_orders ||--o{ trx_lab_order_items : "has items"
     trx_lab_orders ||--o{ trx_lab_order_status_logs : "has status logs"
-    trx_lab_orders ||--o{ trx_lab_order_assignments : "has assignments"
+    trx_lab_orders ||--o{ trx_lab_order_assignments : "assigned_to"
+    trx_lab_orders ||--o{ trx_lab_production_steps : "tracks"
     trx_lab_orders ||--o{ trx_lab_quality_controls : "has qc records"
     trx_lab_orders ||--o{ trx_lab_deliveries : "has deliveries"
     trx_lab_orders ||--o| trx_invoices : "has invoice"
     trx_lab_orders ||--o{ sys_attachments : "has attachments (polymorphic)"
     trx_lab_orders ||--o{ sys_audit_logs : "audited by (polymorphic)"
+
+    trx_lab_order_assignments ||--o{ trx_lab_work_logs : "contains"
 
     trx_lab_deliveries ||--o{ trx_lab_delivery_photos : "has photos"
 
@@ -482,6 +505,138 @@ Satu invoice dapat memiliki banyak pembayaran karena mendukung partial payment.
 
 ---
 
+## 5.18 users â†’ trx_lab_order_assignments
+
+```text
+Relationship:
+users 1 â†’ many trx_lab_order_assignments
+
+Foreign Key:
+trx_lab_order_assignments.assigned_by â†’ users.id
+```
+
+Artinya:
+
+```text
+User Admin Lab atau Production Manager dapat membuat banyak assignment teknisi.
+```
+
+---
+
+## 5.19 trx_lab_order_assignments â†’ trx_lab_work_logs
+
+```text
+Relationship:
+trx_lab_order_assignments 1 â†’ many trx_lab_work_logs
+
+Foreign Key:
+trx_lab_work_logs.assignment_id â†’ trx_lab_order_assignments.id
+```
+
+Artinya:
+
+```text
+Satu assignment dapat memiliki banyak work session.
+Work logs mencatat start work, pause work, resume work, dan complete work.
+Historical work logs tidak boleh dihapus.
+```
+
+---
+
+## 5.20 users â†’ trx_lab_work_logs
+
+```text
+Relationship:
+users 1 â†’ many trx_lab_work_logs
+
+Foreign Key:
+trx_lab_work_logs.performed_by â†’ users.id
+```
+
+Artinya:
+
+```text
+User teknisi, Admin Lab, atau Production Manager dapat mencatat aktivitas produksi.
+```
+
+---
+
+## 5.21 trx_lab_orders â†’ trx_lab_production_steps
+
+```text
+Relationship:
+trx_lab_orders 1 â†’ many trx_lab_production_steps
+
+Foreign Key:
+trx_lab_production_steps.lab_order_id â†’ trx_lab_orders.id
+```
+
+Artinya:
+
+```text
+Satu order dapat memiliki banyak production step.
+Production steps bersifat independen dari assignment records.
+Steps membantu mempersiapkan order untuk QC handoff tanpa memodelkan hasil QC.
+```
+
+---
+
+## 5.22 Sprint 4 Workflow Relationship Notes
+
+Assignment workflow:
+
+```text
+Lab Order
+â†“
+Assignment
+â†“
+Work Logs
+```
+
+Rules:
+
+```text
+1. One order may have multiple assignment records over time.
+2. Only one active assignment exists at any moment.
+3. Reassignment creates a new assignment record.
+4. Historical assignment records are preserved.
+```
+
+Work log workflow:
+
+```text
+Assignment
+â†“
+Work Logs
+```
+
+Rules:
+
+```text
+1. One assignment can have many work sessions.
+2. Work logs record start work, pause work, resume work, and complete work.
+3. Historical work logs must never be deleted.
+```
+
+Production step workflow:
+
+```text
+Lab Order
+â†“
+Production Steps
+```
+
+Rules:
+
+```text
+1. Production steps are independent from assignment records.
+2. Multiple production steps can exist per order.
+3. Steps prepare the order for QC.
+4. Sprint 4 does not model QC results.
+```
+
+---
+
 # 6. Cardinality Summary
 
 | Parent             | Child                     | Cardinality |
@@ -490,6 +645,7 @@ Satu invoice dapat memiliki banyak pembayaran karena mendukung partial payment.
 | users              | trx_lab_orders            | 1 to many   |
 | users              | trx_lab_order_status_logs | 1 to many   |
 | users              | trx_lab_order_assignments | 1 to many   |
+| users              | trx_lab_work_logs         | 1 to many   |
 | users              | trx_lab_quality_controls  | 1 to many   |
 | users              | trx_lab_deliveries        | 1 to many   |
 | users              | trx_invoices              | 1 to many   |
@@ -508,6 +664,8 @@ Satu invoice dapat memiliki banyak pembayaran karena mendukung partial payment.
 | trx_lab_orders     | trx_lab_order_items       | 1 to many   |
 | trx_lab_orders     | trx_lab_order_status_logs | 1 to many   |
 | trx_lab_orders     | trx_lab_order_assignments | 1 to many   |
+| trx_lab_orders     | trx_lab_production_steps  | 1 to many   |
+| trx_lab_order_assignments | trx_lab_work_logs    | 1 to many   |
 | trx_lab_orders     | trx_lab_quality_controls  | 1 to many   |
 | trx_lab_orders     | trx_lab_deliveries        | 1 to many   |
 | trx_lab_orders     | trx_invoices              | 1 to 0..1   |
@@ -539,6 +697,7 @@ Digunakan untuk (Sprint 3 dan seterusnya):
 
 ```text
 trx_lab_orders            (Sprint 3)
+trx_lab_orders            (Sprint 4 production attachments)
 trx_lab_quality_controls  (Sprint 5)
 trx_lab_deliveries        (Sprint 6)
 trx_invoices              (Sprint 7)
@@ -638,6 +797,55 @@ Minimal 1 foto sebelum status DELIVERED.
 
 ---
 
+## 8.6 Sprint 4 Production Status Notes
+
+Sprint 4 mengaktifkan status Lab Order berikut:
+
+```text
+ASSIGNED
+IN_PRODUCTION
+ON_HOLD
+QC_PENDING
+```
+
+Catatan:
+
+```text
+1. RECEIVED berasal dari Sprint 3 dan menjadi titik awal assignment.
+2. ASSIGNED berarti order sudah memiliki active technician assignment.
+3. IN_PRODUCTION berarti teknisi sudah memulai pekerjaan.
+4. ON_HOLD berarti pekerjaan tertahan sementara dengan alasan yang dicatat.
+5. QC_PENDING berarti produksi selesai dan order siap diterima QC.
+6. QC_PASSED dan REMAKE menjadi bagian Sprint 5.
+7. Sprint 4 tidak memodelkan QC result behavior.
+```
+
+---
+
+## 8.7 Sprint 4 Assignment and Work Log Rules
+
+```text
+1. One order may have multiple assignment records over time.
+2. Only one active technician assignment exists at any moment.
+3. Reassignment creates a new assignment record.
+4. Work logs are immutable historical records.
+5. Work logs preserve start, pause, resume, complete, and status change events.
+```
+
+---
+
+## 8.8 Sprint 4 Production Step Rules
+
+```text
+1. trx_lab_production_steps belongs to trx_lab_orders.
+2. Production steps are independent from assignment records.
+3. Multiple production steps can exist per order.
+4. Production steps prepare the order for QC handoff.
+5. Production steps do not store QC pass, reject, or remake decisions.
+```
+
+---
+
 # 9. Foreign Key Recommendation
 
 ## mst_doctors
@@ -691,6 +899,19 @@ changed_by → users.id
 lab_order_id → trx_lab_orders.id
 technician_id → mst_technicians.id
 assigned_by → users.id
+```
+
+## trx_lab_work_logs
+
+```text
+assignment_id → trx_lab_order_assignments.id
+performed_by → users.id
+```
+
+## trx_lab_production_steps
+
+```text
+lab_order_id → trx_lab_orders.id
 ```
 
 ## trx_lab_quality_controls
@@ -792,6 +1013,23 @@ technician_id INDEX
 status INDEX
 ```
 
+## trx_lab_work_logs
+
+```text
+assignment_id INDEX
+performed_by INDEX
+event INDEX
+performed_at INDEX
+```
+
+## trx_lab_production_steps
+
+```text
+lab_order_id INDEX
+status INDEX
+step_name INDEX
+```
+
 ## trx_lab_quality_controls
 
 ```text
@@ -883,15 +1121,17 @@ performed_at INDEX
 12. trx_lab_order_items
 13. trx_lab_order_status_logs
 14. trx_lab_order_assignments
-15. trx_lab_quality_controls
-16. trx_lab_deliveries
-17. trx_lab_delivery_photos
-18. trx_invoices
-19. trx_invoice_items
-20. trx_payments
+15. trx_lab_work_logs
+16. trx_lab_production_steps
+17. trx_lab_quality_controls
+18. trx_lab_deliveries
+19. trx_lab_delivery_photos
+20. trx_invoices
+21. trx_invoice_items
+22. trx_payments
 
-21. sys_attachments
-22. sys_audit_logs
+23. sys_attachments
+24. sys_audit_logs
 ```
 
 ---
@@ -911,6 +1151,9 @@ performed_at INDEX
 10. Attachment umum menggunakan polymorphic relation.
 11. Signature disimpan di trx_lab_deliveries.signature_file_path.
 12. Foto POD disimpan di trx_lab_delivery_photos.
+13. Assignment teknisi disimpan sebagai histori, bukan ditimpa.
+14. Work logs menyimpan sesi kerja produksi.
+15. Production steps menyimpan milestone produksi sebelum QC.
 ```
 
 ---
@@ -1016,7 +1259,177 @@ Payment   (Sprint 7)
 
 ---
 
-# 14. V2 ERD Candidates
+# 14. Sprint 4 ERD — Production Workflow
+
+Bagian ini memperluas ERD Sprint 3 agar mendukung **Sprint 4 — Production Workflow**
+(`production_workflow_design.md`). Sprint 4 memindahkan Lab Order dari
+`RECEIVED` ke `QC_PENDING` melalui assignment teknisi, work logs, dan production
+steps.
+
+## 14.1 Tabel dalam scope Sprint 4
+
+```text
+trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
+trx_lab_order_status_logs
+sys_attachments
+sys_audit_logs
+```
+
+Catatan:
+
+```text
+trx_lab_order_status_logs, sys_attachments, dan sys_audit_logs sudah disiapkan
+di Sprint 3 dan digunakan ulang pada Sprint 4.
+```
+
+Entity purpose:
+
+| Entity | Purpose |
+| --- | --- |
+| `trx_lab_order_assignments` | Assignment of Lab Orders to technicians. |
+| `trx_lab_work_logs` | Tracking technician work sessions. |
+| `trx_lab_production_steps` | Tracking production progress and milestones. |
+
+## 14.2 Relasi yang wajib ada
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_order_assignments
+
+mst_technicians
+  1 -> many trx_lab_order_assignments
+
+users
+  1 -> many trx_lab_order_assignments (assigned_by)
+
+trx_lab_order_assignments
+  1 -> many trx_lab_work_logs
+
+users
+  1 -> many trx_lab_work_logs (performed_by)
+
+trx_lab_orders
+  1 -> many trx_lab_production_steps
+```
+
+## 14.3 Assignment Workflow Relationships
+
+```text
+Lab Order
+-> Assignment
+-> Work Logs
+```
+
+Rules:
+
+```text
+1. One order may have multiple assignment records over time.
+2. Only one active assignment exists at any moment.
+3. Reassignment creates a new assignment record.
+4. Historical assignment records are preserved.
+```
+
+## 14.4 Work Log Relationships
+
+```text
+Assignment
+-> Work Logs
+```
+
+Rules:
+
+```text
+1. One assignment can have many work sessions.
+2. Work logs record start work, pause work, resume work, and complete work.
+3. Historical work logs must never be deleted.
+```
+
+## 14.5 Production Step Relationships
+
+```text
+Lab Order
+-> Production Steps
+```
+
+Rules:
+
+```text
+1. Production steps are independent from assignment records.
+2. Multiple production steps can exist per order.
+3. Steps prepare the order for QC.
+4. QC results are not modeled in Sprint 4.
+```
+
+## 14.6 Mermaid ERD — Sprint 4
+
+```mermaid
+erDiagram
+    trx_lab_orders ||--o{ trx_lab_order_assignments : assigned_to
+    mst_technicians ||--o{ trx_lab_order_assignments : receives
+    users ||--o{ trx_lab_order_assignments : assigns
+
+    trx_lab_order_assignments ||--o{ trx_lab_work_logs : contains
+    users ||--o{ trx_lab_work_logs : records
+
+    trx_lab_orders ||--o{ trx_lab_production_steps : tracks
+```
+
+## 14.7 Sprint 4 Status Notes
+
+Sprint 4 activates:
+
+```text
+ASSIGNED
+IN_PRODUCTION
+ON_HOLD
+QC_PENDING
+```
+
+Notes:
+
+```text
+1. RECEIVED comes from Sprint 3.
+2. ASSIGNED, IN_PRODUCTION, ON_HOLD, and QC_PENDING are active in Sprint 4.
+3. QC_PENDING is only QC handoff preparation.
+4. QC_PASSED and REMAKE belong to Sprint 5.
+5. Sprint 4 does not model Sprint 5 QC workflow.
+```
+
+## 14.8 Sprint 4 ERD Decisions
+
+```text
+1. Assignment history must be preserved.
+2. Only one active technician assignment per order.
+3. Reassignment creates a new assignment record.
+4. Work logs are immutable historical records.
+5. Production steps support future reporting.
+6. Production steps prepare QC handoff.
+7. QC entities are not part of Sprint 4.
+8. Delivery entities are not part of Sprint 4.
+9. Invoice entities are not part of Sprint 4.
+10. Payment entities are not part of Sprint 4.
+```
+
+## 14.9 Sprint 4 ERD Validation Checklist
+
+```text
+✓ Assignment entity present
+✓ Work Log entity present
+✓ Production Step entity present
+✓ Assignment relationships documented
+✓ Work Log relationships documented
+✓ Production Step relationships documented
+✓ Mermaid diagram updated
+✓ Existing Sprint 1-3 relations preserved
+✓ Sprint 5 entities excluded from Sprint 4 scope
+✓ Sprint 6 entities excluded from Sprint 4 scope
+```
+
+---
+
+# 15. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 
