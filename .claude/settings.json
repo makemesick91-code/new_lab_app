@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php -v)",
+      "Bash(composer --version)",
+      "Bash(npm -v)",
+      "Bash(laravel --version)",
+      "Bash(psql --version)",
+      "Read(//c/xampp/php/**)"
+    ],
+    "additionalDirectories": [
+      "C:\\xampp\\php"
+    ]
+  }
+}
