@@ -49,6 +49,8 @@ trx_lab_orders
 trx_lab_order_items
 trx_lab_order_status_logs
 trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
 trx_lab_quality_controls
 trx_lab_deliveries
 trx_lab_delivery_photos
@@ -350,6 +352,11 @@ subtotal = quantity * unit_price (discount dihitung di level invoice pada Sprint
 
 ## trx_lab_order_assignments
 
+> Revised in Sprint 4 (Production Workflow): table now explicitly supports
+> assignment history, reassignment, soft delete, and the handoff from
+> `RECEIVED` to `ASSIGNED`. `IN_PROGRESS` remains an assignment status only;
+> Lab Order status uses `IN_PRODUCTION`.
+
 | Column        | Type        | Rule                  |
 | ------------- | ----------- | --------------------- |
 | id            | BIGINT      | PK                    |
@@ -363,6 +370,7 @@ subtotal = quantity * unit_price (discount dihitung di level invoice pada Sprint
 | notes         | TEXT        | NULL                  |
 | created_at    | TIMESTAMP   |                       |
 | updated_at    | TIMESTAMP   |                       |
+| deleted_at    | TIMESTAMP   | NULL                  |
 
 Status assignment:
 
@@ -372,6 +380,110 @@ IN_PROGRESS
 DONE
 CANCELLED
 REASSIGNED
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many assignment records over time.
+2. Only one active assignment should exist per Lab Order at any time.
+3. Reassignment creates a new assignment record.
+4. Historical assignments must be preserved.
+5. Cancelled Lab Orders cannot be assigned.
+6. Lab Order status changes to ASSIGNED when assignment is created.
+```
+
+---
+
+## trx_lab_work_logs
+
+> Added in Sprint 4 (Production Workflow): immutable production work log records
+> for technician work sessions. Work logs are tied to assignments and prepare
+> traceability for Sprint 8 reporting. They do not store QC results.
+
+| Column           | Type        | Rule                                |
+| ---------------- | ----------- | ----------------------------------- |
+| id               | BIGINT      | PK                                  |
+| assignment_id    | BIGINT      | FK trx_lab_order_assignments.id     |
+| event_type       | VARCHAR(50) | NOT NULL                            |
+| started_at       | TIMESTAMP   | NULL                                |
+| ended_at         | TIMESTAMP   | NULL                                |
+| duration_minutes | INTEGER     | DEFAULT 0                           |
+| notes            | TEXT        | NULL                                |
+| performed_by     | BIGINT      | FK users.id                         |
+| created_at       | TIMESTAMP   |                                     |
+
+Event enum:
+
+```text
+WORK_STARTED
+WORK_PAUSED
+WORK_RESUMED
+WORK_COMPLETED
+STATUS_CHANGED
+```
+
+Business rules:
+
+```text
+1. Work logs are immutable historical records.
+2. One assignment can have many work logs.
+3. Start, pause, resume, and complete actions must create work logs.
+4. Work logs must be tied to an assignment.
+5. Work logs must capture who performed the action.
+6. Completion work log prepares order for QC handoff.
+```
+
+---
+
+## trx_lab_production_steps
+
+> Added in Sprint 4 (Production Workflow): production progress and milestone
+> tracking per Lab Order. Production steps prepare the order for QC handoff but
+> do not model QC pass, reject, or remake behavior.
+
+| Column       | Type         | Rule                 |
+| ------------ | ------------ | -------------------- |
+| id           | BIGINT       | PK                   |
+| lab_order_id | BIGINT       | FK trx_lab_orders.id |
+| step_name    | VARCHAR(100) | NOT NULL             |
+| status       | VARCHAR(50)  | DEFAULT PENDING      |
+| started_at   | TIMESTAMP    | NULL                 |
+| completed_at | TIMESTAMP    | NULL                 |
+| notes        | TEXT         | NULL                 |
+| created_at   | TIMESTAMP    |                      |
+| updated_at   | TIMESTAMP    |                      |
+
+Recommended production step names:
+
+```text
+MODEL_PREPARATION
+WAX_DESIGN
+MILLING
+PRINTING
+FINISHING
+POLISHING
+PACKAGING
+```
+
+Step status enum:
+
+```text
+PENDING
+IN_PROGRESS
+COMPLETED
+SKIPPED
+ON_HOLD
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many production steps.
+2. Production steps support future reporting.
+3. Production steps prepare the Lab Order for QC handoff.
+4. Production steps do not store QC result.
+5. QC result belongs to Sprint 5, not Sprint 4.
 ```
 
 ---
@@ -555,6 +667,7 @@ Digunakan untuk menyimpan file umum:
 Foto kasus
 Scan intraoral
 File pendukung order
+File produksi
 File pendukung QC
 Dokumen invoice
 ```
@@ -588,6 +701,18 @@ Case Photo
 STL File
 X-Ray
 Other Document
+WORK_PHOTO
+DESIGN_FILE
+STL_REVISION
+REFERENCE_IMAGE
+PRODUCTION_NOTE
+```
+
+Catatan Sprint 4:
+
+```text
+Production attachments memakai tabel sys_attachments yang sama.
+Tidak ada tabel attachment baru untuk production workflow.
 ```
 
 ---
@@ -626,6 +751,13 @@ UPDATE
 DELETE
 STATUS_CHANGE
 ASSIGNMENT
+ASSIGN_TECHNICIAN
+REASSIGN_TECHNICIAN
+START_WORK
+PAUSE_WORK
+RESUME_WORK
+COMPLETE_WORK
+SEND_TO_QC
 QC_APPROVAL
 QC_REJECT
 DELIVERY
@@ -686,6 +818,39 @@ trx_invoices
 
 ---
 
+## Sprint 4 Relationship Additions
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_order_assignments
+  1 -> many trx_lab_production_steps
+
+mst_technicians
+  1 -> many trx_lab_order_assignments
+
+users
+  1 -> many trx_lab_order_assignments (assigned_by)
+  1 -> many trx_lab_work_logs (performed_by)
+
+trx_lab_order_assignments
+  1 -> many trx_lab_work_logs
+```
+
+Foreign keys:
+
+```text
+trx_lab_order_assignments.lab_order_id  -> trx_lab_orders.id
+trx_lab_order_assignments.technician_id -> mst_technicians.id
+trx_lab_order_assignments.assigned_by   -> users.id
+
+trx_lab_work_logs.assignment_id         -> trx_lab_order_assignments.id
+trx_lab_work_logs.performed_by          -> users.id
+
+trx_lab_production_steps.lab_order_id   -> trx_lab_orders.id
+```
+
+---
+
 # 7. Index Recommendation
 
 ## trx_lab_orders
@@ -720,6 +885,25 @@ changed_at INDEX
 ```text
 lab_order_id INDEX
 technician_id INDEX
+assigned_by INDEX
+status INDEX
+assigned_at INDEX
+```
+
+## trx_lab_work_logs
+
+```text
+assignment_id INDEX
+event_type INDEX
+performed_by INDEX
+created_at INDEX
+```
+
+## trx_lab_production_steps
+
+```text
+lab_order_id INDEX
+step_name INDEX
 status INDEX
 ```
 
@@ -805,6 +989,28 @@ action INDEX
 1. Order dapat diassign ke satu atau lebih teknisi.
 2. Assignment dapat direassign.
 3. Reassign wajib masuk audit log.
+4. One Lab Order can have many assignment records over time.
+5. Only one active assignment should exist per Lab Order at any time.
+6. Reassignment creates a new assignment record.
+7. Historical assignments must be preserved.
+8. Cancelled Lab Orders cannot be assigned.
+9. Lab Order status changes to ASSIGNED when assignment is created.
+10. IN_PROGRESS adalah status assignment, bukan status Lab Order.
+```
+
+## Production Workflow
+
+```text
+1. Sprint 4 mengaktifkan status ASSIGNED, IN_PRODUCTION, ON_HOLD, dan QC_PENDING.
+2. RECEIVED dan CANCELLED berasal dari Sprint 3.
+3. QC_PASSED dan REMAKE tetap reserved untuk Sprint 5.
+4. Creating assignment changes Lab Order status to ASSIGNED.
+5. Starting work changes Lab Order status to IN_PRODUCTION.
+6. Putting work on hold changes Lab Order status to ON_HOLD.
+7. Completing production changes Lab Order status to QC_PENDING.
+8. All Lab Order status changes must create trx_lab_order_status_logs.
+9. All production actions must create sys_audit_logs.
+10. Sprint 4 tidak mendefinisikan QC result workflow.
 ```
 
 ## Quality Control
@@ -909,15 +1115,17 @@ PAY-2026-000001
 12. trx_lab_order_items
 13. trx_lab_order_status_logs
 14. trx_lab_order_assignments
-15. trx_lab_quality_controls
-16. trx_lab_deliveries
-17. trx_lab_delivery_photos
-18. trx_invoices
-19. trx_invoice_items
-20. trx_payments
+15. trx_lab_work_logs
+16. trx_lab_production_steps
+17. trx_lab_quality_controls
+18. trx_lab_deliveries
+19. trx_lab_delivery_photos
+20. trx_invoices
+21. trx_invoice_items
+22. trx_payments
 
-21. sys_attachments
-22. sys_audit_logs
+23. sys_attachments
+24. sys_audit_logs
 ```
 
 ---
@@ -1115,4 +1323,386 @@ Payment    (Sprint 7)
 ✓ Index Recommendation     (order_number UNIQUE, status, clinic, doctor, patient, due_date, entity_*)
 ✓ Delivery Preparation Fields (delivery_signature_path, delivery_photo_path, received_by_name, received_at)
 ✓ Sprint 3 Ready
+```
+
+---
+
+# 15. Sprint 4 Production Workflow Schema
+
+Bagian ini memperluas database schema untuk **Sprint 4 - Production Workflow**
+berdasarkan `production_workflow_design.md` dan ERD Sprint 4.
+
+## 15.1 Purpose
+
+```text
+Mendukung assignment teknisi, pencatatan work log produksi, production step,
+dan QC handoff preparation dari Lab Order status RECEIVED sampai QC_PENDING.
+```
+
+## 15.2 Scope
+
+Sprint 4 mencakup:
+
+```text
+1. Technician Assignment
+2. Work Logs
+3. Production Steps
+4. Lab Order status integration
+5. Audit integration
+6. Attachment reuse
+7. QC handoff preparation
+```
+
+Sprint 4 tidak mencakup:
+
+```text
+1. QC result workflow
+2. Delivery workflow
+3. Invoice workflow
+4. Payment workflow
+```
+
+## 15.3 New Tables
+
+```text
+trx_lab_order_assignments   Tracks assignment of Lab Orders to technicians.
+trx_lab_work_logs           Tracks technician work events for each assignment.
+trx_lab_production_steps    Tracks production progress and milestones per Lab Order.
+```
+
+## 15.4 trx_lab_order_assignments
+
+Purpose:
+
+```text
+Tracks assignment of Lab Orders to technicians.
+```
+
+Required fields:
+
+```text
+id
+lab_order_id
+technician_id
+assigned_by
+assigned_at
+status
+notes
+created_at
+updated_at
+deleted_at
+```
+
+Status enum:
+
+```text
+ASSIGNED
+IN_PROGRESS
+DONE
+CANCELLED
+REASSIGNED
+```
+
+Foreign keys:
+
+```text
+lab_order_id  -> trx_lab_orders.id
+technician_id -> mst_technicians.id
+assigned_by   -> users.id
+```
+
+Recommended indexes:
+
+```text
+lab_order_id
+technician_id
+assigned_by
+status
+assigned_at
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many assignment records over time.
+2. Only one active assignment should exist per Lab Order at any time.
+3. Reassignment creates a new assignment record.
+4. Historical assignments must be preserved.
+5. Cancelled Lab Orders cannot be assigned.
+6. Lab Order status changes to ASSIGNED when assignment is created.
+```
+
+## 15.5 trx_lab_work_logs
+
+Purpose:
+
+```text
+Tracks technician work events for each assignment.
+```
+
+Required fields:
+
+```text
+id
+assignment_id
+event_type
+started_at
+ended_at
+duration_minutes
+notes
+performed_by
+created_at
+```
+
+Event enum:
+
+```text
+WORK_STARTED
+WORK_PAUSED
+WORK_RESUMED
+WORK_COMPLETED
+STATUS_CHANGED
+```
+
+Foreign keys:
+
+```text
+assignment_id -> trx_lab_order_assignments.id
+performed_by  -> users.id
+```
+
+Recommended indexes:
+
+```text
+assignment_id
+event_type
+performed_by
+created_at
+```
+
+Business rules:
+
+```text
+1. Work logs are immutable historical records.
+2. One assignment can have many work logs.
+3. Start, pause, resume, and complete actions must create work logs.
+4. Work logs must be tied to an assignment.
+5. Work logs must capture who performed the action.
+6. Completion work log prepares order for QC handoff.
+```
+
+## 15.6 trx_lab_production_steps
+
+Purpose:
+
+```text
+Tracks production progress and milestones per Lab Order.
+```
+
+Required fields:
+
+```text
+id
+lab_order_id
+step_name
+status
+started_at
+completed_at
+notes
+created_at
+updated_at
+```
+
+Recommended production step names:
+
+```text
+MODEL_PREPARATION
+WAX_DESIGN
+MILLING
+PRINTING
+FINISHING
+POLISHING
+PACKAGING
+```
+
+Step status enum:
+
+```text
+PENDING
+IN_PROGRESS
+COMPLETED
+SKIPPED
+ON_HOLD
+```
+
+Foreign keys:
+
+```text
+lab_order_id -> trx_lab_orders.id
+```
+
+Recommended indexes:
+
+```text
+lab_order_id
+step_name
+status
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many production steps.
+2. Production steps support future reporting.
+3. Production steps prepare the Lab Order for QC handoff.
+4. Production steps do not store QC result.
+5. QC result belongs to Sprint 5, not Sprint 4.
+```
+
+## 15.7 Relationships
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_order_assignments
+  1 -> many trx_lab_production_steps
+
+mst_technicians
+  1 -> many trx_lab_order_assignments
+
+users
+  1 -> many trx_lab_order_assignments (assigned_by)
+  1 -> many trx_lab_work_logs (performed_by)
+
+trx_lab_order_assignments
+  1 -> many trx_lab_work_logs
+```
+
+## 15.8 Lab Order Status Integration
+
+Existing Sprint 3 status:
+
+```text
+RECEIVED
+CANCELLED
+```
+
+Sprint 4 activates:
+
+```text
+ASSIGNED
+IN_PRODUCTION
+ON_HOLD
+QC_PENDING
+```
+
+Sprint 5 statuses remain reserved:
+
+```text
+QC_PASSED
+REMAKE
+```
+
+Rules:
+
+```text
+1. Creating assignment changes Lab Order status to ASSIGNED.
+2. Starting work changes Lab Order status to IN_PRODUCTION.
+3. Putting work on hold changes Lab Order status to ON_HOLD.
+4. Completing production changes Lab Order status to QC_PENDING.
+5. All Lab Order status changes must create trx_lab_order_status_logs.
+6. All production actions must create sys_audit_logs.
+7. Sprint 4 does not define QC result workflow.
+```
+
+## 15.9 Audit Integration
+
+Sprint 4 production actions must be audited using:
+
+```text
+sys_audit_logs
+entity_type
+entity_id
+```
+
+Required audit actions:
+
+```text
+ASSIGN_TECHNICIAN
+REASSIGN_TECHNICIAN
+START_WORK
+PAUSE_WORK
+RESUME_WORK
+COMPLETE_WORK
+SEND_TO_QC
+STATUS_CHANGE
+```
+
+Rules:
+
+```text
+1. Every production action must create sys_audit_logs.
+2. Audit logs use polymorphic entity_type and entity_id.
+3. Assignment and reassignment audit values must identify old and new technician context.
+4. Work lifecycle audit values must identify assignment, event, actor, and timestamp.
+```
+
+## 15.10 Attachment Integration
+
+Production attachments reuse:
+
+```text
+sys_attachments
+entity_type
+entity_id
+```
+
+Production attachment categories:
+
+```text
+WORK_PHOTO
+DESIGN_FILE
+STL_REVISION
+REFERENCE_IMAGE
+PRODUCTION_NOTE
+```
+
+Rules:
+
+```text
+1. Do not create a new attachment table for production.
+2. Production attachments use entity_type = trx_lab_orders.
+3. File path only is stored in database.
+4. Upload and delete actions must be audited.
+```
+
+## 15.11 Business Rules
+
+```text
+1. Cancelled Lab Orders cannot be assigned.
+2. One Lab Order can have many assignment records over time.
+3. Only one active assignment should exist per Lab Order at any time.
+4. Reassignment creates a new assignment record.
+5. Historical assignments must be preserved.
+6. Work logs are immutable historical records.
+7. Start, pause, resume, and complete actions must create work logs.
+8. Production steps do not store QC result.
+9. QC handoff ends at QC_PENDING.
+10. Delivery, Invoice, and Payment workflows are not part of Sprint 4.
+```
+
+## 15.12 Validation Checklist - Sprint 4 Schema
+
+```text
+✓ Assignment table documented
+✓ Work log table documented
+✓ Production step table documented
+✓ Foreign keys documented
+✓ Indexes documented
+✓ Lab Order status integration documented
+✓ Audit integration documented
+✓ Attachment reuse documented
+✓ QC workflow excluded
+✓ Delivery workflow excluded
+✓ Invoice workflow excluded
+✓ Payment workflow excluded
 ```
