@@ -67,7 +67,9 @@ users
 ├── trx_lab_quality_controls
 ├── trx_lab_deliveries
 ├── trx_invoices
-└── trx_payments
+├── trx_payments
+├── sys_attachments
+└── sys_audit_logs
 
 
 mst_clinics
@@ -102,7 +104,9 @@ trx_lab_orders
 ├── trx_lab_order_assignments
 ├── trx_lab_quality_controls
 ├── trx_lab_deliveries
-└── trx_invoices
+├── trx_invoices
+├── sys_attachments (polymorphic)
+└── sys_audit_logs (polymorphic)
 
 
 trx_lab_deliveries
@@ -129,6 +133,8 @@ erDiagram
     users ||--o{ trx_lab_deliveries : "courier/created_by"
     users ||--o{ trx_invoices : "creates invoice"
     users ||--o{ trx_payments : "records payment"
+    users ||--o{ sys_attachments : "uploads"
+    users ||--o{ sys_audit_logs : "performs"
 
     mst_clinics ||--o{ mst_doctors : "has doctors"
     mst_clinics ||--o{ mst_patients : "has patients"
@@ -152,6 +158,8 @@ erDiagram
     trx_lab_orders ||--o{ trx_lab_quality_controls : "has qc records"
     trx_lab_orders ||--o{ trx_lab_deliveries : "has deliveries"
     trx_lab_orders ||--o| trx_invoices : "has invoice"
+    trx_lab_orders ||--o{ sys_attachments : "has attachments (polymorphic)"
+    trx_lab_orders ||--o{ sys_audit_logs : "audited by (polymorphic)"
 
     trx_lab_deliveries ||--o{ trx_lab_delivery_photos : "has photos"
 
@@ -509,37 +517,56 @@ Satu invoice dapat memiliki banyak pembayaran karena mendukung partial payment.
 
 ---
 
-# 7. Polymorphic Attachment Relationship
+# 7. Polymorphic Relationships
 
-Untuk V1, file umum menggunakan:
+Dua tabel sistem bersifat **polymorphic** sehingga dapat dipakai ulang oleh
+banyak entitas tanpa menambah foreign key per tabel:
 
 ```text
 sys_attachments
+sys_audit_logs
 ```
 
-Relasi polymorphic:
+Kedua tabel menggunakan pasangan kolom polymorphic yang sama
+(sesuai `lab_order_design.md` Sprint 3):
 
 ```text
-attachable_type
-attachable_id
+entity_type
+entity_id
 ```
 
-Digunakan untuk:
+Digunakan untuk (Sprint 3 dan seterusnya):
 
 ```text
-trx_lab_orders
-trx_lab_quality_controls
-trx_lab_deliveries
-trx_invoices
+trx_lab_orders            (Sprint 3)
+trx_lab_quality_controls  (Sprint 5)
+trx_lab_deliveries        (Sprint 6)
+trx_invoices              (Sprint 7)
+trx_payments              (Sprint 7)
 ```
 
 Contoh:
 
 ```text
-attachable_type = trx_lab_orders
-attachable_id = 1
-file_path = order-attachments/ADL-2026-000001/photo-1.jpg
+entity_type = trx_lab_orders
+entity_id   = 1
+file_path   = order-attachments/ADL-2026-000001/photo-1.jpg
 ```
+
+Alasan polymorphic:
+
+```text
+Dibuat polymorphic agar attachment dan audit log dapat digunakan ulang
+pada sprint berikutnya (QC, Delivery, Invoice, Payment) tanpa refactor besar.
+```
+
+> **Naming note (reconciliation).** ERD ini mengikuti `lab_order_design.md`
+> yang menggunakan `entity_type` / `entity_id` untuk `sys_attachments` dan
+> `sys_audit_logs`. Versi awal `database_schema.md` masih memakai
+> `attachable_type` / `attachable_id` (sys_attachments) dan
+> `table_name` / `record_id` (sys_audit_logs). Penyelarasan kolom pada
+> `database_schema.md` berada di luar scope tugas ini (hanya `erd.md` yang
+> diperbarui) dan perlu dilakukan saat implementasi migration Sprint 3.
 
 ---
 
@@ -715,13 +742,15 @@ created_by → users.id
 ## sys_attachments
 
 ```text
+entity_type + entity_id → polymorphic (e.g. trx_lab_orders.id)
 uploaded_by → users.id
 ```
 
 ## sys_audit_logs
 
 ```text
-user_id → users.id nullable
+entity_type + entity_id → polymorphic (e.g. trx_lab_orders.id)
+performed_by → users.id
 ```
 
 ---
@@ -818,19 +847,19 @@ payment_date INDEX
 ## sys_attachments
 
 ```text
-attachable_type INDEX
-attachable_id INDEX
+entity_type INDEX
+entity_id INDEX
 uploaded_by INDEX
 ```
 
 ## sys_audit_logs
 
 ```text
-user_id INDEX
-table_name INDEX
-record_id INDEX
+entity_type INDEX
+entity_id INDEX
+performed_by INDEX
 action INDEX
-created_at INDEX
+performed_at INDEX
 ```
 
 ---
@@ -886,7 +915,108 @@ created_at INDEX
 
 ---
 
-# 13. V2 ERD Candidates
+# 13. Sprint 3 ERD — Lab Order Core
+
+Bagian ini menyelaraskan ERD dengan desain **Sprint 3 — Lab Order Core**
+(`lab_order_design.md`). Sprint 3 menjadikan `trx_lab_orders` sebagai pusat
+transaksi pertama yang benar-benar diimplementasikan.
+
+## 13.1 Tabel dalam scope Sprint 3
+
+```text
+trx_lab_orders
+trx_lab_order_items
+trx_lab_order_status_logs
+sys_attachments
+sys_audit_logs
+```
+
+## 13.2 Relasi yang wajib ada
+
+```text
+mst_clinics      1 → many  trx_lab_orders
+mst_doctors      1 → many  trx_lab_orders
+mst_patients     1 → many  trx_lab_orders
+users            1 → many  trx_lab_orders            (created_by)
+
+trx_lab_orders   1 → many  trx_lab_order_items
+mst_lab_services 1 → many  trx_lab_order_items
+
+trx_lab_orders   1 → many  trx_lab_order_status_logs
+users            1 → many  trx_lab_order_status_logs (changed_by)
+
+users            1 → many  sys_attachments           (uploaded_by)
+users            1 → many  sys_audit_logs            (performed_by)
+
+trx_lab_orders   1 → many  sys_attachments           (polymorphic)
+trx_lab_orders   1 → many  sys_audit_logs            (polymorphic)
+```
+
+## 13.3 Mermaid ERD — Sprint 3
+
+```mermaid
+erDiagram
+    users ||--o{ trx_lab_orders : creates
+    users ||--o{ trx_lab_order_status_logs : changes
+    users ||--o{ sys_attachments : uploads
+    users ||--o{ sys_audit_logs : performs
+
+    mst_clinics ||--o{ mst_doctors : has
+    mst_clinics ||--o{ trx_lab_orders : owns
+
+    mst_doctors ||--o{ mst_patients : handles
+    mst_doctors ||--o{ trx_lab_orders : submits
+
+    mst_patients ||--o{ trx_lab_orders : has
+
+    trx_lab_orders ||--o{ trx_lab_order_items : contains
+    mst_lab_services ||--o{ trx_lab_order_items : used_in
+
+    trx_lab_orders ||--o{ trx_lab_order_status_logs : tracks
+    trx_lab_orders ||--o{ sys_attachments : has
+    trx_lab_orders ||--o{ sys_audit_logs : audited_by
+```
+
+## 13.4 Aturan Polymorphic
+
+`sys_attachments` dan `sys_audit_logs` memakai pasangan kolom polymorphic
+(lihat bagian 7):
+
+```text
+sys_attachments : entity_type, entity_id
+sys_audit_logs  : entity_type, entity_id
+```
+
+Keduanya dibuat polymorphic agar dapat **digunakan ulang pada sprint berikutnya**
+tanpa refactor besar:
+
+```text
+QC        (Sprint 5)
+Delivery  (Sprint 6)
+Invoice   (Sprint 7)
+Payment   (Sprint 7)
+```
+
+## 13.5 Sprint 3 ERD Decisions
+
+```text
+1.  trx_lab_orders menjadi pusat transaksi awal.
+2.  Satu order memiliki satu clinic.
+3.  Satu order memiliki satu doctor.
+4.  Satu order memiliki satu patient.
+5.  Satu order memiliki banyak item.
+6.  Satu order memiliki banyak attachment.
+7.  Satu order memiliki banyak status log.
+8.  Satu order memiliki banyak audit log.
+9.  sys_attachments menggunakan polymorphic relation.
+10. sys_audit_logs menggunakan polymorphic relation.
+11. Delivery, QC, Invoice, dan Payment tidak diimplementasikan pada Sprint 3.
+12. ERD tetap disiapkan agar Sprint 4–7 dapat melanjutkan workflow tanpa refactor besar.
+```
+
+---
+
+# 14. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 
