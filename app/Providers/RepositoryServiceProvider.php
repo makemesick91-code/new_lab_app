@@ -20,6 +20,14 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\Invoice\Interfaces\InvoiceRepositoryInterface;
+use App\Modules\Invoice\Interfaces\PaymentRepositoryInterface;
+use App\Modules\Invoice\Models\Invoice;
+use App\Modules\Invoice\Models\Payment;
+use App\Modules\Invoice\Policies\InvoicePolicy;
+use App\Modules\Invoice\Policies\PaymentPolicy;
+use App\Modules\Invoice\Repositories\InvoiceRepository;
+use App\Modules\Invoice\Repositories\PaymentRepository;
 use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
@@ -103,6 +111,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ChecklistRepositoryInterface::class => ChecklistRepository::class,
         RemakeRequestRepositoryInterface::class => RemakeRequestRepository::class,
         DeliveryRepositoryInterface::class => DeliveryRepository::class,
+        InvoiceRepositoryInterface::class => InvoiceRepository::class,
+        PaymentRepositoryInterface::class => PaymentRepository::class,
     ];
 
     /**
@@ -158,6 +168,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LabOrder::class => LabOrderPolicy::class,
         Attachment::class => AttachmentPolicy::class,
         Delivery::class => DeliveryPolicy::class,
+        Invoice::class => InvoicePolicy::class,
+        Payment::class => PaymentPolicy::class,
     ];
 
     public function register(): void
@@ -176,6 +188,8 @@ class RepositoryServiceProvider extends ServiceProvider
             LabOrder::ENTITY_TYPE => LabOrder::class,
             QualityControl::ENTITY_TYPE => QualityControl::class,
             Delivery::ENTITY_TYPE => Delivery::class,
+            Invoice::ENTITY_TYPE => Invoice::class,
+            Payment::ENTITY_TYPE => Payment::class,
         ]);
 
         foreach ($this->policies as $model => $policy) {

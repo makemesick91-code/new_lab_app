@@ -71,6 +71,21 @@ class AuditLog extends Model
 
     public const ACTION_UPLOAD_POD = 'UPLOAD_POD';
 
+    // Sprint 7 - Invoice & Payment actions
+    public const ACTION_INVOICE_CREATED = 'invoice_created';
+
+    public const ACTION_INVOICE_ISSUED = 'invoice_issued';
+
+    public const ACTION_INVOICE_VOIDED = 'invoice_voided';
+
+    public const ACTION_INVOICE_MARKED_OVERDUE = 'invoice_marked_overdue';
+
+    public const ACTION_PAYMENT_RECORDED = 'payment_recorded';
+
+    public const ACTION_INVOICE_PARTIALLY_PAID = 'invoice_partially_paid';
+
+    public const ACTION_INVOICE_PAID = 'invoice_paid';
+
     protected $table = 'sys_audit_logs';
 
     protected $fillable = [

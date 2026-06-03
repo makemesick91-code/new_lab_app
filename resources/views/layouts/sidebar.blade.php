@@ -96,11 +96,13 @@
             <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">My Deliveries</a>
         @endrole
 
-        @role('Finance')
+        @canany(['view_invoice', 'manage_invoice', 'view_payment', 'manage_payment'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Finance</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Invoices <span class="text-xs text-gray-400">(Sprint 7)</span></a>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Payments <span class="text-xs text-gray-400">(Sprint 7)</span></a>
-        @endrole
+            @canany(['view_invoice', 'manage_invoice'])
+                <a href="{{ route('invoices.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('invoices.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Invoices</a>
+            @endcanany
+        @endcanany
 
         @role('Doctor')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">My Lab</p>

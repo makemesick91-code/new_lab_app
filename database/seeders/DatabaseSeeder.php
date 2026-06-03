@@ -23,6 +23,8 @@ class DatabaseSeeder extends Seeder
             ProductionSeeder::class,
             QualityControlSeeder::class,
             DeliverySeeder::class,
+            InvoiceSeeder::class,
+            PaymentSeeder::class,
         ]);
     }
 }

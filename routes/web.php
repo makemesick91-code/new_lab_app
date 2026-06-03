@@ -6,6 +6,8 @@ use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\Invoice\Controllers\InvoiceController;
+use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
@@ -214,6 +216,28 @@ Route::middleware('auth')->prefix('deliveries')->name('deliveries.')->group(func
         ->name('complete')->middleware('permission:complete_delivery|manage_delivery');
     Route::post('/{delivery}/pod', [DeliveryController::class, 'uploadPod'])
         ->name('pod')->middleware('permission:upload_pod|manage_delivery');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 7 - Invoice & Payment
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->group(function () {
+    Route::get('invoices', [InvoiceController::class, 'index'])
+        ->name('invoices.index')->middleware('permission:view_invoice|manage_invoice');
+    Route::get('invoices/create', [InvoiceController::class, 'create'])
+        ->name('invoices.create')->middleware('permission:create_invoice|manage_invoice');
+    Route::post('invoices', [InvoiceController::class, 'store'])
+        ->name('invoices.store')->middleware('permission:create_invoice|manage_invoice');
+    Route::get('invoices/{invoice}', [InvoiceController::class, 'show'])
+        ->name('invoices.show')->middleware('permission:view_invoice|manage_invoice');
+    Route::post('invoices/{invoice}/issue', [InvoiceController::class, 'issue'])
+        ->name('invoices.issue')->middleware('permission:issue_invoice|manage_invoice');
+    Route::post('invoices/{invoice}/void', [InvoiceController::class, 'void'])
+        ->name('invoices.void')->middleware('permission:void_invoice|manage_invoice');
+    Route::post('invoices/{invoice}/payments', [PaymentController::class, 'store'])
+        ->name('invoices.payments.store')->middleware('permission:create_payment|manage_payment');
 });
 
 require __DIR__.'/auth.php';

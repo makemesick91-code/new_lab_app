@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Invoice\Models\InvoiceItem;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Models\ProductionStep;
@@ -184,6 +185,11 @@ class LabOrder extends Model
     public function deliveries(): HasMany
     {
         return $this->hasMany(Delivery::class, 'lab_order_id');
+    }
+
+    public function invoiceItems(): HasMany
+    {
+        return $this->hasMany(InvoiceItem::class, 'lab_order_id');
     }
 
     protected static function newFactory(): LabOrderFactory
