@@ -1,0 +1,101 @@
+<?php
+
+namespace App\Modules\Doctor\Controllers;
+
+use App\Http\Controllers\Controller;
+use App\Modules\Clinic\Services\ClinicService;
+use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Doctor\Requests\StoreDoctorRequest;
+use App\Modules\Doctor\Requests\UpdateDoctorRequest;
+use App\Modules\Doctor\Services\DoctorService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class DoctorController extends Controller
+{
+    use AuthorizesRequests;
+
+    public function __construct(
+        private readonly DoctorService $doctorService,
+        private readonly ClinicService $clinicService,
+    ) {}
+
+    public function index(Request $request): View
+    {
+        $this->authorize('viewAny', Doctor::class);
+
+        return view('settings.doctors.index', [
+            'doctors' => $this->doctorService->list([
+                'search' => $request->string('search')->toString() ?: null,
+                'clinic_id' => $request->integer('clinic_id') ?: null,
+            ], 10),
+            'search' => $request->string('search')->toString(),
+            'clinicId' => $request->integer('clinic_id') ?: null,
+            'clinics' => $this->clinicService->listAll(),
+        ]);
+    }
+
+    public function create(): View
+    {
+        $this->authorize('create', Doctor::class);
+
+        return view('settings.doctors.create', ['clinics' => $this->clinicService->listAll()]);
+    }
+
+    public function store(StoreDoctorRequest $request): RedirectResponse
+    {
+        $this->authorize('create', Doctor::class);
+
+        $this->doctorService->create($request->validated());
+
+        return redirect()->route('settings.doctors.index')->with('status', 'Doctor created successfully.');
+    }
+
+    public function edit(Doctor $doctor): View
+    {
+        $this->authorize('update', $doctor);
+
+        return view('settings.doctors.edit', [
+            'doctor' => $doctor,
+            'clinics' => $this->clinicService->listAll(),
+        ]);
+    }
+
+    public function update(UpdateDoctorRequest $request, Doctor $doctor): RedirectResponse
+    {
+        $this->authorize('update', $doctor);
+
+        $this->doctorService->update($doctor, $request->validated());
+
+        return redirect()->route('settings.doctors.index')->with('status', 'Doctor updated successfully.');
+    }
+
+    public function destroy(Doctor $doctor): RedirectResponse
+    {
+        $this->authorize('delete', $doctor);
+
+        $this->doctorService->delete($doctor);
+
+        return redirect()->route('settings.doctors.index')->with('status', 'Doctor deleted successfully.');
+    }
+
+    public function activate(Doctor $doctor): RedirectResponse
+    {
+        $this->authorize('update', $doctor);
+
+        $this->doctorService->activate($doctor);
+
+        return redirect()->route('settings.doctors.index')->with('status', 'Doctor activated.');
+    }
+
+    public function deactivate(Doctor $doctor): RedirectResponse
+    {
+        $this->authorize('update', $doctor);
+
+        $this->doctorService->deactivate($doctor);
+
+        return redirect()->route('settings.doctors.index')->with('status', 'Doctor deactivated.');
+    }
+}

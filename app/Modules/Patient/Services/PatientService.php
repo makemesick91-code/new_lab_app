@@ -1,0 +1,50 @@
+<?php
+
+namespace App\Modules\Patient\Services;
+
+use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
+use App\Modules\Patient\Models\Patient;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+
+class PatientService
+{
+    public function __construct(
+        private readonly PatientRepositoryInterface $patients,
+    ) {}
+
+    public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
+    {
+        return $this->patients->paginate($filters, $perPage);
+    }
+
+    public function find(int $id): ?Patient
+    {
+        return $this->patients->findById($id);
+    }
+
+    public function create(array $data): Patient
+    {
+        return DB::transaction(fn () => $this->patients->create($data));
+    }
+
+    public function update(Patient $patient, array $data): Patient
+    {
+        return DB::transaction(fn () => $this->patients->update($patient, $data));
+    }
+
+    public function delete(Patient $patient): bool
+    {
+        return DB::transaction(fn () => $this->patients->delete($patient));
+    }
+
+    public function activate(Patient $patient): Patient
+    {
+        return $this->patients->setActiveStatus($patient, true);
+    }
+
+    public function deactivate(Patient $patient): Patient
+    {
+        return $this->patients->setActiveStatus($patient, false);
+    }
+}

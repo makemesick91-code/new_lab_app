@@ -1,35 +1,33 @@
 <?php
 
-namespace App\Modules\User\Interfaces;
+namespace App\Modules\Clinic\Interfaces;
 
-use App\Models\User;
+use App\Modules\Clinic\Models\Clinic;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
-interface UserRepositoryInterface
+interface ClinicRepositoryInterface
 {
     /**
-     * Paginated, optionally searched list of users.
-     *
      * @param  array{search?: string|null}  $filters
      */
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator;
 
     public function listAll(): Collection;
 
-    public function findById(int $id): ?User;
+    public function findById(int $id): ?Clinic;
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function create(array $data): User;
+    public function create(array $data): Clinic;
 
     /**
      * @param  array<string, mixed>  $data
      */
-    public function update(User $user, array $data): User;
+    public function update(Clinic $clinic, array $data): Clinic;
 
-    public function delete(User $user): bool;
+    public function delete(Clinic $clinic): bool;
 
-    public function setActiveStatus(User $user, bool $isActive): User;
+    public function setActiveStatus(Clinic $clinic, bool $isActive): Clinic;
 }

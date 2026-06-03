@@ -34,11 +34,32 @@
             @endcan
         @endcanany
 
-        @hasanyrole('Super Admin|Admin Lab')
+        {{-- Master Data: each link appears only with the matching permission (TASK-0207). --}}
+        @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Master Data</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Clinics &amp; Doctors <span class="text-xs text-gray-400">(Sprint 2)</span></a>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Lab Services <span class="text-xs text-gray-400">(Sprint 2)</span></a>
+            @can('manage clinics')
+                <a href="{{ route('settings.clinics.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.clinics.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Clinics</a>
+            @endcan
+            @can('manage doctors')
+                <a href="{{ route('settings.doctors.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.doctors.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Doctors</a>
+            @endcan
+            @can('manage patients')
+                <a href="{{ route('settings.patients.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.patients.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Patients</a>
+            @endcan
+            @can('manage lab services')
+                <a href="{{ route('settings.lab-services.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.lab-services.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Lab Services</a>
+            @endcan
+            @can('manage technicians')
+                <a href="{{ route('settings.technicians.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.technicians.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Technicians</a>
+            @endcan
+        @endcanany
 
+        @hasanyrole('Super Admin|Admin Lab')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Operations</p>
             <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Lab Orders <span class="text-xs text-gray-400">(Sprint 3)</span></a>
             <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Assignments <span class="text-xs text-gray-400">(Sprint 4)</span></a>

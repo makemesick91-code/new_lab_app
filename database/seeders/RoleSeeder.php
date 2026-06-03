@@ -19,6 +19,11 @@ class RoleSeeder extends Seeder
         'Admin Lab' => [
             'view dashboard',
             'manage master data',
+            'manage clinics',
+            'manage doctors',
+            'manage patients',
+            'manage lab services',
+            'manage technicians',
             'manage lab orders',
             'manage assignments',
             'view reports',

@@ -5,6 +5,7 @@ namespace App\Modules\User\Repositories;
 use App\Models\User;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 /**
  * Data-access only. No business logic (PROJECT_RULES §9).
@@ -27,6 +28,11 @@ class UserRepository implements UserRepositoryInterface
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
+    }
+
+    public function listAll(): Collection
+    {
+        return User::orderBy('name')->get();
     }
 
     public function findById(int $id): ?User

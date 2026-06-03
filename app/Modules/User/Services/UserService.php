@@ -5,6 +5,7 @@ namespace App\Modules\User\Services;
 use App\Models\User;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,6 +26,11 @@ class UserService
     public function find(int $id): ?User
     {
         return $this->users->findById($id);
+    }
+
+    public function listAll(): Collection
+    {
+        return $this->users->listAll();
     }
 
     /**

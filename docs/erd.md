@@ -72,12 +72,14 @@ users
 
 mst_clinics
 ├── mst_doctors
+├── mst_patients
 ├── trx_lab_orders
 ├── trx_lab_deliveries
 └── trx_invoices
 
 
 mst_doctors
+├── mst_patients
 ├── trx_lab_orders
 └── trx_invoices
 
@@ -129,10 +131,12 @@ erDiagram
     users ||--o{ trx_payments : "records payment"
 
     mst_clinics ||--o{ mst_doctors : "has doctors"
+    mst_clinics ||--o{ mst_patients : "has patients"
     mst_clinics ||--o{ trx_lab_orders : "has orders"
     mst_clinics ||--o{ trx_lab_deliveries : "receives deliveries"
     mst_clinics ||--o{ trx_invoices : "has invoices"
 
+    mst_doctors ||--o{ mst_patients : "has patients"
     mst_doctors ||--o{ trx_lab_orders : "submits orders"
     mst_doctors ||--o{ trx_invoices : "has invoices"
 
@@ -483,6 +487,8 @@ Satu invoice dapat memiliki banyak pembayaran karena mendukung partial payment.
 | users              | trx_invoices              | 1 to many   |
 | users              | trx_payments              | 1 to many   |
 | mst_clinics        | mst_doctors               | 1 to many   |
+| mst_clinics        | mst_patients              | 1 to many   |
+| mst_doctors        | mst_patients              | 1 to many   |
 | mst_clinics        | trx_lab_orders            | 1 to many   |
 | mst_clinics        | trx_lab_deliveries        | 1 to many   |
 | mst_clinics        | trx_invoices              | 1 to many   |
@@ -616,8 +622,18 @@ clinic_id → mst_clinics.id
 ## mst_technicians
 
 ```text
-user_id → users.id
+user_id → users.id nullable
 ```
+
+## mst_patients
+
+```text
+clinic_id → mst_clinics.id
+doctor_id → mst_doctors.id
+```
+
+> Added in Sprint 2 (TASK-0203): patient is captured against its referring
+> clinic and doctor at registration time.
 
 ## trx_lab_orders
 

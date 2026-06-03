@@ -107,27 +107,35 @@ sys_audit_logs
 
 ## mst_clinics
 
-| Column     | Type         | Rule         |
-| ---------- | ------------ | ------------ |
-| id         | BIGINT       | PK           |
-| code       | VARCHAR(50)  | UNIQUE       |
-| name       | VARCHAR(150) | NOT NULL     |
-| phone      | VARCHAR(50)  | NULL         |
-| email      | VARCHAR(150) | NULL         |
-| address    | TEXT         | NULL         |
-| is_active  | BOOLEAN      | DEFAULT TRUE |
-| created_at | TIMESTAMP    |              |
-| updated_at | TIMESTAMP    |              |
-| deleted_at | TIMESTAMP    | NULL         |
+> Revised in Sprint 2 (TASK-0201): added `city`, `province`, `postal_code`.
+
+| Column      | Type         | Rule         |
+| ----------- | ------------ | ------------ |
+| id          | BIGINT       | PK           |
+| code        | VARCHAR(50)  | UNIQUE       |
+| name        | VARCHAR(150) | NOT NULL     |
+| phone       | VARCHAR(50)  | NULL         |
+| email       | VARCHAR(150) | NULL         |
+| address     | TEXT         | NULL         |
+| city        | VARCHAR(100) | NULL         |
+| province    | VARCHAR(100) | NULL         |
+| postal_code | VARCHAR(20)  | NULL         |
+| is_active   | BOOLEAN      | DEFAULT TRUE |
+| created_at  | TIMESTAMP    |              |
+| updated_at  | TIMESTAMP    |              |
+| deleted_at  | TIMESTAMP    | NULL         |
 
 ---
 
 ## mst_doctors
 
+> Revised in Sprint 2 (TASK-0202): added unique `code`.
+
 | Column     | Type         | Rule              |
 | ---------- | ------------ | ----------------- |
 | id         | BIGINT       | PK                |
 | clinic_id  | BIGINT       | FK mst_clinics.id |
+| code       | VARCHAR(50)  | UNIQUE            |
 | name       | VARCHAR(150) | NOT NULL          |
 | phone      | VARCHAR(50)  | NULL              |
 | email      | VARCHAR(150) | NULL              |
@@ -140,35 +148,46 @@ sys_audit_logs
 
 ## mst_patients
 
-| Column       | Type         | Rule     |
-| ------------ | ------------ | -------- |
-| id           | BIGINT       | PK       |
-| patient_code | VARCHAR(50)  | UNIQUE   |
-| name         | VARCHAR(150) | NOT NULL |
-| gender       | VARCHAR(20)  | NULL     |
-| birth_date   | DATE         | NULL     |
-| phone        | VARCHAR(50)  | NULL     |
-| address      | TEXT         | NULL     |
-| created_at   | TIMESTAMP    |          |
-| updated_at   | TIMESTAMP    |          |
-| deleted_at   | TIMESTAMP    | NULL     |
+> Revised in Sprint 2 (TASK-0203): patient now belongs to a clinic and a doctor
+> (`clinic_id`, `doctor_id`); `patient_code` → `medical_record_number`;
+> `birth_date` → `date_of_birth`; added `is_active`.
+
+| Column                | Type         | Rule              |
+| --------------------- | ------------ | ----------------- |
+| id                    | BIGINT       | PK                |
+| clinic_id             | BIGINT       | FK mst_clinics.id |
+| doctor_id             | BIGINT       | FK mst_doctors.id |
+| medical_record_number | VARCHAR(50)  | UNIQUE NULL       |
+| name                  | VARCHAR(150) | NOT NULL          |
+| gender                | VARCHAR(20)  | NULL              |
+| date_of_birth         | DATE         | NULL              |
+| phone                 | VARCHAR(50)  | NULL              |
+| address               | TEXT         | NULL              |
+| is_active             | BOOLEAN      | DEFAULT TRUE      |
+| created_at            | TIMESTAMP    |                   |
+| updated_at            | TIMESTAMP    |                   |
+| deleted_at            | TIMESTAMP    | NULL              |
 
 ---
 
 ## mst_lab_services
 
-| Column         | Type          | Rule         |
-| -------------- | ------------- | ------------ |
-| id             | BIGINT        | PK           |
-| code           | VARCHAR(50)   | UNIQUE       |
-| name           | VARCHAR(150)  | NOT NULL     |
-| category       | VARCHAR(100)  | NULL         |
-| estimated_days | INTEGER       | DEFAULT 1    |
-| base_price     | DECIMAL(18,2) | DEFAULT 0    |
-| is_active      | BOOLEAN       | DEFAULT TRUE |
-| created_at     | TIMESTAMP     |              |
-| updated_at     | TIMESTAMP     |              |
-| deleted_at     | TIMESTAMP     | NULL         |
+> Revised in Sprint 2 (TASK-0204): added `description`;
+> `estimated_days` → `turnaround_days`; `base_price` → `price`.
+
+| Column          | Type          | Rule         |
+| --------------- | ------------- | ------------ |
+| id              | BIGINT        | PK           |
+| code            | VARCHAR(50)   | UNIQUE       |
+| name            | VARCHAR(150)  | NOT NULL     |
+| category        | VARCHAR(100)  | NULL         |
+| description     | TEXT          | NULL         |
+| turnaround_days | INTEGER       | DEFAULT 1    |
+| price           | DECIMAL(18,2) | DEFAULT 0    |
+| is_active       | BOOLEAN       | DEFAULT TRUE |
+| created_at      | TIMESTAMP     |              |
+| updated_at      | TIMESTAMP     |              |
+| deleted_at      | TIMESTAMP     | NULL         |
 
 Contoh service:
 
@@ -187,18 +206,23 @@ Retainer
 
 ## mst_technicians
 
-| Column          | Type         | Rule         |
-| --------------- | ------------ | ------------ |
-| id              | BIGINT       | PK           |
-| user_id         | BIGINT       | FK users.id  |
-| technician_code | VARCHAR(50)  | UNIQUE       |
-| name            | VARCHAR(150) | NOT NULL     |
-| phone           | VARCHAR(50)  | NULL         |
-| skill_category  | VARCHAR(100) | NULL         |
-| is_active       | BOOLEAN      | DEFAULT TRUE |
-| created_at      | TIMESTAMP    |              |
-| updated_at      | TIMESTAMP    |              |
-| deleted_at      | TIMESTAMP    | NULL         |
+> Revised in Sprint 2 (TASK-0205): `technician_code` → `code`;
+> `skill_category` → `specialization`; added `email`; `user_id` made nullable
+> (a technician may optionally map to a login account, ERD §5.1).
+
+| Column         | Type         | Rule              |
+| -------------- | ------------ | ----------------- |
+| id             | BIGINT       | PK                |
+| user_id        | BIGINT       | FK users.id NULL  |
+| code           | VARCHAR(50)  | UNIQUE            |
+| name           | VARCHAR(150) | NOT NULL          |
+| phone          | VARCHAR(50)  | NULL              |
+| email          | VARCHAR(150) | NULL              |
+| specialization | VARCHAR(100) | NULL              |
+| is_active      | BOOLEAN      | DEFAULT TRUE      |
+| created_at     | TIMESTAMP    |                   |
+| updated_at     | TIMESTAMP    |                   |
+| deleted_at     | TIMESTAMP    | NULL              |
 
 ---
 
