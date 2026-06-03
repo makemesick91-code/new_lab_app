@@ -42,6 +42,11 @@
             </select>
         </div>
         <div>
+            <label class="block text-sm font-medium text-gray-700">Nomor RM</label>
+            <input type="text" name="medical_record_number" value="{{ old('medical_record_number', $order?->medical_record_number) }}" placeholder="Masukkan nomor rekam medis pasien" class="mt-1 block w-full rounded-md border-gray-300 text-sm" />
+            <p class="mt-1 text-xs text-gray-500">Nomor RM dari sistem klinik, jika tersedia.</p>
+        </div>
+        <div>
             <label class="block text-sm font-medium text-gray-700">Order Date</label>
             <input type="date" name="order_date" value="{{ old('order_date', optional($order?->order_date)->format('Y-m-d') ?? now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm" />
         </div>

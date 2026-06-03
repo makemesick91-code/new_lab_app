@@ -42,6 +42,7 @@
                 <div><dt class="text-gray-500">Clinic</dt><dd class="font-medium">{{ $order->clinic?->name }}</dd></div>
                 <div><dt class="text-gray-500">Doctor</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
                 <div><dt class="text-gray-500">Patient</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
+                <div><dt class="text-gray-500">Nomor RM</dt><dd class="font-medium">{{ $order->medical_record_number ?? '-' }}</dd></div>
                 <div><dt class="text-gray-500">Priority</dt><dd class="font-medium">{{ $order->priority }}</dd></div>
                 <div><dt class="text-gray-500">Order Date</dt><dd class="font-medium">{{ optional($order->order_date)->format('Y-m-d') }}</dd></div>
                 <div><dt class="text-gray-500">Due Date</dt><dd class="font-medium">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</dd></div>

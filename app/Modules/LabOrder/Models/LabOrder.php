@@ -83,6 +83,7 @@ class LabOrder extends Model
         'clinic_id',
         'doctor_id',
         'patient_id',
+        'medical_record_number',
         'order_date',
         'due_date',
         'priority',

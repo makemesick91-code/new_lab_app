@@ -22,6 +22,7 @@ class LabOrderRepository implements LabOrderRepositoryInterface
                 $term = '%'.mb_strtolower($search).'%';
                 $query->where(function ($q) use ($term) {
                     $q->whereRaw('LOWER(order_number) LIKE ?', [$term])
+                        ->orWhereRaw('LOWER(medical_record_number) LIKE ?', [$term])
                         ->orWhereHas('clinic', fn ($c) => $c->whereRaw('LOWER(name) LIKE ?', [$term]))
                         ->orWhereHas('doctor', fn ($d) => $d->whereRaw('LOWER(name) LIKE ?', [$term]))
                         ->orWhereHas('patient', fn ($p) => $p->whereRaw('LOWER(name) LIKE ?', [$term]));

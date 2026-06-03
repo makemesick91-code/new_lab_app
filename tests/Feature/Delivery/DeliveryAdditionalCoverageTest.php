@@ -1,11 +1,11 @@
 <?php
 
+use App\Models\User;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Services\DeliveryService;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\LabOrder;
 use Database\Seeders\PermissionSeeder;
-use Database\Seeders\RoleSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
@@ -15,7 +15,7 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-function additionalDelivery(?\App\Models\User $courier = null): Delivery
+function additionalDelivery(?User $courier = null): Delivery
 {
     $courier = $courier ?? userWith(['view_delivery', 'start_delivery', 'mark_delivered', 'upload_pod']);
     $order = LabOrder::factory()->create(['status' => LabOrder::STATUS_QC_PASSED]);
@@ -23,7 +23,7 @@ function additionalDelivery(?\App\Models\User $courier = null): Delivery
     return app(DeliveryService::class)->create($order, $courier->id, 'additional test', superAdmin());
 }
 
-function startAdditionalDelivery(Delivery $delivery, \App\Models\User $courier): Delivery
+function startAdditionalDelivery(Delivery $delivery, User $courier): Delivery
 {
     test()->actingAs($courier)->post(route('deliveries.start', $delivery));
 
@@ -228,7 +228,7 @@ it('allows assigned courier to view delivery detail', function () {
 });
 
 it('allows the Quality Control role to view the delivery queue', function () {
-    $qc = \App\Models\User::factory()->create()->assignRole('Quality Control');
+    $qc = User::factory()->create()->assignRole('Quality Control');
 
     $this->actingAs($qc)
         ->get(route('deliveries.index'))
@@ -236,7 +236,7 @@ it('allows the Quality Control role to view the delivery queue', function () {
 });
 
 it('allows the Technician role to view the delivery queue', function () {
-    $technician = \App\Models\User::factory()->create()->assignRole('Technician');
+    $technician = User::factory()->create()->assignRole('Technician');
 
     $this->actingAs($technician)
         ->get(route('deliveries.index'))

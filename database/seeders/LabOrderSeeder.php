@@ -48,6 +48,7 @@ class LabOrderSeeder extends Seeder
                 'clinic_id' => $clinic->id,
                 'doctor_id' => $doctor->id,
                 'patient_id' => $patient->id,
+                'medical_record_number' => 'RM-'.fake()->unique()->numerify('######'),
                 'order_date' => now()->toDateString(),
                 'due_date' => now()->addDays(7)->toDateString(),
                 'priority' => 'NORMAL',

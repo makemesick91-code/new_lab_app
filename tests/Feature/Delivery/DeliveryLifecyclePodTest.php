@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Services\DeliveryService;
 use App\Modules\LabOrder\Models\Attachment;
@@ -14,7 +15,7 @@ beforeEach(function () {
     Storage::fake('public');
 });
 
-function sprint6DeliveryFor(?\App\Models\User $courier = null): Delivery
+function sprint6DeliveryFor(?User $courier = null): Delivery
 {
     $courier = $courier ?? userWith(['view_delivery', 'start_delivery', 'mark_delivered', 'upload_pod']);
     $order = LabOrder::factory()->create(['status' => LabOrder::STATUS_QC_PASSED]);
