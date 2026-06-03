@@ -52,6 +52,8 @@ trx_lab_order_assignments
 trx_lab_work_logs
 trx_lab_production_steps
 trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
 trx_lab_deliveries
 trx_lab_delivery_photos
 trx_invoices
@@ -490,23 +492,128 @@ Business rules:
 
 ## trx_lab_quality_controls
 
+> Revised in Sprint 5 (Quality Control Workflow): `qc_by` is replaced by
+> `inspected_by`, `qc_date` is replaced by `started_at` / `completed_at`, and
+> soft delete is enabled. Older references to `qc_by` should be mapped to
+> `inspected_by` during implementation.
+
 | Column       | Type        | Rule                 |
 | ------------ | ----------- | -------------------- |
 | id           | BIGINT      | PK                   |
 | lab_order_id | BIGINT      | FK trx_lab_orders.id |
-| qc_by        | BIGINT      | FK users.id          |
-| qc_date      | TIMESTAMP   | NOT NULL             |
+| inspected_by | BIGINT      | FK users.id          |
 | result       | VARCHAR(50) | NOT NULL             |
 | notes        | TEXT        | NULL                 |
+| started_at   | TIMESTAMP   | NULL                 |
+| completed_at | TIMESTAMP   | NULL                 |
 | created_at   | TIMESTAMP   |                      |
 | updated_at   | TIMESTAMP   |                      |
+| deleted_at   | TIMESTAMP   | NULL                 |
 
-Result:
+QC Result enum:
 
 ```text
 PASSED
 REJECTED
 REVISION
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many QC reviews.
+2. QC review can only start when Lab Order status = QC_PENDING.
+3. QC review must capture inspector.
+4. QC review must capture result.
+5. QC review history must be preserved.
+6. Soft delete enabled.
+```
+
+---
+
+## trx_lab_qc_checklists
+
+> Added in Sprint 5 (Quality Control Workflow): stores item-level QC checklist
+> results for each QC review.
+
+| Column             | Type         | Rule                              |
+| ------------------ | ------------ | --------------------------------- |
+| id                 | BIGINT       | PK                                |
+| quality_control_id | BIGINT       | FK trx_lab_quality_controls.id    |
+| checklist_item     | VARCHAR(100) | NOT NULL                          |
+| result             | VARCHAR(50)  | NOT NULL                          |
+| notes              | TEXT         | NULL                              |
+| created_at         | TIMESTAMP    |                                   |
+| updated_at         | TIMESTAMP    |                                   |
+
+Checklist result enum:
+
+```text
+PASS
+FAIL
+N/A
+```
+
+Recommended checklist items:
+
+```text
+FIT_ACCURACY
+MARGIN_QUALITY
+OCCLUSION
+SHADE_MATCH
+CONTACT_POINT
+SURFACE_FINISH
+POLISHING
+CLEANLINESS
+PACKAGING_READINESS
+```
+
+Business rules:
+
+```text
+1. One QC review has many checklist records.
+2. At least one checklist item must exist before QC completion.
+3. Checklist history must be preserved.
+```
+
+---
+
+## trx_lab_remake_requests
+
+> Added in Sprint 5 (Quality Control Workflow): stores remake requests generated
+> from QC reviews with result REJECTED or REVISION.
+
+| Column             | Type        | Rule                              |
+| ------------------ | ----------- | --------------------------------- |
+| id                 | BIGINT      | PK                                |
+| lab_order_id       | BIGINT      | FK trx_lab_orders.id              |
+| quality_control_id | BIGINT      | FK trx_lab_quality_controls.id    |
+| requested_by       | BIGINT      | FK users.id                       |
+| reason             | VARCHAR(100)| NOT NULL                          |
+| notes              | TEXT        | NULL                              |
+| status             | VARCHAR(50) | DEFAULT OPEN                      |
+| requested_at       | TIMESTAMP   | NOT NULL                          |
+| created_at         | TIMESTAMP   |                                   |
+| updated_at         | TIMESTAMP   |                                   |
+| deleted_at         | TIMESTAMP   | NULL                              |
+
+Remake status enum:
+
+```text
+OPEN
+IN_PROGRESS
+COMPLETED
+CANCELLED
+```
+
+Business rules:
+
+```text
+1. Remake requires reason.
+2. Remake preserves QC history.
+3. Multiple remake requests may exist for a Lab Order.
+4. Remake history must be preserved.
+5. Soft delete enabled.
 ```
 
 ---
@@ -706,6 +813,10 @@ DESIGN_FILE
 STL_REVISION
 REFERENCE_IMAGE
 PRODUCTION_NOTE
+QC_PHOTO
+QC_NOTE
+QC_EVIDENCE
+QC_REJECTION_EVIDENCE
 ```
 
 Catatan Sprint 4:
@@ -760,6 +871,12 @@ COMPLETE_WORK
 SEND_TO_QC
 QC_APPROVAL
 QC_REJECT
+START_QC
+PASS_QC
+REJECT_QC
+REQUEST_REMAKE
+UPDATE_QC_CHECKLIST
+UPLOAD_QC_EVIDENCE
 DELIVERY
 POD_UPLOAD
 INVOICE_CREATE
@@ -792,7 +909,8 @@ users
   ├── trx_lab_orders.created_by
   ├── trx_lab_order_status_logs.changed_by
   ├── trx_lab_order_assignments.assigned_by
-  ├── trx_lab_quality_controls.qc_by
+  ├── trx_lab_quality_controls.inspected_by
+  ├── trx_lab_remake_requests.requested_by
   ├── trx_lab_deliveries.courier_id
   ├── trx_invoices.created_by
   └── trx_payments.created_by
@@ -805,8 +923,13 @@ trx_lab_orders
   ├── trx_lab_order_status_logs
   ├── trx_lab_order_assignments
   ├── trx_lab_quality_controls
+  ├── trx_lab_remake_requests
   ├── trx_lab_deliveries
   └── trx_invoices
+
+trx_lab_quality_controls
+  ├── trx_lab_qc_checklists
+  └── trx_lab_remake_requests
 
 trx_lab_deliveries
   └── trx_lab_delivery_photos
@@ -847,6 +970,43 @@ trx_lab_work_logs.assignment_id         -> trx_lab_order_assignments.id
 trx_lab_work_logs.performed_by          -> users.id
 
 trx_lab_production_steps.lab_order_id   -> trx_lab_orders.id
+```
+
+---
+
+## Sprint 5 Relationship Additions
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_quality_controls
+  1 -> many trx_lab_remake_requests
+
+users
+  1 -> many trx_lab_quality_controls (inspected_by)
+  1 -> many trx_lab_remake_requests (requested_by)
+
+trx_lab_quality_controls
+  1 -> many trx_lab_qc_checklists
+  1 -> many trx_lab_remake_requests
+
+trx_lab_quality_controls
+  polymorphic -> sys_attachments as QC evidence
+
+trx_lab_orders
+  polymorphic -> sys_attachments as order-level QC evidence
+```
+
+Foreign keys:
+
+```text
+trx_lab_quality_controls.lab_order_id -> trx_lab_orders.id
+trx_lab_quality_controls.inspected_by -> users.id
+
+trx_lab_qc_checklists.quality_control_id -> trx_lab_quality_controls.id
+
+trx_lab_remake_requests.lab_order_id       -> trx_lab_orders.id
+trx_lab_remake_requests.quality_control_id -> trx_lab_quality_controls.id
+trx_lab_remake_requests.requested_by       -> users.id
 ```
 
 ---
@@ -911,8 +1071,27 @@ status INDEX
 
 ```text
 lab_order_id INDEX
-qc_by INDEX
+inspected_by INDEX
 result INDEX
+completed_at INDEX
+```
+
+## trx_lab_qc_checklists
+
+```text
+quality_control_id INDEX
+checklist_item INDEX
+result INDEX
+```
+
+## trx_lab_remake_requests
+
+```text
+lab_order_id INDEX
+quality_control_id INDEX
+requested_by INDEX
+status INDEX
+requested_at INDEX
 ```
 
 ## trx_lab_deliveries
@@ -1016,9 +1195,21 @@ action INDEX
 ## Quality Control
 
 ```text
-1. Order hanya bisa masuk READY_FOR_DELIVERY jika hasil QC PASSED (status QC_PASSED).
-2. Jika hasil QC REVISION, status order menjadi REMAKE.
-3. Jika hasil QC REJECTED, order tidak bisa dikirim.
+1. QC review can only start when Lab Order status = QC_PENDING.
+2. Cancelled Lab Orders cannot be reviewed.
+3. QC review must capture inspected_by.
+4. QC review must capture result.
+5. QC must have at least one checklist result before completion.
+6. QC result PASSED changes Lab Order status to QC_PASSED.
+7. QC result REJECTED changes Lab Order status to REMAKE.
+8. QC result REVISION changes Lab Order status to REMAKE.
+9. QC Result and Lab Order Status are separate concepts.
+10. Remake requires reason.
+11. Remake preserves original production history.
+12. Remake preserves QC history.
+13. Every QC action must create sys_audit_logs.
+14. Every Lab Order status change must create trx_lab_order_status_logs.
+15. Delivery cannot start before QC_PASSED.
 ```
 
 ## Delivery
@@ -1118,14 +1309,16 @@ PAY-2026-000001
 15. trx_lab_work_logs
 16. trx_lab_production_steps
 17. trx_lab_quality_controls
-18. trx_lab_deliveries
-19. trx_lab_delivery_photos
-20. trx_invoices
-21. trx_invoice_items
-22. trx_payments
+18. trx_lab_qc_checklists
+19. trx_lab_remake_requests
+20. trx_lab_deliveries
+21. trx_lab_delivery_photos
+22. trx_invoices
+23. trx_invoice_items
+24. trx_payments
 
-23. sys_attachments
-24. sys_audit_logs
+25. sys_attachments
+26. sys_audit_logs
 ```
 
 ---
@@ -1705,4 +1898,475 @@ Rules:
 ✓ Delivery workflow excluded
 ✓ Invoice workflow excluded
 ✓ Payment workflow excluded
+```
+
+---
+
+# 16. Sprint 5 Quality Control Schema
+
+Bagian ini memperluas database schema untuk **Sprint 5 - Quality Control
+Workflow** berdasarkan `qc_workflow_design.md` dan ERD Sprint 5.
+
+## 16.1 Purpose
+
+```text
+Mendukung QC review, QC checklist, QC result, QC evidence, remake request,
+dan QC history dari Lab Order status QC_PENDING sampai QC_PASSED atau REMAKE.
+```
+
+## 16.2 Scope
+
+Sprint 5 mencakup:
+
+```text
+1. QC Review
+2. QC Checklist
+3. QC Result
+4. QC Evidence
+5. Remake Request
+6. QC History
+7. Lab Order status integration
+8. Audit integration
+9. Attachment reuse
+```
+
+Sprint 5 tidak mencakup:
+
+```text
+1. Delivery workflow
+2. Invoice workflow
+3. Payment workflow
+4. Reporting implementation
+```
+
+## 16.3 Tables
+
+```text
+trx_lab_quality_controls Stores QC review sessions.
+trx_lab_qc_checklists    Stores QC checklist item results.
+trx_lab_remake_requests  Stores remake requests generated from QC review.
+```
+
+QC evidence uses:
+
+```text
+sys_attachments
+```
+
+Do not create:
+
+```text
+trx_lab_qc_photos
+```
+
+## 16.4 QC Review Design - trx_lab_quality_controls
+
+Purpose:
+
+```text
+Stores QC review sessions.
+```
+
+Required fields:
+
+```text
+id
+lab_order_id
+inspected_by
+result
+notes
+started_at
+completed_at
+created_at
+updated_at
+deleted_at
+```
+
+QC Result enum:
+
+```text
+PASSED
+REJECTED
+REVISION
+```
+
+Foreign keys:
+
+```text
+lab_order_id -> trx_lab_orders.id
+inspected_by -> users.id
+```
+
+Recommended indexes:
+
+```text
+lab_order_id
+inspected_by
+result
+completed_at
+```
+
+Business rules:
+
+```text
+1. One Lab Order can have many QC reviews.
+2. QC review can only start when Lab Order status = QC_PENDING.
+3. QC review must capture inspector.
+4. QC review must capture result.
+5. QC review history must be preserved.
+6. Soft delete enabled.
+```
+
+## 16.5 Checklist Design - trx_lab_qc_checklists
+
+Purpose:
+
+```text
+Stores QC checklist results.
+```
+
+Required fields:
+
+```text
+id
+quality_control_id
+checklist_item
+result
+notes
+created_at
+updated_at
+```
+
+Checklist result enum:
+
+```text
+PASS
+FAIL
+N/A
+```
+
+Recommended checklist items:
+
+```text
+FIT_ACCURACY
+MARGIN_QUALITY
+OCCLUSION
+SHADE_MATCH
+CONTACT_POINT
+SURFACE_FINISH
+POLISHING
+CLEANLINESS
+PACKAGING_READINESS
+```
+
+Foreign keys:
+
+```text
+quality_control_id -> trx_lab_quality_controls.id
+```
+
+Recommended indexes:
+
+```text
+quality_control_id
+checklist_item
+result
+```
+
+Business rules:
+
+```text
+1. One QC review has many checklist records.
+2. At least one checklist item must exist before QC completion.
+3. Checklist history must be preserved.
+```
+
+## 16.6 Remake Design - trx_lab_remake_requests
+
+Purpose:
+
+```text
+Stores remake requests generated from QC review.
+```
+
+Required fields:
+
+```text
+id
+lab_order_id
+quality_control_id
+requested_by
+reason
+notes
+status
+requested_at
+created_at
+updated_at
+deleted_at
+```
+
+Remake status enum:
+
+```text
+OPEN
+IN_PROGRESS
+COMPLETED
+CANCELLED
+```
+
+Foreign keys:
+
+```text
+lab_order_id       -> trx_lab_orders.id
+quality_control_id -> trx_lab_quality_controls.id
+requested_by       -> users.id
+```
+
+Recommended indexes:
+
+```text
+lab_order_id
+quality_control_id
+requested_by
+status
+requested_at
+```
+
+Business rules:
+
+```text
+1. Remake requires reason.
+2. Remake preserves QC history.
+3. Multiple remake requests may exist for a Lab Order.
+4. Remake history must be preserved.
+5. Soft delete enabled.
+```
+
+## 16.7 Lab Order Status Integration
+
+QC Results:
+
+```text
+PASSED
+REJECTED
+REVISION
+```
+
+Lab Order Statuses:
+
+```text
+QC_PENDING
+QC_PASSED
+REMAKE
+```
+
+Mapping:
+
+```text
+PASSED   -> QC_PASSED
+REJECTED -> REMAKE
+REVISION -> REMAKE
+```
+
+Important:
+
+```text
+QC Result and Lab Order Status are separate concepts.
+REVISION is a QC result, not a Lab Order status.
+REMAKE is the Lab Order status for REJECTED and REVISION QC results.
+```
+
+Status log rules:
+
+```text
+1. QC_PENDING -> QC_PASSED must create trx_lab_order_status_logs.
+2. QC_PENDING -> REMAKE must create trx_lab_order_status_logs.
+3. REMAKE -> ASSIGNED reuses Sprint 4 assignment workflow.
+4. IN_PRODUCTION -> QC_PENDING reuses Sprint 4 send-to-QC workflow.
+```
+
+## 16.8 Remake Workflow Integration
+
+Remake workflow:
+
+```text
+QC_PENDING
+-> REMAKE
+-> ASSIGNED
+-> IN_PRODUCTION
+-> QC_PENDING
+```
+
+Rules:
+
+```text
+1. Remake reuses Sprint 4 production workflow.
+2. Remake does not create a new Lab Order.
+3. Remake preserves original production history.
+4. Remake preserves QC history.
+5. Remake creates trx_lab_remake_requests.
+```
+
+## 16.9 Audit Integration
+
+Sprint 5 QC actions use:
+
+```text
+sys_audit_logs
+entity_type
+entity_id
+```
+
+Required audit actions:
+
+```text
+START_QC
+PASS_QC
+REJECT_QC
+REQUEST_REMAKE
+UPDATE_QC_CHECKLIST
+UPLOAD_QC_EVIDENCE
+STATUS_CHANGE
+```
+
+Columns:
+
+```text
+entity_type
+entity_id
+action
+old_values
+new_values
+performed_by
+performed_at
+```
+
+Rules:
+
+```text
+1. Every QC action must create sys_audit_logs.
+2. Every QC-related Lab Order status change must create STATUS_CHANGE audit.
+3. Audit records must not store raw file content.
+4. Audit records must identify Lab Order, QC review, actor, timestamp, and result.
+```
+
+## 16.10 Attachment Integration
+
+QC evidence reuses:
+
+```text
+sys_attachments
+entity_type
+entity_id
+```
+
+Attachment categories:
+
+```text
+QC_PHOTO
+QC_NOTE
+QC_EVIDENCE
+QC_REJECTION_EVIDENCE
+```
+
+Preferred QC evidence target:
+
+```text
+entity_type = trx_lab_quality_controls
+entity_id   = trx_lab_quality_controls.id
+```
+
+Order-level evidence target:
+
+```text
+entity_type = trx_lab_orders
+entity_id   = trx_lab_orders.id
+```
+
+Rules:
+
+```text
+1. Do not create a separate QC photo table.
+2. Do not create trx_lab_qc_photos.
+3. File path only is stored in database.
+4. Upload and delete actions must be audited.
+5. Attachment metadata uses soft delete.
+```
+
+## 16.11 Foreign Key Recommendation
+
+```text
+trx_lab_quality_controls
+  lab_order_id -> trx_lab_orders.id
+  inspected_by -> users.id
+
+trx_lab_qc_checklists
+  quality_control_id -> trx_lab_quality_controls.id
+
+trx_lab_remake_requests
+  lab_order_id       -> trx_lab_orders.id
+  quality_control_id -> trx_lab_quality_controls.id
+  requested_by       -> users.id
+```
+
+## 16.12 Index Recommendation
+
+```text
+trx_lab_quality_controls
+  lab_order_id
+  inspected_by
+  result
+  completed_at
+
+trx_lab_qc_checklists
+  quality_control_id
+  checklist_item
+  result
+
+trx_lab_remake_requests
+  lab_order_id
+  quality_control_id
+  requested_by
+  status
+  requested_at
+```
+
+## 16.13 Business Rules
+
+```text
+1. Only QC_PENDING orders can be reviewed.
+2. Cancelled orders cannot be reviewed.
+3. QC review must capture inspector.
+4. QC review must capture result.
+5. QC must have at least one checklist result before completion.
+6. QC pass changes Lab Order status to QC_PASSED.
+7. QC reject or revision changes Lab Order status to REMAKE.
+8. Remake requires reason.
+9. Remake does not create a new Lab Order.
+10. Remake preserves original production history.
+11. Remake preserves QC history.
+12. Every QC action must be audited.
+13. Every status change must be logged.
+14. Delivery cannot start before QC_PASSED.
+15. Delivery, Invoice, Payment, and Reporting are not part of Sprint 5.
+```
+
+## 16.14 Validation Checklist - Sprint 5 Schema
+
+```text
+- QC review table documented
+- QC checklist table documented
+- Remake request table documented
+- Foreign keys documented
+- Indexes documented
+- QC result documented
+- Lab Order status mapping documented
+- Remake workflow documented
+- Audit integration documented
+- Attachment reuse documented
+- QC photo table excluded
+- Delivery excluded
+- Invoice excluded
+- Payment excluded
+- Reporting excluded
 ```
