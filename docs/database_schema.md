@@ -55,7 +55,6 @@ trx_lab_quality_controls
 trx_lab_qc_checklists
 trx_lab_remake_requests
 trx_lab_deliveries
-trx_lab_delivery_photos
 trx_invoices
 trx_invoice_items
 trx_payments
@@ -620,66 +619,61 @@ Business rules:
 
 ## trx_lab_deliveries
 
-| Column              | Type         | Rule                       |
-| ------------------- | ------------ | -------------------------- |
-| id                  | BIGINT       | PK                         |
-| delivery_number     | VARCHAR(50)  | UNIQUE                     |
-| lab_order_id        | BIGINT       | FK trx_lab_orders.id       |
-| courier_id          | BIGINT       | FK users.id                |
-| clinic_id           | BIGINT       | FK mst_clinics.id          |
-| delivery_date       | DATE         | NOT NULL                   |
-| status              | VARCHAR(50)  | DEFAULT READY_FOR_DELIVERY |
-| receiver_name       | VARCHAR(150) | NULL                       |
-| receiver_role       | VARCHAR(100) | NULL                       |
-| receiver_phone      | VARCHAR(50)  | NULL                       |
-| signature_file_path | VARCHAR(255) | NULL                       |
-| delivered_at        | TIMESTAMP    | NULL                       |
-| notes               | TEXT         | NULL                       |
-| created_by          | BIGINT       | FK users.id                |
-| created_at          | TIMESTAMP    |                            |
-| updated_at          | TIMESTAMP    |                            |
-| deleted_at          | TIMESTAMP    | NULL                       |
+Purpose:
+
+```text
+Stores delivery records, courier assignment, delivery status, and POD
+information for Lab Orders.
+```
+
+| Column                  | Type         | Rule                       |
+| ----------------------- | ------------ | -------------------------- |
+| id                      | BIGINT       | PK                         |
+| lab_order_id            | BIGINT       | FK trx_lab_orders.id       |
+| delivery_number         | VARCHAR(50)  | UNIQUE                     |
+| courier_id              | BIGINT       | FK users.id NULL           |
+| status                  | VARCHAR(50)  | DEFAULT READY_FOR_DELIVERY |
+| delivery_notes          | TEXT         | NULL                       |
+| receiver_name           | VARCHAR(150) | NULL                       |
+| receiver_signature_path | VARCHAR(255) | NULL                       |
+| receiver_photo_path     | VARCHAR(255) | NULL                       |
+| received_at             | TIMESTAMP    | NULL                       |
+| started_at              | TIMESTAMP    | NULL                       |
+| completed_at            | TIMESTAMP    | NULL                       |
+| created_by              | BIGINT       | FK users.id                |
+| created_at              | TIMESTAMP    |                            |
+| updated_at              | TIMESTAMP    |                            |
+| deleted_at              | TIMESTAMP    | NULL                       |
 
 Status delivery:
 
 ```text
 READY_FOR_DELIVERY
-IN_TRANSIT
-ARRIVED
-POD_COMPLETED
+IN_DELIVERY
 DELIVERED
+COMPLETED
 CANCELLED
 ```
 
 Business rule:
 
 ```text
-Delivery tidak boleh menjadi DELIVERED jika:
-1. receiver_name kosong
-2. signature_file_path kosong
-3. belum ada minimal 1 foto di trx_lab_delivery_photos
-```
-
----
-
-## trx_lab_delivery_photos
-
-| Column      | Type         | Rule                     |
-| ----------- | ------------ | ------------------------ |
-| id          | BIGINT       | PK                       |
-| delivery_id | BIGINT       | FK trx_lab_deliveries.id |
-| photo_type  | VARCHAR(50)  | DEFAULT RECEIVED_GOODS   |
-| file_path   | VARCHAR(255) | NOT NULL                 |
-| uploaded_by | BIGINT       | FK users.id              |
-| uploaded_at | TIMESTAMP    | NOT NULL                 |
-
-Photo type:
-
-```text
-PACKAGE
-RECEIVED_GOODS
-HANDOVER
-OTHER
+1. One Lab Order can have many delivery records over time.
+2. Only QC_PASSED orders can enter delivery.
+3. Creating delivery changes Lab Order status to READY_FOR_DELIVERY.
+4. Starting delivery changes Lab Order status to IN_DELIVERY.
+5. Marking delivered changes Lab Order status to DELIVERED.
+6. Completing delivery changes Lab Order status to COMPLETED.
+7. Courier is required before IN_DELIVERY.
+8. POD is required before COMPLETED.
+9. Receiver name is required before COMPLETED.
+10. Receiver signature is required before COMPLETED.
+11. Receiver photo is required before COMPLETED.
+12. Delivery history must be preserved.
+13. Soft delete enabled.
+14. No hard delete.
+15. Delivery evidence must reuse sys_attachments.
+16. Do not create trx_lab_delivery_photos for Sprint 6 V1.
 ```
 
 ---
@@ -817,6 +811,10 @@ QC_PHOTO
 QC_NOTE
 QC_EVIDENCE
 QC_REJECTION_EVIDENCE
+DELIVERY_PHOTO
+POD_SIGNATURE
+POD_RECEIVER_PHOTO
+DELIVERY_EVIDENCE
 ```
 
 Catatan Sprint 4:
@@ -877,8 +875,13 @@ REJECT_QC
 REQUEST_REMAKE
 UPDATE_QC_CHECKLIST
 UPLOAD_QC_EVIDENCE
-DELIVERY
-POD_UPLOAD
+CREATE_DELIVERY
+ASSIGN_COURIER
+REASSIGN_COURIER
+START_DELIVERY
+MARK_DELIVERED
+COMPLETE_DELIVERY
+UPLOAD_POD
 INVOICE_CREATE
 PAYMENT_CREATE
 ```
@@ -931,8 +934,6 @@ trx_lab_quality_controls
   ├── trx_lab_qc_checklists
   └── trx_lab_remake_requests
 
-trx_lab_deliveries
-  └── trx_lab_delivery_photos
 
 trx_invoices
   ├── trx_invoice_items
@@ -1007,6 +1008,35 @@ trx_lab_qc_checklists.quality_control_id -> trx_lab_quality_controls.id
 trx_lab_remake_requests.lab_order_id       -> trx_lab_orders.id
 trx_lab_remake_requests.quality_control_id -> trx_lab_quality_controls.id
 trx_lab_remake_requests.requested_by       -> users.id
+```
+
+---
+
+## Sprint 6 Relationship Additions
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_deliveries
+
+users
+  1 -> many trx_lab_deliveries (created_by)
+  1 -> many trx_lab_deliveries (courier_id)
+
+trx_lab_deliveries
+  polymorphic -> sys_attachments as POD evidence
+  polymorphic -> sys_audit_logs as delivery audit trail
+
+trx_lab_orders
+  polymorphic -> sys_attachments as order-level delivery evidence
+  1 -> many trx_lab_order_status_logs
+```
+
+Foreign keys:
+
+```text
+trx_lab_deliveries.lab_order_id -> trx_lab_orders.id
+trx_lab_deliveries.courier_id   -> users.id
+trx_lab_deliveries.created_by   -> users.id
 ```
 
 ---
@@ -1100,16 +1130,9 @@ requested_at INDEX
 delivery_number UNIQUE
 lab_order_id INDEX
 courier_id INDEX
-clinic_id INDEX
 status INDEX
-delivery_date INDEX
-```
-
-## trx_lab_delivery_photos
-
-```text
-delivery_id INDEX
-uploaded_by INDEX
+received_at INDEX
+created_by INDEX
 ```
 
 ## trx_invoices
@@ -1215,12 +1238,18 @@ action INDEX
 ## Delivery
 
 ```text
-1. Delivery hanya bisa dibuat jika order READY_FOR_DELIVERY.
-2. Delivery wajib memiliki kurir.
-3. POD wajib berisi nama penerima.
-4. POD wajib berisi tanda tangan digital.
-5. POD wajib memiliki minimal 1 foto barang diterima.
-6. Status DELIVERED hanya boleh jika POD lengkap.
+1. Delivery hanya bisa dibuat dari Lab Order QC_PASSED.
+2. Membuat delivery mengubah Lab Order menjadi READY_FOR_DELIVERY.
+3. Delivery wajib memiliki kurir sebelum IN_DELIVERY.
+4. POD wajib berisi nama penerima.
+5. POD wajib berisi tanda tangan digital sebagai file path.
+6. POD wajib berisi foto penerima atau bukti penerimaan sebagai file path.
+7. POD evidence wajib memakai sys_attachments.
+8. Status DELIVERED hanya boleh jika POD lengkap.
+9. Status COMPLETED hanya boleh jika delivery/POD sudah lengkap.
+10. Every delivery action must create sys_audit_logs.
+11. Every Lab Order status change must create trx_lab_order_status_logs.
+12. No hard delete for delivery history.
 ```
 
 ## Invoice
@@ -1312,13 +1341,12 @@ PAY-2026-000001
 18. trx_lab_qc_checklists
 19. trx_lab_remake_requests
 20. trx_lab_deliveries
-21. trx_lab_delivery_photos
-22. trx_invoices
-23. trx_invoice_items
-24. trx_payments
+21. trx_invoices
+22. trx_invoice_items
+23. trx_payments
 
-25. sys_attachments
-26. sys_audit_logs
+24. sys_attachments
+25. sys_audit_logs
 ```
 
 ---
@@ -1359,10 +1387,9 @@ REMAKE
 
 ```text
 READY_FOR_DELIVERY
-IN_TRANSIT
-ARRIVED
-POD_COMPLETED
+IN_DELIVERY
 DELIVERED
+COMPLETED
 CANCELLED
 ```
 
@@ -2366,6 +2393,339 @@ trx_lab_remake_requests
 - Attachment reuse documented
 - QC photo table excluded
 - Delivery excluded
+- Invoice excluded
+- Payment excluded
+- Reporting excluded
+```
+
+---
+
+# 17. Sprint 6 Delivery & POD Schema
+
+## 17.1 Purpose
+
+Sprint 6 memperluas database schema untuk mendukung Delivery dan Proof of
+Delivery setelah Lab Order lulus Quality Control.
+
+Tujuan schema:
+
+```text
+1. Menyimpan delivery record per Lab Order.
+2. Menyimpan courier assignment.
+3. Melacak status delivery.
+4. Menyimpan data receiver.
+5. Menyimpan file path POD.
+6. Menghubungkan delivery evidence ke sys_attachments.
+7. Menyediakan delivery history yang dapat diaudit.
+```
+
+## 17.2 Scope
+
+Sprint 6 mencakup:
+
+```text
+Delivery Queue
+Courier Assignment
+Delivery Tracking
+Proof of Delivery
+Receiver Name
+Receiver Signature
+Receiver Photo
+Delivery Evidence
+Delivery History
+```
+
+Sprint 6 tidak mencakup:
+
+```text
+Invoice workflow
+Payment workflow
+Reporting
+Separate courier master table
+Separate delivery photo table
+```
+
+## 17.3 Delivery Table Design - trx_lab_deliveries
+
+Purpose:
+
+```text
+Stores delivery records, courier assignment, delivery status, and POD
+information for Lab Orders.
+```
+
+Required fields:
+
+```text
+id
+lab_order_id
+delivery_number
+courier_id
+status
+delivery_notes
+receiver_name
+receiver_signature_path
+receiver_photo_path
+received_at
+started_at
+completed_at
+created_by
+created_at
+updated_at
+deleted_at
+```
+
+Column rules:
+
+| Column                  | Rule                                  |
+| ----------------------- | ------------------------------------- |
+| `id`                    | Primary key                           |
+| `lab_order_id`          | FK to `trx_lab_orders.id`, required   |
+| `delivery_number`       | Unique, auto-generated                |
+| `courier_id`            | FK to `users.id`, required before `IN_DELIVERY` |
+| `status`                | Delivery status enum                  |
+| `delivery_notes`        | Nullable text                         |
+| `receiver_name`         | Required before `COMPLETED`           |
+| `receiver_signature_path` | File path only, no binary/blob/base64 |
+| `receiver_photo_path`   | File path only, no binary/blob/base64 |
+| `received_at`           | Required before `COMPLETED`           |
+| `started_at`            | Set when delivery starts              |
+| `completed_at`          | Set when delivery workflow completes  |
+| `created_by`            | FK to `users.id`                      |
+| `deleted_at`            | Soft delete timestamp                 |
+
+Delivery status enum:
+
+```text
+READY_FOR_DELIVERY
+IN_DELIVERY
+DELIVERED
+COMPLETED
+CANCELLED
+```
+
+## 17.4 Lab Order Status Integration
+
+Previous status from Sprint 5:
+
+```text
+QC_PASSED
+```
+
+Sprint 6 active Lab Order statuses:
+
+```text
+READY_FOR_DELIVERY
+IN_DELIVERY
+DELIVERED
+COMPLETED
+```
+
+Allowed transitions:
+
+```text
+QC_PASSED -> READY_FOR_DELIVERY
+READY_FOR_DELIVERY -> IN_DELIVERY
+IN_DELIVERY -> DELIVERED
+DELIVERED -> COMPLETED
+```
+
+Rules:
+
+```text
+1. Every transition must create trx_lab_order_status_logs.
+2. Every delivery action must create sys_audit_logs.
+3. Invoice is not created by Sprint 6.
+4. Payment is not created by Sprint 6.
+5. Reporting is not implemented by Sprint 6.
+```
+
+## 17.5 POD Strategy
+
+POD fields:
+
+```text
+receiver_name
+receiver_signature_path
+receiver_photo_path
+received_at
+delivery_notes
+```
+
+Rules:
+
+```text
+1. Store signature as file path, not binary/blob/base64.
+2. Store receiver photo as file path, not binary/blob/base64.
+3. POD evidence must use sys_attachments.
+4. POD must be completed before Lab Order becomes COMPLETED.
+5. Receiver name is required before COMPLETED.
+6. Receiver signature is required before COMPLETED.
+7. Receiver photo is required before COMPLETED.
+```
+
+## 17.6 Attachment Integration
+
+Delivery evidence reuses:
+
+```text
+sys_attachments
+```
+
+Delivery attachment categories:
+
+```text
+DELIVERY_PHOTO
+POD_SIGNATURE
+POD_RECEIVER_PHOTO
+DELIVERY_EVIDENCE
+```
+
+Preferred polymorphic target:
+
+```text
+entity_type = trx_lab_deliveries
+entity_id   = delivery_id
+```
+
+Rules:
+
+```text
+1. Do not create a separate delivery photo table.
+2. Store file metadata in sys_attachments.
+3. Store file content in storage, not database binary columns.
+4. Upload, replace, and delete actions must be audited.
+5. Soft delete applies to attachment metadata.
+```
+
+## 17.7 Audit Log Integration
+
+Sprint 6 uses existing:
+
+```text
+sys_audit_logs
+```
+
+Required audit actions:
+
+```text
+CREATE_DELIVERY
+ASSIGN_COURIER
+REASSIGN_COURIER
+START_DELIVERY
+MARK_DELIVERED
+COMPLETE_DELIVERY
+UPLOAD_POD
+STATUS_CHANGE
+```
+
+Required audit columns:
+
+```text
+entity_type
+entity_id
+action
+old_values
+new_values
+performed_by
+performed_at
+```
+
+Recommended audit target:
+
+```text
+entity_type = trx_lab_deliveries
+entity_id   = delivery_id
+```
+
+Lab Order status changes may also audit:
+
+```text
+entity_type = trx_lab_orders
+entity_id   = lab_order_id
+```
+
+## 17.8 Foreign Key Recommendation
+
+```text
+trx_lab_deliveries
+  lab_order_id -> trx_lab_orders.id
+  courier_id   -> users.id
+  created_by   -> users.id
+```
+
+No separate courier master table is required for Sprint 6 V1.
+
+## 17.9 Index Recommendation
+
+```text
+trx_lab_deliveries
+  delivery_number UNIQUE
+  lab_order_id
+  courier_id
+  status
+  received_at
+  created_by
+```
+
+## 17.10 Suggested Migration Order Update
+
+Recommended order around Sprint 6:
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+trx_lab_deliveries
+trx_invoices
+trx_invoice_items
+trx_payments
+```
+
+`trx_lab_deliveries` appears after Quality Control tables and before
+Invoice/Payment tables.
+
+## 17.11 Business Rules
+
+```text
+1. One Lab Order can have many delivery records over time.
+2. Only QC_PASSED orders can enter delivery.
+3. Creating a delivery changes Lab Order status to READY_FOR_DELIVERY.
+4. Starting delivery changes Lab Order status to IN_DELIVERY.
+5. Marking delivered changes Lab Order status to DELIVERED.
+6. Completing delivery changes Lab Order status to COMPLETED.
+7. Courier is required before IN_DELIVERY.
+8. POD is required before COMPLETED.
+9. Receiver name is required before COMPLETED.
+10. Receiver signature is required before COMPLETED.
+11. Receiver photo is required before COMPLETED.
+12. Delivery history must be preserved.
+13. Soft delete enabled.
+14. No hard delete.
+15. Delivery evidence must reuse sys_attachments.
+16. Every delivery action must create sys_audit_logs.
+17. Every delivery status change must create trx_lab_order_status_logs.
+18. trx_lab_delivery_photos is excluded from Sprint 6 V1.
+19. Separate courier master table is excluded from Sprint 6 V1.
+20. Invoice workflow is excluded from Sprint 6.
+21. Payment workflow is excluded from Sprint 6.
+22. Reporting is excluded from Sprint 6.
+```
+
+## 17.12 Validation Checklist - Sprint 6 Schema
+
+```text
+- Delivery table documented
+- Delivery status enum documented
+- Foreign keys documented
+- Indexes documented
+- Lab Order status mapping documented
+- POD fields documented
+- POD uses sys_attachments
+- Signature stored as file path
+- Receiver photo stored as file path
+- Delivery photo table excluded
+- Courier master table excluded
 - Invoice excluded
 - Payment excluded
 - Reporting excluded
