@@ -2695,7 +2695,363 @@ against a single invoice in Sprint 7.
 
 ---
 
-# 18. V2 ERD Candidates
+# 18. Sprint 8 - Reporting & Dashboard ERD
+
+## Sprint 8 — Reporting & Dashboard ERD
+
+Sprint 8 Reporting & Dashboard adalah logical read-only module. Sprint ini
+tidak membutuhkan tabel fisik baru karena seluruh report membaca data
+operasional dan finansial dari Sprint 0 sampai Sprint 7.
+
+Core decisions:
+
+```text
+1. No new physical database tables are required for Sprint 8.
+2. Reporting is a logical read-only module.
+3. Reporting reads existing operational and financial data.
+4. Reporting must not mutate source data.
+5. Reporting must not duplicate data into summary tables in Sprint 8.
+```
+
+Reporting tidak memiliki foreign key ke source tables karena tidak ada table
+`reports` atau table summary yang dibuat pada Sprint 8. Semua relationship pada
+section ini adalah logical read relationships.
+
+## 18.1 Data Sources
+
+Operational data sources:
+
+```text
+users
+mst_clinics        (clinics)
+mst_doctors        (doctors)
+mst_patients       (patients)
+mst_technicians    (technicians)
+mst_lab_services   (lab_services)
+trx_lab_orders
+trx_lab_order_items
+trx_lab_order_status_logs
+```
+
+Production data sources:
+
+```text
+trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
+```
+
+Quality Control data sources:
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+sys_attachments for QC evidence
+```
+
+Delivery data sources:
+
+```text
+trx_lab_deliveries
+sys_attachments for delivery/POD evidence
+```
+
+Financial data sources:
+
+```text
+trx_invoices
+trx_invoice_items
+trx_payments
+```
+
+Audit data sources:
+
+```text
+sys_audit_logs
+trx_lab_order_status_logs for Lab Order status history
+```
+
+## 18.2 Logical Relationship Notes
+
+Reporting module logical reads:
+
+```text
+Reporting Module
+├── reads users
+├── reads mst_clinics / clinics
+├── reads mst_doctors / doctors
+├── reads mst_patients / patients
+├── reads mst_technicians / technicians
+├── reads mst_lab_services / lab_services
+├── reads trx_lab_orders
+├── reads trx_lab_order_items
+├── reads trx_lab_order_assignments
+├── reads trx_lab_work_logs
+├── reads trx_lab_production_steps
+├── reads trx_lab_quality_controls
+├── reads trx_lab_qc_checklists
+├── reads trx_lab_remake_requests
+├── reads trx_lab_deliveries
+├── reads trx_invoices
+├── reads trx_invoice_items
+├── reads trx_payments
+├── reads sys_audit_logs if audit-based reports are needed
+└── reads trx_lab_order_status_logs for status timeline reports
+```
+
+ERD interpretation:
+
+```text
+Reporting has no ownership relationship with source tables.
+Reporting reads many operational records.
+Reporting reads many financial records.
+Reporting does not own Lab Orders, Deliveries, Invoices, or Payments.
+Reporting does not create child records.
+Reporting does not change business statuses.
+```
+
+## 18.3 Report To Source Mapping
+
+Dashboard Overview:
+
+```text
+trx_lab_orders
+trx_lab_deliveries
+trx_invoices
+trx_payments
+trx_lab_quality_controls
+trx_lab_remake_requests
+```
+
+Order Reports:
+
+```text
+trx_lab_orders
+trx_lab_order_items
+mst_clinics
+mst_doctors
+mst_patients
+mst_lab_services
+trx_lab_order_status_logs
+```
+
+Production Reports:
+
+```text
+trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
+users
+mst_technicians
+trx_lab_orders
+```
+
+QC Reports:
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+sys_attachments if evidence count is needed
+```
+
+Delivery Reports:
+
+```text
+trx_lab_deliveries
+users as courier
+mst_clinics
+trx_lab_orders
+sys_attachments if POD/evidence count is needed
+```
+
+Invoice Reports:
+
+```text
+trx_invoices
+trx_invoice_items
+mst_clinics
+trx_lab_orders
+```
+
+Payment Reports:
+
+```text
+trx_payments
+trx_invoices
+mst_clinics
+users as received_by
+```
+
+Outstanding Invoice Reports:
+
+```text
+trx_invoices
+trx_payments
+mst_clinics
+```
+
+Revenue Reports:
+
+```text
+trx_invoices
+trx_invoice_items
+trx_payments
+mst_clinics
+mst_lab_services if revenue by service is required
+```
+
+## 18.4 Logical Mermaid ERD
+
+Diagram berikut menunjukkan logical read dependencies. Ini bukan physical FK
+diagram dan tidak menambah tabel Sprint 8.
+
+```mermaid
+flowchart TD
+    Reporting[Reporting Module]
+
+    Reporting -. reads .-> Users[users]
+    Reporting -. reads .-> Clinics[mst_clinics]
+    Reporting -. reads .-> Doctors[mst_doctors]
+    Reporting -. reads .-> Patients[mst_patients]
+    Reporting -. reads .-> Technicians[mst_technicians]
+    Reporting -. reads .-> Services[mst_lab_services]
+    Reporting -. reads .-> Orders[trx_lab_orders]
+    Reporting -. reads .-> OrderItems[trx_lab_order_items]
+    Reporting -. reads .-> StatusLogs[trx_lab_order_status_logs]
+    Reporting -. reads .-> Assignments[trx_lab_order_assignments]
+    Reporting -. reads .-> WorkLogs[trx_lab_work_logs]
+    Reporting -. reads .-> ProductionSteps[trx_lab_production_steps]
+    Reporting -. reads .-> QC[trx_lab_quality_controls]
+    Reporting -. reads .-> QCChecklist[trx_lab_qc_checklists]
+    Reporting -. reads .-> Remake[trx_lab_remake_requests]
+    Reporting -. reads .-> Delivery[trx_lab_deliveries]
+    Reporting -. reads .-> Invoices[trx_invoices]
+    Reporting -. reads .-> InvoiceItems[trx_invoice_items]
+    Reporting -. reads .-> Payments[trx_payments]
+    Reporting -. reads .-> Attachments[sys_attachments]
+    Reporting -. reads .-> Audit[sys_audit_logs]
+```
+
+## 18.5 Schema Decision Notes
+
+```text
+No new tables for Sprint 8.
+No materialized views in Sprint 8.
+No aggregate/cache tables in Sprint 8.
+No reporting-specific audit tables.
+No reporting-specific attachment tables.
+CSV export can be generated directly from filtered queries.
+Excel export can be added only if implementation uses an existing package or simple fallback.
+```
+
+Forbidden Sprint 8 reporting tables:
+
+```text
+reporting_summary
+report_snapshots
+reporting_audit_logs
+reporting_attachments
+report_cache
+report_exports
+```
+
+## 18.6 Permission Notes
+
+Planned permissions:
+
+```text
+manage_report
+view_dashboard
+view_order_report
+view_production_report
+view_qc_report
+view_delivery_report
+view_invoice_report
+view_payment_report
+export_report
+```
+
+Role-based access:
+
+```text
+Admin: all reporting permissions
+Finance: financial reports, dashboard, export
+Lab Manager: operational reports, dashboard, export
+Lab Staff: limited operational reports
+Courier: no reporting access by default
+```
+
+Permission design notes:
+
+```text
+1. manage_report can be used as broad reporting override.
+2. export_report should be separate from view permissions.
+3. Financial report permissions should be separate from operational report permissions.
+```
+
+## 18.7 Data Integrity Notes
+
+```text
+Reports must use source-of-truth tables.
+VOID invoices should be excluded from revenue unless explicitly shown.
+Outstanding amount should come from trx_invoices.outstanding_amount.
+Payment totals should come from trx_payments.
+Delivery reports should come from trx_lab_deliveries.
+QC reports should come from QC tables.
+Date filters should be inclusive and timezone-safe.
+Reports must handle empty result sets safely.
+Soft-deleted records should follow the source module's default visibility rules.
+Reporting must not update operational or financial status columns.
+```
+
+## 18.8 Out Of Scope - Sprint 8 ERD
+
+Do not add ERD tables for:
+
+```text
+reporting_summary
+report_snapshots
+data warehouse
+BI star schema
+fact tables
+dimension tables
+scheduled report jobs
+report email history
+report WhatsApp logs
+PDF report templates
+accounting ledger
+tax reporting
+inventory reports
+HR reports
+RME reports
+```
+
+## 18.9 Sprint 8 ERD Validation Checklist
+
+```text
+- Sprint 8 Reporting & Dashboard ERD section added
+- No new physical database tables required
+- Reporting documented as logical read-only module
+- Operational data sources documented
+- Production data sources use existing Sprint 4 table names
+- QC data sources documented
+- Delivery data sources documented
+- Financial data sources documented
+- Audit/status data sources documented
+- Report-to-source mapping documented
+- Permissions documented
+- Data integrity notes documented
+- Reporting summary tables excluded
+- Reporting audit tables excluded
+- Reporting attachment tables excluded
+- Source data mutation excluded
+```
+
+---
+
+# 19. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 

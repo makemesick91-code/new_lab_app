@@ -7,6 +7,7 @@ use App\Modules\Invoice\Models\Invoice;
 use App\Modules\Invoice\Services\InvoiceService;
 use App\Modules\Invoice\Services\InvoiceWorkflowService;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabService\Models\LabService;
 use Illuminate\Database\Seeder;
 
 class InvoiceSeeder extends Seeder
@@ -38,7 +39,7 @@ class InvoiceSeeder extends Seeder
 
         if ($order->items()->count() === 0) {
             $order->items()->create([
-                'lab_service_id' => \App\Modules\LabService\Models\LabService::query()->value('id') ?? \App\Modules\LabService\Models\LabService::factory()->create()->id,
+                'lab_service_id' => LabService::query()->value('id') ?? LabService::factory()->create()->id,
                 'quantity' => 1,
                 'unit_price' => 1500000,
                 'subtotal' => 1500000,

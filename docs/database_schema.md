@@ -3076,3 +3076,381 @@ WhatsApp notification tables
 - Payment allocation tables excluded
 - Reporting aggregation excluded
 ```
+
+---
+
+# 19. Sprint 8 Reporting & Dashboard Schema
+
+## Sprint 8 — Reporting & Dashboard Schema
+
+Sprint 8 Reporting & Dashboard adalah modul read-only yang membaca data dari
+tabel Sprint 0 sampai Sprint 7. Sprint ini tidak menambah tabel fisik,
+migration, trigger, materialized view, atau tabel aggregate/cache.
+
+Core decisions:
+
+```text
+1. No new physical database tables are required for Sprint 8.
+2. No new migrations are required for Sprint 8.
+3. Reporting reads existing Sprint 0-7 source tables.
+4. Reporting must not mutate source data.
+5. Reporting must not duplicate data into summary/cache/reporting tables in Sprint 8.
+```
+
+Reporting schema bersifat logical. Implementasi report harus memakai filtered
+SELECT queries melalui service/repository layer dan tidak boleh melakukan write
+operation ke source tables.
+
+## 19.1 Source Table Groups
+
+Operational source tables:
+
+```text
+users
+mst_clinics        (clinics)
+mst_doctors        (doctors)
+mst_patients       (patients)
+mst_technicians    (technicians)
+mst_lab_services   (lab_services)
+trx_lab_orders
+trx_lab_order_items
+trx_lab_order_status_logs
+```
+
+Production source tables:
+
+```text
+trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
+```
+
+Quality Control source tables:
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+sys_attachments for QC evidence counts if needed
+```
+
+Delivery source tables:
+
+```text
+trx_lab_deliveries
+sys_attachments for delivery/POD evidence counts if needed
+```
+
+Financial source tables:
+
+```text
+trx_invoices
+trx_invoice_items
+trx_payments
+```
+
+Audit / status source tables:
+
+```text
+sys_audit_logs
+trx_lab_order_status_logs
+```
+
+## 19.2 Report To Schema Mapping
+
+Dashboard Overview:
+
+```text
+trx_lab_orders
+trx_lab_deliveries
+trx_invoices
+trx_payments
+trx_lab_quality_controls
+trx_lab_remake_requests
+```
+
+Order Reports:
+
+```text
+trx_lab_orders
+trx_lab_order_items
+mst_clinics
+mst_doctors
+mst_patients
+mst_lab_services
+trx_lab_order_status_logs
+```
+
+Production Reports:
+
+```text
+trx_lab_order_assignments
+trx_lab_work_logs
+trx_lab_production_steps
+users
+mst_technicians
+trx_lab_orders
+```
+
+QC Reports:
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+sys_attachments if evidence counts are needed
+```
+
+Delivery Reports:
+
+```text
+trx_lab_deliveries
+users as courier
+mst_clinics
+trx_lab_orders
+sys_attachments if POD/evidence counts are needed
+```
+
+Invoice Reports:
+
+```text
+trx_invoices
+trx_invoice_items
+mst_clinics
+trx_lab_orders
+```
+
+Payment Reports:
+
+```text
+trx_payments
+trx_invoices
+mst_clinics
+users as received_by
+```
+
+Outstanding Invoice Reports:
+
+```text
+trx_invoices
+trx_payments
+mst_clinics
+```
+
+Revenue Reports:
+
+```text
+trx_invoices
+trx_invoice_items
+trx_payments
+mst_clinics
+mst_lab_services if revenue by service is required
+```
+
+## 19.3 Schema Decision Notes
+
+```text
+1. Use filtered SELECT queries against existing tables.
+2. Use service/repository layer for report calculations.
+3. Avoid direct write operations from Reporting module.
+4. Avoid calculated reporting tables in Sprint 8.
+5. Avoid materialized views in Sprint 8.
+6. Avoid database triggers for reporting in Sprint 8.
+7. Export should be generated from filtered queries.
+8. CSV export is acceptable as baseline.
+9. Excel export may be implemented only if a package already exists or simple implementation is available.
+10. PDF export is out of scope unless explicitly added later.
+```
+
+Reporting must not create:
+
+```text
+reporting_summary
+report_snapshots
+report_cache
+report_exports
+reporting_audit_logs
+reporting_attachments
+```
+
+## 19.4 Data Accuracy Notes
+
+```text
+Payment totals must come from trx_payments.
+Outstanding amount must come from trx_invoices.outstanding_amount.
+Invoice revenue must come from trx_invoices.
+Payment received revenue must come from trx_payments.
+VOID invoices should be excluded from revenue calculations unless the report explicitly includes VOID invoices.
+Delivery reports must use trx_lab_deliveries.
+QC reports must use QC source tables.
+Lab Order status history must use trx_lab_order_status_logs.
+Date filters must be inclusive and timezone-safe.
+Reports must handle empty datasets safely.
+Reports must respect role and permission access.
+```
+
+Date filtering recommendation:
+
+```text
+date_from should include start of day in application timezone.
+date_to should include end of day in application timezone.
+```
+
+Void and deleted record handling:
+
+```text
+1. VOID invoices are excluded from revenue and outstanding reports by default.
+2. VOID invoices may appear in invoice status reports when explicitly filtered.
+3. Soft-deleted records should follow the source module's default query behavior.
+```
+
+## 19.5 Index Review Notes
+
+Sprint 8 should not add indexes immediately unless performance issues are
+proven. Implementation should review whether existing indexes support these
+fields:
+
+```text
+trx_lab_orders.status
+trx_lab_orders.clinic_id
+trx_lab_orders.doctor_id
+trx_lab_orders.created_at
+trx_lab_deliveries.status
+trx_lab_deliveries.courier_id
+trx_lab_deliveries.created_at
+trx_invoices.status
+trx_invoices.clinic_id
+trx_invoices.invoice_date
+trx_invoices.due_date
+trx_payments.payment_date
+trx_payments.payment_method
+trx_payments.received_by
+```
+
+Index rules:
+
+```text
+1. If indexes already exist, do not duplicate them.
+2. If indexes are missing, document them as future optimization only.
+3. Missing indexes are not mandatory Sprint 8 migrations.
+4. Do not create reporting-specific indexes without measured performance need.
+```
+
+## 19.6 Export Schema Notes
+
+```text
+Export does not require new tables.
+Export should use current filtered query result.
+Export should respect user permissions.
+Export should not persist generated files in Sprint 8.
+If persisted export files are needed later, use sys_attachments or a future export history table in a later sprint.
+```
+
+Baseline export:
+
+```text
+CSV export
+```
+
+Optional export:
+
+```text
+Excel export if a package already exists or simple implementation is available.
+```
+
+Out of scope export:
+
+```text
+PDF export
+Persisted export file history
+Scheduled export jobs
+Email/WhatsApp report sending
+```
+
+## 19.7 Permission Notes
+
+Planned permissions:
+
+```text
+manage_report
+view_dashboard
+view_order_report
+view_production_report
+view_qc_report
+view_delivery_report
+view_invoice_report
+view_payment_report
+export_report
+```
+
+Role-based access:
+
+```text
+Admin: all reporting permissions
+Finance: dashboard, invoice report, payment report, outstanding report, revenue report, export
+Lab Manager: dashboard, order report, production report, QC report, delivery report, export
+Lab Staff: limited operational reports
+Courier: no reporting access by default
+```
+
+Permission design notes:
+
+```text
+1. manage_report can act as an admin override.
+2. export_report should be separate from view permissions.
+3. Financial report permissions should remain separate from operational report permissions.
+4. Courier should not receive reporting permissions by default.
+```
+
+## 19.8 Out Of Scope - Sprint 8 Schema
+
+Do not add tables for:
+
+```text
+reporting_summary
+report_snapshots
+report_cache
+report_exports
+data warehouse
+BI star schema
+fact tables
+dimension tables
+materialized views
+scheduled report jobs
+report email history
+report WhatsApp logs
+PDF report templates
+accounting ledger
+tax reporting
+inventory reports
+HR reports
+RME reports
+```
+
+Also out of scope:
+
+```text
+new migrations for reporting
+database triggers for reporting
+reporting-specific audit tables
+reporting-specific attachment tables
+source data mutation from reports
+```
+
+## 19.9 Validation Checklist - Sprint 8 Schema
+
+```text
+- Sprint 8 Reporting & Dashboard Schema section added
+- No new physical tables required
+- No new migrations required
+- Reporting documented as read-only
+- Existing Sprint 0-7 source tables documented
+- Report-to-source table mapping documented
+- Data accuracy notes documented
+- Export schema notes documented
+- Permissions documented
+- Index review documented as future optimization only
+- Reporting summary/cache tables excluded
+- Materialized views excluded
+- Source data mutation excluded
+```

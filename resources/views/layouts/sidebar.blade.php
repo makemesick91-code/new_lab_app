@@ -109,10 +109,36 @@
             <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Orders <span class="text-xs text-gray-400">(Sprint 3)</span></a>
         @endrole
 
-        @hasanyrole('Super Admin|Admin Lab|Finance')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Insights</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Reports <span class="text-xs text-gray-400">(Sprint 8)</span></a>
-        @endhasanyrole
+        {{-- Reports (Sprint 8) — permission-aware menu. --}}
+        @canany(['view_dashboard', 'view_order_report', 'view_production_report', 'view_qc_report', 'view_delivery_report', 'view_invoice_report', 'view_payment_report', 'manage_report'])
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Reports</p>
+            @php($reportActive = fn ($name) => request()->routeIs($name) ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900')
+            @can('reporting.dashboard')
+                <a href="{{ route('reports.dashboard') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.dashboard') }}">Dashboard</a>
+            @endcan
+            @can('reporting.orders')
+                <a href="{{ route('reports.orders') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.orders') }}">Orders</a>
+            @endcan
+            @can('reporting.production')
+                <a href="{{ route('reports.production') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.production') }}">Production</a>
+            @endcan
+            @can('reporting.qc')
+                <a href="{{ route('reports.qc') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.qc') }}">Quality Control</a>
+            @endcan
+            @can('reporting.delivery')
+                <a href="{{ route('reports.delivery') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.delivery') }}">Delivery</a>
+            @endcan
+            @can('reporting.invoices')
+                <a href="{{ route('reports.invoices') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.invoices') }}">Invoices</a>
+            @endcan
+            @can('reporting.payments')
+                <a href="{{ route('reports.payments') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.payments') }}">Payments</a>
+            @endcan
+            @can('reporting.invoices')
+                <a href="{{ route('reports.outstanding') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.outstanding') }}">Outstanding</a>
+                <a href="{{ route('reports.revenue') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.revenue') }}">Revenue</a>
+            @endcan
+        @endcanany
 
     </nav>
 </aside>

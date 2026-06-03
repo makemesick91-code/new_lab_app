@@ -19,6 +19,9 @@ use App\Modules\Production\Controllers\WorkLogController;
 use App\Modules\QualityControl\Controllers\ChecklistController as QcChecklistController;
 use App\Modules\QualityControl\Controllers\QualityControlController;
 use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeController;
+use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
+use App\Modules\Reporting\Controllers\ExportReportController;
+use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\User\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -238,6 +241,45 @@ Route::middleware('auth')->group(function () {
         ->name('invoices.void')->middleware('permission:void_invoice|manage_invoice');
     Route::post('invoices/{invoice}/payments', [PaymentController::class, 'store'])
         ->name('invoices.payments.store')->middleware('permission:create_payment|manage_payment');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 8 — Reporting & Dashboard (read only)
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('reports')->name('reports.')->group(function () {
+    Route::get('dashboard', [ReportingDashboardController::class, 'index'])
+        ->name('dashboard')->middleware('permission:view_dashboard|manage_report');
+
+    Route::get('orders', [ReportController::class, 'orders'])
+        ->name('orders')->middleware('permission:view_order_report|manage_report');
+    Route::get('production', [ReportController::class, 'production'])
+        ->name('production')->middleware('permission:view_production_report|manage_report');
+    Route::get('qc', [ReportController::class, 'qualityControl'])
+        ->name('qc')->middleware('permission:view_qc_report|manage_report');
+    Route::get('delivery', [ReportController::class, 'delivery'])
+        ->name('delivery')->middleware('permission:view_delivery_report|manage_report');
+    Route::get('invoices', [ReportController::class, 'invoices'])
+        ->name('invoices')->middleware('permission:view_invoice_report|manage_report');
+    Route::get('payments', [ReportController::class, 'payments'])
+        ->name('payments')->middleware('permission:view_payment_report|manage_report');
+    Route::get('outstanding', [ReportController::class, 'outstanding'])
+        ->name('outstanding')->middleware('permission:view_invoice_report|manage_report');
+    Route::get('revenue', [ReportController::class, 'revenue'])
+        ->name('revenue')->middleware('permission:view_invoice_report|manage_report');
+
+    // Exports (require export_report + the report's own permission via controller).
+    Route::middleware('permission:export_report|manage_report')->group(function () {
+        Route::get('orders/export', [ExportReportController::class, 'exportOrders'])->name('orders.export');
+        Route::get('production/export', [ExportReportController::class, 'exportProduction'])->name('production.export');
+        Route::get('qc/export', [ExportReportController::class, 'exportQualityControl'])->name('qc.export');
+        Route::get('delivery/export', [ExportReportController::class, 'exportDelivery'])->name('delivery.export');
+        Route::get('invoices/export', [ExportReportController::class, 'exportInvoices'])->name('invoices.export');
+        Route::get('payments/export', [ExportReportController::class, 'exportPayments'])->name('payments.export');
+        Route::get('outstanding/export', [ExportReportController::class, 'exportOutstanding'])->name('outstanding.export');
+        Route::get('revenue/export', [ExportReportController::class, 'exportRevenue'])->name('revenue.export');
+    });
 });
 
 require __DIR__.'/auth.php';

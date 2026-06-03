@@ -68,6 +68,9 @@ use App\Modules\QualityControl\Policies\RemakePolicy;
 use App\Modules\QualityControl\Repositories\ChecklistRepository;
 use App\Modules\QualityControl\Repositories\QualityControlRepository;
 use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
+use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
+use App\Modules\Reporting\Policies\ReportingPolicy;
+use App\Modules\Reporting\Repositories\ReportingRepository;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Policies\TechnicianPolicy;
@@ -113,6 +116,7 @@ class RepositoryServiceProvider extends ServiceProvider
         DeliveryRepositoryInterface::class => DeliveryRepository::class,
         InvoiceRepositoryInterface::class => InvoiceRepository::class,
         PaymentRepositoryInterface::class => PaymentRepository::class,
+        ReportingRepositoryInterface::class => ReportingRepository::class,
     ];
 
     /**
@@ -152,6 +156,15 @@ class RepositoryServiceProvider extends ServiceProvider
         'delivery.markDelivered' => [DeliveryPolicy::class, 'markDelivered'],
         'delivery.completeDelivery' => [DeliveryPolicy::class, 'completeDelivery'],
         'delivery.uploadPod' => [DeliveryPolicy::class, 'uploadPod'],
+        // Sprint 8 - Reporting & Dashboard
+        'reporting.dashboard' => [ReportingPolicy::class, 'viewDashboard'],
+        'reporting.orders' => [ReportingPolicy::class, 'viewOrderReport'],
+        'reporting.production' => [ReportingPolicy::class, 'viewProductionReport'],
+        'reporting.qc' => [ReportingPolicy::class, 'viewQcReport'],
+        'reporting.delivery' => [ReportingPolicy::class, 'viewDeliveryReport'],
+        'reporting.invoices' => [ReportingPolicy::class, 'viewInvoiceReport'],
+        'reporting.payments' => [ReportingPolicy::class, 'viewPaymentReport'],
+        'reporting.export' => [ReportingPolicy::class, 'exportReport'],
     ];
 
     /**
