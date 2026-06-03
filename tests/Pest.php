@@ -53,6 +53,8 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Services\AssignmentService;
 use App\Modules\Production\Services\ProductionWorkflowService;
+use App\Modules\QualityControl\Models\QualityControl;
+use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\Technician\Models\Technician;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -111,6 +113,22 @@ function technicianActor(array $permissions): array
     $technician = Technician::factory()->create(['user_id' => $user->id]);
 
     return [$user, $technician];
+}
+
+/**
+ * A Lab Order in QC_PENDING status, ready for QC review.
+ */
+function qcPendingOrder(): LabOrder
+{
+    return LabOrder::factory()->create(['status' => LabOrder::STATUS_QC_PENDING]);
+}
+
+/**
+ * Start a QC review (creates the default checklist) and return it.
+ */
+function startQcReview(LabOrder $order, ?User $actor = null): QualityControl
+{
+    return app(QualityControlService::class)->start($order->refresh(), 'review', $actor ?? superAdmin());
 }
 
 /**

@@ -22,11 +22,16 @@ class AttachmentService
         private readonly AuditLogService $auditLogs,
     ) {}
 
-    public function upload(LabOrder $order, UploadedFile $file, string $category, ?User $actor = null): Attachment
-    {
+    public function upload(
+        LabOrder $order,
+        UploadedFile $file,
+        string $category,
+        ?User $actor = null,
+        string $auditAction = AuditLog::ACTION_UPLOAD_ATTACHMENT,
+    ): Attachment {
         $actor = $actor ?? auth()->user();
 
-        return DB::transaction(function () use ($order, $file, $category, $actor) {
+        return DB::transaction(function () use ($order, $file, $category, $actor, $auditAction) {
             $extension = $file->getClientOriginalExtension() ?: $file->guessExtension();
             $storedName = Str::uuid()->toString().($extension ? '.'.$extension : '');
             $directory = 'lab-orders/'.$order->order_number;
@@ -48,7 +53,7 @@ class AttachmentService
             $this->auditLogs->log(
                 LabOrder::ENTITY_TYPE,
                 $order->id,
-                AuditLog::ACTION_UPLOAD_ATTACHMENT,
+                $auditAction,
                 null,
                 ['attachment_id' => $attachment->id, 'category' => $category, 'file_name' => $attachment->file_name],
                 $actor,

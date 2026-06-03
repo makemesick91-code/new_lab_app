@@ -13,6 +13,9 @@ use App\Modules\Production\Controllers\AssignmentController as ProductionAssignm
 use App\Modules\Production\Controllers\ProductionStepController;
 use App\Modules\Production\Controllers\ProductionWorkflowController;
 use App\Modules\Production\Controllers\WorkLogController;
+use App\Modules\QualityControl\Controllers\ChecklistController as QcChecklistController;
+use App\Modules\QualityControl\Controllers\QualityControlController;
+use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\User\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -157,6 +160,33 @@ Route::middleware('auth')->prefix('production')->name('production.')->group(func
         ->name('work-logs.index')->middleware('permission:view_production|manage_production');
     Route::patch('/{labOrder}/steps/{step}', [ProductionStepController::class, 'update'])
         ->name('steps.update');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 5 — Quality Control
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('quality-control')->name('quality-control.')->group(function () {
+    Route::get('/', [QualityControlController::class, 'queue'])
+        ->name('queue')->middleware('permission:view_quality_control|manage_quality_control');
+
+    // Static segment before the {labOrder} catch-all.
+    Route::patch('/checklists/{checklist}', [QcChecklistController::class, 'update'])
+        ->name('checklists.update')->middleware('permission:update_qc_checklist|manage_quality_control');
+
+    Route::get('/{labOrder}', [QualityControlController::class, 'show'])
+        ->name('show')->middleware('permission:view_quality_control|manage_quality_control');
+    Route::post('/{labOrder}/start', [QualityControlController::class, 'start'])
+        ->name('start')->middleware('permission:start_qc|manage_quality_control');
+    Route::post('/{labOrder}/pass', [QualityControlController::class, 'pass'])
+        ->name('pass')->middleware('permission:pass_qc|manage_quality_control');
+    Route::post('/{labOrder}/reject', [QualityControlController::class, 'reject'])
+        ->name('reject')->middleware('permission:reject_qc|manage_quality_control');
+    Route::post('/{labOrder}/remake', [QcRemakeController::class, 'store'])
+        ->name('remake')->middleware('permission:request_remake|manage_quality_control');
+    Route::post('/{labOrder}/evidence', [QualityControlController::class, 'evidence'])
+        ->name('evidence.store')->middleware('permission:upload_qc_evidence|manage_quality_control');
 });
 
 require __DIR__.'/auth.php';

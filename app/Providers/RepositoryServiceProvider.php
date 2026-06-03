@@ -46,6 +46,16 @@ use App\Modules\Production\Policies\WorkLogPolicy;
 use App\Modules\Production\Repositories\AssignmentRepository;
 use App\Modules\Production\Repositories\ProductionStepRepository;
 use App\Modules\Production\Repositories\WorkLogRepository;
+use App\Modules\QualityControl\Interfaces\ChecklistRepositoryInterface;
+use App\Modules\QualityControl\Interfaces\QualityControlRepositoryInterface;
+use App\Modules\QualityControl\Interfaces\RemakeRequestRepositoryInterface;
+use App\Modules\QualityControl\Models\QualityControl;
+use App\Modules\QualityControl\Policies\ChecklistPolicy;
+use App\Modules\QualityControl\Policies\QualityControlPolicy;
+use App\Modules\QualityControl\Policies\RemakePolicy;
+use App\Modules\QualityControl\Repositories\ChecklistRepository;
+use App\Modules\QualityControl\Repositories\QualityControlRepository;
+use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Policies\TechnicianPolicy;
@@ -85,6 +95,9 @@ class RepositoryServiceProvider extends ServiceProvider
         AssignmentRepositoryInterface::class => AssignmentRepository::class,
         WorkLogRepositoryInterface::class => WorkLogRepository::class,
         ProductionStepRepositoryInterface::class => ProductionStepRepository::class,
+        QualityControlRepositoryInterface::class => QualityControlRepository::class,
+        ChecklistRepositoryInterface::class => ChecklistRepository::class,
+        RemakeRequestRepositoryInterface::class => RemakeRequestRepository::class,
     ];
 
     /**
@@ -106,6 +119,15 @@ class RepositoryServiceProvider extends ServiceProvider
         'production.cancelAssignment' => [AssignmentPolicy::class, 'cancel'],
         'production.steps.update' => [ProductionStepPolicy::class, 'update'],
         'production.worklogs.view' => [WorkLogPolicy::class, 'view'],
+        // Sprint 5 — Quality Control
+        'qc.viewAny' => [QualityControlPolicy::class, 'viewAny'],
+        'qc.view' => [QualityControlPolicy::class, 'view'],
+        'qc.start' => [QualityControlPolicy::class, 'start'],
+        'qc.pass' => [QualityControlPolicy::class, 'pass'],
+        'qc.reject' => [QualityControlPolicy::class, 'reject'],
+        'qc.uploadEvidence' => [QualityControlPolicy::class, 'uploadEvidence'],
+        'qc.checklists.update' => [ChecklistPolicy::class, 'updateChecklist'],
+        'qc.requestRemake' => [RemakePolicy::class, 'requestRemake'],
     ];
 
     /**
@@ -137,6 +159,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // Non-enforcing: other morphs (e.g. Spatie roles) keep their defaults.
         Relation::morphMap([
             LabOrder::ENTITY_TYPE => LabOrder::class,
+            QualityControl::ENTITY_TYPE => QualityControl::class,
         ]);
 
         foreach ($this->policies as $model => $policy) {

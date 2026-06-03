@@ -59,7 +59,7 @@
             @endcan
         @endcanany
 
-        @canany(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production'])
+        @canany(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Operations</p>
             @canany(['view_lab_orders', 'manage_lab_orders'])
                 <a href="{{ route('lab-orders.index') }}"
@@ -68,6 +68,10 @@
             @canany(['view_production', 'manage_production'])
                 <a href="{{ route('production.board') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('production.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Production</a>
+            @endcanany
+            @canany(['view_quality_control', 'manage_quality_control'])
+                <a href="{{ route('quality-control.queue') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('quality-control.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Quality Control</a>
             @endcanany
         @endcanany
 

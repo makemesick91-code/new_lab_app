@@ -8,6 +8,8 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Models\ProductionStep;
+use App\Modules\QualityControl\Models\QualityControl;
+use App\Modules\QualityControl\Models\RemakeRequest;
 use Database\Factories\LabOrderFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -35,6 +37,10 @@ class LabOrder extends Model
     public const STATUS_ON_HOLD = 'ON_HOLD';
 
     public const STATUS_QC_PENDING = 'QC_PENDING';
+
+    public const STATUS_QC_PASSED = 'QC_PASSED';
+
+    public const STATUS_REMAKE = 'REMAKE';
 
     public const STATUS_CANCELLED = 'CANCELLED';
 
@@ -154,6 +160,16 @@ class LabOrder extends Model
     public function productionSteps(): HasMany
     {
         return $this->hasMany(ProductionStep::class, 'lab_order_id');
+    }
+
+    public function qualityControls(): HasMany
+    {
+        return $this->hasMany(QualityControl::class, 'lab_order_id');
+    }
+
+    public function remakeRequests(): HasMany
+    {
+        return $this->hasMany(RemakeRequest::class, 'lab_order_id');
     }
 
     protected static function newFactory(): LabOrderFactory

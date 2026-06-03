@@ -29,6 +29,11 @@ class Attachment extends Model
         'STL_REVISION',
         'REFERENCE_IMAGE',
         'PRODUCTION_NOTE',
+        // Sprint 5 — Quality Control evidence
+        'QC_PHOTO',
+        'QC_NOTE',
+        'QC_EVIDENCE',
+        'QC_REJECTION_EVIDENCE',
     ];
 
     protected $table = 'sys_attachments';

@@ -43,6 +43,19 @@ class AuditLog extends Model
 
     public const ACTION_UPDATE_PRODUCTION_STEP = 'UPDATE_PRODUCTION_STEP';
 
+    // Sprint 5 — Quality Control actions
+    public const ACTION_START_QC = 'START_QC';
+
+    public const ACTION_PASS_QC = 'PASS_QC';
+
+    public const ACTION_REJECT_QC = 'REJECT_QC';
+
+    public const ACTION_REQUEST_REMAKE = 'REQUEST_REMAKE';
+
+    public const ACTION_UPDATE_QC_CHECKLIST = 'UPDATE_QC_CHECKLIST';
+
+    public const ACTION_UPLOAD_QC_EVIDENCE = 'UPLOAD_QC_EVIDENCE';
+
     protected $table = 'sys_audit_logs';
 
     protected $fillable = [
