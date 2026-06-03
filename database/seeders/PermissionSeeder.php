@@ -18,6 +18,7 @@ class PermissionSeeder extends Seeder
         'view dashboard',
         'manage users',
         'manage roles',
+        'manage permissions',
         'manage master data',
         'manage lab orders',
         'manage assignments',

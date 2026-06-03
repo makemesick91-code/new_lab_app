@@ -17,11 +17,22 @@
             Dashboard
         </a>
 
-        @role('Super Admin')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Administration</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">User Management <span class="text-xs text-gray-400">(Sprint 1)</span></a>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Roles &amp; Permissions <span class="text-xs text-gray-400">(Sprint 1)</span></a>
-        @endrole
+        {{-- Settings: each item appears only if the user holds the matching permission (TASK-0106). --}}
+        @canany(['manage users', 'manage roles', 'manage permissions'])
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Settings</p>
+            @can('manage users')
+                <a href="{{ route('settings.users.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.users.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Users</a>
+            @endcan
+            @can('manage roles')
+                <a href="{{ route('settings.roles.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.roles.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Roles</a>
+            @endcan
+            @can('manage permissions')
+                <a href="{{ route('settings.permissions.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.permissions.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Permissions</a>
+            @endcan
+        @endcanany
 
         @hasanyrole('Super Admin|Admin Lab')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Master Data</p>

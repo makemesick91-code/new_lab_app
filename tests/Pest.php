@@ -44,7 +44,35 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+use App\Models\User;
+use Database\Seeders\PermissionSeeder;
+use Database\Seeders\RoleSeeder;
+
+/**
+ * Seed the Sprint 0 roles & permissions for access-control tests.
+ */
+function seedAccessControl(): void
 {
-    // ..
+    test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+}
+
+/**
+ * A user with the Super Admin role (bypasses every gate).
+ */
+function superAdmin(): User
+{
+    return User::factory()->create()->assignRole('Super Admin');
+}
+
+/**
+ * A user granted only the given permission names (no Super Admin bypass).
+ *
+ * @param  array<int, string>  $permissions
+ */
+function userWith(array $permissions): User
+{
+    $user = User::factory()->create();
+    $user->givePermissionTo($permissions);
+
+    return $user;
 }
