@@ -16,6 +16,18 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
+use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
+use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
+use App\Modules\LabOrder\Interfaces\StatusLogRepositoryInterface;
+use App\Modules\LabOrder\Models\Attachment;
+use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabOrder\Policies\AttachmentPolicy;
+use App\Modules\LabOrder\Policies\LabOrderPolicy;
+use App\Modules\LabOrder\Repositories\AttachmentRepository;
+use App\Modules\LabOrder\Repositories\AuditLogRepository;
+use App\Modules\LabOrder\Repositories\LabOrderRepository;
+use App\Modules\LabOrder\Repositories\StatusLogRepository;
 use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
@@ -31,6 +43,7 @@ use App\Modules\Technician\Repositories\TechnicianRepository;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use App\Modules\User\Policies\UserPolicy;
 use App\Modules\User\Repositories\UserRepository;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Permission\Models\Role;
@@ -55,6 +68,10 @@ class RepositoryServiceProvider extends ServiceProvider
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
+        LabOrderRepositoryInterface::class => LabOrderRepository::class,
+        AttachmentRepositoryInterface::class => AttachmentRepository::class,
+        AuditLogRepositoryInterface::class => AuditLogRepository::class,
+        StatusLogRepositoryInterface::class => StatusLogRepository::class,
     ];
 
     /**
@@ -68,6 +85,8 @@ class RepositoryServiceProvider extends ServiceProvider
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,
         Technician::class => TechnicianPolicy::class,
+        LabOrder::class => LabOrderPolicy::class,
+        Attachment::class => AttachmentPolicy::class,
     ];
 
     public function register(): void
@@ -79,6 +98,13 @@ class RepositoryServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Polymorphic alias so sys_attachments/sys_audit_logs store entity_type
+        // as the table name (e.g. "trx_lab_orders") instead of the FQCN.
+        // Non-enforcing: other morphs (e.g. Spatie roles) keep their defaults.
+        Relation::morphMap([
+            LabOrder::ENTITY_TYPE => LabOrder::class,
+        ]);
+
         foreach ($this->policies as $model => $policy) {
             Gate::policy($model, $policy);
         }

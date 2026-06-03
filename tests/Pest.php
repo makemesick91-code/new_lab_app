@@ -45,6 +45,10 @@ expect()->extend('toBeOne', function () {
 */
 
 use App\Models\User;
+use App\Modules\Clinic\Models\Clinic;
+use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LabService\Models\LabService;
+use App\Modules\Patient\Models\Patient;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 
@@ -54,6 +58,33 @@ use Database\Seeders\RoleSeeder;
 function seedAccessControl(): void
 {
     test()->seed([PermissionSeeder::class, RoleSeeder::class]);
+}
+
+/**
+ * Build a valid StoreLabOrderRequest payload, creating the required master data.
+ *
+ * @param  array<string, mixed>  $overrides
+ * @return array<string, mixed>
+ */
+function labOrderPayload(array $overrides = []): array
+{
+    $clinic = Clinic::factory()->create();
+    $doctor = Doctor::factory()->create(['clinic_id' => $clinic->id]);
+    $patient = Patient::factory()->create(['clinic_id' => $clinic->id, 'doctor_id' => $doctor->id]);
+    $service = LabService::factory()->create();
+
+    return array_merge([
+        'clinic_id' => $clinic->id,
+        'doctor_id' => $doctor->id,
+        'patient_id' => $patient->id,
+        'order_date' => now()->toDateString(),
+        'due_date' => now()->addDays(5)->toDateString(),
+        'priority' => 'NORMAL',
+        'notes' => 'Test order',
+        'items' => [
+            ['lab_service_id' => $service->id, 'tooth_number' => '11', 'quantity' => 2, 'unit_price' => 1000000],
+        ],
+    ], $overrides);
 }
 
 /**

@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Interfaces;
 
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface PatientRepositoryInterface
 {
@@ -11,6 +12,8 @@ interface PatientRepositoryInterface
      * @param  array{search?: string|null, clinic_id?: int|null, doctor_id?: int|null}  $filters
      */
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator;
+
+    public function listAll(): Collection;
 
     public function findById(int $id): ?Patient;
 

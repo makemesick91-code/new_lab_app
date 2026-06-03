@@ -5,9 +5,15 @@ namespace App\Modules\Patient\Repositories;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 class PatientRepository implements PatientRepositoryInterface
 {
+    public function listAll(): Collection
+    {
+        return Patient::query()->where('is_active', true)->orderBy('name')->get();
+    }
+
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator
     {
         $search = $filters['search'] ?? null;

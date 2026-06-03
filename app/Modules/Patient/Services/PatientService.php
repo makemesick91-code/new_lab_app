@@ -5,6 +5,7 @@ namespace App\Modules\Patient\Services;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class PatientService
@@ -16,6 +17,11 @@ class PatientService
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
     {
         return $this->patients->paginate($filters, $perPage);
+    }
+
+    public function listAll(): Collection
+    {
+        return $this->patients->listAll();
     }
 
     public function find(int $id): ?Patient

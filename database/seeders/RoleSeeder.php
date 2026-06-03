@@ -25,29 +25,39 @@ class RoleSeeder extends Seeder
             'manage lab services',
             'manage technicians',
             'manage lab orders',
+            'manage_lab_orders',
+            'view_lab_orders',
+            'create_lab_orders',
+            'update_lab_orders',
+            'cancel_lab_orders',
             'manage assignments',
             'view reports',
         ],
         'Technician' => [
             'view dashboard',
             'manage assignments',
+            'view_lab_orders',
         ],
         'Quality Control' => [
             'view dashboard',
             'manage qc',
+            'view_lab_orders',
         ],
         'Courier' => [
             'view dashboard',
             'manage deliveries',
+            'view_lab_orders',
         ],
         'Finance' => [
             'view dashboard',
             'manage invoices',
             'manage payments',
             'view reports',
+            'view_lab_orders',
         ],
         'Doctor' => [
             'view dashboard',
+            'view_lab_orders',
         ],
     ];
 

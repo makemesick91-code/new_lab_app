@@ -59,11 +59,14 @@
             @endcan
         @endcanany
 
-        @hasanyrole('Super Admin|Admin Lab')
+        @canany(['view_lab_orders', 'manage_lab_orders'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Operations</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Lab Orders <span class="text-xs text-gray-400">(Sprint 3)</span></a>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Assignments <span class="text-xs text-gray-400">(Sprint 4)</span></a>
-        @endhasanyrole
+            <a href="{{ route('lab-orders.index') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('lab-orders.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Lab Orders</a>
+            @hasanyrole('Super Admin|Admin Lab')
+                <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Assignments <span class="text-xs text-gray-400">(Sprint 4)</span></a>
+            @endhasanyrole
+        @endcanany
 
         @role('Technician')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Production</p>

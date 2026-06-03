@@ -25,7 +25,7 @@ class PermissionController extends Controller
         return view('settings.permissions.index', [
             'permissions' => $this->permissionService->list(
                 ['search' => $request->string('search')->toString() ?: null],
-                15
+                50
             ),
             'search' => $request->string('search')->toString(),
         ]);

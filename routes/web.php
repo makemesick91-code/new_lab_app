@@ -5,6 +5,8 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\LabOrder\Controllers\AttachmentController;
+use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\Technician\Controllers\TechnicianController;
@@ -90,6 +92,34 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::patch('technicians/{technician}/activate', [TechnicianController::class, 'activate'])->name('technicians.activate');
         Route::patch('technicians/{technician}/deactivate', [TechnicianController::class, 'deactivate'])->name('technicians.deactivate');
     });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 3 — Lab Order Core
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->group(function () {
+    Route::get('lab-orders', [LabOrderController::class, 'index'])
+        ->name('lab-orders.index')->middleware('permission:view_lab_orders|manage_lab_orders');
+    Route::get('lab-orders/create', [LabOrderController::class, 'create'])
+        ->name('lab-orders.create')->middleware('permission:create_lab_orders|manage_lab_orders');
+    Route::post('lab-orders', [LabOrderController::class, 'store'])
+        ->name('lab-orders.store')->middleware('permission:create_lab_orders|manage_lab_orders');
+    Route::get('lab-orders/{labOrder}', [LabOrderController::class, 'show'])
+        ->name('lab-orders.show')->middleware('permission:view_lab_orders|manage_lab_orders');
+    Route::get('lab-orders/{labOrder}/edit', [LabOrderController::class, 'edit'])
+        ->name('lab-orders.edit')->middleware('permission:update_lab_orders|manage_lab_orders');
+    Route::put('lab-orders/{labOrder}', [LabOrderController::class, 'update'])
+        ->name('lab-orders.update')->middleware('permission:update_lab_orders|manage_lab_orders');
+    Route::post('lab-orders/{labOrder}/cancel', [LabOrderController::class, 'cancel'])
+        ->name('lab-orders.cancel')->middleware('permission:cancel_lab_orders|manage_lab_orders');
+
+    // Attachments — authorization enforced by LabOrderPolicy in the controller.
+    Route::post('lab-orders/{labOrder}/attachments', [AttachmentController::class, 'upload'])
+        ->name('lab-orders.attachments.upload');
+    Route::delete('lab-orders/{labOrder}/attachments/{attachment}', [AttachmentController::class, 'destroy'])
+        ->name('lab-orders.attachments.destroy');
 });
 
 require __DIR__.'/auth.php';

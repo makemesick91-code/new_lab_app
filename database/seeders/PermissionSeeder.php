@@ -25,6 +25,12 @@ class PermissionSeeder extends Seeder
         'manage patients',
         'manage lab services',
         'manage technicians',
+        // Sprint 3 — Lab Order (underscore convention per sprint_3_technical_design.md)
+        'manage_lab_orders',
+        'view_lab_orders',
+        'create_lab_orders',
+        'update_lab_orders',
+        'cancel_lab_orders',
         'manage lab orders',
         'manage assignments',
         'manage qc',
