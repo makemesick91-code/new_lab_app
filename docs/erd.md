@@ -1429,7 +1429,509 @@ Notes:
 
 ---
 
-# 15. V2 ERD Candidates
+# 15. Sprint 5 ERD - Quality Control Workflow
+
+Bagian ini memperluas ERD Sprint 3 dan Sprint 4 agar mendukung **Sprint 5 -
+Quality Control Workflow** (`qc_workflow_design.md`). Sprint 5 memproses Lab
+Order dari `QC_PENDING` menjadi `QC_PASSED` atau `REMAKE`.
+
+Sprint 5 tidak mengimplementasikan Delivery, Proof of Delivery, Invoice,
+Payment, atau Reporting dashboard.
+
+## 15.1 Tabel dalam scope Sprint 5
+
+```text
+trx_lab_quality_controls
+trx_lab_qc_checklists
+trx_lab_remake_requests
+trx_lab_order_status_logs
+sys_attachments
+sys_audit_logs
+```
+
+Catatan:
+
+```text
+trx_lab_order_status_logs, sys_attachments, dan sys_audit_logs sudah disiapkan
+di Sprint 3 dan digunakan ulang pada Sprint 5.
+```
+
+Entity purpose:
+
+| Entity | Purpose |
+| --- | --- |
+| `trx_lab_quality_controls` | Stores each QC review session for a Lab Order. |
+| `trx_lab_qc_checklists` | Stores checklist items and results per QC review. |
+| `trx_lab_remake_requests` | Stores remake request details when QC result requires remake. |
+| `sys_attachments` | Stores QC evidence by polymorphic `entity_type` and `entity_id`. |
+
+## 15.2 High-Level ERD Update
+
+```text
+trx_lab_orders
+|-- trx_lab_quality_controls
+|-- trx_lab_remake_requests
+|-- sys_attachments (QC evidence via polymorphic)
+`-- sys_audit_logs
+
+trx_lab_quality_controls
+|-- trx_lab_qc_checklists
+|-- trx_lab_remake_requests
+`-- sys_attachments (QC evidence via polymorphic)
+```
+
+QC photos/evidence:
+
+```text
+QC evidence uses sys_attachments.
+trx_lab_qc_photos is not used in V1 unless later required by schema or compliance.
+```
+
+## 15.3 Required Relationships
+
+```text
+trx_lab_orders
+  1 -> many trx_lab_quality_controls
+
+users
+  1 -> many trx_lab_quality_controls (inspected_by / qc_by)
+
+trx_lab_quality_controls
+  1 -> many trx_lab_qc_checklists
+
+trx_lab_quality_controls
+  1 -> many trx_lab_remake_requests
+
+trx_lab_orders
+  1 -> many trx_lab_remake_requests
+
+users
+  1 -> many trx_lab_remake_requests (requested_by)
+
+trx_lab_quality_controls
+  polymorphic -> sys_attachments as QC evidence
+
+trx_lab_orders
+  polymorphic -> sys_attachments as order-level QC evidence
+```
+
+Implementation naming note:
+
+```text
+The existing schema uses qc_by on trx_lab_quality_controls.
+Sprint 5 ERD treats qc_by as the inspector/inspected_by relationship.
+```
+
+## 15.4 Mermaid ERD - Sprint 5
+
+```mermaid
+erDiagram
+    trx_lab_orders ||--o{ trx_lab_quality_controls : has_qc_reviews
+    users ||--o{ trx_lab_quality_controls : inspects
+
+    trx_lab_quality_controls ||--o{ trx_lab_qc_checklists : contains
+    users ||--o{ trx_lab_qc_checklists : checks
+
+    trx_lab_quality_controls ||--o{ trx_lab_remake_requests : may_create
+    trx_lab_orders ||--o{ trx_lab_remake_requests : has_remakes
+    users ||--o{ trx_lab_remake_requests : requests
+
+    trx_lab_quality_controls ||--o{ sys_attachments : has_evidence
+    trx_lab_orders ||--o{ sys_attachments : has_qc_evidence
+```
+
+This Mermaid diagram extends the main ERD and must be merged with existing
+Sprint 1-4 relationships during implementation. Existing relationships must not
+be removed.
+
+## 15.5 Entity Relationship Details
+
+### trx_lab_orders -> trx_lab_quality_controls
+
+```text
+Relationship:
+trx_lab_orders 1 -> many trx_lab_quality_controls
+
+Foreign Key:
+trx_lab_quality_controls.lab_order_id -> trx_lab_orders.id
+```
+
+Meaning:
+
+```text
+One Lab Order can have many QC review records, especially when remake requires
+another QC cycle.
+```
+
+### users -> trx_lab_quality_controls
+
+```text
+Relationship:
+users 1 -> many trx_lab_quality_controls
+
+Foreign Key:
+trx_lab_quality_controls.qc_by -> users.id
+```
+
+Meaning:
+
+```text
+One QC Inspector can perform many QC reviews.
+```
+
+### trx_lab_quality_controls -> trx_lab_qc_checklists
+
+```text
+Relationship:
+trx_lab_quality_controls 1 -> many trx_lab_qc_checklists
+
+Foreign Key:
+trx_lab_qc_checklists.qc_id -> trx_lab_quality_controls.id
+```
+
+Meaning:
+
+```text
+One QC review has many checklist item results.
+```
+
+### trx_lab_quality_controls -> trx_lab_remake_requests
+
+```text
+Relationship:
+trx_lab_quality_controls 1 -> many trx_lab_remake_requests
+
+Foreign Key:
+trx_lab_remake_requests.qc_id -> trx_lab_quality_controls.id
+```
+
+Meaning:
+
+```text
+One QC review may create one or more remake request records when result is
+REJECTED or REVISION.
+```
+
+### trx_lab_orders -> trx_lab_remake_requests
+
+```text
+Relationship:
+trx_lab_orders 1 -> many trx_lab_remake_requests
+
+Foreign Key:
+trx_lab_remake_requests.lab_order_id -> trx_lab_orders.id
+```
+
+Meaning:
+
+```text
+One Lab Order can have many remake requests across repeated QC cycles.
+```
+
+### users -> trx_lab_remake_requests
+
+```text
+Relationship:
+users 1 -> many trx_lab_remake_requests
+
+Foreign Key:
+trx_lab_remake_requests.requested_by -> users.id
+```
+
+Meaning:
+
+```text
+One QC Inspector or authorized Admin Lab user can request many remakes.
+```
+
+### trx_lab_quality_controls -> sys_attachments
+
+```text
+Relationship:
+trx_lab_quality_controls polymorphic -> many sys_attachments
+
+Polymorphic fields:
+sys_attachments.entity_type = trx_lab_quality_controls
+sys_attachments.entity_id   = trx_lab_quality_controls.id
+```
+
+Meaning:
+
+```text
+QC evidence such as photos, rejection proof, reference images, and QC documents
+are stored through sys_attachments.
+```
+
+### trx_lab_orders -> sys_attachments for QC evidence
+
+```text
+Relationship:
+trx_lab_orders polymorphic -> many sys_attachments
+
+Polymorphic fields:
+sys_attachments.entity_type = trx_lab_orders
+sys_attachments.entity_id   = trx_lab_orders.id
+```
+
+Meaning:
+
+```text
+Order-level QC evidence can also be attached directly to Lab Order when the file
+needs to be visible across Production, QC, and future Delivery handoff.
+```
+
+## 15.6 Recommended Entity Fields
+
+### trx_lab_quality_controls
+
+```text
+id
+lab_order_id
+qc_by
+qc_date
+started_at
+completed_at
+result
+notes
+created_at
+updated_at
+```
+
+Allowed QC result:
+
+```text
+PASSED
+REJECTED
+REVISION
+```
+
+### trx_lab_qc_checklists
+
+```text
+id
+qc_id
+checklist_item
+result
+notes
+checked_by
+checked_at
+created_at
+updated_at
+```
+
+Allowed checklist result:
+
+```text
+PASS
+FAIL
+N/A
+```
+
+### trx_lab_remake_requests
+
+```text
+id
+lab_order_id
+qc_id
+reason
+notes
+requested_by
+requested_at
+assigned_technician_id
+status
+created_at
+updated_at
+deleted_at
+```
+
+Recommended remake request status:
+
+```text
+OPEN
+ASSIGNED
+IN_PRODUCTION
+RETURNED_TO_QC
+CLOSED
+```
+
+## 15.7 QC Evidence Categories
+
+QC evidence uses:
+
+```text
+sys_attachments
+```
+
+Recommended `category` values:
+
+```text
+QC_PHOTO
+QC_REJECTION_PROOF
+QC_REFERENCE_IMAGE
+QC_NOTE
+QC_DOCUMENT
+```
+
+Rules:
+
+```text
+1. Do not create trx_lab_qc_photos in V1.
+2. Store file path only in sys_attachments.
+3. Attach decision-specific evidence to trx_lab_quality_controls.
+4. Attach general order evidence to trx_lab_orders.
+5. Upload and delete actions must be audited.
+```
+
+## 15.8 Status Flow Notes
+
+Sprint 5 status flow:
+
+```text
+QC_PENDING
+   |
+   v
+QC REVIEW
+   |
+   |-- PASSED   -> QC_PASSED
+   |
+   |-- REJECTED -> REMAKE
+   |
+   |-- REVISION -> REMAKE
+```
+
+Important distinction:
+
+```text
+QC Result:
+PASSED, REJECTED, REVISION
+
+Lab Order Status:
+QC_PASSED, REMAKE
+```
+
+Rules:
+
+```text
+1. QC REVIEW is an operational activity, not a Lab Order status.
+2. PASSED, REJECTED, and REVISION are QC result values.
+3. QC_PASSED and REMAKE are Lab Order statuses.
+4. REVISION must not be used as Lab Order status.
+5. REMAKE is used for both REJECTED and REVISION QC results.
+```
+
+## 15.9 Remake Flow Notes
+
+Remake flow:
+
+```text
+QC_PENDING
+-> REMAKE
+-> ASSIGNED
+-> IN_PRODUCTION
+-> QC_PENDING
+```
+
+Rules:
+
+```text
+1. Remake preserves QC history.
+2. Remake creates a trx_lab_remake_requests record.
+3. Remake does not delete original production data.
+4. Remake does not delete original assignment records.
+5. Remake does not delete original work logs.
+6. Remake reuses Sprint 4 Production Workflow.
+7. Returning to QC creates another QC review cycle.
+```
+
+## 15.10 Foreign Key Additions
+
+```text
+trx_lab_qc_checklists.qc_id       -> trx_lab_quality_controls.id
+trx_lab_qc_checklists.checked_by  -> users.id
+
+trx_lab_remake_requests.lab_order_id -> trx_lab_orders.id
+trx_lab_remake_requests.qc_id        -> trx_lab_quality_controls.id
+trx_lab_remake_requests.requested_by -> users.id
+```
+
+Optional reference:
+
+```text
+trx_lab_remake_requests.assigned_technician_id -> mst_technicians.id
+```
+
+## 15.11 Index Additions
+
+```text
+trx_lab_qc_checklists.qc_id INDEX
+trx_lab_qc_checklists.result INDEX
+trx_lab_qc_checklists.checked_by INDEX
+
+trx_lab_remake_requests.lab_order_id INDEX
+trx_lab_remake_requests.qc_id INDEX
+trx_lab_remake_requests.requested_by INDEX
+trx_lab_remake_requests.status INDEX
+trx_lab_remake_requests.requested_at INDEX
+
+sys_attachments.entity_type INDEX
+sys_attachments.entity_id INDEX
+sys_attachments.category INDEX
+```
+
+## 15.12 Migration Dependency Order Additions
+
+Sprint 5 entities should be created after `trx_lab_quality_controls` and before
+Delivery entities:
+
+```text
+17. trx_lab_quality_controls
+18. trx_lab_qc_checklists
+19. trx_lab_remake_requests
+20. trx_lab_deliveries
+```
+
+`sys_attachments` and `sys_audit_logs` remain shared system tables.
+
+## 15.13 Sprint 5 ERD Decisions
+
+```text
+1. QC review is stored in trx_lab_quality_controls.
+2. QC checklist items are stored in trx_lab_qc_checklists.
+3. QC evidence reuses sys_attachments.
+4. trx_lab_qc_photos is not used in V1 unless later required.
+5. QC result and Lab Order status are separate concepts.
+6. PASSED, REJECTED, and REVISION are QC results.
+7. QC_PASSED and REMAKE are Lab Order statuses.
+8. Remake requests are stored in trx_lab_remake_requests.
+9. Remake preserves original QC, production, and order history.
+10. Remake reuses Sprint 4 Production Workflow.
+11. Delivery is not part of Sprint 5.
+12. Invoice is not part of Sprint 5.
+13. Payment is not part of Sprint 5.
+14. Reporting is not part of Sprint 5.
+```
+
+## 15.14 Sprint 5 ERD Validation Checklist
+
+```text
+- QC review entity present
+- QC checklist entity present
+- Remake request entity present
+- QC evidence uses sys_attachments
+- QC photos table excluded
+- QC result vs Lab Order status documented
+- Remake flow documented
+- Mermaid diagram updated
+- Existing Sprint 1-4 relationships preserved
+- Delivery excluded
+- Invoice excluded
+- Payment excluded
+- Reporting excluded
+```
+
+---
+
+# 16. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 
