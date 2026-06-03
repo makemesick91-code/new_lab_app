@@ -34,6 +34,11 @@ class Attachment extends Model
         'QC_NOTE',
         'QC_EVIDENCE',
         'QC_REJECTION_EVIDENCE',
+        // Sprint 6 - Delivery & POD evidence
+        'DELIVERY_PHOTO',
+        'POD_SIGNATURE',
+        'POD_RECEIVER_PHOTO',
+        'DELIVERY_EVIDENCE',
     ];
 
     protected $table = 'sys_attachments';

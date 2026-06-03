@@ -4,6 +4,7 @@ namespace App\Modules\LabOrder\Models;
 
 use App\Models\User;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
@@ -39,6 +40,14 @@ class LabOrder extends Model
     public const STATUS_QC_PENDING = 'QC_PENDING';
 
     public const STATUS_QC_PASSED = 'QC_PASSED';
+
+    public const STATUS_READY_FOR_DELIVERY = 'READY_FOR_DELIVERY';
+
+    public const STATUS_IN_DELIVERY = 'IN_DELIVERY';
+
+    public const STATUS_DELIVERED = 'DELIVERED';
+
+    public const STATUS_COMPLETED = 'COMPLETED';
 
     public const STATUS_REMAKE = 'REMAKE';
 
@@ -170,6 +179,11 @@ class LabOrder extends Model
     public function remakeRequests(): HasMany
     {
         return $this->hasMany(RemakeRequest::class, 'lab_order_id');
+    }
+
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(Delivery::class, 'lab_order_id');
     }
 
     protected static function newFactory(): LabOrderFactory

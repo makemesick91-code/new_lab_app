@@ -59,7 +59,7 @@
             @endcan
         @endcanany
 
-        @canany(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control'])
+        @canany(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control', 'view_delivery', 'manage_delivery'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Operations</p>
             @canany(['view_lab_orders', 'manage_lab_orders'])
                 <a href="{{ route('lab-orders.index') }}"
@@ -72,6 +72,10 @@
             @canany(['view_quality_control', 'manage_quality_control'])
                 <a href="{{ route('quality-control.queue') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('quality-control.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Quality Control</a>
+            @endcanany
+            @canany(['view_delivery', 'manage_delivery'])
+                <a href="{{ route('deliveries.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Deliveries</a>
             @endcanany
         @endcanany
 
@@ -89,7 +93,7 @@
 
         @role('Courier')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Delivery</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Deliveries <span class="text-xs text-gray-400">(Sprint 6)</span></a>
+            <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">My Deliveries</a>
         @endrole
 
         @role('Finance')

@@ -56,6 +56,21 @@ class AuditLog extends Model
 
     public const ACTION_UPLOAD_QC_EVIDENCE = 'UPLOAD_QC_EVIDENCE';
 
+    // Sprint 6 - Delivery & POD actions
+    public const ACTION_CREATE_DELIVERY = 'CREATE_DELIVERY';
+
+    public const ACTION_ASSIGN_COURIER = 'ASSIGN_COURIER';
+
+    public const ACTION_REASSIGN_COURIER = 'REASSIGN_COURIER';
+
+    public const ACTION_START_DELIVERY = 'START_DELIVERY';
+
+    public const ACTION_MARK_DELIVERED = 'MARK_DELIVERED';
+
+    public const ACTION_COMPLETE_DELIVERY = 'COMPLETE_DELIVERY';
+
+    public const ACTION_UPLOAD_POD = 'UPLOAD_POD';
+
     protected $table = 'sys_audit_logs';
 
     protected $fillable = [

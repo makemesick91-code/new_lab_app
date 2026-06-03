@@ -12,6 +12,10 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\Delivery\Interfaces\DeliveryRepositoryInterface;
+use App\Modules\Delivery\Models\Delivery;
+use App\Modules\Delivery\Policies\DeliveryPolicy;
+use App\Modules\Delivery\Repositories\DeliveryRepository;
 use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
@@ -98,6 +102,7 @@ class RepositoryServiceProvider extends ServiceProvider
         QualityControlRepositoryInterface::class => QualityControlRepository::class,
         ChecklistRepositoryInterface::class => ChecklistRepository::class,
         RemakeRequestRepositoryInterface::class => RemakeRequestRepository::class,
+        DeliveryRepositoryInterface::class => DeliveryRepository::class,
     ];
 
     /**
@@ -128,6 +133,15 @@ class RepositoryServiceProvider extends ServiceProvider
         'qc.uploadEvidence' => [QualityControlPolicy::class, 'uploadEvidence'],
         'qc.checklists.update' => [ChecklistPolicy::class, 'updateChecklist'],
         'qc.requestRemake' => [RemakePolicy::class, 'requestRemake'],
+        // Sprint 6 - Delivery & POD
+        'delivery.viewAny' => [DeliveryPolicy::class, 'viewAny'],
+        'delivery.view' => [DeliveryPolicy::class, 'view'],
+        'delivery.create' => [DeliveryPolicy::class, 'create'],
+        'delivery.assignCourier' => [DeliveryPolicy::class, 'assignCourier'],
+        'delivery.startDelivery' => [DeliveryPolicy::class, 'startDelivery'],
+        'delivery.markDelivered' => [DeliveryPolicy::class, 'markDelivered'],
+        'delivery.completeDelivery' => [DeliveryPolicy::class, 'completeDelivery'],
+        'delivery.uploadPod' => [DeliveryPolicy::class, 'uploadPod'],
     ];
 
     /**
@@ -143,6 +157,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Technician::class => TechnicianPolicy::class,
         LabOrder::class => LabOrderPolicy::class,
         Attachment::class => AttachmentPolicy::class,
+        Delivery::class => DeliveryPolicy::class,
     ];
 
     public function register(): void
@@ -160,6 +175,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Relation::morphMap([
             LabOrder::ENTITY_TYPE => LabOrder::class,
             QualityControl::ENTITY_TYPE => QualityControl::class,
+            Delivery::ENTITY_TYPE => Delivery::class,
         ]);
 
         foreach ($this->policies as $model => $policy) {

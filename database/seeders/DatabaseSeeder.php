@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             LabOrderSeeder::class,
             ProductionSeeder::class,
             QualityControlSeeder::class,
+            DeliverySeeder::class,
         ]);
     }
 }

@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
@@ -187,6 +188,32 @@ Route::middleware('auth')->prefix('quality-control')->name('quality-control.')->
         ->name('remake')->middleware('permission:request_remake|manage_quality_control');
     Route::post('/{labOrder}/evidence', [QualityControlController::class, 'evidence'])
         ->name('evidence.store')->middleware('permission:upload_qc_evidence|manage_quality_control');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 6 - Delivery & POD
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('deliveries')->name('deliveries.')->group(function () {
+    Route::get('/', [DeliveryController::class, 'index'])
+        ->name('index')->middleware('permission:view_delivery|manage_delivery');
+    Route::post('/', [DeliveryController::class, 'store'])
+        ->name('store')->middleware('permission:create_delivery|manage_delivery');
+    Route::get('/{delivery}', [DeliveryController::class, 'show'])
+        ->name('show')->middleware('permission:view_delivery|manage_delivery');
+    Route::post('/{delivery}/assign-courier', [DeliveryController::class, 'assignCourier'])
+        ->name('assign-courier')->middleware('permission:assign_courier|manage_delivery');
+    Route::post('/{delivery}/reassign-courier', [DeliveryController::class, 'reassignCourier'])
+        ->name('reassign-courier')->middleware('permission:assign_courier|manage_delivery');
+    Route::post('/{delivery}/start', [DeliveryController::class, 'startDelivery'])
+        ->name('start')->middleware('permission:start_delivery|manage_delivery');
+    Route::post('/{delivery}/mark-delivered', [DeliveryController::class, 'markDelivered'])
+        ->name('mark-delivered')->middleware('permission:mark_delivered|manage_delivery');
+    Route::post('/{delivery}/complete', [DeliveryController::class, 'completeDelivery'])
+        ->name('complete')->middleware('permission:complete_delivery|manage_delivery');
+    Route::post('/{delivery}/pod', [DeliveryController::class, 'uploadPod'])
+        ->name('pod')->middleware('permission:upload_pod|manage_delivery');
 });
 
 require __DIR__.'/auth.php';
