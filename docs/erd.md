@@ -84,8 +84,7 @@ mst_clinics
 
 mst_doctors
 ├── mst_patients
-├── trx_lab_orders
-└── trx_invoices
+└── trx_lab_orders
 
 
 mst_patients
@@ -106,7 +105,7 @@ trx_lab_orders
 ├── trx_lab_order_assignments
 ├── trx_lab_quality_controls
 ├── trx_lab_deliveries
-├── trx_invoices
+├── trx_invoice_items (billing link)
 ├── sys_attachments (polymorphic)
 └── sys_audit_logs (polymorphic)
 
@@ -164,8 +163,6 @@ erDiagram
 
     mst_doctors ||--o{ mst_patients : "has patients"
     mst_doctors ||--o{ trx_lab_orders : "submits orders"
-    mst_doctors ||--o{ trx_invoices : "has invoices"
-
     mst_patients ||--o{ trx_lab_orders : "has orders"
 
     mst_lab_services ||--o{ trx_lab_order_items : "used in items"
@@ -178,7 +175,7 @@ erDiagram
     trx_lab_orders ||--o{ trx_lab_production_steps : "tracks"
     trx_lab_orders ||--o{ trx_lab_quality_controls : "has qc records"
     trx_lab_orders ||--o{ trx_lab_deliveries : "has deliveries"
-    trx_lab_orders ||--o| trx_invoices : "has invoice"
+    trx_lab_orders ||--o{ trx_invoice_items : "billed as invoice items"
     trx_lab_orders ||--o{ sys_attachments : "has attachments (polymorphic)"
     trx_lab_orders ||--o{ sys_audit_logs : "audited by (polymorphic)"
 
@@ -448,23 +445,37 @@ Satu delivery wajib memiliki minimal satu foto penerimaan.
 
 ---
 
-## 5.15 trx_lab_orders → trx_invoices
+## 5.15 trx_lab_orders → trx_invoice_items
+
+Sprint 7 update:
+
+```text
+The earlier direct trx_lab_orders -> trx_invoices 1:0..1 billing design is
+superseded by the Sprint 7 invoice header and invoice item model.
+
+Active Sprint 7 relationship:
+trx_lab_orders 1 -> many trx_invoice_items
+trx_invoice_items.lab_order_id -> trx_lab_orders.id
+
+One invoice can contain multiple completed Lab Orders from the same clinic.
+```
 
 ```text
 Relationship:
-trx_lab_orders 1 → 0..1 trx_invoices
+trx_lab_orders 1 -> many trx_invoice_items
 
 Foreign Key:
-trx_invoices.lab_order_id → trx_lab_orders.id
+trx_invoice_items.lab_order_id -> trx_lab_orders.id
 
 Constraint:
-trx_invoices.lab_order_id UNIQUE
+trx_invoice_items.lab_order_id should be unique for active/non-void invoices.
 ```
 
 Artinya:
 
 ```text
-Untuk V1, satu order hanya boleh memiliki maksimal satu invoice.
+Untuk Sprint 7, satu invoice dapat berisi banyak Lab Order dari Clinic yang sama.
+Satu Lab Order tidak boleh ditagihkan lebih dari sekali pada invoice aktif.
 ```
 
 ---
@@ -657,7 +668,6 @@ Rules:
 | mst_clinics        | trx_lab_deliveries        | 1 to many   |
 | mst_clinics        | trx_invoices              | 1 to many   |
 | mst_doctors        | trx_lab_orders            | 1 to many   |
-| mst_doctors        | trx_invoices              | 1 to many   |
 | mst_patients       | trx_lab_orders            | 1 to many   |
 | mst_lab_services   | trx_lab_order_items       | 1 to many   |
 | mst_technicians    | trx_lab_order_assignments | 1 to many   |
@@ -668,7 +678,7 @@ Rules:
 | trx_lab_order_assignments | trx_lab_work_logs    | 1 to many   |
 | trx_lab_orders     | trx_lab_quality_controls  | 1 to many   |
 | trx_lab_orders     | trx_lab_deliveries        | 1 to many   |
-| trx_lab_orders     | trx_invoices              | 1 to 0..1   |
+| trx_lab_orders     | trx_invoice_items         | 1 to many   |
 | trx_lab_deliveries | trx_lab_delivery_photos   | 1 to many   |
 | trx_invoices       | trx_invoice_items         | 1 to many   |
 | trx_invoices       | trx_payments              | 1 to many   |
@@ -741,16 +751,28 @@ menjadi pusat transaksi utama.
 
 ---
 
-## 8.2 Invoice V1: One Order One Invoice
+## 8.2 Invoice Sprint 7: Multi Order One Invoice
+
+Sprint 7 update:
 
 ```text
-trx_lab_orders 1 → 0..1 trx_invoices
+This rule is no longer the active Sprint 7 billing design.
+
+Sprint 7 uses trx_invoices as the invoice header and trx_invoice_items as the
+bridge to Lab Orders. One invoice can group multiple completed Lab Orders from
+the same clinic.
+```
+
+```text
+trx_invoices 1 -> many trx_invoice_items
+trx_lab_orders 1 -> many trx_invoice_items
 ```
 
 Rule:
 
 ```text
-trx_invoices.lab_order_id wajib UNIQUE.
+Satu invoice dapat menagihkan beberapa Lab Order yang sudah COMPLETED dari
+Clinic yang sama. Lab Order billing link disimpan di trx_invoice_items.
 ```
 
 ---
@@ -940,9 +962,7 @@ uploaded_by → users.id
 ## trx_invoices
 
 ```text
-lab_order_id → trx_lab_orders.id UNIQUE
 clinic_id → mst_clinics.id
-doctor_id → mst_doctors.id
 created_by → users.id
 ```
 
@@ -950,13 +970,14 @@ created_by → users.id
 
 ```text
 invoice_id → trx_invoices.id
-lab_order_item_id → trx_lab_order_items.id
+lab_order_id → trx_lab_orders.id
 ```
 
 ## trx_payments
 
 ```text
 invoice_id → trx_invoices.id
+received_by → users.id
 created_by → users.id
 ```
 
@@ -1060,18 +1081,18 @@ uploaded_by INDEX
 
 ```text
 invoice_number UNIQUE
-lab_order_id UNIQUE
 clinic_id INDEX
-doctor_id INDEX
+created_by INDEX
 status INDEX
 invoice_date INDEX
+due_date INDEX
 ```
 
 ## trx_invoice_items
 
 ```text
 invoice_id INDEX
-lab_order_item_id INDEX
+lab_order_id INDEX
 ```
 
 ## trx_payments
@@ -1080,6 +1101,8 @@ lab_order_item_id INDEX
 payment_number UNIQUE
 invoice_id INDEX
 payment_date INDEX
+received_by INDEX
+created_by INDEX
 ```
 
 ## sys_attachments
@@ -2302,7 +2325,377 @@ the physical timestamp column used for delivery completion queries.
 
 ---
 
-# 17. V2 ERD Candidates
+# 17. Sprint 7 - Invoice & Payment ERD
+
+## Sprint 7 — Invoice & Payment ERD
+
+Sprint 7 menambahkan model invoice dan payment setelah Lab Order selesai.
+Desain aktif Sprint 7 mengganti batasan lama one-order-one-invoice dengan
+invoice header dan invoice item.
+
+Business model:
+
+```text
+Completed Lab Orders
+-> Invoice Items
+-> Invoice Header
+-> Payments
+```
+
+Rules utama:
+
+```text
+1. Invoice dibuat dari satu atau lebih Lab Order dengan status COMPLETED.
+2. Satu Invoice hanya boleh berisi Lab Order dari Clinic yang sama.
+3. Satu Invoice belongs to one Clinic.
+4. Satu Invoice has many Invoice Items.
+5. Satu Invoice Item references one Lab Order.
+6. Satu Invoice has many Payments.
+7. Outstanding amount = total_amount - paid_amount.
+8. Invoice PDF dan bukti pembayaran memakai sys_attachments polymorphic.
+9. Invoice/payment audit memakai sys_audit_logs polymorphic.
+10. trx_lab_order_status_logs tetap khusus untuk status Lab Order.
+```
+
+## 17.1 Entity: trx_invoices
+
+Purpose:
+
+```text
+Menyimpan invoice header untuk tagihan Clinic. Satu invoice dapat menagihkan
+beberapa Lab Order yang sudah COMPLETED dari Clinic yang sama.
+```
+
+Suggested fields:
+
+```text
+id
+invoice_number
+clinic_id
+invoice_date
+due_date
+status
+subtotal
+discount_amount
+tax_amount
+total_amount
+paid_amount
+outstanding_amount
+notes
+created_by
+issued_at
+voided_at
+created_at
+updated_at
+```
+
+Foreign keys:
+
+```text
+mst_clinics.id -> trx_invoices.clinic_id
+users.id       -> trx_invoices.created_by
+```
+
+Status enum:
+
+```text
+DRAFT
+ISSUED
+PARTIALLY_PAID
+PAID
+OVERDUE
+VOID
+```
+
+Notes:
+
+```text
+invoice_number must be unique.
+trx_invoices does not store lab_order_id in the active Sprint 7 design.
+Lab Order billing link is stored in trx_invoice_items.lab_order_id.
+```
+
+## 17.2 Entity: trx_invoice_items
+
+Purpose:
+
+```text
+Menyimpan detail tagihan per Lab Order. Tabel ini menjadi bridge agar satu
+Invoice dapat memuat banyak Lab Order dari Clinic yang sama.
+```
+
+Suggested fields:
+
+```text
+id
+invoice_id
+lab_order_id
+description
+quantity
+unit_price
+discount_amount
+total_price
+created_at
+updated_at
+```
+
+Foreign keys:
+
+```text
+trx_invoices.id   -> trx_invoice_items.invoice_id
+trx_lab_orders.id -> trx_invoice_items.lab_order_id
+```
+
+Notes:
+
+```text
+One invoice item belongs to one invoice.
+One invoice item references one Lab Order.
+One Lab Order should not be billed more than once unless the previous invoice is VOID.
+```
+
+## 17.3 Entity: trx_payments
+
+Purpose:
+
+```text
+Mencatat pembayaran yang diterima untuk Invoice. Satu Invoice dapat memiliki
+banyak Payment sampai total pembayaran mencapai total invoice.
+```
+
+Suggested fields:
+
+```text
+id
+payment_number
+invoice_id
+payment_date
+payment_method
+amount
+reference_number
+notes
+received_by
+created_by
+created_at
+updated_at
+```
+
+Foreign keys:
+
+```text
+trx_invoices.id -> trx_payments.invoice_id
+users.id        -> trx_payments.received_by
+users.id        -> trx_payments.created_by
+```
+
+Payment method enum:
+
+```text
+CASH
+BANK_TRANSFER
+QRIS
+CARD
+OTHER
+```
+
+Notes:
+
+```text
+payment_number must be unique.
+Payment amount must be greater than 0.
+Payment cannot be recorded for VOID invoices.
+Total paid amount cannot exceed invoice total_amount.
+```
+
+## 17.4 Required Relationships
+
+Relationship text:
+
+```text
+mst_clinics  1 -> many trx_invoices
+trx_invoices many -> 1 mst_clinics
+users        1 -> many trx_invoices as created_by
+
+trx_invoices     1 -> many trx_invoice_items
+trx_invoice_items many -> 1 trx_invoices
+trx_lab_orders   1 -> many trx_invoice_items
+trx_invoice_items many -> 1 trx_lab_orders
+
+trx_invoices 1 -> many trx_payments
+trx_payments many -> 1 trx_invoices
+users        1 -> many trx_payments as received_by
+users        1 -> many trx_payments as created_by
+
+trx_invoices polymorphic -> many sys_attachments as invoice files
+trx_payments polymorphic -> many sys_attachments as payment proof
+trx_invoices polymorphic -> many sys_audit_logs as invoice audit trail
+trx_payments polymorphic -> many sys_audit_logs as payment audit trail
+```
+
+Implementation relationship mapping:
+
+```text
+Clinic hasMany Invoice
+Invoice belongsTo Clinic
+Invoice belongsTo User as created_by
+Invoice hasMany InvoiceItem
+Invoice hasMany Payment
+Invoice morphMany Attachment
+Invoice morphMany AuditLog
+
+InvoiceItem belongsTo Invoice
+InvoiceItem belongsTo LabOrder
+
+LabOrder hasMany InvoiceItem
+
+Payment belongsTo Invoice
+Payment belongsTo User as received_by
+Payment belongsTo User as created_by
+Payment morphMany Attachment
+Payment morphMany AuditLog
+```
+
+## 17.5 Mermaid ERD - Sprint 7
+
+Diagram berikut adalah extension Sprint 7 untuk digabungkan dengan ERD utama.
+Relasi polymorphic ke attachments dan audit logs adalah logical relationship,
+bukan foreign key langsung.
+
+```mermaid
+erDiagram
+    mst_clinics ||--o{ trx_invoices : has_invoices
+    users ||--o{ trx_invoices : creates
+
+    trx_invoices ||--o{ trx_invoice_items : has_items
+    trx_lab_orders ||--o{ trx_invoice_items : billed_as_items
+
+    trx_invoices ||--o{ trx_payments : has_payments
+    users ||--o{ trx_payments : receives
+    users ||--o{ trx_payments : creates
+
+    trx_invoices ||--o{ sys_attachments : has_invoice_files
+    trx_payments ||--o{ sys_attachments : has_payment_proof
+    trx_invoices ||--o{ sys_audit_logs : audited_by
+    trx_payments ||--o{ sys_audit_logs : audited_by
+```
+
+## 17.6 Cardinality Notes
+
+```text
+1. One Clinic can have many Invoices.
+2. One Invoice belongs to exactly one Clinic.
+3. One Invoice can have many Invoice Items.
+4. One Invoice Item belongs to exactly one Invoice.
+5. One Invoice Item references exactly one Lab Order.
+6. One Lab Order can appear in invoice items only once for active/non-void invoices.
+7. One Invoice can have many Payments.
+8. One Payment belongs to exactly one Invoice.
+9. One Invoice can have many attachments, such as invoice PDF.
+10. One Payment can have many attachments, such as payment proof.
+```
+
+## 17.7 Data Integrity Notes
+
+```text
+invoice_number must be unique.
+payment_number must be unique.
+invoice_items.lab_order_id should be unique for active/non-void invoices.
+payment.amount must be greater than 0.
+total paid amount must not exceed invoice total_amount.
+outstanding_amount should equal total_amount - paid_amount.
+invoice cannot be generated from non-COMPLETED Lab Orders.
+invoice cannot mix Lab Orders from different Clinics.
+payment cannot be recorded for VOID invoice.
+invoice cannot be voided if payments already exist.
+Lab Order status logs remain in trx_lab_order_status_logs.
+Invoice and Payment activity is recorded in sys_audit_logs.
+```
+
+Suggested indexes:
+
+```text
+trx_invoices.invoice_number UNIQUE
+trx_invoices.clinic_id INDEX
+trx_invoices.status INDEX
+trx_invoices.invoice_date INDEX
+trx_invoices.due_date INDEX
+
+trx_invoice_items.invoice_id INDEX
+trx_invoice_items.lab_order_id INDEX
+
+trx_payments.payment_number UNIQUE
+trx_payments.invoice_id INDEX
+trx_payments.payment_date INDEX
+trx_payments.payment_method INDEX
+trx_payments.received_by INDEX
+trx_payments.created_by INDEX
+```
+
+## 17.8 Attachment and Audit Reuse
+
+Attachment usage:
+
+```text
+sys_attachments.entity_type / entity_id -> trx_invoices
+sys_attachments.entity_type / entity_id -> trx_payments
+```
+
+Audit usage:
+
+```text
+sys_audit_logs.entity_type / entity_id -> trx_invoices
+sys_audit_logs.entity_type / entity_id -> trx_payments
+```
+
+Important separation:
+
+```text
+trx_lab_order_status_logs records Lab Order status changes only.
+Invoice status and Payment actions use sys_audit_logs, not Lab Order status logs.
+```
+
+## 17.9 Out Of Scope - Sprint 7 ERD
+
+The following entities are not part of Sprint 7 ERD:
+
+```text
+accounting ledger
+tax reporting tables
+external payment gateway tables
+refund handling
+invoice email history
+WhatsApp notification logs
+reporting aggregation tables
+payment allocation table
+```
+
+Payment allocation table is not required because each payment is recorded
+against a single invoice in Sprint 7.
+
+## 17.10 Sprint 7 ERD Validation Checklist
+
+```text
+- trx_invoices entity documented
+- trx_invoice_items entity documented
+- trx_payments entity documented
+- One invoice can contain multiple Lab Orders from the same Clinic
+- Lab Order billing link uses trx_invoice_items.lab_order_id
+- Invoice belongs to Clinic
+- Invoice has many Invoice Items
+- Invoice has many Payments
+- Payment belongs to Invoice
+- Invoice and Payment attachments reuse sys_attachments
+- Invoice and Payment audit reuse sys_audit_logs
+- Lab Order status logs remain separate
+- One-order-one-invoice rule marked as superseded for Sprint 7
+- Accounting ledger excluded
+- Refund handling excluded
+- External payment gateway excluded
+```
+
+---
+
+# 18. V2 ERD Candidates
 
 Fitur berikut tidak masuk ERD V1:
 

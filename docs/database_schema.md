@@ -680,33 +680,43 @@ Business rule:
 
 ## trx_invoices
 
+Sprint 7 update:
+
+```text
+The old one-order-one-invoice schema is superseded. trx_invoices is now an
+invoice header for one Clinic, and Lab Order billing links are stored in
+trx_invoice_items.lab_order_id.
+```
+
 | Column             | Type          | Rule                 |
 | ------------------ | ------------- | -------------------- |
-| id                 | BIGINT        | PK                   |
-| invoice_number     | VARCHAR(50)   | UNIQUE               |
-| lab_order_id       | BIGINT        | FK trx_lab_orders.id |
+| id                 | BIGSERIAL     | PRIMARY KEY          |
+| invoice_number     | VARCHAR(50)   | UNIQUE NOT NULL      |
 | clinic_id          | BIGINT        | FK mst_clinics.id    |
-| doctor_id          | BIGINT        | FK mst_doctors.id    |
 | invoice_date       | DATE          | NOT NULL             |
 | due_date           | DATE          | NULL                 |
-| subtotal           | DECIMAL(18,2) | DEFAULT 0            |
-| discount           | DECIMAL(18,2) | DEFAULT 0            |
-| tax                | DECIMAL(18,2) | DEFAULT 0            |
-| grand_total        | DECIMAL(18,2) | DEFAULT 0            |
-| paid_amount        | DECIMAL(18,2) | DEFAULT 0            |
-| outstanding_amount | DECIMAL(18,2) | DEFAULT 0            |
-| status             | VARCHAR(50)   | DEFAULT UNPAID       |
+| status             | VARCHAR(30)   | DEFAULT DRAFT        |
+| subtotal           | NUMERIC(15,2) | DEFAULT 0            |
+| discount_amount    | NUMERIC(15,2) | DEFAULT 0            |
+| tax_amount         | NUMERIC(15,2) | DEFAULT 0            |
+| total_amount       | NUMERIC(15,2) | DEFAULT 0            |
+| paid_amount        | NUMERIC(15,2) | DEFAULT 0            |
+| outstanding_amount | NUMERIC(15,2) | DEFAULT 0            |
+| notes              | TEXT          | NULL                 |
 | created_by         | BIGINT        | FK users.id          |
-| created_at         | TIMESTAMP     |                      |
-| updated_at         | TIMESTAMP     |                      |
-| deleted_at         | TIMESTAMP     | NULL                 |
+| issued_at          | TIMESTAMP     | NULL                 |
+| voided_at          | TIMESTAMP     | NULL                 |
+| created_at         | TIMESTAMP     | NOT NULL             |
+| updated_at         | TIMESTAMP     | NOT NULL             |
 
 Status invoice:
 
 ```text
-UNPAID
-PARTIAL
+DRAFT
+ISSUED
+PARTIALLY_PAID
 PAID
+OVERDUE
 VOID
 ```
 
@@ -714,17 +724,18 @@ VOID
 
 ## trx_invoice_items
 
-| Column            | Type          | Rule                      |
-| ----------------- | ------------- | ------------------------- |
-| id                | BIGINT        | PK                        |
-| invoice_id        | BIGINT        | FK trx_invoices.id        |
-| lab_order_item_id | BIGINT        | FK trx_lab_order_items.id |
-| description       | VARCHAR(255)  | NOT NULL                  |
-| qty               | DECIMAL(18,2) | DEFAULT 1                 |
-| price             | DECIMAL(18,2) | DEFAULT 0                 |
-| subtotal          | DECIMAL(18,2) | DEFAULT 0                 |
-| created_at        | TIMESTAMP     |                           |
-| updated_at        | TIMESTAMP     |                           |
+| Column          | Type          | Rule                                 |
+| --------------- | ------------- | ------------------------------------ |
+| id              | BIGSERIAL     | PRIMARY KEY                          |
+| invoice_id      | BIGINT        | FK trx_invoices.id ON DELETE CASCADE |
+| lab_order_id    | BIGINT        | FK trx_lab_orders.id                 |
+| description     | VARCHAR(255)  | NOT NULL                             |
+| quantity        | INTEGER       | DEFAULT 1                            |
+| unit_price      | NUMERIC(15,2) | DEFAULT 0                            |
+| discount_amount | NUMERIC(15,2) | DEFAULT 0                            |
+| total_price     | NUMERIC(15,2) | DEFAULT 0                            |
+| created_at      | TIMESTAMP     | NOT NULL                             |
+| updated_at      | TIMESTAMP     | NOT NULL                             |
 
 ---
 
@@ -732,18 +743,18 @@ VOID
 
 | Column           | Type          | Rule               |
 | ---------------- | ------------- | ------------------ |
-| id               | BIGINT        | PK                 |
-| payment_number   | VARCHAR(50)   | UNIQUE             |
+| id               | BIGSERIAL     | PRIMARY KEY        |
+| payment_number   | VARCHAR(50)   | UNIQUE NOT NULL    |
 | invoice_id       | BIGINT        | FK trx_invoices.id |
 | payment_date     | DATE          | NOT NULL           |
-| payment_method   | VARCHAR(50)   | NOT NULL           |
-| amount           | DECIMAL(18,2) | NOT NULL           |
+| payment_method   | VARCHAR(30)   | NOT NULL           |
+| amount           | NUMERIC(15,2) | NOT NULL           |
 | reference_number | VARCHAR(100)  | NULL               |
 | notes            | TEXT          | NULL               |
+| received_by      | BIGINT        | FK users.id        |
 | created_by       | BIGINT        | FK users.id        |
-| created_at       | TIMESTAMP     |                    |
-| updated_at       | TIMESTAMP     |                    |
-| deleted_at       | TIMESTAMP     | NULL               |
+| created_at       | TIMESTAMP     | NOT NULL           |
+| updated_at       | TIMESTAMP     | NOT NULL           |
 
 Payment method:
 
@@ -751,8 +762,7 @@ Payment method:
 CASH
 BANK_TRANSFER
 QRIS
-DEBIT_CARD
-CREDIT_CARD
+CARD
 OTHER
 ```
 
@@ -898,8 +908,7 @@ mst_clinics
   └── trx_invoices
 
 mst_doctors
-  ├── trx_lab_orders
-  └── trx_invoices
+  └── trx_lab_orders
 
 mst_patients
   └── trx_lab_orders
@@ -916,6 +925,7 @@ users
   ├── trx_lab_remake_requests.requested_by
   ├── trx_lab_deliveries.courier_id
   ├── trx_invoices.created_by
+  ├── trx_payments.received_by
   └── trx_payments.created_by
 
 mst_technicians
@@ -928,7 +938,7 @@ trx_lab_orders
   ├── trx_lab_quality_controls
   ├── trx_lab_remake_requests
   ├── trx_lab_deliveries
-  └── trx_invoices
+  └── trx_invoice_items
 
 trx_lab_quality_controls
   ├── trx_lab_qc_checklists
@@ -1139,11 +1149,19 @@ created_by INDEX
 
 ```text
 invoice_number UNIQUE
-lab_order_id INDEX
 clinic_id INDEX
-doctor_id INDEX
 status INDEX
 invoice_date INDEX
+due_date INDEX
+created_by INDEX
+```
+
+## trx_invoice_items
+
+```text
+invoice_id INDEX
+lab_order_id INDEX
+invoice_id, lab_order_id INDEX
 ```
 
 ## trx_payments
@@ -1152,6 +1170,9 @@ invoice_date INDEX
 payment_number UNIQUE
 invoice_id INDEX
 payment_date INDEX
+payment_method INDEX
+received_by INDEX
+created_by INDEX
 ```
 
 ## sys_attachments
@@ -1255,11 +1276,14 @@ action INDEX
 ## Invoice
 
 ```text
-1. Invoice hanya bisa dibuat setelah delivery DELIVERED.
-2. Invoice dapat dibayar sebagian.
-3. Jika paid_amount = 0, status UNPAID.
-4. Jika paid_amount < grand_total, status PARTIAL.
-5. Jika paid_amount >= grand_total, status PAID.
+1. Invoice hanya bisa dibuat dari Lab Order dengan status COMPLETED.
+2. Satu invoice dapat berisi beberapa Lab Order dari Clinic yang sama.
+3. Lab Order billing link disimpan di trx_invoice_items.lab_order_id.
+4. Invoice dapat dibayar sebagian.
+5. Jika paid_amount = 0 dan invoice sudah issued, status ISSUED.
+6. Jika paid_amount > 0 dan paid_amount < total_amount, status PARTIALLY_PAID.
+7. Jika paid_amount = total_amount, status PAID.
+8. Invoice VOID tidak boleh menerima payment.
 ```
 
 ---
@@ -1396,9 +1420,11 @@ CANCELLED
 ## Invoice Status
 
 ```text
-UNPAID
-PARTIAL
+DRAFT
+ISSUED
+PARTIALLY_PAID
 PAID
+OVERDUE
 VOID
 ```
 
@@ -1526,8 +1552,10 @@ Payment    (Sprint 7)
    disiapkan di trx_lab_orders agar Sprint 6 (Delivery & POD) tanpa refactor besar.
 2. Status enum lengkap sudah didefinisikan; sprint berikutnya tinggal mengaktifkan transisi.
 3. sys_attachments & sys_audit_logs polymorphic siap dipakai QC, Delivery, Invoice, Payment.
-4. trx_lab_order_assignments, trx_lab_quality_controls, trx_lab_deliveries, trx_invoices,
-   trx_payments tetap terhubung ke trx_lab_orders sesuai ERD.
+4. trx_lab_order_assignments, trx_lab_quality_controls, dan trx_lab_deliveries
+   tetap terhubung langsung ke trx_lab_orders sesuai ERD.
+5. Sprint 7 menagihkan Lab Order melalui trx_invoice_items.lab_order_id, bukan
+   melalui trx_invoices.lab_order_id.
 ```
 
 ## 14.7 Validation Checklist — Sprint 3 Schema
@@ -2729,4 +2757,322 @@ Invoice/Payment tables.
 - Invoice excluded
 - Payment excluded
 - Reporting excluded
+```
+
+---
+
+# 18. Sprint 7 Invoice & Payment Schema
+
+## Sprint 7 — Invoice & Payment Schema
+
+Sprint 7 menambahkan schema Invoice dan Payment setelah Lab Order selesai.
+Schema ini mengikuti `docs/invoice_payment_workflow_design.md` dan `docs/erd.md`.
+
+Business model:
+
+```text
+COMPLETED Lab Orders
+-> trx_invoice_items
+-> trx_invoices
+-> trx_payments
+```
+
+Rules utama:
+
+```text
+1. One invoice belongs to one Clinic.
+2. One invoice can contain multiple completed Lab Orders from the same Clinic.
+3. One invoice has many invoice items.
+4. One invoice item references one Lab Order.
+5. One invoice has many payments.
+6. Payment is recorded against invoice.
+7. outstanding_amount = total_amount - paid_amount.
+8. Lab Order must be COMPLETED before it can be included in invoice.
+9. One Lab Order should not be invoiced more than once unless the previous invoice is VOID.
+10. Invoice cannot be voided if payment already exists.
+11. Payment cannot be recorded for VOID invoice.
+12. Payment amount must not exceed outstanding amount.
+```
+
+## 18.1 Table: trx_invoices
+
+Purpose:
+
+```text
+Stores invoice header data for one Clinic and supports grouping multiple
+completed Lab Orders into one invoice.
+```
+
+Fields:
+
+```text
+id                 BIGSERIAL PRIMARY KEY
+invoice_number     VARCHAR(50) UNIQUE NOT NULL
+clinic_id          BIGINT NOT NULL REFERENCES mst_clinics(id)
+invoice_date       DATE NOT NULL
+due_date           DATE NULL
+status             VARCHAR(30) NOT NULL DEFAULT 'DRAFT'
+subtotal           NUMERIC(15,2) NOT NULL DEFAULT 0
+discount_amount    NUMERIC(15,2) NOT NULL DEFAULT 0
+tax_amount         NUMERIC(15,2) NOT NULL DEFAULT 0
+total_amount       NUMERIC(15,2) NOT NULL DEFAULT 0
+paid_amount        NUMERIC(15,2) NOT NULL DEFAULT 0
+outstanding_amount NUMERIC(15,2) NOT NULL DEFAULT 0
+notes              TEXT NULL
+created_by         BIGINT NOT NULL REFERENCES users(id)
+issued_at          TIMESTAMP NULL
+voided_at          TIMESTAMP NULL
+created_at         TIMESTAMP NOT NULL
+updated_at         TIMESTAMP NOT NULL
+```
+
+Note:
+
+```text
+The prompt may refer to clinics(id). In this project schema, the Clinic master
+table is documented as mst_clinics.
+```
+
+Indexes:
+
+```text
+UNIQUE(invoice_number)
+INDEX(clinic_id)
+INDEX(status)
+INDEX(invoice_date)
+INDEX(due_date)
+INDEX(created_by)
+```
+
+Constraints / notes:
+
+```text
+status values: DRAFT, ISSUED, PARTIALLY_PAID, PAID, OVERDUE, VOID
+total_amount must be >= 0
+paid_amount must be >= 0
+outstanding_amount must be >= 0
+paid_amount must not exceed total_amount
+outstanding_amount should equal total_amount - paid_amount
+VOID invoice should not receive payment
+PAID invoice should have outstanding_amount = 0
+trx_invoices does not store lab_order_id in Sprint 7
+```
+
+## 18.2 Table: trx_invoice_items
+
+Purpose:
+
+```text
+Stores invoice detail lines and links invoices to completed Lab Orders.
+This table enables one invoice to contain multiple Lab Orders from the same
+Clinic.
+```
+
+Fields:
+
+```text
+id              BIGSERIAL PRIMARY KEY
+invoice_id      BIGINT NOT NULL REFERENCES trx_invoices(id) ON DELETE CASCADE
+lab_order_id    BIGINT NOT NULL REFERENCES trx_lab_orders(id)
+description     VARCHAR(255) NOT NULL
+quantity        INTEGER NOT NULL DEFAULT 1
+unit_price      NUMERIC(15,2) NOT NULL DEFAULT 0
+discount_amount NUMERIC(15,2) NOT NULL DEFAULT 0
+total_price     NUMERIC(15,2) NOT NULL DEFAULT 0
+created_at      TIMESTAMP NOT NULL
+updated_at      TIMESTAMP NOT NULL
+```
+
+Indexes:
+
+```text
+INDEX(invoice_id)
+INDEX(lab_order_id)
+INDEX(invoice_id, lab_order_id)
+UNIQUE(lab_order_id) if strict one active invoice per Lab Order is enforced at application level
+```
+
+Constraints / notes:
+
+```text
+quantity must be greater than 0
+unit_price must be >= 0
+discount_amount must be >= 0
+total_price must be >= 0
+total_price should equal quantity * unit_price - discount_amount
+lab_order_id must reference a COMPLETED Lab Order
+all Lab Orders in one invoice must belong to the same Clinic
+one Lab Order should not be included in multiple non-VOID invoices
+if PostgreSQL partial unique index is later used, enforce uniqueness only for
+non-VOID invoices through application/migration design carefully
+```
+
+## 18.3 Table: trx_payments
+
+Purpose:
+
+```text
+Stores payment records against invoices.
+```
+
+Fields:
+
+```text
+id               BIGSERIAL PRIMARY KEY
+payment_number   VARCHAR(50) UNIQUE NOT NULL
+invoice_id       BIGINT NOT NULL REFERENCES trx_invoices(id)
+payment_date     DATE NOT NULL
+payment_method   VARCHAR(30) NOT NULL
+amount           NUMERIC(15,2) NOT NULL
+reference_number VARCHAR(100) NULL
+notes            TEXT NULL
+received_by      BIGINT NOT NULL REFERENCES users(id)
+created_by       BIGINT NOT NULL REFERENCES users(id)
+created_at       TIMESTAMP NOT NULL
+updated_at       TIMESTAMP NOT NULL
+```
+
+Indexes:
+
+```text
+UNIQUE(payment_number)
+INDEX(invoice_id)
+INDEX(payment_date)
+INDEX(payment_method)
+INDEX(received_by)
+INDEX(created_by)
+```
+
+Constraints / notes:
+
+```text
+payment_method values: CASH, BANK_TRANSFER, QRIS, CARD, OTHER
+amount must be greater than 0
+payment amount must not exceed invoice outstanding amount
+payment cannot be recorded for VOID invoice
+payment updates invoice.paid_amount and invoice.outstanding_amount
+partial payment changes invoice status to PARTIALLY_PAID
+full payment changes invoice status to PAID
+```
+
+## 18.4 Relationship Summary
+
+```text
+clinics.id
+-> trx_invoices.clinic_id
+
+mst_clinics.id
+-> trx_invoices.clinic_id
+
+users.id
+-> trx_invoices.created_by
+
+trx_invoices.id
+-> trx_invoice_items.invoice_id
+
+trx_lab_orders.id
+-> trx_invoice_items.lab_order_id
+
+trx_invoices.id
+-> trx_payments.invoice_id
+
+users.id
+-> trx_payments.received_by
+
+users.id
+-> trx_payments.created_by
+```
+
+## 18.5 Audit and Attachment Notes
+
+Reusable systems:
+
+```text
+sys_audit_logs
+sys_attachments
+```
+
+Audit events:
+
+```text
+Invoice created, issued, voided, marked overdue, and marked paid events must be
+logged in sys_audit_logs.
+
+Payment created events must be logged in sys_audit_logs.
+```
+
+Attachment strategy:
+
+```text
+Future invoice PDF, payment proof, or supporting files can use sys_attachments
+with entity_type/entity_id.
+
+No dedicated invoice/payment attachment tables are needed in Sprint 7.
+```
+
+Do not create:
+
+```text
+trx_invoice_audit_logs
+trx_payment_audit_logs
+invoice-specific attachment tables
+payment-specific attachment tables
+```
+
+Important separation:
+
+```text
+trx_lab_order_status_logs remains only for Lab Order status tracking.
+Invoice and Payment actions use sys_audit_logs.
+```
+
+## 18.6 Schema Design Notes
+
+```text
+1. Use decimal/NUMERIC for monetary values, not floating point.
+2. Store calculated totals for historical consistency.
+3. Recalculate invoice totals through service layer.
+4. Avoid direct manual mutation of paid_amount and outstanding_amount outside PaymentService.
+5. Keep reporting aggregation out of Sprint 7.
+6. Store invoice header data in trx_invoices.
+7. Store Lab Order billing links in trx_invoice_items.
+8. Store payment receipts in trx_payments.
+```
+
+## 18.7 Out Of Scope - Sprint 7 Schema
+
+Do not add:
+
+```text
+accounting ledger tables
+journal entry tables
+tax reporting tables
+external payment gateway tables
+refund tables
+payment allocation tables
+reporting summary tables
+invoice email history tables
+WhatsApp notification tables
+```
+
+## 18.8 Validation Checklist - Sprint 7 Schema
+
+```text
+- Sprint 7 Invoice & Payment Schema section added
+- trx_invoices documented
+- trx_invoice_items documented
+- trx_payments documented
+- One invoice can contain multiple completed Lab Orders from the same Clinic
+- Invoice belongs to one Clinic
+- Invoice item references one Lab Order
+- Payment is recorded against invoice
+- outstanding_amount = total_amount - paid_amount
+- sys_audit_logs reused for invoice and payment audit events
+- sys_attachments reused for invoice PDF and payment proof
+- trx_lab_order_status_logs remains only for Lab Order status tracking
+- Dedicated invoice/payment audit log tables excluded
+- Dedicated invoice/payment attachment tables excluded
+- Accounting ledger excluded
+- Payment allocation tables excluded
+- Reporting aggregation excluded
 ```
