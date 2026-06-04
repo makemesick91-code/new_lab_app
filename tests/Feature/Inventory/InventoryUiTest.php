@@ -134,10 +134,28 @@ it('shows running balance on the stock card', function () {
         ->get(route('inventory.products.stock-card', $product))
         ->assertOk()
         ->assertSee('Stock Card')
+        ->assertSee('Ledger-derived Stock Card')
+        ->assertSee('Stock is calculated from inventory movements. No mutable stock column is used.')
+        ->assertSee('Inventory Location')
+        ->assertSee('Movement Type')
+        ->assertSee('Movement Timeline')
         ->assertSee('Running Balance')
+        ->assertSee('Manual inventory movement')
+        ->assertSee('No cost captured')
         ->assertSee('10.00')
         ->assertSee('7.00')
         ->assertSee('Balance Location');
+});
+
+it('shows an empty state on the stock card when no movement matches filters', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Empty Card Product']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.stock-card', $product))
+        ->assertOk()
+        ->assertSee('Ledger-derived Stock Card')
+        ->assertSee('No stock movements match these filters.')
+        ->assertSee('Opening stock, receive stock, and adjustments will appear here after they are recorded.');
 });
 
 it('does not show products or locations from another branch', function () {
