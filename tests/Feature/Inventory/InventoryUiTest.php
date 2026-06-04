@@ -21,8 +21,12 @@ it('opens the inventory dashboard for an authenticated user', function () {
         ->get(route('inventory.dashboard'))
         ->assertOk()
         ->assertSee('Inventory Dashboard')
+        ->assertSee('Inventory KPI Cards')
         ->assertSee('Total Inventory Value')
-        ->assertSee('Recent Movements');
+        ->assertSee('Inventory Value Summary')
+        ->assertSee('Stock by Location')
+        ->assertSee('Recent Movements')
+        ->assertSee('Top Consumed Materials');
 });
 
 it('opens inventory product location supplier and stock indexes', function () {
@@ -34,7 +38,10 @@ it('opens inventory product location supplier and stock indexes', function () {
         ->get(route('inventory.products.index'))
         ->assertOk()
         ->assertSee('Inventory Products')
-        ->assertSee('Zirconia UI Block');
+        ->assertSee('Zirconia UI Block')
+        ->assertSee('Branch Total Stock')
+        ->assertSee('Current Stock - Branch Total')
+        ->assertSee('Stock Status');
 
     $this->actingAs($this->user)
         ->get(route('inventory.locations.index'))
@@ -54,6 +61,27 @@ it('opens inventory product location supplier and stock indexes', function () {
         ->assertSee('Inventory Stock');
 });
 
+it('shows product detail stock summary and safe action context', function () {
+    $product = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Detail Summary Product',
+        'minimum_stock' => 10,
+    ]);
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+
+    app(InventoryStockService::class)->createOpeningStock($product->id, $location->id, 5, 100, 'detail summary');
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.show', $product))
+        ->assertOk()
+        ->assertSee('Product Summary Card')
+        ->assertSee('Current Stock - Branch Total')
+        ->assertSee('Branch / Location Stock Clarity')
+        ->assertSee('Inventory Value')
+        ->assertSee('Every stock operation requires a selected Inventory Location.')
+        ->assertSee('This product is below minimum stock.');
+});
+
 it('shows a required location selector on the opening stock form', function () {
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Opening Selector Location']);
@@ -62,10 +90,43 @@ it('shows a required location selector on the opening stock form', function () {
         ->get(route('inventory.products.opening-stock.create', $product))
         ->assertOk()
         ->assertSee('Opening Stock')
+        ->assertSee('Product Summary Panel')
+        ->assertSee('Create Initial Ledger Entry')
+        ->assertSee('Opening Stock creates an initial ledger movement.')
+        ->assertSee('Ledger-derived stock')
         ->assertSee('Inventory Location')
         ->assertSee('name="inventory_location_id"', false)
         ->assertSee('required', false)
         ->assertSee('Opening Selector Location');
+});
+
+it('shows receive stock supplier and cost guidance', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Receive Location']);
+    Supplier::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Receive Supplier']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.receive-stock.create', $product))
+        ->assertOk()
+        ->assertSee('Receive Stock Into Location')
+        ->assertSee('Receive Stock increases ledger quantity.')
+        ->assertSee('Supplier')
+        ->assertSee('Unit Cost')
+        ->assertSee('Receive Supplier')
+        ->assertSee('Capture supplier unit cost when known.');
+});
+
+it('shows adjustment out safety warning and no location disabled state', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.adjust-out.create', $product))
+        ->assertOk()
+        ->assertSee('Reduce Stock By Correction')
+        ->assertSee('Adjustment Out reduces stock and cannot be treated casually.')
+        ->assertSee('insufficient stock')
+        ->assertSee('No active Inventory Location is available.')
+        ->assertDontSee('Create Adjustment Out');
 });
 
 it('does not show inactive locations in stock operation selectors', function () {
@@ -106,10 +167,28 @@ it('shows running balance on the stock card', function () {
         ->get(route('inventory.products.stock-card', $product))
         ->assertOk()
         ->assertSee('Stock Card')
+        ->assertSee('Ledger-derived Stock Card')
+        ->assertSee('Stock is calculated from inventory movements. No mutable stock column is used.')
+        ->assertSee('Inventory Location')
+        ->assertSee('Movement Type')
+        ->assertSee('Movement Timeline')
         ->assertSee('Running Balance')
+        ->assertSee('Manual inventory movement')
+        ->assertSee('No cost captured')
         ->assertSee('10.00')
         ->assertSee('7.00')
         ->assertSee('Balance Location');
+});
+
+it('shows an empty state on the stock card when no movement matches filters', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Empty Card Product']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.stock-card', $product))
+        ->assertOk()
+        ->assertSee('Ledger-derived Stock Card')
+        ->assertSee('No stock movements match these filters.')
+        ->assertSee('Opening stock, receive stock, and adjustments will appear here after they are recorded.');
 });
 
 it('does not show products or locations from another branch', function () {
