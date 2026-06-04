@@ -90,10 +90,43 @@ it('shows a required location selector on the opening stock form', function () {
         ->get(route('inventory.products.opening-stock.create', $product))
         ->assertOk()
         ->assertSee('Opening Stock')
+        ->assertSee('Product Summary Panel')
+        ->assertSee('Create Initial Ledger Entry')
+        ->assertSee('Opening Stock creates an initial ledger movement.')
+        ->assertSee('Ledger-derived stock')
         ->assertSee('Inventory Location')
         ->assertSee('name="inventory_location_id"', false)
         ->assertSee('required', false)
         ->assertSee('Opening Selector Location');
+});
+
+it('shows receive stock supplier and cost guidance', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Receive Location']);
+    Supplier::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Receive Supplier']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.receive-stock.create', $product))
+        ->assertOk()
+        ->assertSee('Receive Stock Into Location')
+        ->assertSee('Receive Stock increases ledger quantity.')
+        ->assertSee('Supplier')
+        ->assertSee('Unit Cost')
+        ->assertSee('Receive Supplier')
+        ->assertSee('Capture supplier unit cost when known.');
+});
+
+it('shows adjustment out safety warning and no location disabled state', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.adjust-out.create', $product))
+        ->assertOk()
+        ->assertSee('Reduce Stock By Correction')
+        ->assertSee('Adjustment Out reduces stock and cannot be treated casually.')
+        ->assertSee('insufficient stock')
+        ->assertSee('No active Inventory Location is available.')
+        ->assertDontSee('Create Adjustment Out');
 });
 
 it('does not show inactive locations in stock operation selectors', function () {
