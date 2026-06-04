@@ -31,6 +31,11 @@ class DeliveryRepository implements DeliveryRepositoryInterface
             ->when($filters['doctor_id'] ?? null, fn ($q, $v) => $q->whereHas('labOrder', fn ($o) => $o->where('doctor_id', $v)))
             ->when($filters['patient_id'] ?? null, fn ($q, $v) => $q->whereHas('labOrder', fn ($o) => $o->where('patient_id', $v)))
             ->when($filters['due_date'] ?? null, fn ($q, $v) => $q->whereHas('labOrder', fn ($o) => $o->whereDate('due_date', $v)))
+            // Sprint 9 — Multi Branch Foundation: opt-in branch scope (NOT enforced).
+            // Only applies when branch_id is explicitly passed; no caller passes it today.
+            // TODO(branch-scope): derive branch_id from the authenticated user's branch
+            // (Super Admin bypass) to enforce per-branch delivery isolation.
+            ->when($filters['branch_id'] ?? null, fn ($q, $v) => $q->where('branch_id', $v))
             ->orderByRaw("CASE status WHEN 'IN_DELIVERY' THEN 0 WHEN 'READY_FOR_DELIVERY' THEN 1 WHEN 'DELIVERED' THEN 2 ELSE 3 END")
             ->orderByDesc('id')
             ->paginate(min($perPage, 100))

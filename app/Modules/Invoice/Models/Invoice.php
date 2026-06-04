@@ -3,6 +3,7 @@
 namespace App\Modules\Invoice\Models;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\AuditLog;
@@ -44,6 +45,7 @@ class Invoice extends Model
 
     protected $fillable = [
         'invoice_number',
+        'branch_id',
         'clinic_id',
         'invoice_date',
         'due_date',
@@ -79,6 +81,11 @@ class Invoice extends Model
     public function clinic(): BelongsTo
     {
         return $this->belongsTo(Clinic::class, 'clinic_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function creator(): BelongsTo

@@ -8,6 +8,10 @@ use App\Modules\AccessControl\Interfaces\RoleRepositoryInterface;
 use App\Modules\AccessControl\Policies\RolePolicy;
 use App\Modules\AccessControl\Repositories\PermissionRepository;
 use App\Modules\AccessControl\Repositories\RoleRepository;
+use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
+use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Policies\BranchPolicy;
+use App\Modules\Branch\Repositories\BranchRepository;
 use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
@@ -20,6 +24,26 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
+use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
+use App\Modules\Inventory\Models\InventoryLocation;
+use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Policies\InventoryLocationPolicy;
+use App\Modules\Inventory\Policies\InventoryMovementPolicy;
+use App\Modules\Inventory\Policies\ProductPolicy;
+use App\Modules\Inventory\Policies\SupplierPolicy;
+use App\Modules\Inventory\Repositories\InventoryLocationRepository;
+use App\Modules\Inventory\Repositories\InventoryMovementRepository;
+use App\Modules\Inventory\Repositories\ProductCategoryRepository;
+use App\Modules\Inventory\Repositories\ProductRepository;
+use App\Modules\Inventory\Repositories\ProductUnitRepository;
+use App\Modules\Inventory\Repositories\SupplierRepository;
 use App\Modules\Invoice\Interfaces\InvoiceRepositoryInterface;
 use App\Modules\Invoice\Interfaces\PaymentRepositoryInterface;
 use App\Modules\Invoice\Models\Invoice;
@@ -117,6 +141,15 @@ class RepositoryServiceProvider extends ServiceProvider
         InvoiceRepositoryInterface::class => InvoiceRepository::class,
         PaymentRepositoryInterface::class => PaymentRepository::class,
         ReportingRepositoryInterface::class => ReportingRepository::class,
+        // Sprint 9 — Multi Branch Foundation
+        BranchRepositoryInterface::class => BranchRepository::class,
+        // Sprint 12 - Inventory Core
+        InventoryLocationRepositoryInterface::class => InventoryLocationRepository::class,
+        ProductCategoryRepositoryInterface::class => ProductCategoryRepository::class,
+        ProductUnitRepositoryInterface::class => ProductUnitRepository::class,
+        ProductRepositoryInterface::class => ProductRepository::class,
+        SupplierRepositoryInterface::class => SupplierRepository::class,
+        InventoryMovementRepositoryInterface::class => InventoryMovementRepository::class,
     ];
 
     /**
@@ -183,6 +216,12 @@ class RepositoryServiceProvider extends ServiceProvider
         Delivery::class => DeliveryPolicy::class,
         Invoice::class => InvoicePolicy::class,
         Payment::class => PaymentPolicy::class,
+        // Sprint 9 — Multi Branch Foundation (skeleton; no routes authorize against it yet)
+        Branch::class => BranchPolicy::class,
+        InventoryLocation::class => InventoryLocationPolicy::class,
+        Product::class => ProductPolicy::class,
+        Supplier::class => SupplierPolicy::class,
+        InventoryMovement::class => InventoryMovementPolicy::class,
     ];
 
     public function register(): void

@@ -72,6 +72,8 @@ class RoleSeeder extends Seeder
             'view_invoice_report',
             'view_payment_report',
             'export_report',
+            'manage_inventory',
+            'view_inventory',
             'manage assignments',
             'view reports',
         ],
@@ -91,6 +93,7 @@ class RoleSeeder extends Seeder
             'view_payment',
             'view_dashboard',
             'view_production_report',
+            'view_inventory',
         ],
         'Quality Control' => [
             'view dashboard',
@@ -109,6 +112,7 @@ class RoleSeeder extends Seeder
             'view_payment',
             'view_dashboard',
             'view_qc_report',
+            'view_inventory',
         ],
         'Delivery Coordinator' => [
             'view dashboard',

@@ -25,6 +25,7 @@ class LabOrderFactory extends Factory
             'clinic_id' => Clinic::factory(),
             'doctor_id' => Doctor::factory(),
             'patient_id' => Patient::factory(),
+            'medical_record_number' => 'RM-'.fake()->unique()->numerify('######'),
             'order_date' => now()->toDateString(),
             'due_date' => now()->addDays(7)->toDateString(),
             'priority' => 'NORMAL',

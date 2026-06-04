@@ -3,6 +3,7 @@
 namespace App\Modules\LabOrder\Models;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Doctor\Models\Doctor;
@@ -80,9 +81,11 @@ class LabOrder extends Model
 
     protected $fillable = [
         'order_number',
+        'branch_id',
         'clinic_id',
         'doctor_id',
         'patient_id',
+        'medical_record_number',
         'order_date',
         'due_date',
         'priority',
@@ -108,6 +111,11 @@ class LabOrder extends Model
     public function isEditable(): bool
     {
         return ! in_array($this->status, [self::STATUS_CANCELLED, 'COMPLETED'], true);
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function clinic(): BelongsTo

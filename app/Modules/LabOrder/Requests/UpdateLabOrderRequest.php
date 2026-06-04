@@ -22,6 +22,7 @@ class UpdateLabOrderRequest extends FormRequest
             'clinic_id' => ['required', 'integer', 'exists:mst_clinics,id'],
             'doctor_id' => ['required', 'integer', 'exists:mst_doctors,id'],
             'patient_id' => ['required', 'integer', 'exists:mst_patients,id'],
+            'medical_record_number' => ['nullable', 'string', 'max:100'],
             'order_date' => ['required', 'date'],
             'due_date' => ['required', 'date', 'after_or_equal:order_date'],
             'priority' => ['required', Rule::in(LabOrder::PRIORITIES)],

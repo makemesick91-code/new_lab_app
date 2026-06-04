@@ -31,6 +31,26 @@ it('creates a lab order (happy path)', function () {
     expect(LabOrder::count())->toBe(1);
 });
 
+it('creates a lab order with a medical record number', function () {
+    $this->actingAs(userWith(['create_lab_orders']))
+        ->post(route('lab-orders.store'), labOrderPayload([
+            'medical_record_number' => 'RM-000123',
+        ]))
+        ->assertRedirect();
+
+    expect(LabOrder::first()->medical_record_number)->toBe('RM-000123');
+});
+
+it('creates a lab order without a medical record number', function () {
+    $this->actingAs(userWith(['create_lab_orders']))
+        ->post(route('lab-orders.store'), labOrderPayload([
+            'medical_record_number' => null,
+        ]))
+        ->assertRedirect();
+
+    expect(LabOrder::first()->medical_record_number)->toBeNull();
+});
+
 it('auto generates a unique order number in ADL-YYYY-XXXXXX format', function () {
     $admin = superAdmin();
     $this->actingAs($admin)->post(route('lab-orders.store'), labOrderPayload());
@@ -102,6 +122,14 @@ it('validates item quantity and unit price', function () {
         ->assertSessionHasErrors(['items.0.quantity', 'items.0.unit_price']);
 });
 
+it('validates medical record number max length', function () {
+    $this->actingAs(superAdmin())
+        ->post(route('lab-orders.store'), labOrderPayload([
+            'medical_record_number' => str_repeat('A', 101),
+        ]))
+        ->assertSessionHasErrors('medical_record_number');
+});
+
 it('updates a lab order', function () {
     $service = app(LabOrderService::class);
     $payload = labOrderPayload();
@@ -109,12 +137,14 @@ it('updates a lab order', function () {
 
     $update = $payload;
     $update['notes'] = 'Updated notes';
+    $update['medical_record_number'] = 'RM-UPDATED-001';
 
     $this->actingAs(superAdmin())
         ->put(route('lab-orders.update', $order), $update)
         ->assertRedirect(route('lab-orders.show', $order));
 
     expect($order->refresh()->notes)->toBe('Updated notes');
+    expect($order->medical_record_number)->toBe('RM-UPDATED-001');
     expect(AuditLog::where('entity_id', $order->id)->where('action', 'UPDATE')->exists())->toBeTrue();
 });
 
@@ -125,6 +155,33 @@ it('shows a lab order detail page', function () {
         ->get(route('lab-orders.show', $order))
         ->assertOk()
         ->assertSee($order->order_number);
+});
+
+it('shows the medical record number on the lab order detail page', function () {
+    $order = app(LabOrderService::class)->create(labOrderPayload([
+        'medical_record_number' => 'RM-000123',
+    ]), superAdmin());
+
+    $this->actingAs(userWith(['view_lab_orders']))
+        ->get(route('lab-orders.show', $order))
+        ->assertOk()
+        ->assertSee('RM-000123');
+});
+
+it('searches lab orders by medical record number', function () {
+    $matching = app(LabOrderService::class)->create(labOrderPayload([
+        'medical_record_number' => 'RM-SEARCH-001',
+    ]), superAdmin());
+
+    app(LabOrderService::class)->create(labOrderPayload([
+        'medical_record_number' => 'RM-OTHER-001',
+    ]), superAdmin());
+
+    $this->actingAs(userWith(['view_lab_orders']))
+        ->get(route('lab-orders.index', ['search' => 'RM-SEARCH-001']))
+        ->assertOk()
+        ->assertSee($matching->order_number)
+        ->assertDontSee('RM-OTHER-001');
 });
 
 it('renders the edit page for an editable order', function () {

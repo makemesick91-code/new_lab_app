@@ -3,7 +3,7 @@
         <div class="p-6 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <form method="GET" action="{{ route('lab-orders.index') }}" class="flex flex-wrap items-center gap-2">
-                    <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Order #, clinic, doctor, patient"
+                    <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Order #, RM, clinic, doctor, patient"
                            class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                     <select name="status" class="rounded-md border-gray-300 text-sm">
                         <option value="">All status</option>
@@ -51,7 +51,10 @@
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $order->order_number }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->clinic?->name }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->doctor?->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $order->patient?->name ?? '—' }}</td>
+                                <td class="px-3 py-2 text-gray-600">
+                                    <div>{{ $order->patient?->name ?? '—' }}</div>
+                                    <div class="text-xs text-gray-400">RM: {{ $order->medical_record_number ?? '-' }}</div>
+                                </td>
                                 <td class="px-3 py-2 text-gray-600">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->priority }}</td>
                                 <td class="px-3 py-2">

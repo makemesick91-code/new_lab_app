@@ -27,6 +27,11 @@ class InvoiceRepository implements InvoiceRepositoryInterface
             ->when($filters['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
             ->when($filters['clinic_id'] ?? null, fn ($q, $clinicId) => $q->where('clinic_id', $clinicId))
             ->when($filters['invoice_date'] ?? null, fn ($q, $date) => $q->whereDate('invoice_date', $date))
+            // Sprint 9 — Multi Branch Foundation: opt-in branch scope (NOT enforced).
+            // Only applies when branch_id is explicitly passed; no caller passes it today.
+            // TODO(branch-scope): derive branch_id from the authenticated user's branch
+            // (Super Admin bypass) to enforce per-branch invoice isolation.
+            ->when($filters['branch_id'] ?? null, fn ($q, $v) => $q->where('branch_id', $v))
             ->orderByDesc('invoice_date')
             ->orderByDesc('id')
             ->paginate(min($perPage, 100))

@@ -96,6 +96,20 @@
             <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">My Deliveries</a>
         @endrole
 
+        @canany(['view_inventory', 'manage_inventory', 'manage master data'])
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Inventory</p>
+            <a href="{{ route('inventory.dashboard') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.dashboard') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Dashboard</a>
+            <a href="{{ route('inventory.products.index') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.products.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Products</a>
+            <a href="{{ route('inventory.locations.index') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.locations.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Locations</a>
+            <a href="{{ route('inventory.suppliers.index') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Suppliers</a>
+            <a href="{{ route('inventory.stock.index') }}"
+               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Stock</a>
+        @endcanany
+
         @canany(['view_invoice', 'manage_invoice', 'view_payment', 'manage_payment'])
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Finance</p>
             @canany(['view_invoice', 'manage_invoice'])
