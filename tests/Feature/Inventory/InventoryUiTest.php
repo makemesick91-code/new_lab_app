@@ -21,8 +21,12 @@ it('opens the inventory dashboard for an authenticated user', function () {
         ->get(route('inventory.dashboard'))
         ->assertOk()
         ->assertSee('Inventory Dashboard')
+        ->assertSee('Inventory KPI Cards')
         ->assertSee('Total Inventory Value')
-        ->assertSee('Recent Movements');
+        ->assertSee('Inventory Value Summary')
+        ->assertSee('Stock by Location')
+        ->assertSee('Recent Movements')
+        ->assertSee('Top Consumed Materials');
 });
 
 it('opens inventory product location supplier and stock indexes', function () {

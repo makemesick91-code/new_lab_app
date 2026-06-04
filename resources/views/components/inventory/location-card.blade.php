@@ -1,0 +1,29 @@
+@props([
+    'location',
+])
+
+@php
+    $qty = (float) data_get($location, 'total_stock', 0);
+    $value = (float) data_get($location, 'inventory_value', 0);
+    $href = route('inventory.stock.index', ['inventory_location_id' => data_get($location, 'id')]);
+@endphp
+
+<a href="{{ $href }}" class="block rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+    <div class="flex items-start justify-between gap-3">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ data_get($location, 'code') ?: 'Location' }}</p>
+            <h4 class="mt-1 text-sm font-semibold text-gray-900">{{ data_get($location, 'name', '-') }}</h4>
+        </div>
+        <span class="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">Location</span>
+    </div>
+    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+            <dt class="text-xs text-gray-500">Qty</dt>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($qty, 2) }}</dd>
+        </div>
+        <div>
+            <dt class="text-xs text-gray-500">Value</dt>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($value, 2) }}</dd>
+        </div>
+    </dl>
+</a>

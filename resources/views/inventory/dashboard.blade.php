@@ -1,101 +1,99 @@
 <x-settings-shell title="Inventory Dashboard">
     <div class="space-y-6">
-        <div class="grid gap-4 sm:grid-cols-3">
-            <div class="bg-white shadow-sm sm:rounded-lg p-4">
-                <p class="text-xs text-gray-500">Total Inventory Value</p>
-                <p class="mt-1 text-2xl font-semibold text-gray-900">{{ number_format((float) $summary['inventory_value'], 2) }}</p>
-            </div>
-            <div class="bg-white shadow-sm sm:rounded-lg p-4">
-                <p class="text-xs text-gray-500">Low Stock Count</p>
-                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ number_format((int) $summary['low_stock_count']) }}</p>
-            </div>
-            <div class="bg-white shadow-sm sm:rounded-lg p-4">
-                <p class="text-xs text-gray-500">Out of Stock Count</p>
-                <p class="mt-1 text-2xl font-semibold text-red-700">{{ number_format((int) $summary['out_of_stock_count']) }}</p>
-            </div>
-        </div>
-
-        <div class="grid gap-6 lg:grid-cols-2">
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-gray-800">Stock by Location</h3>
-                    <a href="{{ route('inventory.stock.index') }}" class="text-sm text-indigo-600 hover:text-indigo-500">View stock</a>
+        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Inventory Core</p>
+                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Stock visibility for the active branch</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                        Stock is calculated from the inventory movement ledger by branch, location, and product. Use this dashboard to spot low stock, inspect movement history, and jump into stock operations safely.
+                    </p>
                 </div>
-                <table class="mt-3 min-w-full text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-2 py-1 font-medium">Location</th>
-                            <th class="px-2 py-1 font-medium text-right">Qty</th>
-                            <th class="px-2 py-1 font-medium text-right">Value</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($stockByLocation as $row)
-                            <tr>
-                                <td class="px-2 py-2 font-medium text-gray-900">{{ $row->name }}</td>
-                                <td class="px-2 py-2 text-right text-gray-700">{{ number_format((float) $row->total_stock, 2) }}</td>
-                                <td class="px-2 py-2 text-right text-gray-700">{{ number_format((float) $row->inventory_value, 2) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="3" class="px-2 py-6 text-center text-gray-400">No stock movements yet.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+                <div class="flex flex-wrap gap-2">
+                    <a href="{{ route('inventory.stock.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                        Open Stock
+                    </a>
+                    <a href="{{ route('inventory.products.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        Products
+                    </a>
+                </div>
             </div>
+        </section>
 
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-800">Recent Movements</h3>
-                <table class="mt-3 min-w-full text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-2 py-1 font-medium">Date</th>
-                            <th class="px-2 py-1 font-medium">Product</th>
-                            <th class="px-2 py-1 font-medium">Type</th>
-                            <th class="px-2 py-1 font-medium text-right">Qty</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($recentMovements as $movement)
-                            <tr>
-                                <td class="px-2 py-2 text-gray-600">{{ optional($movement->movement_date)->format('Y-m-d') }}</td>
-                                <td class="px-2 py-2 font-medium text-gray-900">{{ $movement->product?->name }}</td>
-                                <td class="px-2 py-2 text-gray-600">{{ $movement->movement_type }}</td>
-                                <td class="px-2 py-2 text-right text-gray-700">{{ number_format((float) $movement->quantity_in - (float) $movement->quantity_out, 2) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="px-2 py-6 text-center text-gray-400">No recent movements.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
+        <section aria-labelledby="inventory-kpis">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 id="inventory-kpis" class="text-base font-semibold text-gray-900">Inventory KPI Cards</h3>
+                <p class="text-xs text-gray-500">Ledger-derived branch summary</p>
             </div>
+            <div class="grid gap-4 sm:grid-cols-3">
+                <x-inventory.kpi-card
+                    label="Total Inventory Value"
+                    :value="number_format((float) $summary['inventory_value'], 2)"
+                    hint="Current branch stock value"
+                    tone="primary"
+                    :href="route('inventory.stock.index')"
+                />
+                <x-inventory.kpi-card
+                    label="Low Stock Count"
+                    :value="number_format((int) $summary['low_stock_count'])"
+                    hint="At or below minimum stock"
+                    tone="warning"
+                    :href="route('inventory.stock.index')"
+                />
+                <x-inventory.kpi-card
+                    label="Out Of Stock Count"
+                    :value="number_format((int) $summary['out_of_stock_count'])"
+                    hint="Current stock is zero or below"
+                    tone="danger"
+                    :href="route('inventory.stock.index')"
+                />
+            </div>
+        </section>
+
+        <x-inventory.stock-value-card :summary="$summary" scope-label="Active branch" />
+
+        <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+            <x-inventory.dashboard-section
+                title="Stock by Location"
+                description="Inventory value and quantity grouped by physical inventory location."
+                :action-href="route('inventory.stock.index')"
+                action-label="View stock"
+            >
+                @if ($stockByLocation->isEmpty())
+                    <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
+                        <p class="text-sm font-medium text-gray-900">No stock movements yet.</p>
+                        <p class="mt-1 text-sm text-gray-500">Opening stock or receive stock movements will create location summaries.</p>
+                        @if ($locations->isNotEmpty())
+                            <p class="mt-2 text-xs text-gray-500">{{ number_format($locations->count()) }} active locations are ready for stock operations.</p>
+                        @endif
+                    </div>
+                @else
+                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        @foreach ($stockByLocation as $location)
+                            <x-inventory.location-card :location="$location" />
+                        @endforeach
+                    </div>
+                @endif
+            </x-inventory.dashboard-section>
+
+            <x-inventory.low-stock-widget
+                :items="$lowStockProducts"
+                :href="route('inventory.stock.index')"
+            />
         </div>
 
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
-            <h3 class="font-semibold text-gray-800">Low Stock Products</h3>
-            <div class="mt-3 overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Code</th>
-                            <th class="px-3 py-2 font-medium">Product</th>
-                            <th class="px-3 py-2 font-medium text-right">Current</th>
-                            <th class="px-3 py-2 font-medium text-right">Minimum</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($lowStockProducts as $product)
-                            <tr>
-                                <td class="px-3 py-2 text-gray-600">{{ $product->code }}</td>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $product->name }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $product->current_stock, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $product->minimum_stock, 2) }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="4" class="px-3 py-6 text-center text-gray-400">No low stock products.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <x-inventory.movement-timeline
+                :movements="$recentMovements"
+                :href="route('inventory.stock.index')"
+            />
+
+            <x-inventory.dashboard-section title="Top Consumed Materials" description="Future-ready production usage insight." density="compact">
+                <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
+                    <p class="text-sm font-medium text-gray-900">Coming in a future sprint.</p>
+                    <p class="mt-1 text-sm text-gray-500">Production usage is out of scope for Inventory Core, so this widget stays intentionally empty.</p>
+                </div>
+            </x-inventory.dashboard-section>
         </div>
     </div>
 </x-settings-shell>
