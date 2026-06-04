@@ -38,7 +38,10 @@ it('opens inventory product location supplier and stock indexes', function () {
         ->get(route('inventory.products.index'))
         ->assertOk()
         ->assertSee('Inventory Products')
-        ->assertSee('Zirconia UI Block');
+        ->assertSee('Zirconia UI Block')
+        ->assertSee('Branch Total Stock')
+        ->assertSee('Current Stock - Branch Total')
+        ->assertSee('Stock Status');
 
     $this->actingAs($this->user)
         ->get(route('inventory.locations.index'))
@@ -56,6 +59,27 @@ it('opens inventory product location supplier and stock indexes', function () {
         ->get(route('inventory.stock.index'))
         ->assertOk()
         ->assertSee('Inventory Stock');
+});
+
+it('shows product detail stock summary and safe action context', function () {
+    $product = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Detail Summary Product',
+        'minimum_stock' => 10,
+    ]);
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+
+    app(InventoryStockService::class)->createOpeningStock($product->id, $location->id, 5, 100, 'detail summary');
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.show', $product))
+        ->assertOk()
+        ->assertSee('Product Summary Card')
+        ->assertSee('Current Stock - Branch Total')
+        ->assertSee('Branch / Location Stock Clarity')
+        ->assertSee('Inventory Value')
+        ->assertSee('Every stock operation requires a selected Inventory Location.')
+        ->assertSee('This product is below minimum stock.');
 });
 
 it('shows a required location selector on the opening stock form', function () {
