@@ -42,8 +42,10 @@
                                     <div class="flex flex-wrap items-center justify-end gap-2">
                                         <a href="{{ route('inventory.products.show', $product) }}" class="text-gray-600 hover:text-gray-900">View</a>
                                         <a href="{{ route('inventory.products.stock-card', $product) }}" class="text-indigo-600 hover:text-indigo-500">Card</a>
-                                        <a href="{{ route('inventory.products.opening-stock.create', $product) }}" class="text-green-600 hover:text-green-500">Opening</a>
-                                        <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="text-emerald-600 hover:text-emerald-500">Receive</a>
+                                        @if ($product->is_active)
+                                            <a href="{{ route('inventory.products.opening-stock.create', $product) }}" class="text-green-600 hover:text-green-500">Opening</a>
+                                            <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="text-emerald-600 hover:text-emerald-500">Receive</a>
+                                        @endif
                                         <a href="{{ route('inventory.products.edit', $product) }}" class="text-indigo-600 hover:text-indigo-500">Edit</a>
                                     </div>
                                 </td>

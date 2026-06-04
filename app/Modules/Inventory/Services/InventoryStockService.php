@@ -263,7 +263,7 @@ class InventoryStockService
             ->lockForUpdate()
             ->first();
 
-        if (! $product) {
+        if (! $product || ! $product->is_active) {
             throw ValidationException::withMessages([
                 'product_id' => 'Product tidak valid untuk branch aktif.',
             ]);

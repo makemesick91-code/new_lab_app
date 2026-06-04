@@ -2,6 +2,7 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\InventoryLocation;
+use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\InventoryStockService;
@@ -67,6 +68,32 @@ it('shows a required location selector on the opening stock form', function () {
         ->assertSee('Opening Selector Location');
 });
 
+it('does not show inactive locations in stock operation selectors', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Selectable Active Location']);
+    InventoryLocation::factory()->inactive()->create(['branch_id' => $this->branch->id, 'name' => 'Hidden Inactive Location']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.opening-stock.create', $product))
+        ->assertOk()
+        ->assertSee('Selectable Active Location')
+        ->assertDontSee('Hidden Inactive Location');
+});
+
+it('does not allow stock operation forms for inactive products', function () {
+    $product = Product::factory()->inactive()->create(['branch_id' => $this->branch->id]);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.opening-stock.create', $product))
+        ->assertForbidden();
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.show', $product))
+        ->assertOk()
+        ->assertDontSee('Opening Stock')
+        ->assertDontSee('Receive Stock');
+});
+
 it('shows running balance on the stock card', function () {
     $product = Product::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Balance Product']);
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Balance Location']);
@@ -104,4 +131,40 @@ it('does not show products or locations from another branch', function () {
         ->assertOk()
         ->assertSee('Visible Branch Location')
         ->assertDontSee('Hidden Branch Location');
+});
+
+it('does not leak another branch location through the stock card filter', function () {
+    $otherBranch = Branch::factory()->create();
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    $otherLocation = InventoryLocation::factory()->create(['branch_id' => $otherBranch->id]);
+
+    $this->actingAs($this->user)
+        ->from(route('inventory.products.show', $product))
+        ->get(route('inventory.products.stock-card', [
+            'product' => $product,
+            'inventory_location_id' => $otherLocation->id,
+        ]))
+        ->assertRedirect(route('inventory.products.show', $product))
+        ->assertSessionHasErrors('inventory_location_id');
+});
+
+it('does not show another branch movement on the inventory dashboard', function () {
+    $otherBranch = Branch::factory()->create();
+    $product = Product::factory()->create(['branch_id' => $otherBranch->id, 'name' => 'Hidden Movement Product']);
+    $location = InventoryLocation::factory()->create(['branch_id' => $otherBranch->id, 'name' => 'Hidden Movement Location']);
+
+    InventoryMovement::factory()->opening()->create([
+        'branch_id' => $otherBranch->id,
+        'inventory_location_id' => $location->id,
+        'product_id' => $product->id,
+        'supplier_id' => null,
+        'quantity_in' => 5,
+        'quantity_out' => 0,
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.dashboard'))
+        ->assertOk()
+        ->assertDontSee('Hidden Movement Product')
+        ->assertDontSee('Hidden Movement Location');
 });

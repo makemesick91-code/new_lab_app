@@ -123,3 +123,29 @@ it('reports low stock products and inventory value from the ledger', function ()
         ->toBe([$lowProduct->id])
         ->and($this->service->getInventoryValue($location->id))->toBe(1400.0);
 });
+
+it('respects the location filter when reporting low stock products', function () {
+    $product = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'minimum_stock' => 10,
+        'average_cost' => 100,
+    ]);
+    $healthyLocation = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $lowLocation = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->service->createOpeningStock($product->id, $healthyLocation->id, 20, 100);
+    $this->service->createOpeningStock($product->id, $lowLocation->id, 4, 100);
+
+    expect($this->service->getLowStockProducts($healthyLocation->id)->pluck('id')->all())
+        ->toBe([])
+        ->and($this->service->getLowStockProducts($lowLocation->id)->pluck('id')->all())
+        ->toBe([$product->id]);
+});
+
+it('rejects stock writes for inactive products', function () {
+    $product = Product::factory()->inactive()->create(['branch_id' => $this->branch->id]);
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+
+    expect(fn () => $this->service->createOpeningStock($product->id, $location->id, 1))
+        ->toThrow(ValidationException::class);
+});

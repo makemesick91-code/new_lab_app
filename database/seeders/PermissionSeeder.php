@@ -78,6 +78,9 @@ class PermissionSeeder extends Seeder
         'view_invoice_report',
         'view_payment_report',
         'export_report',
+        // Sprint 12 - Inventory Core
+        'manage_inventory',
+        'view_inventory',
         'manage lab orders',
         'manage assignments',
         'manage qc',

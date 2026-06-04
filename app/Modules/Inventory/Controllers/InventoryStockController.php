@@ -45,8 +45,7 @@ class InventoryStockController extends Controller
 
     public function openingStock(Product $product): View|Response
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         return $this->renderInventoryView('inventory.stock.opening', [
             'product' => $product->load(['category', 'unit']),
@@ -56,8 +55,7 @@ class InventoryStockController extends Controller
 
     public function storeOpeningStock(StoreOpeningStockRequest $request, Product $product): RedirectResponse
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         $this->stock->createOpeningStock(
             $product->id,
@@ -72,8 +70,7 @@ class InventoryStockController extends Controller
 
     public function receiveStock(Product $product): View|Response
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         return $this->renderInventoryView('inventory.stock.receive', [
             'product' => $product->load(['category', 'unit']),
@@ -84,8 +81,7 @@ class InventoryStockController extends Controller
 
     public function storeReceiveStock(StoreReceiveStockRequest $request, Product $product): RedirectResponse
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         $this->stock->receiveStock(
             $product->id,
@@ -101,8 +97,7 @@ class InventoryStockController extends Controller
 
     public function adjustIn(Product $product): View|Response
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         return $this->renderInventoryView('inventory.stock.adjust-in', [
             'product' => $product->load(['category', 'unit']),
@@ -112,8 +107,7 @@ class InventoryStockController extends Controller
 
     public function storeAdjustIn(StoreAdjustmentRequest $request, Product $product): RedirectResponse
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         $this->stock->adjustIn(
             $product->id,
@@ -127,8 +121,7 @@ class InventoryStockController extends Controller
 
     public function adjustOut(Product $product): View|Response
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         return $this->renderInventoryView('inventory.stock.adjust-out', [
             'product' => $product->load(['category', 'unit']),
@@ -138,8 +131,7 @@ class InventoryStockController extends Controller
 
     public function storeAdjustOut(StoreAdjustmentRequest $request, Product $product): RedirectResponse
     {
-        $this->authorize('view', $product);
-        $this->authorize('create', InventoryMovement::class);
+        $this->authorizeStockOperation($product);
 
         $this->stock->adjustOut(
             $product->id,
@@ -149,5 +141,13 @@ class InventoryStockController extends Controller
         );
 
         return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stock adjustment out created.');
+    }
+
+    private function authorizeStockOperation(Product $product): void
+    {
+        $this->authorize('view', $product);
+        $this->authorize('create', InventoryMovement::class);
+
+        abort_unless($product->is_active, 403);
     }
 }

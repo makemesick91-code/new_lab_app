@@ -23,10 +23,12 @@
             <h3 class="font-semibold text-gray-800">Stock Actions</h3>
             <div class="mt-3 flex flex-wrap gap-2">
                 <a href="{{ route('inventory.products.stock-card', $product) }}" class="rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">Stock Card</a>
-                <a href="{{ route('inventory.products.opening-stock.create', $product) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Opening Stock</a>
-                <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Receive Stock</a>
-                <a href="{{ route('inventory.products.adjust-in.create', $product) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Adjust In</a>
-                <a href="{{ route('inventory.products.adjust-out.create', $product) }}" class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Adjust Out</a>
+                @if ($product->is_active)
+                    <a href="{{ route('inventory.products.opening-stock.create', $product) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Opening Stock</a>
+                    <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Receive Stock</a>
+                    <a href="{{ route('inventory.products.adjust-in.create', $product) }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Adjust In</a>
+                    <a href="{{ route('inventory.products.adjust-out.create', $product) }}" class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Adjust Out</a>
+                @endif
                 <a href="{{ route('inventory.products.edit', $product) }}" class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Edit Product</a>
             </div>
         </div>

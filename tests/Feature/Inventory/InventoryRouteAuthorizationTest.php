@@ -4,6 +4,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\Supplier;
 use Database\Seeders\BranchSeeder;
 
 beforeEach(function () {
@@ -81,6 +82,30 @@ it('rejects stock movement using a location from another branch', function () {
 
     $this->assertDatabaseMissing('trx_inventory_movements', [
         'inventory_location_id' => $otherLocation->id,
+        'product_id' => $product->id,
+    ]);
+});
+
+it('rejects receiving stock with a supplier from another branch', function () {
+    $user = userWith(['manage master data']);
+    $otherBranch = Branch::factory()->create();
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $otherSupplier = Supplier::factory()->create(['branch_id' => $otherBranch->id]);
+
+    $this->actingAs($user)
+        ->from(route('inventory.products.receive-stock.create', $product))
+        ->post(route('inventory.products.receive-stock.store', $product), [
+            'inventory_location_id' => $location->id,
+            'quantity' => 5,
+            'unit_cost' => 15000,
+            'supplier_id' => $otherSupplier->id,
+        ])
+        ->assertRedirect(route('inventory.products.receive-stock.create', $product))
+        ->assertSessionHasErrors('supplier_id');
+
+    $this->assertDatabaseMissing('trx_inventory_movements', [
+        'supplier_id' => $otherSupplier->id,
         'product_id' => $product->id,
     ]);
 });
