@@ -6,6 +6,12 @@ use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\Inventory\Controllers\InventoryDashboardController;
+use App\Modules\Inventory\Controllers\InventoryLocationController;
+use App\Modules\Inventory\Controllers\InventoryStockController;
+use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
+use App\Modules\Inventory\Controllers\StockCardController;
+use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierController;
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
@@ -280,6 +286,31 @@ Route::middleware('auth')->prefix('reports')->name('reports.')->group(function (
         Route::get('outstanding/export', [ExportReportController::class, 'exportOutstanding'])->name('outstanding.export');
         Route::get('revenue/export', [ExportReportController::class, 'exportRevenue'])->name('revenue.export');
     });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 12 - Inventory Core
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(function () {
+    Route::get('dashboard', [InventoryDashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');
+
+    Route::get('products/{product}/stock-card', [StockCardController::class, 'show'])->name('products.stock-card');
+    Route::get('products/{product}/opening-stock', [InventoryStockController::class, 'openingStock'])->name('products.opening-stock.create');
+    Route::post('products/{product}/opening-stock', [InventoryStockController::class, 'storeOpeningStock'])->name('products.opening-stock.store');
+    Route::get('products/{product}/receive-stock', [InventoryStockController::class, 'receiveStock'])->name('products.receive-stock.create');
+    Route::post('products/{product}/receive-stock', [InventoryStockController::class, 'storeReceiveStock'])->name('products.receive-stock.store');
+    Route::get('products/{product}/adjust-in', [InventoryStockController::class, 'adjustIn'])->name('products.adjust-in.create');
+    Route::post('products/{product}/adjust-in', [InventoryStockController::class, 'storeAdjustIn'])->name('products.adjust-in.store');
+    Route::get('products/{product}/adjust-out', [InventoryStockController::class, 'adjustOut'])->name('products.adjust-out.create');
+    Route::post('products/{product}/adjust-out', [InventoryStockController::class, 'storeAdjustOut'])->name('products.adjust-out.store');
+
+    Route::resource('locations', InventoryLocationController::class);
+    Route::resource('products', InventoryProductController::class);
+    Route::resource('suppliers', InventorySupplierController::class);
 });
 
 require __DIR__.'/auth.php';

@@ -30,6 +30,14 @@ use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
+use App\Modules\Inventory\Models\InventoryLocation;
+use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Policies\InventoryLocationPolicy;
+use App\Modules\Inventory\Policies\InventoryMovementPolicy;
+use App\Modules\Inventory\Policies\ProductPolicy;
+use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
@@ -210,6 +218,10 @@ class RepositoryServiceProvider extends ServiceProvider
         Payment::class => PaymentPolicy::class,
         // Sprint 9 — Multi Branch Foundation (skeleton; no routes authorize against it yet)
         Branch::class => BranchPolicy::class,
+        InventoryLocation::class => InventoryLocationPolicy::class,
+        Product::class => ProductPolicy::class,
+        Supplier::class => SupplierPolicy::class,
+        InventoryMovement::class => InventoryMovementPolicy::class,
     ];
 
     public function register(): void
