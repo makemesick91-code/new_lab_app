@@ -7,6 +7,18 @@ use App\Modules\Invoice\Models\Invoice;
 use App\Modules\Invoice\Models\Payment;
 use Illuminate\Support\Collection;
 
+/**
+ * Sprint 9 — Multi Branch Foundation.
+ *
+ * Payments carry a nullable branch_id (backfilled to MAIN) and are listed per
+ * invoice, so they inherit the invoice's branch scope. No branch filtering is
+ * enforced yet.
+ *
+ * TODO(branch-scope): when global branch listings are added, expose a paginate()
+ * with an opt-in branch_id filter mirroring the Invoice/Delivery/LabOrder
+ * repositories, and derive the branch from the authenticated user (Super Admin
+ * bypass) to enforce per-branch payment isolation.
+ */
 class PaymentRepository implements PaymentRepositoryInterface
 {
     public function create(array $data): Payment

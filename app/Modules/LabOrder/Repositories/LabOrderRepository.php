@@ -33,6 +33,13 @@ class LabOrderRepository implements LabOrderRepositoryInterface
             ->when($filters['clinic_id'] ?? null, fn ($q, $v) => $q->where('clinic_id', $v))
             ->when($filters['doctor_id'] ?? null, fn ($q, $v) => $q->where('doctor_id', $v))
             ->when($filters['patient_id'] ?? null, fn ($q, $v) => $q->where('patient_id', $v))
+            // Sprint 9 — Multi Branch Foundation: opt-in branch scope.
+            // Applies ONLY when a caller explicitly passes branch_id; no caller does
+            // today, so behavior is unchanged (filtering is NOT enforced yet).
+            // TODO(branch-scope): once branch context is resolved from the
+            // authenticated user, default this to the user's branch_id (with a
+            // Super-Admin "all branches" bypass) to enforce multi-branch isolation.
+            ->when($filters['branch_id'] ?? null, fn ($q, $v) => $q->where('branch_id', $v))
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();

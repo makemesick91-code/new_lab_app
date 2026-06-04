@@ -3,6 +3,7 @@
 namespace App\Modules\Delivery\Models;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
@@ -41,6 +42,7 @@ class Delivery extends Model
 
     protected $fillable = [
         'lab_order_id',
+        'branch_id',
         'delivery_number',
         'courier_id',
         'status',
@@ -66,6 +68,11 @@ class Delivery extends Model
     public function labOrder(): BelongsTo
     {
         return $this->belongsTo(LabOrder::class, 'lab_order_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function courier(): BelongsTo

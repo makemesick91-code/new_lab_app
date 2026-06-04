@@ -3,6 +3,7 @@
 namespace App\Modules\Invoice\Models;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\AuditLog;
 use Database\Factories\PaymentFactory;
@@ -39,6 +40,7 @@ class Payment extends Model
 
     protected $fillable = [
         'payment_number',
+        'branch_id',
         'invoice_id',
         'payment_date',
         'payment_method',
@@ -60,6 +62,11 @@ class Payment extends Model
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class, 'invoice_id');
+    }
+
+    public function branch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class);
     }
 
     public function receiver(): BelongsTo

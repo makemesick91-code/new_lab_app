@@ -8,6 +8,10 @@ use App\Modules\AccessControl\Interfaces\RoleRepositoryInterface;
 use App\Modules\AccessControl\Policies\RolePolicy;
 use App\Modules\AccessControl\Repositories\PermissionRepository;
 use App\Modules\AccessControl\Repositories\RoleRepository;
+use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
+use App\Modules\Branch\Models\Branch;
+use App\Modules\Branch\Policies\BranchPolicy;
+use App\Modules\Branch\Repositories\BranchRepository;
 use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
@@ -117,6 +121,8 @@ class RepositoryServiceProvider extends ServiceProvider
         InvoiceRepositoryInterface::class => InvoiceRepository::class,
         PaymentRepositoryInterface::class => PaymentRepository::class,
         ReportingRepositoryInterface::class => ReportingRepository::class,
+        // Sprint 9 — Multi Branch Foundation
+        BranchRepositoryInterface::class => BranchRepository::class,
     ];
 
     /**
@@ -183,6 +189,8 @@ class RepositoryServiceProvider extends ServiceProvider
         Delivery::class => DeliveryPolicy::class,
         Invoice::class => InvoicePolicy::class,
         Payment::class => PaymentPolicy::class,
+        // Sprint 9 — Multi Branch Foundation (skeleton; no routes authorize against it yet)
+        Branch::class => BranchPolicy::class,
     ];
 
     public function register(): void
