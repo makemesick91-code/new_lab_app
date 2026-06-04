@@ -5,7 +5,7 @@ beforeEach(function () {
 });
 
 it('renders the owner dashboard sections for an authenticated user', function () {
-    $this->actingAs(userWith(['manage_report', 'view_inventory']))
+    $this->actingAs(userWith(['manage_report']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Owner Dashboard')

@@ -1,6 +1,21 @@
 @php
     $user = auth()->user();
     $canAny = fn (array $permissions): bool => $user ? $user->canAny($permissions) : false;
+    $branchOperationalPermissions = [
+        'view_lab_orders',
+        'manage_lab_orders',
+        'view_production',
+        'manage_production',
+        'view_quality_control',
+        'manage_quality_control',
+        'view_delivery',
+        'manage_delivery',
+        'view_inventory',
+        'manage_inventory',
+        'view_invoice',
+        'manage_invoice',
+    ];
+    $showBranchAdminDashboard = $canAny($branchOperationalPermissions);
 
     $ownerKpis = $ownerKpis ?? [
         [
@@ -109,6 +124,118 @@
     $ownerAlerts = $ownerAlerts ?? [];
     $branchPerformance = $branchPerformance ?? [];
     $recentActivity = $recentActivity ?? [];
+
+    $branchSummaryCards = $branchSummaryCards ?? [
+        [
+            'label' => 'Arrived Today',
+            'value' => '0',
+            'context' => 'No arrivals data supplied.',
+            'severity' => 'neutral',
+            'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
+        ],
+        [
+            'label' => 'Needs Assignment',
+            'value' => '0',
+            'context' => 'All visible work is assigned.',
+            'severity' => 'success',
+            'href' => $canAny(['view_production', 'manage_production']) ? route('production.board') : null,
+        ],
+        [
+            'label' => 'Stuck / Overdue',
+            'value' => '0',
+            'context' => 'No stuck work supplied.',
+            'severity' => 'success',
+            'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
+        ],
+        [
+            'label' => 'Needs QC',
+            'value' => '0',
+            'context' => 'QC queue is clear.',
+            'severity' => 'success',
+            'href' => $canAny(['view_quality_control', 'manage_quality_control']) ? route('quality-control.queue') : null,
+        ],
+        [
+            'label' => 'Ready Delivery',
+            'value' => '0',
+            'context' => 'No ready delivery data supplied.',
+            'severity' => 'neutral',
+            'href' => $canAny(['view_delivery', 'manage_delivery']) ? route('deliveries.index') : null,
+        ],
+        [
+            'label' => 'Low Stock',
+            'value' => '0',
+            'context' => 'No low stock alerts supplied.',
+            'severity' => 'success',
+            'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.stock.index') : null,
+        ],
+        [
+            'label' => 'Unpaid Invoices',
+            'value' => '0',
+            'context' => 'No unpaid invoice data supplied.',
+            'severity' => 'neutral',
+            'href' => $canAny(['view_invoice', 'manage_invoice']) ? route('invoices.index') : null,
+        ],
+    ];
+
+    $branchQueues = $branchQueues ?? [
+        [
+            'title' => 'Arrived Today',
+            'items' => [],
+            'empty' => 'No new orders today.',
+        ],
+        [
+            'title' => 'Needs Assignment',
+            'items' => [],
+            'empty' => 'All new orders are assigned.',
+        ],
+        [
+            'title' => 'Needs QC',
+            'items' => [],
+            'empty' => 'QC queue is clear.',
+        ],
+        [
+            'title' => 'Ready Delivery',
+            'items' => [],
+            'empty' => 'No orders waiting for delivery.',
+        ],
+        [
+            'title' => 'Finance Follow-up',
+            'items' => [],
+            'empty' => 'No unpaid invoices needing follow-up.',
+        ],
+    ];
+    $branchAlerts = $branchAlerts ?? [];
+    $productionWorkload = $productionWorkload ?? [];
+    $qcWorkload = $qcWorkload ?? [];
+    $deliveryWorkload = $deliveryWorkload ?? [];
+    $inventoryAlerts = $inventoryAlerts ?? [];
+    $financeAlerts = $financeAlerts ?? [];
+    $branchQuickActions = $branchQuickActions ?? [
+        [
+            'label' => 'Create Lab Order',
+            'href' => $canAny(['create_lab_orders', 'manage_lab_orders']) ? route('lab-orders.create') : null,
+        ],
+        [
+            'label' => 'Open Production Board',
+            'href' => $canAny(['view_production', 'manage_production']) ? route('production.board') : null,
+        ],
+        [
+            'label' => 'Open QC Queue',
+            'href' => $canAny(['view_quality_control', 'manage_quality_control']) ? route('quality-control.queue') : null,
+        ],
+        [
+            'label' => 'Open Delivery Queue',
+            'href' => $canAny(['view_delivery', 'manage_delivery']) ? route('deliveries.index') : null,
+        ],
+        [
+            'label' => 'Inventory Stock',
+            'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.stock.index') : null,
+        ],
+        [
+            'label' => 'Invoices',
+            'href' => $canAny(['view_invoice', 'manage_invoice']) ? route('invoices.index') : null,
+        ],
+    ];
 @endphp
 
 <x-app-layout>
@@ -116,10 +243,10 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                    Owner Dashboard
+                    {{ $showBranchAdminDashboard ? 'Branch Admin Dashboard' : 'Owner Dashboard' }}
                 </h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    Executive overview for ADLMS pilot operations.
+                    {{ $showBranchAdminDashboard ? 'Daily operations overview for the active branch.' : 'Executive overview for ADLMS pilot operations.' }}
                 </p>
             </div>
             <div class="text-left sm:text-right">
@@ -134,6 +261,9 @@
 
         <main class="min-w-0 flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
             <div class="mx-auto max-w-7xl space-y-6">
+                @if ($showBranchAdminDashboard)
+                    @include('dashboards.branch-admin')
+                @else
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
@@ -234,6 +364,7 @@
                         @endcanany
                     </div>
                 </x-owner-dashboard.dashboard-section>
+                @endif
             </div>
         </main>
     </div>
