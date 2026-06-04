@@ -9,6 +9,7 @@ use App\Modules\Inventory\Requests\InventoryFilterRequest;
 use App\Modules\Inventory\Requests\StoreProductRequest;
 use App\Modules\Inventory\Requests\UpdateProductRequest;
 use App\Modules\Inventory\Services\InventoryProductService;
+use App\Modules\Inventory\Services\InventoryStockService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -21,14 +22,19 @@ class ProductController extends Controller
 
     public function __construct(
         private readonly InventoryProductService $products,
+        private readonly InventoryStockService $stock,
     ) {}
 
     public function index(InventoryFilterRequest $request): View|Response
     {
         $this->authorize('viewAny', Product::class);
 
+        $products = $this->products->paginate($request->filters(), $request->perPage());
+        $currentStocks = $this->stock->getCurrentStockByBranch()->pluck('current_stock', 'product_id');
+
         return $this->renderInventoryView('inventory.products.index', [
-            'products' => $this->products->paginate($request->filters(), $request->perPage()),
+            'products' => $products,
+            'currentStocks' => $currentStocks,
             'filters' => $request->filters(),
         ]);
     }
@@ -37,7 +43,10 @@ class ProductController extends Controller
     {
         $this->authorize('create', Product::class);
 
-        return $this->renderInventoryView('inventory.products.create');
+        return $this->renderInventoryView('inventory.products.create', [
+            'categories' => $this->products->listActiveCategories(),
+            'units' => $this->products->listActiveUnits(),
+        ]);
     }
 
     public function store(StoreProductRequest $request): RedirectResponse
@@ -55,6 +64,7 @@ class ProductController extends Controller
 
         return $this->renderInventoryView('inventory.products.show', [
             'product' => $product->load(['category', 'unit']),
+            'currentStock' => $this->stock->getCurrentStock($product->id),
         ]);
     }
 
@@ -64,6 +74,8 @@ class ProductController extends Controller
 
         return $this->renderInventoryView('inventory.products.edit', [
             'product' => $product->load(['category', 'unit']),
+            'categories' => $this->products->listActiveCategories(),
+            'units' => $this->products->listActiveUnits(),
         ]);
     }
 

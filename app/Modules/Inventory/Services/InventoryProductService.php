@@ -31,6 +31,16 @@ class InventoryProductService
         return $this->products->listActive($this->branchContext->requireId());
     }
 
+    public function listActiveCategories(): Collection
+    {
+        return $this->categories->listActive($this->branchContext->requireId());
+    }
+
+    public function listActiveUnits(): Collection
+    {
+        return $this->units->listActive();
+    }
+
     public function find(int $id): ?Product
     {
         return $this->products->findInBranch($this->branchContext->requireId(), $id);

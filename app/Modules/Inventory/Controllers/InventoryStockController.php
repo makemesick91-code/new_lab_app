@@ -36,9 +36,7 @@ class InventoryStockController extends Controller
         $locationId = $request->integer('inventory_location_id') ?: null;
 
         return $this->renderInventoryView('inventory.stock.index', [
-            'stockRows' => $locationId
-                ? $this->stock->getCurrentStockByLocation($locationId)
-                : $this->stock->getCurrentStockByBranch(),
+            'stockRows' => $this->stock->getStockRows($locationId),
             'summary' => $this->stock->getBranchSummary($locationId),
             'locations' => $this->locations->listActive(),
             'filters' => $request->filters(),
@@ -50,7 +48,7 @@ class InventoryStockController extends Controller
         $this->authorize('view', $product);
         $this->authorize('create', InventoryMovement::class);
 
-        return $this->renderInventoryView('inventory.stock.opening-stock', [
+        return $this->renderInventoryView('inventory.stock.opening', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
         ]);
@@ -77,7 +75,7 @@ class InventoryStockController extends Controller
         $this->authorize('view', $product);
         $this->authorize('create', InventoryMovement::class);
 
-        return $this->renderInventoryView('inventory.stock.receive-stock', [
+        return $this->renderInventoryView('inventory.stock.receive', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
             'suppliers' => $this->suppliers->listActive(),

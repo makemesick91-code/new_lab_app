@@ -135,11 +135,37 @@ class InventoryStockService
         return $this->movements->currentStockByBranch($this->branchContext->requireId());
     }
 
+    public function getStockRows(?int $locationId = null): Collection
+    {
+        $branchId = $this->branchContext->requireId();
+
+        if ($locationId !== null) {
+            $this->assertLocationInBranch($branchId, $locationId);
+        }
+
+        return $this->movements->stockRows($branchId, $locationId);
+    }
+
+    public function getStockByLocationSummary(): Collection
+    {
+        return $this->movements->stockByLocationSummary($this->branchContext->requireId());
+    }
+
+    public function getRecentMovements(int $limit = 10): Collection
+    {
+        return $this->movements->recentMovements($this->branchContext->requireId(), $limit);
+    }
+
     public function getBranchSummary(?int $locationId = null): array
     {
+        $lowStockProducts = $this->getLowStockProducts($locationId);
+
         return [
             'inventory_value' => $this->getInventoryValue($locationId),
-            'low_stock_count' => $this->getLowStockProducts($locationId)->count(),
+            'low_stock_count' => $lowStockProducts->count(),
+            'out_of_stock_count' => $lowStockProducts
+                ->filter(fn ($product) => (float) $product->current_stock <= 0)
+                ->count(),
         ];
     }
 

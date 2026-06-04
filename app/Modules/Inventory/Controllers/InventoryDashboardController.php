@@ -28,7 +28,9 @@ class InventoryDashboardController extends Controller
         return $this->renderInventoryView('inventory.dashboard', [
             'summary' => $this->stock->getBranchSummary(),
             'locations' => $this->locations->listActive(),
+            'stockByLocation' => $this->stock->getStockByLocationSummary(),
             'lowStockProducts' => $this->stock->getLowStockProducts(),
+            'recentMovements' => $this->stock->getRecentMovements(),
         ]);
     }
 }

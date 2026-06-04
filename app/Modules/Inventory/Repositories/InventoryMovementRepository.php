@@ -65,6 +65,40 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->get();
     }
 
+    public function stockRows(int $branchId, ?int $locationId = null): Collection
+    {
+        return InventoryMovement::query()
+            ->with(['product.category', 'product.unit', 'inventoryLocation'])
+            ->select('product_id', 'inventory_location_id')
+            ->selectRaw('SUM(quantity_in) - SUM(quantity_out) as current_stock')
+            ->where('branch_id', $branchId)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id', 'inventory_location_id')
+            ->orderBy('inventory_location_id')
+            ->orderBy('product_id')
+            ->get();
+    }
+
+    public function stockByLocationSummary(int $branchId): Collection
+    {
+        $stock = InventoryMovement::query()
+            ->select('inventory_location_id', 'product_id')
+            ->selectRaw('SUM(quantity_in) - SUM(quantity_out) as current_stock')
+            ->where('branch_id', $branchId)
+            ->groupBy('inventory_location_id', 'product_id');
+
+        return InventoryMovement::query()
+            ->fromSub($stock, 'stock')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'stock.inventory_location_id')
+            ->join('inv_products', 'inv_products.id', '=', 'stock.product_id')
+            ->select('inv_inventory_locations.id', 'inv_inventory_locations.name', 'inv_inventory_locations.code')
+            ->selectRaw('SUM(stock.current_stock) as total_stock')
+            ->selectRaw('SUM(stock.current_stock * inv_products.average_cost) as inventory_value')
+            ->groupBy('inv_inventory_locations.id', 'inv_inventory_locations.name', 'inv_inventory_locations.code')
+            ->orderBy('inv_inventory_locations.name')
+            ->get();
+    }
+
     public function stockCard(int $branchId, int $productId, ?int $locationId = null, array $filters = []): Collection
     {
         return InventoryMovement::query()
@@ -116,5 +150,16 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->value('inventory_value');
 
         return (float) $value;
+    }
+
+    public function recentMovements(int $branchId, int $limit = 10): Collection
+    {
+        return InventoryMovement::query()
+            ->with(['inventoryLocation', 'product.unit', 'supplier', 'createdBy'])
+            ->where('branch_id', $branchId)
+            ->orderByDesc('movement_date')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
     }
 }

@@ -18,9 +18,15 @@ interface InventoryMovementRepositoryInterface
 
     public function currentStockByBranch(int $branchId): Collection;
 
+    public function stockRows(int $branchId, ?int $locationId = null): Collection;
+
+    public function stockByLocationSummary(int $branchId): Collection;
+
     public function stockCard(int $branchId, int $productId, ?int $locationId = null, array $filters = []): Collection;
 
     public function lowStockProducts(int $branchId, ?int $locationId = null): Collection;
 
     public function inventoryValue(int $branchId, ?int $locationId = null): float;
+
+    public function recentMovements(int $branchId, int $limit = 10): Collection;
 }

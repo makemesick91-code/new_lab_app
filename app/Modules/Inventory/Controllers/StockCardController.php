@@ -28,11 +28,20 @@ class StockCardController extends Controller
         $this->authorize('view', $product);
         $this->authorize('viewAny', InventoryMovement::class);
 
-        return $this->renderInventoryView('inventory.stock-card.show', [
+        $runningBalance = 0;
+        $stockCard = $this->stock->getStockCard($product->id, $request->locationId(), $request->filters())
+            ->map(function ($movement) use (&$runningBalance) {
+                $runningBalance += (float) $movement->quantity_in - (float) $movement->quantity_out;
+                $movement->running_balance = $runningBalance;
+
+                return $movement;
+            });
+
+        return $this->renderInventoryView('inventory.stock.card', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
             'filters' => $request->validated(),
-            'stockCard' => $this->stock->getStockCard($product->id, $request->locationId(), $request->filters()),
+            'stockCard' => $stockCard,
             'currentStock' => $this->stock->getCurrentStock($product->id, $request->locationId()),
         ]);
     }
