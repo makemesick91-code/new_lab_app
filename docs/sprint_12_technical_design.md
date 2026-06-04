@@ -18,6 +18,7 @@ Sprint 12 must support:
 - Product units
 - Products/materials
 - Suppliers
+- Inventory locations inside each branch
 - Inventory transaction ledger
 - Opening stock
 - Receive stock
@@ -32,7 +33,9 @@ Out of scope:
 
 - Stock opname
 - Production usage
+- Bill of materials
 - Purchase order
+- Inter-location transfer
 - Inter-branch transfer
 - Supplier payment
 - Inventory forecasting
@@ -43,25 +46,41 @@ Out of scope:
 
 All branch-owned Inventory data must carry `branch_id`. Reads and writes must go through a branch resolver rather than trusting request input.
 
+Inventory is also location-aware from day one. Every stock movement belongs to exactly one Inventory Location inside the active branch.
+
 2. Sprint 12 must not assume `CurrentBranch` exists.
 
 The audit found Branch foundation but no `CurrentBranch` class, helper, middleware, or service. Sprint 12 requires a minimal `BranchContext` service before Inventory implementation.
 
-3. Stock is calculated from a ledger.
+3. Inventory Location is the stock ownership boundary below Branch.
+
+The ownership hierarchy is:
+
+```text
+Branch
+  -> Inventory Location
+      -> Product Stock Ledger
+```
+
+Inventory Location represents a warehouse, production room, QC room, delivery area, clinic room, or any other storage area.
+
+4. Stock is calculated from a ledger.
 
 There must be no mutable `final_stock`, `current_stock`, or `qty_on_hand` column treated as source of truth. Current stock is derived from inventory ledger movements:
 
 ```text
-SUM(quantity_in - quantity_out)
+SUM(quantity_in) - SUM(quantity_out)
 ```
 
-4. Repositories enforce branch filters.
+Stock can be viewed per Inventory Location and aggregated per Branch from the same ledger.
 
-Inventory repositories must always accept branch context from services and apply `branch_id` filters. They must not expose unscoped list/detail queries except deliberate Super Admin/all-branch reporting methods.
+5. Repositories enforce branch and location filters.
 
-5. Policies block cross-branch access.
+Inventory repositories must always accept branch context from services and apply `branch_id` filters. Location-specific stock operations must also filter by `inventory_location_id`. Repositories must not expose unscoped list/detail queries except deliberate Super Admin/all-branch reporting methods.
 
-Inventory policies must compare model `branch_id` with the active branch. Super Admin may bypass via existing `Gate::before`; any extra all-branch permission must be explicit.
+6. Policies block cross-branch and cross-location access.
+
+Inventory policies must compare model `branch_id` with the active branch. Location policies must ensure the Inventory Location belongs to the active branch. Super Admin may bypass via existing `Gate::before`; any extra all-branch permission must be explicit.
 
 ## Branch Strategy
 
@@ -138,6 +157,46 @@ For detail pages, repositories should load by both primary key and branch:
 InventoryMovement::where('branch_id', $branchId)->find($id)
 ```
 
+### Inventory Location Strategy
+
+Inventory Location is a branch-owned master entity stored in:
+
+```text
+inv_inventory_locations
+```
+
+Each Inventory Location belongs to exactly one Branch. It represents physical or operational storage areas such as:
+
+- Warehouse
+- Production Room
+- QC Room
+- Delivery Area
+- Clinic Room
+- Other storage areas
+
+Location types:
+
+```text
+WAREHOUSE
+PRODUCTION_ROOM
+QC_ROOM
+DELIVERY_AREA
+CLINIC_ROOM
+OTHER
+```
+
+All stock actions require an Inventory Location selection. Services must validate:
+
+- The selected Inventory Location exists.
+- The selected Inventory Location is active.
+- The selected Inventory Location belongs to the active branch.
+- The selected product belongs to the same active branch.
+- Movement `branch_id`, `inventory_location_id`, and `product_id` are consistent.
+
+Inventory Location access must be branch-scoped. Users may only list, view, create, update, deactivate, and use locations inside their active branch.
+
+No transfer logic is included in Sprint 12. Moving stock from one location to another is out of scope and must not be simulated as adjustment-out plus adjustment-in in UI workflows.
+
 ### Policy Rules
 
 Policy checks:
@@ -211,6 +270,51 @@ INDEX branch_id
 UNIQUE(branch_id, code)
 INDEX(branch_id, is_active)
 ```
+
+### inv_inventory_locations
+
+Purpose: branch-owned physical or operational storage locations for inventory.
+
+Columns:
+
+```text
+id BIGSERIAL PRIMARY KEY
+branch_id BIGINT NOT NULL FK mst_branches(id) ON DELETE RESTRICT
+name VARCHAR(150) NOT NULL
+code VARCHAR(50) NULL
+type VARCHAR(50) NOT NULL
+description TEXT NULL
+is_active BOOLEAN NOT NULL DEFAULT TRUE
+created_at TIMESTAMP NULL
+updated_at TIMESTAMP NULL
+```
+
+Allowed `type` values:
+
+```text
+WAREHOUSE
+PRODUCTION_ROOM
+QC_ROOM
+DELIVERY_AREA
+CLINIC_ROOM
+OTHER
+```
+
+Indexes:
+
+```text
+INDEX branch_id
+UNIQUE(branch_id, code) WHERE code IS NOT NULL
+INDEX(branch_id, type)
+INDEX(branch_id, is_active)
+```
+
+Business rules:
+
+- Every Inventory Location belongs to exactly one branch.
+- Users may only access locations inside their active branch.
+- Location `code` is optional, but when present it must be unique within the branch.
+- Locations should be deactivated instead of deleted once ledger movements exist.
 
 ### mst_inventory_products
 
@@ -293,6 +397,7 @@ Columns:
 ```text
 id BIGSERIAL PRIMARY KEY
 branch_id BIGINT NOT NULL FK mst_branches(id) ON DELETE RESTRICT
+inventory_location_id BIGINT NOT NULL FK inv_inventory_locations(id) ON DELETE RESTRICT
 product_id BIGINT NOT NULL FK mst_inventory_products(id) ON DELETE RESTRICT
 supplier_id BIGINT NULL FK mst_inventory_suppliers(id) ON DELETE SET NULL
 movement_number VARCHAR(50) NOT NULL
@@ -324,6 +429,8 @@ Indexes:
 ```text
 INDEX branch_id
 UNIQUE(branch_id, movement_number)
+INDEX(branch_id, inventory_location_id)
+INDEX(branch_id, inventory_location_id, product_id)
 INDEX(branch_id, product_id)
 INDEX(branch_id, supplier_id)
 INDEX(branch_id, movement_date)
@@ -339,39 +446,117 @@ Ledger rules:
 - `quantity_in` and `quantity_out` must never be negative.
 - `total_cost = quantity_in * unit_cost` when `unit_cost` exists for inbound movement.
 - Movement rows are append-only after creation.
+- `inventory_location_id` must belong to the same `branch_id`.
+- `product_id` must belong to the same `branch_id`.
+- `supplier_id`, when present, must belong to the same `branch_id`.
 
 ### Current Stock Query
 
-No mutable stock table is required for Sprint 12. Current stock is a query:
+No mutable stock table is required for Sprint 12. There must be no `stock`, `current_stock`, or `qty_on_hand` column in product tables.
+
+Current stock per product per Inventory Location:
 
 ```sql
 SELECT
     product_id,
-    SUM(quantity_in - quantity_out) AS current_stock
+    inventory_location_id,
+    SUM(quantity_in) - SUM(quantity_out) AS current_stock
+FROM trx_inventory_movements
+WHERE branch_id = :branch_id
+  AND inventory_location_id = :inventory_location_id
+GROUP BY product_id, inventory_location_id
+```
+
+Total stock per product per Branch:
+
+```sql
+SELECT
+    product_id,
+    SUM(quantity_in) - SUM(quantity_out) AS current_stock
 FROM trx_inventory_movements
 WHERE branch_id = :branch_id
 GROUP BY product_id
 ```
 
-For listing products with stock:
+For listing products with stock per location:
 
 ```sql
 SELECT
     p.*,
-    COALESCE(SUM(m.quantity_in - m.quantity_out), 0) AS current_stock
+    l.id AS inventory_location_id,
+    l.name AS inventory_location_name,
+    COALESCE(SUM(m.quantity_in) - SUM(m.quantity_out), 0) AS current_stock
 FROM mst_inventory_products p
+JOIN inv_inventory_locations l
+    ON l.branch_id = p.branch_id
 LEFT JOIN trx_inventory_movements m
     ON m.product_id = p.id
     AND m.branch_id = p.branch_id
+    AND m.inventory_location_id = l.id
 WHERE p.branch_id = :branch_id
-GROUP BY p.id
+  AND l.id = :inventory_location_id
+GROUP BY p.id, l.id, l.name
 ```
 
-Low stock:
+Low stock per location:
 
 ```text
-current_stock <= minimum_stock
+location_current_stock <= product.minimum_stock
 ```
+
+Low stock per branch:
+
+```text
+branch_total_current_stock <= product.minimum_stock
+```
+
+Branch dashboards should show both views because a branch can have enough total stock while one operational location is low.
+
+## ERD Description
+
+Inventory Core relationship model:
+
+```text
+mst_branches
+  has many inv_inventory_locations
+  has many mst_product_categories
+  has many mst_product_units
+  has many mst_inventory_products
+  has many mst_inventory_suppliers
+  has many trx_inventory_movements
+
+inv_inventory_locations
+  belongs to mst_branches
+  has many trx_inventory_movements
+
+mst_inventory_products
+  belongs to mst_branches
+  belongs to mst_product_categories (nullable)
+  belongs to mst_product_units
+  has many trx_inventory_movements
+
+mst_inventory_suppliers
+  belongs to mst_branches
+  has many trx_inventory_movements
+
+trx_inventory_movements
+  belongs to mst_branches
+  belongs to inv_inventory_locations
+  belongs to mst_inventory_products
+  belongs to mst_inventory_suppliers (nullable)
+  belongs to users via created_by
+```
+
+Ownership invariant:
+
+```text
+trx_inventory_movements.branch_id
+  = inv_inventory_locations.branch_id
+  = mst_inventory_products.branch_id
+  = mst_inventory_suppliers.branch_id when supplier_id is present
+```
+
+Inventory Location is the only location dimension in Sprint 12. Inter-location transfer is explicitly out of scope.
 
 ## Module Structure
 
@@ -434,6 +619,19 @@ app/Modules/Inventory/
     └── InventoryNumberGeneratorService.php
 ```
 
+Inventory Location additions required in the module structure:
+
+```text
+app/Modules/Inventory/Controllers/InventoryLocationController.php
+app/Modules/Inventory/Interfaces/InventoryLocationRepositoryInterface.php
+app/Modules/Inventory/Models/InventoryLocation.php
+app/Modules/Inventory/Policies/InventoryLocationPolicy.php
+app/Modules/Inventory/Repositories/InventoryLocationRepository.php
+app/Modules/Inventory/Requests/StoreInventoryLocationRequest.php
+app/Modules/Inventory/Requests/UpdateInventoryLocationRequest.php
+app/Modules/Inventory/Services/InventoryLocationService.php
+```
+
 ## Models
 
 All models should:
@@ -446,12 +644,26 @@ All models should:
 - Define `branch(): BelongsTo`.
 - Define `protected static function newFactory()`.
 
+`InventoryLocation` should:
+
+- Use table `inv_inventory_locations`.
+- Define allowed type constants:
+  - `WAREHOUSE`
+  - `PRODUCTION_ROOM`
+  - `QC_ROOM`
+  - `DELIVERY_AREA`
+  - `CLINIC_ROOM`
+  - `OTHER`
+- Define `branch(): BelongsTo`.
+- Define `movements(): HasMany`.
+- Use deactivation for operational removal once movements exist.
+
 `InventoryMovement` should:
 
 - Define `ENTITY_TYPE = 'trx_inventory_movements'`.
 - Not use `SoftDeletes`.
 - Be append-only by policy/service convention.
-- Define `product()`, `supplier()`, `branch()`, and `creator()` relationships.
+- Define `product()`, `supplier()`, `branch()`, `inventoryLocation()`, and `creator()` relationships.
 
 ## Services
 
@@ -470,6 +682,17 @@ Responsibilities:
 - List/create/update/delete units in the active branch.
 - Prevent delete when products reference the unit.
 - Stamp `branch_id` on create.
+
+### InventoryLocationService
+
+Responsibilities:
+
+- List/create/update/deactivate Inventory Locations in the active branch.
+- Stamp `branch_id` on create from `BranchContext`.
+- Validate location type against the allowed constants.
+- Return active locations for stock forms.
+- Prevent hard delete when ledger movements reference the location.
+- Deactivate locations instead of deleting them for normal operational use.
 
 ### InventoryProductService
 
@@ -492,21 +715,26 @@ Responsibilities:
 
 Responsibilities:
 
-- Create ledger rows for opening stock, receive stock, adjustment in, and adjustment out.
-- Validate product/supplier branch ownership.
+- Create ledger rows for opening stock into location, receive stock into location, adjustment in location, and adjustment out location.
+- Validate product/supplier/location branch ownership.
 - Generate movement numbers.
 - Wrap all writes in `DB::transaction()`.
-- Use `lockForUpdate()` on product/movement aggregate checks when creating outbound movements.
+- Use `lockForUpdate()` on product/location/movement aggregate checks when creating outbound movements.
 - Write audit logs through `AuditLogService`.
 - Block negative stock for `ADJUSTMENT_OUT`.
+- Require `inventory_location_id` for every movement.
+- Do not implement transfer logic.
 
 ### InventoryStockService
 
 Responsibilities:
 
 - Calculate current stock from `trx_inventory_movements`.
-- Return stock card rows for one product in active branch.
-- Return low stock products.
+- Return current stock per location.
+- Return total stock per branch.
+- Return stock card rows for one product in one active-branch location.
+- Return low stock products per location.
+- Return low stock products aggregated per branch.
 - Return dashboard aggregate counts.
 - Never persist final stock.
 
@@ -517,6 +745,8 @@ Responsibilities:
 - Summarize:
   - total active products
   - low stock product count
+  - low stock by location
+  - stock by location
   - total stock value from inbound cost basis where feasible
   - movement count for current month
   - recent movements
@@ -561,6 +791,26 @@ delete(InventoryCategory $category)
 
 Same CRUD/list pattern as categories.
 
+### InventoryLocationRepository
+
+Methods:
+
+```text
+paginateForCurrentBranch(int $branchId, array $filters = [], int $perPage = 10)
+listActiveLocations(int $branchId): Collection
+findInBranch(int $branchId, int $id): ?InventoryLocation
+create(array $data): InventoryLocation
+update(InventoryLocation $location, array $data): InventoryLocation
+deactivate(InventoryLocation $location): InventoryLocation
+hasMovements(int $branchId, int $locationId): bool
+```
+
+Repository rules:
+
+- All list and detail queries must include `branch_id`.
+- `listActiveLocations()` powers movement forms and excludes inactive locations.
+- Normal implementation should deactivate instead of hard delete once movements exist.
+
 ### InventoryProductRepository
 
 Methods:
@@ -587,16 +837,20 @@ Methods:
 ```text
 paginate(int $branchId, array $filters = [], int $perPage = 15)
 forProduct(int $branchId, int $productId, array $filters = [], int $perPage = 15)
+stockCardByLocation(int $branchId, int $locationId, int $productId, array $filters = [], int $perPage = 15)
 create(array $data)
-currentStockForProduct(int $branchId, int $productId): string
-currentStockByProduct(int $branchId, array $productIds = []): Collection
-lowStockProducts(int $branchId): Collection
+currentStockForProductInLocation(int $branchId, int $locationId, int $productId): string
+currentStockByLocation(int $branchId, int $locationId, array $productIds = []): Collection
+currentStockByBranch(int $branchId, array $productIds = []): Collection
+lowStockProductsByLocation(int $branchId, int $locationId): Collection
+lowStockProductsByBranch(int $branchId): Collection
 latestMovementNumberForMonth(int $branchId, string $month): ?string
 ```
 
 Repository guardrail:
 
 - No `find($id)` without branch condition.
+- No stock-card query without branch and location conditions.
 - No global `paginate()` for normal Inventory controllers.
 
 ## Requests
@@ -613,6 +867,18 @@ Common validation:
 - Notes: nullable string max 2000.
 
 Request examples:
+
+### StoreInventoryLocationRequest
+
+```text
+name required string max:150
+code nullable string max:50
+type required in:WAREHOUSE,PRODUCTION_ROOM,QC_ROOM,DELIVERY_AREA,CLINIC_ROOM,OTHER
+description nullable string max:2000
+is_active sometimes boolean
+```
+
+Service rule: `code`, when present, must be unique within the active branch.
 
 ### StoreInventoryProductRequest
 
@@ -632,6 +898,7 @@ Branch ownership for category/unit is checked in `InventoryProductService`.
 ### StoreOpeningStockRequest
 
 ```text
+inventory_location_id required integer exists:inv_inventory_locations,id
 product_id required integer exists:mst_inventory_products,id
 movement_date required date
 quantity required numeric min:0.01
@@ -639,11 +906,12 @@ unit_cost nullable numeric min:0
 notes nullable string max:2000
 ```
 
-Service rule: only one opening stock movement per product per branch unless explicitly allowed.
+Service rule: only one opening stock movement per product per location per branch unless explicitly allowed.
 
 ### StoreStockReceiptRequest
 
 ```text
+inventory_location_id required integer exists:inv_inventory_locations,id
 product_id required integer exists:mst_inventory_products,id
 supplier_id nullable integer exists:mst_inventory_suppliers,id
 movement_date required date
@@ -655,13 +923,16 @@ notes nullable string max:2000
 ### StoreAdjustmentOutRequest
 
 ```text
+inventory_location_id required integer exists:inv_inventory_locations,id
 product_id required integer exists:mst_inventory_products,id
 movement_date required date
 quantity required numeric min:0.01
 notes required string max:2000
 ```
 
-Service rule: resulting stock must not go negative.
+Service rule: resulting stock in that location must not go negative.
+
+Branch/location ownership for `inventory_location_id`, `product_id`, and `supplier_id` is checked in services. Request `exists` rules alone are not sufficient.
 
 ## Policies
 
@@ -682,7 +953,9 @@ view_inventory_dashboard
 Policy behavior:
 
 - Master data policies check permission and active branch.
+- Inventory Location policy checks permission and active branch.
 - Movement policy allows view within branch.
+- Movement policy also verifies the movement location belongs to the active branch.
 - Movement create abilities map to receive/adjust permissions.
 - Movement update/delete return false for posted movement records.
 
@@ -706,6 +979,19 @@ Cross-branch rule:
 return $model->branch_id === app(BranchContext::class)->id()
 ```
 
+Cross-location rule:
+
+```text
+return $location->branch_id === app(BranchContext::class)->id()
+```
+
+For movement records:
+
+```text
+return $movement->branch_id === app(BranchContext::class)->id()
+    && $movement->inventoryLocation->branch_id === app(BranchContext::class)->id()
+```
+
 Super Admin bypass remains centralized in `RepositoryServiceProvider`.
 
 ## Controllers
@@ -725,6 +1011,14 @@ Controllers should stay thin.
 
 - CRUD except show.
 
+### InventoryLocationController
+
+- CRUD except show.
+- Index lists locations in the active branch.
+- Store/update validates type and branch-scoped code uniqueness through service rules.
+- Destroy should deactivate when movements exist, not delete ledger-linked locations.
+- Provides active location options for stock operation forms through `InventoryLocationService`.
+
 ### InventoryProductController
 
 - CRUD except show.
@@ -737,11 +1031,12 @@ Controllers should stay thin.
 ### InventoryMovementController
 
 - `index()`: ledger list.
-- `stockCard(InventoryProduct $product)`: stock card for one product after policy/branch check.
+- `stockCard(InventoryProduct $product, InventoryLocation $location)`: stock card for one product in one location after policy/branch/location checks.
+- Filters include product, location, type, supplier, and date range.
 
 ### StockReceiptController
 
-- `create()`: receive stock form.
+- `create()`: receive stock form with required location selection.
 - `store(StoreStockReceiptRequest $request)`: create `RECEIVE_STOCK` ledger row.
 
 ### StockAdjustmentController
@@ -752,7 +1047,7 @@ Controllers should stay thin.
 
 ### OpeningStockController
 
-- `create()`, `store()`.
+- `create()`, `store()` with required location selection.
 - Can be folded into `InventoryMovementController` if the UI uses one movement form, but a dedicated controller keeps rules clearer.
 
 ## Routes
@@ -773,6 +1068,10 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
         ->except(['show'])
         ->middleware('permission:manage_inventory|create_inventory_master|update_inventory_master|delete_inventory_master');
 
+    Route::resource('locations', InventoryLocationController::class)
+        ->except(['show'])
+        ->middleware('permission:view_inventory|manage_inventory');
+
     Route::resource('products', InventoryProductController::class)
         ->except(['show'])
         ->middleware('permission:view_inventory|manage_inventory');
@@ -785,8 +1084,8 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
         ->name('movements.index')
         ->middleware('permission:view_inventory_movements|manage_inventory');
 
-    Route::get('products/{product}/stock-card', [InventoryMovementController::class, 'stockCard'])
-        ->name('products.stock-card')
+    Route::get('products/{product}/locations/{location}/stock-card', [InventoryMovementController::class, 'stockCard'])
+        ->name('products.locations.stock-card')
         ->middleware('permission:view_inventory_movements|manage_inventory');
 
     Route::get('opening-stock/create', [OpeningStockController::class, 'create'])
@@ -831,6 +1130,11 @@ resources/views/inventory/units/create.blade.php
 resources/views/inventory/units/edit.blade.php
 resources/views/inventory/units/_form.blade.php
 
+resources/views/inventory/locations/index.blade.php
+resources/views/inventory/locations/create.blade.php
+resources/views/inventory/locations/edit.blade.php
+resources/views/inventory/locations/_form.blade.php
+
 resources/views/inventory/products/index.blade.php
 resources/views/inventory/products/create.blade.php
 resources/views/inventory/products/edit.blade.php
@@ -853,9 +1157,11 @@ UI conventions:
 
 - Use `<x-settings-shell>`.
 - Keep index screens dense and operational.
-- Add filters for search, category, movement type, supplier, and date range where useful.
+- Add filters for search, category, location, movement type, supplier, and date range where useful.
 - Show current stock as calculated value.
 - Show low stock indicator when `current_stock <= minimum_stock`.
+- Stock operation forms must require an active Inventory Location selection.
+- Dashboard should display total inventory value, stock by location, low stock by location, and recent movements.
 - Do not show branch selector to normal users. If Super Admin branch switching is introduced, it should update BranchContext/session and be protected.
 
 Sidebar:
@@ -870,6 +1176,7 @@ Recommended Pest feature tests:
 ```text
 tests/Feature/Inventory/InventoryCategoryTest.php
 tests/Feature/Inventory/InventoryUnitTest.php
+tests/Feature/Inventory/InventoryLocationTest.php
 tests/Feature/Inventory/InventoryProductTest.php
 tests/Feature/Inventory/InventorySupplierTest.php
 tests/Feature/Inventory/InventoryMovementTest.php
@@ -884,6 +1191,7 @@ Factory files:
 ```text
 database/factories/InventoryCategoryFactory.php
 database/factories/InventoryUnitFactory.php
+database/factories/InventoryLocationFactory.php
 database/factories/InventoryProductFactory.php
 database/factories/InventorySupplierFactory.php
 database/factories/InventoryMovementFactory.php
@@ -895,28 +1203,37 @@ Test scenarios:
 - Guests are redirected to login.
 - Users without inventory permissions are forbidden.
 - Categories, units, products, and suppliers can be created/updated in active branch.
+- Inventory Locations can be listed, created, updated, and deactivated in active branch.
 - Duplicate codes are rejected per branch.
 - Same code is allowed in different branches if branch context supports switching.
+- Location codes are optional but unique per branch when present.
 - Product category/unit must belong to active branch.
-- Opening stock creates an inbound ledger row.
-- Receive stock creates an inbound ledger row.
-- Adjustment in creates an inbound ledger row.
-- Adjustment out creates an outbound ledger row.
-- Adjustment out cannot make stock negative.
-- Current stock is calculated from ledger rows.
-- Stock card lists movement rows in date/id order for one product.
-- Low stock detection uses calculated stock and `minimum_stock`.
+- Opening stock into a location creates an inbound ledger row.
+- Receive stock into a location creates an inbound ledger row.
+- Adjustment in location creates an inbound ledger row.
+- Adjustment out location creates an outbound ledger row.
+- Adjustment out cannot make stock negative in that location.
+- Current stock is calculated from ledger rows per location.
+- Branch total stock is aggregated from all locations in the branch.
+- Stock card lists movement rows in date/id order for one product in one location.
+- Low stock detection uses calculated stock and `minimum_stock` per location.
+- Low stock detection also supports branch aggregate view.
 - Dashboard summary is scoped to active branch.
+- Dashboard summary includes stock by location and low stock by location.
 - Repositories do not leak records from another branch.
+- Repositories do not leak stock from another location when a location-specific query is used.
 - Policies block cross-branch view/update.
+- Policies block access to locations outside the active branch.
+- Services reject movements when product branch and location branch do not match.
+- Services reject movements when supplier branch and location branch do not match.
+- Invalid location access returns forbidden or validation error according to controller/service boundary.
 - Movement rows cannot be edited or deleted after creation.
 - Audit log rows are created for master mutations and stock movements.
 
 BranchContext tests:
 
-- Returns MAIN branch when no session/user branch exists.
-- Super Admin can use active branch from session.
-- Non-super user cannot access a branch outside context.
+- Returns MAIN branch for an authenticated user when no user branch assignment exists.
+- Falls back to MAIN when no explicit current/default branch exists in the current data model.
 - Missing MAIN branch fails loudly rather than creating unscoped Inventory data.
 
 ## Audit Logging
@@ -928,6 +1245,7 @@ Add `ENTITY_TYPE` constants:
 ```text
 mst_product_categories
 mst_product_units
+inv_inventory_locations
 mst_inventory_products
 mst_inventory_suppliers
 trx_inventory_movements
@@ -942,6 +1260,9 @@ inventory_category_created
 inventory_category_updated
 inventory_unit_created
 inventory_unit_updated
+inventory_location_created
+inventory_location_updated
+inventory_location_deactivated
 inventory_product_created
 inventory_product_updated
 inventory_supplier_created
@@ -976,23 +1297,35 @@ Concurrent adjustment-out requests can overspend stock unless services use trans
 
 Products, categories, units, and suppliers must be validated against the same active branch. Request `exists` rules alone are insufficient.
 
-6. Cost valuation ambiguity.
+6. Product/location branch mismatch.
+
+Stock movements must reject any combination where product, supplier, and Inventory Location do not belong to the same active branch.
+
+7. Location isolation errors.
+
+Stock per location and stock per branch use the same ledger. Queries must be explicit about whether they group by `inventory_location_id` or aggregate all locations.
+
+8. Transfer expectations.
+
+Users may expect movement between locations, but inter-location transfer is out of scope. Avoid UI labels or workflows that imply transfer support.
+
+9. Cost valuation ambiguity.
 
 Sprint 12 can store `unit_cost` and `total_cost`, but it should not promise accounting-grade valuation, FIFO/LIFO, supplier payment, or forecasting.
 
-7. Existing material references are free text.
+10. Existing material references are free text.
 
 Lab Order items have `material_text`. Sprint 12 should not retrofit production usage or Lab Order item material linkage in this sprint.
 
-8. Permission naming consistency.
+11. Permission naming consistency.
 
 Use underscore-style permissions for Inventory and keep role assignments aligned.
 
-9. Immutability expectations.
+12. Immutability expectations.
 
 Ledger rows must be append-only. Corrections should be new adjustment rows, not updates to old rows.
 
-10. Reporting expectations.
+13. Reporting expectations.
 
 Inventory dashboard is in scope, but reporting exports and long-term analytics are not. Keep summary service boundaries clean for later Reporting integration.
 
@@ -1000,17 +1333,27 @@ Inventory dashboard is in scope, but reporting exports and long-term analytics a
 
 - Inventory technical implementation has a minimal `BranchContext` or equivalent resolver before any Inventory branch-owned write.
 - All Inventory branch-owned tables include non-null `branch_id`.
+- `inv_inventory_locations` exists as a branch-owned Inventory Location master table.
+- All Inventory movements include `branch_id`, `inventory_location_id`, and `product_id`.
 - All Inventory repositories filter list/detail queries by active branch.
+- Location-specific stock repositories filter by active branch and Inventory Location.
 - All Inventory services stamp `branch_id` from branch context on create.
+- All stock movement services require active Inventory Location selection.
 - Inventory policies prevent cross-branch access for non-bypass users.
+- Inventory policies prevent access to locations outside the active branch.
+- Product branch and location branch always match for movements.
 - Stock is calculated from `trx_inventory_movements` ledger rows.
 - No mutable final stock source-of-truth column exists.
 - Opening stock, receive stock, adjustment in, and adjustment out create immutable ledger rows.
-- Adjustment out cannot make calculated stock negative.
-- Current stock, stock card, low stock detection, and dashboard summary are scoped to active branch.
+- Opening stock, receive stock, adjustment in, and adjustment out are location-aware.
+- Adjustment out cannot make calculated stock negative in the selected location.
+- Current stock is available per location and aggregated per branch.
+- Stock card is available per location.
+- Low stock detection supports per-location and per-branch views.
+- Dashboard summary includes total inventory value, stock by location, low stock by location, and recent movements.
 - Inventory CRUD and movement actions use FormRequest validation, services, repositories, policies, and Blade views consistent with existing modules.
 - Inventory permissions are seeded and assigned to appropriate roles.
-- Feature tests cover authorization, branch scoping, CRUD, ledger movement creation, stock calculation, low stock, stock card, dashboard, and negative-stock prevention.
+- Feature tests cover authorization, branch scoping, location isolation, CRUD, ledger movement creation, stock per location, branch stock aggregation, low stock, stock card, dashboard, invalid location access, and negative-stock prevention.
 - Existing test suite remains green.
 
 ## Implementation Files
@@ -1032,6 +1375,7 @@ resources/views/inventory/**/*
 tests/Feature/Inventory/*
 database/factories/InventoryCategoryFactory.php
 database/factories/InventoryUnitFactory.php
+database/factories/InventoryLocationFactory.php
 database/factories/InventoryProductFactory.php
 database/factories/InventorySupplierFactory.php
 database/factories/InventoryMovementFactory.php
@@ -1057,6 +1401,7 @@ Likely migrations during implementation:
 ```text
 database/migrations/*_create_mst_product_categories_table.php
 database/migrations/*_create_mst_product_units_table.php
+database/migrations/*_create_inv_inventory_locations_table.php
 database/migrations/*_create_mst_inventory_products_table.php
 database/migrations/*_create_mst_inventory_suppliers_table.php
 database/migrations/*_create_trx_inventory_movements_table.php
