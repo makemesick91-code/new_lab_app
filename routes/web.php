@@ -11,6 +11,7 @@ use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
 use App\Modules\Inventory\Controllers\StockCardController;
+use App\Modules\Inventory\Controllers\StockOpnameController;
 use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierController;
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
@@ -311,6 +312,13 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::resource('locations', InventoryLocationController::class);
     Route::resource('products', InventoryProductController::class);
     Route::resource('suppliers', InventorySupplierController::class);
+
+    Route::resource('stock-opnames', StockOpnameController::class)->only(['index', 'create', 'store', 'show']);
+    Route::get('stock-opnames/{stockOpname}/review', [StockOpnameController::class, 'reviewScreen'])->name('stock-opnames.review-screen');
+    Route::post('stock-opnames/{stockOpname}/review', [StockOpnameController::class, 'review'])->name('stock-opnames.review');
+    Route::post('stock-opnames/{stockOpname}/finalize', [StockOpnameController::class, 'finalize'])->name('stock-opnames.finalize');
+    Route::post('stock-opnames/{stockOpname}/cancel', [StockOpnameController::class, 'cancel'])->name('stock-opnames.cancel');
+    Route::post('stock-opnames/{stockOpname}/products/{productId}/counted-quantity', [StockOpnameController::class, 'updateCountedQuantity'])->name('stock-opnames.update-counted-quantity');
 });
 
 require __DIR__.'/auth.php';

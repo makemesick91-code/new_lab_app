@@ -29,6 +29,7 @@ use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
+use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -43,6 +44,7 @@ use App\Modules\Inventory\Repositories\InventoryMovementRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
 use App\Modules\Inventory\Repositories\ProductRepository;
 use App\Modules\Inventory\Repositories\ProductUnitRepository;
+use App\Modules\Inventory\Repositories\StockOpnameRepository;
 use App\Modules\Inventory\Repositories\SupplierRepository;
 use App\Modules\Invoice\Interfaces\InvoiceRepositoryInterface;
 use App\Modules\Invoice\Interfaces\PaymentRepositoryInterface;
@@ -150,6 +152,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ProductRepositoryInterface::class => ProductRepository::class,
         SupplierRepositoryInterface::class => SupplierRepository::class,
         InventoryMovementRepositoryInterface::class => InventoryMovementRepository::class,
+        // Sprint 13 - Stock Opname
+        StockOpnameRepositoryInterface::class => StockOpnameRepository::class,
     ];
 
     /**

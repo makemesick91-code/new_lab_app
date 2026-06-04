@@ -1,518 +1,726 @@
-# UI Design System — Asia Dental Lab Management System
+# ADLMS UI Design System
 
-> **Purpose:** A lightweight, implementable design system that fixes the drift found in
-> [docs/ui_ux_audit.md](ui_ux_audit.md) and gives every module one shared visual language.
-> **Direction:** Modern SaaS · clean medical/laboratory feel · professional for clinic
-> owners & branch admins · dense enough for daily operational users · mobile-responsive.
-> **Stack:** Laravel Blade + Tailwind CSS + Alpine.js (only where already used). **No React, no Vue, no new UI library.**
-> **Status:** Documentation only — no code is modified here. All snippets are reference implementations.
+Version: 1.0
+Last updated: June 2026
+Status: **Official.** This is the canonical UI/UX standard for all future ADLMS modules.
 
----
+This document governs every Blade view, component, and layout. It is subordinate to
+[docs/architecture_rules.md](architecture_rules.md) and
+[docs/ai_development_guide.md](ai_development_guide.md) — where this document and those
+conflict, the architecture rules win. UI consistency never overrides branch isolation,
+ledger-derived stock, permission-aware visibility, or the
+Controller → Request → Service → Repository → Model flow.
 
-## 0. Principles
-
-1. **Tokens before utilities.** Colors, type, and spacing are named once in `tailwind.config.js`; pages consume tokens, never raw hex or arbitrary values.
-2. **Components before copy-paste.** Repeated markup (cards, tables, badges, filters) becomes a Blade component. One change propagates everywhere.
-3. **Calm, clinical, legible.** Cool neutrals + one trustworthy primary + strictly semantic status colors. Color is information, not decoration.
-4. **Dense but breathable.** Compact rows and 13px–14px data text for power users, with enough whitespace to stay scannable.
-5. **Accessible by default.** Associated labels, visible focus, semantic HTML, status never by color alone.
-
----
-
-## 1. Color Usage
-
-A cool **slate** neutral ramp (clinical, less "warm office" than default gray) + a **teal** primary (medical, trustworthy, distinct from the generic indigo/blue) + a strict semantic set.
-
-### 1.1 Proposed token extension (reference — `tailwind.config.js`)
-```js
-// theme.extend.colors
-colors: {
-  // Brand / primary action
-  primary: {
-    50:'#f0fdfa',100:'#ccfbf1',200:'#99f6e4',300:'#5eead4',400:'#2dd4bf',
-    500:'#14b8a6',600:'#0d9488',700:'#0f766e',800:'#115e59',900:'#134e4a',
-  },
-  // Neutral surface/text ramp (slate)
-  surface:  '#ffffff',
-  canvas:   '#f8fafc', // app background (slate-50)
-  ink:      '#0f172a', // primary text (slate-900)
-  muted:    '#64748b', // secondary text (slate-500)
-  line:     '#e2e8f0', // borders/dividers (slate-200)
-}
-```
-Semantic status colors map to Tailwind palettes already available (no custom needed):
-
-| Token | Meaning | bg / text |
-|---|---|---|
-| `success` | paid, passed, completed, OK | `bg-emerald-50` / `text-emerald-700` |
-| `warning` | pending, partial, low stock, due soon | `bg-amber-50` / `text-amber-700` |
-| `danger`  | overdue, rejected, remake, out of stock, cancelled-with-loss | `bg-rose-50` / `text-rose-700` |
-| `info`    | received, issued, in-transit | `bg-sky-50` / `text-sky-700` |
-| `primary` | active work (in production, in QC) | `bg-primary-50` / `text-primary-700` |
-| `neutral` | draft, void, cancelled, inactive | `bg-slate-100` / `text-slate-600` |
-
-### 1.2 Usage rules
-- **Primary (teal)** = the single most important action on a screen (Create, Save, Apply) and active-work status. One primary button per view region.
-- **Neutral/slate** = structure: backgrounds, borders, body and secondary text, secondary buttons.
-- **Semantic** = state only (badges, KPI accents, alerts). Never use `success`/`danger` for decoration.
-- **Money & metrics:** value text in `text-ink`; positive emphasis `text-emerald-700`, owed/overdue `text-rose-700`, watch `text-amber-700`.
-- App background `canvas` (slate-50), content surfaces `surface` (white). Replaces today's `bg-gray-100`.
+It was extracted from the live codebase: `resources/views` (layouts, sidebar,
+`settings-shell`, the `owner-dashboard`/`branch-dashboard`/`inventory` component families,
+and the Sprint 12 inventory views), reconciled against the architecture and AI-development
+guides. The Sprint 12 `inventory/products/index` view is treated as the **reference
+implementation** of current conventions; older views (e.g. `inventory/stock/index`,
+`invoices/index`) using indigo accents, `sm:rounded-lg` cards, and no mobile layout are
+**legacy** and should converge on this standard when touched.
 
 ---
 
-## 2. Typography Scale
+# Design Philosophy
 
-Keep **Figtree** (already loaded via bunny.net — clean, modern, not an overused system font). Use **tabular numerals** for all tables/KPIs so digits align.
+ADLMS is a **dense, internal SaaS operations tool** for a multi-branch dental laboratory —
+not a marketing site. Every screen exists to let an operator (clinic owner, branch admin,
+technician, finance, courier) make a decision quickly and safely.
 
-| Token | Tailwind | Size / line | Use |
+Principles:
+
+1. **Operational, not promotional.** Build the working page. No hero blocks, no decorative
+   gradients, no landing pages for internal tools.
+2. **Decision density.** Show the data that drives the next action, compactly and scannably.
+   Prefer information per scroll over whitespace for its own sake.
+3. **Status is always visible.** Every record's state is shown with a semantic badge and text —
+   never color alone, never ambiguous.
+4. **Branch- and permission-truthful.** The UI only ever shows the active branch's data and
+   only the actions the user is authorized for. Selectors never leak other branches.
+5. **Honest about data.** Empty states say what is missing; the UI never fabricates numbers or
+   implies fake data. Ledger-derived values are labeled as derived.
+6. **Restrained palette.** One teal primary, slate neutrals, and a strict semantic status set.
+   Color carries meaning, not decoration.
+7. **Reuse before reinvention.** Use the existing component families and Breeze primitives
+   before authoring new markup.
+
+Aesthetic: clean medical/laboratory SaaS — calm, precise, trustworthy, readable at a glance
+on both a branch desktop and a courier's phone.
+
+## Color Foundation
+
+| Role | Token | Tailwind | Use |
 |---|---|---|---|
-| Display | `text-2xl font-semibold` | 24 / 32 | KPI values, dashboard hero numbers |
-| H1 / page title | `text-xl font-semibold text-ink` | 20 / 28 | `x-page-header` title |
-| H2 / section | `text-base font-semibold text-ink` | 16 / 24 | card & form-section headings |
-| H3 / subsection | `text-sm font-semibold text-ink` | 14 / 20 | sub-blocks |
-| Body | `text-sm text-ink` | 14 / 20 | default UI text |
-| Data / dense | `text-sm` (tables) | 14 / 20 | table cells, dense lists |
-| Label | `text-sm font-medium text-ink` | 14 / 20 | form labels |
-| Meta / helper | `text-xs text-muted` | 12 / 16 | helper text, captions, table sub-lines |
-| Eyebrow | `text-xs font-semibold uppercase tracking-wide text-muted` | 12 | sidebar section headers, KPI labels |
+| Primary / brand | teal | `teal-700` (hover `teal-600`, ring `teal-500`) | primary actions, eyebrow labels, active accents |
+| Neutral solid | gray | `gray-900` (hover `gray-800`) | filter "Apply", neutral solid buttons |
+| Surface | white | `bg-white` | cards, tables |
+| Canvas | gray | `bg-gray-100` | app background |
+| Text | gray | `gray-900` ink / `gray-500` muted / `gray-400` faint | hierarchy |
+| Border / divider | gray | `border-gray-200`, `divide-gray-100/200` | structure |
+| Success | emerald/green | `emerald-50` / `emerald-700` | healthy, completed, paid, OK |
+| Warning | amber | `amber-50` / `amber-700` | pending, low stock, due soon |
+| Danger | rose/red | `rose-50` / `rose-700` | out of stock, overdue, failed, irreversible |
+| Info | sky | `sky-50` / `sky-700` | received, issued, in-transit, scope chips |
+| Draft / neutral state | gray | `gray-100` / `gray-600` | draft, cancelled, inactive, metadata |
 
-**Numerals:** add `tabular-nums` (and `slashed-zero` if desired) to numeric cells/KPIs:
-```html
-<td class="px-3 py-2 text-right tabular-nums text-ink">{{ number_format($v, 2) }}</td>
-```
-Headings use `text-ink`; never pure black. Body never lighter than `text-muted` for primary content.
+> Legacy views use `indigo-*` for primary/focus and `bg-gray-800` for buttons. Treat indigo as
+> deprecated; new and modified views use **teal** as the primary and focus color.
 
----
+## Typography
 
-## 3. Spacing System
+Font: **Figtree** (loaded via bunny.net, configured in `tailwind.config.js`). Do not introduce
+other font families.
 
-Tailwind's 4px base scale, constrained to a small, predictable set so rhythm is consistent.
-
-| Context | Token | Value |
+| Token | Classes | Use |
 |---|---|---|
-| Page vertical rhythm (between blocks) | `space-y-6` | 24px |
-| Card padding (default) | `p-6` | 24px |
-| Card padding (dense/table card) | `p-4` | 16px |
-| Table cell | `px-3 py-2` | 12 / 8px |
-| Form field gap (grid) | `gap-4` | 16px |
-| Inline control gap (filter bar) | `gap-2` | 8px |
-| Section heading → content | `mt-3` | 12px |
-| Icon ↔ label | `gap-2` | 8px |
+| Eyebrow | `text-xs font-semibold uppercase tracking-wide text-teal-700` | section/page kicker |
+| Page title | `text-xl font-semibold text-gray-900` | page H1 |
+| Section title | `text-base font-semibold text-gray-900` | card/section H2 |
+| Body | `text-sm text-gray-700` | default |
+| Muted / helper | `text-sm text-gray-500` / `text-xs text-gray-500` | descriptions, captions |
+| Numeric | add `tabular-nums` | all quantities, money, counts |
 
-**Radius:** `rounded-lg` (8px) for cards/inputs/buttons, `rounded-full` for badges/avatars.
-**Elevation:** one shadow only — `shadow-sm` for cards; `shadow-lg` reserved for overlays (modal, drawer, dropdown). No mixed shadow scales.
-**Borders:** `border border-line` for structural separation; `divide-y divide-line` inside tables/lists.
-**Content width:** `max-w-7xl mx-auto` for table-heavy/dashboard pages; `max-w-3xl` for single-column forms.
+## Spacing & Shape
+
+- Page rhythm: `space-y-6` between major blocks.
+- Card padding: `p-4` (dense/list cards) to `p-6` (content cards).
+- Table cells: `px-3 py-2` (compact) / `px-4 py-3` (primary list tables).
+- Radius: `rounded-lg` for cards/inputs/buttons; `rounded-full` for badges/pills.
+- Elevation: `shadow-sm` only for cards; reserve heavier shadows for overlays (modal, dropdown).
+- Card frame (canonical): `rounded-lg border border-gray-200 bg-white shadow-sm`.
 
 ---
 
-## 4. Page Layout Pattern
+# Layout Standards
 
-One shell for the whole app (replaces the dual `app-layout` + `settings-shell` paths). Sidebar lives in the shell; content is a single padded column.
+## App layout
 
-```blade
-{{-- resources/views/components/app-shell.blade.php (proposed) --}}
-@props(['title' => null])
-<x-app-layout>
-    <div x-data="{ nav: false }" class="min-h-screen bg-canvas">
-        {{-- top bar (slim): hamburger + brand + user menu --}}
-        <x-app-topbar />
+Layout hierarchy (do not bypass):
 
-        <div class="lg:flex">
-            <x-app-sidebar />               {{-- off-canvas < lg, pinned lg+ --}}
-
-            <main class="flex-1 min-w-0">
-                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-                    @isset($title)
-                        <x-page-header :title="$title">{{ $header ?? '' }}</x-page-header>
-                    @endisset
-
-                    <x-flash />              {{-- success/error/info alerts --}}
-
-                    {{ $slot }}
-                </div>
-            </main>
-        </div>
-    </div>
-</x-app-layout>
+```text
+layouts/app.blade.php
+  -> layouts/navigation.blade.php   (slim top bar: brand + user menu + mobile toggle)
+  -> layouts/sidebar.blade.php      (permission-aware module navigation)
+  -> components/settings-shell.blade.php   (universal module shell: header + flash + slot)
+      -> module views
+          -> module partials / components
 ```
-**Page anatomy (top → bottom):** Top bar → Page header (title + actions) → Flash → Filter bar (if list) → Primary content (KPIs / table / form) → Pagination.
 
----
+Every module page renders inside `<x-settings-shell title="...">`. The shell provides the
+sidebar, the page header band, and standard flash/validation rendering. Do **not** hand-roll a
+new shell or re-include the sidebar manually.
 
-## 5. KPI Card Pattern
+## Content width
 
-Compact metric tile. Label (eyebrow) + value (display) + optional delta/hint. Accent reserved for semantic meaning.
+- Operational/table/dashboard pages: full content column inside the shell, max `max-w-7xl`,
+  horizontal padding `px-4 sm:px-6 lg:px-8`.
+- Single-column forms: constrain the form body to a readable width (`max-w-3xl`) even when the
+  shell is wider.
+- Inner content uses `space-y-6` as the vertical rhythm.
 
-```blade
-<div class="rounded-lg border border-line bg-surface p-4">
-    <p class="text-xs font-semibold uppercase tracking-wide text-muted">Outstanding</p>
-    <p class="mt-1 text-2xl font-semibold tabular-nums text-rose-700">{{ number_format($v, 2) }}</p>
-    <p class="mt-1 text-xs text-muted">{{ $hint ?? '' }}</p>
-</div>
-```
-- Default value color `text-ink`; switch to `text-emerald-700/amber-700/rose-700` only when the metric *is* good/watch/bad.
-- Grid: `grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6` (operational KPIs) or `lg:grid-cols-3` (financial).
-- See `x-kpi-card` in §16.
+## Header structure
 
----
-
-## 6. Table Pattern
-
-Dense, scannable, responsive. Always wrapped for horizontal scroll; semantic `<th scope>`; hover row state; right-aligned tabular numerics.
+Every page opens with a header block:
 
 ```blade
-<div class="rounded-lg border border-line bg-surface">
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-line text-sm">
-            <thead>
-                <tr class="text-left text-muted">
-                    <th scope="col" class="px-3 py-2 font-medium">Invoice #</th>
-                    <th scope="col" class="px-3 py-2 font-medium">Clinic</th>
-                    <th scope="col" class="px-3 py-2 font-medium">Status</th>
-                    <th scope="col" class="px-3 py-2 font-medium text-right">Outstanding</th>
-                    <th scope="col" class="px-3 py-2 font-medium text-right">Action</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-line">
-                @forelse ($rows as $row)
-                    <tr class="hover:bg-slate-50">
-                        <td class="px-3 py-2 font-medium text-ink">{{ $row->number }}</td>
-                        <td class="px-3 py-2 text-muted">{{ $row->clinic?->name }}</td>
-                        <td class="px-3 py-2"><x-status-badge domain="invoice" :value="$row->status" /></td>
-                        <td class="px-3 py-2 text-right tabular-nums text-ink">{{ number_format($row->outstanding, 2) }}</td>
-                        <td class="px-3 py-2 text-right">
-                            <a href="#" class="font-medium text-primary-700 hover:text-primary-600">View</a>
-                        </td>
-                    </tr>
-                @empty
-                    <tr><td colspan="5"><x-empty-state message="No invoices found." /></td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-</div>
-```
-**Rules:** identifiers `font-medium text-ink`; secondary columns `text-muted`; numerics `text-right tabular-nums`; actions in the last, right-aligned column using primary link color; one row-hover (`hover:bg-slate-50`); pagination directly below the card.
-
----
-
-## 7. Filter Bar Pattern
-
-A single inline `GET` form: search → selects → Apply (primary) → Reset (quiet link). Wraps on mobile.
-
-```blade
-<form method="GET" action="{{ $action }}"
-      class="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface p-4">
-    <div class="grow min-w-[12rem]">
-        <label for="f-search" class="sr-only">Search</label>
-        <input id="f-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}"
-               placeholder="Search…"
-               class="w-full rounded-lg border-line text-sm focus:border-primary-500 focus:ring-primary-500" />
-    </div>
-    {{ $slot }} {{-- additional selects --}}
-    <button class="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700
-                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600">
-        Apply
-    </button>
-    <a href="{{ $action }}" class="px-2 py-2 text-sm font-medium text-muted hover:text-ink">Reset</a>
-</form>
-```
-Every select carries a real (possibly `sr-only`) label and the same `rounded-lg border-line` styling + primary focus ring. See `x-filter-bar` §16.
-
----
-
-## 8. Form Pattern
-
-Grouped into `x-form-section` blocks; labels associated with inputs (`for`/`id`); inline per-field errors; one language app-wide (recommend **Indonesian** for operational labels — pick one and commit).
-
-```blade
-<form method="POST" action="{{ $action }}" class="space-y-6">
-    @csrf
-    <x-form-section title="Order Details"
-                    description="Klinik, dokter, dan pasien untuk order ini.">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-                <label for="clinic_id" class="text-sm font-medium text-ink">Klinik</label>
-                <select id="clinic_id" name="clinic_id"
-                        class="mt-1 block w-full rounded-lg border-line text-sm focus:border-primary-500 focus:ring-primary-500">
-                    …
-                </select>
-                @error('clinic_id')
-                    <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
-                @enderror
-            </div>
-        </div>
-    </x-form-section>
-
-    <div class="flex items-center justify-end gap-3">
-        <a href="{{ $cancel }}" class="text-sm font-medium text-muted hover:text-ink">Batal</a>
-        <button class="rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">Simpan</button>
-    </div>
-</form>
-```
-**Rules:** every control has an `id` + associated `<label for>`; required fields marked with `<span class="text-rose-600">*</span>`; helper text `text-xs text-muted`; inline `@error` under each field (keep the top summary only as a secondary aid); inputs use Tailwind Forms plugin (already installed) with the primary focus ring; destructive confirms use a modal, never `prompt()`.
-
----
-
-## 9. Status Badge Pattern
-
-**One** component, semantic mapping per domain. Replaces the four divergent inline implementations from the audit.
-
-Shape: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`.
-
-| Domain | Value → token |
-|---|---|
-| **Lab Order** | DRAFT→neutral · RECEIVED→info · ASSIGNED/IN_PRODUCTION→primary · ON_HOLD→warning · QC_PENDING→warning · QC_PASSED/READY_FOR_DELIVERY→info · IN_DELIVERY→info · DELIVERED/COMPLETED→success · REMAKE→danger · CANCELLED→neutral |
-| **Invoice** | DRAFT→neutral · ISSUED→info · PARTIALLY_PAID→warning · PAID→success · OVERDUE→danger · VOID→neutral |
-| **Delivery** | READY_FOR_DELIVERY→info · IN_DELIVERY→primary · DELIVERED→success · COMPLETED→success · CANCELLED→neutral |
-| **QC** | PENDING→warning · PASSED→success · REJECTED→danger |
-| **Stock** | OK→success · LOW→warning · OUT→danger |
-| **Active flag** | true→success ("Active") · false→neutral ("Inactive") |
-
-Accessibility: the human-readable status text is always the badge content (color is reinforcement, not the only signal). See `x-status-badge` §16.
-
----
-
-## 10. Empty State Pattern
-
-Consistent, helpful: muted icon + message + optional CTA. Used inside table bodies (`colspan`) or standalone.
-
-```blade
-<div class="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-    <svg class="h-8 w-8 text-slate-300" …></svg>
-    <p class="text-sm text-muted">{{ $message ?? 'No data yet.' }}</p>
-    @isset($cta)<div class="mt-1">{{ $cta }}</div>@endisset
-</div>
-```
-Lists that can be populated by the user should pass a CTA (e.g. "+ Buat Lab Order"). See `x-empty-state` §16.
-
----
-
-## 11. Alert / Flash Message Pattern
-
-Semantic, dismissible, icon + message. One `x-flash` reads `session('status'|'error'|'info')` and validation summary.
-
-```blade
-@if (session('status'))
-    <div role="status"
-         class="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-        <svg class="mt-0.5 h-5 w-5 shrink-0" …></svg>
-        <p>{{ session('status') }}</p>
-    </div>
-@endif
-@if ($errors->any())
-    <div role="alert"
-         class="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-        <p class="font-medium">Periksa kembali isian berikut:</p>
-        <ul class="mt-1 list-disc list-inside space-y-0.5">
-            @foreach ($errors->all() as $e)<li>{{ $e }}</li>@endforeach
-        </ul>
-    </div>
-@endif
-```
-Variants: `success` (emerald), `error` (rose, `role="alert"`), `info` (sky), `warning` (amber). Success/info are dismissible via Alpine (`x-data="{show:true}" x-show="show"`).
-
----
-
-## 12. Sidebar Navigation Pattern
-
-Permission-gated, icon + label, grouped by eyebrow section headers. Off-canvas drawer `< lg`, pinned `lg+`. No dead `#` links, no internal sprint labels.
-
-```blade
-<aside :class="nav ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
-       class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 transform border-r border-line bg-surface
-              transition-transform lg:static lg:z-auto">
-    <nav class="space-y-1 p-4 text-sm">
-        <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-muted">Operations</p>
-
-        <a href="{{ route('lab-orders.index') }}"
-           @class([
-               'flex items-center gap-2 rounded-lg px-3 py-2',
-               'bg-primary-50 text-primary-700 font-medium' => request()->routeIs('lab-orders.*'),
-               'text-muted hover:bg-slate-50 hover:text-ink' => ! request()->routeIs('lab-orders.*'),
-           ])>
-            <svg class="h-4 w-4" …></svg> Lab Orders
-        </a>
-    </nav>
-</aside>
-{{-- < lg backdrop --}}
-<div x-show="nav" @click="nav=false" x-cloak class="fixed inset-0 z-30 bg-slate-900/40 lg:hidden"></div>
-```
-**Rules:** active item = `bg-primary-50 text-primary-700`; inactive = `text-muted hover:bg-slate-50`. Each section wrapped in `@canany`. Hamburger in top bar toggles `nav` with `aria-expanded` / `aria-controls`. Disambiguate the three "Dashboard" labels → "Overview", "Reports", "Inventory".
-
----
-
-## 13. Dashboard Card Pattern
-
-A titled content card (chart/list/table) with an optional header action. The building block for dashboard grids alongside KPI cards.
-
-```blade
-<section class="rounded-lg border border-line bg-surface p-6">
-    <div class="flex items-center justify-between">
-        <h2 class="text-base font-semibold text-ink">Stock by Location</h2>
-        <a href="#" class="text-sm font-medium text-primary-700 hover:text-primary-600">View all</a>
-    </div>
-    <div class="mt-3">{{ $slot }}</div>   {{-- table / mini-bars / list --}}
-</section>
-```
-Dashboard grid: `grid gap-6 lg:grid-cols-2` (two-up panels) with a full-width KPI row above. For "charts", prefer inline CSS/SVG bars (Alpine-friendly, no library) over raw number tables:
-```blade
-<div class="h-2 rounded-full bg-slate-100">
-    <div class="h-2 rounded-full bg-primary-500" style="width: {{ $pct }}%"></div>
-</div>
-```
-**Post-login landing** should be a real Overview: KPI row + "needs attention" panels (overdue invoices, QC pending, orders due today) — not the Breeze placeholder.
-
----
-
-## 14. Responsive Rules
-
-| Breakpoint | Behavior |
-|---|---|
-| `< sm` (mobile) | Sidebar off-canvas (hidden, hamburger). KPIs `grid-cols-2`. Filter bar wraps; full-width controls. Tables scroll horizontally inside `overflow-x-auto`. Forms single column. |
-| `sm` (≥640) | KPIs `sm:grid-cols-3`. Form grids `sm:grid-cols-2/3`. |
-| `lg` (≥1024) | Sidebar pinned (`lg:static`). KPIs up to `lg:grid-cols-6`. Dashboard panels `lg:grid-cols-2`. Content `max-w-7xl`. |
-
-**Rules:** mobile-first — base classes target small screens, add `sm:`/`lg:` for larger. Never rely on the sidebar being visible to reach a page (every destination also reachable after opening the drawer). Touch targets ≥ 40px (`py-2` + adequate width). No fixed pixel widths on content; use `min-w-0` on flex children so tables can shrink/scroll.
-
----
-
-## 15. Accessibility Rules
-
-1. **Labels:** every input/select/textarea has an associated `<label for>`; visually-hidden ones use `sr-only` (never label-less).
-2. **Focus:** visible focus on all interactive elements — `focus:ring-2 focus:ring-primary-500` (forms) / `focus-visible:outline` (buttons/links). Never remove outlines without a replacement.
-3. **Semantics:** real `<table>/<thead>/<th scope="col">`, `<nav>`, `<main>`, `<button>` for actions, `<a>` for navigation. Add a skip-to-content link before `<main>`.
-4. **Status not by color alone:** badges always include text; alerts include an icon + text and `role="status"`/`role="alert"`.
-5. **Interactive components:** hamburger/disclosure buttons set `aria-expanded` + `aria-controls`; drawers/modals trap focus and close on `Esc`; icon-only controls have `aria-label`.
-6. **Contrast:** body text `text-ink` on `surface`/`canvas` and badge fg/bg pairs meet WCAG AA (the `-700` text on `-50` bg pairs above qualify). Avoid text lighter than `text-muted` for meaningful content.
-7. **Motion:** keep transitions short; respect `motion-reduce:transition-none`.
-8. **No blocking native dialogs** (`prompt`/`alert`) for app flows — use accessible modals.
-
----
-
-## 16. Proposed Reusable Blade Components
-
-All live in `resources/views/components/` and are usable as `<x-…>`. Props shown; markup follows the patterns above.
-
-### `<x-page-header>`
-```blade
-@props(['title', 'subtitle' => null])
-<div class="flex flex-wrap items-end justify-between gap-3">
+<div class="flex flex-wrap items-start justify-between gap-3">
     <div>
-        <h1 class="text-xl font-semibold text-ink">{{ $title }}</h1>
-        @isset($subtitle)<p class="mt-0.5 text-sm text-muted">{{ $subtitle }}</p>@endisset
+        <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Inventory Products</p>
+        <h2 class="mt-1 text-xl font-semibold text-gray-900">Product Stock Directory</h2>
+        <p class="mt-1 text-sm text-gray-500">Branch-total stock is derived from the movement ledger.</p>
     </div>
-    @isset($actions)<div class="flex items-center gap-2">{{ $actions }}</div>@endisset
-</div>
-```
-Usage: `<x-page-header title="Lab Orders"><x-slot:actions><a …>+ Buat</a></x-slot:actions></x-page-header>`
-
-### `<x-kpi-card>`
-```blade
-@props(['label', 'value', 'tone' => 'default', 'hint' => null])
-@php($tones = ['default'=>'text-ink','success'=>'text-emerald-700','warning'=>'text-amber-700','danger'=>'text-rose-700'])
-<div class="rounded-lg border border-line bg-surface p-4">
-    <p class="text-xs font-semibold uppercase tracking-wide text-muted">{{ $label }}</p>
-    <p class="mt-1 text-2xl font-semibold tabular-nums {{ $tones[$tone] }}">{{ $value }}</p>
-    @isset($hint)<p class="mt-1 text-xs text-muted">{{ $hint }}</p>@endisset
+    {{-- primary action(s), permission-gated --}}
+    @can('manage_inventory')
+        <a href="{{ route('inventory.products.create') }}"
+           class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+            Create Product
+        </a>
+    @endcan
 </div>
 ```
 
-### `<x-status-badge>`
+Required parts: **eyebrow** (context), **title**, **one-line operational description**, and
+**primary action(s)** on the right. Actions must be permission-gated.
+
+## Breadcrumbs
+
+ADLMS uses a flat module structure; breadcrumbs are **optional** and only used for deep
+detail pages (e.g. Product → Stock Card). When used:
+
+- Place directly under/above the header, `text-sm text-gray-500`.
+- Each crumb is a real link except the current page (`text-gray-700`, not linked).
+- Use `aria-label="Breadcrumb"` on the `<nav>` and `aria-current="page"` on the last item.
+- Never substitute breadcrumbs for the sidebar; the sidebar is the primary IA.
+
+## Action bars
+
+When a page has list-level actions beyond the header (bulk filters, export, secondary
+navigation), group them in a single bar:
+
+- Filters live in their own bordered card (see **Filter Standards**), not mixed with the header.
+- Row-level actions live in the table's right-aligned final column, consistent order
+  (`View` → workflow action → `Edit`), permission-gated.
+- Destructive actions (cancel, void, adjust-out) are visually distinct (rose text) and confirmed
+  via the `<x-modal>` component — never a native `prompt()`/`alert()`.
+
+---
+
+# Navigation Standards
+
+## Sidebar rules
+
+`layouts/sidebar.blade.php` is the canonical module navigation.
+
+- **Permission-aware:** every link/section is wrapped in `@can`, `@canany`, or `@role`. Never
+  render a link to a route the user cannot access (architecture rule).
+- Gate each item with the **same permission used by its route**.
+- No dead links (`href="#"`) and no internal/sprint jargon ("(Sprint 5)") in production nav.
+- Width `w-64`, `border-r border-gray-200 bg-white`. On mobile it must be reachable (see
+  Responsive Rules) — never leave a fixed sidebar covering the content with no toggle.
+- Icons are encouraged (inline SVG, `h-4 w-4`) but text labels are mandatory.
+
+## Menu grouping
+
+Group links under uppercase eyebrow section headers, ordered by operational frequency:
+
 ```blade
-@props(['domain', 'value'])
-@php
-    $maps = [
-        'order' => ['IN_PRODUCTION'=>'primary','ASSIGNED'=>'primary','RECEIVED'=>'info','QC_PASSED'=>'info',
-            'READY_FOR_DELIVERY'=>'info','IN_DELIVERY'=>'info','ON_HOLD'=>'warning','QC_PENDING'=>'warning',
-            'DELIVERED'=>'success','COMPLETED'=>'success','REMAKE'=>'danger','CANCELLED'=>'neutral','DRAFT'=>'neutral'],
-        'invoice' => ['DRAFT'=>'neutral','ISSUED'=>'info','PARTIALLY_PAID'=>'warning','PAID'=>'success','OVERDUE'=>'danger','VOID'=>'neutral'],
-        'delivery'=> ['READY_FOR_DELIVERY'=>'info','IN_DELIVERY'=>'primary','DELIVERED'=>'success','COMPLETED'=>'success','CANCELLED'=>'neutral'],
-        'qc'      => ['PENDING'=>'warning','PASSED'=>'success','REJECTED'=>'danger'],
-        'stock'   => ['OK'=>'success','LOW'=>'warning','OUT'=>'danger'],
-    ];
-    $tone = $maps[$domain][$value] ?? 'neutral';
-    $classes = [
-        'success'=>'bg-emerald-50 text-emerald-700','warning'=>'bg-amber-50 text-amber-700',
-        'danger'=>'bg-rose-50 text-rose-700','info'=>'bg-sky-50 text-sky-700',
-        'primary'=>'bg-primary-50 text-primary-700','neutral'=>'bg-slate-100 text-slate-600',
-    ][$tone];
-@endphp
-<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $classes }}">
-    {{ str($value)->replace('_',' ')->title() }}
-</span>
+<p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Inventory</p>
 ```
 
-### `<x-filter-bar>`
+Canonical groups: **Dashboard/Overview**, **Operations** (Lab Orders, Production, QC, Deliveries),
+**Inventory** (Dashboard, Products, Locations, Suppliers, Stock), **Finance** (Invoices),
+**Reports**, **Master Data**, **Settings**. Disambiguate repeated labels — qualify the three
+"Dashboard" entries as "Overview", "Inventory", "Reports".
+
+## Active states
+
+Mark the active item with `request()->routeIs(...)`, matching the whole module sub-tree:
+
 ```blade
-@props(['action'])
-<form method="GET" action="{{ $action }}"
-      class="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface p-4">
-    {{ $slot }} {{-- search + selects --}}
-    <button class="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700">Apply</button>
-    <a href="{{ $action }}" class="px-2 py-2 text-sm font-medium text-muted hover:text-ink">Reset</a>
+<a href="{{ route('inventory.products.index') }}"
+   @class([
+       'flex items-center gap-2 rounded-lg px-3 py-2',
+       'bg-teal-50 text-teal-700 font-medium' => request()->routeIs('inventory.products.*'),
+       'text-gray-600 hover:bg-gray-50 hover:text-gray-900' => ! request()->routeIs('inventory.products.*'),
+   ])>Products</a>
+```
+
+Active = `bg-teal-50 text-teal-700 font-medium`. Inactive = `text-gray-600 hover:bg-gray-50`.
+
+---
+
+# Dashboard Standards
+
+ADLMS has three dashboard surfaces, each with its own **existing component family**. Reuse these
+components before creating new markup.
+
+## Owner Dashboard
+
+Audience: clinic owner / group leadership — a **cross-branch**, decision-oriented overview.
+Component family (`resources/views/components/owner-dashboard/`):
+
+- `owner-dashboard.owner-kpi-card` — top group-level KPIs.
+- `owner-dashboard.dashboard-section` — titled section wrapper.
+- `owner-dashboard.branch-performance-card` — per-branch comparison.
+- `owner-dashboard.pipeline-card` — workflow pipeline status.
+- `owner-dashboard.alert-panel` — items needing attention.
+- `owner-dashboard.activity-timeline` — recent group activity.
+
+The owner dashboard is the **only** surface allowed to compare multiple branches, and only for
+branches the user is authorized to see (see Filter Standards → Branch filters).
+
+## Branch Dashboard
+
+Audience: branch admin / operational staff — scoped to the **active branch**. Component family
+(`resources/views/components/branch-dashboard/`):
+
+- `branch-dashboard.daily-summary-card`
+- `branch-dashboard.queue-card`
+- `branch-dashboard.workload-widget`
+- `branch-dashboard.quick-action-panel`
+- `branch-dashboard.inventory-alert-widget`
+- `branch-dashboard.finance-alert-widget`
+
+All data is resolved through `BranchContext` server-side; the branch dashboard shows no branch
+selector.
+
+## Inventory Dashboard
+
+Audience: anyone with inventory access — branch-scoped, location-aware. Component family
+(`resources/views/components/inventory/`):
+
+- `inventory.kpi-card`
+- `inventory.dashboard-section`
+- `inventory.stock-value-card`
+- `inventory.location-card`
+- `inventory.low-stock-widget`
+- `inventory.movement-timeline`
+
+## Rules for dashboard building blocks
+
+### KPI Cards
+- Use the family's KPI component (`owner-kpi-card`, `inventory.kpi-card`); do not hand-roll.
+- Anatomy: muted label (eyebrow) → large value (`text-2xl font-semibold tabular-nums`) → optional
+  hint/delta.
+- Default value color `text-gray-900`; switch to `text-emerald-700` / `text-amber-700` /
+  `text-rose-700` only when the metric itself is good / watch / bad.
+- Grid: `grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6` (operational) or
+  `lg:grid-cols-3` (financial).
+
+### Charts
+- No charting library is permitted (no React/Vue/new deps). Render trends with inline
+  CSS/SVG bars driven by Blade/Alpine, e.g. a `bg-teal-500` fill on a `bg-gray-100` track.
+- If a true visualization is not feasible, present a compact, clearly-labeled summary **table**
+  instead of a fake chart. Never label a table "chart" ambiguously.
+- Every chart/visualization needs an empty state.
+
+### Tables (on dashboards)
+- Use compact summary tables inside `inventory.dashboard-section` / `dashboard-section`.
+- Right-align and `tabular-nums` all numerics; primary identifier first.
+- Keep dashboard tables short (top-N) and link to the full list ("View all").
+
+### Summary blocks
+- Use a section wrapper component (`*.dashboard-section`) with a title and optional header link.
+- Summaries must be branch-scoped and label derived values ("Branch Total · derived from ledger").
+- Pair every summary with an empty state describing what populates it.
+
+---
+
+# Card Standards
+
+Canonical frame: `rounded-lg border border-gray-200 bg-white shadow-sm`.
+
+## Header
+Optional but standard for content/list cards:
+
+```blade
+<div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+    <div>
+        <h3 class="text-base font-semibold text-gray-900">Products</h3>
+        <p class="text-sm text-gray-500">{{ number_format($products->total()) }} in branch scope.</p>
+    </div>
+    <span class="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">Branch Total Stock</span>
+</div>
+```
+Header holds: title, optional count/subtitle, optional scope chip or header action.
+
+## Body
+- Padding `p-4`–`p-6`; or, for tables, the table sits flush and the body padding is zero with the
+  table providing its own cell padding.
+- One logical concern per card. Avoid nesting decorative cards inside cards; nested framing is
+  allowed only for repeated item tiles inside a framed tool.
+
+## Footer
+- Used for pagination, totals, or footer actions: `border-t border-gray-200 px-4 py-3`.
+- Pagination: `{{ $items->links() }}` in the footer; filters must be preserved
+  (`->withQueryString()` server-side).
+
+## Spacing requirements
+- Between cards: `space-y-6` (or grid `gap-6`).
+- Inside a card: `space-y-4` for stacked sub-blocks.
+- Card header/footer: `px-4 py-3`. Card body content: `p-4`–`p-6`.
+
+---
+
+# Table Standards
+
+## Desktop tables
+```blade
+<div class="hidden overflow-x-auto md:block">
+  <table class="min-w-full divide-y divide-gray-200 text-sm">
+    <thead class="bg-gray-50">
+      <tr class="text-left text-gray-500">
+        <th scope="col" class="px-4 py-3 font-medium">Product</th>
+        <th scope="col" class="px-3 py-3 text-right font-medium">Current Stock - Branch Total</th>
+        <th scope="col" class="px-3 py-3 font-medium">Stock Status</th>
+        <th scope="col" class="px-4 py-3 text-right font-medium">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      <tr class="hover:bg-gray-50"> ... </tr>
+    </tbody>
+  </table>
+</div>
+```
+Rules: `<th scope="col">` on every header; `bg-gray-50` thead; primary identifier first;
+`tabular-nums` + `text-right` on numerics; `hover:bg-gray-50` rows; wrap in `overflow-x-auto`;
+row-level status tinting via `@class` (`bg-rose-50/40` out, `bg-amber-50/40` low,
+`bg-gray-50/60` inactive) plus an optional colored left accent bar.
+
+## Mobile tables
+The desktop table is hidden on small screens (`hidden md:block`) and replaced by a **stacked card
+list** (`md:hidden`), one `<article>` per row:
+
+```blade
+<div class="divide-y divide-gray-100 md:hidden">
+  <article class="p-4">
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-xs uppercase tracking-wide text-gray-500">{{ $product->code }}</p>
+        <h3 class="mt-1 text-base font-semibold text-gray-900">{{ $product->name }}</h3>
+      </div>
+      @include('inventory._low-stock-badge', [...])
+    </div>
+    <div class="mt-4 grid grid-cols-2 gap-3 text-sm"> ...key figures in ring-1 tiles... </div>
+    <div class="mt-4 flex flex-wrap gap-2"> ...actions as bordered buttons... </div>
+  </article>
+</div>
+```
+This **dual desktop-table / mobile-card pattern is mandatory** for primary list tables. Dense,
+secondary tables may instead rely on horizontal scroll, but must never overlap text on mobile.
+
+## Sortable tables
+- Sorting is server-side; sort state lives in the query string and is preserved through
+  pagination (`->withQueryString()`).
+- Sortable headers render as buttons/links inside the `<th>`, with the current sort indicated by
+  an arrow glyph and `aria-sort="ascending|descending"` on the `<th>`.
+- Default ordering must be deterministic and documented per page (e.g. stock card =
+  `movement_date ASC, id ASC`).
+
+## Status columns
+- Status is always a **badge** (see Badge Standards), produced by a shared partial/component —
+  never an inline ad-hoc span per page.
+- Inventory uses `@include('inventory._status-badge', ...)` (active/inactive) and
+  `@include('inventory._low-stock-badge', ...)` (OK/Low/Out). Cross-module status (order, invoice,
+  delivery, QC) should use a shared `<x-status-badge>` rather than per-page ternaries.
+- Always pair color with text; provide an empty state row (`colspan` spanning all columns).
+
+---
+
+# Form Standards
+
+Forms follow Controller → Form Request → Service. Views only render fields and errors; **no
+business logic in Blade**. Use the Breeze primitives (`x-input-label`, `x-text-input`,
+`x-input-error`, `x-primary-button`) themed to teal.
+
+## Labels
+- Every control has an associated label: `<label for="id">` ↔ input `id`, or `<x-input-label
+  for="...">`. No label-less inputs; visually-hidden labels use `sr-only`.
+- Label style: `text-sm font-medium text-gray-700`.
+
+## Inputs
+- Tailwind Forms plugin styling: `rounded-lg border-gray-300 text-sm focus:border-teal-500
+  focus:ring-teal-500`. Full-width in single-column forms (`block w-full`).
+- Selects for branch/location-sensitive data must list **only active records from the active
+  branch** (server-prepared); never `::all()` in the view.
+- Date inputs use `type="date"`; numeric inputs use `type="number"` with `step`/`min` and
+  `tabular-nums` where displayed.
+
+## Validation errors
+- Inline, per field, immediately below the control:
+  ```blade
+  @error('clinic_id') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+  ```
+- The shell's top-of-page error summary is a secondary aid, not the only signal.
+- Repopulate with `old(...)` on every field.
+
+## Required fields
+- Mark required labels with a rose asterisk: `<span class="text-rose-600">*</span>`.
+- Communicate requirement in the label, not by color alone.
+
+## Sections
+- Group related fields in a titled section card (`x-form-section`-style): bordered card with a
+  section title + optional description, fields in a responsive grid (`grid gap-4 sm:grid-cols-2/3`).
+- Submit/cancel actions are predictable and visible: primary (teal) submit on the right, ghost
+  cancel link to its left.
+- Show a **warning banner** adjacent to destructive/irreversible operations; disable or explain
+  the form when required active records are absent (e.g. no active location → can't receive stock).
+
+---
+
+# Filter Standards
+
+Filters live in their own bordered card above the list, as a single `GET` form that preserves
+state in the query string.
+
+```blade
+<form method="GET" action="{{ route('...') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+  <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto] md:items-end"> ... </div>
 </form>
 ```
+Submit = `bg-gray-900` "Apply"; Reset = bordered ghost link to the base route. Every control has
+an associated label.
 
-### `<x-data-table>`
+## Search
+- `type="search"`, name `search`, descriptive placeholder ("Code, name, or category").
+- Server-side, search is case-insensitive (`LOWER(...) LIKE`) and scoped to the active branch.
+
+## Branch filters
+- **Operational pages do NOT show a branch selector.** Branch is resolved server-side by
+  `BranchContext`; a user must never choose or submit `branch_id` for branch-owned data.
+- The **only** exception is multi-branch surfaces (owner dashboard / group reports). There a
+  branch selector may appear, but it must list only branches the user is authorized for and be
+  re-validated server-side — never trust the raw submitted value as the source of truth.
+
+## Date filters
+- Use `date_from` / `date_to` (`type="date"`); server validates the range via a Filter Request.
+- Default sensible ranges for reports; show the active range in the header.
+
+## Status filters
+- Render the domain's enum as a `<select>` ("All status" + each status). Values come from model
+  constants (e.g. `StockOpname::STATUSES`), never hard-coded in the view.
+- The chosen status is reflected back in the control (`@selected(...)`).
+
+---
+
+# Badge Standards
+
+Shape: `inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium`. Always
+text + color; never color alone. Produced by shared partials/components, not per-page spans.
+
+| Variant | Classes | Applies to |
+|---|---|---|
+| **Success** | `bg-emerald-50 text-emerald-700` | Active, OK, Paid, Passed, Delivered |
+| **Warning** | `bg-amber-50 text-amber-700` | Pending, Low stock, Partially paid, Due soon |
+| **Danger** | `bg-rose-50 text-rose-700` | Out of stock, Overdue, Rejected, Remake |
+| **Info** | `bg-sky-50 text-sky-700` | Received, Issued, In delivery, scope chips |
+| **Draft** | `bg-gray-100 text-gray-600` | Draft, not-yet-issued |
+| **Completed** | `bg-emerald-50 text-emerald-700` | Completed, Finalized (success family) |
+| **Cancelled** | `bg-gray-100 text-gray-600` | Cancelled, Void, Inactive (neutral family) |
+
+Reference implementations: `inventory/_status-badge.blade.php` (Active/Inactive) and
+`inventory/_low-stock-badge.blade.php` (OK/Low/Out). For cross-module workflow status (Lab Order,
+Invoice, Delivery, QC), standardize on a shared `<x-status-badge :domain :value>` that maps each
+status to a variant above — replacing the legacy inline blue/indigo badges in
+`lab-orders/index`, `production/board`, and `invoices/index`.
+
+Color semantics (architecture rule): green/teal = healthy/positive, amber = warning, red/rose =
+danger/irreversible, gray/slate = neutral metadata.
+
+---
+
+# Empty State Standards
+
+Every list, table, dashboard widget, and timeline must have an empty state. It must state what is
+missing, avoid implying fake data, avoid blaming the user, and offer an authorized next action
+only when appropriate.
+
+Canonical (table, in a full-span row):
 ```blade
-@props(['headers' => []]) {{-- ['Label' or ['label'=>'Total','align'=>'right'] …] --}}
-<div class="rounded-lg border border-line bg-surface">
-    <div class="overflow-x-auto">
-        <table class="min-w-full divide-y divide-line text-sm">
-            <thead>
-                <tr class="text-left text-muted">
-                    @foreach ($headers as $h)
-                        @php($label = is_array($h) ? $h['label'] : $h)
-                        @php($align = is_array($h) && ($h['align'] ?? '')==='right' ? 'text-right' : '')
-                        <th scope="col" class="px-3 py-2 font-medium {{ $align }}">{{ $label }}</th>
-                    @endforeach
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-line">{{ $slot }}</tbody>
-        </table>
+<tr>
+  <td colspan="7" class="px-4 py-12">
+    <div class="mx-auto max-w-sm text-center">
+      <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-400">
+        <span class="text-lg font-semibold">0</span>
+      </div>
+      <p class="mt-3 text-sm font-medium text-gray-900">No products found.</p>
+      <p class="mt-1 text-sm text-gray-500">Create materials before receiving stock or recording opening balances.</p>
+      {{-- optional, permission-gated next action --}}
     </div>
-    @isset($footer)<div class="border-t border-line p-3">{{ $footer }}</div>@endisset
-</div>
+  </td>
+</tr>
 ```
-
-### `<x-empty-state>`
-```blade
-@props(['message' => 'No data yet.', 'icon' => true])
-<div class="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
-    @if($icon)<svg class="h-8 w-8 text-slate-300" …></svg>@endif
-    <p class="text-sm text-muted">{{ $message }}</p>
-    @isset($cta)<div class="mt-1">{{ $cta }}</div>@endisset
-</div>
-```
-
-### `<x-form-section>`
-```blade
-@props(['title' => null, 'description' => null])
-<section class="rounded-lg border border-line bg-surface p-6">
-    @if($title || $description)
-        <div class="mb-4">
-            @isset($title)<h2 class="text-base font-semibold text-ink">{{ $title }}</h2>@endisset
-            @isset($description)<p class="mt-0.5 text-sm text-muted">{{ $description }}</p>@endisset
-        </div>
-    @endif
-    {{ $slot }}
-</section>
-```
+Structure: muted icon/marker → **bold what-is-missing line** → **muted explanatory line** →
+optional authorized CTA. Dense secondary tables may use a single centered muted line
+(`px-3 py-6 text-center text-gray-400`), but primary lists use the full structure above.
 
 ---
 
-## 17. Adoption Path (suggested, non-binding)
+# Inventory UI Standards (Sprint 12 conventions)
 
-1. Add color/type tokens to `tailwind.config.js` + a small `@layer components` (`.btn`, `.card`, `.badge`) in `app.css`.
-2. Build the seven components above; convert one list page (Invoices) + one form (Lab Order) as the reference implementation.
-3. Roll `x-status-badge` across all lists (highest readability win, lowest risk).
-4. Replace the dual layout with `x-app-shell` + responsive sidebar; retire `prompt()` via `x-confirm-modal`.
-5. Replace the placeholder landing dashboard with a real Overview using `x-kpi-card` + `x-dashboard-card`.
+Sprint 12 established the most current UI conventions; `inventory/products/index` is the
+reference. New inventory UI must follow these:
 
-> Sequencing mirrors the priority order in [docs/ui_ux_audit.md](ui_ux_audit.md) §4.
+- **Shell & header:** `<x-settings-shell>` + eyebrow (`text-teal-700`) + title + derived-stock
+  description + permission-gated primary action.
+- **Cards:** `rounded-lg border border-gray-200 bg-white shadow-sm` with `border-b`/`border-t`
+  header/footer bands.
+- **Lists:** the mandatory dual **desktop table (`hidden md:block`) + mobile card list
+  (`md:hidden`)** pattern, with `<th scope="col">`, `bg-gray-50` thead, `tabular-nums` numerics,
+  `hover:bg-gray-50`, and status row-tinting.
+- **Stock display is ledger-derived and labeled.** Columns/figures show "Current Stock - Branch
+  Total" / "derived from the movement ledger". Never present a stored stock column; there are none
+  (architecture rule: no mutable stock columns).
+- **Location awareness:** stock, stock card, and operations are filtered by
+  `inventory_location_id`; selectors list only active locations in the active branch. Location
+  filters must never leak another branch's stock rows or stock card.
+- **Status badges:** `_low-stock-badge` (OK/Low/Out → emerald/amber/rose) and `_status-badge`
+  (Active/Inactive). Inactive products/locations are visually de-emphasized and their stock
+  operations are hidden/disabled with an explanation.
+- **Stock operation forms** (opening, receive, adjust-in, adjust-out) must show: product summary,
+  operation type, required location selector, quantity guidance, cost guidance (opening/receive),
+  a **warning banner for adjustment-out**, and a ledger-derived stock explanation. Adjustment-out
+  UI must make insufficient-stock failures clear (the rule is enforced in the service).
+- **Dashboard:** use the `inventory.*` component family (`kpi-card`, `dashboard-section`,
+  `stock-value-card`, `location-card`, `low-stock-widget`, `movement-timeline`).
+- **Legacy to migrate:** `inventory/stock/index` still uses indigo focus, `bg-gray-800` buttons,
+  `sm:rounded-lg` cards, no mobile cards, and a thin empty state — converge it on this standard
+  when next touched.
 
 ---
 
-*Documentation only — no Blade, config, route, or backend files were modified. Every snippet targets the existing Laravel + Blade + Tailwind + Alpine stack with no new front-end dependency.*
+# Responsive Rules
+
+Mobile-first. Base classes target small screens; add `sm:`/`md:`/`lg:` upward. Do not use
+viewport-based font scaling.
+
+## Desktop (`lg`, ≥1024px)
+- Sidebar pinned (`lg:static`). Content `max-w-7xl`.
+- KPI grids up to `lg:grid-cols-6`; dashboard panels `lg:grid-cols-2`.
+- Full desktop tables visible (`md:block`).
+
+## Tablet (`sm`–`md`, 640–1023px)
+- KPI grids `sm:grid-cols-3`; form grids `sm:grid-cols-2/3`.
+- Tables: from `md` up show the desktop table; below `md` show stacked cards.
+- Filter bars wrap (`flex-wrap` / responsive grid).
+
+## Mobile (`< sm`, <640px)
+- Sidebar is off-canvas/toggleable — never a fixed panel covering content with no way to reach the
+  page. Action buttons stay reachable; form controls go full-width.
+- Primary lists render as the **stacked card layout** (`md:hidden`); dense secondary tables use
+  horizontal scroll inside `overflow-x-auto` with no text overlap.
+- KPI grids collapse to `grid-cols-2`.
+
+---
+
+# Accessibility Rules
+
+## Contrast
+- Body text `text-gray-700`/`gray-900` on white/`gray-50`; never lighter than `text-gray-500` for
+  meaningful content. Badge fg/bg pairs use `-700` on `-50` (meet WCAG AA).
+- Never communicate state or risk by color alone — always include text/iconography.
+
+## Keyboard navigation
+- All interactive elements reachable and operable by keyboard; logical tab order.
+- Visible focus on everything: `focus:ring-2 focus:ring-teal-500 focus:ring-offset-2` (buttons),
+  `focus:border-teal-500 focus:ring-teal-500` (inputs). Never remove an outline without a
+  replacement.
+- Disclosure controls (sidebar toggle, dropdowns, modals) set `aria-expanded`/`aria-controls`;
+  modals trap focus and close on `Esc`. Use real `<button>`/`<a>` elements.
+
+## Labels
+- Every form control has an associated `<label for>` (or `sr-only` label). Icon-only controls have
+  `aria-label`. Tables use `<th scope="col">`; sortable headers use `aria-sort`. Provide a
+  skip-to-content link before `<main>`. `<nav>` landmarks are labeled.
+
+---
+
+# UX Rules
+
+## Always
+- **Show context.** Every page states where you are (eyebrow + title) and the active scope
+  (branch/location), and labels derived values as derived.
+- **Show status.** Every record exposes its state via a semantic badge + text; lists and
+  dashboards make "what needs attention" obvious.
+- **Show validation.** Surface field-level errors inline, repopulate input, and warn before
+  destructive/irreversible actions.
+
+## Never
+- **Hide critical actions.** Primary and workflow actions are visible (permission-gated), not
+  buried; destructive actions are clearly labeled, never disguised.
+- **Create ambiguous statuses.** No status without a defined badge variant; never two visually
+  identical badges for different states (e.g. PAID vs OVERDUE must differ); never label a table a
+  "chart" or imply fake/derived numbers as stored truth.
+
+---
+
+# AI UI Implementation Checklist
+
+Before building UI:
+- [ ] Read this document, `architecture_rules.md` §UI, and `ai_development_guide.md` §UI/UX.
+- [ ] Confirm scope: UI-only? Which module/views? Any new component needed, or does a family
+      component already exist (`owner-dashboard.*`, `branch-dashboard.*`, `inventory.*`, Breeze)?
+- [ ] Identify the active-branch scope; confirm no branch selector on operational pages.
+- [ ] Identify required permissions for every action to gate (`@can`/`@canany`/`@role`).
+
+While building UI:
+- [ ] Page rendered inside `<x-settings-shell title="...">`.
+- [ ] Header = eyebrow + title + description + permission-gated action(s).
+- [ ] Cards use `rounded-lg border border-gray-200 bg-white shadow-sm`; teal primary; no indigo.
+- [ ] Lists use the dual desktop-table + mobile-card pattern; `<th scope>`, `tabular-nums`,
+      `hover:bg-gray-50`, status tinting.
+- [ ] Status shown via shared badge partial/component (not inline ad-hoc spans).
+- [ ] Every table/widget/timeline has a compliant empty state.
+- [ ] Forms: associated labels, inline `@error`, `old()` repopulation, required `*`, teal focus,
+      destructive warning banner; selects show only active branch records.
+- [ ] Filters in a bordered `GET` card; query string preserved through pagination.
+- [ ] No business logic, repository, or service calls in Blade; no `::all()`/N+1 in views.
+- [ ] Responsive verified at mobile / tablet / desktop; sidebar reachable on mobile.
+- [ ] Accessibility: focus rings, labels, `scope`, keyboard operability, contrast.
+
+Before finishing:
+- [ ] Add/adjust UI tests when Blade output changes (`tests/Feature/<Module>/...UiTest.php`).
+- [ ] Run requested gates (`php artisan test`, `npm.cmd run build`, `.\vendor\bin\pint`); report
+      honestly.
+
+# AI UI Review Checklist
+
+- [ ] Uses existing shell, sidebar, and component families; no parallel shell or duplicated nav.
+- [ ] Permission-aware: no links/actions to unauthorized routes; actions gated with the route's
+      permission.
+- [ ] Branch-truthful: operational pages have no branch selector; selectors show only active
+      branch records; no cross-branch leakage in lists/dashboards/exports.
+- [ ] Teal primary + semantic palette; no stray indigo or `bg-gray-800` in new code.
+- [ ] Cards/tables/badges/empty states match the standards above; numerics `tabular-nums`.
+- [ ] Primary lists implement the dual desktop/mobile pattern; tables wrapped for overflow.
+- [ ] Every status uses a defined badge variant; no ambiguous or color-only statuses.
+- [ ] Forms validate via Form Requests; inline errors; destructive actions warned; no `prompt()`.
+- [ ] No business logic / queries / service calls in Blade; no N+1 from views.
+- [ ] Accessibility: labels, `scope`, focus, keyboard, contrast; no color-only signaling.
+- [ ] Inventory: stock presented as ledger-derived and labeled; no stored-stock assumption;
+      location filters scoped; adjustment-out warning present.
+- [ ] Responsive on mobile/tablet/desktop; UI tests updated; gates run and reported.
+
+---
+
+# Future Sprint UI Guidance
+
+General rule for all future sprints: reuse this design system, the existing component families,
+and the architecture flow. Branch is resolved server-side; stock stays ledger-derived; status is
+always badged; every list has desktop + mobile layouts and an empty state.
+
+## Stock Opname (Sprint 13)
+- **List** (`inventory/stock-opnames/index`): dual desktop/mobile list of opname documents —
+  columns Opname #, Location, Date, Status badge, Items count, Actions. Status badges: DRAFT →
+  Draft(gray), COUNTING → Warning(amber), COMPLETED → Completed(emerald), CANCELLED →
+  Cancelled(gray). Branch-scoped; location filter + status filter; no branch selector.
+- **Create/Count** (`.../create`, `.../edit`): header with location selector (active locations in
+  active branch only); item lines showing **System Qty (derived, read-only)**, **Counted Qty
+  (input)**, and live **Variance** (counted − system) with sign coloring
+  (emerald positive / rose negative / gray zero). System Qty is labeled "derived from ledger" and
+  never editable.
+- **Finalize:** a clearly-warned, irreversible action (`<x-modal>` confirm + warning banner)
+  explaining that finalizing posts `ADJUSTMENT_IN/OUT` ledger movements for each variance. Draft
+  counts must visibly **not** be a stock source of truth. Disable finalize when no active location
+  or no counted lines.
+- **Detail/show:** read-only document with per-line variance and the resulting movements once
+  finalized.
+
+## Purchasing (Sprint 15)
+- Purchase Order list + form scoped to active branch; supplier selector lists only active
+  suppliers in the active branch. PO line items with qty and expected cost; PO totals
+  `tabular-nums`.
+- **PO does not change stock.** UI must make explicit that a PO is intent only — show a status
+  badge (Draft / Issued / Received / Cancelled) and never display a PO as increasing inventory.
+  Stock increases happen only at Goods Receipt (a separate ledger movement). Warn on
+  void/cancel of an issued PO.
+
+## HR
+- A separate **HR** module surface (own sidebar group, permission-gated). Employee directory as a
+  dual desktop/mobile list; branch-owned employees scoped via `BranchContext` with `is_active`
+  lifecycle (deactivate, don't delete). Employee detail uses titled section cards (personal,
+  employment, branch assignment). No coupling shown to production/payroll except via clearly
+  labeled related-records panels.
+
+## Attendance
+- Branch- and employee-aware. Present attendance as an **event log** (immutable records), not an
+  editable daily-summary grid — daily/period summaries are clearly labeled as **aggregates**
+  derived from the log, mirroring the ledger-derived inventory principle.
+- Day/period views: read-only summary cards + a scrollable event table (clock-in/out events) with
+  status badges (Present / Late / Absent / Leave). Filters: date range, employee, status. No
+  branch selector for branch staff.
+
+## Payroll
+- Most sensitive surface — strict permission gating, prominent scope/context, and auditable
+  presentation. Payroll runs shown as **locked period snapshots**: a run has a status badge
+  (Draft / Calculated / Approved / Paid) and, once approved/paid, is read-only.
+- Payslip/run detail uses section cards with `tabular-nums` money columns and visible references
+  to the source attendance period (without mutating attendance). Calculations must be presented as
+  reproducible and auditable; warn clearly before approving/locking a run. No fabricated figures.
+
+---
+
+*This design system is documentation only. It defines how ADLMS UI must look and behave; it does
+not itself change application code. Implementations must reuse the existing layout shell, sidebar,
+component families, and Breeze primitives, and stay within the Laravel + Blade + Tailwind +
+Alpine stack with no new front-end framework.*
