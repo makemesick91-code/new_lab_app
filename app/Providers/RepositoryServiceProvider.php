@@ -24,6 +24,18 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
+use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
+use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
+use App\Modules\Inventory\Repositories\InventoryLocationRepository;
+use App\Modules\Inventory\Repositories\InventoryMovementRepository;
+use App\Modules\Inventory\Repositories\ProductCategoryRepository;
+use App\Modules\Inventory\Repositories\ProductRepository;
+use App\Modules\Inventory\Repositories\ProductUnitRepository;
+use App\Modules\Inventory\Repositories\SupplierRepository;
 use App\Modules\Invoice\Interfaces\InvoiceRepositoryInterface;
 use App\Modules\Invoice\Interfaces\PaymentRepositoryInterface;
 use App\Modules\Invoice\Models\Invoice;
@@ -123,6 +135,13 @@ class RepositoryServiceProvider extends ServiceProvider
         ReportingRepositoryInterface::class => ReportingRepository::class,
         // Sprint 9 — Multi Branch Foundation
         BranchRepositoryInterface::class => BranchRepository::class,
+        // Sprint 12 - Inventory Core
+        InventoryLocationRepositoryInterface::class => InventoryLocationRepository::class,
+        ProductCategoryRepositoryInterface::class => ProductCategoryRepository::class,
+        ProductUnitRepositoryInterface::class => ProductUnitRepository::class,
+        ProductRepositoryInterface::class => ProductRepository::class,
+        SupplierRepositoryInterface::class => SupplierRepository::class,
+        InventoryMovementRepositoryInterface::class => InventoryMovementRepository::class,
     ];
 
     /**
