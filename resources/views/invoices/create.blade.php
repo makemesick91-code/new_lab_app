@@ -75,7 +75,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $order->clinic?->name }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->patient?->name ?? '-' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->items->count() }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $order->items->sum('subtotal'), 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($order->items->sum('subtotal')) }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada Order Lab selesai yang dapat dibuat invoice.</td></tr>

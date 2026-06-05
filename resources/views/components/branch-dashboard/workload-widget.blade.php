@@ -23,19 +23,19 @@
                     <dl class="mt-3 grid grid-cols-4 gap-2 text-xs">
                         <div>
                             <dt class="text-gray-500">Ditugaskan</dt>
-                            <dd class="font-semibold tabular-nums text-gray-900">{{ data_get($row, 'assigned', 0) }}</dd>
+                            <dd class="font-semibold tabular-nums text-gray-900">{{ format_number_id(data_get($row, 'assigned', 0)) }}</dd>
                         </div>
                         <div>
                             <dt class="text-gray-500">Proses</dt>
-                            <dd class="font-semibold tabular-nums text-gray-900">{{ data_get($row, 'in_progress', 0) }}</dd>
+                            <dd class="font-semibold tabular-nums text-gray-900">{{ format_number_id(data_get($row, 'in_progress', 0)) }}</dd>
                         </div>
                         <div>
                             <dt class="text-gray-500">Jeda</dt>
-                            <dd class="font-semibold tabular-nums text-amber-700">{{ data_get($row, 'paused', 0) }}</dd>
+                            <dd class="font-semibold tabular-nums text-amber-700">{{ format_number_id(data_get($row, 'paused', 0)) }}</dd>
                         </div>
                         <div>
                             <dt class="text-gray-500">Terlambat</dt>
-                            <dd class="font-semibold tabular-nums text-rose-700">{{ data_get($row, 'overdue', 0) }}</dd>
+                            <dd class="font-semibold tabular-nums text-rose-700">{{ format_number_id(data_get($row, 'overdue', 0)) }}</dd>
                         </div>
                     </dl>
                 </div>

@@ -111,7 +111,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $delivery->labOrder?->clinic?->name }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $delivery->courier?->name ?? '-' }}</td>
                                 <td class="px-3 py-2"><span class="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{{ $statusLabels[$delivery->status] ?? $delivery->status }}</span></td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($delivery->labOrder?->due_date)->format('Y-m-d') ?? '-' }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($delivery->labOrder?->due_date) }}</td>
                                 <td class="px-3 py-2 text-right">
                                     <a href="{{ route('deliveries.show', $delivery) }}" class="text-indigo-600 hover:text-indigo-500">Lihat Detail</a>
                                 </td>

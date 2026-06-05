@@ -175,8 +175,8 @@ it('shows running balance on the stock card', function () {
         ->assertSee('Saldo Berjalan')
         ->assertSee('Pergerakan persediaan manual')
         ->assertSee('Biaya tidak dicatat')
-        ->assertSee('10.00')
-        ->assertSee('7.00')
+        ->assertSee('+10')
+        ->assertSee('>7<', false)
         ->assertSee('Balance Location');
 });
 

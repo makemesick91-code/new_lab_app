@@ -17,9 +17,9 @@
         </div>
 
         <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-6">
-            <div class="rounded-md bg-amber-50 px-3 py-2 text-amber-800">Total Tertunggak<br><strong class="text-lg">{{ number_format($summary['total_outstanding'], 2) }}</strong></div>
+            <div class="rounded-md bg-amber-50 px-3 py-2 text-amber-800">Total Tertunggak<br><strong class="text-lg">{{ format_currency_id($summary['total_outstanding']) }}</strong></div>
             @foreach (['current' => 'Saat Ini', '1_30' => '1-30 hari', '31_60' => '31-60 hari', '61_90' => '61-90 hari', 'over_90' => '90+ hari'] as $key => $label)
-                <div class="rounded-md bg-gray-50 px-3 py-2">{{ $label }}<br><strong class="text-lg text-gray-900">{{ number_format($summary['aging'][$key], 2) }}</strong></div>
+                <div class="rounded-md bg-gray-50 px-3 py-2">{{ $label }}<br><strong class="text-lg text-gray-900">{{ format_currency_id($summary['aging'][$key]) }}</strong></div>
             @endforeach
         </div>
 
@@ -39,8 +39,8 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->invoice_date }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->due_date ?? '—' }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->status }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $r->total_amount, 2) }}</td>
-                            <td class="px-3 py-2 text-right font-medium text-amber-700">{{ number_format((float) $r->outstanding_amount, 2) }}</td>
+                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($r->total_amount) }}</td>
+                            <td class="px-3 py-2 text-right font-medium text-amber-700">{{ format_currency_id($r->outstanding_amount) }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="7" class="px-3 py-6 text-center text-gray-400">Tidak ada invoice tertunggak.</td></tr>

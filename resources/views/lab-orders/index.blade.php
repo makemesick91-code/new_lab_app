@@ -78,7 +78,7 @@
                                     <div>{{ $order->patient?->name ?? '—' }}</div>
                                     <div class="text-xs text-gray-400">RM: {{ $order->medical_record_number ?? '-' }}</div>
                                 </td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($order->due_date, '—') }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $priorityLabels[$order->priority] ?? $order->priority }}</td>
                                 <td class="px-3 py-2">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $order->status === 'CANCELLED' ? 'bg-gray-100 text-gray-600' : 'bg-blue-50 text-blue-700' }}">{{ $statusLabels[$order->status] ?? $order->status }}</span>

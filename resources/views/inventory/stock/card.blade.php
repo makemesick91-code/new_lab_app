@@ -53,7 +53,7 @@
                     <dl class="mt-5 grid gap-3 text-sm sm:grid-cols-3">
                         <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                             <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Stok Minimum</dt>
-                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($minimumStock, 2) }}</dd>
+                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($minimumStock) }}</dd>
                         </div>
                         <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                             <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Lingkup Filter</dt>
@@ -61,7 +61,7 @@
                         </div>
                         <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                             <dt class="text-xs font-semibold uppercase tracking-wide text-gray-500">Jumlah Pergerakan</dt>
-                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($stockCard->count()) }}</dd>
+                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_number_id($stockCard->count()) }}</dd>
                         </div>
                     </dl>
                 </div>
@@ -83,7 +83,7 @@
                         'text-rose-900' => $isOut,
                         'text-amber-900' => $isLow,
                         'text-teal-900' => ! $isOut && ! $isLow,
-                    ])>{{ number_format($currentStock, 2) }}</p>
+                    ])>{{ format_quantity_id($currentStock) }}</p>
                     <p @class([
                         'mt-1 text-sm',
                         'text-rose-700' => $isOut,
@@ -176,33 +176,33 @@
                                     <div class="flex items-start justify-between gap-3">
                                         <div>
                                             <p class="text-sm font-semibold text-gray-900">{{ str_replace('_', ' ', $movement->movement_type) }}</p>
-                                            <p class="mt-1 text-xs text-gray-500">{{ optional($movement->movement_date)->format('Y-m-d') }} - {{ $movement->inventoryLocation?->name ?? '-' }}</p>
+                                            <p class="mt-1 text-xs text-gray-500">{{ format_date_id($movement->movement_date) }} - {{ $movement->inventoryLocation?->name ?? '-' }}</p>
                                         </div>
                                         <div class="text-right">
                                             <p @class([
                                                 'text-base font-semibold tabular-nums',
                                                 'text-emerald-700' => $isInbound,
                                                 'text-amber-700' => ! $isInbound,
-                                            ])>{{ $delta >= 0 ? '+' : '-' }}{{ number_format(abs($delta), 2) }}</p>
+                                            ])>{{ $delta >= 0 ? '+' : '-' }}{{ format_quantity_id(abs($delta)) }}</p>
                                             <p class="text-xs text-gray-500">Perubahan</p>
                                         </div>
                                     </div>
                                     <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
                                         <div class="rounded-lg bg-emerald-50 p-3">
                                             <dt class="text-xs text-emerald-700">Jumlah Masuk</dt>
-                                            <dd class="mt-1 font-semibold tabular-nums text-emerald-900">{{ number_format($quantityIn, 2) }}</dd>
+                                            <dd class="mt-1 font-semibold tabular-nums text-emerald-900">{{ format_quantity_id($quantityIn) }}</dd>
                                         </div>
                                         <div class="rounded-lg bg-amber-50 p-3">
                                             <dt class="text-xs text-amber-700">Jumlah Keluar</dt>
-                                            <dd class="mt-1 font-semibold tabular-nums text-amber-900">{{ number_format($quantityOut, 2) }}</dd>
+                                            <dd class="mt-1 font-semibold tabular-nums text-amber-900">{{ format_quantity_id($quantityOut) }}</dd>
                                         </div>
                                         <div class="rounded-lg bg-teal-50 p-3">
                                             <dt class="text-xs text-teal-700">Saldo Berjalan</dt>
-                                            <dd class="mt-1 font-semibold tabular-nums text-teal-900">{{ number_format((float) $movement->running_balance, 2) }}</dd>
+                                            <dd class="mt-1 font-semibold tabular-nums text-teal-900">{{ format_quantity_id($movement->running_balance) }}</dd>
                                         </div>
                                         <div class="rounded-lg bg-gray-50 p-3">
                                             <dt class="text-xs text-gray-500">Biaya per Unit</dt>
-                                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ (float) $movement->unit_cost > 0 ? number_format((float) $movement->unit_cost, 2) : 'Biaya tidak dicatat' }}</dd>
+                                            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ (float) $movement->unit_cost > 0 ? format_currency_id($movement->unit_cost) : 'Biaya tidak dicatat' }}</dd>
                                         </div>
                                     </dl>
                                     <div class="mt-4 rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
@@ -249,7 +249,7 @@
                                             ])></span>
                                             <div>
                                                 <p class="font-semibold text-gray-900">{{ str_replace('_', ' ', $movement->movement_type) }}</p>
-                                                <p class="mt-0.5 text-xs text-gray-500">{{ optional($movement->movement_date)->format('Y-m-d') }}</p>
+                                                <p class="mt-0.5 text-xs text-gray-500">{{ format_date_id($movement->movement_date) }}</p>
                                             </div>
                                         </div>
                                     </td>
@@ -260,16 +260,16 @@
                                         <p class="mt-0.5 text-xs text-gray-400">{{ $movement->createdBy?->name ?? '-' }}</p>
                                     </td>
                                     <td class="px-3 py-3 text-right tabular-nums">
-                                        <span class="font-semibold text-emerald-700">{{ $quantityIn > 0 ? '+'.number_format($quantityIn, 2) : number_format($quantityIn, 2) }}</span>
+                                        <span class="font-semibold text-emerald-700">{{ $quantityIn > 0 ? '+'.format_quantity_id($quantityIn) : format_quantity_id($quantityIn) }}</span>
                                     </td>
                                     <td class="px-3 py-3 text-right tabular-nums">
-                                        <span class="font-semibold text-amber-700">{{ $quantityOut > 0 ? '-'.number_format($quantityOut, 2) : number_format($quantityOut, 2) }}</span>
+                                        <span class="font-semibold text-amber-700">{{ $quantityOut > 0 ? '-'.format_quantity_id($quantityOut) : format_quantity_id($quantityOut) }}</span>
                                     </td>
                                     <td class="px-3 py-3 text-right tabular-nums">
-                                        <span class="rounded-full bg-teal-50 px-2.5 py-1 font-semibold text-teal-800">{{ number_format((float) $movement->running_balance, 2) }}</span>
+                                        <span class="rounded-full bg-teal-50 px-2.5 py-1 font-semibold text-teal-800">{{ format_quantity_id($movement->running_balance) }}</span>
                                     </td>
                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">
-                                        {{ (float) $movement->unit_cost > 0 ? number_format((float) $movement->unit_cost, 2) : 'Biaya tidak dicatat' }}
+                                        {{ (float) $movement->unit_cost > 0 ? format_currency_id($movement->unit_cost) : 'Biaya tidak dicatat' }}
                                     </td>
                                 </tr>
                             @endforeach

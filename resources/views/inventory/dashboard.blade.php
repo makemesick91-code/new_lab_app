@@ -28,21 +28,21 @@
             <div class="grid gap-4 sm:grid-cols-3">
                 <x-inventory.kpi-card
                     label="Total Nilai Persediaan"
-                    :value="number_format((float) $summary['inventory_value'], 2)"
+                    :value="format_currency_id($summary['inventory_value'])"
                     hint="Nilai stok cabang saat ini"
                     tone="primary"
                     :href="route('inventory.stock.index')"
                 />
                 <x-inventory.kpi-card
                     label="Jumlah Stok Menipis"
-                    :value="number_format((int) $summary['low_stock_count'])"
+                    :value="format_number_id((int) $summary['low_stock_count'])"
                     hint="Pada atau di bawah stok minimum"
                     tone="warning"
                     :href="route('inventory.stock.index')"
                 />
                 <x-inventory.kpi-card
                     label="Jumlah Stok Habis"
-                    :value="number_format((int) $summary['out_of_stock_count'])"
+                    :value="format_number_id((int) $summary['out_of_stock_count'])"
                     hint="Stok saat ini nol atau kurang"
                     tone="danger"
                     :href="route('inventory.stock.index')"
@@ -64,7 +64,7 @@
                         <p class="text-sm font-medium text-gray-900">Belum ada pergerakan stok.</p>
                         <p class="mt-1 text-sm text-gray-500">Stok awal atau penerimaan stok akan membuat ringkasan lokasi.</p>
                         @if ($locations->isNotEmpty())
-                            <p class="mt-2 text-xs text-gray-500">{{ number_format($locations->count()) }} lokasi aktif siap untuk operasi stok.</p>
+                            <p class="mt-2 text-xs text-gray-500">{{ format_number_id($locations->count()) }} lokasi aktif siap untuk operasi stok.</p>
                         @endif
                     </div>
                 @else

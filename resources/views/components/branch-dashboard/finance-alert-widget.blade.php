@@ -20,7 +20,7 @@
                             <p class="text-sm font-medium text-gray-900">{{ data_get($invoice, 'number', 'Invoice') }}</p>
                             <p class="mt-1 text-xs text-gray-500">{{ data_get($invoice, 'clinic', 'Klinik') }}</p>
                         </div>
-                        <p class="text-sm font-semibold tabular-nums text-rose-700">{{ data_get($invoice, 'outstanding', 'Rp 0.00') }}</p>
+                        <p class="text-sm font-semibold tabular-nums text-rose-700">{{ format_currency_id(data_get($invoice, 'outstanding', 0)) }}</p>
                     </div>
                 </div>
             @endforeach

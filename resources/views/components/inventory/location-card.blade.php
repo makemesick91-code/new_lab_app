@@ -19,11 +19,11 @@
     <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
             <dt class="text-xs text-gray-500">Jumlah</dt>
-            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($qty, 2) }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($qty) }}</dd>
         </div>
         <div>
             <dt class="text-xs text-gray-500">Nilai</dt>
-            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($value, 2) }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_currency_id($value) }}</dd>
         </div>
     </dl>
 </a>

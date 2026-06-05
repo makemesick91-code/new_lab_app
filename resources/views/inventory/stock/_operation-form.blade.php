@@ -113,11 +113,11 @@
                     </div>
                     <div class="flex items-center justify-between gap-3">
                         <dt class="text-gray-500">Stok Minimum</dt>
-                        <dd class="font-semibold tabular-nums text-gray-900">{{ number_format((float) $product->minimum_stock, 2) }}</dd>
+                        <dd class="font-semibold tabular-nums text-gray-900">{{ format_quantity_id($product->minimum_stock) }}</dd>
                     </div>
                     <div class="flex items-center justify-between gap-3">
                         <dt class="text-gray-500">Biaya Rata-rata</dt>
-                        <dd class="font-semibold tabular-nums text-gray-900">{{ number_format((float) $product->average_cost, 2) }}</dd>
+                        <dd class="font-semibold tabular-nums text-gray-900">{{ format_currency_id($product->average_cost) }}</dd>
                     </div>
                 </dl>
             </section>

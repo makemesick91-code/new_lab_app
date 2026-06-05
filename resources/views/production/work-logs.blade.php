@@ -34,7 +34,7 @@
                         <td class="px-3 py-2 text-gray-600">{{ $log->assignment?->technician?->name ?? '—' }}</td>
                         <td class="px-3 py-2 text-right text-gray-600">{{ $log->duration_minutes }}</td>
                         <td class="px-3 py-2 text-gray-600">{{ $log->performedBy?->name ?? 'Sistem' }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ optional($log->created_at)->format('Y-m-d H:i') }}</td>
+                        <td class="px-3 py-2 text-gray-600">{{ format_datetime_id($log->created_at) }}</td>
                         <td class="px-3 py-2 text-gray-600">{{ $log->notes ?? '—' }}</td>
                     </tr>
                 @empty

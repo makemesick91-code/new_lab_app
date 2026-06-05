@@ -24,7 +24,7 @@
             <h3 class="text-sm font-semibold text-gray-800">Beban Kerja Teknisi</h3>
             <div class="mt-2 flex flex-wrap gap-3 text-sm">
                 @forelse ($summary['workload'] as $row)
-                    <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->technician_name ?? '—' }}: <strong>{{ number_format($row->total_assignments) }}</strong> ({{ number_format($row->completed) }} selesai)</span>
+                    <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->technician_name ?? '—' }}: <strong>{{ format_number_id($row->total_assignments) }}</strong> ({{ format_number_id($row->completed) }} selesai)</span>
                 @empty
                     <span class="text-gray-400">Belum ada data.</span>
                 @endforelse

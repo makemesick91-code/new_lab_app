@@ -17,8 +17,8 @@
         </div>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div class="rounded-md bg-green-50 px-4 py-3 text-green-800">Pendapatan Invoice (tanpa VOID)<br><strong class="text-2xl">{{ number_format($summary['invoice_revenue'], 2) }}</strong></div>
-            <div class="rounded-md bg-blue-50 px-4 py-3 text-blue-800">Pembayaran Diterima<br><strong class="text-2xl">{{ number_format($summary['payment_received'], 2) }}</strong></div>
+            <div class="rounded-md bg-green-50 px-4 py-3 text-green-800">Pendapatan Invoice (tanpa VOID)<br><strong class="text-2xl">{{ format_currency_id($summary['invoice_revenue']) }}</strong></div>
+            <div class="rounded-md bg-blue-50 px-4 py-3 text-blue-800">Pembayaran Diterima<br><strong class="text-2xl">{{ format_currency_id($summary['payment_received']) }}</strong></div>
         </div>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -27,7 +27,7 @@
                 <table class="mt-2 min-w-full text-sm">
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($summary['by_month'] as $row)
-                            <tr><td class="px-2 py-1 text-gray-700">{{ $row->month }}</td><td class="px-2 py-1 text-right font-medium text-gray-900">{{ number_format($row->amount, 2) }}</td></tr>
+                            <tr><td class="px-2 py-1 text-gray-700">{{ format_month_id($row->month) }}</td><td class="px-2 py-1 text-right font-medium text-gray-900">{{ format_currency_id($row->amount) }}</td></tr>
                         @empty
                             <tr><td class="px-2 py-3 text-center text-gray-400">Belum ada data pendapatan.</td></tr>
                         @endforelse
@@ -39,7 +39,7 @@
                 <table class="mt-2 min-w-full text-sm">
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($summary['by_clinic'] as $row)
-                            <tr><td class="px-2 py-1 text-gray-700">{{ $row->clinic_name ?? '—' }}</td><td class="px-2 py-1 text-right font-medium text-gray-900">{{ number_format((float) $row->amount, 2) }}</td></tr>
+                            <tr><td class="px-2 py-1 text-gray-700">{{ $row->clinic_name ?? '—' }}</td><td class="px-2 py-1 text-right font-medium text-gray-900">{{ format_currency_id($row->amount) }}</td></tr>
                         @empty
                             <tr><td class="px-2 py-3 text-center text-gray-400">Belum ada data pendapatan.</td></tr>
                         @endforelse

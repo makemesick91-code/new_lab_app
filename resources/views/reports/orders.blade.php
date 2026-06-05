@@ -21,9 +21,9 @@
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
-            <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ number_format($summary['total']) }}</strong></span>
+            <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ format_number_id($summary['total']) }}</strong></span>
             @foreach ($summary['by_status'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->status }}: <strong>{{ number_format($row->total) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->status }}: <strong>{{ format_number_id($row->total) }}</strong></span>
             @endforeach
         </div>
 

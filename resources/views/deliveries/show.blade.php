@@ -69,8 +69,8 @@
                         </form>
                     @endcan
                 </div>
-                <p class="text-sm text-gray-500">Dimulai: {{ optional($delivery->started_at)->format('Y-m-d H:i') ?? '-' }}</p>
-                <p class="text-sm text-gray-500">Diselesaikan: {{ optional($delivery->completed_at)->format('Y-m-d H:i') ?? '-' }}</p>
+                <p class="text-sm text-gray-500">Dimulai: {{ format_datetime_id($delivery->started_at) }}</p>
+                <p class="text-sm text-gray-500">Diselesaikan: {{ format_datetime_id($delivery->completed_at) }}</p>
             </div>
         </div>
 
@@ -78,7 +78,7 @@
             <h3 class="font-semibold text-gray-800">Panel POD</h3>
             <dl class="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                 <div><dt class="text-gray-500">Penerima</dt><dd class="font-medium">{{ $delivery->receiver_name ?? '-' }}</dd></div>
-                <div><dt class="text-gray-500">Diterima Pada</dt><dd class="font-medium">{{ optional($delivery->received_at)->format('Y-m-d H:i') ?? '-' }}</dd></div>
+                <div><dt class="text-gray-500">Diterima Pada</dt><dd class="font-medium">{{ format_datetime_id($delivery->received_at) }}</dd></div>
                 <div><dt class="text-gray-500">Catatan</dt><dd class="font-medium">{{ $delivery->delivery_notes ?? '-' }}</dd></div>
             </dl>
 
@@ -127,7 +127,7 @@
                     @forelse ($delivery->labOrder?->statusLogs->sortByDesc('changed_at') ?? [] as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium">{{ $statusLabels[$log->old_status] ?? $log->old_status }} -> {{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ optional($log->changed_at)->format('Y-m-d H:i') }} oleh {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} oleh {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada riwayat status.</li>
@@ -142,7 +142,7 @@
                 @forelse ($delivery->auditLogs->sortByDesc('performed_at') as $log)
                     <li class="border-b border-gray-100 pb-2">
                         <p class="font-medium">{{ $log->action }}</p>
-                        <p class="text-gray-500">{{ optional($log->performed_at)->format('Y-m-d H:i') }} oleh {{ $log->performer?->name ?? 'Sistem' }}</p>
+                        <p class="text-gray-500">{{ format_datetime_id($log->performed_at) }} oleh {{ $log->performer?->name ?? 'Sistem' }}</p>
                     </li>
                 @empty
                     <li class="text-gray-400">Belum ada catatan audit.</li>

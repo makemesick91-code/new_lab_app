@@ -25,9 +25,9 @@
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
-            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Diterima: <strong>{{ number_format($summary['total'], 2) }}</strong></span>
+            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Diterima: <strong>{{ format_currency_id($summary['total']) }}</strong></span>
             @foreach ($summary['by_method'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->payment_method }}: <strong>{{ number_format((float) $row->amount, 2) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->payment_method }}: <strong>{{ format_currency_id($row->amount) }}</strong></span>
             @endforeach
         </div>
 
@@ -47,7 +47,7 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->clinic_name }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->payment_date }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->payment_method }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $r->amount, 2) }}</td>
+                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($r->amount) }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->received_by_name ?? '—' }}</td>
                         </tr>
                     @empty

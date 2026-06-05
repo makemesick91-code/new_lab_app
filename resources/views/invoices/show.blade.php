@@ -22,20 +22,20 @@
                 </div>
 
                 <dl class="mt-5 grid gap-4 sm:grid-cols-3 text-sm">
-                    <div><dt class="text-gray-500">Tanggal Invoice</dt><dd class="font-medium text-gray-900">{{ optional($invoice->invoice_date)->format('Y-m-d') }}</dd></div>
-                    <div><dt class="text-gray-500">Tanggal Jatuh Tempo</dt><dd class="font-medium text-gray-900">{{ optional($invoice->due_date)->format('Y-m-d') ?? '-' }}</dd></div>
+                    <div><dt class="text-gray-500">Tanggal Invoice</dt><dd class="font-medium text-gray-900">{{ format_date_id($invoice->invoice_date) }}</dd></div>
+                    <div><dt class="text-gray-500">Tanggal Jatuh Tempo</dt><dd class="font-medium text-gray-900">{{ format_date_id($invoice->due_date) }}</dd></div>
                     <div><dt class="text-gray-500">Dibuat Oleh</dt><dd class="font-medium text-gray-900">{{ $invoice->creator?->name ?? '-' }}</dd></div>
                 </dl>
             </div>
 
             <div class="bg-white shadow-sm sm:rounded-lg p-6">
                 <dl class="space-y-2 text-sm">
-                    <div class="flex justify-between"><dt class="text-gray-500">Subtotal</dt><dd class="font-medium">{{ number_format((float) $invoice->subtotal, 2) }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">Diskon</dt><dd class="font-medium">{{ number_format((float) $invoice->discount_amount, 2) }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">Pajak</dt><dd class="font-medium">{{ number_format((float) $invoice->tax_amount, 2) }}</dd></div>
-                    <div class="flex justify-between border-t pt-2"><dt class="text-gray-900">Total</dt><dd class="font-semibold">{{ number_format((float) $invoice->total_amount, 2) }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-500">Dibayar</dt><dd class="font-medium">{{ number_format((float) $invoice->paid_amount, 2) }}</dd></div>
-                    <div class="flex justify-between"><dt class="text-gray-900">Tertunggak</dt><dd class="font-semibold">{{ number_format((float) $invoice->outstanding_amount, 2) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">Subtotal</dt><dd class="font-medium">{{ format_currency_id($invoice->subtotal) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">Diskon</dt><dd class="font-medium">{{ format_currency_id($invoice->discount_amount) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">Pajak</dt><dd class="font-medium">{{ format_currency_id($invoice->tax_amount) }}</dd></div>
+                    <div class="flex justify-between border-t pt-2"><dt class="text-gray-900">Total</dt><dd class="font-semibold">{{ format_currency_id($invoice->total_amount) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-500">Dibayar</dt><dd class="font-medium">{{ format_currency_id($invoice->paid_amount) }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-gray-900">Tertunggak</dt><dd class="font-semibold">{{ format_currency_id($invoice->outstanding_amount) }}</dd></div>
                 </dl>
             </div>
         </div>
@@ -59,8 +59,8 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $item->labOrder?->patient?->name ?? '-' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $item->description }}</td>
                                 <td class="px-3 py-2 text-right text-gray-700">{{ $item->quantity }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $item->unit_price, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $item->total_price, 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($item->unit_price) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($item->total_price) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -83,9 +83,9 @@
                             @forelse ($invoice->payments as $payment)
                                 <tr>
                                     <td class="px-3 py-2 font-medium text-gray-900">{{ $payment->payment_number }}</td>
-                                    <td class="px-3 py-2 text-gray-600">{{ optional($payment->payment_date)->format('Y-m-d') }}</td>
+                                    <td class="px-3 py-2 text-gray-600">{{ format_date_id($payment->payment_date) }}</td>
                                     <td class="px-3 py-2 text-gray-600">{{ $payment->payment_method }}</td>
-                                    <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $payment->amount, 2) }}</td>
+                                    <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($payment->amount) }}</td>
                                 </tr>
                             @empty
                                 <tr><td colspan="4" class="px-3 py-6 text-center text-gray-400">Belum ada pembayaran tercatat.</td></tr>

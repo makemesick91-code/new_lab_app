@@ -70,7 +70,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $order->patient?->name ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->activeAssignment?->technician?->name ?? 'Belum ditugaskan' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $priorityLabels[$order->priority] ?? $order->priority }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($order->due_date, '—') }}</td>
                                 <td class="px-3 py-2">
                                     <span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{{ $statusLabels[$order->status] ?? $order->status }}</span>
                                 </td>

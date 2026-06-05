@@ -31,8 +31,8 @@
                         <tr class="hover:bg-gray-50">
                             <td class="px-3 py-2 text-gray-600">{{ $product->code }}</td>
                             <td class="px-3 py-2 font-medium text-gray-900">{{ $product->name }}</td>
-                            <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ number_format($current, 2) }}</td>
-                            <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ number_format($minimum, 2) }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_quantity_id($current) }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_quantity_id($minimum) }}</td>
                             <td class="px-3 py-2">@include('inventory._low-stock-badge', ['current' => $current, 'minimum' => $minimum])</td>
                         </tr>
                     @endforeach

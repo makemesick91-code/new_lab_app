@@ -63,7 +63,7 @@
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
                 <div>
                     <h3 class="text-base font-semibold text-gray-900">Stok Opname</h3>
-                    <p class="text-sm text-gray-500">{{ number_format($stockOpnames->total()) }} stok opname dalam lingkup cabang aktif.</p>
+                    <p class="text-sm text-gray-500">{{ format_number_id($stockOpnames->total()) }} stok opname dalam lingkup cabang aktif.</p>
                 </div>
             </div>
 
@@ -85,7 +85,7 @@
                             <tr class="hover:bg-gray-50">
                                 <td class="px-4 py-3 font-semibold text-gray-900">{{ $stockOpname->opname_number }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ $stockOpname->inventoryLocation?->name ?? '-' }}</td>
-                                <td class="px-3 py-3 text-gray-600">{{ $stockOpname->opname_date->format('Y-m-d') }}</td>
+                                <td class="px-3 py-3 text-gray-600">{{ format_date_id($stockOpname->opname_date) }}</td>
                                 <td class="px-3 py-3">
                                     <span @class([
                                         'inline-flex rounded-full px-3 py-1 text-xs font-medium',
@@ -129,7 +129,7 @@
                             <div class="min-w-0">
                                 <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{{ $stockOpname->opname_number }}</p>
                                 <h3 class="mt-1 text-base font-semibold text-gray-900">{{ $stockOpname->inventoryLocation?->name ?? '-' }}</h3>
-                                <p class="mt-1 text-sm text-gray-500">{{ $stockOpname->opname_date->format('Y-m-d') }}</p>
+                                <p class="mt-1 text-sm text-gray-500">{{ format_date_id($stockOpname->opname_date) }}</p>
                             </div>
                             <span @class([
                                 'inline-flex rounded-full px-3 py-1 text-xs font-medium',

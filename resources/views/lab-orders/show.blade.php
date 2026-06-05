@@ -67,8 +67,8 @@
                 <div><dt class="text-gray-500">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
                 <div><dt class="text-gray-500">Nomor RM</dt><dd class="font-medium">{{ $order->medical_record_number ?? '-' }}</dd></div>
                 <div><dt class="text-gray-500">Prioritas</dt><dd class="font-medium">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
-                <div><dt class="text-gray-500">Tanggal Order</dt><dd class="font-medium">{{ optional($order->order_date)->format('Y-m-d') }}</dd></div>
-                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</dd></div>
+                <div><dt class="text-gray-500">Tanggal Order</dt><dd class="font-medium">{{ format_date_id($order->order_date) }}</dd></div>
+                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
                 <div class="sm:col-span-2"><dt class="text-gray-500">Catatan</dt><dd class="font-medium">{{ $order->notes ?? '—' }}</dd></div>
                 <div><dt class="text-gray-500">Dibuat Oleh</dt><dd class="font-medium">{{ $order->creator?->name ?? '—' }}</dd></div>
             </div>
@@ -93,8 +93,8 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $item->shade_color_text ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $item->material_text ?? '—' }}</td>
                                 <td class="px-3 py-2 text-right text-gray-600">{{ rtrim(rtrim($item->quantity, '0'), '.') }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $item->unit_price, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $item->subtotal, 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->unit_price) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->subtotal) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -161,7 +161,7 @@
                         <div class="mt-1 h-2 w-2 rounded-full bg-indigo-500"></div>
                         <div>
                             <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ optional($log->changed_at)->format('Y-m-d H:i') }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                             @if ($log->notes)<p class="text-gray-600">{{ $log->notes }}</p>@endif
                         </div>
                     </div>
@@ -183,7 +183,7 @@
                             <tr>
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $log->action }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $log->performer?->name ?? 'Sistem' }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($log->performed_at)->format('Y-m-d H:i') }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_datetime_id($log->performed_at) }}</td>
                             </tr>
                         @empty
                             <tr><td colspan="3" class="px-3 py-6 text-center text-gray-400">Belum ada catatan audit.</td></tr>

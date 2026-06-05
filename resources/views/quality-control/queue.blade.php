@@ -61,7 +61,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $order->patient?->name ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $order->activeAssignment?->technician?->name ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $priorityLabels[$order->priority] ?? $order->priority }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($order->due_date, '—') }}</td>
                                 <td class="px-3 py-2"><span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">{{ $statusLabels[$order->status] ?? $order->status }}</span></td>
                                 <td class="px-3 py-2 text-right">
                                     <a href="{{ route('quality-control.show', $order) }}" class="text-indigo-600 hover:text-indigo-500">Review</a>

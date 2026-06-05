@@ -21,10 +21,10 @@
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
-            <span class="rounded-md bg-gray-50 px-3 py-1">Jumlah: <strong>{{ number_format($summary['count']) }}</strong></span>
-            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total: <strong>{{ number_format($summary['total_amount'], 2) }}</strong></span>
+            <span class="rounded-md bg-gray-50 px-3 py-1">Jumlah: <strong>{{ format_number_id($summary['count']) }}</strong></span>
+            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total: <strong>{{ format_currency_id($summary['total_amount']) }}</strong></span>
             @foreach ($summary['by_status'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->status }}: <strong>{{ number_format($row->total) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->status }}: <strong>{{ format_number_id($row->total) }}</strong></span>
             @endforeach
         </div>
 
@@ -44,9 +44,9 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->invoice_date }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->due_date ?? '—' }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->status }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $r->total_amount, 2) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $r->paid_amount, 2) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $r->outstanding_amount, 2) }}</td>
+                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($r->total_amount) }}</td>
+                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($r->paid_amount) }}</td>
+                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($r->outstanding_amount) }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="8" class="px-3 py-6 text-center text-gray-400">Belum ada invoice.</td></tr>

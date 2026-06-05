@@ -14,7 +14,7 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Stok Opname</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $stockOpname->opname_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    {{ $stockOpname->inventoryLocation?->name ?? '-' }} · {{ $stockOpname->opname_date->format('Y-m-d') }}
+                    {{ $stockOpname->inventoryLocation?->name ?? '-' }} · {{ format_date_id($stockOpname->opname_date) }}
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -121,19 +121,19 @@
                                             <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
                                             <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
                                         </td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ number_format((float)$item->system_quantity, 2) }}</td>
+                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->system_quantity) }}</td>
                                         <td class="px-3 py-3 text-right tabular-nums">
                                             @if (in_array($stockOpname->status, ['DRAFT', 'COUNTING']))
                                                 <form method="POST" action="{{ route('inventory.stock-opnames.update-counted-quantity', [$stockOpname, $item->product_id]) }}" class="flex items-center justify-end gap-2">
                                                     @csrf
-                                                    <input type="number" step="0.01" min="0" name="counted_quantity" value="{{ number_format((float)$item->counted_quantity, 2) }}"
+                                                    <input type="number" step="0.01" min="0" name="counted_quantity" value="{{ rtrim(rtrim(number_format((float) $item->counted_quantity, 2, '.', ''), '0'), '.') }}"
                                                            class="w-32 rounded-lg border-gray-300 text-sm text-right focus:border-teal-500 focus:ring-teal-500">
                                                     <input type="text" name="notes" value="{{ $item->notes }}" placeholder="Catatan"
                                                            class="w-40 rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                                                     <button type="submit" class="rounded-lg bg-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-300">Simpan</button>
                                                 </form>
                                             @else
-                                                {{ number_format((float)$item->counted_quantity, 2) }}
+                                                {{ format_quantity_id($item->counted_quantity) }}
                                             @endif
                                         </td>
                                         <td class="px-3 py-3 text-right tabular-nums">
@@ -143,7 +143,7 @@
                                                 'text-red-600' => (float)$item->variance_quantity < 0,
                                                 'text-gray-600' => (float)$item->variance_quantity === 0,
                                             ])>
-                                                {{ number_format((float)$item->variance_quantity, 2) }}
+                                                {{ format_quantity_id($item->variance_quantity) }}
                                             </span>
                                         </td>
                                         <td class="px-4 py-3 text-gray-600">{{ $item->notes ?? '-' }}</td>
@@ -195,7 +195,7 @@
                         </div>
                         <div class="flex justify-between">
                             <dt class="text-sm text-gray-600">Tanggal Opname</dt>
-                            <dd class="text-sm text-gray-900">{{ $stockOpname->opname_date->format('Y-m-d') }}</dd>
+                            <dd class="text-sm text-gray-900">{{ format_date_id($stockOpname->opname_date) }}</dd>
                         </div>
                         <div class="flex justify-between">
                             <dt class="text-sm text-gray-600">Dihitung Oleh</dt>
@@ -208,7 +208,7 @@
                         @if ($stockOpname->completed_at)
                             <div class="flex justify-between">
                                 <dt class="text-sm text-gray-600">Selesai Pada</dt>
-                                <dd class="text-sm text-gray-900">{{ $stockOpname->completed_at->format('Y-m-d H:i') }}</dd>
+                                <dd class="text-sm text-gray-900">{{ format_datetime_id($stockOpname->completed_at) }}</dd>
                             </div>
                         @endif
                         @if ($stockOpname->notes)

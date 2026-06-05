@@ -22,11 +22,11 @@
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div>
                                 <p class="text-sm font-medium text-gray-900">{{ $movement->product?->name ?? '-' }}</p>
-                                <p class="mt-1 text-xs text-gray-500">{{ optional($movement->movement_date)->format('Y-m-d') }} · {{ $movement->inventoryLocation?->name ?? '-' }}</p>
+                                <p class="mt-1 text-xs text-gray-500">{{ format_date_id($movement->movement_date) }} · {{ $movement->inventoryLocation?->name ?? '-' }}</p>
                             </div>
                             <div class="text-right">
                                 <p class="text-sm font-semibold tabular-nums {{ $isInbound ? 'text-emerald-700' : 'text-amber-700' }}">
-                                    {{ $delta >= 0 ? '+' : '' }}{{ number_format($delta, 2) }}
+                                    {{ $delta >= 0 ? '+' : '' }}{{ format_quantity_id($delta) }}
                                 </p>
                                 <p class="text-xs text-gray-500">{{ str_replace('_', ' ', $movement->movement_type) }}</p>
                             </div>

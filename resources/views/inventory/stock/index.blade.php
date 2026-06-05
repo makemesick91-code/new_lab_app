@@ -19,15 +19,15 @@
         <div class="grid gap-4 sm:grid-cols-3">
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Nilai Persediaan</p>
-                <p class="mt-1 text-2xl font-semibold text-gray-900">{{ number_format((float) $summary['inventory_value'], 2) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-gray-900">{{ format_currency_id($summary['inventory_value']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Stok Menipis</p>
-                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ number_format((int) $summary['low_stock_count']) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ format_number_id((int) $summary['low_stock_count']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Stok Habis</p>
-                <p class="mt-1 text-2xl font-semibold text-red-700">{{ number_format((int) $summary['out_of_stock_count']) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-red-700">{{ format_number_id((int) $summary['out_of_stock_count']) }}</p>
             </div>
         </div>
 
@@ -50,8 +50,8 @@
                             <tr>
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $product?->name ?? '-' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $row->inventoryLocation?->name ?? '-' }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format($current, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format($current * (float) ($product?->average_cost ?? 0), 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_quantity_id($current) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($current * (float) ($product?->average_cost ?? 0)) }}</td>
                                 <td class="px-3 py-2">@include('inventory._low-stock-badge', ['current' => $current, 'minimum' => $product?->minimum_stock ?? 0])</td>
                             </tr>
                         @empty

@@ -62,14 +62,14 @@
                             <tr>
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $invoice->invoice_number }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $invoice->clinic?->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($invoice->invoice_date)->format('Y-m-d') }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ optional($invoice->due_date)->format('Y-m-d') ?? '-' }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($invoice->invoice_date) }}</td>
+                                <td class="px-3 py-2 text-gray-600">{{ format_date_id($invoice->due_date) }}</td>
                                 <td class="px-3 py-2">
                                     <span class="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{{ $statusLabels[$invoice->status] ?? $invoice->status }}</span>
                                 </td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->total_amount, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->paid_amount, 2) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->outstanding_amount, 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($invoice->total_amount) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($invoice->paid_amount) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($invoice->outstanding_amount) }}</td>
                                 <td class="px-3 py-2 text-right">
                                     <a href="{{ route('invoices.show', $invoice) }}" class="text-indigo-600 hover:text-indigo-500">Lihat</a>
                                 </td>

@@ -157,7 +157,7 @@
                     @forelse ($history as $review)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $statusLabels[$review->result] ?? ($review->result ?? 'Sedang Direview') }} <span class="text-xs text-gray-400">oleh {{ $review->inspector?->name }}</span></p>
-                            <p class="text-gray-500">{{ optional($review->completed_at ?? $review->started_at)->format('Y-m-d H:i') }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($review->completed_at ?? $review->started_at) }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada riwayat QC.</li>
@@ -170,7 +170,7 @@
                     @forelse ($remakeRequests as $remake)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $remake->reason }} <span class="text-xs text-gray-400">({{ $statusLabels[$remake->status] ?? $remake->status }})</span></p>
-                            <p class="text-gray-500">{{ optional($remake->requested_at)->format('Y-m-d H:i') }} · {{ $remake->requestedBy?->name }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($remake->requested_at) }} · {{ $remake->requestedBy?->name }}</p>
                             @if ($remake->notes)<p class="text-gray-600">{{ $remake->notes }}</p>@endif
                         </li>
                     @empty
@@ -188,7 +188,7 @@
                     @forelse ($order->statusLogs->sortByDesc('changed_at') as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ optional($log->changed_at)->format('Y-m-d H:i') }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada riwayat status.</li>
@@ -201,7 +201,7 @@
                     @forelse ($auditLogs as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $log->action }}</p>
-                            <p class="text-gray-500">{{ optional($log->performed_at)->format('Y-m-d H:i') }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->performed_at) }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada catatan audit.</li>

@@ -48,7 +48,7 @@
                 <div><dt class="text-gray-500">Dokter</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
                 <div><dt class="text-gray-500">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
                 <div><dt class="text-gray-500">Prioritas</dt><dd class="font-medium">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
-                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ optional($order->due_date)->format('Y-m-d') ?? '—' }}</dd></div>
+                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
                 <div><dt class="text-gray-500">Teknisi Aktif</dt><dd class="font-medium">{{ $activeAssignment?->technician?->name ?? 'Belum ditugaskan' }}</dd></div>
             </dl>
         </div>
@@ -169,7 +169,7 @@
                     @forelse ($assignmentHistory as $a)
                         <li class="flex items-center justify-between border-b border-gray-100 pb-2">
                             <span class="font-medium text-gray-900">{{ $a->technician?->name }}</span>
-                            <span class="text-gray-500">{{ $statusLabels[$a->status] ?? $a->status }} · {{ optional($a->assigned_at)->format('Y-m-d H:i') }}</span>
+                            <span class="text-gray-500">{{ $statusLabels[$a->status] ?? $a->status }} · {{ format_datetime_id($a->assigned_at) }}</span>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada penugasan.</li>
@@ -186,7 +186,7 @@
                     @forelse ($workLogs as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $workLogLabels[$log->event_type] ?? $log->event_type }} <span class="text-xs text-gray-400">({{ $log->duration_minutes }} menit)</span></p>
-                            <p class="text-gray-500">{{ optional($log->created_at)->format('Y-m-d H:i') }} · {{ $log->performedBy?->name }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->created_at) }} · {{ $log->performedBy?->name }}</p>
                             @if ($log->notes)<p class="text-gray-600">{{ $log->notes }}</p>@endif
                         </li>
                     @empty
@@ -204,7 +204,7 @@
                     @forelse ($order->statusLogs->sortByDesc('changed_at') as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ optional($log->changed_at)->format('Y-m-d H:i') }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada riwayat status.</li>
@@ -218,7 +218,7 @@
                     @forelse ($auditLogs as $log)
                         <li class="border-b border-gray-100 pb-2">
                             <p class="font-medium text-gray-900">{{ $log->action }}</p>
-                            <p class="text-gray-500">{{ optional($log->performed_at)->format('Y-m-d H:i') }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
+                            <p class="text-gray-500">{{ format_datetime_id($log->performed_at) }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
                         <li class="text-gray-400">Belum ada catatan audit.</li>

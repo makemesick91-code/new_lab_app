@@ -20,7 +20,7 @@
     $ownerKpis = $ownerKpis ?? [
         [
             'label' => 'Pendapatan Bulan Ini',
-            'value' => 'Rp 0.00',
+            'value' => format_currency_id(0),
             'secondary' => 'Belum ada data pendapatan yang terhubung di halaman ini.',
             'severity' => 'neutral',
             'href' => $canAny(['view_invoice_report', 'manage_report']) ? route('reports.revenue') : null,
@@ -41,14 +41,14 @@
         ],
         [
             'label' => 'Invoice Tertunggak',
-            'value' => 'Rp 0.00',
+            'value' => format_currency_id(0),
             'secondary' => 'Gunakan laporan invoice untuk detail umur piutang.',
             'severity' => 'neutral',
             'href' => $canAny(['view_invoice_report', 'manage_report']) ? route('reports.outstanding') : null,
         ],
         [
             'label' => 'Nilai Persediaan',
-            'value' => 'Rp 0.00',
+            'value' => format_currency_id(0),
             'secondary' => 'Nilai berbasis ledger dari Inventory Core.',
             'severity' => 'neutral',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.dashboard') : null,

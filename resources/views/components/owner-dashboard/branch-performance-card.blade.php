@@ -26,11 +26,11 @@
     <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
             <dt class="text-xs text-gray-500">Pendapatan</dt>
-            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ data_get($branch, 'revenue', 'Rp 0.00') }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_currency_id(data_get($branch, 'revenue', 0)) }}</dd>
         </div>
         <div>
             <dt class="text-xs text-gray-500">Order</dt>
-            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ data_get($branch, 'orders', 0) }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_number_id(data_get($branch, 'orders', 0)) }}</dd>
         </div>
         <div>
             <dt class="text-xs text-gray-500">Waktu Selesai</dt>
@@ -38,7 +38,7 @@
         </div>
         <div>
             <dt class="text-xs text-gray-500">Tertunggak</dt>
-            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ data_get($branch, 'outstanding', 'Rp 0.00') }}</dd>
+            <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_currency_id(data_get($branch, 'outstanding', 0)) }}</dd>
         </div>
     </dl>
 

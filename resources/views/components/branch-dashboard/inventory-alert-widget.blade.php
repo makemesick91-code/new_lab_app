@@ -20,8 +20,8 @@
                         <p class="mt-1 text-xs text-gray-500">{{ data_get($item, 'location', 'Lokasi') }}</p>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm font-semibold tabular-nums text-amber-700">{{ data_get($item, 'current', 0) }}</p>
-                        <p class="text-xs text-gray-500">min {{ data_get($item, 'minimum', 0) }}</p>
+                        <p class="text-sm font-semibold tabular-nums text-amber-700">{{ format_quantity_id(data_get($item, 'current', 0)) }}</p>
+                        <p class="text-xs text-gray-500">min {{ format_quantity_id(data_get($item, 'minimum', 0)) }}</p>
                     </div>
                 </div>
             @endforeach

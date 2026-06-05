@@ -21,11 +21,11 @@
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
-            <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ number_format($summary['total']) }}</strong></span>
+            <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ format_number_id($summary['total']) }}</strong></span>
             @foreach ($summary['by_result'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->result }}: <strong>{{ number_format($row->total) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->result }}: <strong>{{ format_number_id($row->total) }}</strong></span>
             @endforeach
-            <span class="rounded-md bg-amber-50 px-3 py-1 text-amber-700">Remake: <strong>{{ number_format($summary['remake_count']) }}</strong></span>
+            <span class="rounded-md bg-amber-50 px-3 py-1 text-amber-700">Remake: <strong>{{ format_number_id($summary['remake_count']) }}</strong></span>
         </div>
 
         <div class="overflow-x-auto">

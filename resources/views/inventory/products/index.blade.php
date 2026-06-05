@@ -39,7 +39,7 @@
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
                 <div>
                     <h3 class="text-base font-semibold text-gray-900">Produk</h3>
-                    <p class="text-sm text-gray-500">{{ number_format($products->total()) }} produk dalam lingkup cabang aktif.</p>
+                    <p class="text-sm text-gray-500">{{ format_number_id($products->total()) }} produk dalam lingkup cabang aktif.</p>
                 </div>
                 <span class="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">Total Stok Cabang</span>
             </div>
@@ -92,14 +92,14 @@
                                     <p>{{ $product->category?->name ?? '-' }}</p>
                                     <p class="mt-0.5 text-xs text-gray-500">{{ $product->unit?->symbol ?? '-' }}</p>
                                 </td>
-                                <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ number_format($minimumStock, 2) }}</td>
+                                <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($minimumStock) }}</td>
                                 <td class="px-3 py-3 text-right tabular-nums">
                                     <span @class([
                                         'font-semibold',
                                         'text-rose-700' => $isOut,
                                         'text-amber-700' => $isLow,
                                         'text-gray-900' => ! $isOut && ! $isLow,
-                                    ])>{{ number_format($currentStock, 2) }}</span>
+                                    ])>{{ format_quantity_id($currentStock) }}</span>
                                 </td>
                                 <td class="px-3 py-3">@include('inventory._low-stock-badge', ['current' => $currentStock, 'minimum' => $minimumStock])</td>
                                 <td class="px-3 py-3">@include('inventory._status-badge', ['active' => $product->is_active])</td>
@@ -156,11 +156,11 @@
                         <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
                             <div class="rounded-lg bg-white p-3 ring-1 ring-gray-100">
                                 <p class="text-xs text-gray-500">Total Cabang</p>
-                                <p class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($currentStock, 2) }}</p>
+                                <p class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($currentStock) }}</p>
                             </div>
                             <div class="rounded-lg bg-white p-3 ring-1 ring-gray-100">
                                 <p class="text-xs text-gray-500">Stok Minimum</p>
-                                <p class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($minimumStock, 2) }}</p>
+                                <p class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($minimumStock) }}</p>
                             </div>
                         </div>
                         <div class="mt-3 flex flex-wrap items-center gap-2">

@@ -5,7 +5,7 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Tinjau Stok Opname</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $stockOpname->opname_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    {{ $stockOpname->inventoryLocation?->name ?? '-' }} · {{ $stockOpname->opname_date->format('Y-m-d') }}
+                    {{ $stockOpname->inventoryLocation?->name ?? '-' }} · {{ format_date_id($stockOpname->opname_date) }}
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
@@ -73,8 +73,8 @@
                                 </td>
                                 <td class="px-3 py-3 text-gray-600">{{ $item->product?->code ?? '-' }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ $item->product?->unit?->symbol ?? '-' }}</td>
-                                <td class="px-3 py-3 text-right tabular-nums text-gray-600">{{ number_format((float)$item->system_quantity, 2) }}</td>
-                                <td class="px-3 py-3 text-right tabular-nums text-gray-600">{{ number_format((float)$item->counted_quantity, 2) }}</td>
+                                <td class="px-3 py-3 text-right tabular-nums text-gray-600">{{ format_quantity_id($item->system_quantity) }}</td>
+                                <td class="px-3 py-3 text-right tabular-nums text-gray-600">{{ format_quantity_id($item->counted_quantity) }}</td>
                                 <td class="px-3 py-3 text-right tabular-nums">
                                     <span @class([
                                         'font-semibold',
@@ -82,7 +82,7 @@
                                         'text-red-600' => $isShort,
                                         'text-gray-500' => $isZero,
                                     ])>
-                                        {{ $isOver ? '+' : '' }}{{ number_format($variance, 2) }}
+                                        {{ $isOver ? '+' : '' }}{{ format_quantity_id($variance) }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-3">

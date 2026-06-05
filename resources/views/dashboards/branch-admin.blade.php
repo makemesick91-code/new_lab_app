@@ -9,7 +9,7 @@
         </div>
         <div class="text-left sm:text-right">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Hari Ini</p>
-            <p class="text-sm font-medium text-gray-900">{{ now()->format('Y-m-d') }}</p>
+            <p class="text-sm font-medium text-gray-900">{{ format_date_id(now()) }}</p>
         </div>
     </div>
 </section>
@@ -39,7 +39,7 @@
                 <div class="rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <div class="flex items-center justify-between gap-2">
                         <h4 class="text-sm font-semibold text-gray-900">{{ data_get($queue, 'title', 'Antrean') }}</h4>
-                        <span class="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-gray-600">{{ collect(data_get($queue, 'items', []))->count() }}</span>
+                        <span class="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-gray-600">{{ format_number_id(collect(data_get($queue, 'items', []))->count()) }}</span>
                     </div>
                     <div class="mt-3 space-y-3">
                         @forelse (data_get($queue, 'items', []) as $item)

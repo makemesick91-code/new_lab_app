@@ -49,7 +49,7 @@
                 </div>
                 <div class="rounded-lg bg-teal-50 px-4 py-3 text-right">
                     <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Stok Saat Ini - Total Cabang</p>
-                    <p class="mt-1 text-2xl font-semibold tabular-nums text-teal-900">{{ number_format($currentStock, 2) }}</p>
+                    <p class="mt-1 text-2xl font-semibold tabular-nums text-teal-900">{{ format_quantity_id($currentStock) }}</p>
                     <p class="mt-1 text-xs text-teal-700">{{ $product->unit?->symbol ?? 'satuan' }}</p>
                 </div>
             </div>
@@ -65,11 +65,11 @@
                 </div>
                 <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Stok Minimum</dt>
-                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($minimumStock, 2) }}</dd>
+                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($minimumStock) }}</dd>
                 </div>
                 <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Biaya Rata-rata</dt>
-                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format($averageCost, 2) }}</dd>
+                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_currency_id($averageCost) }}</dd>
                 </div>
             </dl>
         </section>
@@ -94,7 +94,7 @@
                     </div>
                     <div class="rounded-lg border border-gray-200 p-4">
                         <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Nilai Persediaan</p>
-                        <p class="mt-2 text-lg font-semibold tabular-nums text-gray-900">{{ number_format($inventoryValue, 2) }}</p>
+                        <p class="mt-2 text-lg font-semibold tabular-nums text-gray-900">{{ format_currency_id($inventoryValue) }}</p>
                         <p class="mt-1 text-xs text-gray-500">Stok saat ini × biaya rata-rata.</p>
                     </div>
                     <div class="rounded-lg border border-gray-200 p-4">

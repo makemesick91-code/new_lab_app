@@ -34,22 +34,22 @@
             @foreach ($cardDefs as $key => $label)
                 <div class="bg-white shadow-sm sm:rounded-lg p-4">
                     <p class="text-xs text-gray-500">{{ $label }}</p>
-                    <p class="mt-1 text-2xl font-semibold text-gray-900">{{ number_format($cards[$key]) }}</p>
+                    <p class="mt-1 text-2xl font-semibold text-gray-900">{{ format_number_id($cards[$key]) }}</p>
                 </div>
             @endforeach
         </div>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Pendapatan</p>
-                <p class="mt-1 text-2xl font-semibold text-green-700">{{ number_format($cards['revenue'], 2) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-green-700">{{ format_currency_id($cards['revenue']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Tertunggak</p>
-                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ number_format($cards['outstanding'], 2) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ format_currency_id($cards['outstanding']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Invoice Terlambat</p>
-                <p class="mt-1 text-2xl font-semibold text-red-700">{{ number_format($cards['overdue_invoices']) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-red-700">{{ format_number_id($cards['overdue_invoices']) }}</p>
             </div>
         </div>
 
@@ -69,9 +69,10 @@
                     <table class="mt-3 min-w-full text-sm">
                         <tbody class="divide-y divide-gray-100">
                             @forelse ($charts[$key] as $row)
+                                @php($labelValue = $labelCol === 'month' ? format_month_id($row->{$labelCol}) : ($row->{$labelCol} ?? '—'))
                                 <tr>
-                                    <td class="px-2 py-1 text-gray-700">{{ $row->{$labelCol} ?? 'â€”' }}</td>
-                                    <td class="px-2 py-1 text-right font-medium text-gray-900">{{ $valCol === 'amount' ? number_format((float) $row->{$valCol}, 2) : number_format((int) $row->{$valCol}) }}</td>
+                                    <td class="px-2 py-1 text-gray-700">{{ $labelValue }}</td>
+                                    <td class="px-2 py-1 text-right font-medium text-gray-900">{{ $valCol === 'amount' ? format_currency_id($row->{$valCol}) : format_number_id((int) $row->{$valCol}) }}</td>
                                 </tr>
                             @empty
                                 <tr><td class="px-2 py-3 text-center text-gray-400">Belum ada data.</td></tr>

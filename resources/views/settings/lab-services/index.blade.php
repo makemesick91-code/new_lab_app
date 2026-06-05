@@ -31,7 +31,7 @@
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $service->name }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $service->category ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $service->turnaround_days }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ number_format((float) $service->price, 2) }}</td>
+                                <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($service->price) }}</td>
                                 <td class="px-3 py-2">
                                     @if ($service->is_active)
                                         <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
