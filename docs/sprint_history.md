@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 12 (with current Sprint 13 work in progress).
+Sprint 13.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -43,7 +43,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 11 | Branch Enforcement | `b53bbe3`, `675cd5f` | `backfill_default_branch` |
 | 12 | Inventory Core | `cafbb73` … `bbc9843` | `inv_*` (6 tables incl. `trx_inventory_movements`) |
 | (post-12) | UI Design System & Dashboards | `e8c0141` … `52a7a1d` | (none — Blade/components) |
-| 13 (in progress) | Inventory Advanced / Stock Opname | — | `trx_stock_opnames`, `trx_stock_opname_items` |
+| 13 | Stock Opname Workflow | `f4718c1` / `sprint-13.1-complete` | `trx_stock_opnames`, `trx_stock_opname_items` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -303,6 +303,135 @@ mobile-card responsive lists, ledger-derived labeling).
 
 ---
 
+# Sprint 13 — Stock Opname Workflow
+
+## Sprint 13 Overview
+
+**Status:** COMPLETED. Release tag `sprint-13.1-complete`, commit `f4718c1`, completion date
+2026-06-05.
+
+**Business objective:** Extend Inventory with a branch- and location-aware physical stock counting
+workflow. The workflow lets a branch count actual quantities, compare them to ledger-derived
+system stock, review variances, and generate adjustment movements during finalization.
+
+**Inventory stock counting workflow:** Users create a draft opname for one inventory location,
+optionally preselect products, snapshot each product's system quantity from the movement ledger,
+and enter counted quantities on the count/detail screen.
+
+**Variance review workflow:** `reviewOpname()` moves a `DRAFT` count into the implemented
+review-ready `COUNTING` state. The Variance Review screen shows read-only system quantity, counted
+quantity, variance, and Over/Short/Match classification. It does not show invalid workflow actions;
+Finalize is available only while the opname is `COUNTING`.
+
+**Adjustment generation workflow:** `finalizeOpname()` posts non-zero variances into
+`trx_inventory_movements`: positive variance creates `ADJUSTMENT_IN`, negative variance creates
+`ADJUSTMENT_OUT`, and zero variance creates no movement. Generated movements reference
+`trx_stock_opnames`.
+
+## Deliverables
+
+**Database:**
+- `trx_stock_opnames`
+- `trx_stock_opname_items`
+
+**Models:**
+- `StockOpname`
+- `StockOpnameItem`
+
+**Services:**
+- `createDraftOpname()`
+- `updateCountedQuantity()`
+- `reviewOpname()`
+- `finalizeOpname()`
+- `cancelOpname()`
+
+**Requests:**
+- `StoreStockOpnameRequest`
+- `UpdateStockOpnameItemRequest`
+- `ReviewStockOpnameRequest`
+- `FinalizeStockOpnameRequest`
+- `CancelStockOpnameRequest`
+
+**Policy:** `StockOpnamePolicy`.
+
+**Controller:** `StockOpnameController`.
+
+**Routes:**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/stock-opnames` | `inventory.stock-opnames.index` |
+| GET | `inventory/stock-opnames/create` | `inventory.stock-opnames.create` |
+| POST | `inventory/stock-opnames` | `inventory.stock-opnames.store` |
+| GET | `inventory/stock-opnames/{stock_opname}` | `inventory.stock-opnames.show` |
+| GET | `inventory/stock-opnames/{stockOpname}/review` | `inventory.stock-opnames.review-screen` |
+| POST | `inventory/stock-opnames/{stockOpname}/review` | `inventory.stock-opnames.review` |
+| POST | `inventory/stock-opnames/{stockOpname}/finalize` | `inventory.stock-opnames.finalize` |
+| POST | `inventory/stock-opnames/{stockOpname}/cancel` | `inventory.stock-opnames.cancel` |
+| POST | `inventory/stock-opnames/{stockOpname}/products/{productId}/counted-quantity` | `inventory.stock-opnames.update-counted-quantity` |
+
+**Views:**
+- Index
+- Create
+- Show
+- Variance Review
+
+## Key Features
+
+- Draft workflow
+- Counting workflow
+- Variance review
+- Finalization
+- Cancellation
+- Ledger-derived stock adjustments
+
+## Quality Gates
+
+| Gate | Result |
+|---|---|
+| Inventory Tests | PASS |
+| StockOpname Tests | PASS |
+| Pint | PASS |
+| Build | PASS |
+| Routes | PASS |
+
+## Documentation Added
+
+- `sprint_13_technical_design.md`
+- `sprint_13_completion_summary.md`
+- `sprint_13_inventory_audit.md`
+
+## Architecture Notes
+
+- **Ledger-derived stock:** Final stock remains derived from `trx_inventory_movements`; Stock
+  Opname records snapshots and variances only.
+- **Branch isolation:** Opnames are branch- and location-owned. Services resolve branch through
+  `BranchContext`, repositories scope reads by branch, and policy checks preserve active-branch
+  ownership.
+- **Transaction safety:** Stock Opname write workflows are service-owned and transactional.
+  Finalization locks the branch-owned opname and validates products/location before posting
+  adjustment movements.
+- **No direct stock updates:** Sprint 13 introduced no mutable stock columns and does not update
+  product stock directly.
+
+## Known Decisions
+
+- `COUNTING` status is used as the review-ready state; no separate `REVIEW` or `FINALIZED` status
+  was introduced.
+- Adjustment movements are generated only during finalization.
+- The Variance Review screen is read-only after finalization.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Release Tag | `sprint-13.1-complete` |
+| Commit | `f4718c1` |
+| Completion Date | 2026-06-05 |
+| Status | COMPLETED |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -323,6 +452,8 @@ mobile-card responsive lists, ledger-derived labeling).
 13. **S12** — Ledger-derived inventory; no mutable stock columns; location-aware operations.
 14. **post-12** — Official UI design system + reusable dashboard component families
     (`owner-dashboard.*`, `branch-dashboard.*`, `inventory.*`).
+15. **S13** — Stock Opname keeps physical counts as snapshots and posts stock-changing variance
+    adjustments only through finalization into the movement ledger.
 
 ---
 
@@ -340,8 +471,8 @@ mobile-card responsive lists, ledger-derived labeling).
 8. **S11** — No user may see/mutate/select/infer another branch's records.
 9. **S12** — `current stock = SUM(in) − SUM(out)`; adjustment-out requires sufficient
    location-level stock; valuation = derived stock × average_cost; no mutable stock state.
-10. **S13 (planned)** — Stock opname compares counted vs derived stock and posts adjustment ledger
-    movements on finalize; draft counts are never a stock source of truth.
+10. **S13** — Stock opname compares counted vs derived stock and posts adjustment ledger movements
+    on finalize; draft counts are never a stock source of truth.
 
 ---
 
@@ -418,11 +549,10 @@ mobile-card responsive lists, ledger-derived labeling).
 
 (From `architecture_rules.md` §Future Sprint Protection Rules — bindings for upcoming work.)
 
-- **Sprint 13 — Inventory Advanced / Stock Opname:** Preserve ledger-derived stock, branch+location
-  isolation, no mutable stock columns, service-managed finalization, transactional posting. Opname
-  compares counted vs derived stock and posts adjustment ledger movements **on finalize**; draft
-  counts are never a stock source of truth. *(Schema for `trx_stock_opnames` / `trx_stock_opname_items`
-  and models/repositories already scaffolded.)*
+- **Sprint 13 completed baseline — Stock Opname:** Future changes must preserve ledger-derived
+  stock, branch+location isolation, no mutable stock columns, service-managed finalization, and
+  transactional posting. Opname compares counted vs derived stock and posts adjustment ledger
+  movements **on finalize**; draft counts are never a stock source of truth.
 - **Sprint 14 — Stock Transfer:** Ledger-based only — outbound movement from source location +
   inbound to destination, wrapped in one transaction; per-location source sufficiency checked;
   same branch unless inter-branch is explicitly designed. Never transfer by updating a stock column.
@@ -472,7 +602,7 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12, ledger-derived, location-aware).
+(S12–13, ledger-derived, location-aware, Stock Opname).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -485,5 +615,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 12 (with Sprint 13 stock-opname scaffolding in progress) and must be updated as each new
-sprint completes.*
+Sprint 13 and must be updated as each new sprint completes.*
