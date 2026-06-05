@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;

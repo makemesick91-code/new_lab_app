@@ -6,8 +6,11 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 
 beforeEach(function () {
+    $this->withoutMiddleware(ValidateCsrfToken::class);
+
     test()->seed(BranchSeeder::class);
     seedAccessControl();
 

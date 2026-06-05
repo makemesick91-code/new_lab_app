@@ -10,7 +10,6 @@ use App\Modules\Inventory\Requests\StoreStockOpnameRequest;
 use App\Modules\Inventory\Requests\UpdateStockOpnameItemRequest;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -21,7 +20,7 @@ beforeEach(function () {
 
 it('validates store stock opname request', function () {
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
-    $requestClass = new StoreStockOpnameRequest();
+    $requestClass = new StoreStockOpnameRequest;
 
     // Valid data
     $validData = [
@@ -42,7 +41,7 @@ it('validates store stock opname request', function () {
 });
 
 it('validates update stock opname item request', function () {
-    $requestClass = new UpdateStockOpnameItemRequest();
+    $requestClass = new UpdateStockOpnameItemRequest;
 
     // Valid data
     $validData = [
@@ -61,7 +60,7 @@ it('validates update stock opname item request', function () {
 });
 
 it('validates review stock opname request', function () {
-    $requestClass = new ReviewStockOpnameRequest();
+    $requestClass = new ReviewStockOpnameRequest;
 
     // Valid data with notes
     $validData = ['notes' => 'Reviewed and ready'];
@@ -74,7 +73,7 @@ it('validates review stock opname request', function () {
 });
 
 it('validates finalize stock opname request', function () {
-    $requestClass = new FinalizeStockOpnameRequest();
+    $requestClass = new FinalizeStockOpnameRequest;
 
     // Valid data with notes
     $validData = ['notes' => 'Finalized'];
@@ -87,7 +86,7 @@ it('validates finalize stock opname request', function () {
 });
 
 it('validates cancel stock opname request requires notes', function () {
-    $requestClass = new CancelStockOpnameRequest();
+    $requestClass = new CancelStockOpnameRequest;
 
     // Valid data
     $validData = ['notes' => 'Cancelled due to mistake'];

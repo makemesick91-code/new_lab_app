@@ -140,9 +140,9 @@ class StockOpnameController extends Controller
 
         // Calculate summary data
         $totalProducts = $stockOpname->items->count();
-        $totalVariances = $stockOpname->items->filter(fn($item) => abs((float)$item->variance_quantity) > 0)->count();
-        $overages = $stockOpname->items->filter(fn($item) => (float)$item->variance_quantity > 0)->count();
-        $shortages = $stockOpname->items->filter(fn($item) => (float)$item->variance_quantity < 0)->count();
+        $totalVariances = $stockOpname->items->filter(fn ($item) => abs((float) $item->variance_quantity) > 0)->count();
+        $overages = $stockOpname->items->filter(fn ($item) => (float) $item->variance_quantity > 0)->count();
+        $shortages = $stockOpname->items->filter(fn ($item) => (float) $item->variance_quantity < 0)->count();
 
         return $this->renderInventoryView('inventory.stock-opnames.review', [
             'stockOpname' => $stockOpname,

@@ -34,10 +34,12 @@ use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
+use App\Modules\Inventory\Policies\StockOpnamePolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -226,6 +228,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Product::class => ProductPolicy::class,
         Supplier::class => SupplierPolicy::class,
         InventoryMovement::class => InventoryMovementPolicy::class,
+        StockOpname::class => StockOpnamePolicy::class,
     ];
 
     public function register(): void

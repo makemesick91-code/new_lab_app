@@ -12,7 +12,7 @@
                 <a href="{{ route('inventory.stock-opnames.show', $stockOpname) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Back to Details
                 </a>
-                @if (in_array($stockOpname->status, [\App\Modules\Inventory\Models\StockOpname::STATUS_DRAFT, \App\Modules\Inventory\Models\StockOpname::STATUS_COUNTING]))
+                @if ($stockOpname->status === \App\Modules\Inventory\Models\StockOpname::STATUS_COUNTING)
                     <form method="POST" action="{{ route('inventory.stock-opnames.finalize', $stockOpname) }}">
                         @csrf
                         <button type="submit" class="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
