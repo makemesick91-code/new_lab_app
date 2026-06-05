@@ -21,4 +21,15 @@ class AssignTechnicianRequest extends FormRequest
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'technician_id.required' => 'Teknisi wajib dipilih.',
+            'technician_id.exists' => 'Teknisi tidak valid.',
+        ];
+    }
 }

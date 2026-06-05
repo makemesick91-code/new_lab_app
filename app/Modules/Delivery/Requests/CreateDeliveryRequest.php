@@ -22,6 +22,18 @@ class CreateDeliveryRequest extends FormRequest
         ];
     }
 
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'lab_order_id.required' => 'Order lab wajib dipilih.',
+            'lab_order_id.exists' => 'Order lab tidak valid.',
+            'courier_id.exists' => 'Kurir tidak valid.',
+        ];
+    }
+
     public function after(): array
     {
         return [
@@ -29,7 +41,7 @@ class CreateDeliveryRequest extends FormRequest
                 $order = LabOrder::find($this->input('lab_order_id'));
 
                 if ($order && $order->status !== LabOrder::STATUS_QC_PASSED) {
-                    $validator->errors()->add('lab_order_id', 'Hanya order QC_PASSED yang dapat masuk delivery.');
+                    $validator->errors()->add('lab_order_id', 'Hanya order yang lulus QC yang dapat masuk pengiriman.');
                 }
             },
         ];

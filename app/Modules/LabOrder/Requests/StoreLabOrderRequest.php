@@ -44,14 +44,14 @@ class StoreLabOrderRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'clinic_id.required' => 'Clinic wajib dipilih.',
-            'doctor_id.required' => 'Doctor wajib dipilih.',
-            'patient_id.required' => 'Patient wajib dipilih.',
-            'due_date.required' => 'Due date wajib diisi.',
+            'clinic_id.required' => 'Klinik wajib dipilih.',
+            'doctor_id.required' => 'Dokter wajib dipilih.',
+            'patient_id.required' => 'Pasien wajib dipilih.',
+            'due_date.required' => 'Tenggat wajib diisi.',
             'items.required' => 'Minimal satu item order wajib diisi.',
             'items.min' => 'Minimal satu item order wajib diisi.',
-            'items.*.lab_service_id.required' => 'Lab service wajib dipilih pada setiap item.',
-            'items.*.quantity.min' => 'Quantity harus lebih dari 0.',
+            'items.*.lab_service_id.required' => 'Layanan lab wajib dipilih pada setiap item.',
+            'items.*.quantity.min' => 'Jumlah harus lebih dari 0.',
         ];
     }
 }

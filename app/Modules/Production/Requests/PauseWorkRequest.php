@@ -38,8 +38,8 @@ class PauseWorkRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.required' => 'Alasan pause wajib diisi.',
-            'reason.min' => 'Alasan pause minimal 5 karakter.',
+            'reason.required' => 'Alasan jeda wajib diisi.',
+            'reason.min' => 'Alasan jeda minimal 5 karakter.',
         ];
     }
 }

@@ -58,7 +58,7 @@ class DeliveryService
         $actor = $actor ?? auth()->user();
 
         if ($order->status !== LabOrder::STATUS_QC_PASSED) {
-            throw ValidationException::withMessages(['lab_order_id' => 'Hanya order QC_PASSED yang dapat masuk delivery.']);
+            throw ValidationException::withMessages(['lab_order_id' => 'Hanya order yang lulus QC yang dapat masuk pengiriman.']);
         }
 
         return DB::transaction(function () use ($order, $courierId, $notes, $actor) {
@@ -102,7 +102,7 @@ class DeliveryService
         $actor = $actor ?? auth()->user();
 
         if (! in_array($delivery->status, [Delivery::STATUS_READY_FOR_DELIVERY, Delivery::STATUS_IN_DELIVERY], true)) {
-            throw ValidationException::withMessages(['status' => 'Courier hanya dapat diassign sebelum delivery selesai.']);
+            throw ValidationException::withMessages(['status' => 'Kurir hanya dapat ditugaskan sebelum pengiriman selesai.']);
         }
 
         return DB::transaction(function () use ($delivery, $courierId, $notes, $actor) {
@@ -126,7 +126,7 @@ class DeliveryService
     public function reassignCourier(Delivery $delivery, int $courierId, string $notes, ?User $actor = null): Delivery
     {
         if (! $notes) {
-            throw ValidationException::withMessages(['notes' => 'Catatan reassignment wajib diisi.']);
+            throw ValidationException::withMessages(['notes' => 'Catatan pergantian kurir wajib diisi.']);
         }
 
         return $this->assignCourier($delivery, $courierId, $notes, $actor);

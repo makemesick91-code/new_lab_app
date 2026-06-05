@@ -24,6 +24,6 @@ class RemakeController extends Controller
         $data = $request->validated();
         $this->workflow->requestRemake($labOrder, $data['reason'], $data['notes']);
 
-        return redirect()->route('quality-control.show', $labOrder)->with('status', 'Remake request created.');
+        return redirect()->route('quality-control.show', $labOrder)->with('status', 'Permintaan perbaikan berhasil dibuat.');
     }
 }

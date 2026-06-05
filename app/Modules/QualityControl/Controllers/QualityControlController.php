@@ -86,7 +86,7 @@ class QualityControlController extends Controller
         $this->authorize('qc.start', $labOrder);
         $this->qcService->start($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'QC review started.');
+        return $this->back($labOrder, 'Review QC berhasil dimulai.');
     }
 
     public function pass(PassQcRequest $request, LabOrder $labOrder): RedirectResponse
@@ -94,7 +94,7 @@ class QualityControlController extends Controller
         $this->authorize('qc.pass', $labOrder);
         $this->workflow->pass($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'QC passed. Order is QC_PASSED.');
+        return $this->back($labOrder, 'QC lulus. Order siap untuk pengiriman.');
     }
 
     public function reject(RejectQcRequest $request, LabOrder $labOrder): RedirectResponse
@@ -103,7 +103,7 @@ class QualityControlController extends Controller
         $data = $request->validated();
         $this->workflow->reject($labOrder, $data['result'], $data['reason'], $data['notes']);
 
-        return $this->back($labOrder, 'QC rejected. Order moved to REMAKE.');
+        return $this->back($labOrder, 'QC ditolak. Order masuk alur perbaikan.');
     }
 
     public function evidence(UploadQcEvidenceRequest $request, LabOrder $labOrder): RedirectResponse
@@ -111,7 +111,7 @@ class QualityControlController extends Controller
         $this->authorize('qc.uploadEvidence', $labOrder);
         $this->workflow->uploadEvidence($labOrder, $request->file('file'), $request->validated()['category']);
 
-        return $this->back($labOrder, 'QC evidence uploaded.');
+        return $this->back($labOrder, 'Bukti QC berhasil diunggah.');
     }
 
     private function back(LabOrder $labOrder, string $message): RedirectResponse

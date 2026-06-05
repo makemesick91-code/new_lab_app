@@ -33,8 +33,8 @@ class UploadQcEvidenceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'category.required' => 'Kategori evidence wajib dipilih.',
-            'file.required' => 'File evidence wajib diunggah.',
+            'category.required' => 'Kategori bukti QC wajib dipilih.',
+            'file.required' => 'File bukti QC wajib diunggah.',
             'file.max' => 'Ukuran file maksimal 10 MB.',
             'file.extensions' => 'Tipe file tidak didukung. Gunakan jpg, jpeg, png, pdf, atau stl.',
         ];

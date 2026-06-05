@@ -26,6 +26,6 @@ class ProductionStepController extends Controller
 
         $this->stepService->update($step, $request->validated());
 
-        return redirect()->route('production.show', $labOrder)->with('status', 'Production step updated.');
+        return redirect()->route('production.show', $labOrder)->with('status', 'Tahap produksi berhasil diperbarui.');
     }
 }

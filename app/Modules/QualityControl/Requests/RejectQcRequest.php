@@ -38,8 +38,8 @@ class RejectQcRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.required' => 'Alasan reject wajib diisi.',
-            'notes.required' => 'Catatan reject wajib diisi.',
+            'reason.required' => 'Alasan penolakan wajib diisi.',
+            'notes.required' => 'Catatan penolakan wajib diisi.',
         ];
     }
 }

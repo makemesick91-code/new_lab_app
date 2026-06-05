@@ -101,7 +101,7 @@ class PodService
     {
         if (! $delivery->hasCompletePod()) {
             throw ValidationException::withMessages([
-                'pod' => 'POD wajib lengkap sebelum delivery dapat diselesaikan.',
+                'pod' => 'POD wajib lengkap sebelum pengiriman dapat diselesaikan.',
             ]);
         }
     }

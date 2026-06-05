@@ -12,7 +12,7 @@ it('allows an authorized user to access the delivery queue', function () {
     $this->actingAs(userWith(['view_delivery']))
         ->get(route('deliveries.index'))
         ->assertOk()
-        ->assertSee('Delivery Queue');
+        ->assertSee('Antrean Pengiriman');
 });
 
 it('redirects guests from the delivery queue', function () {

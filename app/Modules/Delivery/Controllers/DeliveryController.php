@@ -86,7 +86,7 @@ class DeliveryController extends Controller
             $request->user(),
         );
 
-        return redirect()->route('deliveries.show', $delivery)->with('status', 'Delivery created.');
+        return redirect()->route('deliveries.show', $delivery)->with('status', 'Pengiriman berhasil dibuat.');
     }
 
     public function assignCourier(AssignCourierRequest $request, Delivery $delivery): RedirectResponse
@@ -95,7 +95,7 @@ class DeliveryController extends Controller
         $data = $request->validated();
         $this->deliveries->assignCourier($delivery, (int) $data['courier_id'], $data['notes'] ?? null, $request->user());
 
-        return $this->back($delivery, 'Courier assigned.');
+        return $this->back($delivery, 'Kurir berhasil ditugaskan.');
     }
 
     public function reassignCourier(ReassignCourierRequest $request, Delivery $delivery): RedirectResponse
@@ -104,7 +104,7 @@ class DeliveryController extends Controller
         $data = $request->validated();
         $this->deliveries->reassignCourier($delivery, (int) $data['courier_id'], $data['notes'], $request->user());
 
-        return $this->back($delivery, 'Courier reassigned.');
+        return $this->back($delivery, 'Kurir berhasil diganti.');
     }
 
     public function startDelivery(StartDeliveryRequest $request, Delivery $delivery): RedirectResponse
@@ -112,7 +112,7 @@ class DeliveryController extends Controller
         $this->authorize('startDelivery', $delivery);
         $this->workflow->start($delivery, $request->validated()['notes'] ?? null, $request->user());
 
-        return $this->back($delivery, 'Delivery started.');
+        return $this->back($delivery, 'Pengiriman berhasil dimulai.');
     }
 
     public function markDelivered(MarkDeliveredRequest $request, Delivery $delivery): RedirectResponse
@@ -123,7 +123,7 @@ class DeliveryController extends Controller
         $data['receiver_photo'] = $request->file('receiver_photo');
         $this->workflow->markDelivered($delivery, $data, $request->user());
 
-        return $this->back($delivery, 'Delivery marked as delivered.');
+        return $this->back($delivery, 'Pengiriman berhasil ditandai terkirim.');
     }
 
     public function completeDelivery(CompleteDeliveryRequest $request, Delivery $delivery): RedirectResponse
@@ -131,7 +131,7 @@ class DeliveryController extends Controller
         $this->authorize('completeDelivery', $delivery);
         $this->workflow->complete($delivery, $request->validated()['notes'] ?? null, $request->user());
 
-        return $this->back($delivery, 'Delivery completed.');
+        return $this->back($delivery, 'Pengiriman berhasil diselesaikan.');
     }
 
     public function uploadPod(UploadPodRequest $request, Delivery $delivery): RedirectResponse
@@ -149,7 +149,7 @@ class DeliveryController extends Controller
             $request->user(),
         );
 
-        return $this->back($delivery, 'POD uploaded.');
+        return $this->back($delivery, 'POD berhasil diunggah.');
     }
 
     private function back(Delivery $delivery, string $message): RedirectResponse

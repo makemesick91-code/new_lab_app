@@ -25,6 +25,6 @@ class ChecklistController extends Controller
 
         $order = $checklist->qualityControl->labOrder;
 
-        return redirect()->route('quality-control.show', $order)->with('status', 'Checklist updated.');
+        return redirect()->route('quality-control.show', $order)->with('status', 'Checklist berhasil diperbarui.');
     }
 }

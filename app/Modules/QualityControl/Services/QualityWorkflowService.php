@@ -44,7 +44,7 @@ class QualityWorkflowService
         }
 
         if ($this->checklists->hasFailedItem($review->id)) {
-            throw ValidationException::withMessages(['checklist' => 'QC tidak dapat PASSED selama masih ada item checklist yang FAIL.']);
+            throw ValidationException::withMessages(['checklist' => 'QC tidak dapat diluluskan selama masih ada item checklist yang gagal.']);
         }
 
         return DB::transaction(function () use ($order, $review, $notes, $actor) {

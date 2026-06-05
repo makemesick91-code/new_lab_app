@@ -35,7 +35,7 @@ class UpdateChecklistRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'notes.required' => 'Catatan wajib diisi untuk item checklist yang FAIL.',
+            'notes.required' => 'Catatan wajib diisi untuk item checklist yang gagal.',
         ];
     }
 }

@@ -70,7 +70,7 @@ class LabOrderController extends Controller
 
         return redirect()
             ->route('lab-orders.show', $order)
-            ->with('status', "Lab order {$order->order_number} created successfully.");
+            ->with('status', "Order lab {$order->order_number} berhasil ditambahkan.");
     }
 
     public function show(LabOrder $labOrder): View
@@ -102,7 +102,7 @@ class LabOrderController extends Controller
 
         return redirect()
             ->route('lab-orders.show', $labOrder)
-            ->with('status', 'Lab order updated successfully.');
+            ->with('status', 'Order lab berhasil diperbarui.');
     }
 
     public function cancel(CancelLabOrderRequest $request, LabOrder $labOrder): RedirectResponse
@@ -113,7 +113,7 @@ class LabOrderController extends Controller
 
         return redirect()
             ->route('lab-orders.show', $labOrder)
-            ->with('status', 'Lab order cancelled.');
+            ->with('status', 'Order lab berhasil dibatalkan.');
     }
 
     /**

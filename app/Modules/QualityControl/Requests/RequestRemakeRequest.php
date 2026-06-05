@@ -28,9 +28,9 @@ class RequestRemakeRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.required' => 'Alasan remake wajib diisi.',
-            'reason.min' => 'Alasan remake minimal 5 karakter.',
-            'notes.required' => 'Catatan remake wajib diisi.',
+            'reason.required' => 'Alasan perbaikan wajib diisi.',
+            'reason.min' => 'Alasan perbaikan minimal 5 karakter.',
+            'notes.required' => 'Catatan perbaikan wajib diisi.',
         ];
     }
 }

@@ -34,11 +34,11 @@ class DeliveryWorkflowService
         $delivery = $delivery->refresh();
 
         if ($delivery->status !== Delivery::STATUS_READY_FOR_DELIVERY || $delivery->labOrder->status !== LabOrder::STATUS_READY_FOR_DELIVERY) {
-            throw ValidationException::withMessages(['status' => 'Delivery hanya dapat dimulai dari READY_FOR_DELIVERY.']);
+            throw ValidationException::withMessages(['status' => 'Pengiriman hanya dapat dimulai dari status Siap Dikirim.']);
         }
 
         if (! $delivery->courier_id) {
-            throw ValidationException::withMessages(['courier_id' => 'Courier wajib diassign sebelum delivery dimulai.']);
+            throw ValidationException::withMessages(['courier_id' => 'Kurir wajib ditugaskan sebelum pengiriman dimulai.']);
         }
 
         return DB::transaction(function () use ($delivery, $notes, $actor) {
@@ -64,7 +64,7 @@ class DeliveryWorkflowService
         $delivery = $delivery->refresh();
 
         if ($delivery->status !== Delivery::STATUS_IN_DELIVERY || $delivery->labOrder->status !== LabOrder::STATUS_IN_DELIVERY) {
-            throw ValidationException::withMessages(['status' => 'Delivery hanya dapat ditandai delivered dari IN_DELIVERY.']);
+            throw ValidationException::withMessages(['status' => 'Pengiriman hanya dapat ditandai terkirim dari status Dalam Pengiriman.']);
         }
 
         return DB::transaction(function () use ($delivery, $data, $actor) {
@@ -106,7 +106,7 @@ class DeliveryWorkflowService
         $delivery = $delivery->refresh();
 
         if ($delivery->status !== Delivery::STATUS_DELIVERED || $delivery->labOrder->status !== LabOrder::STATUS_DELIVERED) {
-            throw ValidationException::withMessages(['status' => 'Delivery hanya dapat diselesaikan dari DELIVERED.']);
+            throw ValidationException::withMessages(['status' => 'Pengiriman hanya dapat diselesaikan dari status Terkirim.']);
         }
 
         $this->podService->assertComplete($delivery);
@@ -135,7 +135,7 @@ class DeliveryWorkflowService
 
         if (! $order || $order->status !== $expectedOldStatus) {
             throw ValidationException::withMessages([
-                'status' => "Status Lab Order harus {$expectedOldStatus}.",
+                'status' => "Status Order Lab harus {$expectedOldStatus}.",
             ]);
         }
 

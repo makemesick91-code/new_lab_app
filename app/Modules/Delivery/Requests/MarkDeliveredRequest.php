@@ -21,4 +21,17 @@ class MarkDeliveredRequest extends FormRequest
             'delivery_notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'receiver_name.required' => 'Nama penerima wajib diisi.',
+            'signature.required' => 'Tanda tangan penerima wajib diunggah.',
+            'receiver_photo.required' => 'Foto penerima wajib diunggah.',
+            'received_at.required' => 'Waktu penerimaan wajib diisi.',
+        ];
+    }
 }

@@ -25,7 +25,7 @@ class AssignmentController extends Controller
         $data = $request->validated();
         $this->assignmentService->assign($labOrder, (int) $data['technician_id'], $data['notes'] ?? null);
 
-        return redirect()->route('production.show', $labOrder)->with('status', 'Technician assigned.');
+        return redirect()->route('production.show', $labOrder)->with('status', 'Teknisi berhasil ditugaskan.');
     }
 
     public function reassign(ReassignTechnicianRequest $request, LabOrder $labOrder): RedirectResponse
@@ -35,6 +35,6 @@ class AssignmentController extends Controller
         $data = $request->validated();
         $this->assignmentService->reassign($labOrder, (int) $data['technician_id'], $data['reason']);
 
-        return redirect()->route('production.show', $labOrder)->with('status', 'Technician reassigned.');
+        return redirect()->route('production.show', $labOrder)->with('status', 'Teknisi berhasil diganti.');
     }
 }

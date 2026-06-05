@@ -18,4 +18,15 @@ class AssignCourierRequest extends FormRequest
             'notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'courier_id.required' => 'Kurir wajib dipilih.',
+            'courier_id.exists' => 'Kurir tidak valid.',
+        ];
+    }
 }

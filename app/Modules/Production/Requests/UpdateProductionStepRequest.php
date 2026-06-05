@@ -39,7 +39,7 @@ class UpdateProductionStepRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'notes.required' => 'Catatan wajib diisi untuk step yang di-skip atau on hold.',
+            'notes.required' => 'Catatan wajib diisi untuk tahap yang dilewati atau dijeda.',
         ];
     }
 }

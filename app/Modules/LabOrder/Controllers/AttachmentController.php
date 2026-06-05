@@ -30,7 +30,7 @@ class AttachmentController extends Controller
 
         return redirect()
             ->route('lab-orders.show', $labOrder)
-            ->with('status', 'Attachment uploaded successfully.');
+            ->with('status', 'Lampiran berhasil diunggah.');
     }
 
     public function destroy(LabOrder $labOrder, Attachment $attachment): RedirectResponse
@@ -46,6 +46,6 @@ class AttachmentController extends Controller
 
         return redirect()
             ->route('lab-orders.show', $labOrder)
-            ->with('status', 'Attachment deleted.');
+            ->with('status', 'Lampiran berhasil dihapus.');
     }
 }

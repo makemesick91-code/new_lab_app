@@ -84,7 +84,7 @@ class ProductionWorkflowController extends Controller
         $this->authorize('production.start', $labOrder);
         $this->workflow->startWork($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'Work started.');
+        return $this->back($labOrder, 'Produksi berhasil dimulai.');
     }
 
     public function pause(PauseWorkRequest $request, LabOrder $labOrder): RedirectResponse
@@ -93,7 +93,7 @@ class ProductionWorkflowController extends Controller
         $data = $request->validated();
         $this->workflow->pauseWork($labOrder, $data['reason'], $data['hold_reason'] ?? null);
 
-        return $this->back($labOrder, 'Work paused.');
+        return $this->back($labOrder, 'Produksi berhasil dijeda.');
     }
 
     public function resume(ResumeWorkRequest $request, LabOrder $labOrder): RedirectResponse
@@ -101,7 +101,7 @@ class ProductionWorkflowController extends Controller
         $this->authorize('production.resume', $labOrder);
         $this->workflow->resumeWork($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'Work resumed.');
+        return $this->back($labOrder, 'Produksi berhasil dilanjutkan.');
     }
 
     public function complete(CompleteWorkRequest $request, LabOrder $labOrder): RedirectResponse
@@ -109,7 +109,7 @@ class ProductionWorkflowController extends Controller
         $this->authorize('production.complete', $labOrder);
         $this->workflow->completeWork($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'Work completed.');
+        return $this->back($labOrder, 'Produksi berhasil diselesaikan.');
     }
 
     public function sendToQc(SendToQcRequest $request, LabOrder $labOrder): RedirectResponse
@@ -117,7 +117,7 @@ class ProductionWorkflowController extends Controller
         $this->authorize('production.sendToQc', $labOrder);
         $this->workflow->sendToQc($labOrder, $request->validated()['notes'] ?? null);
 
-        return $this->back($labOrder, 'Order sent to QC.');
+        return $this->back($labOrder, 'Order berhasil dikirim ke QC.');
     }
 
     private function back(LabOrder $labOrder, string $message): RedirectResponse

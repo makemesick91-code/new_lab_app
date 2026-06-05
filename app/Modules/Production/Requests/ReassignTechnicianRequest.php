@@ -28,8 +28,8 @@ class ReassignTechnicianRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'reason.required' => 'Alasan reassignment wajib diisi.',
-            'reason.min' => 'Alasan reassignment minimal 5 karakter.',
+            'reason.required' => 'Alasan pergantian teknisi wajib diisi.',
+            'reason.min' => 'Alasan pergantian teknisi minimal 5 karakter.',
         ];
     }
 }

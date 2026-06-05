@@ -45,8 +45,15 @@ class UpdateLabOrderRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'clinic_id.required' => 'Klinik wajib dipilih.',
+            'doctor_id.required' => 'Dokter wajib dipilih.',
+            'patient_id.required' => 'Pasien wajib dipilih.',
+            'order_date.required' => 'Tanggal order wajib diisi.',
+            'due_date.required' => 'Tenggat wajib diisi.',
             'items.required' => 'Minimal satu item order wajib aktif.',
             'items.min' => 'Minimal satu item order wajib aktif.',
+            'items.*.lab_service_id.required' => 'Layanan lab wajib dipilih pada setiap item.',
+            'items.*.quantity.min' => 'Jumlah harus lebih dari 0.',
         ];
     }
 }

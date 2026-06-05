@@ -79,10 +79,10 @@ it('shows the delivery detail panels', function () {
     $this->actingAs(superAdmin())
         ->get(route('deliveries.show', $delivery))
         ->assertOk()
-        ->assertSee('Courier Assignment')
-        ->assertSee('POD Panel')
-        ->assertSee('Evidence Panel')
-        ->assertSee('Audit History');
+        ->assertSee('Penugasan Kurir')
+        ->assertSee('Panel POD')
+        ->assertSee('Panel Bukti')
+        ->assertSee('Riwayat Audit');
 });
 
 it('generates a delivery number with the DLV format', function () {
