@@ -1,19 +1,19 @@
-<x-settings-shell title="Delivery Report">
+<x-settings-shell title="Laporan Pengiriman">
     <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <form method="GET" action="{{ route('reports.delivery') }}" class="flex flex-wrap items-end gap-2">
-                <div><label class="block text-xs text-gray-500">From</label><input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 rounded-md border-gray-300 text-sm" /></div>
-                <div><label class="block text-xs text-gray-500">To</label><input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 rounded-md border-gray-300 text-sm" /></div>
-                <div><label class="block text-xs text-gray-500">Clinic</label>
-                    <select name="clinic_id" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">All</option>
+                <div><label class="block text-xs text-gray-500">Dari</label><input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 rounded-md border-gray-300 text-sm" /></div>
+                <div><label class="block text-xs text-gray-500">Sampai</label><input type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 rounded-md border-gray-300 text-sm" /></div>
+                <div><label class="block text-xs text-gray-500">Klinik</label>
+                    <select name="clinic_id" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
                         @foreach ($clinics as $c)<option value="{{ $c->id }}" @selected(($filters['clinic_id'] ?? null) == $c->id)>{{ $c->name }}</option>@endforeach
                     </select></div>
-                <div><label class="block text-xs text-gray-500">Courier</label>
-                    <select name="courier_id" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">All</option>
+                <div><label class="block text-xs text-gray-500">Kurir</label>
+                    <select name="courier_id" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
                         @foreach ($couriers as $u)<option value="{{ $u->id }}" @selected(($filters['courier_id'] ?? null) == $u->id)>{{ $u->name }}</option>@endforeach
                     </select></div>
                 <div><label class="block text-xs text-gray-500">Status</label>
-                    <select name="delivery_status" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">All</option>
+                    <select name="delivery_status" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
                         @foreach ($deliveryStatuses as $s)<option value="{{ $s }}" @selected(($filters['delivery_status'] ?? null) === $s)>{{ $s }}</option>@endforeach
                     </select></div>
                 <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
@@ -34,9 +34,9 @@
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead><tr class="text-left text-gray-500">
-                    <th class="px-3 py-2 font-medium">Delivery #</th><th class="px-3 py-2 font-medium">Order #</th>
-                    <th class="px-3 py-2 font-medium">Clinic</th><th class="px-3 py-2 font-medium">Courier</th>
-                    <th class="px-3 py-2 font-medium">Status</th><th class="px-3 py-2 font-medium">Receiver</th>
+                    <th class="px-3 py-2 font-medium">No. Pengiriman</th><th class="px-3 py-2 font-medium">No. Order</th>
+                    <th class="px-3 py-2 font-medium">Klinik</th><th class="px-3 py-2 font-medium">Kurir</th>
+                    <th class="px-3 py-2 font-medium">Status</th><th class="px-3 py-2 font-medium">Penerima</th>
                     <th class="px-3 py-2 font-medium">POD</th>
                 </tr></thead>
                 <tbody class="divide-y divide-gray-100">
@@ -48,10 +48,10 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->courier_name ?? '—' }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->status }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->receiver_name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->receiver_signature_path ? 'Signed' : '—' }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $r->receiver_signature_path ? 'Ditandatangani' : '—' }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="7" class="px-3 py-6 text-center text-gray-400">No deliveries found.</td></tr>
+                        <tr><td colspan="7" class="px-3 py-6 text-center text-gray-400">Belum ada pengiriman.</td></tr>
                     @endforelse
                 </tbody>
             </table>

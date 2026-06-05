@@ -24,6 +24,6 @@ class PaymentController extends Controller
 
         $this->payments->record($invoice, $request->validated(), $request->user());
 
-        return redirect()->route('invoices.show', $invoice)->with('status', 'Payment recorded.');
+        return redirect()->route('invoices.show', $invoice)->with('status', 'Pembayaran berhasil dicatat.');
     }
 }

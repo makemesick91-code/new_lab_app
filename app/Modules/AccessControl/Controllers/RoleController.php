@@ -55,7 +55,7 @@ class RoleController extends Controller
 
         return redirect()
             ->route('settings.roles.index')
-            ->with('status', 'Role created successfully.');
+            ->with('status', 'Role berhasil dibuat.');
     }
 
     public function edit(Role $role): View
@@ -77,7 +77,7 @@ class RoleController extends Controller
 
         return redirect()
             ->route('settings.roles.index')
-            ->with('status', 'Role updated successfully.');
+            ->with('status', 'Role berhasil diperbarui.');
     }
 
     public function destroy(Role $role): RedirectResponse
@@ -88,6 +88,6 @@ class RoleController extends Controller
 
         return redirect()
             ->route('settings.roles.index')
-            ->with('status', 'Role deleted successfully.');
+            ->with('status', 'Role berhasil dihapus.');
     }
 }

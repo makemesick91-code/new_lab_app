@@ -75,7 +75,7 @@ class RoleService
     {
         if (in_array($role->name, self::PROTECTED_ROLES, true)) {
             throw ValidationException::withMessages([
-                'role' => "The {$role->name} role cannot be deleted.",
+                'role' => "Role {$role->name} tidak dapat dihapus.",
             ]);
         }
 

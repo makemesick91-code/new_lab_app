@@ -56,7 +56,7 @@ class BranchController extends Controller
 
         $this->branchService->create($request->validated());
 
-        return redirect()->route('settings.branches.index')->with('status', 'Branch created successfully.');
+        return redirect()->route('settings.branches.index')->with('status', 'Cabang berhasil dibuat.');
     }
 
     public function edit(Branch $branch): View
@@ -72,7 +72,7 @@ class BranchController extends Controller
 
         $this->branchService->update($branch, $request->validated());
 
-        return redirect()->route('settings.branches.index')->with('status', 'Branch updated successfully.');
+        return redirect()->route('settings.branches.index')->with('status', 'Cabang berhasil diperbarui.');
     }
 
     public function destroy(Branch $branch): RedirectResponse
@@ -81,6 +81,6 @@ class BranchController extends Controller
 
         $this->branchService->delete($branch);
 
-        return redirect()->route('settings.branches.index')->with('status', 'Branch deleted successfully.');
+        return redirect()->route('settings.branches.index')->with('status', 'Cabang berhasil dihapus.');
     }
 }

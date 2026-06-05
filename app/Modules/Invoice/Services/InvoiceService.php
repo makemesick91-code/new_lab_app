@@ -107,11 +107,11 @@ class InvoiceService
         }
 
         if ($orders->contains(fn (LabOrder $order) => $order->status !== LabOrder::STATUS_COMPLETED)) {
-            throw ValidationException::withMessages(['lab_order_ids' => 'Semua Lab Order harus COMPLETED sebelum dibuat invoice.']);
+            throw ValidationException::withMessages(['lab_order_ids' => 'Semua Lab Order harus berstatus COMPLETED sebelum dibuat invoice.']);
         }
 
         if ($orders->pluck('clinic_id')->unique()->count() !== 1 || (int) $orders->first()->clinic_id !== $clinicId) {
-            throw ValidationException::withMessages(['clinic_id' => 'Semua Lab Order harus berasal dari Clinic yang sama.']);
+            throw ValidationException::withMessages(['clinic_id' => 'Semua Lab Order harus berasal dari klinik yang sama.']);
         }
     }
 

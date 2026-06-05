@@ -19,44 +19,44 @@
 
     $ownerKpis = $ownerKpis ?? [
         [
-            'label' => 'Revenue This Month',
+            'label' => 'Pendapatan Bulan Ini',
             'value' => 'Rp 0.00',
-            'secondary' => 'No revenue data connected on this page yet.',
+            'secondary' => 'Belum ada data pendapatan yang terhubung di halaman ini.',
             'severity' => 'neutral',
             'href' => $canAny(['view_invoice_report', 'manage_report']) ? route('reports.revenue') : null,
         ],
         [
-            'label' => 'Active Orders',
+            'label' => 'Order Aktif',
             'value' => '0',
-            'secondary' => 'Open lab orders or reports for live counts.',
+            'secondary' => 'Buka Order Lab atau laporan untuk jumlah terbaru.',
             'severity' => 'neutral',
             'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
         ],
         [
-            'label' => 'Overdue Orders',
+            'label' => 'Order Terlambat',
             'value' => '0',
-            'secondary' => 'No overdue data supplied to this view.',
+            'secondary' => 'Belum ada data keterlambatan untuk tampilan ini.',
             'severity' => 'success',
             'href' => $canAny(['view_order_report', 'manage_report']) ? route('reports.orders') : null,
         ],
         [
-            'label' => 'Outstanding Invoices',
+            'label' => 'Invoice Tertunggak',
             'value' => 'Rp 0.00',
-            'secondary' => 'Use invoice reports for detailed aging.',
+            'secondary' => 'Gunakan laporan invoice untuk detail umur piutang.',
             'severity' => 'neutral',
             'href' => $canAny(['view_invoice_report', 'manage_report']) ? route('reports.outstanding') : null,
         ],
         [
-            'label' => 'Inventory Value',
+            'label' => 'Nilai Persediaan',
             'value' => 'Rp 0.00',
-            'secondary' => 'Ledger-derived value from Inventory Core.',
+            'secondary' => 'Nilai berbasis ledger dari Inventory Core.',
             'severity' => 'neutral',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.dashboard') : null,
         ],
         [
-            'label' => 'Low Stock Count',
+            'label' => 'Jumlah Stok Menipis',
             'value' => '0',
-            'secondary' => 'Low-stock alerts appear when data is supplied.',
+            'secondary' => 'Peringatan stok menipis tampil saat data tersedia.',
             'severity' => 'success',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.stock.index') : null,
         ],
@@ -64,58 +64,58 @@
 
     $pipelineStages = $pipelineStages ?? [
         [
-            'label' => 'Received',
+            'label' => 'Diterima',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
         ],
         [
-            'label' => 'In Production',
+            'label' => 'Dalam Produksi',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_production', 'manage_production']) ? route('production.board') : null,
         ],
         [
-            'label' => 'QC Pending',
+            'label' => 'Menunggu QC',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_quality_control', 'manage_quality_control']) ? route('quality-control.queue') : null,
         ],
         [
-            'label' => 'QC Failed',
+            'label' => 'QC Gagal',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_qc_report', 'manage_report']) ? route('reports.qc') : null,
         ],
         [
-            'label' => 'Ready Delivery',
+            'label' => 'Siap Pengiriman',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_delivery', 'manage_delivery']) ? route('deliveries.index') : null,
         ],
         [
-            'label' => 'Delivered',
+            'label' => 'Terkirim',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_delivery_report', 'manage_report']) ? route('reports.delivery') : null,
         ],
         [
-            'label' => 'Completed',
+            'label' => 'Selesai',
             'count' => 0,
             'percent' => 0,
-            'oldestAge' => 'No aging data',
+            'oldestAge' => 'Belum ada data umur',
             'severity' => 'neutral',
             'href' => $canAny(['view_order_report', 'manage_report']) ? route('reports.orders') : null,
         ],
@@ -127,51 +127,51 @@
 
     $branchSummaryCards = $branchSummaryCards ?? [
         [
-            'label' => 'Arrived Today',
+            'label' => 'Masuk Hari Ini',
             'value' => '0',
-            'context' => 'No arrivals data supplied.',
+            'context' => 'Belum ada data order masuk.',
             'severity' => 'neutral',
             'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
         ],
         [
-            'label' => 'Needs Assignment',
+            'label' => 'Perlu Penugasan',
             'value' => '0',
-            'context' => 'All visible work is assigned.',
+            'context' => 'Semua pekerjaan terlihat sudah ditugaskan.',
             'severity' => 'success',
             'href' => $canAny(['view_production', 'manage_production']) ? route('production.board') : null,
         ],
         [
-            'label' => 'Stuck / Overdue',
+            'label' => 'Tertahan / Terlambat',
             'value' => '0',
-            'context' => 'No stuck work supplied.',
+            'context' => 'Belum ada pekerjaan tertahan.',
             'severity' => 'success',
             'href' => $canAny(['view_lab_orders', 'manage_lab_orders']) ? route('lab-orders.index') : null,
         ],
         [
-            'label' => 'Needs QC',
+            'label' => 'Perlu QC',
             'value' => '0',
-            'context' => 'QC queue is clear.',
+            'context' => 'Antrean QC kosong.',
             'severity' => 'success',
             'href' => $canAny(['view_quality_control', 'manage_quality_control']) ? route('quality-control.queue') : null,
         ],
         [
-            'label' => 'Ready Delivery',
+            'label' => 'Siap Pengiriman',
             'value' => '0',
-            'context' => 'No ready delivery data supplied.',
+            'context' => 'Belum ada data siap kirim.',
             'severity' => 'neutral',
             'href' => $canAny(['view_delivery', 'manage_delivery']) ? route('deliveries.index') : null,
         ],
         [
-            'label' => 'Low Stock',
+            'label' => 'Stok Menipis',
             'value' => '0',
-            'context' => 'No low stock alerts supplied.',
+            'context' => 'Belum ada peringatan stok menipis.',
             'severity' => 'success',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.stock.index') : null,
         ],
         [
-            'label' => 'Unpaid Invoices',
+            'label' => 'Invoice Belum Dibayar',
             'value' => '0',
-            'context' => 'No unpaid invoice data supplied.',
+            'context' => 'Belum ada data invoice belum dibayar.',
             'severity' => 'neutral',
             'href' => $canAny(['view_invoice', 'manage_invoice']) ? route('invoices.index') : null,
         ],
@@ -179,29 +179,29 @@
 
     $branchQueues = $branchQueues ?? [
         [
-            'title' => 'Arrived Today',
+            'title' => 'Masuk Hari Ini',
             'items' => [],
-            'empty' => 'No new orders today.',
+            'empty' => 'Belum ada order baru hari ini.',
         ],
         [
-            'title' => 'Needs Assignment',
+            'title' => 'Perlu Penugasan',
             'items' => [],
-            'empty' => 'All new orders are assigned.',
+            'empty' => 'Semua order baru sudah ditugaskan.',
         ],
         [
-            'title' => 'Needs QC',
+            'title' => 'Perlu QC',
             'items' => [],
-            'empty' => 'QC queue is clear.',
+            'empty' => 'Antrean QC kosong.',
         ],
         [
-            'title' => 'Ready Delivery',
+            'title' => 'Siap Pengiriman',
             'items' => [],
-            'empty' => 'No orders waiting for delivery.',
+            'empty' => 'Belum ada order menunggu pengiriman.',
         ],
         [
-            'title' => 'Finance Follow-up',
+            'title' => 'Tindak Lanjut Keuangan',
             'items' => [],
-            'empty' => 'No unpaid invoices needing follow-up.',
+            'empty' => 'Belum ada invoice belum dibayar yang perlu ditindaklanjuti.',
         ],
     ];
     $branchAlerts = $branchAlerts ?? [];
@@ -212,27 +212,27 @@
     $financeAlerts = $financeAlerts ?? [];
     $branchQuickActions = $branchQuickActions ?? [
         [
-            'label' => 'Create Lab Order',
+            'label' => 'Buat Order Lab',
             'href' => $canAny(['create_lab_orders', 'manage_lab_orders']) ? route('lab-orders.create') : null,
         ],
         [
-            'label' => 'Open Production Board',
+            'label' => 'Buka Papan Produksi',
             'href' => $canAny(['view_production', 'manage_production']) ? route('production.board') : null,
         ],
         [
-            'label' => 'Open QC Queue',
+            'label' => 'Buka Antrean QC',
             'href' => $canAny(['view_quality_control', 'manage_quality_control']) ? route('quality-control.queue') : null,
         ],
         [
-            'label' => 'Open Delivery Queue',
+            'label' => 'Buka Antrean Pengiriman',
             'href' => $canAny(['view_delivery', 'manage_delivery']) ? route('deliveries.index') : null,
         ],
         [
-            'label' => 'Inventory Stock',
+            'label' => 'Stok Persediaan',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.stock.index') : null,
         ],
         [
-            'label' => 'Invoices',
+            'label' => 'Invoice',
             'href' => $canAny(['view_invoice', 'manage_invoice']) ? route('invoices.index') : null,
         ],
     ];
@@ -243,14 +243,14 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ $showBranchAdminDashboard ? 'Branch Admin Dashboard' : 'Owner Dashboard' }}
+                    {{ $showBranchAdminDashboard ? 'Dasbor Admin Cabang' : 'Dasbor Owner' }}
                 </h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    {{ $showBranchAdminDashboard ? 'Daily operations overview for the active branch.' : 'Executive overview for ADLMS pilot operations.' }}
+                    {{ $showBranchAdminDashboard ? 'Ringkasan operasional harian untuk cabang aktif.' : 'Ringkasan eksekutif untuk operasional pilot ADLMS.' }}
                 </p>
             </div>
             <div class="text-left sm:text-right">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Signed in as</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Login sebagai</p>
                 <p class="text-sm font-medium text-gray-900">{{ $user?->name }}</p>
             </div>
         </div>
@@ -267,21 +267,21 @@
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Owner Overview</p>
-                            <h1 class="mt-1 text-2xl font-semibold text-gray-900">Business health at a glance</h1>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Ringkasan Owner</p>
+                            <h1 class="mt-1 text-2xl font-semibold text-gray-900">Kondisi bisnis secara ringkas</h1>
                             <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                                This dashboard uses existing ADLMS destinations and safe empty states. Detailed live metrics remain available through Reports, Inventory, and operational modules until a dedicated owner data service is connected.
+                                Dasbor ini menggunakan tujuan ADLMS yang sudah tersedia dan empty state yang aman. Metrik live terperinci tetap tersedia melalui Laporan, Persediaan, dan modul operasional sampai layanan data owner khusus terhubung.
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             @canany(['view_dashboard', 'manage_report'])
                                 <a href="{{ route('reports.dashboard') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                                    Open Reports
+                                    Buka Laporan
                                 </a>
                             @endcanany
                             @canany(['view_inventory', 'manage_inventory', 'manage master data'])
                                 <a href="{{ route('inventory.dashboard') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                                    Open Inventory
+                                    Buka Persediaan
                                 </a>
                             @endcanany
                         </div>
@@ -290,8 +290,8 @@
 
                 <section aria-labelledby="executive-kpis">
                     <div class="mb-3 flex items-center justify-between">
-                        <h3 id="executive-kpis" class="text-base font-semibold text-gray-900">Executive KPI Cards</h3>
-                        <p class="text-xs text-gray-500">Revenue, workload, cash risk, and inventory risk</p>
+                        <h3 id="executive-kpis" class="text-base font-semibold text-gray-900">Kartu KPI Eksekutif</h3>
+                        <p class="text-xs text-gray-500">Pendapatan, beban kerja, risiko kas, dan risiko persediaan</p>
                     </div>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
                         @foreach ($ownerKpis as $kpi)
@@ -310,28 +310,28 @@
                 <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
                     <x-owner-dashboard.pipeline-card
                         :stages="$pipelineStages"
-                        title="Operational Pipeline"
-                        period-label="Received through completion"
+                        title="Pipeline Operasional"
+                        period-label="Dari diterima sampai selesai"
                     />
 
                     <x-owner-dashboard.alert-panel
                         :alerts="$ownerAlerts"
-                        title="Alert Center"
-                        empty-title="No urgent alerts"
-                        empty-body="Overdue orders, low stock, unpaid invoices, and QC issues will appear here when owner metrics are supplied."
+                        title="Pusat Peringatan"
+                        empty-title="Tidak ada peringatan mendesak"
+                        empty-body="Order terlambat, stok menipis, invoice belum dibayar, dan isu QC akan tampil di sini saat metrik owner tersedia."
                     />
                 </div>
 
                 <x-owner-dashboard.dashboard-section
-                    title="Branch Performance"
-                    description="Revenue, order load, and completion time by branch."
+                    title="Performa Cabang"
+                    description="Pendapatan, beban order, dan waktu penyelesaian per cabang."
                     :action-href="$canAny(['view_dashboard', 'manage_report']) ? route('reports.dashboard') : null"
-                    action-label="Open reporting dashboard"
+                    action-label="Buka dasbor laporan"
                 >
                     @if (collect($branchPerformance)->isEmpty())
                         <div class="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center">
-                            <p class="text-sm font-medium text-gray-900">No branch performance data</p>
-                            <p class="mt-1 text-sm text-gray-500">Branch comparison needs grouped reporting data. Existing report pages remain available for detailed review.</p>
+                            <p class="text-sm font-medium text-gray-900">Belum ada data performa cabang</p>
+                            <p class="mt-1 text-sm text-gray-500">Perbandingan cabang membutuhkan data laporan yang dikelompokkan. Halaman laporan tetap tersedia untuk review terperinci.</p>
                         </div>
                     @else
                         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -344,23 +344,23 @@
 
                 <x-owner-dashboard.activity-timeline
                     :events="$recentActivity"
-                    title="Recent Activity Timeline"
-                    empty-title="No recent activity"
+                    title="Timeline Aktivitas Terbaru"
+                    empty-title="Belum ada aktivitas terbaru"
                 />
 
-                <x-owner-dashboard.dashboard-section title="Available Drill-downs" description="Use existing ADLMS modules for live operational details." density="compact">
+                <x-owner-dashboard.dashboard-section title="Akses Detail Tersedia" description="Gunakan modul ADLMS yang sudah ada untuk detail operasional live." density="compact">
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         @canany(['view_order_report', 'manage_report'])
-                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Order Reports</a>
+                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Laporan Order</a>
                         @endcanany
                         @canany(['view_qc_report', 'manage_report'])
-                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">QC Reports</a>
+                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Laporan QC</a>
                         @endcanany
                         @canany(['view_invoice_report', 'manage_report'])
-                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Outstanding Invoices</a>
+                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Invoice Tertunggak</a>
                         @endcanany
                         @canany(['view_inventory', 'manage_inventory', 'manage master data'])
-                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Inventory Stock</a>
+                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Stok Persediaan</a>
                         @endcanany
                     </div>
                 </x-owner-dashboard.dashboard-section>

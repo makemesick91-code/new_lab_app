@@ -48,7 +48,7 @@ class TechnicianController extends Controller
 
         $this->technicianService->create($request->validated());
 
-        return redirect()->route('settings.technicians.index')->with('status', 'Technician created successfully.');
+        return redirect()->route('settings.technicians.index')->with('status', 'Teknisi berhasil dibuat.');
     }
 
     public function edit(Technician $technician): View
@@ -67,7 +67,7 @@ class TechnicianController extends Controller
 
         $this->technicianService->update($technician, $request->validated());
 
-        return redirect()->route('settings.technicians.index')->with('status', 'Technician updated successfully.');
+        return redirect()->route('settings.technicians.index')->with('status', 'Teknisi berhasil diperbarui.');
     }
 
     public function destroy(Technician $technician): RedirectResponse
@@ -76,7 +76,7 @@ class TechnicianController extends Controller
 
         $this->technicianService->delete($technician);
 
-        return redirect()->route('settings.technicians.index')->with('status', 'Technician deleted successfully.');
+        return redirect()->route('settings.technicians.index')->with('status', 'Teknisi berhasil dihapus.');
     }
 
     public function activate(Technician $technician): RedirectResponse
@@ -85,7 +85,7 @@ class TechnicianController extends Controller
 
         $this->technicianService->activate($technician);
 
-        return redirect()->route('settings.technicians.index')->with('status', 'Technician activated.');
+        return redirect()->route('settings.technicians.index')->with('status', 'Teknisi berhasil diaktifkan.');
     }
 
     public function deactivate(Technician $technician): RedirectResponse
@@ -94,6 +94,6 @@ class TechnicianController extends Controller
 
         $this->technicianService->deactivate($technician);
 
-        return redirect()->route('settings.technicians.index')->with('status', 'Technician deactivated.');
+        return redirect()->route('settings.technicians.index')->with('status', 'Teknisi berhasil dinonaktifkan.');
     }
 }

@@ -17,11 +17,11 @@
 <article class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm">
     <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-gray-900">{{ data_get($item, 'identifier', 'No item') }}</p>
-            <p class="mt-1 truncate text-sm text-gray-600">{{ data_get($item, 'title', 'No title') }}</p>
+            <p class="truncate text-sm font-semibold text-gray-900">{{ data_get($item, 'identifier', 'Tanpa item') }}</p>
+            <p class="mt-1 truncate text-sm text-gray-600">{{ data_get($item, 'title', 'Tanpa judul') }}</p>
         </div>
         <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-medium {{ $badgeClasses }}">
-            {{ data_get($item, 'status', 'Open') }}
+            {{ data_get($item, 'status', 'Terbuka') }}
         </span>
     </div>
 
@@ -34,7 +34,7 @@
             <span>{{ data_get($item, 'priority') }}</span>
         @endif
         @if (data_get($item, 'dueDate'))
-            <span>Due {{ data_get($item, 'dueDate') }}</span>
+            <span>Jatuh tempo {{ data_get($item, 'dueDate') }}</span>
         @endif
         @if (data_get($item, 'ageLabel'))
             <span>{{ data_get($item, 'ageLabel') }}</span>
@@ -43,7 +43,7 @@
 
     @if (data_get($item, 'href'))
         <a href="{{ data_get($item, 'href') }}" class="mt-3 inline-flex text-xs font-semibold text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-            {{ data_get($item, 'actionLabel', 'Open') }}
+            {{ data_get($item, 'actionLabel', 'Buka') }}
         </a>
     @endif
 </article>

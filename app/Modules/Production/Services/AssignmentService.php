@@ -106,7 +106,7 @@ class AssignmentService
 
         if ((int) $active->technician_id === $newTechnicianId) {
             throw ValidationException::withMessages([
-                'technician_id' => 'Technician baru harus berbeda dari technician saat ini.',
+                'technician_id' => 'Teknisi baru harus berbeda dari teknisi saat ini.',
             ]);
         }
 

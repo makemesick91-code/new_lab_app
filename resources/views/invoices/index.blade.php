@@ -1,19 +1,30 @@
-<x-settings-shell title="Invoices">
+@php
+    $statusLabels = [
+        'DRAFT' => 'Draft',
+        'ISSUED' => 'Diterbitkan',
+        'PARTIALLY_PAID' => 'Dibayar Sebagian',
+        'PAID' => 'Lunas',
+        'OVERDUE' => 'Terlambat',
+        'VOID' => 'Void',
+    ];
+@endphp
+
+<x-settings-shell title="Invoice">
     <div class="space-y-6">
         <div class="bg-white shadow-sm sm:rounded-lg">
             <div class="p-6 space-y-4">
                 <div class="flex items-center justify-between gap-3">
                     <form method="GET" action="{{ route('invoices.index') }}" class="flex flex-wrap items-center gap-2">
-                        <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Invoice # or clinic"
+                        <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="No. invoice atau klinik"
                                class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                         <select name="status" class="rounded-md border-gray-300 text-sm">
-                            <option value="">All status</option>
+                            <option value="">Semua status</option>
                             @foreach ($statuses as $status)
-                                <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $status }}</option>
+                                <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
                             @endforeach
                         </select>
                         <select name="clinic_id" class="rounded-md border-gray-300 text-sm">
-                            <option value="">All clinics</option>
+                            <option value="">Semua klinik</option>
                             @foreach ($clinics as $clinic)
                                 <option value="{{ $clinic->id }}" @selected($filters['clinic_id'] === $clinic->id)>{{ $clinic->name }}</option>
                             @endforeach
@@ -24,7 +35,7 @@
                     </form>
 
                     @canany(['create_invoice', 'manage_invoice'])
-                        <a href="{{ route('invoices.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Create Invoice</a>
+                        <a href="{{ route('invoices.create') }}" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Buat Invoice</a>
                     @endcanany
                 </div>
             </div>
@@ -35,15 +46,15 @@
                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead>
                         <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Invoice #</th>
-                            <th class="px-3 py-2 font-medium">Clinic</th>
-                            <th class="px-3 py-2 font-medium">Date</th>
-                            <th class="px-3 py-2 font-medium">Due</th>
+                            <th class="px-3 py-2 font-medium">No. Invoice</th>
+                            <th class="px-3 py-2 font-medium">Klinik</th>
+                            <th class="px-3 py-2 font-medium">Tanggal</th>
+                            <th class="px-3 py-2 font-medium">Jatuh Tempo</th>
                             <th class="px-3 py-2 font-medium">Status</th>
                             <th class="px-3 py-2 font-medium text-right">Total</th>
-                            <th class="px-3 py-2 font-medium text-right">Paid</th>
-                            <th class="px-3 py-2 font-medium text-right">Outstanding</th>
-                            <th class="px-3 py-2 font-medium text-right">Action</th>
+                            <th class="px-3 py-2 font-medium text-right">Dibayar</th>
+                            <th class="px-3 py-2 font-medium text-right">Tertunggak</th>
+                            <th class="px-3 py-2 font-medium text-right">Aksi</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -54,17 +65,17 @@
                                 <td class="px-3 py-2 text-gray-600">{{ optional($invoice->invoice_date)->format('Y-m-d') }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ optional($invoice->due_date)->format('Y-m-d') ?? '-' }}</td>
                                 <td class="px-3 py-2">
-                                    <span class="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{{ $invoice->status }}</span>
+                                    <span class="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{{ $statusLabels[$invoice->status] ?? $invoice->status }}</span>
                                 </td>
                                 <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->total_amount, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->paid_amount, 2) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $invoice->outstanding_amount, 2) }}</td>
                                 <td class="px-3 py-2 text-right">
-                                    <a href="{{ route('invoices.show', $invoice) }}" class="text-indigo-600 hover:text-indigo-500">View</a>
+                                    <a href="{{ route('invoices.show', $invoice) }}" class="text-indigo-600 hover:text-indigo-500">Lihat</a>
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="9" class="px-3 py-6 text-center text-gray-400">No invoices found.</td></tr>
+                            <tr><td colspan="9" class="px-3 py-6 text-center text-gray-400">Belum ada invoice.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

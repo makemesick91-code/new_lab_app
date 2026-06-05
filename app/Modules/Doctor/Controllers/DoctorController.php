@@ -50,7 +50,7 @@ class DoctorController extends Controller
 
         $this->doctorService->create($request->validated());
 
-        return redirect()->route('settings.doctors.index')->with('status', 'Doctor created successfully.');
+        return redirect()->route('settings.doctors.index')->with('status', 'Dokter berhasil dibuat.');
     }
 
     public function edit(Doctor $doctor): View
@@ -69,7 +69,7 @@ class DoctorController extends Controller
 
         $this->doctorService->update($doctor, $request->validated());
 
-        return redirect()->route('settings.doctors.index')->with('status', 'Doctor updated successfully.');
+        return redirect()->route('settings.doctors.index')->with('status', 'Dokter berhasil diperbarui.');
     }
 
     public function destroy(Doctor $doctor): RedirectResponse
@@ -78,7 +78,7 @@ class DoctorController extends Controller
 
         $this->doctorService->delete($doctor);
 
-        return redirect()->route('settings.doctors.index')->with('status', 'Doctor deleted successfully.');
+        return redirect()->route('settings.doctors.index')->with('status', 'Dokter berhasil dihapus.');
     }
 
     public function activate(Doctor $doctor): RedirectResponse
@@ -87,7 +87,7 @@ class DoctorController extends Controller
 
         $this->doctorService->activate($doctor);
 
-        return redirect()->route('settings.doctors.index')->with('status', 'Doctor activated.');
+        return redirect()->route('settings.doctors.index')->with('status', 'Dokter berhasil diaktifkan.');
     }
 
     public function deactivate(Doctor $doctor): RedirectResponse
@@ -96,6 +96,6 @@ class DoctorController extends Controller
 
         $this->doctorService->deactivate($doctor);
 
-        return redirect()->route('settings.doctors.index')->with('status', 'Doctor deactivated.');
+        return redirect()->route('settings.doctors.index')->with('status', 'Dokter berhasil dinonaktifkan.');
     }
 }

@@ -58,7 +58,7 @@ class UserController extends Controller
 
         return redirect()
             ->route('settings.users.index')
-            ->with('status', 'User created successfully.');
+            ->with('status', 'Pengguna berhasil dibuat.');
     }
 
     public function edit(User $user): View
@@ -80,7 +80,7 @@ class UserController extends Controller
 
         return redirect()
             ->route('settings.users.index')
-            ->with('status', 'User updated successfully.');
+            ->with('status', 'Pengguna berhasil diperbarui.');
     }
 
     public function destroy(User $user): RedirectResponse
@@ -91,7 +91,7 @@ class UserController extends Controller
 
         return redirect()
             ->route('settings.users.index')
-            ->with('status', 'User deleted successfully.');
+            ->with('status', 'Pengguna berhasil dihapus.');
     }
 
     public function activate(User $user): RedirectResponse
@@ -102,7 +102,7 @@ class UserController extends Controller
 
         return redirect()
             ->route('settings.users.index')
-            ->with('status', 'User activated.');
+            ->with('status', 'Pengguna berhasil diaktifkan.');
     }
 
     public function deactivate(User $user): RedirectResponse
@@ -113,6 +113,6 @@ class UserController extends Controller
 
         return redirect()
             ->route('settings.users.index')
-            ->with('status', 'User deactivated.');
+            ->with('status', 'Pengguna berhasil dinonaktifkan.');
     }
 }

@@ -1,11 +1,11 @@
-<x-settings-shell title="Create Invoice">
+<x-settings-shell title="Buat Invoice">
     <div class="space-y-6">
         <div class="bg-white shadow-sm sm:rounded-lg p-6">
             <form method="GET" action="{{ route('invoices.create') }}" class="flex flex-wrap items-center gap-2">
-                <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Order #, clinic, doctor, patient"
+                <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="No. order, klinik, dokter, pasien"
                        class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                 <select name="clinic_id" class="rounded-md border-gray-300 text-sm">
-                    <option value="">All clinics</option>
+                    <option value="">Semua klinik</option>
                     @foreach ($clinics as $clinic)
                         <option value="{{ $clinic->id }}" @selected($filters['clinic_id'] === $clinic->id)>{{ $clinic->name }}</option>
                     @endforeach
@@ -20,9 +20,9 @@
 
             <div class="grid gap-4 md:grid-cols-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Clinic</label>
+                    <label class="block text-sm font-medium text-gray-700">Klinik</label>
                     <select name="clinic_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                        <option value="">Select clinic</option>
+                        <option value="">Pilih klinik</option>
                         @foreach ($clinics as $clinic)
                             <option value="{{ $clinic->id }}" @selected(old('clinic_id', $filters['clinic_id']) == $clinic->id)>{{ $clinic->name }}</option>
                         @endforeach
@@ -30,24 +30,24 @@
                     @error('clinic_id') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Invoice Date</label>
+                    <label class="block text-sm font-medium text-gray-700">Tanggal Invoice</label>
                     <input type="date" name="invoice_date" value="{{ old('invoice_date', now()->toDateString()) }}" class="mt-1 w-full rounded-md border-gray-300 text-sm">
                     @error('invoice_date') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Due Date</label>
+                    <label class="block text-sm font-medium text-gray-700">Tanggal Jatuh Tempo</label>
                     <input type="date" name="due_date" value="{{ old('due_date', now()->addDays(14)->toDateString()) }}" class="mt-1 w-full rounded-md border-gray-300 text-sm">
                     @error('due_date') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">Discount</label>
+                    <label class="block text-sm font-medium text-gray-700">Diskon</label>
                     <input type="number" step="0.01" min="0" name="discount_amount" value="{{ old('discount_amount', 0) }}" class="mt-1 w-full rounded-md border-gray-300 text-sm">
                     @error('discount_amount') <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                 </div>
             </div>
 
             <div>
-                <label class="block text-sm font-medium text-gray-700">Notes</label>
+                <label class="block text-sm font-medium text-gray-700">Catatan</label>
                 <textarea name="notes" rows="2" class="mt-1 w-full rounded-md border-gray-300 text-sm">{{ old('notes') }}</textarea>
             </div>
 
@@ -57,12 +57,12 @@
                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead>
                         <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Select</th>
-                            <th class="px-3 py-2 font-medium">Order #</th>
-                            <th class="px-3 py-2 font-medium">Clinic</th>
-                            <th class="px-3 py-2 font-medium">Patient</th>
-                            <th class="px-3 py-2 font-medium">Items</th>
-                            <th class="px-3 py-2 font-medium text-right">Amount</th>
+                            <th class="px-3 py-2 font-medium">Pilih</th>
+                            <th class="px-3 py-2 font-medium">No. Order</th>
+                            <th class="px-3 py-2 font-medium">Klinik</th>
+                            <th class="px-3 py-2 font-medium">Pasien</th>
+                            <th class="px-3 py-2 font-medium">Item</th>
+                            <th class="px-3 py-2 font-medium text-right">Jumlah</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -78,15 +78,15 @@
                                 <td class="px-3 py-2 text-right text-gray-700">{{ number_format((float) $order->items->sum('subtotal'), 2) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">No completed Lab Orders available for invoicing.</td></tr>
+                            <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada Order Lab selesai yang dapat dibuat invoice.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
             </div>
 
             <div class="flex justify-end gap-2">
-                <a href="{{ route('invoices.index') }}" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Cancel</a>
-                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Create Draft</button>
+                <a href="{{ route('invoices.index') }}" class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Batal</a>
+                <button type="submit" class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Buat Draft</button>
             </div>
         </form>
     </div>

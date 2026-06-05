@@ -46,7 +46,7 @@ class ClinicController extends Controller
 
         $this->clinicService->create($request->validated());
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Clinic created successfully.');
+        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dibuat.');
     }
 
     public function edit(Clinic $clinic): View
@@ -62,7 +62,7 @@ class ClinicController extends Controller
 
         $this->clinicService->update($clinic, $request->validated());
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Clinic updated successfully.');
+        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil diperbarui.');
     }
 
     public function destroy(Clinic $clinic): RedirectResponse
@@ -71,7 +71,7 @@ class ClinicController extends Controller
 
         $this->clinicService->delete($clinic);
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Clinic deleted successfully.');
+        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dihapus.');
     }
 
     public function activate(Clinic $clinic): RedirectResponse
@@ -80,7 +80,7 @@ class ClinicController extends Controller
 
         $this->clinicService->activate($clinic);
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Clinic activated.');
+        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil diaktifkan.');
     }
 
     public function deactivate(Clinic $clinic): RedirectResponse
@@ -89,6 +89,6 @@ class ClinicController extends Controller
 
         $this->clinicService->deactivate($clinic);
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Clinic deactivated.');
+        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dinonaktifkan.');
     }
 }

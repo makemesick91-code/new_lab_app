@@ -58,7 +58,7 @@ class PatientController extends Controller
 
         $this->patientService->create($request->validated());
 
-        return redirect()->route('settings.patients.index')->with('status', 'Patient created successfully.');
+        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
     }
 
     public function edit(Patient $patient): View
@@ -78,7 +78,7 @@ class PatientController extends Controller
 
         $this->patientService->update($patient, $request->validated());
 
-        return redirect()->route('settings.patients.index')->with('status', 'Patient updated successfully.');
+        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil diperbarui.');
     }
 
     public function destroy(Patient $patient): RedirectResponse
@@ -87,7 +87,7 @@ class PatientController extends Controller
 
         $this->patientService->delete($patient);
 
-        return redirect()->route('settings.patients.index')->with('status', 'Patient deleted successfully.');
+        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dihapus.');
     }
 
     public function activate(Patient $patient): RedirectResponse
@@ -96,7 +96,7 @@ class PatientController extends Controller
 
         $this->patientService->activate($patient);
 
-        return redirect()->route('settings.patients.index')->with('status', 'Patient activated.');
+        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil diaktifkan.');
     }
 
     public function deactivate(Patient $patient): RedirectResponse
@@ -105,6 +105,6 @@ class PatientController extends Controller
 
         $this->patientService->deactivate($patient);
 
-        return redirect()->route('settings.patients.index')->with('status', 'Patient deactivated.');
+        return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dinonaktifkan.');
     }
 }

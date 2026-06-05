@@ -56,7 +56,7 @@ it('shows invoice list to authorized users', function () {
     $this->actingAs(userWith(['view_invoice']))
         ->get(route('invoices.index'))
         ->assertOk()
-        ->assertSee('Invoices');
+        ->assertSee('Invoice');
 });
 
 it('creates an invoice from completed lab orders', function () {

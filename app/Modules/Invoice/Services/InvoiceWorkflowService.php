@@ -37,7 +37,7 @@ class InvoiceWorkflowService
             }
 
             if (! $invoice->due_date) {
-                throw ValidationException::withMessages(['due_date' => 'Due date wajib diisi sebelum invoice diterbitkan.']);
+                throw ValidationException::withMessages(['due_date' => 'Tanggal jatuh tempo wajib diisi sebelum invoice diterbitkan.']);
             }
 
             $updated = $this->invoices->update($invoice, [

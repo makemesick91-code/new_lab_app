@@ -9,14 +9,14 @@ it('lets an authorized user view the reports dashboard', function () {
         ->get(route('reports.dashboard'))
         ->assertOk()
         ->assertViewIs('reports.dashboard')
-        ->assertSee('Total Orders');
+        ->assertSee('Total Order');
 });
 
 it('handles an empty dataset on the dashboard', function () {
     $this->actingAs(userWith(['manage_report']))
         ->get(route('reports.dashboard'))
         ->assertOk()
-        ->assertSee('Revenue');
+        ->assertSee('Pendapatan');
 });
 
 it('denies the dashboard to users without permission', function () {

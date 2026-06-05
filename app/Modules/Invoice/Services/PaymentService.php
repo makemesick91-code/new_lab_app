@@ -39,11 +39,11 @@ class PaymentService
             $amount = round((float) $data['amount'], 2);
 
             if ($amount <= 0) {
-                throw ValidationException::withMessages(['amount' => 'Amount harus lebih dari 0.']);
+                throw ValidationException::withMessages(['amount' => 'Jumlah pembayaran harus lebih dari 0.']);
             }
 
             if ($amount > round((float) $invoice->outstanding_amount, 2)) {
-                throw ValidationException::withMessages(['amount' => 'Payment tidak boleh melebihi outstanding amount.']);
+                throw ValidationException::withMessages(['amount' => 'Pembayaran tidak boleh melebihi sisa tagihan.']);
             }
 
             $payment = $this->payments->create([

@@ -66,7 +66,7 @@ class InvoiceController extends Controller
 
         $invoice = $this->invoices->create($request->validated(), $request->user());
 
-        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice created.');
+        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice berhasil dibuat.');
     }
 
     public function show(Invoice $invoice): View
@@ -85,7 +85,7 @@ class InvoiceController extends Controller
 
         $this->workflow->issue($invoice, $request->validated()['notes'] ?? null, $request->user());
 
-        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice issued.');
+        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice berhasil diterbitkan.');
     }
 
     public function void(VoidInvoiceRequest $request, Invoice $invoice): RedirectResponse
@@ -94,6 +94,6 @@ class InvoiceController extends Controller
 
         $this->workflow->void($invoice, $request->validated()['notes'], $request->user());
 
-        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice voided.');
+        return redirect()->route('invoices.show', $invoice)->with('status', 'Invoice berhasil divoid.');
     }
 }

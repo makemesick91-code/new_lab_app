@@ -46,7 +46,7 @@ class LabServiceController extends Controller
 
         $this->labServiceService->create($request->validated());
 
-        return redirect()->route('settings.lab-services.index')->with('status', 'Lab service created successfully.');
+        return redirect()->route('settings.lab-services.index')->with('status', 'Layanan lab berhasil dibuat.');
     }
 
     public function edit(LabService $labService): View
@@ -62,7 +62,7 @@ class LabServiceController extends Controller
 
         $this->labServiceService->update($labService, $request->validated());
 
-        return redirect()->route('settings.lab-services.index')->with('status', 'Lab service updated successfully.');
+        return redirect()->route('settings.lab-services.index')->with('status', 'Layanan lab berhasil diperbarui.');
     }
 
     public function destroy(LabService $labService): RedirectResponse
@@ -71,7 +71,7 @@ class LabServiceController extends Controller
 
         $this->labServiceService->delete($labService);
 
-        return redirect()->route('settings.lab-services.index')->with('status', 'Lab service deleted successfully.');
+        return redirect()->route('settings.lab-services.index')->with('status', 'Layanan lab berhasil dihapus.');
     }
 
     public function activate(LabService $labService): RedirectResponse
@@ -80,7 +80,7 @@ class LabServiceController extends Controller
 
         $this->labServiceService->activate($labService);
 
-        return redirect()->route('settings.lab-services.index')->with('status', 'Lab service activated.');
+        return redirect()->route('settings.lab-services.index')->with('status', 'Layanan lab berhasil diaktifkan.');
     }
 
     public function deactivate(LabService $labService): RedirectResponse
@@ -89,6 +89,6 @@ class LabServiceController extends Controller
 
         $this->labServiceService->deactivate($labService);
 
-        return redirect()->route('settings.lab-services.index')->with('status', 'Lab service deactivated.');
+        return redirect()->route('settings.lab-services.index')->with('status', 'Layanan lab berhasil dinonaktifkan.');
     }
 }
