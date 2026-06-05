@@ -5,11 +5,11 @@
 
 @php($movements = collect($movements))
 
-<x-inventory.dashboard-section title="Recent Movements" description="Latest inventory ledger movements in this branch, shown as a timeline." :action-href="$href" action-label="Open stock">
+<x-inventory.dashboard-section title="Pergerakan Terbaru" description="Pergerakan ledger persediaan terbaru di cabang ini, ditampilkan sebagai timeline." :action-href="$href" action-label="Buka stok">
     @if ($movements->isEmpty())
         <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-            <p class="text-sm font-medium text-gray-900">No recent movements.</p>
-            <p class="mt-1 text-sm text-gray-500">Opening, receive, and adjustment movements will appear here.</p>
+            <p class="text-sm font-medium text-gray-900">Belum ada pergerakan terbaru.</p>
+            <p class="mt-1 text-sm text-gray-500">Pergerakan stok awal, penerimaan, dan penyesuaian akan muncul di sini.</p>
         </div>
     @else
         <ol class="relative space-y-4 border-l border-gray-200 pl-4">

@@ -66,7 +66,7 @@ class InventoryStockService
 
             if ($currentStock < $qty) {
                 throw ValidationException::withMessages([
-                    'quantity' => 'Stock pada lokasi ini tidak mencukupi.',
+                    'quantity' => 'Stok pada lokasi ini tidak mencukupi.',
                 ]);
             }
 
@@ -211,7 +211,7 @@ class InventoryStockService
     {
         if ($qty <= 0) {
             throw ValidationException::withMessages([
-                'quantity' => 'Quantity harus lebih dari 0.',
+                'quantity' => 'Jumlah stok harus lebih besar dari nol.',
             ]);
         }
     }
@@ -222,7 +222,7 @@ class InventoryStockService
 
         if (! $product) {
             throw ValidationException::withMessages([
-                'product_id' => 'Product tidak valid untuk branch aktif.',
+                'product_id' => 'Produk tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -235,7 +235,7 @@ class InventoryStockService
 
         if (! $location || ! $location->is_active) {
             throw ValidationException::withMessages([
-                'inventory_location_id' => 'Inventory location tidak valid untuk branch aktif.',
+                'inventory_location_id' => 'Lokasi persediaan tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -248,7 +248,7 @@ class InventoryStockService
 
         if (! $supplier || ! $supplier->is_active) {
             throw ValidationException::withMessages([
-                'supplier_id' => 'Supplier tidak valid untuk branch aktif.',
+                'supplier_id' => 'Pemasok tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -265,7 +265,7 @@ class InventoryStockService
 
         if (! $product || ! $product->is_active) {
             throw ValidationException::withMessages([
-                'product_id' => 'Product tidak valid untuk branch aktif.',
+                'product_id' => 'Produk tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -282,7 +282,7 @@ class InventoryStockService
 
         if (! $location || ! $location->is_active) {
             throw ValidationException::withMessages([
-                'inventory_location_id' => 'Inventory location tidak valid untuk branch aktif.',
+                'inventory_location_id' => 'Lokasi persediaan tidak valid untuk cabang aktif.',
             ]);
         }
 

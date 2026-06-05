@@ -1,20 +1,20 @@
-<x-settings-shell title="Inventory Dashboard">
+<x-settings-shell title="Dasbor Persediaan">
     <div class="space-y-6">
         <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Inventory Core</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Stock visibility for the active branch</h1>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan Inti</p>
+                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Visibilitas stok untuk cabang aktif</h1>
                     <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                        Stock is calculated from the inventory movement ledger by branch, location, and product. Use this dashboard to spot low stock, inspect movement history, and jump into stock operations safely.
+                        Stok dihitung dari ledger pergerakan persediaan berdasarkan cabang, lokasi, dan produk. Gunakan dasbor ini untuk melihat stok menipis, memeriksa riwayat pergerakan, dan masuk ke operasi stok dengan aman.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <a href="{{ route('inventory.stock.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                        Open Stock
+                        Buka Stok
                     </a>
                     <a href="{{ route('inventory.products.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Products
+                        Produk
                     </a>
                 </div>
             </div>
@@ -22,49 +22,49 @@
 
         <section aria-labelledby="inventory-kpis">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <h3 id="inventory-kpis" class="text-base font-semibold text-gray-900">Inventory KPI Cards</h3>
-                <p class="text-xs text-gray-500">Ledger-derived branch summary</p>
+                <h3 id="inventory-kpis" class="text-base font-semibold text-gray-900">Kartu KPI Persediaan</h3>
+                <p class="text-xs text-gray-500">Ringkasan cabang berbasis ledger</p>
             </div>
             <div class="grid gap-4 sm:grid-cols-3">
                 <x-inventory.kpi-card
-                    label="Total Inventory Value"
+                    label="Total Nilai Persediaan"
                     :value="number_format((float) $summary['inventory_value'], 2)"
-                    hint="Current branch stock value"
+                    hint="Nilai stok cabang saat ini"
                     tone="primary"
                     :href="route('inventory.stock.index')"
                 />
                 <x-inventory.kpi-card
-                    label="Low Stock Count"
+                    label="Jumlah Stok Menipis"
                     :value="number_format((int) $summary['low_stock_count'])"
-                    hint="At or below minimum stock"
+                    hint="Pada atau di bawah stok minimum"
                     tone="warning"
                     :href="route('inventory.stock.index')"
                 />
                 <x-inventory.kpi-card
-                    label="Out Of Stock Count"
+                    label="Jumlah Stok Habis"
                     :value="number_format((int) $summary['out_of_stock_count'])"
-                    hint="Current stock is zero or below"
+                    hint="Stok saat ini nol atau kurang"
                     tone="danger"
                     :href="route('inventory.stock.index')"
                 />
             </div>
         </section>
 
-        <x-inventory.stock-value-card :summary="$summary" scope-label="Active branch" />
+        <x-inventory.stock-value-card :summary="$summary" scope-label="Cabang aktif" />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <x-inventory.dashboard-section
-                title="Stock by Location"
-                description="Inventory value and quantity grouped by physical inventory location."
+                title="Stok per Lokasi"
+                description="Nilai dan jumlah persediaan dikelompokkan berdasarkan lokasi persediaan fisik."
                 :action-href="route('inventory.stock.index')"
-                action-label="View stock"
+                action-label="Lihat stok"
             >
                 @if ($stockByLocation->isEmpty())
                     <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-                        <p class="text-sm font-medium text-gray-900">No stock movements yet.</p>
-                        <p class="mt-1 text-sm text-gray-500">Opening stock or receive stock movements will create location summaries.</p>
+                        <p class="text-sm font-medium text-gray-900">Belum ada pergerakan stok.</p>
+                        <p class="mt-1 text-sm text-gray-500">Stok awal atau penerimaan stok akan membuat ringkasan lokasi.</p>
                         @if ($locations->isNotEmpty())
-                            <p class="mt-2 text-xs text-gray-500">{{ number_format($locations->count()) }} active locations are ready for stock operations.</p>
+                            <p class="mt-2 text-xs text-gray-500">{{ number_format($locations->count()) }} lokasi aktif siap untuk operasi stok.</p>
                         @endif
                     </div>
                 @else
@@ -88,10 +88,10 @@
                 :href="route('inventory.stock.index')"
             />
 
-            <x-inventory.dashboard-section title="Top Consumed Materials" description="Future-ready production usage insight." density="compact">
+            <x-inventory.dashboard-section title="Material Paling Banyak Dipakai" description="Insight penggunaan produksi untuk sprint berikutnya." density="compact">
                 <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-                    <p class="text-sm font-medium text-gray-900">Coming in a future sprint.</p>
-                    <p class="mt-1 text-sm text-gray-500">Production usage is out of scope for Inventory Core, so this widget stays intentionally empty.</p>
+                    <p class="text-sm font-medium text-gray-900">Akan tersedia pada sprint berikutnya.</p>
+                    <p class="mt-1 text-sm text-gray-500">Penggunaan produksi berada di luar scope Persediaan Inti, jadi widget ini sengaja dikosongkan.</p>
                 </div>
             </x-inventory.dashboard-section>
         </div>

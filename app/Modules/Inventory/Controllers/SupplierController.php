@@ -46,7 +46,7 @@ class SupplierController extends Controller
 
         $supplier = $this->suppliers->create($request->validated());
 
-        return redirect()->route('inventory.suppliers.show', $supplier)->with('status', 'Supplier created.');
+        return redirect()->route('inventory.suppliers.show', $supplier)->with('status', 'Pemasok berhasil ditambahkan.');
     }
 
     public function show(Supplier $supplier): View|Response
@@ -73,7 +73,7 @@ class SupplierController extends Controller
 
         $this->suppliers->update($supplier, $request->validated());
 
-        return redirect()->route('inventory.suppliers.show', $supplier)->with('status', 'Supplier updated.');
+        return redirect()->route('inventory.suppliers.show', $supplier)->with('status', 'Pemasok berhasil diperbarui.');
     }
 
     public function destroy(Supplier $supplier): RedirectResponse
@@ -82,6 +82,6 @@ class SupplierController extends Controller
 
         $this->suppliers->deactivate($supplier);
 
-        return redirect()->route('inventory.suppliers.index')->with('status', 'Supplier deactivated.');
+        return redirect()->route('inventory.suppliers.index')->with('status', 'Pemasok berhasil dinonaktifkan.');
     }
 }

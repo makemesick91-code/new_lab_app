@@ -6,20 +6,20 @@
 
 @php($items = collect($items)->take($limit))
 
-<x-inventory.dashboard-section title="Low Stock Products" description="Products at or below minimum stock for this branch." :action-href="$href" action-label="Open stock">
+<x-inventory.dashboard-section title="Produk Stok Menipis" description="Produk pada atau di bawah stok minimum untuk cabang ini." :action-href="$href" action-label="Buka stok">
     @if ($items->isEmpty())
         <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-            <p class="text-sm font-medium text-gray-900">No low stock products.</p>
-            <p class="mt-1 text-sm text-gray-500">Low and out-of-stock materials will appear here when they need attention.</p>
+            <p class="text-sm font-medium text-gray-900">Tidak ada produk stok menipis.</p>
+            <p class="mt-1 text-sm text-gray-500">Material stok menipis dan stok habis akan muncul di sini saat perlu perhatian.</p>
         </div>
     @else
         <div class="overflow-hidden rounded-lg border border-gray-200">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50">
                     <tr class="text-left text-gray-500">
-                        <th scope="col" class="px-3 py-2 font-medium">Code</th>
-                        <th scope="col" class="px-3 py-2 font-medium">Product</th>
-                        <th scope="col" class="px-3 py-2 font-medium text-right">Current</th>
+                        <th scope="col" class="px-3 py-2 font-medium">Kode</th>
+                        <th scope="col" class="px-3 py-2 font-medium">Produk</th>
+                        <th scope="col" class="px-3 py-2 font-medium text-right">Saat Ini</th>
                         <th scope="col" class="px-3 py-2 font-medium text-right">Minimum</th>
                         <th scope="col" class="px-3 py-2 font-medium">Status</th>
                     </tr>

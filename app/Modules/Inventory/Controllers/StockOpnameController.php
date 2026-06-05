@@ -72,7 +72,7 @@ class StockOpnameController extends Controller
         );
 
         return redirect()->route('inventory.stock-opnames.show', $opname)
-            ->with('status', 'Stock opname created successfully.');
+            ->with('status', 'Stok opname berhasil dibuat.');
     }
 
     public function show(StockOpname $stockOpname): View
@@ -101,7 +101,7 @@ class StockOpnameController extends Controller
             $request->validated('notes'),
         );
 
-        return back()->with('status', 'Counted quantity updated successfully.');
+        return back()->with('status', 'Jumlah terhitung berhasil diperbarui.');
     }
 
     public function review(ReviewStockOpnameRequest $request, StockOpname $stockOpname): RedirectResponse
@@ -110,7 +110,7 @@ class StockOpnameController extends Controller
 
         $this->opnameService->reviewOpname($stockOpname->id);
 
-        return back()->with('status', 'Stock opname reviewed successfully.');
+        return back()->with('status', 'Stok opname berhasil ditandai siap finalisasi.');
     }
 
     public function finalize(FinalizeStockOpnameRequest $request, StockOpname $stockOpname): RedirectResponse
@@ -119,7 +119,7 @@ class StockOpnameController extends Controller
 
         $this->opnameService->finalizeOpname($stockOpname->id);
 
-        return back()->with('status', 'Stock opname finalized successfully.');
+        return back()->with('status', 'Stok opname berhasil diselesaikan.');
     }
 
     public function cancel(CancelStockOpnameRequest $request, StockOpname $stockOpname): RedirectResponse
@@ -129,7 +129,7 @@ class StockOpnameController extends Controller
         $this->opnameService->cancelOpname($stockOpname->id, $request->validated('notes'));
 
         return redirect()->route('inventory.stock-opnames.index')
-            ->with('status', 'Stock opname cancelled successfully.');
+            ->with('status', 'Stok opname berhasil dibatalkan.');
     }
 
     public function reviewScreen(StockOpname $stockOpname): View
@@ -138,7 +138,6 @@ class StockOpnameController extends Controller
 
         $stockOpname = $this->opnames->loadItems($stockOpname);
 
-        // Calculate summary data
         $totalProducts = $stockOpname->items->count();
         $totalVariances = $stockOpname->items->filter(fn ($item) => abs((float) $item->variance_quantity) > 0)->count();
         $overages = $stockOpname->items->filter(fn ($item) => (float) $item->variance_quantity > 0)->count();

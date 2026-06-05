@@ -65,7 +65,7 @@ class InventoryStockController extends Controller
             $request->validated('notes'),
         );
 
-        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Opening stock created.');
+        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stok awal berhasil ditambahkan.');
     }
 
     public function receiveStock(Product $product): View|Response
@@ -92,7 +92,7 @@ class InventoryStockController extends Controller
             $request->validated('notes'),
         );
 
-        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stock received.');
+        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stok berhasil diterima.');
     }
 
     public function adjustIn(Product $product): View|Response
@@ -116,7 +116,7 @@ class InventoryStockController extends Controller
             $request->validated('notes'),
         );
 
-        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stock adjustment in created.');
+        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Penyesuaian stok masuk berhasil dilakukan.');
     }
 
     public function adjustOut(Product $product): View|Response
@@ -140,7 +140,7 @@ class InventoryStockController extends Controller
             $request->validated('notes'),
         );
 
-        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stock adjustment out created.');
+        return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Penyesuaian stok keluar berhasil dilakukan.');
     }
 
     private function authorizeStockOperation(Product $product): void

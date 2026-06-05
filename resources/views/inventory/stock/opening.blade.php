@@ -1,7 +1,7 @@
-<x-settings-shell title="Opening Stock">
+<x-settings-shell title="Stok Awal">
     @include('inventory.stock._operation-form', [
         'action' => route('inventory.products.opening-stock.store', $product),
-        'button' => 'Create Opening Stock',
+        'button' => 'Buat Stok Awal',
         'operationType' => 'opening',
         'includeCost' => true,
     ])

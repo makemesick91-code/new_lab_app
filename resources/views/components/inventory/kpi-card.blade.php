@@ -30,7 +30,7 @@
 
         @if ($href)
             <a href="{{ $href }}" class="text-xs font-semibold text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                View details
+                Lihat detail
             </a>
         @endif
     </div>

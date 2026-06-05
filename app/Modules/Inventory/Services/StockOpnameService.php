@@ -64,7 +64,7 @@ class StockOpnameService
     {
         if ($countedQuantity < 0) {
             throw ValidationException::withMessages([
-                'counted_quantity' => 'Counted quantity tidak boleh negatif.',
+                'counted_quantity' => 'Jumlah terhitung tidak boleh negatif.',
             ]);
         }
 
@@ -105,13 +105,13 @@ class StockOpnameService
 
             if ($opname->status !== StockOpname::STATUS_DRAFT) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname hanya bisa direview dari status DRAFT.',
+                    'status' => 'Stok opname hanya bisa ditinjau dari status DRAFT.',
                 ]);
             }
 
             if (! $opname->items()->exists()) {
                 throw ValidationException::withMessages([
-                    'items' => 'Stock opname harus memiliki minimal satu item sebelum review.',
+                    'items' => 'Stok opname harus memiliki minimal satu item sebelum ditinjau.',
                 ]);
             }
 
@@ -132,19 +132,19 @@ class StockOpnameService
 
             if ($opname->status === StockOpname::STATUS_COMPLETED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname sudah difinalisasi.',
+                    'status' => 'Stok opname sudah difinalisasi.',
                 ]);
             }
 
             if ($opname->status === StockOpname::STATUS_CANCELLED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname yang dibatalkan tidak bisa difinalisasi.',
+                    'status' => 'Stok opname yang dibatalkan tidak bisa difinalisasi.',
                 ]);
             }
 
             if ($opname->status !== StockOpname::STATUS_COUNTING) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname harus direview sebelum finalisasi.',
+                    'status' => 'Stok opname harus ditinjau sebelum finalisasi.',
                 ]);
             }
 
@@ -154,7 +154,7 @@ class StockOpnameService
 
             if ($opname->items->isEmpty()) {
                 throw ValidationException::withMessages([
-                    'items' => 'Stock opname harus memiliki minimal satu item sebelum finalisasi.',
+                    'items' => 'Stok opname harus memiliki minimal satu item sebelum finalisasi.',
                 ]);
             }
 
@@ -172,7 +172,7 @@ class StockOpnameService
 
                     if ($currentStock < $quantityOut) {
                         throw ValidationException::withMessages([
-                            'counted_quantity' => 'Variance stock opname melebihi stock lokasi saat ini.',
+                            'counted_quantity' => 'Selisih stok opname melebihi stok lokasi saat ini.',
                         ]);
                     }
 
@@ -195,13 +195,13 @@ class StockOpnameService
 
             if ($opname->status === StockOpname::STATUS_COMPLETED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname yang sudah selesai tidak bisa dibatalkan.',
+                    'status' => 'Stok opname yang sudah selesai tidak bisa dibatalkan.',
                 ]);
             }
 
             if ($opname->status === StockOpname::STATUS_CANCELLED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Stock opname sudah dibatalkan.',
+                    'status' => 'Stok opname sudah dibatalkan.',
                 ]);
             }
 
@@ -241,7 +241,7 @@ class StockOpnameService
             'unit_cost' => max(0, $unitCost),
             'reference_type' => $opname->getTable(),
             'reference_id' => $opname->id,
-            'notes' => 'Generated from stock opname '.$opname->opname_number,
+            'notes' => 'Dihasilkan dari stok opname '.$opname->opname_number,
             'created_by' => Auth::id(),
         ]);
     }
@@ -256,7 +256,7 @@ class StockOpnameService
 
         if (! $opname) {
             throw ValidationException::withMessages([
-                'stock_opname_id' => 'Stock opname tidak valid untuk branch aktif.',
+                'stock_opname_id' => 'Stok opname tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -267,7 +267,7 @@ class StockOpnameService
     {
         if (in_array($opname->status, [StockOpname::STATUS_COMPLETED, StockOpname::STATUS_CANCELLED], true)) {
             throw ValidationException::withMessages([
-                'status' => 'Stock opname yang sudah selesai atau dibatalkan tidak bisa diedit.',
+                'status' => 'Stok opname yang sudah selesai atau dibatalkan tidak bisa diedit.',
             ]);
         }
     }
@@ -278,7 +278,7 @@ class StockOpnameService
 
         if (! $location || ! $location->is_active) {
             throw ValidationException::withMessages([
-                'inventory_location_id' => 'Inventory location tidak valid untuk branch aktif.',
+                'inventory_location_id' => 'Lokasi persediaan tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -291,7 +291,7 @@ class StockOpnameService
 
         if (! $product || ! $product->is_active) {
             throw ValidationException::withMessages([
-                'product_id' => 'Product tidak valid untuk branch aktif.',
+                'product_id' => 'Produk tidak valid untuk cabang aktif.',
             ]);
         }
 
@@ -308,7 +308,7 @@ class StockOpnameService
 
         if (! $product || ! $product->is_active) {
             throw ValidationException::withMessages([
-                'product_id' => 'Product tidak valid untuk branch aktif.',
+                'product_id' => 'Produk tidak valid untuk cabang aktif.',
             ]);
         }
 

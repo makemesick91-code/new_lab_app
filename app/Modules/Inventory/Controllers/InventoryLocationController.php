@@ -49,7 +49,7 @@ class InventoryLocationController extends Controller
 
         $this->locations->create($request->validated());
 
-        return redirect()->route('inventory.locations.index')->with('status', 'Inventory location created.');
+        return redirect()->route('inventory.locations.index')->with('status', 'Lokasi persediaan berhasil ditambahkan.');
     }
 
     public function show(InventoryLocation $location): View|Response
@@ -77,7 +77,7 @@ class InventoryLocationController extends Controller
 
         $this->locations->update($location, $request->validated());
 
-        return redirect()->route('inventory.locations.index')->with('status', 'Inventory location updated.');
+        return redirect()->route('inventory.locations.index')->with('status', 'Lokasi persediaan berhasil diperbarui.');
     }
 
     public function destroy(InventoryLocation $location): RedirectResponse
@@ -86,6 +86,6 @@ class InventoryLocationController extends Controller
 
         $this->locations->deactivate($location);
 
-        return redirect()->route('inventory.locations.index')->with('status', 'Inventory location deactivated.');
+        return redirect()->route('inventory.locations.index')->with('status', 'Lokasi persediaan berhasil dinonaktifkan.');
     }
 }

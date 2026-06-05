@@ -20,13 +20,13 @@ it('opens the inventory dashboard for an authenticated user', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Inventory Dashboard')
-        ->assertSee('Inventory KPI Cards')
-        ->assertSee('Total Inventory Value')
-        ->assertSee('Inventory Value Summary')
-        ->assertSee('Stock by Location')
-        ->assertSee('Recent Movements')
-        ->assertSee('Top Consumed Materials');
+        ->assertSee('Dasbor Persediaan')
+        ->assertSee('Kartu KPI Persediaan')
+        ->assertSee('Total Nilai Persediaan')
+        ->assertSee('Ringkasan Nilai Persediaan')
+        ->assertSee('Stok per Lokasi')
+        ->assertSee('Pergerakan Terbaru')
+        ->assertSee('Material Paling Banyak Dipakai');
 });
 
 it('opens inventory product location supplier and stock indexes', function () {
@@ -37,28 +37,28 @@ it('opens inventory product location supplier and stock indexes', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.index'))
         ->assertOk()
-        ->assertSee('Inventory Products')
+        ->assertSee('Produk Persediaan')
         ->assertSee('Zirconia UI Block')
-        ->assertSee('Branch Total Stock')
-        ->assertSee('Current Stock - Branch Total')
-        ->assertSee('Stock Status');
+        ->assertSee('Total Stok Cabang')
+        ->assertSee('Stok Saat Ini - Total Cabang')
+        ->assertSee('Status Stok');
 
     $this->actingAs($this->user)
         ->get(route('inventory.locations.index'))
         ->assertOk()
-        ->assertSee('Inventory Locations')
+        ->assertSee('Lokasi Persediaan')
         ->assertSee('Gudang UI');
 
     $this->actingAs($this->user)
         ->get(route('inventory.suppliers.index'))
         ->assertOk()
-        ->assertSee('Inventory Suppliers')
+        ->assertSee('Pemasok Persediaan')
         ->assertSee('PT UI Supplier');
 
     $this->actingAs($this->user)
         ->get(route('inventory.stock.index'))
         ->assertOk()
-        ->assertSee('Inventory Stock');
+        ->assertSee('Stok Persediaan');
 });
 
 it('shows product detail stock summary and safe action context', function () {
@@ -74,12 +74,12 @@ it('shows product detail stock summary and safe action context', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.show', $product))
         ->assertOk()
-        ->assertSee('Product Summary Card')
-        ->assertSee('Current Stock - Branch Total')
-        ->assertSee('Branch / Location Stock Clarity')
-        ->assertSee('Inventory Value')
-        ->assertSee('Every stock operation requires a selected Inventory Location.')
-        ->assertSee('This product is below minimum stock.');
+        ->assertSee('Kartu Ringkasan Produk')
+        ->assertSee('Stok Saat Ini - Total Cabang')
+        ->assertSee('Kejelasan Stok Cabang / Lokasi')
+        ->assertSee('Nilai Persediaan')
+        ->assertSee('Setiap operasi stok wajib memilih Lokasi Persediaan.')
+        ->assertSee('Produk ini berada di bawah stok minimum.');
 });
 
 it('shows a required location selector on the opening stock form', function () {
@@ -89,12 +89,12 @@ it('shows a required location selector on the opening stock form', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.opening-stock.create', $product))
         ->assertOk()
-        ->assertSee('Opening Stock')
-        ->assertSee('Product Summary Panel')
-        ->assertSee('Create Initial Ledger Entry')
-        ->assertSee('Opening Stock creates an initial ledger movement.')
-        ->assertSee('Ledger-derived stock')
-        ->assertSee('Inventory Location')
+        ->assertSee('Stok Awal')
+        ->assertSee('Panel Ringkasan Produk')
+        ->assertSee('Buat Entri Ledger Awal')
+        ->assertSee('Stok Awal membuat pergerakan ledger awal.')
+        ->assertSee('Stok berbasis ledger')
+        ->assertSee('Lokasi Persediaan')
         ->assertSee('name="inventory_location_id"', false)
         ->assertSee('required', false)
         ->assertSee('Opening Selector Location');
@@ -108,12 +108,12 @@ it('shows receive stock supplier and cost guidance', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.receive-stock.create', $product))
         ->assertOk()
-        ->assertSee('Receive Stock Into Location')
-        ->assertSee('Receive Stock increases ledger quantity.')
-        ->assertSee('Supplier')
-        ->assertSee('Unit Cost')
+        ->assertSee('Terima Stok ke Lokasi')
+        ->assertSee('Terima Stok menambah jumlah ledger.')
+        ->assertSee('Pemasok')
+        ->assertSee('Biaya per Unit')
         ->assertSee('Receive Supplier')
-        ->assertSee('Capture supplier unit cost when known.');
+        ->assertSee('Isi biaya per unit pemasok jika diketahui. Gunakan 0 hanya jika biaya tidak tersedia.');
 });
 
 it('shows adjustment out safety warning and no location disabled state', function () {
@@ -122,11 +122,11 @@ it('shows adjustment out safety warning and no location disabled state', functio
     $this->actingAs($this->user)
         ->get(route('inventory.products.adjust-out.create', $product))
         ->assertOk()
-        ->assertSee('Reduce Stock By Correction')
-        ->assertSee('Adjustment Out reduces stock and cannot be treated casually.')
-        ->assertSee('insufficient stock')
-        ->assertSee('No active Inventory Location is available.')
-        ->assertDontSee('Create Adjustment Out');
+        ->assertSee('Kurangi Stok sebagai Koreksi')
+        ->assertSee('Penyesuaian Keluar mengurangi stok dan perlu kehati-hatian.')
+        ->assertSee('stok lokasi tidak mencukupi')
+        ->assertSee('Tidak ada Lokasi Persediaan aktif.')
+        ->assertDontSee('Buat Penyesuaian Keluar');
 });
 
 it('does not show inactive locations in stock operation selectors', function () {
@@ -151,8 +151,8 @@ it('does not allow stock operation forms for inactive products', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.show', $product))
         ->assertOk()
-        ->assertDontSee('Opening Stock')
-        ->assertDontSee('Receive Stock');
+        ->assertDontSee('Stok Awal')
+        ->assertDontSee('Terima Stok');
 });
 
 it('shows running balance on the stock card', function () {
@@ -166,15 +166,15 @@ it('shows running balance on the stock card', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.products.stock-card', $product))
         ->assertOk()
-        ->assertSee('Stock Card')
-        ->assertSee('Ledger-derived Stock Card')
-        ->assertSee('Stock is calculated from inventory movements. No mutable stock column is used.')
-        ->assertSee('Inventory Location')
-        ->assertSee('Movement Type')
-        ->assertSee('Movement Timeline')
-        ->assertSee('Running Balance')
-        ->assertSee('Manual inventory movement')
-        ->assertSee('No cost captured')
+        ->assertSee('Kartu Stok')
+        ->assertSee('Kartu Stok Berbasis Ledger')
+        ->assertSee('Stok dihitung dari pergerakan persediaan. Tidak ada kolom stok mutable yang digunakan.')
+        ->assertSee('Lokasi Persediaan')
+        ->assertSee('Tipe Pergerakan')
+        ->assertSee('Riwayat Pergerakan Stok')
+        ->assertSee('Saldo Berjalan')
+        ->assertSee('Pergerakan persediaan manual')
+        ->assertSee('Biaya tidak dicatat')
         ->assertSee('10.00')
         ->assertSee('7.00')
         ->assertSee('Balance Location');
@@ -186,9 +186,9 @@ it('shows an empty state on the stock card when no movement matches filters', fu
     $this->actingAs($this->user)
         ->get(route('inventory.products.stock-card', $product))
         ->assertOk()
-        ->assertSee('Ledger-derived Stock Card')
-        ->assertSee('No stock movements match these filters.')
-        ->assertSee('Opening stock, receive stock, and adjustments will appear here after they are recorded.');
+        ->assertSee('Kartu Stok Berbasis Ledger')
+        ->assertSee('Tidak ada pergerakan stok yang cocok dengan filter ini.')
+        ->assertSee('Stok awal, penerimaan stok, dan penyesuaian akan muncul di sini setelah dicatat.');
 });
 
 it('does not show products or locations from another branch', function () {

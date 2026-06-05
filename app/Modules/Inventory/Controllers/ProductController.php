@@ -55,7 +55,7 @@ class ProductController extends Controller
 
         $product = $this->products->create($request->validated());
 
-        return redirect()->route('inventory.products.show', $product)->with('status', 'Product created.');
+        return redirect()->route('inventory.products.show', $product)->with('status', 'Produk berhasil ditambahkan.');
     }
 
     public function show(Product $product): View|Response
@@ -85,7 +85,7 @@ class ProductController extends Controller
 
         $this->products->update($product, $request->validated());
 
-        return redirect()->route('inventory.products.show', $product)->with('status', 'Product updated.');
+        return redirect()->route('inventory.products.show', $product)->with('status', 'Produk berhasil diperbarui.');
     }
 
     public function destroy(Product $product): RedirectResponse
@@ -94,6 +94,6 @@ class ProductController extends Controller
 
         $this->products->deactivate($product);
 
-        return redirect()->route('inventory.products.index')->with('status', 'Product deactivated.');
+        return redirect()->route('inventory.products.index')->with('status', 'Produk berhasil dinonaktifkan.');
     }
 }

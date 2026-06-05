@@ -82,13 +82,13 @@ class InventoryProductService
     {
         if (! $this->categories->findInBranch($branchId, (int) $data['product_category_id'])) {
             throw ValidationException::withMessages([
-                'product_category_id' => 'Product category tidak valid untuk branch aktif.',
+                'product_category_id' => 'Kategori produk tidak valid untuk cabang aktif.',
             ]);
         }
 
         if (! $this->units->find((int) $data['product_unit_id'])) {
             throw ValidationException::withMessages([
-                'product_unit_id' => 'Product unit tidak valid.',
+                'product_unit_id' => 'Satuan produk tidak valid.',
             ]);
         }
     }
@@ -99,7 +99,7 @@ class InventoryProductService
 
         if (! $product) {
             throw ValidationException::withMessages([
-                'product_id' => 'Product tidak valid untuk branch aktif.',
+                'product_id' => 'Produk tidak valid untuk cabang aktif.',
             ]);
         }
 

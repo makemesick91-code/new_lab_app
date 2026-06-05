@@ -1,7 +1,7 @@
-<x-settings-shell title="Adjustment Out">
+<x-settings-shell title="Penyesuaian Keluar">
     @include('inventory.stock._operation-form', [
         'action' => route('inventory.products.adjust-out.store', $product),
-        'button' => 'Create Adjustment Out',
+        'button' => 'Buat Penyesuaian Keluar',
         'operationType' => 'adjust_out',
     ])
 </x-settings-shell>
