@@ -15,6 +15,12 @@ class PurchaseOrderItem extends Model
 {
     use HasFactory;
 
+    public const RECEIVING_STATUS_PENDING = 'pending';
+
+    public const RECEIVING_STATUS_PARTIAL = 'partial';
+
+    public const RECEIVING_STATUS_COMPLETE = 'complete';
+
     protected $table = 'trx_purchase_order_items';
 
     protected $fillable = [
@@ -38,7 +44,32 @@ class PurchaseOrderItem extends Model
 
     public function quantityRemaining(): float
     {
-        return (float) $this->quantity_ordered - (float) ($this->quantity_received ?? 0);
+        return max(0, (float) $this->quantity_ordered - (float) ($this->quantity_received ?? 0));
+    }
+
+    public function receivingStatus(): string
+    {
+        $received = (float) ($this->quantity_received ?? 0);
+        $ordered = (float) $this->quantity_ordered;
+
+        if ($received <= 0) {
+            return self::RECEIVING_STATUS_PENDING;
+        }
+
+        if ($received >= $ordered) {
+            return self::RECEIVING_STATUS_COMPLETE;
+        }
+
+        return self::RECEIVING_STATUS_PARTIAL;
+    }
+
+    public function receivingStatusLabel(): string
+    {
+        return match ($this->receivingStatus()) {
+            self::RECEIVING_STATUS_COMPLETE => 'Lengkap',
+            self::RECEIVING_STATUS_PARTIAL => 'Sebagian',
+            default => 'Belum Diterima',
+        };
     }
 
     public function lineTotal(): float

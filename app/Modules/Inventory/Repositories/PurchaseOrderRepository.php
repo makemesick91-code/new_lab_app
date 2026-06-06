@@ -55,6 +55,11 @@ class PurchaseOrderRepository implements PurchaseOrderRepositoryInterface
                 'items.product',
                 'items.inventoryLocation',
                 'items.purchaseRequestItem',
+                'goodsReceipts' => fn ($query) => $query
+                    ->where('branch_id', $branchId)
+                    ->with('createdBy')
+                    ->orderByDesc('receipt_date')
+                    ->orderByDesc('id'),
             ])
             ->where('branch_id', $branchId)
             ->find($id);

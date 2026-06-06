@@ -79,6 +79,7 @@
                 <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                     <div class="border-b border-gray-200 px-4 py-3">
                         <h3 class="text-base font-semibold text-gray-900">Item Pesanan</h3>
+                        <p class="mt-1 text-sm text-gray-500">Progress penerimaan per baris menggunakan cache jumlah diterima dari penerimaan barang yang diposting.</p>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -87,7 +88,10 @@
                                     <th scope="col" class="px-4 py-3 font-medium">Produk</th>
                                     <th scope="col" class="px-3 py-3 font-medium">Lokasi</th>
                                     <th scope="col" class="px-3 py-3 font-medium">Item PR</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Jumlah</th>
+                                    <th scope="col" class="px-3 py-3 text-right font-medium">Dipesan</th>
+                                    <th scope="col" class="px-3 py-3 text-right font-medium">Diterima</th>
+                                    <th scope="col" class="px-3 py-3 text-right font-medium">Sisa</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Status Penerimaan</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Harga Satuan</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Total Baris</th>
                                     <th scope="col" class="px-4 py-3 font-medium">Catatan</th>
@@ -109,6 +113,14 @@
                                             @endif
                                         </td>
                                         <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_ordered) }}</td>
+                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_received ?? 0) }}</td>
+                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantityRemaining()) }}</td>
+                                        <td class="px-3 py-3">
+                                            @include('inventory.purchase-orders._receiving-status-badge', [
+                                                'status' => $item->receivingStatus(),
+                                                'label' => $item->receivingStatusLabel(),
+                                            ])
+                                        </td>
                                         <td class="px-3 py-3 text-right tabular-nums text-gray-700">
                                             {{ $item->unit_price !== null ? format_currency_id($item->unit_price) : '—' }}
                                         </td>
@@ -117,19 +129,64 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada item.</td>
+                                        <td colspan="10" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada item.</td>
                                     </tr>
                                 @endforelse
                             </tbody>
                             @if ($purchaseOrder->items->isNotEmpty())
                                 <tfoot class="bg-gray-50">
                                     <tr>
-                                        <td colspan="5" class="px-4 py-3 text-right text-sm font-semibold text-gray-900">Total Pesanan</td>
+                                        <td colspan="8" class="px-4 py-3 text-right text-sm font-semibold text-gray-900">Total Pesanan</td>
                                         <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">{{ format_currency_id($purchaseOrder->total_amount) }}</td>
                                         <td></td>
                                     </tr>
                                 </tfoot>
                             @endif
+                        </table>
+                    </div>
+                </div>
+
+                <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                    <div class="border-b border-gray-200 px-4 py-3">
+                        <h3 class="text-base font-semibold text-gray-900">Penerimaan Barang Terkait</h3>
+                        <p class="mt-1 text-sm text-gray-500">Daftar penerimaan barang untuk pesanan pembelian ini dalam cabang aktif.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr class="text-left text-gray-500">
+                                    <th scope="col" class="px-4 py-3 font-medium">No. Penerimaan</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Status</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Surat Jalan</th>
+                                    <th scope="col" class="px-4 py-3 font-medium">Dibuat oleh</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                @forelse ($purchaseOrder->goodsReceipts as $goodsReceipt)
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-3">
+                                            @can('view', $goodsReceipt)
+                                                <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-teal-700 hover:text-teal-600">
+                                                    {{ $goodsReceipt->receipt_number }}
+                                                </a>
+                                            @else
+                                                <span class="font-semibold text-gray-900">{{ $goodsReceipt->receipt_number }}</span>
+                                            @endcan
+                                        </td>
+                                        <td class="px-3 py-3 tabular-nums text-gray-700">{{ format_date_id($goodsReceipt->receipt_date) }}</td>
+                                        <td class="px-3 py-3">
+                                            @include('inventory.goods-receipts._status-badge', ['status' => $goodsReceipt->status])
+                                        </td>
+                                        <td class="px-3 py-3 text-gray-600">{{ $goodsReceipt->supplier_delivery_number ?? '—' }}</td>
+                                        <td class="px-4 py-3 text-gray-600">{{ $goodsReceipt->createdBy?->name ?? '—' }}</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada penerimaan barang untuk pesanan ini.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
                         </table>
                     </div>
                 </div>
