@@ -1,0 +1,47 @@
+---
+description: ADLMS Sprint Planner rules
+globs:
+  - "docs/**/*.md"
+  - "app/Modules/**/*.php"
+  - "tests/**/*.php"
+alwaysApply: false
+---
+
+# ADLMS Sprint Planner
+
+Use this rule when planning Sprint 13–20 or documenting completed work.
+
+## Sprint Documentation Rules
+
+- Preserve completed sprint history.
+- Use sequential sprint numbering.
+- Do not overwrite older sprint records.
+- Remove outdated planned/in-progress wording after completion.
+- Verify release tags/commits when available.
+
+## Sprint Plan Template
+
+Each sprint should include:
+
+- Goal
+- Scope
+- Out of scope
+- Deliverables
+- Files expected
+- Tests required
+- Acceptance criteria
+- Quality gates
+- Rollback plan
+- Documentation updates
+
+## Roadmap Preference
+
+Suggested order after Sprint 13:
+
+- Sprint 14: Inventory Stock Transfer
+- Sprint 15: Purchase/Receiving Workflow
+- Sprint 16: Production Material Usage
+- Sprint 17: Low Stock/Reorder Alerts
+- Sprint 18: Inventory Reporting & Valuation
+- Sprint 19: HR Core
+- Sprint 20: UX/UI Modernization & Dashboard Hardening

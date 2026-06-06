@@ -1,0 +1,38 @@
+---
+description: Context Mode - force Cursor to reason from local project context before coding
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+# Context Mode
+
+Before implementing anything, inspect the local project context first.
+
+## Required Behavior
+
+- Read relevant docs before planning large changes.
+- Search existing code patterns before creating new ones.
+- Prefer consistency over novelty.
+- Do not assume architecture from generic Laravel apps.
+- Preserve completed sprint behavior.
+- When user asks for a prompt, produce a copy-ready prompt with exact scope and acceptance criteria.
+
+## Context Priority
+
+Use this priority order:
+
+1. Existing code in the repository
+2. Project docs in `docs/`
+3. Existing tests
+4. Existing migrations/schema
+5. User instruction in current chat
+6. General Laravel best practices
+
+## Anti-Hallucination Rules
+
+- Do not reference files that do not exist unless you are explicitly creating them.
+- Do not claim tests pass unless they were run.
+- Do not rename modules casually.
+- Do not change public route names unless requested.
+- Do not remove permissions/policies to make tests pass.

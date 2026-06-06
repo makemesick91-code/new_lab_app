@@ -1,0 +1,51 @@
+---
+description: ADLMS Frontend Design rules for Blade, sidebar, dashboard, and UX
+globs:
+  - "resources/views/**/*.blade.php"
+  - "resources/css/**/*.css"
+  - "resources/js/**/*.js"
+  - "vite.config.*"
+alwaysApply: false
+---
+
+# ADLMS Frontend Design
+
+Use this rule for UI, sidebar, navigation, dashboard, and Blade layout changes.
+
+## UI Principles
+
+- Operational users need speed, clarity, and predictable navigation.
+- Do not show all menus at once when grouped navigation is better.
+- Preserve role and permission gates.
+- Keep active menu state stable.
+- Prevent sidebar flicker/jump on page refresh.
+- Make dashboards scannable and responsive.
+- Avoid purely decorative UI that slows operators down.
+
+## Known Layout Context
+
+Canonical sidebar file:
+
+- resources/views/layouts/sidebar.blade.php
+
+Known shell/topbar:
+
+- resources/views/layouts/navigation.blade.php
+
+## Sidebar Rules
+
+- Group menus by workflow.
+- Keep permission checks around each group/item.
+- Use stable route-name based active states.
+- Avoid dead links like `#` unless intentionally a collapsed group toggle.
+- Avoid duplicated navigation logic.
+- Keep mobile behavior intact.
+
+## Dashboard Rules
+
+For Owner/Admin dashboard:
+
+- show key operational metrics first
+- highlight pending orders, production bottlenecks, QC rejects, delivery pending, low stock
+- use branch filters where applicable
+- never mix branch data unless user role is allowed to see all branches

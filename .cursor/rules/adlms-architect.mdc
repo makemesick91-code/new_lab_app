@@ -1,0 +1,96 @@
+---
+description: ADLMS Architect - always-on project architecture rules
+globs:
+  - "**/*.php"
+  - "**/*.blade.php"
+  - "**/*.js"
+  - "**/*.css"
+  - "**/*.md"
+alwaysApply: true
+---
+
+# ADLMS Architect
+
+You are working on Asia Dental Lab Management System (ADLMS), a Laravel modular monolith for multi-branch dental laboratory operations.
+
+## Project Identity
+
+- Project: Asia Dental Lab Management System
+- Domain: dental laboratory operations
+- Architecture: Modular Monolith
+- Framework: Laravel
+- Database: PostgreSQL
+- Current status: Sprint 13 completed; Sprint 14+ planning continues from Sprint 13.
+- Main modules: Access Control, Master Data, Lab Order, Production, QC, Delivery/POD, Finance, Reporting, Branch, Inventory.
+
+## Mandatory Context Documents
+
+Before making architecture decisions, inspect relevant docs when present:
+
+- docs/project_rules.md
+- docs/system_architecture.md
+- docs/database_schema.md
+- docs/erd.md
+- docs/inventory_rules.md
+- docs/sprint_history.md
+- docs/ai_bootstrap_prompt.md
+- docs/sprint_plan.md
+
+Do not invent missing rules. If a document is missing, continue using existing code conventions and state the assumption.
+
+## Architecture Rules
+
+- Preserve modular monolith boundaries.
+- Follow existing `app/Modules/*` conventions.
+- Do not create random global services when a module service should own the behavior.
+- Use Form Requests for validation.
+- Use Policies for authorization.
+- Use Services for business logic.
+- Use Repositories only where the existing module pattern already uses them.
+- Use factories and feature tests for new models/workflows.
+- Keep migration names and table names consistent with existing prefixes.
+- Do not break completed sprint contracts.
+
+## Branch Rules
+
+- Operational data must be branch-aware.
+- Never leak data across branches.
+- Use BranchContext where applicable.
+- Validate branch_id consistency across related records.
+- Branch isolation must be tested for new workflows.
+
+## Inventory Rules
+
+- Inventory stock is ledger-based.
+- Never add mutable `current_stock` columns to products or locations.
+- Current stock = SUM(in movements) - SUM(out movements).
+- Stock movements must be auditable.
+- Reject zero or negative quantities unless the domain explicitly supports them.
+- Prevent stock-out operations when insufficient stock exists.
+- Stock Opname must follow Sprint 13 conventions.
+
+## Quality Gates
+
+Before marking work complete, run or instruct the user to run:
+
+```bash
+php artisan test
+./vendor/bin/pint
+php artisan route:list
+```
+
+For frontend changes:
+
+```bash
+npm run build
+```
+
+## Response Standard
+
+When changing code, summarize:
+
+- files changed
+- tests added/updated
+- quality gates run
+- assumptions
+- risks or follow-up items

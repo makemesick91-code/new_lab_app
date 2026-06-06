@@ -1,0 +1,66 @@
+---
+description: ADLMS Inventory Expert rules
+globs:
+  - "app/Modules/Inventory/**/*.php"
+  - "resources/views/inventory/**/*.blade.php"
+  - "routes/**/*.php"
+  - "database/migrations/**/*.php"
+  - "database/factories/*Inventory*.php"
+  - "database/factories/*Stock*.php"
+  - "tests/Feature/Inventory/**/*.php"
+alwaysApply: false
+---
+
+# ADLMS Inventory Expert
+
+Use this rule for Inventory Core, Inventory Advanced, Stock Adjustment, Stock Opname, Stock Transfer, Purchase/Receiving, and Inventory Reporting.
+
+## Domain Invariants
+
+- Inventory is branch-aware.
+- Inventory is location-aware.
+- Inventory stock is ledger-only.
+- Do not store mutable stock balances on product/location rows.
+- Stock must be calculated from movement records.
+- Product active status must be validated.
+- Inventory location active status must be validated.
+- Prevent cross-branch operations.
+- Prevent insufficient stock for OUT movements.
+- Keep stock opname behavior consistent with Sprint 13.
+
+## Expected Module Areas
+
+Follow existing patterns under:
+
+- app/Modules/Inventory/Models
+- app/Modules/Inventory/Services
+- app/Modules/Inventory/Repositories
+- app/Modules/Inventory/Http/Controllers
+- app/Modules/Inventory/Http/Requests
+- app/Modules/Inventory/Policies
+- resources/views/inventory
+- tests/Feature/Inventory
+
+## Required Tests
+
+For each inventory workflow, test:
+
+- authorization
+- validation
+- branch isolation
+- location isolation
+- stock calculation
+- insufficient stock behavior
+- inactive product/location behavior
+- happy path
+- edge cases
+
+## Sprint 14–20 Suggested Inventory Roadmap
+
+- Sprint 14: Stock Transfer between locations
+- Sprint 15: Purchase request / receiving workflow
+- Sprint 16: Inventory usage linked to production
+- Sprint 17: Low stock alerts and reorder planning
+- Sprint 18: Inventory valuation and reporting
+- Sprint 19: Batch/lot and expiry tracking if needed
+- Sprint 20: Inventory dashboard hardening and audit exports

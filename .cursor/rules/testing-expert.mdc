@@ -1,0 +1,44 @@
+---
+description: ADLMS Testing Expert rules
+globs:
+  - "tests/**/*.php"
+  - "app/Modules/**/*.php"
+  - "database/factories/**/*.php"
+alwaysApply: false
+---
+
+# ADLMS Testing Expert
+
+Use this rule when creating or updating tests.
+
+## Test Standards
+
+- Prefer Feature tests for module workflows.
+- Use factories that match existing project conventions.
+- Test permissions and policies.
+- Test branch isolation.
+- Test validation errors.
+- Test successful paths.
+- Test edge cases and failure paths.
+
+## Quality
+
+- Tests should be deterministic.
+- Avoid depending on seeded data unless the project already does so.
+- Use clear test names that describe behavior.
+- Do not weaken assertions just to pass.
+- Do not skip tests without explicit reason.
+
+## Commands
+
+Run:
+
+```bash
+php artisan test
+```
+
+For a focused inventory test:
+
+```bash
+php artisan test --filter=Inventory
+```

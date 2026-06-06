@@ -1,0 +1,38 @@
+---
+description: ADLMS Branch Enforcement rules
+globs:
+  - "app/Modules/**/*.php"
+  - "tests/Feature/**/*.php"
+  - "database/migrations/**/*.php"
+alwaysApply: false
+---
+
+# ADLMS Branch Enforcement
+
+Use this rule for any workflow that reads or writes operational data.
+
+## Branch Isolation
+
+- Every operational query should be scoped to the active branch unless the user has explicit cross-branch permission.
+- Do not rely on frontend-hidden menus for security.
+- Enforce branch rules in policies/services/queries.
+- Validate that related records belong to the same branch.
+
+## BranchContext
+
+Use BranchContext where applicable:
+
+- resolve the active branch
+- require branch ID for write operations
+- avoid trusting request branch_id blindly
+
+## Tests Required
+
+Add branch isolation tests for:
+
+- listing pages
+- detail pages
+- create/update actions
+- service methods
+- repository queries
+- reporting endpoints

@@ -1,0 +1,66 @@
+---
+description: Laravel modular monolith layering — Controller → Request → Service → Repository → Model
+globs: app/Modules/**/*.php,routes/**/*.php,tests/Feature/**/*.php
+alwaysApply: false
+---
+
+# Laravel Modular Monolith Layering
+
+## Module Layout
+
+Each domain under `app/Modules/<Module>/` owns:
+
+`Controllers/`, `Requests/`, `Services/`, `Repositories/`, `Interfaces/`, `Models/`, `Policies/`
+
+Mirror an existing module before scaffolding. Register interface→repository bindings and policies in `app/Providers/RepositoryServiceProvider.php`.
+
+## Required Flow
+
+```text
+HTTP → Controller → FormRequest → Service → RepositoryInterface → Repository → Model → DB
+```
+
+| Layer | Does | Must Not |
+| --- | --- | --- |
+| Controller | `$this->authorize()`, call service, return view/redirect | Query models, business logic, branch rules |
+| FormRequest | Validation rules, input normalization | Domain ownership as sole protection, DB writes |
+| Service | Business rules, BranchContext, transactions | Render views, bypass repositories |
+| Repository | Query, filter, paginate, persist | Authorization, workflow decisions |
+| Policy | Permission/role/branch checks | Heavy queries, persistence, workflows |
+| Model | Fillable, casts, relations, scopes | Workflow orchestration, auth decisions |
+
+## Scaffolding Order
+
+1. Read existing module conventions
+2. Model + migration (only if explicitly requested)
+3. Interface + Repository
+4. Service (inject interface, use transactions)
+5. FormRequests (one per write action)
+6. Policy
+7. Thin Controller
+8. Wire bindings, policies, routes
+9. Pest feature tests (validation, auth, happy path, branch isolation)
+10. Run Pint + tests
+
+## Valid Controller Pattern
+
+```php
+public function store(StoreProductRequest $request): RedirectResponse
+{
+    $this->authorize('create', Product::class);
+    $product = $this->products->create($request->validated());
+    return redirect()->route('inventory.products.show', $product)
+        ->with('status', 'Product created.');
+}
+```
+
+## Forbidden Patterns
+
+- `Product::create($request->all())` in controllers
+- Concrete repository injection when interface exists
+- Business logic in Blade or repositories
+- Unscoped `Model::findOrFail($id)` for branch-owned records
+
+## Testing
+
+Use Pest with `RefreshDatabase`. Prove allowed and denied paths. Branch isolation tests are mandatory for branch-owned features.

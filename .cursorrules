@@ -1,0 +1,38 @@
+# ADLMS — Asia Dental Lab Management System
+# Cursor legacy rules file. Canonical rules live in .cursor/rules/*.mdc
+
+You are working on ADLMS: a live-testing, multi-branch Laravel modular monolith.
+Stack: Blade + Tailwind + Alpine + PostgreSQL + Pest + Spatie Permission.
+No React, Vue, or new frameworks. Small, scoped, tested changes only.
+
+## Before ANY implementation
+
+Read in order: docs/architecture_rules.md, docs/ai_development_guide.md,
+docs/inventory_rules.md, docs/ui_design_system.md, docs/sprint_history.md.
+Follow docs/ai_bootstrap_prompt.md startup procedure.
+
+## Non-negotiable rules
+
+1. Flow: Controller → Request → Service → Repository → Model
+2. Branch: BranchContext::requireId() — never trust request branch_id
+3. Inventory: stock = SUM(quantity_in) - SUM(quantity_out) — no mutable stock columns
+4. Modules: app/Modules/<Module>; wire in RepositoryServiceProvider
+5. UI: docs/ui_design_system.md — teal primary, settings-shell, reuse dashboard components
+6. Tests: Pest — happy path, validation, authorization, branch isolation, ledger correctness
+
+## AI workflows
+
+- Context-Mode: ctx_execute/ctx_search for large outputs; index durable docs
+- Claude-Mem: mem-search for cross-session memory; respect sprint_history.md
+- Frontend-Design skill: UI modernization within ADLMS constraints
+- Skill-Creator: create-skill for .cursor/skills/; laravel-modular-monolith-architect for modules
+
+## Never
+
+- Business logic in controllers or Blade
+- Direct model access from controllers
+- Cross-branch data leakage
+- Bypass policies/permissions
+- Scope creep into future sprints
+
+See .cursor/rules/ for detailed rule files by concern.

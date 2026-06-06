@@ -1,0 +1,67 @@
+---
+description: AI agent workflows — Context-Mode, Claude-Mem, Frontend-Design, Skill-Creator
+alwaysApply: true
+---
+
+# AI Agent Workflows
+
+## Bootstrap (every task)
+
+Execute `docs/ai_bootstrap_prompt.md` before implementation:
+
+1. Read docs 1–5 in order
+2. Summarize business, architecture, branch, inventory, UI, sprint context
+3. Identify affected modules/services/repositories/policies/tests
+4. Run Sprint Consistency Check (Sprints 10–12)
+5. Produce scoped implementation plan — **wait for approval** before coding
+6. Implement in phases; run quality gates; deliver honest summary
+
+## Context-Mode Workflow
+
+Use when processing large outputs (test runs, logs, diffs, migrations, route lists):
+
+- Prefer `ctx_execute` / `ctx_execute_file` over dumping raw terminal output into context
+- Use `ctx_search` for previously indexed project knowledge before re-reading large files
+- Index durable docs (`docs/architecture_rules.md`, module folders) with `ctx_index` when starting long sessions
+- Trigger on: test output, build logs, git history, API responses, security audits
+
+## Claude-Mem Workflow
+
+Use for cross-session continuity:
+
+- `mem-search` before re-solving problems ("did we already fix branch leakage in X?")
+- Reference `docs/sprint_history.md` for permanent decisions; mem-search for session-specific fixes
+- After significant architectural decisions, capture rationale aligned with sprint history numbering
+- Do not contradict locked sprint decisions (BranchContext, ledger inventory, layering)
+
+## Frontend-Design Workflow
+
+When building or modernizing UI pages/components:
+
+- Read `docs/ui_design_system.md` and inspect reference view `inventory/products/index`
+- Load the `frontend-design` skill for distinctive, production-grade interfaces within ADLMS constraints
+- Design contracts in `docs/ui_*_design.md` follow Skill-Creator principles — honor their data contracts
+- Never override branch isolation, permissions, or ledger rules for visual polish
+
+## Skill-Creator Workflow
+
+When authoring or extending agent skills for this project:
+
+- Read the `create-skill` skill before writing `.cursor/skills/**/SKILL.md`
+- Project skills live in `.cursor/skills/<name>/SKILL.md` (never `~/.cursor/skills-cursor/`)
+- Skills need YAML frontmatter (`name`, `description`) and trigger scenarios
+- Keep skills focused: one workflow per skill; reference `docs/` rather than duplicating constitution text
+- For modular monolith work, prefer `laravel-modular-monolith-architect` skill over ad-hoc scaffolding
+
+## Laravel Modular Monolith Architect
+
+Invoke when scaffolding modules, CRUD slices, workflow actions, or reviewing layering compliance.
+
+## Pre-Commit Review Checklist
+
+- Architecture: thin controllers, services own rules, repos own queries
+- Branch: BranchContext used; no cross-branch leakage
+- Inventory: ledger-derived; no mutable stock
+- UI: design system, responsive, accessible, empty states
+- Security: authorized routes, validated input, denial paths tested
+- Tests: happy path + validation + auth + branch isolation (+ ledger for inventory)

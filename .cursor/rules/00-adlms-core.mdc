@@ -1,0 +1,56 @@
+---
+description: ADLMS core constitution — project identity, mandatory bootstrap, layering, pilot stability
+alwaysApply: true
+---
+
+# ADLMS Core Constitution
+
+**Asia Dental Lab Management System (ADLMS)** is a live-testing, multi-branch Laravel modular monolith (Blade + Tailwind + Alpine + PostgreSQL + Pest + Spatie Permission). Treat it as production-adjacent: small, scoped, tested changes only.
+
+## Mandatory Reading (before any implementation)
+
+Read in order; stop and report if unavailable:
+
+1. `docs/architecture_rules.md` — architecture constitution
+2. `docs/ai_development_guide.md` — operating manual
+3. `docs/inventory_rules.md` — ledger-only inventory
+4. `docs/ui_design_system.md` — official UI/UX standard
+5. `docs/sprint_history.md` — permanent project memory (Sprint 0–13)
+
+Also read the target module under `app/Modules/<Module>`, relevant routes, policies, tests, and `app/Modules/Branch/Services/BranchContext.php` for branch-owned work.
+
+## Non-Negotiable Architecture
+
+```text
+Controller → Request → Service → Repository → Model
+```
+
+- Modules live under `app/Modules/<Module>`; wire bindings/policies in `RepositoryServiceProvider`.
+- Business logic in Services only; wrap multi-write/workflow/ledger ops in `DB::transaction`.
+- Controllers: authorize, call service, return response — no domain queries or business `if` chains.
+- Repositories: persistence only via interfaces; branch-scoped queries with `int $branchId`.
+- Never: Controller→Model, View→Service/Repository/Model, cross-module ad hoc DB access.
+
+## Branch & Inventory Mandates
+
+- Active branch via `BranchContext::requireId()` — **never** trust request `branch_id`.
+- Stock is ledger-derived: `SUM(quantity_in) - SUM(quantity_out)` — **no mutable stock columns**.
+
+## Sprint Consistency Check (before coding)
+
+- **Sprint 10** — Branch resolved centrally via BranchContext?
+- **Sprint 11** — All branch-owned queries scoped; no cross-branch leakage?
+- **Sprint 12** — Stock ledger-derived, location-aware; no direct stock mutation?
+
+If a violation is detected, STOP and explain the conflict with a compliant alternative.
+
+## Pilot / Live Testing Stability
+
+- Extend established patterns; do not replace architecture or introduce new frameworks.
+- Single PostgreSQL database; additive migrations only when explicitly requested.
+- Run quality gates before claiming done: `php artisan test`, `vendor/bin/pint`; report honestly.
+- Add focused Pest tests: happy path, validation, authorization, branch isolation, ledger correctness.
+
+## Workflow Entry
+
+Follow `docs/ai_bootstrap_prompt.md` startup procedure: read → summarize → identify risks → plan → wait for approval → implement in phases → verify.

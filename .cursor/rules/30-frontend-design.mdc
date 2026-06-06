@@ -1,0 +1,60 @@
+---
+description: ADLMS frontend UX modernization — Blade, Tailwind, design system, accessibility
+globs: resources/views/**/*.blade.php,resources/css/**/*.css,tailwind.config.js
+alwaysApply: false
+---
+
+# Frontend UX Modernization
+
+Authority: `docs/ui_design_system.md` (subordinate to architecture rules).
+
+Stack: **Blade + Tailwind + Alpine only** — no React, Vue, or new JS frameworks.
+
+## Design Philosophy
+
+Dense internal SaaS for multi-branch dental lab operations. Operational, not promotional. Status always visible. Branch- and permission-truthful. Honest empty states. Reuse before reinvention.
+
+## Layout & Shell
+
+- Render module pages inside `<x-settings-shell>` with permission-aware sidebar
+- Canvas: `bg-gray-100`; cards: `rounded-lg border border-gray-200 bg-white shadow-sm`
+- Primary color: **teal** (`teal-700`, ring `teal-500`) — indigo is legacy/deprecated
+- Font: **Figtree** only (via `tailwind.config.js`)
+
+## Component Families (reuse first)
+
+- `owner-dashboard.*` — owner KPI surfaces
+- `branch-dashboard.*` — branch admin surfaces
+- `inventory.*` — inventory module (Sprint 12 reference: `inventory/products/index`)
+- Breeze form primitives for inputs/buttons
+
+## List & Table Patterns
+
+- Dual layout: desktop table + mobile stacked cards
+- `<th scope="col">`, `tabular-nums` for quantities/currency
+- Semantic status badges (`_status-badge`, `_low-stock-badge` partials)
+- Row tinting for status; never color alone
+- Horizontal scroll for dense tables on small screens
+
+## Forms & Actions
+
+- Associated `<label for="...">` on every input
+- Visible teal focus rings; keyboard operable
+- Permission-aware action buttons (`@can`/`@canany` — never sole protection)
+- Destructive flows via `<x-modal>`, not `prompt()`/`alert()`
+- UI text: Bahasa Indonesia for operator-facing labels (per migration standard)
+
+## Empty States & Data Honesty
+
+- Every list needs an empty state explaining what is missing
+- Never fabricate data; label ledger-derived values as derived
+- Selectors show only active-branch records
+
+## Accessibility
+
+- Sufficient contrast, status text + color, focus management
+- Sidebar reachable on mobile
+
+## When Touching Legacy Views
+
+Views using indigo accents, `sm:rounded-lg` only, or no mobile layout are **legacy**. Converge to this standard when modified.

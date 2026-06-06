@@ -1,0 +1,79 @@
+---
+description: Multi-branch isolation and ledger-only inventory rules
+globs: app/Modules/Branch/**/*.php,app/Modules/Inventory/**/*.php,resources/views/inventory/**/*.blade.php,database/migrations/*inv*,database/migrations/*branch*
+alwaysApply: false
+---
+
+# Branch Isolation & Ledger Inventory
+
+## BranchContext (mandatory for branch-owned data)
+
+Resolver: `app/Modules/Branch/Services/BranchContext.php`
+
+- `requireId(): int` — use in every branch-owned service method
+- `id()`, `branch()`, `forUser(User $user)` — read-only resolution
+- Resolution order: user `branch_id` → first active `branches()` → MAIN fallback
+- User input **never** decides `branch_id`
+
+## Branch-Owned Service Rules
+
+1. Call `BranchContext::requireId()`
+2. Load via `findInBranch($branchId, $id)` or equivalent
+3. Validate related records share the same branch
+4. Reject inactive branch-owned records when required
+
+## Branch-Owned Repository Rules
+
+- Accept `int $branchId` as first parameter
+- Always `where('branch_id', $branchId)`
+- Provide `findInBranch()` for route-bound IDs
+- No unbounded `all()` on branch-owned tables
+
+## Forbidden Branch Patterns
+
+```php
+$branchId = $request->input('branch_id');           // NEVER
+$product = Product::findOrFail($id);                // unscoped
+InventoryLocation::all()                            // cross-branch selector
+```
+
+## Ledger-Only Inventory
+
+Stock source of truth: `trx_inventory_movements` (append-only ledger).
+
+```text
+current stock = SUM(quantity_in) - SUM(quantity_out)
+```
+
+Hierarchy: `Branch → Inventory Location → Product → Movement Ledger`
+
+Every movement requires: `branch_id`, `inventory_location_id`, `product_id`, `movement_type`, `movement_date`, `quantity_in`, `quantity_out`.
+
+Movement types: `OPENING`, `PURCHASE`, `ADJUSTMENT_IN`, `ADJUSTMENT_OUT`.
+
+## Forbidden Inventory Patterns
+
+- Mutable columns: `stock`, `current_stock`, `qty_on_hand`, `available_stock`, etc.
+- Direct stock mutation: `$product->update(['current_stock' => ...])`
+- Stock increases from PO without ledger receipt
+- Unscoped stock aggregates (missing `branch_id` and/or `inventory_location_id`)
+- Stock opname counts as source of truth (snapshot + ledger posting on finalize only)
+
+## Valid Stock Query
+
+```php
+return (float) InventoryMovement::query()
+    ->where('branch_id', $branchId)
+    ->where('product_id', $productId)
+    ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+    ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as current_stock')
+    ->value('current_stock');
+```
+
+## Adjustment-Out
+
+Check **location-specific** derived stock before creating outbound movement. Reject insufficient stock.
+
+## Valuation
+
+`derived stock × average_cost` — never read a stored stock column.
