@@ -170,6 +170,11 @@ it('does not add forbidden stock or total columns to purchase order tables', fun
     }
 });
 
+it('stores quantity_ordered on purchase order items without mutable stock columns', function () {
+    expect(Schema::hasColumn('trx_purchase_order_items', 'quantity_ordered'))->toBeTrue()
+        ->and(Schema::hasColumn('trx_purchase_order_items', 'quantity_received'))->toBeTrue();
+});
+
 it('leaves trx_inventory_movements schema unchanged by purchase order migrations', function () {
     expect(Schema::hasTable('trx_inventory_movements'))->toBeTrue();
 
@@ -187,18 +192,12 @@ it('leaves trx_inventory_movements schema unchanged by purchase order migrations
     }
 });
 
-it('does not create goods receipt tables in sprint 16.2 schema', function () {
-    foreach ([
-        'trx_goods_receipts',
-        'trx_goods_receipt_items',
-        'trx_purchase_receipts',
-        'trx_purchase_receipt_items',
-    ] as $table) {
-        expect(Schema::hasTable($table))->toBeFalse();
-    }
+it('creates goods receipt tables in sprint 16.3 schema', function () {
+    expect(Schema::hasTable('trx_goods_receipts'))->toBeTrue()
+        ->and(Schema::hasTable('trx_goods_receipt_items'))->toBeTrue();
 });
 
-it('limits sprint 16.2 purchase order status to workflow states without receiving columns', function () {
+it('limits sprint 16.2 purchase order status column to string workflow field without receiving columns', function () {
     expect(Schema::hasColumn('trx_purchase_orders', 'status'))->toBeTrue();
 
     $status = collect(DB::select('PRAGMA table_info(trx_purchase_orders)'))

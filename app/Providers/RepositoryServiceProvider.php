@@ -24,6 +24,7 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -35,6 +36,7 @@ use App\Modules\Inventory\Interfaces\PurchaseRequestRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
+use App\Modules\Inventory\Models\GoodsReceipt;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -44,6 +46,7 @@ use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Policies\GoodsReceiptPolicy;
 use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
@@ -53,6 +56,7 @@ use App\Modules\Inventory\Policies\PurchaseRequestPolicy;
 use App\Modules\Inventory\Policies\StockOpnamePolicy;
 use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
+use App\Modules\Inventory\Repositories\GoodsReceiptRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -179,6 +183,8 @@ class RepositoryServiceProvider extends ServiceProvider
         PurchaseRequestRepositoryInterface::class => PurchaseRequestRepository::class,
         // Sprint 16.2 - Purchase Order
         PurchaseOrderRepositoryInterface::class => PurchaseOrderRepository::class,
+        // Sprint 16.3 - Goods Receipt
+        GoodsReceiptRepositoryInterface::class => GoodsReceiptRepository::class,
     ];
 
     /**
@@ -256,6 +262,7 @@ class RepositoryServiceProvider extends ServiceProvider
         StockTransfer::class => StockTransferPolicy::class,
         PurchaseRequest::class => PurchaseRequestPolicy::class,
         PurchaseOrder::class => PurchaseOrderPolicy::class,
+        GoodsReceipt::class => GoodsReceiptPolicy::class,
     ];
 
     public function register(): void

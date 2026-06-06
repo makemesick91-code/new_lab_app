@@ -125,6 +125,10 @@
                 <a href="{{ route('inventory.purchase-orders.index') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.purchase-orders.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Pesanan Pembelian</a>
             @endcan
+            @can('viewAny', \App\Modules\Inventory\Models\GoodsReceipt::class)
+                <a href="{{ route('inventory.goods-receipts.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.goods-receipts.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Penerimaan Barang</a>
+            @endcan
         @endcanany
 
         @canany(['view_invoice', 'manage_invoice', 'view_payment', 'manage_payment'])

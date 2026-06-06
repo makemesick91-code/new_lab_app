@@ -41,4 +41,10 @@ interface PurchaseOrderRepositoryInterface
     public function latestNumberForDateAndBranch(string $datePrefix, int $branchId): ?string;
 
     public function existsNumber(string $number): bool;
+
+    /**
+     * Increment cumulative received quantity for a PO line.
+     * Callable only from GoodsReceiptService::post().
+     */
+    public function incrementItemQuantityReceived(int $purchaseOrderItemId, float $acceptedQty): void;
 }

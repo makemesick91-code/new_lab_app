@@ -28,6 +28,10 @@ class PurchaseOrder extends Model
 
     public const STATUS_SENT = 'sent';
 
+    public const STATUS_PARTIALLY_RECEIVED = 'partially_received';
+
+    public const STATUS_FULLY_RECEIVED = 'fully_received';
+
     public const STATUS_CANCELLED = 'cancelled';
 
     public const STATUSES = [
@@ -35,11 +39,13 @@ class PurchaseOrder extends Model
         self::STATUS_SUBMITTED,
         self::STATUS_APPROVED,
         self::STATUS_SENT,
+        self::STATUS_PARTIALLY_RECEIVED,
+        self::STATUS_FULLY_RECEIVED,
         self::STATUS_CANCELLED,
     ];
 
     public const TERMINAL_STATUSES = [
-        self::STATUS_SENT,
+        self::STATUS_FULLY_RECEIVED,
         self::STATUS_CANCELLED,
     ];
 
@@ -95,6 +101,16 @@ class PurchaseOrder extends Model
     public function isSent(): bool
     {
         return $this->status === self::STATUS_SENT;
+    }
+
+    public function isPartiallyReceived(): bool
+    {
+        return $this->status === self::STATUS_PARTIALLY_RECEIVED;
+    }
+
+    public function isFullyReceived(): bool
+    {
+        return $this->status === self::STATUS_FULLY_RECEIVED;
     }
 
     public function isCancelled(): bool
@@ -177,6 +193,11 @@ class PurchaseOrder extends Model
     public function items(): HasMany
     {
         return $this->hasMany(PurchaseOrderItem::class, 'purchase_order_id');
+    }
+
+    public function goodsReceipts(): HasMany
+    {
+        return $this->hasMany(GoodsReceipt::class, 'purchase_order_id');
     }
 
     protected static function newFactory(): PurchaseOrderFactory

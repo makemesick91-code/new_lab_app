@@ -6,6 +6,7 @@ use Database\Factories\PurchaseOrderItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Sprint 16.2 — trx_purchase_order_items (per-product purchase order lines).
@@ -30,8 +31,14 @@ class PurchaseOrderItem extends Model
     {
         return [
             'quantity_ordered' => 'decimal:2',
+            'quantity_received' => 'decimal:2',
             'unit_price' => 'decimal:2',
         ];
+    }
+
+    public function quantityRemaining(): float
+    {
+        return (float) $this->quantity_ordered - (float) ($this->quantity_received ?? 0);
     }
 
     public function lineTotal(): float
@@ -57,6 +64,11 @@ class PurchaseOrderItem extends Model
     public function purchaseRequestItem(): BelongsTo
     {
         return $this->belongsTo(PurchaseRequestItem::class, 'purchase_request_item_id');
+    }
+
+    public function goodsReceiptItems(): HasMany
+    {
+        return $this->hasMany(GoodsReceiptItem::class, 'purchase_order_item_id');
     }
 
     protected static function newFactory(): PurchaseOrderItemFactory

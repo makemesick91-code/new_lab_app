@@ -30,14 +30,18 @@ it('limits purchase order statuses to workflow states only', function () {
         'submitted',
         'approved',
         'sent',
+        'partially_received',
+        'fully_received',
         'cancelled',
     ]);
 });
 
-it('does not include deferred receiving statuses in purchase order statuses', function () {
-    foreach (['partially_received', 'fully_received', 'closed'] as $status) {
-        expect(PurchaseOrder::STATUSES)->not->toContain($status);
+it('includes receiving statuses reserved in sprint 16.2 design', function () {
+    foreach (['partially_received', 'fully_received'] as $status) {
+        expect(PurchaseOrder::STATUSES)->toContain($status);
     }
+
+    expect(PurchaseOrder::STATUSES)->not->toContain('closed');
 });
 
 it('resolves purchase order relationships', function () {

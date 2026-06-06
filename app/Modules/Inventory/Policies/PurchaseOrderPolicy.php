@@ -61,6 +61,17 @@ class PurchaseOrderPolicy
             && ($purchaseOrder->isDraft() || $purchaseOrder->isSubmitted());
     }
 
+    public function receive(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $this->canManageInventory($user)
+            && $this->belongsToActiveBranch($purchaseOrder->branch_id)
+            && in_array($purchaseOrder->status, [
+                PurchaseOrder::STATUS_APPROVED,
+                PurchaseOrder::STATUS_SENT,
+                PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
+            ], true);
+    }
+
     protected function canApprovePurchaseOrder(User $user): bool
     {
         return $user->canAny(['approve_inventory_purchase_order', 'manage_inventory', 'manage master data']);

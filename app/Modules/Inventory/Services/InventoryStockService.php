@@ -139,6 +139,9 @@ class InventoryStockService
         ?int $supplierId = null,
         ?string $notes = null,
         ?array $batchData = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        ?string $movementDate = null,
     ): InventoryMovement {
         return $this->createInboundMovement(
             InventoryMovement::TYPE_PURCHASE,
@@ -149,6 +152,9 @@ class InventoryStockService
             $supplierId,
             $notes,
             $batchData,
+            $referenceType,
+            $referenceId,
+            $movementDate,
         );
     }
 
@@ -313,10 +319,13 @@ class InventoryStockService
         ?int $supplierId = null,
         ?string $notes = null,
         ?array $batchData = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        ?string $movementDate = null,
     ): InventoryMovement {
         $this->assertPositiveQuantity($qty);
 
-        return DB::transaction(function () use ($movementType, $productId, $locationId, $qty, $unitCost, $supplierId, $notes, $batchData) {
+        return DB::transaction(function () use ($movementType, $productId, $locationId, $qty, $unitCost, $supplierId, $notes, $batchData, $referenceType, $referenceId, $movementDate) {
             $branchId = $this->branchContext->requireId();
             $this->lockAndAssertProductInBranch($branchId, $productId);
             $this->lockAndAssertLocationInBranch($branchId, $locationId);
@@ -334,12 +343,12 @@ class InventoryStockService
                 'supplier_id' => $supplierId,
                 'inventory_batch_id' => $batch?->id,
                 'movement_type' => $movementType,
-                'movement_date' => now()->toDateString(),
+                'movement_date' => $movementDate ?? now()->toDateString(),
                 'quantity_in' => $qty,
                 'quantity_out' => 0,
                 'unit_cost' => max(0, $unitCost),
-                'reference_type' => null,
-                'reference_id' => null,
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
                 'notes' => $notes,
                 'created_by' => Auth::id(),
             ]);

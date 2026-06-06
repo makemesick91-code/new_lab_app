@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Repositories;
 
 use App\Modules\Inventory\Interfaces\PurchaseOrderRepositoryInterface;
 use App\Modules\Inventory\Models\PurchaseOrder;
+use App\Modules\Inventory\Models\PurchaseOrderItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -108,5 +109,12 @@ class PurchaseOrderRepository implements PurchaseOrderRepositoryInterface
         return PurchaseOrder::query()
             ->where('purchase_order_number', $number)
             ->exists();
+    }
+
+    public function incrementItemQuantityReceived(int $purchaseOrderItemId, float $acceptedQty): void
+    {
+        PurchaseOrderItem::query()
+            ->whereKey($purchaseOrderItemId)
+            ->increment('quantity_received', $acceptedQty);
     }
 }

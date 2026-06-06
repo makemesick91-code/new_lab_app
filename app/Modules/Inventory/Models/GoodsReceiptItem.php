@@ -1,0 +1,77 @@
+<?php
+
+namespace App\Modules\Inventory\Models;
+
+use Database\Factories\GoodsReceiptItemFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+/**
+ * Sprint 16.3 — trx_goods_receipt_items (per-product goods receipt lines).
+ */
+class GoodsReceiptItem extends Model
+{
+    use HasFactory;
+
+    protected $table = 'trx_goods_receipt_items';
+
+    protected $fillable = [
+        'goods_receipt_id',
+        'purchase_order_item_id',
+        'product_id',
+        'inventory_location_id',
+        'inventory_movement_id',
+        'ordered_qty',
+        'previously_received_qty',
+        'received_qty',
+        'accepted_qty',
+        'rejected_qty',
+        'unit_cost',
+        'line_total',
+        'notes',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'ordered_qty' => 'decimal:2',
+            'previously_received_qty' => 'decimal:2',
+            'received_qty' => 'decimal:2',
+            'accepted_qty' => 'decimal:2',
+            'rejected_qty' => 'decimal:2',
+            'unit_cost' => 'decimal:2',
+            'line_total' => 'decimal:2',
+        ];
+    }
+
+    public function goodsReceipt(): BelongsTo
+    {
+        return $this->belongsTo(GoodsReceipt::class, 'goods_receipt_id');
+    }
+
+    public function purchaseOrderItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderItem::class, 'purchase_order_item_id');
+    }
+
+    public function product(): BelongsTo
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function inventoryLocation(): BelongsTo
+    {
+        return $this->belongsTo(InventoryLocation::class, 'inventory_location_id');
+    }
+
+    public function inventoryMovement(): BelongsTo
+    {
+        return $this->belongsTo(InventoryMovement::class, 'inventory_movement_id');
+    }
+
+    protected static function newFactory(): GoodsReceiptItemFactory
+    {
+        return GoodsReceiptItemFactory::new();
+    }
+}

@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 16.2.
+Sprint 16.3.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -52,6 +52,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 15.6 | Inventory Advanced Hardening & Navigation Closure | (Sprint 15.6 navigation/dashboard hardening) | (none — UI/navigation only) |
 | 16.1 | Purchase Request Workflow | (Sprint 16.1 purchase request implementation) | `trx_purchase_requests`, `trx_purchase_request_items` |
 | 16.2 | Purchase Order Workflow | (Sprint 16.2 purchase order implementation) | `trx_purchase_orders`, `trx_purchase_order_items` |
+| 16.3 | Goods Receipt Workflow | (Sprint 16.3 goods receipt implementation) | `trx_goods_receipts`, `trx_goods_receipt_items`; `quantity_received` on `trx_purchase_order_items` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1622,6 +1623,169 @@ Purchase Order is implemented as a **document-only workflow**:
 
 ---
 
+# Sprint 16.3 — Goods Receipt Workflow
+
+## Sprint 16.3 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Business objective:** Introduce a branch-scoped Goods Receipt (GR) workflow that closes the
+procurement chain:
+
+```text
+Purchase Request → Purchase Order → Goods Receipt → PURCHASE Inventory Movement
+```
+
+Sprint 16.3 is the **first procurement sprint that writes to the inventory ledger**. Posting a GR
+creates `trx_inventory_movements` rows with `movement_type = PURCHASE` inside `DB::transaction()`
+boundaries. Stock remains ledger-derived; no mutable stock columns are added.
+
+**Out of scope:** Supplier invoice/payment, GR reversal/void, HR module, advanced costing, batch
+fields on GR UI (standalone Terima Stok batch path preserved).
+
+## Deliverables
+
+**Schema:**
+- `trx_goods_receipts` — header with `receipt_number`, `receipt_date`, workflow statuses
+  (`draft`, `submitted`, `posted`, `cancelled`), required `purchase_order_id`, optional delivery/
+  invoice reference fields, audit timestamps and user FKs.
+- `trx_goods_receipt_items` — lines with `accepted_qty`, `rejected_qty`, `received_qty`
+  (accepted + rejected), context snapshots (`ordered_qty`, `previously_received_qty`), cost
+  snapshots (`unit_cost`, `line_total`), required `inventory_location_id`, optional
+  `inventory_movement_id` (1:1 link after post).
+- `trx_purchase_order_items.quantity_received` — derived cache of cumulative **accepted** qty
+  across posted GRs (default `0`).
+
+**Models and factories:**
+- `GoodsReceipt` / `GoodsReceiptItem` with status constants, relations, and workflow helpers.
+- Extended `PurchaseOrder` (receiving statuses `partially_received`, `fully_received`, `goodsReceipts()`
+  relation) and `PurchaseOrderItem` (`quantity_received`, `quantityRemaining()` accessor).
+
+**Repository and provider binding:**
+- `GoodsReceiptRepository` + `GoodsReceiptRepositoryInterface`; wired in `RepositoryServiceProvider`.
+- Extended `PurchaseOrderRepository` — `incrementItemQuantityReceived()` callable only from
+  `GoodsReceiptService::post()`.
+
+**Service:**
+- `GoodsReceiptService` owns draft create/update, submit, post (ledger write), and cancel inside
+  `DB::transaction()` with row locks and posting guard/idempotency.
+- Extended `InventoryStockService::receiveStock()` with optional `reference_type` / `reference_id`.
+
+**Policy and permissions:**
+- `GoodsReceiptPolicy` with `viewAny`, `view`, `create`, `update`, `submit`, `post`, `cancel`.
+- Extended `PurchaseOrderPolicy::receive` for **Terima Barang** CTA.
+- `view_inventory` — view GR list/detail.
+- `manage_inventory` — create, update, submit, post, cancel (no separate approve permission).
+
+**Form requests:**
+- `StoreGoodsReceiptRequest`, `UpdateGoodsReceiptRequest`, `PostGoodsReceiptRequest`,
+  `SubmitGoodsReceiptRequest`, `CancelGoodsReceiptRequest`
+- `ValidatesGoodsReceiptInput` (shared concern) — excludes `quantity_received`, `unit_cost`,
+  `line_total`, `inventory_movement_id` from user input.
+
+**Controller and routes:**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/goods-receipts` | `inventory.goods-receipts.index` |
+| GET | `inventory/goods-receipts/create` | `inventory.goods-receipts.create` |
+| POST | `inventory/goods-receipts` | `inventory.goods-receipts.store` |
+| GET | `inventory/goods-receipts/{goods_receipt}` | `inventory.goods-receipts.show` |
+| GET | `inventory/goods-receipts/{goods_receipt}/edit` | `inventory.goods-receipts.edit` |
+| PUT/PATCH | `inventory/goods-receipts/{goods_receipt}` | `inventory.goods-receipts.update` |
+| POST | `inventory/goods-receipts/{goodsReceipt}/submit` | `inventory.goods-receipts.submit` |
+| POST | `inventory/goods-receipts/{goodsReceipt}/post` | `inventory.goods-receipts.post` |
+| POST | `inventory/goods-receipts/{goodsReceipt}/cancel` | `inventory.goods-receipts.cancel` |
+
+**Blade UI:**
+- Views under `resources/views/inventory/goods-receipts/` (index, create, edit, show, `_form`,
+  `_status-badge`).
+- Sidebar link **Penerimaan Barang** (permission-gated).
+- PO show **Terima Barang** button when PO is receivable and has remaining qty.
+
+## Workflow Statuses
+
+**Goods Receipt:**
+- `draft` — editable; no stock impact; can submit, post directly, or cancel.
+- `submitted` — review checkpoint; no stock impact; can post; not editable or cancellable.
+- `posted` — terminal; creates PURCHASE movements; immutable.
+- `cancelled` — terminal; draft-only; no ledger writes.
+
+**Purchase Order receiving (new in 16.3):**
+- `partially_received` — at least one posted GR; some lines still open.
+- `fully_received` — all lines have `quantity_received >= quantity_ordered`; blocks new GR.
+
+PO eligibility for new GR: `approved`, `sent`, `partially_received`.
+
+## Ledger Decision
+
+- GR post creates one `PURCHASE` movement per line with `accepted_qty > 0`.
+- Movement `reference_type = trx_goods_receipts`, `reference_id = goods_receipt.id`.
+- Line FK `inventory_movement_id` for 1:1 traceability.
+- `rejected_qty` recorded on GR line only — does not enter stock or PO cache.
+- `quantity_received` on PO items updated **only** by `GoodsReceiptService::post()` using
+  `accepted_qty` only — service-owned derived cache, not user-editable.
+- Cost snapshots (`unit_cost`, `line_total`) persisted at post time from PO item `unit_price`.
+- No mutable stock columns added (`current_stock`, `qty_on_hand`, etc.).
+
+## Branch Enforcement
+
+- `BranchContext::requireId()` on all service writes; never trust request `branch_id`.
+- Repository `findInBranch` / `paginateForBranch` scoping.
+- Policies enforce `belongsToActiveBranch()` on view/mutate.
+- Cross-branch PO, GR, and inventory location linkage rejected in service and request layers.
+- Posting transaction locks GR + PO + PO items with `lockForUpdate()`.
+
+## Preserved Invariants
+
+- **Ledger-only stock** — no mutable stock columns.
+- **PO document workflow unchanged** except receiving status progression and cache column.
+- **PR intent-only** — no PR ledger writes.
+- **Standalone Terima Stok** preserved with `reference_type = null`.
+- **HR module untouched.**
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 16.3 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 950 tests, 3178 assertions |
+| GoodsReceipt-filtered tests (`php artisan test --filter=GoodsReceipt`) | PASS — 121 tests, 462 assertions |
+| Routes (`php artisan route:list --name=goods-receipts`) | PASS — 9 routes |
+| Pint (`./vendor/bin/pint --test`) | PASS |
+| Frontend build (`npm.cmd run build`) | PASS |
+| Knowledge graph (`graphify update .`) | PASS |
+
+## Architecture Notes
+
+- **Layering preserved:** `Controller → Request → Service → Repository → Model`.
+- **First procurement ledger write:** GR post is the authoritative stock-in path for PO-linked
+  receiving; PO alone does not increase stock.
+- **Approved deviation:** intermediate `submitted` status and submit route added (design had
+  draft→posted direct); post allowed from draft or submitted.
+- **Approved deviation:** GR header uses PO relation for supplier context instead of denormalized
+  supplier columns; `receipt_number` naming; extra line context columns for UX.
+
+## Known Decisions
+
+- Posted GR is **immutable** in 16.3; reversal deferred to future sprint.
+- Over-receiving blocked with no override flag.
+- `fully_received` is the receiving terminal PO status (`closed` deferred).
+- Batch tracking on GR form not wired; `InventoryStockService` batch path available for future.
+- Completion summary: `docs/sprint_16_3_goods_receipt_completion_summary.md`.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 16.3 — Goods Receipt Workflow |
+| Status | COMPLETED (full-suite gates verified) |
+| Suggested tag | `sprint-16.3-complete` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1665,6 +1829,10 @@ Purchase Order is implemented as a **document-only workflow**:
 23. **S16.2** — Purchase Order as document-only workflow; no stock updates or `trx_inventory_movements`;
     `total_amount` computed via model accessor (not stored); supplier snapshot at creation; PR-linked PO
     from approved PR only with duplicate-active-PO guard; receiving statuses deferred to Sprint 16.3.
+24. **S16.3** — Goods Receipt as first procurement ledger write; GR post creates PURCHASE movements
+    with `reference_type/id` traceability; PO item `quantity_received` as service-owned derived cache
+    (accepted qty only); PO receiving statuses `partially_received`/`fully_received`; posted GR immutable;
+    intermediate `submitted` review step; no mutable stock columns.
 
 ---
 
@@ -1701,6 +1869,9 @@ Purchase Order is implemented as a **document-only workflow**:
     prerequisite for linked PO creation in 16.2.
 16. **S16.2** — Purchase Order is document-only; PO workflow does not increase stock; `PURCHASE`
     movements deferred to Goods Receipt; PO total computed from line items, not stored on header.
+17. **S16.3** — Goods Receipt post creates PURCHASE ledger movements; `accepted_qty` enters stock;
+    `rejected_qty` is audit-only; PO `quantity_received` cache updated by service on post (accepted
+    only); over-receive blocked; posted GR immutable; stock remains `SUM(in) − SUM(out)`.
 
 ---
 

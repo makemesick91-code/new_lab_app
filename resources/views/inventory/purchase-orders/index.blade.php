@@ -6,6 +6,8 @@
         PurchaseOrder::STATUS_SUBMITTED => 'Diajukan',
         PurchaseOrder::STATUS_APPROVED => 'Disetujui',
         PurchaseOrder::STATUS_SENT => 'Dikirim',
+        PurchaseOrder::STATUS_PARTIALLY_RECEIVED => 'Diterima Sebagian',
+        PurchaseOrder::STATUS_FULLY_RECEIVED => 'Diterima Lengkap',
         PurchaseOrder::STATUS_CANCELLED => 'Dibatalkan',
     ];
 @endphp

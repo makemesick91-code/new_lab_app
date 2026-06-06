@@ -189,17 +189,17 @@ it('does not overgrant approve_inventory_purchase_order in role seeder', functio
     expect(Role::findByName('Admin Lab')->hasPermissionTo('approve_inventory_purchase_order'))->toBeTrue();
 });
 
-it('keeps sprint 16.2 purchase order status set unchanged', function () {
+it('supports sprint 16.3 receiving statuses on purchase order model constants', function () {
     expect(PurchaseOrder::STATUSES)->toBe([
         'draft',
         'submitted',
         'approved',
         'sent',
+        'partially_received',
+        'fully_received',
         'cancelled',
     ])
-        ->and(PurchaseOrder::TERMINAL_STATUSES)->toBe(['sent', 'cancelled']);
+        ->and(PurchaseOrder::TERMINAL_STATUSES)->toBe(['fully_received', 'cancelled']);
 
-    foreach (['partially_received', 'fully_received', 'closed'] as $status) {
-        expect(PurchaseOrder::STATUSES)->not->toContain($status);
-    }
+    expect(PurchaseOrder::STATUSES)->not->toContain('closed');
 });
