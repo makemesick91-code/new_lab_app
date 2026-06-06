@@ -22,3 +22,7 @@ yarn-error.log
 /.vscode
 /.zed
 /.claude/settings.local.json
+
+# Cursor backups
+.cursor_backup_*/
+.cursor_backup_*
