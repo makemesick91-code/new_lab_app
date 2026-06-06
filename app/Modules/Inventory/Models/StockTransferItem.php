@@ -29,7 +29,7 @@ class StockTransferItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity' => 'decimal:2',
+            'quantity' => 'decimal:4',
         ];
     }
 

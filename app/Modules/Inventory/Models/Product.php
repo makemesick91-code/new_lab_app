@@ -34,9 +34,9 @@ class Product extends Model
     protected function casts(): array
     {
         return [
-            'minimum_stock' => 'decimal:2',
-            'reorder_point' => 'decimal:2',
-            'reorder_quantity' => 'decimal:2',
+            'minimum_stock' => 'decimal:4',
+            'reorder_point' => 'decimal:4',
+            'reorder_quantity' => 'decimal:4',
             'alert_enabled' => 'boolean',
             'average_cost' => 'decimal:2',
             'is_active' => 'boolean',

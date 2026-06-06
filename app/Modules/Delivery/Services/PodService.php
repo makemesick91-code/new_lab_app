@@ -39,37 +39,42 @@ class PodService
     public function uploadPod(
         Delivery $delivery,
         string $receiverName,
-        UploadedFile $signature,
-        UploadedFile $receiverPhoto,
+        string $signatureData,
         mixed $receivedAt,
         ?string $notes = null,
         ?User $actor = null,
+        ?UploadedFile $receiverPhoto = null,
     ): Delivery {
         $actor = $actor ?? auth()->user();
 
-        return DB::transaction(function () use ($delivery, $receiverName, $signature, $receiverPhoto, $receivedAt, $notes, $actor) {
-            $signatureAttachment = $this->storeAttachment($delivery, $signature, self::CATEGORY_POD_SIGNATURE, $actor);
-            $photoAttachment = $this->storeAttachment($delivery, $receiverPhoto, self::CATEGORY_POD_RECEIVER_PHOTO, $actor);
-
-            $updated = $this->deliveries->update($delivery, [
+        return DB::transaction(function () use ($delivery, $receiverName, $signatureData, $receivedAt, $notes, $actor, $receiverPhoto) {
+            $updateData = [
                 'receiver_name' => $receiverName,
-                'receiver_signature_path' => $signatureAttachment->file_path,
-                'receiver_photo_path' => $photoAttachment->file_path,
+                'receiver_signature_data' => $signatureData,
                 'received_at' => $receivedAt,
                 'delivery_notes' => $notes ?? $delivery->delivery_notes,
-            ]);
+            ];
+
+            $auditPayload = [
+                'receiver_name' => $receiverName,
+                'received_at' => $receivedAt,
+                'signature_stored_as' => 'receiver_signature_data',
+            ];
+
+            if ($receiverPhoto) {
+                $photoAttachment = $this->storeAttachment($delivery, $receiverPhoto, self::CATEGORY_POD_RECEIVER_PHOTO, $actor);
+                $updateData['receiver_photo_path'] = $photoAttachment->file_path;
+                $auditPayload['receiver_photo_attachment_id'] = $photoAttachment->id;
+            }
+
+            $updated = $this->deliveries->update($delivery, $updateData);
 
             $this->auditLogs->log(
                 Delivery::ENTITY_TYPE,
                 $delivery->id,
                 AuditLog::ACTION_UPLOAD_POD,
                 null,
-                [
-                    'receiver_name' => $receiverName,
-                    'signature_attachment_id' => $signatureAttachment->id,
-                    'receiver_photo_attachment_id' => $photoAttachment->id,
-                    'received_at' => $receivedAt,
-                ],
+                $auditPayload,
                 $actor,
             );
 

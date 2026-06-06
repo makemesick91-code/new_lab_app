@@ -67,7 +67,7 @@
                     </div>
                     <div>
                         <label :for="'quantity-' + index" class="block text-sm font-medium text-gray-700">Jumlah Diminta <span class="text-red-600">*</span></label>
-                        <input :id="'quantity-' + index" type="number" step="0.01" min="0.01" :name="'items[' + index + '][quantity_requested]'" x-model.number="item.quantity_requested" required
+                        <input :id="'quantity-' + index" type="number" step="0.0001" min="0.0001" :name="'items[' + index + '][quantity_requested]'" x-model.number="item.quantity_requested" required
                                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                     </div>
                     <div>

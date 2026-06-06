@@ -13,11 +13,11 @@
 
 <span @class([
     'inline-flex rounded-full px-3 py-1 text-xs font-medium',
-    'bg-blue-100 text-blue-800' => $status === StockTransfer::STATUS_DRAFT,
-    'bg-yellow-100 text-yellow-800' => $status === StockTransfer::STATUS_SUBMITTED,
-    'bg-orange-100 text-orange-800' => $status === StockTransfer::STATUS_IN_TRANSIT,
-    'bg-green-100 text-green-800' => in_array($status, [StockTransfer::STATUS_RECEIVED, StockTransfer::STATUS_COMPLETED], true),
-    'bg-red-100 text-red-800' => $status === StockTransfer::STATUS_CANCELLED,
+    'bg-gray-100 text-gray-600' => $status === StockTransfer::STATUS_DRAFT,
+    'bg-amber-50 text-amber-700' => $status === StockTransfer::STATUS_SUBMITTED,
+    'bg-sky-50 text-sky-700' => $status === StockTransfer::STATUS_IN_TRANSIT,
+    'bg-emerald-50 text-emerald-700' => in_array($status, [StockTransfer::STATUS_RECEIVED, StockTransfer::STATUS_COMPLETED], true),
+    'bg-rose-50 text-rose-700' => $status === StockTransfer::STATUS_CANCELLED,
 ])>
     {{ $statusLabels[$status] ?? $status }}
 </span>

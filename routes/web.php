@@ -14,6 +14,7 @@ use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
+use App\Modules\Inventory\Controllers\ProductImportController;
 use App\Modules\Inventory\Controllers\PurchaseOrderController;
 use App\Modules\Inventory\Controllers\PurchaseRequestController;
 use App\Modules\Inventory\Controllers\StockCardController;
@@ -324,6 +325,9 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('products/{product}/adjust-out', [InventoryStockController::class, 'storeAdjustOut'])->name('products.adjust-out.store');
 
     Route::resource('locations', InventoryLocationController::class);
+    Route::get('products/import/template', [ProductImportController::class, 'template'])->name('products.import.template');
+    Route::get('products/import', [ProductImportController::class, 'create'])->name('products.import');
+    Route::post('products/import', [ProductImportController::class, 'store'])->name('products.import.store');
     Route::resource('products', InventoryProductController::class);
     Route::resource('suppliers', InventorySupplierController::class);
 

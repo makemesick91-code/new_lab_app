@@ -79,7 +79,7 @@ if (! function_exists('format_number_id')) {
 }
 
 if (! function_exists('format_quantity_id')) {
-    function format_quantity_id(mixed $value, int $decimals = 2): string
+    function format_quantity_id(mixed $value, int $decimals = 4): string
     {
         $number = numeric_display_value($value);
 
@@ -177,6 +177,21 @@ if (! function_exists('parse_display_date')) {
         } catch (Throwable) {
             return null;
         }
+    }
+}
+
+if (! function_exists('delivery_report_has_signature')) {
+    /**
+     * Whether a delivery report row has receiver POD signature (data URL or legacy file path).
+     */
+    function delivery_report_has_signature(?object $row): bool
+    {
+        if ($row === null) {
+            return false;
+        }
+
+        return filled($row->receiver_signature_data ?? null)
+            || filled($row->receiver_signature_path ?? null);
     }
 }
 

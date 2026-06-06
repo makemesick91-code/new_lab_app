@@ -82,7 +82,7 @@
                                     </div>
                                     <div class="md:col-span-1">
                                         <label for="new-counted" class="block text-sm font-medium text-gray-700">Jumlah Terhitung <span class="text-red-600">*</span></label>
-                                        <input id="new-counted" type="number" step="0.01" min="0" name="counted_quantity" required value="0"
+                                        <input id="new-counted" type="number" step="0.0001" min="0" name="counted_quantity" required value="0"
                                                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                                     </div>
                                     <div class="md:col-span-1">
@@ -126,7 +126,7 @@
                                             @if (in_array($stockOpname->status, ['DRAFT', 'COUNTING']))
                                                 <form method="POST" action="{{ route('inventory.stock-opnames.update-counted-quantity', [$stockOpname, $item->product_id]) }}" class="flex items-center justify-end gap-2">
                                                     @csrf
-                                                    <input type="number" step="0.01" min="0" name="counted_quantity" value="{{ (string) ($item->counted_quantity ?? 0) }}"
+                                                    <input type="number" step="0.0001" min="0" name="counted_quantity" value="{{ (string) ($item->counted_quantity ?? 0) }}"
                                                            class="w-32 rounded-lg border-gray-300 text-sm text-right focus:border-teal-500 focus:ring-teal-500">
                                                     <input type="text" name="notes" value="{{ $item->notes }}" placeholder="Catatan"
                                                            class="w-40 rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">

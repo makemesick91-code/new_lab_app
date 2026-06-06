@@ -36,8 +36,8 @@ class PurchaseOrderItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity_ordered' => 'decimal:2',
-            'quantity_received' => 'decimal:2',
+            'quantity_ordered' => 'decimal:4',
+            'quantity_received' => 'decimal:4',
             'unit_price' => 'decimal:2',
         ];
     }

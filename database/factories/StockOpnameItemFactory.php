@@ -28,7 +28,7 @@ class StockOpnameItemFactory extends Factory
             ]),
             'system_quantity' => $system,
             'counted_quantity' => $counted,
-            'variance_quantity' => round($counted - $system, 2),
+            'variance_quantity' => round($counted - $system, 4),
             'unit_cost' => fake()->randomFloat(2, 10000, 500000),
             'notes' => fake()->optional()->sentence(),
         ];

@@ -68,15 +68,15 @@ class DeliveryWorkflowService
         }
 
         return DB::transaction(function () use ($delivery, $data, $actor) {
-            if (($data['signature'] ?? null) && ($data['receiver_photo'] ?? null)) {
+            if (! empty($data['receiver_signature_data'])) {
                 $delivery = $this->podService->uploadPod(
                     $delivery,
                     $data['receiver_name'],
-                    $data['signature'],
-                    $data['receiver_photo'],
+                    $data['receiver_signature_data'],
                     $data['received_at'],
                     $data['delivery_notes'] ?? null,
                     $actor,
+                    $data['receiver_photo'] ?? null,
                 );
             }
 

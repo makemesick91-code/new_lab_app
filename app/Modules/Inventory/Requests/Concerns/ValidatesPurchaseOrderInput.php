@@ -32,7 +32,7 @@ trait ValidatesPurchaseOrderInput
             'items.*.product_id' => ['required', 'integer', 'exists:inv_products,id'],
             'items.*.inventory_location_id' => ['nullable', 'integer', 'exists:inv_inventory_locations,id'],
             'items.*.purchase_request_item_id' => ['nullable', 'integer', 'exists:trx_purchase_request_items,id'],
-            'items.*.quantity_ordered' => ['required', 'numeric', 'gt:0'],
+            'items.*.quantity_ordered' => ['required', 'numeric', 'min:0.0001'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
             'items.*.notes' => ['nullable', 'string', 'max:500'],
         ];
@@ -56,6 +56,7 @@ trait ValidatesPurchaseOrderInput
             'items.*.product_id.exists' => 'Produk tidak ditemukan.',
             'items.*.quantity_ordered.required' => 'Jumlah pesanan wajib diisi.',
             'items.*.quantity_ordered.gt' => 'Jumlah pesanan harus lebih dari nol.',
+            'items.*.quantity_ordered.min' => 'Jumlah pesanan harus minimal 0,0001.',
             'items.*.unit_price.min' => 'Harga satuan tidak boleh negatif.',
             'items.*.notes.max' => 'Catatan item tidak boleh lebih dari 500 karakter.',
             'purchase_request_id.exists' => 'Permintaan pembelian tidak ditemukan.',

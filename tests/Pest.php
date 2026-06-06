@@ -179,6 +179,20 @@ function userWith(array $permissions): User
     return $user;
 }
 
+function validPodSignatureData(): string
+{
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC';
+}
+
+function podPayload(array $overrides = []): array
+{
+    return array_merge([
+        'receiver_name' => 'Budi Santoso',
+        'received_at' => now()->format('Y-m-d H:i:s'),
+        'receiver_signature_data' => validPodSignatureData(),
+    ], $overrides);
+}
+
 function inventoryQuickActionsPanelHtml(string $html): string
 {
     if (! preg_match('/data-testid="inventory-quick-actions"[\s\S]*?<\/section>/', $html, $matches)) {

@@ -28,7 +28,7 @@ trait ValidatesStockTransferInput
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:inv_products,id'],
             'items.*.inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
-            'items.*.quantity' => ['required', 'numeric', 'gt:0'],
+            'items.*.quantity' => ['required', 'numeric', 'min:0.0001'],
             'items.*.notes' => ['nullable', 'string', 'max:2000'],
         ];
     }

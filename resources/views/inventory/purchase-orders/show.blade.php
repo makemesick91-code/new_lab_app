@@ -1,5 +1,21 @@
 @php
     use App\Modules\Inventory\Models\PurchaseOrder;
+    use App\Modules\Inventory\Models\PurchaseOrderItem;
+
+    $receivingStatuses = [
+        PurchaseOrder::STATUS_SENT => [
+            'status' => PurchaseOrderItem::RECEIVING_STATUS_PENDING,
+            'label' => 'Belum Diterima',
+        ],
+        PurchaseOrder::STATUS_PARTIALLY_RECEIVED => [
+            'status' => PurchaseOrderItem::RECEIVING_STATUS_PARTIAL,
+            'label' => 'Sebagian',
+        ],
+        PurchaseOrder::STATUS_FULLY_RECEIVED => [
+            'status' => PurchaseOrderItem::RECEIVING_STATUS_COMPLETE,
+            'label' => 'Lengkap',
+        ],
+    ];
 @endphp
 
 <x-settings-shell title="Pesanan Pembelian {{ $purchaseOrder->purchase_order_number }}">
@@ -8,70 +24,101 @@
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Pesanan Pembelian</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $purchaseOrder->purchase_order_number }}</h2>
-                <p class="mt-1 text-sm text-gray-500">
-                    {{ format_date_id($purchaseOrder->order_date) }}
-                    · @include('inventory.purchase-orders._status-badge', ['status' => $purchaseOrder->status])
-                </p>
+                <p class="mt-1 text-sm text-gray-500">{{ $purchaseOrder->displaySupplierName() }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    @include('inventory.purchase-orders._status-badge', ['status' => $purchaseOrder->status])
+                    @if (isset($receivingStatuses[$purchaseOrder->status]))
+                        @include('inventory.purchase-orders._receiving-status-badge', $receivingStatuses[$purchaseOrder->status])
+                    @endif
+                </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-                @can('update', $purchaseOrder)
-                    <a href="{{ route('inventory.purchase-orders.edit', $purchaseOrder) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Ubah
+            <div class="flex flex-col items-stretch gap-2 sm:items-end">
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    @can('submit', $purchaseOrder)
+                        <form method="POST" action="{{ route('inventory.purchase-orders.submit', $purchaseOrder) }}">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
+                                Ajukan
+                            </button>
+                        </form>
+                    @endcan
+
+                    @can('approve', $purchaseOrder)
+                        <form method="POST" action="{{ route('inventory.purchase-orders.approve', $purchaseOrder) }}">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                Setujui
+                            </button>
+                        </form>
+                    @endcan
+
+                    @can('send', $purchaseOrder)
+                        <form method="POST" action="{{ route('inventory.purchase-orders.send', $purchaseOrder) }}">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                Kirim ke Supplier
+                            </button>
+                        </form>
+                    @endcan
+
+                    @can('receive', $purchaseOrder)
+                        <a href="{{ route('inventory.goods-receipts.create', ['purchase_order_id' => $purchaseOrder->id]) }}"
+                           class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            Terima Barang
+                        </a>
+                    @endcan
+                </div>
+                <div class="flex flex-wrap items-center justify-end gap-2">
+                    @can('update', $purchaseOrder)
+                        <a href="{{ route('inventory.purchase-orders.edit', $purchaseOrder) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            Ubah
+                        </a>
+                    @endcan
+
+                    @can('cancel', $purchaseOrder)
+                        <form method="POST" action="{{ route('inventory.purchase-orders.cancel', $purchaseOrder) }}">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">
+                                Batalkan
+                            </button>
+                        </form>
+                    @endcan
+
+                    <a href="{{ route('inventory.purchase-orders.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        Kembali
                     </a>
-                @endcan
-
-                @can('submit', $purchaseOrder)
-                    <form method="POST" action="{{ route('inventory.purchase-orders.submit', $purchaseOrder) }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center rounded-lg bg-yellow-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2">
-                            Ajukan
-                        </button>
-                    </form>
-                @endcan
-
-                @can('approve', $purchaseOrder)
-                    <form method="POST" action="{{ route('inventory.purchase-orders.approve', $purchaseOrder) }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Setujui
-                        </button>
-                    </form>
-                @endcan
-
-                @can('send', $purchaseOrder)
-                    <form method="POST" action="{{ route('inventory.purchase-orders.send', $purchaseOrder) }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Kirim ke Supplier
-                        </button>
-                    </form>
-                @endcan
-
-                @can('receive', $purchaseOrder)
-                    <a href="{{ route('inventory.goods-receipts.create', ['purchase_order_id' => $purchaseOrder->id]) }}"
-                       class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Terima Barang
-                    </a>
-                @endcan
-
-                @can('cancel', $purchaseOrder)
-                    <form method="POST" action="{{ route('inventory.purchase-orders.cancel', $purchaseOrder) }}">
-                        @csrf
-                        <button type="submit" class="inline-flex items-center rounded-lg bg-gray-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                            Batalkan
-                        </button>
-                    </form>
-                @endcan
-
-                <a href="{{ route('inventory.purchase-orders.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Kembali
-                </a>
+                </div>
             </div>
         </div>
 
         <div class="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
             <p class="font-semibold">Tidak menambah stok</p>
             <p class="mt-1">Pesanan pembelian tidak menambah stok. Stok bertambah hanya melalui penerimaan barang.</p>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500">Tanggal PO</p>
+                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">{{ format_date_id($purchaseOrder->order_date) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500">Perkiraan Kirim</p>
+                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">
+                    {{ $purchaseOrder->expected_delivery_date ? format_date_id($purchaseOrder->expected_delivery_date) : '—' }}
+                </p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500">Dibuat oleh</p>
+                <p class="mt-1 text-sm font-semibold text-gray-900">{{ $purchaseOrder->createdBy?->name ?? '—' }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                <p class="text-xs font-medium text-gray-500">Total Item</p>
+                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">{{ format_number_id($purchaseOrder->items->count()) }}</p>
+            </div>
+            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:col-span-2 lg:col-span-1">
+                <p class="text-xs font-medium text-gray-500">Total Nilai ({{ $purchaseOrder->currency }})</p>
+                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">{{ format_currency_id($purchaseOrder->total_amount) }}</p>
+            </div>
         </div>
 
         <div class="grid gap-6 lg:grid-cols-3">
@@ -81,7 +128,8 @@
                         <h3 class="text-base font-semibold text-gray-900">Item Pesanan</h3>
                         <p class="mt-1 text-sm text-gray-500">Progress penerimaan per baris menggunakan cache jumlah diterima dari penerimaan barang yang diposting.</p>
                     </div>
-                    <div class="overflow-x-auto">
+
+                    <div class="hidden overflow-x-auto md:block">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr class="text-left text-gray-500">
@@ -144,6 +192,46 @@
                             @endif
                         </table>
                     </div>
+
+                    <div class="divide-y divide-gray-100 md:hidden">
+                        @forelse ($purchaseOrder->items as $item)
+                            <article class="p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="min-w-0">
+                                        <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
+                                        <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
+                                    </div>
+                                    @include('inventory.purchase-orders._receiving-status-badge', [
+                                        'status' => $item->receivingStatus(),
+                                        'label' => $item->receivingStatusLabel(),
+                                    ])
+                                </div>
+                                <div class="mt-3 grid grid-cols-3 gap-2 text-sm">
+                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
+                                        <p class="text-xs text-gray-500">Dipesan</p>
+                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantity_ordered) }}</p>
+                                    </div>
+                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
+                                        <p class="text-xs text-gray-500">Diterima</p>
+                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantity_received ?? 0) }}</p>
+                                    </div>
+                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
+                                        <p class="text-xs text-gray-500">Sisa</p>
+                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantityRemaining()) }}</p>
+                                    </div>
+                                </div>
+                                <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
+                                    <span>Harga: {{ $item->unit_price !== null ? format_currency_id($item->unit_price) : '—' }}</span>
+                                    <span>Subtotal: {{ format_currency_id($item->lineTotal()) }}</span>
+                                </div>
+                                @if ($item->notes)
+                                    <p class="mt-2 text-sm text-gray-600">{{ $item->notes }}</p>
+                                @endif
+                            </article>
+                        @empty
+                            <div class="px-4 py-8 text-center text-sm text-gray-500">Belum ada item.</div>
+                        @endforelse
+                    </div>
                 </div>
 
                 <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -151,7 +239,7 @@
                         <h3 class="text-base font-semibold text-gray-900">Penerimaan Barang Terkait</h3>
                         <p class="mt-1 text-sm text-gray-500">Daftar penerimaan barang untuk pesanan pembelian ini dalam cabang aktif.</p>
                     </div>
-                    <div class="overflow-x-auto">
+                    <div class="hidden overflow-x-auto md:block">
                         <table class="min-w-full divide-y divide-gray-200 text-sm">
                             <thead class="bg-gray-50">
                                 <tr class="text-left text-gray-500">
@@ -188,6 +276,29 @@
                                 @endforelse
                             </tbody>
                         </table>
+                    </div>
+                    <div class="divide-y divide-gray-100 md:hidden">
+                        @forelse ($purchaseOrder->goodsReceipts as $goodsReceipt)
+                            <article class="p-4">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        @can('view', $goodsReceipt)
+                                            <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-teal-700 hover:text-teal-600">
+                                                {{ $goodsReceipt->receipt_number }}
+                                            </a>
+                                        @else
+                                            <p class="font-semibold text-gray-900">{{ $goodsReceipt->receipt_number }}</p>
+                                        @endcan
+                                        <p class="mt-1 text-sm text-gray-500">{{ format_date_id($goodsReceipt->receipt_date) }}</p>
+                                    </div>
+                                    @include('inventory.goods-receipts._status-badge', ['status' => $goodsReceipt->status])
+                                </div>
+                                <p class="mt-2 text-sm text-gray-600">Surat jalan: {{ $goodsReceipt->supplier_delivery_number ?? '—' }}</p>
+                                <p class="mt-1 text-sm text-gray-600">Dibuat oleh: {{ $goodsReceipt->createdBy?->name ?? '—' }}</p>
+                            </article>
+                        @empty
+                            <div class="px-4 py-8 text-center text-sm text-gray-500">Belum ada penerimaan barang untuk pesanan ini.</div>
+                        @endforelse
                     </div>
                 </div>
             </div>
@@ -244,9 +355,9 @@
                 </div>
 
                 @if ($purchaseOrder->submitted_at)
-                    <div class="rounded-lg border border-yellow-200 bg-yellow-50 p-4 shadow-sm">
-                        <h3 class="text-base font-semibold text-yellow-900">Pengajuan</h3>
-                        <dl class="mt-3 space-y-2 text-sm text-yellow-800">
+                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                        <h3 class="text-base font-semibold text-amber-900">Pengajuan</h3>
+                        <dl class="mt-3 space-y-2 text-sm text-amber-800">
                             <div>
                                 <dt class="font-medium">Diajukan oleh</dt>
                                 <dd>{{ $purchaseOrder->submittedBy?->name ?? '—' }}</dd>
@@ -260,9 +371,9 @@
                 @endif
 
                 @if ($purchaseOrder->approved_at)
-                    <div class="rounded-lg border border-green-200 bg-green-50 p-4 shadow-sm">
-                        <h3 class="text-base font-semibold text-green-900">Persetujuan</h3>
-                        <dl class="mt-3 space-y-2 text-sm text-green-800">
+                    <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                        <h3 class="text-base font-semibold text-emerald-900">Persetujuan</h3>
+                        <dl class="mt-3 space-y-2 text-sm text-emerald-800">
                             <div>
                                 <dt class="font-medium">Disetujui oleh</dt>
                                 <dd>{{ $purchaseOrder->approvedBy?->name ?? '—' }}</dd>

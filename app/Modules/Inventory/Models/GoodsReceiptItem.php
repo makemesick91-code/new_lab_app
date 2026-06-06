@@ -41,11 +41,11 @@ class GoodsReceiptItem extends Model
     protected function casts(): array
     {
         return [
-            'ordered_qty' => 'decimal:2',
-            'previously_received_qty' => 'decimal:2',
-            'received_qty' => 'decimal:2',
-            'accepted_qty' => 'decimal:2',
-            'rejected_qty' => 'decimal:2',
+            'ordered_qty' => 'decimal:4',
+            'previously_received_qty' => 'decimal:4',
+            'received_qty' => 'decimal:4',
+            'accepted_qty' => 'decimal:4',
+            'rejected_qty' => 'decimal:4',
             'unit_cost' => 'decimal:2',
             'line_total' => 'decimal:2',
             'batch_received_date' => 'date',

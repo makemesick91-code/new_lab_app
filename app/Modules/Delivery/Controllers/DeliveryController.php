@@ -119,7 +119,6 @@ class DeliveryController extends Controller
     {
         $this->authorize('markDelivered', $delivery);
         $data = $request->validated();
-        $data['signature'] = $request->file('signature');
         $data['receiver_photo'] = $request->file('receiver_photo');
         $this->workflow->markDelivered($delivery, $data, $request->user());
 
@@ -142,11 +141,11 @@ class DeliveryController extends Controller
         $this->podService->uploadPod(
             $delivery,
             $data['receiver_name'],
-            $request->file('signature'),
-            $request->file('receiver_photo'),
+            $data['receiver_signature_data'],
             $data['received_at'],
             $data['delivery_notes'] ?? null,
             $request->user(),
+            $request->file('receiver_photo'),
         );
 
         return $this->back($delivery, 'POD berhasil diunggah.');

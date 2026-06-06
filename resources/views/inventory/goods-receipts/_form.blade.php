@@ -296,11 +296,11 @@
                                     </select>
                                 </td>
                                 <td class="px-3 py-3">
-                                    <input type="number" step="0.01" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
                                     <p x-show="isOverReceive(item)" x-cloak class="mt-1 text-xs text-amber-700" x-text="overReceiveMessage(item)"></p>
                                 </td>
                                 <td class="px-3 py-3">
-                                    <input type="number" step="0.01" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
                                 </td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatNumber(item.received_qty)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatCurrency(item.unit_cost)"></td>
@@ -354,12 +354,12 @@
                         <div class="mt-3 grid grid-cols-2 gap-3">
                             <div>
                                 <label class="text-sm font-medium text-gray-700">Diterima Baik</label>
-                                <input type="number" step="0.01" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                                 <p x-show="isOverReceive(item)" x-cloak class="mt-1 text-xs text-amber-700" x-text="overReceiveMessage(item)"></p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-700">Ditolak</label>
-                                <input type="number" step="0.01" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                             </div>
                         </div>
                         <p class="mt-2 text-xs text-gray-500">Jumlah diterima: <span class="font-medium tabular-nums" x-text="formatNumber(item.received_qty)"></span></p>

@@ -6,12 +6,14 @@
             <p class="mt-1 text-sm text-gray-500">Hanya pesanan berstatus Draft yang dapat diubah.</p>
         </div>
 
-        <form method="POST" action="{{ route('inventory.purchase-orders.update', $purchaseOrder) }}" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <form method="POST" action="{{ route('inventory.purchase-orders.update', $purchaseOrder) }}" class="max-w-5xl space-y-6">
             @csrf
             @method('PUT')
-            @include('inventory.purchase-orders._form', ['purchaseOrder' => $purchaseOrder])
+            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                @include('inventory.purchase-orders._form', ['purchaseOrder' => $purchaseOrder])
+            </div>
 
-            <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4">
+            <div class="flex flex-wrap items-center gap-3">
                 <a href="{{ route('inventory.purchase-orders.show', $purchaseOrder) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Batal
                 </a>

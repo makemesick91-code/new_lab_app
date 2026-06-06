@@ -58,7 +58,7 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->courier_name ?? '—' }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $statusLabels[$r->status] ?? $r->status }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->receiver_name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->receiver_signature_path ? 'Ditandatangani' : '—' }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ delivery_report_has_signature($r) ? 'Ditandatangani' : '—' }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="7" class="px-3 py-6 text-center text-gray-400">Belum ada pengiriman.</td></tr>

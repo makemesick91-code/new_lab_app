@@ -178,7 +178,7 @@ trait ValidatesGoodsReceiptInput
             $rejectedQty = (float) ($item['rejected_qty'] ?? 0);
             $receivedQty = (float) ($item['received_qty'] ?? 0);
 
-            if (round($acceptedQty + $rejectedQty, 2) !== round($receivedQty, 2)) {
+            if (round($acceptedQty + $rejectedQty, 4) !== round($receivedQty, 4)) {
                 $validator->errors()->add(
                     "items.{$index}.received_qty",
                     'Jumlah diterima harus sama dengan diterima baik ditambah ditolak.',

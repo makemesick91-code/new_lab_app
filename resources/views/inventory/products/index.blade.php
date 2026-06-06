@@ -6,9 +6,19 @@
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">Direktori Stok Produk</h2>
                 <p class="mt-1 text-sm text-gray-500">Total stok cabang dihitung dari ledger pergerakan di seluruh lokasi persediaan aktif.</p>
             </div>
-            <a href="{{ route('inventory.products.create') }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                Tambah Produk
-            </a>
+            <div class="flex flex-wrap gap-2">
+                @can('create', \App\Modules\Inventory\Models\Product::class)
+                    <a href="{{ route('inventory.products.import.template') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        Unduh Template CSV
+                    </a>
+                    <a href="{{ route('inventory.products.import') }}" class="inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700 shadow-sm hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        Impor CSV
+                    </a>
+                @endcan
+                <a href="{{ route('inventory.products.create') }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    Tambah Produk
+                </a>
+            </div>
         </div>
 
         <form method="GET" action="{{ route('inventory.products.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">

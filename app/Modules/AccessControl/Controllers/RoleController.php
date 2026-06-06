@@ -5,6 +5,7 @@ namespace App\Modules\AccessControl\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\AccessControl\Requests\StoreRoleRequest;
 use App\Modules\AccessControl\Requests\UpdateRoleRequest;
+use App\Modules\AccessControl\Services\PermissionGroupingService;
 use App\Modules\AccessControl\Services\PermissionService;
 use App\Modules\AccessControl\Services\RoleService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -23,6 +24,7 @@ class RoleController extends Controller
     public function __construct(
         private readonly RoleService $roleService,
         private readonly PermissionService $permissionService,
+        private readonly PermissionGroupingService $permissionGroupingService,
     ) {}
 
     public function index(Request $request): View
@@ -43,7 +45,9 @@ class RoleController extends Controller
         $this->authorize('create', Role::class);
 
         return view('settings.roles.create', [
-            'permissions' => $this->permissionService->listAll(),
+            'permissionGroups' => $this->permissionGroupingService->group(
+                $this->permissionService->listAll()
+            ),
         ]);
     }
 
@@ -64,7 +68,9 @@ class RoleController extends Controller
 
         return view('settings.roles.edit', [
             'role' => $role->load('permissions'),
-            'permissions' => $this->permissionService->listAll(),
+            'permissionGroups' => $this->permissionGroupingService->group(
+                $this->permissionService->listAll()
+            ),
             'assignedPermissions' => $role->permissions->pluck('name')->all(),
         ]);
     }

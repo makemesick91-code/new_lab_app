@@ -173,7 +173,7 @@ class StockTransferService
 
             foreach ($items->groupBy('product_id') as $productId => $groupedItems) {
                 $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $productId);
-                $quantity = round((float) $groupedItems->sum(fn (StockTransferItem $item) => (float) $item->quantity), 2);
+                $quantity = round((float) $groupedItems->sum(fn (StockTransferItem $item) => (float) $item->quantity), 4);
                 $this->assertPositiveQuantity($quantity);
 
                 $currentStock = $this->movements->currentStock($branchId, $product->id, $source->id);
@@ -394,7 +394,7 @@ class StockTransferService
                 ];
             }
 
-            $normalized[$lineKey]['quantity'] = round($normalized[$lineKey]['quantity'] + $quantity, 2);
+            $normalized[$lineKey]['quantity'] = round($normalized[$lineKey]['quantity'] + $quantity, 4);
             $normalized[$lineKey]['notes'] = $notes ?: $normalized[$lineKey]['notes'];
         }
 

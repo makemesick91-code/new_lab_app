@@ -29,7 +29,7 @@ class PurchaseRequestItem extends Model
     protected function casts(): array
     {
         return [
-            'quantity_requested' => 'decimal:2',
+            'quantity_requested' => 'decimal:4',
             'estimated_unit_price' => 'decimal:2',
         ];
     }

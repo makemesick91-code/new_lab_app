@@ -38,7 +38,7 @@ class DeliveryReportService
     {
         $rows = $this->reporting->deliveryQuery($filters)->get()->map(fn ($r) => [
             $r->delivery_number, $r->order_number, $r->clinic_name, $r->courier_name, $r->status,
-            $r->receiver_name, $r->receiver_signature_path ? 'YES' : 'NO', $r->completed_at,
+            $r->receiver_name, delivery_report_has_signature($r) ? 'YES' : 'NO', $r->completed_at,
         ]);
 
         return [
