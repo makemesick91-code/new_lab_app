@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 15.5.
+Sprint 15.6.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -49,6 +49,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 15.3 | Batch & Lot Tracking | (Sprint 15.3 batch/lot implementation) | `inv_inventory_batches`; `inventory_batch_id` on `trx_inventory_movements` and `trx_stock_transfer_items` |
 | 15.4 | Reorder Point & Inventory Alerts | (Sprint 15.4 reorder/alerts implementation) | `reorder_point`, `reorder_quantity`, `alert_enabled` on `inv_products` |
 | 15.5 | Inventory Analytics | (Sprint 15.5 analytics implementation) | (none — read-only analytics from ledger) |
+| 15.6 | Inventory Advanced Hardening & Navigation Closure | (Sprint 15.6 navigation/dashboard hardening) | (none — UI/navigation only) |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1307,6 +1308,89 @@ in three phases: 15.5.1 repository/service analytics, 15.5.2 controller/route/si
 
 ---
 
+# Sprint 15.6 — Inventory Advanced Hardening & Navigation Closure
+
+## Sprint 15.6 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Branch:** `feature/sprint-15-inventory-advanced`
+
+**Scope:** Inventory Advanced (Sprint 15 milestone closure slice)
+
+**Business objective:** Close navigation and dashboard UX gaps across the Sprint 15 inventory
+advanced feature set — improve operator discoverability of Stock Opname, remove duplicate alert KPIs
+on the inventory dashboard, add permission-gated quick actions, and remove sidebar placeholder dead
+links — without changing ledger rules, branch isolation, or authorization contracts.
+
+**Planning note:** Implemented in four steps: 15.6.1 Stok Opname sidebar discovery, 15.6.2 dashboard
+KPI deduplication, 15.6.3 dashboard quick actions, 15.6.4 sidebar dead-link removal. Step 15.6.5
+covers documentation and memory sync.
+
+## Deliverables
+
+**Navigation (sidebar):**
+- **Stok Opname** link added under Persediaan — permission-gated; operators can discover the
+  Sprint 13 workflow from the sidebar.
+- Dead placeholder links removed from the Persediaan section (no links to unbuilt routes).
+
+**Inventory dashboard:**
+- Duplicate alert KPI strip removed; **`InventoryAlertService` confirmed as the canonical source**
+  for alert counts on the dashboard (`stock-value-card` and related widgets).
+- **Quick actions panel** added — permission-gated shortcuts to common inventory workflows
+  (e.g. receive stock, transfer, opname, alerts) without menu sprawl.
+
+**Preserved invariants:**
+- Inventory **ledger-only** rule unchanged — no mutable stock columns; stock remains
+  `SUM(quantity_in) - SUM(quantity_out)`.
+- **Branch isolation** and **permission gates** preserved on all dashboard links and quick actions.
+
+## UI Notes
+
+- Stok Opname discoverable from sidebar alongside existing Persediaan links (Transfer Stok, Batch
+  & Lot, Peringatan Stok, Analitik Persediaan).
+- Dashboard no longer shows redundant KPI counts that duplicated `stock-value-card` alert summary.
+- Quick actions respect `@can` / policy gates — view-only users see no unauthorized actions.
+- Sidebar contains only routes to implemented, permission-gated inventory features.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 15.6 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 644 tests, 2061 assertions |
+| Pint (`vendor/bin/pint`) | PASS |
+| Frontend build (`npm run build`) | PASS |
+
+## Architecture Notes
+
+- **No schema changes** — navigation and dashboard UX only.
+- **Layering unchanged** — no business logic moved into Blade; quick actions link to existing
+  routes/controllers.
+- **`InventoryAlertService::getAlertSummary()`** remains the single source of truth for dashboard
+  alert KPI counts (resolves Sprint 15.4 known risk of KPI duplication).
+- **Branch isolation:** Dashboard and sidebar remain active-branch scoped via existing controller
+  and policy patterns; no cross-branch data exposure introduced.
+
+## Known Decisions
+
+- Sprint 15.6 **does not** add Purchase Request, Purchase Order, or Goods Receipt workflows — those
+  remain Sprint 16 candidates per roadmap.
+- Notification channels for alerts remain deferred (unchanged from Sprint 15.4).
+- Owner cross-branch dashboard rollup remains deferred.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 15.6 — Inventory Advanced Hardening & Navigation Closure |
+| Branch | `feature/sprint-15-inventory-advanced` |
+| Status | COMPLETED (full-suite gates verified) |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1342,6 +1426,9 @@ in three phases: 15.5.1 repository/service analytics, 15.5.2 controller/route/si
     and batch alerts remain ledger-derived; no alert persistence table.
 20. **S15.5** — Read-only inventory analytics via `InventoryAnalyticsService`; all metrics
     ledger-derived from `trx_inventory_movements`; no analytics persistence or mutable stock columns.
+21. **S15.6** — Inventory navigation/dashboard hardening: Stok Opname sidebar discovery, dashboard
+    KPI deduplication with `InventoryAlertService` as canonical alert source, permission-gated quick
+    actions, dead sidebar links removed; no schema or ledger-rule changes.
 
 ---
 
@@ -1408,6 +1495,11 @@ in three phases: 15.5.1 repository/service analytics, 15.5.2 controller/route/si
 8. **S15.4** — **Peringatan Stok** alerts index with unified stock/batch table; dashboard KPI
    strip and `stock-value-card` aligned to `InventoryAlertService`; severity badges Habis / Kritis /
    Menipis / Kedaluwarsa / Segera Kedaluwarsa; reorder fields on product form/show.
+9. **S15.5** — **Analitik Persediaan** read-only analytics page; Indonesian labels; responsive
+   desktop-table / mobile-card layout; ledger-derived disclaimers.
+10. **S15.6** — **Stok Opname** sidebar link; inventory dashboard quick actions panel;
+    duplicate alert KPI strip removed (`InventoryAlertService` canonical); sidebar dead placeholder
+    links removed.
 
 ---
 
@@ -1492,9 +1584,15 @@ in three phases: 15.5.1 repository/service analytics, 15.5.2 controller/route/si
   queries via `BranchContext::requireId()`, read-only `InventoryAnalyticsService`, and UI disclaimers
   that outbound value trend ≠ on-hand value history. Owner cross-branch rollup and value snapshot
   tables remain follow-up work.
-- **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
+- **Sprint 15.6 completed baseline — Inventory Advanced Hardening & Navigation Closure:** Future
+  changes must preserve `InventoryAlertService` as the canonical dashboard alert KPI source (no
+  duplicate KPI strips), permission-gated sidebar and quick-action links only to implemented routes,
+  Stok Opname sidebar discoverability, and removal of dead placeholder navigation. No mutable stock
+  columns; branch isolation and ledger rules unchanged.
+- **Sprint 16 — Purchasing (candidate):** Purchase Request / Purchase Order / Receiving workflow.
+  POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
-- **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
+- **Sprint 16+ — Goods Receipt:** May create inventory movements only after validation (active
   branch, active location, product/supplier in branch, qty > 0, documented unit-cost rules,
   transactional ledger write).
 - **Sprint 17 — HR Core:** Separate module; not directly coupled to production/payroll/attendance
@@ -1538,8 +1636,9 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–15.5, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
-Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics).
+(S12–15.6, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
+Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics, navigation/dashboard
+hardening).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -1552,4 +1651,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 15.5 and must be updated as each new sprint completes.*
+Sprint 15.6 and must be updated as each new sprint completes.*

@@ -178,3 +178,12 @@ function userWith(array $permissions): User
 
     return $user;
 }
+
+function inventoryQuickActionsPanelHtml(string $html): string
+{
+    if (! preg_match('/data-testid="inventory-quick-actions"[\s\S]*?<\/section>/', $html, $matches)) {
+        return '';
+    }
+
+    return $matches[0];
+}

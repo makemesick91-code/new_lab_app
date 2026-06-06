@@ -76,9 +76,7 @@
             </div>
         </section>
 
-        <x-inventory.alert-summary-widget :summary="$alertSummary" :href="route('inventory.alerts.index')" />
-
-        <x-inventory.stock-value-card :summary="$summary" :alert-summary="$alertSummary" scope-label="Cabang aktif" />
+        <x-inventory.quick-actions-panel />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <x-inventory.dashboard-section

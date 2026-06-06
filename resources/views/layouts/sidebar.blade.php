@@ -1,11 +1,7 @@
 {{--
     Base dashboard sidebar (Sprint 0 — Foundation).
 
-    Menu items are ROLE-BASED PLACEHOLDERS only. All links point to "#" because
-    the actual CRUD / feature pages are delivered in later sprints
-    (Sprint 1: User & Access, Sprint 2: Master Data, Sprint 3+: Lab Order, etc.).
-
-    Visibility is gated using Spatie Permission's @role Blade directive.
+    Visibility is gated using Spatie Permission @can / @canany and @role Blade directives.
     Roles: Super Admin, Admin Lab, Technician, Quality Control, Courier, Finance, Doctor.
 --}}
 <aside class="w-64 shrink-0 bg-white border-r border-gray-200 min-h-[calc(100vh-4rem)]">
@@ -86,11 +82,6 @@
             @endcan
         @endrole
 
-        @role('Quality Control')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">QC</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">QC <span class="text-xs text-gray-400">(Sprint 5)</span></a>
-        @endrole
-
         @role('Courier')
             <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Pengiriman</p>
             <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Pengiriman Saya</a>
@@ -108,6 +99,10 @@
                class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Pemasok</a>
             <a href="{{ route('inventory.stock.index') }}"
                class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Stok</a>
+            @can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
+                <a href="{{ route('inventory.stock-opnames.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock-opnames.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Stok Opname</a>
+            @endcan
             @can('viewAny', \App\Modules\Inventory\Models\InventoryBatch::class)
                 <a href="{{ route('inventory.batches.index') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.batches.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Batch & Lot</a>
@@ -131,11 +126,6 @@
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('invoices.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Invoice</a>
             @endcanany
         @endcanany
-
-        @role('Doctor')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Lab Saya</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Order Saya <span class="text-xs text-gray-400">(Sprint 3)</span></a>
-        @endrole
 
         {{-- Reports (Sprint 8) — permission-aware menu. --}}
         @canany(['view_dashboard', 'view_order_report', 'view_production_report', 'view_qc_report', 'view_delivery_report', 'view_invoice_report', 'view_payment_report', 'manage_report'])

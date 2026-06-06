@@ -34,7 +34,6 @@ class InventoryDashboardController extends Controller
             'batchAlerts' => $this->alerts->getBatchExpiryAlerts(limit: 5),
             'locations' => $this->locations->listActive(),
             'stockByLocation' => $this->stock->getStockByLocationSummary(),
-            'lowStockProducts' => $this->stock->getLowStockProducts(),
             'recentMovements' => $this->stock->getRecentMovements(),
         ]);
     }

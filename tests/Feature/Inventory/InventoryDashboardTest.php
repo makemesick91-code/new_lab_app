@@ -21,7 +21,7 @@ beforeEach(function () {
     $this->alertService = app(InventoryAlertService::class);
 });
 
-it('displays alert summary on inventory dashboard', function () {
+it('displays alert KPIs on inventory dashboard', function () {
     $product = Product::factory()->create([
         'branch_id' => $this->branch->id,
         'minimum_stock' => 10,
@@ -35,13 +35,14 @@ it('displays alert summary on inventory dashboard', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Ringkasan Peringatan')
+        ->assertSee('Kartu KPI Persediaan')
         ->assertSee('Stok Kritis')
         ->assertSee('Stok Habis')
         ->assertSee('Stok Rendah')
         ->assertSee('Batch Kedaluwarsa')
         ->assertSee('Segera Kedaluwarsa')
-        ->assertSee('Peringatan Stok');
+        ->assertSee('Peringatan Stok')
+        ->assertDontSee('Ringkasan Peringatan');
 });
 
 it('matches dashboard alert counts with InventoryAlertService summary', function () {
@@ -80,7 +81,7 @@ it('matches dashboard alert counts with InventoryAlertService summary', function
     $response->assertSee(format_number_id($summary['batch_expired_count']), false);
 });
 
-it('does not show legacy Stok Menipis label on stock value card', function () {
+it('does not duplicate alert summary sections on dashboard', function () {
     $product = Product::factory()->create([
         'branch_id' => $this->branch->id,
         'minimum_stock' => 10,
@@ -94,9 +95,11 @@ it('does not show legacy Stok Menipis label on stock value card', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Ringkasan Nilai Persediaan')
-        ->assertSee('Stok Rendah')
-        ->assertDontSee('Stok Menipis');
+        ->assertSee('Kartu KPI Persediaan')
+        ->assertDontSee('Ringkasan Peringatan')
+        ->assertDontSee('Ringkasan Nilai Persediaan')
+        ->assertDontSee('Stok Menipis')
+        ->assertSee('Di bawah stok minimum, di atas nol', false);
 });
 
 it('still shows inventory value on dashboard', function () {
@@ -131,14 +134,54 @@ it('allows manage_inventory users to view inventory dashboard alerts', function 
     $this->actingAs($user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Ringkasan Peringatan');
+        ->assertSee('Kartu KPI Persediaan');
 });
 
 it('allows view_inventory users to view inventory dashboard alerts', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Ringkasan Peringatan');
+        ->assertSee('Kartu KPI Persediaan');
+});
+
+it('shows view quick actions for view_inventory users', function () {
+    $html = $this->actingAs($this->user)
+        ->get(route('inventory.dashboard'))
+        ->assertOk()
+        ->assertSee('Aksi Cepat Persediaan')
+        ->getContent();
+
+    $panel = inventoryQuickActionsPanelHtml($html);
+
+    expect($panel)
+        ->toContain('Peringatan Stok')
+        ->toContain('Analitik Persediaan')
+        ->toContain(route('inventory.alerts.index'))
+        ->toContain(route('inventory.analytics.index'))
+        ->not->toContain('Stok Opname')
+        ->not->toContain('Transfer Stok')
+        ->not->toContain(route('inventory.stock-opnames.index'))
+        ->not->toContain(route('inventory.stock-transfers.index'));
+});
+
+it('shows manage quick actions for manage_inventory users', function () {
+    $user = userWith(['manage_inventory']);
+
+    $html = $this->actingAs($user)
+        ->get(route('inventory.dashboard'))
+        ->assertOk()
+        ->assertSee('Aksi Cepat Persediaan')
+        ->getContent();
+
+    $panel = inventoryQuickActionsPanelHtml($html);
+
+    expect($panel)
+        ->toContain('Peringatan Stok')
+        ->toContain('Analitik Persediaan')
+        ->toContain('Stok Opname')
+        ->toContain('Transfer Stok')
+        ->toContain(route('inventory.stock-opnames.index'))
+        ->toContain(route('inventory.stock-transfers.index'));
 });
 
 it('enforces branch isolation on dashboard alert counts', function () {
