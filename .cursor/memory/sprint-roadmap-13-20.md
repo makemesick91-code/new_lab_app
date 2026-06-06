@@ -32,9 +32,53 @@ Inventory Analytics.
 
 Inventory Advanced Hardening & Navigation Closure (sidebar, dashboard KPI dedup, quick actions).
 
-## Sprint 16 — PLANNED (candidate)
+## Sprint 16 — COMPLETE
 
-Purchase Request, Purchase Order, and Receiving workflow. POs express intent only; stock increases via receipt/ledger movement.
+Purchasing milestone delivered as slices 16.1–16.4. PR/PO express intent only; stock increases via Goods Receipt post → `PURCHASE` ledger movement.
+
+**Final sign-off:** commit `0dd4729`, tag `sprint-16.4-revision-complete`, **1038 tests passed**, **3523 assertions**, **227 routes**.
+
+### Sprint 16.1 — COMPLETE
+
+Purchase Request Workflow (intent-only; no inventory movements; branch-scoped approval).
+
+### Sprint 16.2 — COMPLETE
+
+Purchase Order Workflow (document-only; no inventory movements; no stock updates):
+
+- schema: `trx_purchase_orders`, `trx_purchase_order_items`
+- statuses: draft, submitted, approved, sent, cancelled
+- manual PO and PR-linked PO (approved PR only; duplicate active PO blocked)
+- supplier snapshot, currency default IDR, computed total (not stored)
+- UI: Pesanan Pembelian sidebar, Buat Pesanan Pembelian quick action, Buat PO from approved PR
+
+### Sprint 16.3 — COMPLETE
+
+Goods Receipt / receiving workflow (PURCHASE inventory movements; stock updates):
+
+- schema: `trx_goods_receipts`, `trx_goods_receipt_items`; PO item `quantity_received` fulfillment cache
+- statuses: draft, submitted, posted, cancelled
+- `GoodsReceiptService` post → `PURCHASE` movements; PR/PO remain zero stock impact
+- PO receiving statuses: partially_received, fully_received (header); line pending/partial/complete
+- UI: Penerimaan Barang sidebar, Terima Barang from PO show
+
+### Sprint 16.4 — COMPLETE
+
+Procurement Hardening (no re-architecture; closes audit backlog on PR → PO → GR chain):
+
+- 16.4.1: batch/lot on GR receive (`requires_batch_tracking`, batch fields, movement linkage)
+- 16.4.2: PO receiving visibility (ordered/received/remaining, linked GR panel)
+- 16.4.3: GR void workflow (`ADJUSTMENT_OUT` reversal, PO cache rollback)
+- 16.4.4: PR/PO branch isolation tests, GR regression, permission/UI hardening
+
+### Sprint 16.4 Revision UI Inventory — COMPLETE
+
+Final inventory/procurement UI closure (commit `0dd4729`):
+
+- sidebar navigation overhaul for inventory and procurement modules
+- procurement form polish: PO, PR, stock transfers, goods receipts
+- product CSV import UI; decimal(18,4) quantity column migration
+- roles/permissions grouping UI (`PermissionGroupingService`)
 
 ## Sprint 17 — PLANNED
 

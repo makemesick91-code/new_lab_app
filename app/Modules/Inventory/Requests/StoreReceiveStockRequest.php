@@ -19,7 +19,7 @@ class StoreReceiveStockRequest extends FormRequest
     {
         return array_merge([
             'inventory_location_id' => ['required', 'integer', 'exists:inv_inventory_locations,id'],
-            'quantity' => ['required', 'numeric', 'gt:0'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_cost' => ['nullable', 'numeric', 'min:0'],
             'supplier_id' => ['nullable', 'integer', 'exists:inv_suppliers,id'],
             'notes' => ['nullable', 'string', 'max:2000'],

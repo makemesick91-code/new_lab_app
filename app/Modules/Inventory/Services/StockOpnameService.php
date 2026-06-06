@@ -89,7 +89,7 @@ class StockOpnameService
 
             $item->update([
                 'counted_quantity' => $countedQuantity,
-                'variance_quantity' => round($countedQuantity - $systemQuantity, 2),
+                'variance_quantity' => round($countedQuantity - $systemQuantity, 4),
                 'notes' => $notes,
             ]);
 
@@ -160,7 +160,7 @@ class StockOpnameService
 
             foreach ($opname->items as $item) {
                 $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $item->product_id);
-                $variance = round((float) $item->variance_quantity, 2);
+                $variance = round((float) $item->variance_quantity, 4);
 
                 if ($variance > 0) {
                     $this->createAdjustmentMovement($opname, $product, $variance, 0, (float) $item->unit_cost);

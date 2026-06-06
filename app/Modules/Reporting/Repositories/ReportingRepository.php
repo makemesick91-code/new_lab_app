@@ -115,7 +115,7 @@ class ReportingRepository implements ReportingRepositoryInterface
             ->when($f['courier_id'] ?? null, fn ($q, $v) => $q->where('dl.courier_id', $v))
             ->when($f['delivery_status'] ?? null, fn ($q, $v) => $q->where('dl.status', $v))
             ->when(true, fn ($q) => $this->dateRange($q, 'dl.created_at', $f))
-            ->select('dl.delivery_number', 'o.order_number', 'c.name as clinic_name', 'u.name as courier_name', 'dl.status', 'dl.receiver_name', 'dl.receiver_signature_path', 'dl.completed_at', 'dl.created_at')
+            ->select('dl.delivery_number', 'o.order_number', 'c.name as clinic_name', 'u.name as courier_name', 'dl.status', 'dl.receiver_name', 'dl.receiver_signature_path', 'dl.receiver_signature_data', 'dl.completed_at', 'dl.created_at')
             ->orderByDesc('dl.id');
     }
 
@@ -138,7 +138,7 @@ class ReportingRepository implements ReportingRepositoryInterface
             ->when(true, fn ($q) => $this->dateRange($q, 'dl.created_at', $f))
             ->select('u.name as courier_name', DB::raw('COUNT(*) as total'),
                 DB::raw("SUM(CASE WHEN dl.status IN ('DELIVERED','COMPLETED') THEN 1 ELSE 0 END) as delivered"),
-                DB::raw('SUM(CASE WHEN dl.receiver_signature_path IS NOT NULL THEN 1 ELSE 0 END) as pod_completed'))
+                DB::raw('SUM(CASE WHEN dl.receiver_signature_path IS NOT NULL OR dl.receiver_signature_data IS NOT NULL THEN 1 ELSE 0 END) as pod_completed'))
             ->groupBy('u.name')->orderByDesc('total')->get();
     }
 

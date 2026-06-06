@@ -42,17 +42,17 @@
         <div class="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
                 <label for="minimum_stock" class="block text-sm font-medium text-gray-700">Stok Minimum</label>
-                <input id="minimum_stock" type="number" step="0.01" min="0" name="minimum_stock" value="{{ old('minimum_stock', $product?->minimum_stock ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <input id="minimum_stock" type="number" step="0.0001" min="0" name="minimum_stock" value="{{ old('minimum_stock', $product?->minimum_stock ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 <p class="mt-1 text-xs text-gray-500">Digunakan sebagai titik pesan ulang jika titik pesan ulang kosong atau nol.</p>
             </div>
             <div>
                 <label for="reorder_point" class="block text-sm font-medium text-gray-700">Titik Pesan Ulang</label>
-                <input id="reorder_point" type="number" step="0.01" min="0" name="reorder_point" value="{{ old('reorder_point', $product?->reorder_point ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <input id="reorder_point" type="number" step="0.0001" min="0" name="reorder_point" value="{{ old('reorder_point', $product?->reorder_point ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 <p class="mt-1 text-xs text-gray-500">Stok turun ke level ini → tindakan pesan ulang disarankan.</p>
             </div>
             <div>
                 <label for="reorder_quantity" class="block text-sm font-medium text-gray-700">Jumlah Pesan Ulang</label>
-                <input id="reorder_quantity" type="number" step="0.01" min="0" name="reorder_quantity" value="{{ old('reorder_quantity', $product?->reorder_quantity ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <input id="reorder_quantity" type="number" step="0.0001" min="0" name="reorder_quantity" value="{{ old('reorder_quantity', $product?->reorder_quantity ?? 0) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 <p class="mt-1 text-xs text-gray-500">Saran jumlah saat titik pesan ulang tercapai (informasi saja).</p>
             </div>
             <div class="flex items-center pt-6">

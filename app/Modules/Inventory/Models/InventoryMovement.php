@@ -57,8 +57,8 @@ class InventoryMovement extends Model
     {
         return [
             'movement_date' => 'date',
-            'quantity_in' => 'decimal:2',
-            'quantity_out' => 'decimal:2',
+            'quantity_in' => 'decimal:4',
+            'quantity_out' => 'decimal:4',
             'unit_cost' => 'decimal:2',
         ];
     }

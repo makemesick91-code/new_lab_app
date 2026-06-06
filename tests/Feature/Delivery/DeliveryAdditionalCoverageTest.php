@@ -6,7 +6,6 @@ use App\Modules\Delivery\Services\DeliveryService;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\LabOrder;
 use Database\Seeders\PermissionSeeder;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
@@ -137,7 +136,7 @@ it('allows management to start an assigned delivery', function () {
     expect($delivery->refresh()->status)->toBe(Delivery::STATUS_IN_DELIVERY);
 });
 
-it('rejects mark delivered without signature', function () {
+it('rejects mark delivered without signature data', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'mark_delivered']);
     $delivery = startAdditionalDelivery(additionalDelivery($courier), $courier);
 
@@ -145,22 +144,8 @@ it('rejects mark delivered without signature', function () {
         ->post(route('deliveries.mark-delivered', $delivery), [
             'receiver_name' => 'Budi',
             'received_at' => now()->format('Y-m-d H:i:s'),
-            'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
         ])
-        ->assertSessionHasErrors('signature');
-});
-
-it('rejects mark delivered without receiver photo', function () {
-    $courier = userWith(['view_delivery', 'start_delivery', 'mark_delivered']);
-    $delivery = startAdditionalDelivery(additionalDelivery($courier), $courier);
-
-    $this->actingAs($courier)
-        ->post(route('deliveries.mark-delivered', $delivery), [
-            'receiver_name' => 'Budi',
-            'received_at' => now()->format('Y-m-d H:i:s'),
-            'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-        ])
-        ->assertSessionHasErrors('receiver_photo');
+        ->assertSessionHasErrors('receiver_signature_data');
 });
 
 it('rejects mark delivered without receiver name', function () {
@@ -170,8 +155,7 @@ it('rejects mark delivered without receiver name', function () {
     $this->actingAs($courier)
         ->post(route('deliveries.mark-delivered', $delivery), [
             'received_at' => now()->format('Y-m-d H:i:s'),
-            'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-            'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
+            'receiver_signature_data' => validPodSignatureData(),
         ])
         ->assertSessionHasErrors('receiver_name');
 });
@@ -195,19 +179,15 @@ it('blocks duplicate completion', function () {
         ->assertSessionHasErrors('status');
 });
 
-it('updates receiver signature and photo paths after POD upload', function () {
+it('updates receiver signature data after POD upload', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
     $delivery = startAdditionalDelivery(additionalDelivery($courier), $courier);
 
-    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), [
+    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), podPayload([
         'receiver_name' => 'Budi',
-        'received_at' => now()->format('Y-m-d H:i:s'),
-        'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-        'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
-    ]);
+    ]));
 
-    expect($delivery->refresh()->receiver_signature_path)->not->toBeNull()
-        ->and($delivery->receiver_photo_path)->not->toBeNull();
+    expect($delivery->refresh()->receiver_signature_data)->toBe(validPodSignatureData());
 });
 
 it('denies delivery detail to an unrelated courier', function () {
@@ -274,16 +254,14 @@ it('grants Courier operational delivery permissions only', function () {
         ->and($role->hasPermissionTo('manage_delivery'))->toBeFalse();
 });
 
-it('stores delivery attachments with the delivery entity type', function () {
+it('does not require photo upload for POD signature storage', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
     $delivery = startAdditionalDelivery(additionalDelivery($courier), $courier);
 
-    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), [
+    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), podPayload([
         'receiver_name' => 'Budi',
-        'received_at' => now()->format('Y-m-d H:i:s'),
-        'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-        'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
-    ]);
+    ]));
 
-    expect(Attachment::where('entity_type', Delivery::ENTITY_TYPE)->count())->toBe(2);
+    expect(Attachment::where('entity_type', Delivery::ENTITY_TYPE)->count())->toBe(0)
+        ->and($delivery->refresh()->receiver_signature_data)->not->toBeNull();
 });

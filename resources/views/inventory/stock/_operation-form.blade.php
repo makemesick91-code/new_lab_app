@@ -181,7 +181,7 @@
 
                         <div>
                             <label for="quantity" class="text-sm font-semibold text-gray-800">Jumlah <span class="text-rose-600">*</span></label>
-                            <input id="quantity" type="number" step="0.01" min="0.01" name="quantity" value="{{ old('quantity') }}" class="mt-2 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-teal-500 focus:ring-teal-500" required>
+                            <input id="quantity" type="number" step="0.0001" min="0.0001" name="quantity" value="{{ old('quantity') }}" class="mt-2 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-teal-500 focus:ring-teal-500" required>
                             <p class="mt-1 text-xs text-gray-500">{{ $operationCopy['quantityHelp'] }}</p>
                             @error('quantity')
                                 <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>

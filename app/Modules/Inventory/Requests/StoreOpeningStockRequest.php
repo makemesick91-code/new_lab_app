@@ -15,7 +15,7 @@ class StoreOpeningStockRequest extends FormRequest
     {
         return [
             'inventory_location_id' => ['required', 'integer', 'exists:inv_inventory_locations,id'],
-            'quantity' => ['required', 'numeric', 'gt:0'],
+            'quantity' => ['required', 'numeric', 'min:0.0001'],
             'unit_cost' => ['nullable', 'numeric', 'min:0'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];

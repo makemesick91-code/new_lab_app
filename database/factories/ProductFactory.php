@@ -40,4 +40,9 @@ class ProductFactory extends Factory
     {
         return $this->state(fn () => ['is_active' => false]);
     }
+
+    public function requiresBatchTracking(): static
+    {
+        return $this->state(fn () => ['requires_batch_tracking' => true]);
+    }
 }

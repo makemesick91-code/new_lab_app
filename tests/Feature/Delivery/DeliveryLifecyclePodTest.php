@@ -3,11 +3,9 @@
 use App\Models\User;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Services\DeliveryService;
-use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabOrderStatusLog;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -46,53 +44,77 @@ it('rejects start delivery without assigned courier', function () {
         ->assertSessionHasErrors('courier_id');
 });
 
-it('uploads POD evidence to sys_attachments', function () {
+it('uploads POD with canvas signature data', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
     $delivery = sprint6DeliveryFor($courier);
 
     $this->actingAs($courier)->post(route('deliveries.start', $delivery));
 
     $this->actingAs($courier)
-        ->post(route('deliveries.pod', $delivery), [
-            'receiver_name' => 'Budi Santoso',
-            'received_at' => now()->format('Y-m-d H:i:s'),
-            'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-            'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
-        ])
+        ->post(route('deliveries.pod', $delivery), podPayload())
         ->assertRedirect(route('deliveries.show', $delivery));
 
     expect($delivery->refresh()->receiver_name)->toBe('Budi Santoso')
-        ->and(Attachment::where('entity_type', Delivery::ENTITY_TYPE)->where('category', 'POD_SIGNATURE')->exists())->toBeTrue()
-        ->and(Attachment::where('entity_type', Delivery::ENTITY_TYPE)->where('category', 'POD_RECEIVER_PHOTO')->exists())->toBeTrue()
+        ->and($delivery->receiver_signature_data)->toBe(validPodSignatureData())
         ->and(AuditLog::where('action', AuditLog::ACTION_UPLOAD_POD)->exists())->toBeTrue();
 });
 
-it('rejects POD upload without required receiver data and files', function () {
+it('rejects POD upload without required receiver data and signature', function () {
     $delivery = sprint6DeliveryFor();
 
     $this->actingAs(superAdmin())
         ->post(route('deliveries.pod', $delivery), [])
-        ->assertSessionHasErrors(['receiver_name', 'signature', 'receiver_photo', 'received_at']);
+        ->assertSessionHasErrors(['receiver_name', 'receiver_signature_data', 'received_at']);
 });
 
-it('marks delivered with POD and creates evidence categories', function () {
+it('rejects POD upload without recipient signature data', function () {
+    $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
+    $delivery = sprint6DeliveryFor($courier);
+    $this->actingAs($courier)->post(route('deliveries.start', $delivery));
+
+    $this->actingAs($courier)
+        ->post(route('deliveries.pod', $delivery), podPayload(['receiver_signature_data' => '']))
+        ->assertSessionHasErrors('receiver_signature_data');
+});
+
+it('stores canvas signature data in the database', function () {
+    $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
+    $delivery = sprint6DeliveryFor($courier);
+    $this->actingAs($courier)->post(route('deliveries.start', $delivery));
+
+    $signature = validPodSignatureData();
+    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), podPayload([
+        'receiver_signature_data' => $signature,
+    ]));
+
+    expect($delivery->refresh()->receiver_signature_data)->toBe($signature);
+});
+
+it('shows canvas signature on delivery detail after POD is saved', function () {
+    $courier = userWith(['view_delivery', 'start_delivery', 'upload_pod']);
+    $delivery = sprint6DeliveryFor($courier);
+    $this->actingAs($courier)->post(route('deliveries.start', $delivery));
+    $this->actingAs($courier)->post(route('deliveries.pod', $delivery), podPayload());
+
+    $this->actingAs($courier)
+        ->get(route('deliveries.show', $delivery))
+        ->assertOk()
+        ->assertSee('Tanda Tangan Penerima')
+        ->assertSee(validPodSignatureData(), false);
+});
+
+it('marks delivered with POD and stores canvas signature', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'mark_delivered', 'upload_pod']);
     $delivery = sprint6DeliveryFor($courier);
     $this->actingAs($courier)->post(route('deliveries.start', $delivery));
 
     $this->actingAs($courier)
-        ->post(route('deliveries.mark-delivered', $delivery), [
-            'receiver_name' => 'Budi Santoso',
-            'received_at' => now()->format('Y-m-d H:i:s'),
-            'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-            'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
-        ])
+        ->post(route('deliveries.mark-delivered', $delivery), podPayload())
         ->assertRedirect(route('deliveries.show', $delivery));
 
     expect($delivery->refresh()->status)->toBe(Delivery::STATUS_DELIVERED)
         ->and($delivery->labOrder->refresh()->status)->toBe(LabOrder::STATUS_DELIVERED)
-        ->and(Attachment::where('category', 'POD_SIGNATURE')->exists())->toBeTrue()
-        ->and(Attachment::where('category', 'POD_RECEIVER_PHOTO')->exists())->toBeTrue()
+        ->and($delivery->receiver_signature_data)->toBe(validPodSignatureData())
         ->and(AuditLog::where('action', AuditLog::ACTION_MARK_DELIVERED)->exists())->toBeTrue();
 });
 
@@ -100,12 +122,7 @@ it('completes a delivered order with POD', function () {
     $courier = userWith(['view_delivery', 'start_delivery', 'mark_delivered', 'upload_pod']);
     $delivery = sprint6DeliveryFor($courier);
     $this->actingAs($courier)->post(route('deliveries.start', $delivery));
-    $this->actingAs($courier)->post(route('deliveries.mark-delivered', $delivery), [
-        'receiver_name' => 'Budi Santoso',
-        'received_at' => now()->format('Y-m-d H:i:s'),
-        'signature' => UploadedFile::fake()->create('signature.png', 10, 'image/png'),
-        'receiver_photo' => UploadedFile::fake()->create('receiver.png', 10, 'image/png'),
-    ]);
+    $this->actingAs($courier)->post(route('deliveries.mark-delivered', $delivery), podPayload());
 
     $this->actingAs(superAdmin())
         ->post(route('deliveries.complete', $delivery->refresh()))
@@ -123,4 +140,14 @@ it('denies delivery actions for users without permission', function () {
     $this->actingAs(userWith(['view_delivery']))
         ->post(route('deliveries.start', $delivery))
         ->assertForbidden();
+});
+
+it('shows legacy delivery detail without canvas signature without crashing', function () {
+    $delivery = Delivery::factory()->delivered()->create();
+
+    $this->actingAs(superAdmin())
+        ->get(route('deliveries.show', $delivery))
+        ->assertOk()
+        ->assertSee('Panel POD')
+        ->assertSee('Tanda Tangan Penerima');
 });

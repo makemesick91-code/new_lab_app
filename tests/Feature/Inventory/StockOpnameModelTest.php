@@ -46,8 +46,8 @@ it('casts opname dates and item decimals', function () {
 
     expect($opname->opname_date)->toBeInstanceOf(Carbon::class)
         ->and($opname->completed_at)->toBeInstanceOf(Carbon::class)
-        ->and($item->system_quantity)->toBe('5.00')
-        ->and($item->variance_quantity)->toBe('0.00');
+        ->and($item->system_quantity)->toBe('5.0000')
+        ->and($item->variance_quantity)->toBe('0.0000');
 });
 
 it('defaults a new opname to DRAFT and supports status states', function () {

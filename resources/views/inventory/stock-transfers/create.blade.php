@@ -11,11 +11,13 @@
             <p class="mt-1">Pergerakan stok baru dibuat saat transfer diselesaikan. Draft dan pengajuan tidak mengubah stok terhitung.</p>
         </div>
 
-        <form method="POST" action="{{ route('inventory.stock-transfers.store') }}" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <form method="POST" action="{{ route('inventory.stock-transfers.store') }}" class="max-w-5xl space-y-6">
             @csrf
-            @include('inventory.stock-transfers._form')
+            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                @include('inventory.stock-transfers._form')
+            </div>
 
-            <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4">
+            <div class="flex flex-wrap items-center gap-3">
                 <a href="{{ route('inventory.stock-transfers.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Batal
                 </a>

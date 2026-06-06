@@ -49,6 +49,7 @@ class Delivery extends Model
         'delivery_notes',
         'receiver_name',
         'receiver_signature_path',
+        'receiver_signature_data',
         'receiver_photo_path',
         'received_at',
         'started_at',
@@ -95,11 +96,15 @@ class Delivery extends Model
         return $this->morphMany(AuditLog::class, 'entity');
     }
 
+    public function hasSignature(): bool
+    {
+        return filled($this->receiver_signature_data) || filled($this->receiver_signature_path);
+    }
+
     public function hasCompletePod(): bool
     {
         return filled($this->receiver_name)
-            && filled($this->receiver_signature_path)
-            && filled($this->receiver_photo_path)
+            && $this->hasSignature()
             && $this->received_at !== null;
     }
 

@@ -46,6 +46,11 @@ class Supplier extends Model
         return $this->hasMany(InventoryBatch::class, 'supplier_id');
     }
 
+    public function purchaseOrders(): HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class, 'supplier_id');
+    }
+
     protected static function newFactory(): SupplierFactory
     {
         return SupplierFactory::new();

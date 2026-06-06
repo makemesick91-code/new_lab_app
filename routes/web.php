@@ -6,6 +6,7 @@ use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
@@ -13,6 +14,9 @@ use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
+use App\Modules\Inventory\Controllers\ProductImportController;
+use App\Modules\Inventory\Controllers\PurchaseOrderController;
+use App\Modules\Inventory\Controllers\PurchaseRequestController;
 use App\Modules\Inventory\Controllers\StockCardController;
 use App\Modules\Inventory\Controllers\StockOpnameController;
 use App\Modules\Inventory\Controllers\StockTransferController;
@@ -321,6 +325,9 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('products/{product}/adjust-out', [InventoryStockController::class, 'storeAdjustOut'])->name('products.adjust-out.store');
 
     Route::resource('locations', InventoryLocationController::class);
+    Route::get('products/import/template', [ProductImportController::class, 'template'])->name('products.import.template');
+    Route::get('products/import', [ProductImportController::class, 'create'])->name('products.import');
+    Route::post('products/import', [ProductImportController::class, 'store'])->name('products.import.store');
     Route::resource('products', InventoryProductController::class);
     Route::resource('suppliers', InventorySupplierController::class);
 
@@ -336,6 +343,24 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('stock-transfers/{stockTransfer}/ship', [StockTransferController::class, 'ship'])->name('stock-transfers.ship');
     Route::post('stock-transfers/{stockTransfer}/receive', [StockTransferController::class, 'receive'])->name('stock-transfers.receive');
     Route::post('stock-transfers/{stockTransfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
+
+    Route::resource('purchase-requests', PurchaseRequestController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::post('purchase-requests/{purchaseRequest}/submit', [PurchaseRequestController::class, 'submit'])->name('purchase-requests.submit');
+    Route::post('purchase-requests/{purchaseRequest}/approve', [PurchaseRequestController::class, 'approve'])->name('purchase-requests.approve');
+    Route::post('purchase-requests/{purchaseRequest}/reject', [PurchaseRequestController::class, 'reject'])->name('purchase-requests.reject');
+    Route::post('purchase-requests/{purchaseRequest}/cancel', [PurchaseRequestController::class, 'cancel'])->name('purchase-requests.cancel');
+
+    Route::resource('purchase-orders', PurchaseOrderController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::post('purchase-orders/{purchaseOrder}/submit', [PurchaseOrderController::class, 'submit'])->name('purchase-orders.submit');
+    Route::post('purchase-orders/{purchaseOrder}/approve', [PurchaseOrderController::class, 'approve'])->name('purchase-orders.approve');
+    Route::post('purchase-orders/{purchaseOrder}/send', [PurchaseOrderController::class, 'send'])->name('purchase-orders.send');
+    Route::post('purchase-orders/{purchaseOrder}/cancel', [PurchaseOrderController::class, 'cancel'])->name('purchase-orders.cancel');
+
+    Route::resource('goods-receipts', GoodsReceiptController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::post('goods-receipts/{goodsReceipt}/submit', [GoodsReceiptController::class, 'submit'])->name('goods-receipts.submit');
+    Route::post('goods-receipts/{goodsReceipt}/post', [GoodsReceiptController::class, 'post'])->name('goods-receipts.post');
+    Route::post('goods-receipts/{goodsReceipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('goods-receipts.cancel');
+    Route::post('goods-receipts/{goodsReceipt}/void', [GoodsReceiptController::class, 'void'])->name('goods-receipts.void');
 });
 
 require __DIR__.'/auth.php';

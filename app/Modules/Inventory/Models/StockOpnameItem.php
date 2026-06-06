@@ -33,9 +33,9 @@ class StockOpnameItem extends Model
     protected function casts(): array
     {
         return [
-            'system_quantity' => 'decimal:2',
-            'counted_quantity' => 'decimal:2',
-            'variance_quantity' => 'decimal:2',
+            'system_quantity' => 'decimal:4',
+            'counted_quantity' => 'decimal:4',
+            'variance_quantity' => 'decimal:4',
             'unit_cost' => 'decimal:2',
         ];
     }

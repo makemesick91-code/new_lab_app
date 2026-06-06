@@ -53,7 +53,7 @@ it('casts transfer dates ship receive timestamps and item quantity decimals', fu
     expect($transfer->transfer_date)->toBeInstanceOf(Carbon::class)
         ->and($transfer->shipped_at)->toBeInstanceOf(Carbon::class)
         ->and($transfer->completed_at)->toBeInstanceOf(Carbon::class)
-        ->and($item->quantity)->toBe('5.00');
+        ->and($item->quantity)->toBe('5.0000');
 });
 
 it('defines lowercase transfer statuses for Sprint 15.2 receiving workflow', function () {
@@ -155,6 +155,6 @@ it('mass-assigns all stock transfer item fillable attributes', function () {
 
     expect($item->stock_transfer_id)->toBe($transfer->id)
         ->and($item->product_id)->toBe($product->id)
-        ->and($item->quantity)->toBe('12.50')
+        ->and($item->quantity)->toBe('12.5000')
         ->and($item->notes)->toBe('Transfer enough for production');
 });

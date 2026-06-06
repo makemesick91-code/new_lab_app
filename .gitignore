@@ -26,3 +26,6 @@ yarn-error.log
 # Cursor backups
 .cursor_backup_*/
 .cursor_backup_*
+# Graphify
+graphify-out/
+.graphify*
