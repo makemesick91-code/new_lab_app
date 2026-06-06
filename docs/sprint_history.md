@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 14.
+Sprint 15.2.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -45,6 +45,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | (post-12) | UI Design System & Dashboards | `e8c0141` … `52a7a1d` | (none — Blade/components) |
 | 13 | Stock Opname Workflow | `f4718c1` / `sprint-13.1-complete` | `trx_stock_opnames`, `trx_stock_opname_items` |
 | 14 | Stock Transfer Workflow | `72b618a` … (Sprint 14.7) / `sprint-14-ui-context-complete` | `trx_stock_transfers`, `trx_stock_transfer_items`; `TRANSFER_IN`/`TRANSFER_OUT` movement types |
+| 15.2 | Transfer Receiving Workflow | (Sprint 15.2 ship/receive refactor) | `shipped_at`, `shipped_by` on `trx_stock_transfers`; workflow `in_transit` / `received` statuses |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -702,6 +703,176 @@ product/location rejection, status transition guards, and UI permission visibili
 
 ---
 
+# Sprint 15.2 — Transfer Receiving Workflow
+
+## Sprint 15.2 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Business objective:** Evolve the Sprint 14 stock transfer workflow from a single-step
+completion into a **two-phase ship/receive handoff**. Source staff ship goods (stock leaves the
+source location and the document enters transit); destination staff receive goods later (stock
+arrives at the destination). This models in-transit inventory and separates ship vs receive audit
+actors without introducing mutable stock columns.
+
+**Planning note:** The permanent history records the original transfer implementation as **Sprint
+14**. Active milestone planning labeled the ship/receive evolution **Sprint 15.2** (design:
+`docs/sprint_15_2_transfer_receiving_design.md`).
+
+**Workflow states (current):** `draft → submitted → in_transit → received`, with `cancelled` as a
+terminal off-ramp from `draft` or `submitted` only. Legacy database rows with status `completed`
+remain readable; the UI labels them **Diterima** alongside `received` rows.
+
+## Changes from Sprint 14
+
+**Removed (legacy complete workflow):**
+- `StockTransferService::completeTransfer()`
+- `StockTransferController::complete()`
+- `StockTransferPolicy::complete()`
+- `CompleteStockTransferRequest`
+- Route `inventory.stock-transfers.complete` (`POST .../complete` now returns **404**)
+
+**Added (two-phase workflow):**
+- `StockTransferService::shipTransfer()` — `submitted → in_transit`; posts **TRANSFER_OUT only**
+- `StockTransferService::receiveTransfer()` — `in_transit → received`; posts **TRANSFER_IN only**
+- `StockTransferController::ship()` / `receive()`
+- `StockTransferPolicy::ship()` / `receive()`
+- `ShipStockTransferRequest` / `ReceiveStockTransferRequest`
+- Routes `inventory.stock-transfers.ship` and `inventory.stock-transfers.receive`
+
+**Status model extensions:**
+- New constants: `in_transit`, `received`
+- `STATUS_COMPLETED` retained **only** for legacy DB rows (not used by new workflow transitions)
+- `isInTransit()` and `isReceived()` helpers; `isReceived()` treats both `received` and
+  `completed` as terminal
+- Ledger panel on show view uses `isInTransit()` and `isReceived()` to display movements
+
+**Guards:**
+- Duplicate ship and duplicate receive are rejected
+- Cancel blocked after ship or receive (and for legacy `completed` / `received` / `in_transit`)
+- Ship requires source location derived stock sufficiency before posting OUT movements
+
+**Column names unchanged:** `completed_at` and `approved_by` still record receive completion;
+`shipped_at` and `shipped_by` added for ship audit (migration
+`2026_06_06_200001_add_ship_columns_to_trx_stock_transfers_table`).
+
+## Deliverables
+
+**Database (additive):**
+- `shipped_at` (nullable timestamp)
+- `shipped_by` (nullable FK → `users`)
+
+**Services:**
+- `shipTransfer()` — OUT movements at source; sets `in_transit`, `shipped_at`, `shipped_by`
+- `receiveTransfer()` — IN movements at destination; sets `received`, `approved_by`,
+  `completed_at`
+- Unchanged: `createTransfer()`, `updateTransfer()`, `submitTransfer()`, `cancelTransfer()`,
+  `getTransferDetails()`
+
+**Requests:**
+- `ShipStockTransferRequest`
+- `ReceiveStockTransferRequest`
+- Removed: `CompleteStockTransferRequest`
+
+**Policy abilities:**
+- `ship`, `receive` (require `manage_inventory` + active-branch ownership)
+- Removed: `complete`
+
+**Routes (current):**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/stock-transfers` | `inventory.stock-transfers.index` |
+| GET | `inventory/stock-transfers/create` | `inventory.stock-transfers.create` |
+| POST | `inventory/stock-transfers` | `inventory.stock-transfers.store` |
+| GET | `inventory/stock-transfers/{stock_transfer}` | `inventory.stock-transfers.show` |
+| GET | `inventory/stock-transfers/{stock_transfer}/edit` | `inventory.stock-transfers.edit` |
+| PUT/PATCH | `inventory/stock-transfers/{stock_transfer}` | `inventory.stock-transfers.update` |
+| POST | `inventory/stock-transfers/{stockTransfer}/submit` | `inventory.stock-transfers.submit` |
+| POST | `inventory/stock-transfers/{stockTransfer}/ship` | `inventory.stock-transfers.ship` |
+| POST | `inventory/stock-transfers/{stockTransfer}/receive` | `inventory.stock-transfers.receive` |
+| POST | `inventory/stock-transfers/{stockTransfer}/cancel` | `inventory.stock-transfers.cancel` |
+
+**UI (Indonesian operator labels):**
+- **Kirim Transfer** (ship) — replaces **Selesaikan Transfer**
+- **Terima Transfer** (receive) — new action for `in_transit` transfers
+- Status badges include **Dalam Perjalanan** (`in_transit`) and **Diterima** (`received` and
+  legacy `completed`)
+
+## Services and Business Rules
+
+`StockTransferService` preserves Sprint 14 layering inside `DB::transaction()` boundaries:
+
+1. **Branch resolution:** `BranchContext::requireId()` — never trust request `branch_id`.
+2. **Two-phase ledger flow:** Ship creates **OUT only** at source; receive creates **IN only** at
+   destination. Never post both movement types in a single action.
+3. **Ledger-derived stock:** Transfer documents store requested quantities only; stock remains
+   `SUM(quantity_in) - SUM(quantity_out)` per product+location. **No mutable stock columns.**
+4. **Ship:** Allowed only from `submitted`; locks transfer, locations, products, and items;
+   validates source sufficiency; posts `TRANSFER_OUT` per item; status → `in_transit`.
+5. **Receive:** Allowed only from `in_transit`; posts `TRANSFER_IN` per item at destination;
+   status → `received`; sets `approved_by` and `completed_at`.
+6. **Cancel:** Allowed from `draft` or `submitted` only; blocked after ship, receive, or for
+   terminal statuses.
+7. **Legacy compatibility:** Rows with status `completed` display as Diterima; `isReceived()`
+   includes `completed`; external callers of `POST .../complete` must migrate to ship + receive.
+
+## Quality Gates
+
+**StockTransfer-scoped verification (recorded at Sprint 15.2 completion):**
+
+| Gate | Result |
+|---|---|
+| Stock Transfer tests (`php artisan test --filter=StockTransfer`) | PASS — 81 tests, 435 assertions |
+| Pint (`vendor/bin/pint`) | PASS |
+| Routes (`php artisan route:list --name=stock-transfer`) | PASS — 10 routes; no `complete` route |
+
+> **Release note:** The gates above are **StockTransfer-scoped only**. A full-suite quality gate
+> (`php artisan test`, `npm run build`, and full route audit) is still required before the final
+> Sprint 15.2 release commit.
+
+## Architecture Notes
+
+- **Layering preserved:** `Controller → Request → Service → Repository → Model`.
+- **Ledger-only stock:** Ship and receive append movements to `trx_inventory_movements`; transfer
+  tables never store or mutate balances.
+- **No mutable stock columns:** Product and location rows are unchanged; derived stock only.
+- **Branch isolation:** Transfers remain same-branch, location-aware; `BranchContext` resolves
+  branch; policies enforce active-branch ownership.
+- **Two-phase transfer flow:** Operational handoff split across ship (OUT) and receive (IN);
+  in-transit documents show OUT movements; received documents show both OUT and IN.
+- **Atomic per phase:** Each ship or receive runs in a single DB transaction with `lockForUpdate()`
+  on transfer, locations, products, and items.
+- **Reference linkage:** Movements reference `trx_stock_transfers` via polymorphic
+  `reference_type`/`reference_id`.
+
+## Known Decisions
+
+- Sprint 15.2 **replaces** the Sprint 14 single-step `completeTransfer()` workflow; the complete
+  route and service method are intentionally removed (404 for legacy integrations).
+- `STATUS_COMPLETED` is a read-only legacy status constant; new transitions end at `received`.
+- `completed_at` / `approved_by` column names were not renamed in 15.2 (receive metadata); ship
+  audit uses `shipped_at` / `shipped_by`.
+- Inter-branch transfer remains **out of scope**.
+
+## Assumptions
+
+- External integrations previously calling `POST .../complete` must adopt ship then receive.
+- Legacy `completed` rows require no data migration for display; operators see Diterima.
+- View-only users (`view_inventory`) can list and view transfers but cannot ship, receive, or
+  cancel.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 15.2 — Transfer Receiving Workflow |
+| Status | COMPLETED (StockTransfer-scoped gates verified; full-suite gate pending release commit) |
+| Design Doc | `docs/sprint_15_2_transfer_receiving_design.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -727,6 +898,9 @@ product/location rejection, status transition guards, and UI permission visibili
 16. **S14** — Stock Transfer uses a document workflow (`draft → submitted → completed`) and posts
     paired `TRANSFER_OUT`/`TRANSFER_IN` ledger movements atomically on completion; transfer tables
     never store stock balances.
+17. **S15.2** — Stock Transfer evolved to a two-phase ship/receive workflow (`draft → submitted →
+    in_transit → received`); ship posts `TRANSFER_OUT` only, receive posts `TRANSFER_IN` only;
+    legacy `complete` workflow removed; `STATUS_COMPLETED` retained for legacy rows only.
 
 ---
 
@@ -749,6 +923,10 @@ product/location rejection, status transition guards, and UI permission visibili
 11. **S14** — Stock transfer moves quantity between locations within one branch via paired
     `TRANSFER_OUT`/`TRANSFER_IN` movements in one transaction; source location sufficiency checked
     at completion; transfer line quantities are document-only until completion.
+12. **S15.2** — Stock transfer ship/receive split: ship (`submitted → in_transit`) posts OUT only
+    with source sufficiency check; receive (`in_transit → received`) posts IN only; cancel blocked
+    after ship/receive; duplicate ship/receive guarded; legacy `completed` rows display as
+    Diterima.
 
 ---
 
@@ -773,6 +951,10 @@ product/location rejection, status transition guards, and UI permission visibili
    conventions: teal primary, bordered cards, dual responsive table/mobile layout, Indonesian
    operator labels, permission-gated workflow buttons, ledger movement display on completed
    transfers.
+6. **S15.2** — Stock Transfer UI actions renamed for two-phase workflow: **Kirim Transfer** and
+   **Terima Transfer** replace **Selesaikan Transfer**; status badges add **Dalam Perjalanan**
+   (`in_transit`) and **Diterima** (`received` + legacy `completed`); ledger panel driven by
+   `isInTransit()` / `isReceived()`.
 
 ---
 
@@ -833,11 +1015,15 @@ product/location rejection, status transition guards, and UI permission visibili
   stock, branch+location isolation, no mutable stock columns, service-managed finalization, and
   transactional posting. Opname compares counted vs derived stock and posts adjustment ledger
   movements **on finalize**; draft counts are never a stock source of truth.
-- **Sprint 14 completed baseline — Stock Transfer:** Future changes must preserve the document
-  workflow (`draft → submitted → completed`), paired `TRANSFER_OUT`/`TRANSFER_IN` ledger posting
-  in one transaction on completion, per-location source sufficiency checks, same-branch-only
-  locations, and no mutable stock columns. Never transfer by updating a stock column or by manual
-  adjustment pairs.
+- **Sprint 14 completed baseline — Stock Transfer (superseded by 15.2 for workflow):** Original
+  single-step `complete` workflow was replaced in Sprint 15.2. Future changes must preserve the
+  **15.2 ship/receive workflow** (`draft → submitted → in_transit → received`), ship posting
+  `TRANSFER_OUT` only and receive posting `TRANSFER_IN` only, per-location source sufficiency
+  checks at ship, same-branch-only locations, branch isolation, and no mutable stock columns.
+  Never transfer by updating a stock column or by manual adjustment pairs.
+- **Sprint 15.2 completed baseline — Transfer Receiving:** Future changes must preserve the
+  two-phase ledger flow, duplicate ship/receive guards, cancel blocked after ship/receive, legacy
+  `completed` row compatibility via `isReceived()`, and removal of the `complete` route/service.
 - **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
 - **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
@@ -884,7 +1070,7 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–14, ledger-derived, location-aware, Stock Opname, Stock Transfer).
+(S12–15.2, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -897,4 +1083,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 14 and must be updated as each new sprint completes.*
+Sprint 15.2 and must be updated as each new sprint completes.*
