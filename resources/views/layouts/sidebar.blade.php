@@ -112,6 +112,10 @@
                 <a href="{{ route('inventory.batches.index') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.batches.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Batch & Lot</a>
             @endcan
+            @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                <a href="{{ route('inventory.alerts.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.alerts.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Peringatan Stok</a>
+            @endcan
             @can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
                 <a href="{{ route('inventory.stock-transfers.index') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock-transfers.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Transfer Stok</a>

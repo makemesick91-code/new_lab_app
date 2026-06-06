@@ -119,4 +119,29 @@ class InventoryBatchRepository implements InventoryBatchRepositoryInterface
             ->orderByDesc('id')
             ->get();
     }
+
+    public function batchesWithDerivedStockForAlerts(int $branchId, ?int $locationId = null): Collection
+    {
+        $stockSub = InventoryMovement::query()
+            ->select('inventory_batch_id')
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as derived_stock')
+            ->where('branch_id', $branchId)
+            ->whereNotNull('inventory_batch_id')
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('inventory_batch_id');
+
+        return InventoryBatch::query()
+            ->with(['product.unit'])
+            ->select('inv_inventory_batches.*')
+            ->selectRaw('COALESCE(batch_stock.derived_stock, 0) as derived_stock')
+            ->leftJoinSub($stockSub, 'batch_stock', function ($join) {
+                $join->on('inv_inventory_batches.id', '=', 'batch_stock.inventory_batch_id');
+            })
+            ->where('inv_inventory_batches.branch_id', $branchId)
+            ->where('inv_inventory_batches.is_active', true)
+            ->whereNotNull('inv_inventory_batches.expiry_date')
+            ->whereRaw('COALESCE(batch_stock.derived_stock, 0) > 0')
+            ->orderBy('inv_inventory_batches.expiry_date')
+            ->get();
+    }
 }

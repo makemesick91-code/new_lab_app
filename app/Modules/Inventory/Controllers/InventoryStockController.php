@@ -10,6 +10,7 @@ use App\Modules\Inventory\Requests\InventoryFilterRequest;
 use App\Modules\Inventory\Requests\StoreAdjustmentRequest;
 use App\Modules\Inventory\Requests\StoreOpeningStockRequest;
 use App\Modules\Inventory\Requests\StoreReceiveStockRequest;
+use App\Modules\Inventory\Services\InventoryAlertService;
 use App\Modules\Inventory\Services\InventoryLocationService;
 use App\Modules\Inventory\Services\InventoryStockService;
 use App\Modules\Inventory\Services\InventorySupplierService;
@@ -25,6 +26,7 @@ class InventoryStockController extends Controller
 
     public function __construct(
         private readonly InventoryStockService $stock,
+        private readonly InventoryAlertService $alerts,
         private readonly InventoryLocationService $locations,
         private readonly InventorySupplierService $suppliers,
     ) {}
@@ -38,6 +40,7 @@ class InventoryStockController extends Controller
         return $this->renderInventoryView('inventory.stock.index', [
             'stockRows' => $this->stock->getStockRows($locationId),
             'summary' => $this->stock->getBranchSummary($locationId),
+            'alertSummary' => $this->alerts->getAlertSummary($locationId),
             'locations' => $this->locations->listActive(),
             'filters' => $request->filters(),
         ]);

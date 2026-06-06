@@ -74,6 +74,29 @@
             </dl>
         </section>
 
+        <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <h3 class="text-base font-semibold text-gray-900">Pengaturan Pesanan Ulang</h3>
+            <p class="mt-1 text-sm text-gray-500">Konfigurasi peringatan stok untuk produk ini. Stok tetap dihitung dari ledger.</p>
+            <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Titik Pesan Ulang</dt>
+                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id((float) ($product->reorder_point ?? 0)) }}</dd>
+                </div>
+                <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Jumlah Pesan Ulang</dt>
+                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id((float) ($product->reorder_quantity ?? 0)) }}</dd>
+                </div>
+                <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Peringatan Aktif</dt>
+                    <dd class="mt-1 font-semibold text-gray-900">{{ $product->alert_enabled ? 'Ya' : 'Tidak' }}</dd>
+                </div>
+                <div class="rounded-lg border border-gray-100 bg-gray-50 p-4">
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Stok Minimum (fallback)</dt>
+                    <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($minimumStock) }}</dd>
+                </div>
+            </dl>
+        </section>
+
         <div class="grid gap-6 lg:grid-cols-3">
             <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm lg:col-span-2">
                 <div class="flex flex-wrap items-start justify-between gap-3">

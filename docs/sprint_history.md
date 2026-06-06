@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 15.3.
+Sprint 15.4.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -47,6 +47,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 14 | Stock Transfer Workflow | `72b618a` … (Sprint 14.7) / `sprint-14-ui-context-complete` | `trx_stock_transfers`, `trx_stock_transfer_items`; `TRANSFER_IN`/`TRANSFER_OUT` movement types |
 | 15.2 | Transfer Receiving Workflow | (Sprint 15.2 ship/receive refactor) | `shipped_at`, `shipped_by` on `trx_stock_transfers`; workflow `in_transit` / `received` statuses |
 | 15.3 | Batch & Lot Tracking | (Sprint 15.3 batch/lot implementation) | `inv_inventory_batches`; `inventory_batch_id` on `trx_inventory_movements` and `trx_stock_transfer_items` |
+| 15.4 | Reorder Point & Inventory Alerts | (Sprint 15.4 reorder/alerts implementation) | `reorder_point`, `reorder_quantity`, `alert_enabled` on `inv_products` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1039,6 +1040,169 @@ batch_stock(batch, location) =
 
 ---
 
+# Sprint 15.4 — Reorder Point & Inventory Alerts
+
+## Sprint 15.4 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Branch:** `feature/sprint-15-inventory-advanced`
+
+**Scope:** Inventory Advanced (Sprint 15 milestone slice)
+
+**Business objective:** Add product-level reorder configuration and a unified, read-only inventory
+alert engine that surfaces out-of-stock, critical, low-stock, and batch expiry conditions — while
+preserving ledger-derived stock (`SUM(quantity_in) - SUM(quantity_out)`) with no mutable stock
+columns.
+
+**Planning note:** Design authority: `docs/sprint_15_4_reorder_alerts_design.md`. Implemented in
+four steps: schema/product fields, `InventoryAlertService`, alerts index page and dashboard widgets,
+and stock-value-card alignment with alert summary counts.
+
+## Deliverables
+
+**Database (additive):**
+- `reorder_point` (nullable `decimal(12,2)`) on `inv_products`
+- `reorder_quantity` (nullable `decimal(12,2)`) on `inv_products`
+- `alert_enabled` (`boolean`, default `true`) on `inv_products`
+- Migration: `2026_06_06_220000_add_reorder_fields_to_inv_products_table`
+
+**Models and factories:**
+- `Product` model — fillable/casts for reorder fields
+- `ProductFactory` — reorder field defaults for tests
+
+**Service layer:**
+- `InventoryAlertService` — stock severity classification, batch expiry alerts, unified alert list,
+  `getAlertSummary()` for KPI counts
+- Repository extensions: `productsWithDerivedStock()`, `batchesWithDerivedStockForAlerts()`
+
+**Controllers and routes:**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/alerts` | `inventory.alerts.index` |
+
+**Views and components:**
+- `inventory/alerts/index` — unified alert dashboard with filters, KPI strip, pagination
+- `inventory/alerts/_stock-severity-badge` — Habis / Kritis / Menipis badges
+- `x-inventory.alert-summary-widget` — dashboard alert summary card
+- `x-inventory.stock-alert-widget` — top stock alerts on dashboard
+- `x-inventory.batch-alert-widget` — top batch expiry alerts on dashboard
+- `x-inventory.stock-value-card` — inventory value + five alert KPI counts (aligned with
+  `InventoryAlertService`)
+- Product form/show — reorder fields and **Pengaturan Peringatan & Pesanan Ulang** panel
+- Sidebar **Peringatan Stok** link under Persediaan
+
+**Requests:**
+- `StoreProductRequest` / `UpdateProductRequest` — reorder field validation
+- `InventoryAlertFilterRequest` — location, severity, and type filters
+
+**Tests:**
+- `InventoryAlertTest` — stock/batch severity, branch isolation, authorization, UI index
+- `InventoryDashboardTest` — dashboard alert summary alignment with `getAlertSummary()`
+- Extensions in `InventoryUiTest`, `ProductTest`
+
+## Alert Rules
+
+Stock alerts (branch-scoped; optional `inventory_location_id` filter):
+
+| Severity | Code | Condition |
+|---|---|---|
+| Out of stock | `out_of_stock` | `current_stock <= 0` |
+| Critical stock | `critical` | `current_stock > 0` AND `current_stock <= minimum_stock` (when `minimum_stock > 0`) |
+| Low stock | `low` | `current_stock <= effective_reorder_point` (when effective reorder point `> 0` and not already critical/OOS) |
+
+Effective reorder point:
+
+```text
+effective_reorder_point(product) =
+  COALESCE(NULLIF(reorder_point, 0), minimum_stock)
+```
+
+Batch expiry alerts (derived batch stock `> 0` required):
+
+| Severity | Code | Condition |
+|---|---|---|
+| Expired batch | `batch_expired` | `expiry_date < today` AND derived batch stock `> 0` |
+| Expiring soon | `batch_expiring_soon` | `expiry_date` within 30 days (inclusive) AND derived batch stock `> 0` |
+
+Additional rules:
+- `alert_enabled = false` excludes product from stock alerts.
+- Inactive products and batches excluded.
+- Batches without `expiry_date` excluded from expiry alerts.
+- Alerts are computed on read — no `trx_inventory_alerts` persistence table.
+
+## Ledger Rules
+
+- Stock remains **ledger-derived only:**
+
+```text
+current_stock = SUM(quantity_in) - SUM(quantity_out)
+```
+
+- **No mutable stock columns** on products, locations, or batches.
+- Batch stock remains derived from movements filtered by `inventory_batch_id`.
+- `reorder_quantity` is informational only — no automatic PO or ledger write in 15.4.
+
+## UI Notes
+
+- **Peringatan Stok** sidebar menu — permission-gated via `@can('viewAny', InventoryMovement::class)`.
+- Indonesian operator labels on dashboard and alerts index:
+  - **Stok Habis** — out-of-stock count
+  - **Stok Kritis** — critical count
+  - **Stok Rendah** — low-stock count
+  - **Batch Kedaluwarsa** — expired batch count
+  - **Segera Kedaluwarsa** — expiring-soon batch count
+  - **Rekomendasi Reorder** — reorder quantity hint on alert rows
+  - **Jumlah Pesan Ulang** — product form field for `reorder_quantity`
+- `stock-value-card` displays inventory value plus the five alert KPI counts sourced from
+  `InventoryAlertService::getAlertSummary()`.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 15.4 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 607 tests, 1902 assertions |
+| Alert-filtered tests (`php artisan test --filter=InventoryAlert`) | PASS — 17 tests, 45 assertions |
+| Pint (`vendor/bin/pint`) | PASS |
+| Routes (`php artisan route:list`) | PASS — 193 routes total; 1 alert route (`inventory.alerts.index`) |
+| Migration (`php artisan migrate:fresh --seed`) | PASS — all migrations including 15.4 reorder fields on `inv_products` |
+| Frontend build (`npm run build`) | PASS — Vite production build (`app-TtdU21Qi.css`, `app-CoaHkm5D.js`) |
+
+## Architecture Notes
+
+- **Layering preserved:** `InventoryAlertController` → `InventoryAlertFilterRequest` →
+  `InventoryAlertService` → movement/batch repositories.
+- **Branch isolation:** `BranchContext::requireId()`; location filter validated via
+  `findInBranch()`; cross-branch products/batches never appear in alert lists.
+- **Sprint 15.3 compatibility:** Batch expiry alerts reuse `InventoryBatchService::EXPIRING_SOON_DAYS`
+  and derived batch stock; outbound expired-batch guards unchanged.
+- **Legacy coexistence:** `lowStockProducts()` repository method retained for the dashboard
+  low-stock widget; alert KPIs use `InventoryAlertService` as source of truth.
+
+## Known Risks
+
+- **No notification channel yet** — operators must open dashboard/alerts page; email/SMS/push deferred.
+- **Owner cross-branch rollup deferred** — owner dashboard alert integration remains out of scope.
+- **KPI duplication on dashboard** — KPI strip, `stock-value-card`, and `alert-summary-widget` may
+  need a UX consolidation pass.
+- **`lowStockProducts()` still exists** — legacy low-stock widget uses older threshold logic;
+  gradual migration to `InventoryAlertService` recommended.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 15.4 — Reorder Point & Inventory Alerts |
+| Branch | `feature/sprint-15-inventory-advanced` |
+| Status | COMPLETED (full-suite gates verified) |
+| Design Doc | `docs/sprint_15_4_reorder_alerts_design.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1069,6 +1233,9 @@ batch_stock(batch, location) =
     legacy `complete` workflow removed; `STATUS_COMPLETED` retained for legacy rows only.
 18. **S15.3** — Batch/lot identity on `inv_inventory_batches`; movements optionally reference
     `inventory_batch_id`; batch stock ledger-derived; expired outbound blocked; read-only batch UI.
+19. **S15.4** — Unified inventory alerts computed on read via `InventoryAlertService`; product
+    reorder fields (`reorder_point`, `reorder_quantity`, `alert_enabled`) on `inv_products`; stock
+    and batch alerts remain ledger-derived; no alert persistence table.
 
 ---
 
@@ -1098,6 +1265,9 @@ batch_stock(batch, location) =
 13. **S15.3** — Batch/lot identity is metadata on `inv_inventory_batches`; quantity remains on
     the movement ledger; nullable `inventory_batch_id` preserves pre-15.3 behavior; outbound
     movements reject inactive or expired batches.
+14. **S15.4** — Stock alert severities: out-of-stock (`<= 0`), critical (`<= minimum_stock`),
+    low (`<= effective_reorder_point`); batch expiry alerts require derived batch stock `> 0`;
+    `alert_enabled` gates stock alerts; `reorder_quantity` is informational only.
 
 ---
 
@@ -1129,6 +1299,9 @@ batch_stock(batch, location) =
 7. **S15.3** — Batch & Lot UI under Persediaan sidebar; index/show read-only; expiry badges;
    batch context integrated into receive, adjust, and transfer forms without menu sprawl beyond
    one permission-gated **Batch & Lot** link.
+8. **S15.4** — **Peringatan Stok** alerts index with unified stock/batch table; dashboard KPI
+   strip and `stock-value-card` aligned to `InventoryAlertService`; severity badges Habis / Kritis /
+   Menipis / Kedaluwarsa / Segera Kedaluwarsa; reorder fields on product form/show.
 
 ---
 
@@ -1203,6 +1376,11 @@ batch_stock(batch, location) =
   `inventory_batch_id` backward compatibility, branch-scoped batch access, inactive/expired batch
   outbound guards, and transfer ship/receive batch FK propagation. Batch-aware stock opname and
   `requires_batch_tracking` product flag remain follow-up work.
+- **Sprint 15.4 completed baseline — Reorder Point & Inventory Alerts:** Future changes must
+  preserve ledger-derived alert quantities (no mutable stock or alert-count columns), read-only
+  computed alerts via `InventoryAlertService`, branch-scoped alert queries, `alert_enabled`
+  gating, and informational-only `reorder_quantity`. Notification channels, alert persistence,
+  and owner cross-branch rollup remain follow-up work.
 - **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
 - **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
@@ -1249,8 +1427,8 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–15.3, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
-Batch & Lot tracking).
+(S12–15.4, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
+Batch & Lot tracking, Reorder Point & Inventory Alerts).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -1263,4 +1441,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 15.3 and must be updated as each new sprint completes.*
+Sprint 15.4 and must be updated as each new sprint completes.*

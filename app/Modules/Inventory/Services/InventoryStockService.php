@@ -294,16 +294,13 @@ class InventoryStockService
         return $this->movements->recentMovements($this->branchContext->requireId(), $limit);
     }
 
+    /**
+     * @return array{inventory_value: float}
+     */
     public function getBranchSummary(?int $locationId = null): array
     {
-        $lowStockProducts = $this->getLowStockProducts($locationId);
-
         return [
             'inventory_value' => $this->getInventoryValue($locationId),
-            'low_stock_count' => $lowStockProducts->count(),
-            'out_of_stock_count' => $lowStockProducts
-                ->filter(fn ($product) => (float) $product->current_stock <= 0)
-                ->count(),
         ];
     }
 

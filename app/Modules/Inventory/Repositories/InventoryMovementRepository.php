@@ -147,6 +147,26 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->get();
     }
 
+    public function productsWithDerivedStock(int $branchId, ?int $locationId = null): Collection
+    {
+        $stock = InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as current_stock')
+            ->where('branch_id', $branchId)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id');
+
+        return Product::query()
+            ->with('unit')
+            ->where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->leftJoinSub($stock, 'stock', fn ($join) => $join->on('stock.product_id', '=', 'inv_products.id'))
+            ->select('inv_products.*')
+            ->selectRaw('COALESCE(stock.current_stock, 0) as current_stock')
+            ->orderBy('inv_products.name')
+            ->get();
+    }
+
     public function inventoryValue(int $branchId, ?int $locationId = null): float
     {
         $stock = InventoryMovement::query()

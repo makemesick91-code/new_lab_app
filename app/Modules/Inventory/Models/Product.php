@@ -23,6 +23,9 @@ class Product extends Model
         'code',
         'description',
         'minimum_stock',
+        'reorder_point',
+        'reorder_quantity',
+        'alert_enabled',
         'average_cost',
         'is_active',
     ];
@@ -31,6 +34,9 @@ class Product extends Model
     {
         return [
             'minimum_stock' => 'decimal:2',
+            'reorder_point' => 'decimal:2',
+            'reorder_quantity' => 'decimal:2',
+            'alert_enabled' => 'boolean',
             'average_cost' => 'decimal:2',
             'is_active' => 'boolean',
         ];

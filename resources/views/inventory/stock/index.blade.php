@@ -16,18 +16,22 @@
             </form>
         </div>
 
-        <div class="grid gap-4 sm:grid-cols-3">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Nilai Persediaan</p>
                 <p class="mt-1 text-2xl font-semibold text-gray-900">{{ format_currency_id($summary['inventory_value']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
-                <p class="text-xs text-gray-500">Stok Menipis</p>
-                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ format_number_id((int) $summary['low_stock_count']) }}</p>
+                <p class="text-xs text-gray-500">Stok Kritis</p>
+                <p class="mt-1 text-2xl font-semibold text-orange-700">{{ format_number_id((int) $alertSummary['critical_stock_count']) }}</p>
+            </div>
+            <div class="bg-white shadow-sm sm:rounded-lg p-4">
+                <p class="text-xs text-gray-500">Stok Rendah</p>
+                <p class="mt-1 text-2xl font-semibold text-amber-700">{{ format_number_id((int) $alertSummary['low_stock_count']) }}</p>
             </div>
             <div class="bg-white shadow-sm sm:rounded-lg p-4">
                 <p class="text-xs text-gray-500">Stok Habis</p>
-                <p class="mt-1 text-2xl font-semibold text-red-700">{{ format_number_id((int) $summary['out_of_stock_count']) }}</p>
+                <p class="mt-1 text-2xl font-semibold text-red-700">{{ format_number_id((int) $alertSummary['out_of_stock_count']) }}</p>
             </div>
         </div>
 

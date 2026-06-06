@@ -19,4 +19,6 @@ interface InventoryBatchRepositoryInterface
     public function movementsForBatch(int $branchId, int $batchId): Collection;
 
     public function transferReferencesForBatch(int $branchId, int $batchId): Collection;
+
+    public function batchesWithDerivedStockForAlerts(int $branchId, ?int $locationId = null): Collection;
 }

@@ -25,7 +25,7 @@
                 <h3 id="inventory-kpis" class="text-base font-semibold text-gray-900">Kartu KPI Persediaan</h3>
                 <p class="text-xs text-gray-500">Ringkasan cabang berbasis ledger</p>
             </div>
-            <div class="grid gap-4 sm:grid-cols-3">
+            <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <x-inventory.kpi-card
                     label="Total Nilai Persediaan"
                     :value="format_currency_id($summary['inventory_value'])"
@@ -34,23 +34,46 @@
                     :href="route('inventory.stock.index')"
                 />
                 <x-inventory.kpi-card
-                    label="Jumlah Stok Menipis"
-                    :value="format_number_id((int) $summary['low_stock_count'])"
-                    hint="Pada atau di bawah stok minimum"
+                    label="Stok Kritis"
+                    :value="format_number_id((int) $alertSummary['critical_stock_count'])"
+                    hint="Di bawah stok minimum, di atas nol"
                     tone="warning"
-                    :href="route('inventory.stock.index')"
+                    :href="route('inventory.alerts.index', ['severity' => 'critical'])"
                 />
                 <x-inventory.kpi-card
-                    label="Jumlah Stok Habis"
-                    :value="format_number_id((int) $summary['out_of_stock_count'])"
+                    label="Stok Habis"
+                    :value="format_number_id((int) $alertSummary['out_of_stock_count'])"
                     hint="Stok saat ini nol atau kurang"
                     tone="danger"
-                    :href="route('inventory.stock.index')"
+                    :href="route('inventory.alerts.index', ['severity' => 'out_of_stock'])"
+                />
+                <x-inventory.kpi-card
+                    label="Stok Rendah"
+                    :value="format_number_id((int) $alertSummary['low_stock_count'])"
+                    hint="Pada atau di bawah titik pesan ulang"
+                    tone="warning"
+                    :href="route('inventory.alerts.index', ['severity' => 'low'])"
+                />
+                <x-inventory.kpi-card
+                    label="Batch Kedaluwarsa"
+                    :value="format_number_id((int) $alertSummary['batch_expired_count'])"
+                    hint="Batch kedaluwarsa dengan stok tersisa"
+                    tone="danger"
+                    :href="route('inventory.alerts.index', ['severity' => 'batch_expired'])"
+                />
+                <x-inventory.kpi-card
+                    label="Segera Kedaluwarsa"
+                    :value="format_number_id((int) $alertSummary['batch_expiring_soon_count'])"
+                    hint="Kedaluwarsa dalam 30 hari"
+                    tone="warning"
+                    :href="route('inventory.alerts.index', ['severity' => 'batch_expiring_soon'])"
                 />
             </div>
         </section>
 
-        <x-inventory.stock-value-card :summary="$summary" scope-label="Cabang aktif" />
+        <x-inventory.alert-summary-widget :summary="$alertSummary" :href="route('inventory.alerts.index')" />
+
+        <x-inventory.stock-value-card :summary="$summary" :alert-summary="$alertSummary" scope-label="Cabang aktif" />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <x-inventory.dashboard-section
@@ -76,11 +99,16 @@
                 @endif
             </x-inventory.dashboard-section>
 
-            <x-inventory.low-stock-widget
-                :items="$lowStockProducts"
-                :href="route('inventory.stock.index')"
+            <x-inventory.stock-alert-widget
+                :items="$stockAlerts"
+                :href="route('inventory.alerts.index')"
             />
         </div>
+
+        <x-inventory.batch-alert-widget
+            :items="$batchAlerts"
+            :href="route('inventory.alerts.index', ['type' => 'batch'])"
+        />
 
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
             <x-inventory.movement-timeline

@@ -28,6 +28,9 @@ class ProductFactory extends Factory
             'code' => 'PRD-'.strtoupper(Str::random(6)),
             'description' => fake()->optional()->sentence(),
             'minimum_stock' => fake()->randomFloat(2, 1, 20),
+            'reorder_point' => 0,
+            'reorder_quantity' => 0,
+            'alert_enabled' => true,
             'average_cost' => fake()->randomFloat(2, 10000, 500000),
             'is_active' => true,
         ];

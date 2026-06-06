@@ -32,6 +32,9 @@ class UpdateProductRequest extends FormRequest
             ],
             'description' => ['nullable', 'string', 'max:2000'],
             'minimum_stock' => ['nullable', 'numeric', 'min:0'],
+            'reorder_point' => ['nullable', 'numeric', 'min:0'],
+            'reorder_quantity' => ['nullable', 'numeric', 'min:0'],
+            'alert_enabled' => ['nullable', 'boolean'],
             'average_cost' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
         ];

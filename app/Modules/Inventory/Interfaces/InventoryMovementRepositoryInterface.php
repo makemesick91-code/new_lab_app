@@ -28,6 +28,8 @@ interface InventoryMovementRepositoryInterface
 
     public function lowStockProducts(int $branchId, ?int $locationId = null): Collection;
 
+    public function productsWithDerivedStock(int $branchId, ?int $locationId = null): Collection;
+
     public function inventoryValue(int $branchId, ?int $locationId = null): float;
 
     public function recentMovements(int $branchId, int $limit = 10): Collection;

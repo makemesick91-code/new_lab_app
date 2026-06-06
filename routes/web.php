@@ -6,6 +6,7 @@ use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
@@ -298,6 +299,8 @@ Route::middleware('auth')->prefix('reports')->name('reports.')->group(function (
 */
 Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(function () {
     Route::get('dashboard', [InventoryDashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('alerts', [InventoryAlertController::class, 'index'])->name('alerts.index');
 
     Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');
 
