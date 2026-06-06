@@ -21,11 +21,17 @@ class InventoryMovement extends Model
 
     public const TYPE_ADJUSTMENT_OUT = 'ADJUSTMENT_OUT';
 
+    public const TYPE_TRANSFER_IN = 'TRANSFER_IN';
+
+    public const TYPE_TRANSFER_OUT = 'TRANSFER_OUT';
+
     public const TYPES = [
         self::TYPE_OPENING,
         self::TYPE_PURCHASE,
         self::TYPE_ADJUSTMENT_IN,
         self::TYPE_ADJUSTMENT_OUT,
+        self::TYPE_TRANSFER_IN,
+        self::TYPE_TRANSFER_OUT,
     ];
 
     protected $table = 'trx_inventory_movements';

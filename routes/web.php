@@ -12,6 +12,7 @@ use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
 use App\Modules\Inventory\Controllers\StockCardController;
 use App\Modules\Inventory\Controllers\StockOpnameController;
+use App\Modules\Inventory\Controllers\StockTransferController;
 use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierController;
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
@@ -319,6 +320,11 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('stock-opnames/{stockOpname}/finalize', [StockOpnameController::class, 'finalize'])->name('stock-opnames.finalize');
     Route::post('stock-opnames/{stockOpname}/cancel', [StockOpnameController::class, 'cancel'])->name('stock-opnames.cancel');
     Route::post('stock-opnames/{stockOpname}/products/{productId}/counted-quantity', [StockOpnameController::class, 'updateCountedQuantity'])->name('stock-opnames.update-counted-quantity');
+
+    Route::resource('stock-transfers', StockTransferController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::post('stock-transfers/{stockTransfer}/submit', [StockTransferController::class, 'submit'])->name('stock-transfers.submit');
+    Route::post('stock-transfers/{stockTransfer}/complete', [StockTransferController::class, 'complete'])->name('stock-transfers.complete');
+    Route::post('stock-transfers/{stockTransfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
 });
 
 require __DIR__.'/auth.php';

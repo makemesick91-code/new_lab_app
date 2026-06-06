@@ -30,16 +30,19 @@ use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
+use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
+use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
 use App\Modules\Inventory\Policies\StockOpnamePolicy;
+use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -47,6 +50,7 @@ use App\Modules\Inventory\Repositories\ProductCategoryRepository;
 use App\Modules\Inventory\Repositories\ProductRepository;
 use App\Modules\Inventory\Repositories\ProductUnitRepository;
 use App\Modules\Inventory\Repositories\StockOpnameRepository;
+use App\Modules\Inventory\Repositories\StockTransferRepository;
 use App\Modules\Inventory\Repositories\SupplierRepository;
 use App\Modules\Invoice\Interfaces\InvoiceRepositoryInterface;
 use App\Modules\Invoice\Interfaces\PaymentRepositoryInterface;
@@ -156,6 +160,8 @@ class RepositoryServiceProvider extends ServiceProvider
         InventoryMovementRepositoryInterface::class => InventoryMovementRepository::class,
         // Sprint 13 - Stock Opname
         StockOpnameRepositoryInterface::class => StockOpnameRepository::class,
+        // Sprint 14 - Stock Transfer
+        StockTransferRepositoryInterface::class => StockTransferRepository::class,
     ];
 
     /**
@@ -229,6 +235,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Supplier::class => SupplierPolicy::class,
         InventoryMovement::class => InventoryMovementPolicy::class,
         StockOpname::class => StockOpnamePolicy::class,
+        StockTransfer::class => StockTransferPolicy::class,
     ];
 
     public function register(): void

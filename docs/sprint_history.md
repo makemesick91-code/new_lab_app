@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 13.
+Sprint 14.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -44,6 +44,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 12 | Inventory Core | `cafbb73` … `bbc9843` | `inv_*` (6 tables incl. `trx_inventory_movements`) |
 | (post-12) | UI Design System & Dashboards | `e8c0141` … `52a7a1d` | (none — Blade/components) |
 | 13 | Stock Opname Workflow | `f4718c1` / `sprint-13.1-complete` | `trx_stock_opnames`, `trx_stock_opname_items` |
+| 14 | Stock Transfer Workflow | `72b618a` … (Sprint 14.7) / `sprint-14-ui-context-complete` | `trx_stock_transfers`, `trx_stock_transfer_items`; `TRANSFER_IN`/`TRANSFER_OUT` movement types |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -432,6 +433,275 @@ Finalize is available only while the opname is `COUNTING`.
 
 ---
 
+# Sprint 14 — Stock Transfer Workflow
+
+## Sprint 14 Overview
+
+**Status:** COMPLETED. Release tag `sprint-14-ui-context-complete`, schema commit `72b618a`,
+completion date 2026-06-06 (Sprint 14.7 documentation and release completion).
+
+**Business objective:** Extend Inventory with a branch-scoped inter-location stock transfer
+workflow. Users create a transfer document from a source location to a destination location within
+the active branch, submit it for processing, and complete it to post paired ledger movements. Stock
+remains ledger-derived; transfer tables store workflow identity and requested quantities only.
+
+**Workflow states:** `draft → submitted → completed`, with `cancelled` as a terminal off-ramp from
+`draft` or `submitted`. Draft transfers are editable; submitted transfers await completion;
+completed transfers are immutable and show linked ledger movements on the detail screen.
+
+## Deliverables
+
+**Database:**
+- `trx_stock_transfers` (transfer document header)
+- `trx_stock_transfer_items` (per-product transfer lines)
+
+**Models:**
+- `StockTransfer`
+- `StockTransferItem`
+
+**Movement types (ledger extension):**
+- `TRANSFER_OUT` — outbound from source location on completion
+- `TRANSFER_IN` — inbound to destination location on completion
+
+**Services:**
+- `createTransfer()`
+- `updateTransfer()`
+- `submitTransfer()`
+- `completeTransfer()`
+- `cancelTransfer()`
+- `getTransferDetails()`
+
+**Repository:**
+- `StockTransferRepository` / `StockTransferRepositoryInterface`
+
+**Requests:**
+- `StoreStockTransferRequest`
+- `UpdateStockTransferRequest`
+- `SubmitStockTransferRequest`
+- `CompleteStockTransferRequest`
+- `CancelStockTransferRequest`
+- `ValidatesStockTransferInput` (shared concern)
+
+**Policy:** `StockTransferPolicy`.
+
+**Controller:** `StockTransferController`.
+
+**Routes:**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/stock-transfers` | `inventory.stock-transfers.index` |
+| GET | `inventory/stock-transfers/create` | `inventory.stock-transfers.create` |
+| POST | `inventory/stock-transfers` | `inventory.stock-transfers.store` |
+| GET | `inventory/stock-transfers/{stock_transfer}` | `inventory.stock-transfers.show` |
+| GET | `inventory/stock-transfers/{stock_transfer}/edit` | `inventory.stock-transfers.edit` |
+| PUT/PATCH | `inventory/stock-transfers/{stock_transfer}` | `inventory.stock-transfers.update` |
+| POST | `inventory/stock-transfers/{stockTransfer}/submit` | `inventory.stock-transfers.submit` |
+| POST | `inventory/stock-transfers/{stockTransfer}/complete` | `inventory.stock-transfers.complete` |
+| POST | `inventory/stock-transfers/{stockTransfer}/cancel` | `inventory.stock-transfers.cancel` |
+
+**Views:**
+- Index (`inventory/stock-transfers/index`)
+- Create (`inventory/stock-transfers/create`)
+- Edit (`inventory/stock-transfers/edit`)
+- Show (`inventory/stock-transfers/show`)
+- Partials: `_form`, `_status-badge`
+- Sidebar link: Transfer Stok (permission-gated via `@can('viewAny', StockTransfer::class)`)
+
+**Factories:**
+- `StockTransferFactory`
+- `StockTransferItemFactory`
+
+## Database Changes
+
+**`trx_stock_transfers`**
+- `branch_id` → `mst_branches`
+- `transfer_number` (unique per branch: `UNIQUE(branch_id, transfer_number)`)
+- `source_inventory_location_id` → `inv_inventory_locations`
+- `destination_inventory_location_id` → `inv_inventory_locations`
+- `transfer_date`, `status` (default `draft`), `notes`
+- `requested_by`, `approved_by` (nullable), `completed_at` (nullable), `created_by` → `users`
+- Indexes: `branch_id`, source/destination location, `status`, `transfer_date`,
+  `(branch_id, status)`, `(branch_id, transfer_date)`
+
+**`trx_stock_transfer_items`**
+- `stock_transfer_id` → `trx_stock_transfers` (cascade delete)
+- `product_id` → `inv_products`
+- `quantity` (`decimal(12,2)`), `notes`
+- Index: `(stock_transfer_id, product_id)`
+
+**No mutable stock columns** were added to products, locations, or any other table.
+
+## Models and Relationships
+
+**`StockTransfer`** (`trx_stock_transfers`)
+- Status constants: `draft`, `submitted`, `completed`, `cancelled` (lowercase strings)
+- Relations: `branch`, `sourceInventoryLocation`, `destinationInventoryLocation`, `requestedBy`,
+  `approvedBy`, `createdBy`, `items`
+- Casts: `transfer_date` (date), `completed_at` (datetime)
+
+**`StockTransferItem`** (`trx_stock_transfer_items`)
+- Relations: `stockTransfer`, `product`
+- Casts: `quantity` (decimal:2)
+- Line quantities are requested transfer amounts, not stock balances
+
+**`InventoryMovement`** (extended)
+- Added `TYPE_TRANSFER_IN` and `TYPE_TRANSFER_OUT` to movement type constants
+- Completed transfers reference `reference_type = trx_stock_transfers`,
+  `reference_id = transfer.id`
+
+## Services and Business Rules
+
+`StockTransferService` owns all workflow rules inside `DB::transaction()` boundaries:
+
+1. **Branch resolution:** `BranchContext::requireId()` — never trust request `branch_id`.
+2. **Location validation:** Source and destination must be active locations in the active branch;
+   source and destination must differ.
+3. **Product validation:** Items must reference active products in the active branch; quantities
+   must be > 0; duplicate product lines are merged on create/update.
+4. **Draft-only edits:** `updateTransfer()` allowed only when status is `draft`.
+5. **Submit:** `submitTransfer()` moves `draft → submitted` after validating locations, items, and
+   product/quantity rules.
+6. **Complete:** `completeTransfer()` allowed only from `submitted`; locks transfer, locations,
+   products, and items with `lockForUpdate()`; checks per-product source location derived stock
+   sufficiency; posts paired `TRANSFER_OUT` (source) and `TRANSFER_IN` (destination) movements per
+   item; sets `approved_by`, `completed_at`, status `completed`.
+7. **Cancel:** Allowed from `draft` or `submitted`; blocked for `completed` or already `cancelled`.
+8. **Transfer number:** Generated as `TRF-{Ym}-{RANDOM6}` (e.g. `TRF-202606-ABCDEF`).
+9. **Movement metadata:** `unit_cost` from `product.average_cost`; `movement_date` from transfer
+   date; notes reference the transfer number.
+
+## Requests
+
+All write requests use `ValidatesStockTransferInput` for shared rules:
+- Required distinct source/destination location IDs (active, in active branch)
+- Required `items` array (min 1) with `product_id`, `quantity > 0`
+- Optional `transfer_date`, `notes`
+- Branch-safe `withValidator` checks for active locations and products
+
+`SubmitStockTransferRequest` and `CompleteStockTransferRequest` carry no body fields.
+`CancelStockTransferRequest` accepts optional `notes`.
+
+## Policies
+
+`StockTransferPolicy` uses `ChecksInventoryAccess`:
+- `viewAny` / `view`: `view_inventory` + active-branch ownership
+- `create` / `update` / `delete` / `submit` / `complete` / `cancel`: `manage_inventory` +
+  active-branch ownership
+- Super Admin bypass remains centralized in `RepositoryServiceProvider` (not duplicated)
+
+## Controllers and Routes
+
+`StockTransferController` is thin: authorize, delegate to service/repository, return view/redirect.
+Index paginates via repository with filters (search, source/destination location, status, date
+range). Show loads ledger movements when status is `completed`. Registered under
+`inventory.*` prefix with `auth` middleware in `routes/web.php`. Wired in
+`RepositoryServiceProvider` (interface binding + policy registration).
+
+## Blade UI
+
+Follows `docs/ui_design_system.md` conventions:
+- `<x-settings-shell>` layout, teal primary (`teal-700`), bordered cards, dual desktop-table /
+  mobile-card responsive lists
+- Indonesian operator-facing labels (Transfer Stok, Lokasi Sumber/Tujuan, status badges)
+- Permission-aware action buttons (`@can` for create, edit, submit, complete, cancel)
+- Show page displays linked ledger movements for completed transfers
+- Empty states and filter card on index
+
+## Tests
+
+65 focused tests across 7 files under `tests/Feature/Inventory/`:
+
+| File | Focus |
+|---|---|
+| `StockTransferModelTest` | Relations, casts, statuses, fillable |
+| `StockTransferServiceTest` | Workflow, ledger posting, stock sufficiency, branch isolation |
+| `StockTransferRequestTest` | Validation, branch-safe location/product checks |
+| `StockTransferPolicyTest` | Authorization matrix, cross-branch denial |
+| `StockTransferControllerTest` | Routes, HTTP happy paths, auth denial |
+| `StockTransferHardeningTest` | Branch isolation, ledger correctness, status guards, no mutable stock |
+| `StockTransferUiTest` | Blade visibility, Indonesian labels, permission-gated buttons |
+
+Coverage includes: happy path, validation, authorization, branch isolation, location isolation,
+ledger correctness (paired movements, derived balances), insufficient stock, inactive
+product/location rejection, status transition guards, and UI permission visibility.
+
+## Quality Gates
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 501 tests, 1460 assertions |
+| Stock Transfer tests (`--filter=StockTransfer`) | PASS — 65 tests, 319 assertions |
+| Pint (`vendor/bin/pint --test`) | PASS |
+| Routes (`php artisan route:list --name=stock-transfer`) | PASS — 9 routes registered |
+| Build (`npm run build`) | PASS |
+
+## Architecture Notes
+
+- **Layering preserved:** `Controller → Request → Service → Repository → Model`.
+- **Ledger-derived stock:** Transfer documents do not store or mutate stock; completion posts
+  append-only movements to `trx_inventory_movements`.
+- **Atomic transfer:** Paired `TRANSFER_OUT` + `TRANSFER_IN` movements are created in a single
+  transaction per completion — never simulate transfers via manual adjustment pairs.
+- **Reference linkage:** Movements reference the transfer header via polymorphic
+  `reference_type`/`reference_id` for auditability on the show screen.
+- **Concurrency:** `lockForUpdate()` on transfer, locations, products, and items during
+  completion; source stock checked against ledger-derived balance before posting.
+
+## Branch Isolation Notes
+
+- Every transfer carries `branch_id` resolved from `BranchContext`.
+- Repository methods accept `int $branchId` first and apply `where('branch_id', $branchId)`.
+- Source and destination locations must belong to the active branch.
+- Products on transfer lines must belong to the active branch.
+- Policies verify `belongsToActiveBranch($stockTransfer->branch_id)`.
+- Cross-branch transfer access is denied at policy, service, controller, and HTTP layers.
+- Inter-branch transfer is **out of scope** — same-branch locations only.
+
+## Inventory Ledger Notes
+
+- New movement types: `TRANSFER_IN`, `TRANSFER_OUT` (added to `InventoryMovement::TYPES`).
+- On completion, each item creates:
+  - `TRANSFER_OUT` at source: `quantity_out = item.quantity`, `quantity_in = 0`
+  - `TRANSFER_IN` at destination: `quantity_in = item.quantity`, `quantity_out = 0`
+- Stock before/after remains `SUM(quantity_in) - SUM(quantity_out)` per product+location.
+- No mutable `current_stock`, `stock`, or `qty_on_hand` columns introduced or used.
+- Insufficient source location stock blocks completion and rolls back the transaction.
+
+## Known Decisions
+
+- Transfer statuses use lowercase strings (`draft`, `submitted`, `completed`, `cancelled`) stored
+  in the database — distinct from Stock Opname uppercase status convention.
+- Two-step approval workflow: `submit` then `complete` (no separate `approved` status; completion
+  sets `approved_by`).
+- Draft and submitted transfers can be cancelled; completed transfers are terminal.
+- Transfer line quantities are document quantities only; ledger posting happens exclusively on
+  `completeTransfer()`.
+- `manage master data` legacy permission remains accepted for inventory transfer actions via
+  `ChecksInventoryAccess` (backward compatibility with Sprint 12 permission patterns).
+
+## Assumptions
+
+- Transfers operate within a single branch (no inter-branch transfer design in Sprint 14).
+- `unit_cost` on transfer movements uses `product.average_cost` (no FIFO/LIFO costing).
+- Transfer numbers are generated randomly per month prefix; no sequential per-branch counter.
+- View-only users (`view_inventory`) can list and view transfers but cannot create, edit, submit,
+  complete, or cancel.
+- Route model binding parameter naming follows Laravel resource convention (`stock_transfer` for
+  show/edit/update; `stockTransfer` for workflow POST routes).
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Release Tag | `sprint-14-ui-context-complete` |
+| Schema Commit | `72b618a` (Add inventory stock transfer models and schema) |
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 14.7 — Documentation and Release Completion |
+| Status | COMPLETED |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -454,6 +724,9 @@ Finalize is available only while the opname is `COUNTING`.
     (`owner-dashboard.*`, `branch-dashboard.*`, `inventory.*`).
 15. **S13** — Stock Opname keeps physical counts as snapshots and posts stock-changing variance
     adjustments only through finalization into the movement ledger.
+16. **S14** — Stock Transfer uses a document workflow (`draft → submitted → completed`) and posts
+    paired `TRANSFER_OUT`/`TRANSFER_IN` ledger movements atomically on completion; transfer tables
+    never store stock balances.
 
 ---
 
@@ -473,6 +746,9 @@ Finalize is available only while the opname is `COUNTING`.
    location-level stock; valuation = derived stock × average_cost; no mutable stock state.
 10. **S13** — Stock opname compares counted vs derived stock and posts adjustment ledger movements
     on finalize; draft counts are never a stock source of truth.
+11. **S14** — Stock transfer moves quantity between locations within one branch via paired
+    `TRANSFER_OUT`/`TRANSFER_IN` movements in one transaction; source location sufficiency checked
+    at completion; transfer line quantities are document-only until completion.
 
 ---
 
@@ -493,6 +769,10 @@ Finalize is available only while the opname is `COUNTING`.
    teal, semantic badges, the dual responsive table, and accessibility rules — and flagging the
    older indigo/`sm:rounded-lg`/no-mobile views (e.g. `inventory/stock/index`, `invoices/index`)
    as legacy to converge.
+5. **S14** — Stock Transfer UI (`inventory/stock-transfers/*`) follows Sprint 12 inventory
+   conventions: teal primary, bordered cards, dual responsive table/mobile layout, Indonesian
+   operator labels, permission-gated workflow buttons, ledger movement display on completed
+   transfers.
 
 ---
 
@@ -553,9 +833,11 @@ Finalize is available only while the opname is `COUNTING`.
   stock, branch+location isolation, no mutable stock columns, service-managed finalization, and
   transactional posting. Opname compares counted vs derived stock and posts adjustment ledger
   movements **on finalize**; draft counts are never a stock source of truth.
-- **Sprint 14 — Stock Transfer:** Ledger-based only — outbound movement from source location +
-  inbound to destination, wrapped in one transaction; per-location source sufficiency checked;
-  same branch unless inter-branch is explicitly designed. Never transfer by updating a stock column.
+- **Sprint 14 completed baseline — Stock Transfer:** Future changes must preserve the document
+  workflow (`draft → submitted → completed`), paired `TRANSFER_OUT`/`TRANSFER_IN` ledger posting
+  in one transaction on completion, per-location source sufficiency checks, same-branch-only
+  locations, and no mutable stock columns. Never transfer by updating a stock column or by manual
+  adjustment pairs.
 - **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
 - **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
@@ -602,7 +884,7 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–13, ledger-derived, location-aware, Stock Opname).
+(S12–14, ledger-derived, location-aware, Stock Opname, Stock Transfer).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -615,4 +897,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 13 and must be updated as each new sprint completes.*
+Sprint 14 and must be updated as each new sprint completes.*

@@ -108,6 +108,10 @@
                class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Pemasok</a>
             <a href="{{ route('inventory.stock.index') }}"
                class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Stok</a>
+            @can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
+                <a href="{{ route('inventory.stock-transfers.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock-transfers.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Transfer Stok</a>
+            @endcan
         @endcanany
 
         @canany(['view_invoice', 'manage_invoice', 'view_payment', 'manage_payment'])
