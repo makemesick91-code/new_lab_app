@@ -10,11 +10,13 @@ use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Requests\CancelStockTransferRequest;
-use App\Modules\Inventory\Requests\CompleteStockTransferRequest;
+use App\Modules\Inventory\Requests\ReceiveStockTransferRequest;
+use App\Modules\Inventory\Requests\ShipStockTransferRequest;
 use App\Modules\Inventory\Requests\StoreStockTransferRequest;
 use App\Modules\Inventory\Requests\SubmitStockTransferRequest;
 use App\Modules\Inventory\Requests\UpdateStockTransferRequest;
 use App\Modules\Inventory\Services\InventoryLocationService;
+use App\Modules\Inventory\Services\InventoryStockService;
 use App\Modules\Inventory\Services\StockTransferService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -32,6 +34,7 @@ class StockTransferController extends Controller
         private readonly StockTransferService $transferService,
         private readonly InventoryLocationService $locations,
         private readonly ProductRepositoryInterface $products,
+        private readonly InventoryStockService $stock,
         private readonly BranchContext $branchContext,
     ) {}
 
@@ -64,6 +67,7 @@ class StockTransferController extends Controller
         return $this->renderInventoryView('inventory.stock-transfers.create', [
             'locations' => $this->locations->listActive(),
             'products' => $this->products->listActive($this->branchContext->requireId()),
+            'batchOptions' => $this->stock->batchOptionsMatrixForTransfer(),
         ]);
     }
 
@@ -89,9 +93,9 @@ class StockTransferController extends Controller
 
         $stockTransfer = $this->transfers->loadDetails($stockTransfer);
 
-        $ledgerMovements = $stockTransfer->status === StockTransfer::STATUS_COMPLETED
+        $ledgerMovements = $stockTransfer->isInTransit() || $stockTransfer->isReceived()
             ? InventoryMovement::query()
-                ->with(['product', 'inventoryLocation'])
+                ->with(['product', 'inventoryLocation', 'inventoryBatch'])
                 ->where('branch_id', $stockTransfer->branch_id)
                 ->where('reference_type', $stockTransfer->getTable())
                 ->where('reference_id', $stockTransfer->id)
@@ -115,6 +119,7 @@ class StockTransferController extends Controller
             'stockTransfer' => $stockTransfer,
             'locations' => $this->locations->listActive(),
             'products' => $this->products->listActive($this->branchContext->requireId()),
+            'batchOptions' => $this->stock->batchOptionsMatrixForTransfer(),
         ]);
     }
 
@@ -144,13 +149,22 @@ class StockTransferController extends Controller
         return back()->with('status', 'Transfer stok berhasil diajukan.');
     }
 
-    public function complete(CompleteStockTransferRequest $request, StockTransfer $stockTransfer): RedirectResponse
+    public function ship(ShipStockTransferRequest $request, StockTransfer $stockTransfer): RedirectResponse
     {
-        $this->authorize('complete', $stockTransfer);
+        $this->authorize('ship', $stockTransfer);
 
-        $this->transferService->completeTransfer($stockTransfer->id);
+        $this->transferService->shipTransfer($stockTransfer->id);
 
-        return back()->with('status', 'Transfer stok berhasil diselesaikan.');
+        return back()->with('status', 'Transfer stok berhasil dikirim.');
+    }
+
+    public function receive(ReceiveStockTransferRequest $request, StockTransfer $stockTransfer): RedirectResponse
+    {
+        $this->authorize('receive', $stockTransfer);
+
+        $this->transferService->receiveTransfer($stockTransfer->id);
+
+        return back()->with('status', 'Transfer stok berhasil diterima.');
     }
 
     public function cancel(CancelStockTransferRequest $request, StockTransfer $stockTransfer): RedirectResponse

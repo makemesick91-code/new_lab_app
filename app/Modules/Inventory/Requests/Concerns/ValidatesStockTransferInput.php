@@ -3,6 +3,7 @@
 namespace App\Modules\Inventory\Requests\Concerns;
 
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use Illuminate\Contracts\Validation\Validator;
@@ -26,6 +27,7 @@ trait ValidatesStockTransferInput
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:inv_products,id'],
+            'items.*.inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
             'items.*.notes' => ['nullable', 'string', 'max:2000'],
         ];
@@ -59,6 +61,14 @@ trait ValidatesStockTransferInput
                     $validator,
                     $branchId,
                     "items.{$index}.product_id",
+                    $item['product_id'] ?? null,
+                );
+
+                $this->validateBatchForTransferItem(
+                    $validator,
+                    $branchId,
+                    "items.{$index}.inventory_batch_id",
+                    $item['inventory_batch_id'] ?? null,
                     $item['product_id'] ?? null,
                 );
             }
@@ -102,6 +112,37 @@ trait ValidatesStockTransferInput
 
         if (! $product || ! $product->is_active) {
             $validator->errors()->add($field, 'Produk tidak valid untuk cabang aktif.');
+        }
+    }
+
+    private function validateBatchForTransferItem(
+        Validator $validator,
+        int $branchId,
+        string $field,
+        mixed $batchId,
+        mixed $productId,
+    ): void {
+        if (! is_numeric($batchId)) {
+            return;
+        }
+
+        $batch = InventoryBatch::query()
+            ->where('branch_id', $branchId)
+            ->whereKey((int) $batchId)
+            ->first();
+
+        if (! $batch) {
+            $validator->errors()->add($field, 'Batch tidak valid untuk cabang aktif.');
+
+            return;
+        }
+
+        if (is_numeric($productId) && $batch->product_id !== (int) $productId) {
+            $validator->errors()->add($field, 'Batch tidak sesuai dengan produk yang dipilih.');
+        }
+
+        if (! $batch->is_active) {
+            $validator->errors()->add($field, 'Batch tidak aktif dan tidak dapat digunakan.');
         }
     }
 }

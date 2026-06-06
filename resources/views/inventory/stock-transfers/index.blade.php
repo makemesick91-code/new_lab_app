@@ -4,7 +4,9 @@
     $statusLabels = [
         StockTransfer::STATUS_DRAFT => 'Draft',
         StockTransfer::STATUS_SUBMITTED => 'Diajukan',
-        StockTransfer::STATUS_COMPLETED => 'Selesai',
+        StockTransfer::STATUS_IN_TRANSIT => 'Dalam Perjalanan',
+        StockTransfer::STATUS_RECEIVED => 'Diterima',
+        StockTransfer::STATUS_COMPLETED => 'Diterima',
         StockTransfer::STATUS_CANCELLED => 'Dibatalkan',
     ];
 @endphp

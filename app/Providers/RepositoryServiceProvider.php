@@ -24,6 +24,7 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
@@ -32,18 +33,21 @@ use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
+use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
 use App\Modules\Inventory\Policies\StockOpnamePolicy;
 use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
+use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
@@ -152,6 +156,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 9 — Multi Branch Foundation
         BranchRepositoryInterface::class => BranchRepository::class,
         // Sprint 12 - Inventory Core
+        InventoryBatchRepositoryInterface::class => InventoryBatchRepository::class,
         InventoryLocationRepositoryInterface::class => InventoryLocationRepository::class,
         ProductCategoryRepositoryInterface::class => ProductCategoryRepository::class,
         ProductUnitRepositoryInterface::class => ProductUnitRepository::class,
@@ -230,6 +235,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Payment::class => PaymentPolicy::class,
         // Sprint 9 — Multi Branch Foundation (skeleton; no routes authorize against it yet)
         Branch::class => BranchPolicy::class,
+        InventoryBatch::class => InventoryBatchPolicy::class,
         InventoryLocation::class => InventoryLocationPolicy::class,
         Product::class => ProductPolicy::class,
         Supplier::class => SupplierPolicy::class,

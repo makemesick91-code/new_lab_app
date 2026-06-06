@@ -44,6 +44,19 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
         return (float) $value;
     }
 
+    public function currentStockByBatch(int $branchId, int $productId, int $locationId, int $batchId): float
+    {
+        $value = InventoryMovement::query()
+            ->where('branch_id', $branchId)
+            ->where('product_id', $productId)
+            ->where('inventory_location_id', $locationId)
+            ->where('inventory_batch_id', $batchId)
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as current_stock')
+            ->value('current_stock');
+
+        return (float) $value;
+    }
+
     public function currentStockByLocation(int $branchId, int $locationId): Collection
     {
         return InventoryMovement::query()

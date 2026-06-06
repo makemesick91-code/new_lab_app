@@ -126,6 +126,34 @@ it('shows receive stock supplier and cost guidance', function () {
         ->assertSee('Isi biaya per unit pemasok jika diketahui. Gunakan 0 hanya jika biaya tidak tersedia.');
 });
 
+it('shows Indonesian batch labels on receive and adjustment stock forms', function () {
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+    InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Batch UI Location']);
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.receive-stock.create', $product))
+        ->assertOk()
+        ->assertSee('Batch')
+        ->assertSee('Nomor Batch')
+        ->assertSee('Nomor Lot')
+        ->assertSee('Tanggal Kedaluwarsa')
+        ->assertSee('Tanggal Terima')
+        ->assertSee('Gunakan Batch yang Ada')
+        ->assertSee('Buat Batch Baru');
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.adjust-in.create', $product))
+        ->assertOk()
+        ->assertSee('Gunakan Batch yang Ada')
+        ->assertSee('Buat Batch Baru');
+
+    $this->actingAs($this->user)
+        ->get(route('inventory.products.adjust-out.create', $product))
+        ->assertOk()
+        ->assertSee('Batch')
+        ->assertDontSee('Buat Batch Baru');
+});
+
 it('shows adjustment out safety warning and no location disabled state', function () {
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
 

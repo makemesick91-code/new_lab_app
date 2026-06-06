@@ -5,5 +5,7 @@
         'operationType' => 'receive',
         'includeCost' => true,
         'includeSupplier' => true,
+        'includeBatch' => true,
+        'batches' => $batches ?? collect(),
     ])
 </x-settings-shell>

@@ -5,7 +5,8 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Requests\CancelStockTransferRequest;
-use App\Modules\Inventory\Requests\CompleteStockTransferRequest;
+use App\Modules\Inventory\Requests\ReceiveStockTransferRequest;
+use App\Modules\Inventory\Requests\ShipStockTransferRequest;
 use App\Modules\Inventory\Requests\StoreStockTransferRequest;
 use App\Modules\Inventory\Requests\SubmitStockTransferRequest;
 use App\Modules\Inventory\Requests\UpdateStockTransferRequest;
@@ -160,12 +161,14 @@ it('rejects stock transfer requests for inactive or cross-branch products', func
         ->and($crossBranchValidator->errors()->has('items.0.product_id'))->toBeTrue();
 });
 
-it('validates submit and complete stock transfer requests without body fields', function () {
+it('validates submit ship and receive stock transfer requests without body fields', function () {
     $submitValidator = validateInventoryRequest(new SubmitStockTransferRequest, []);
-    $completeValidator = validateInventoryRequest(new CompleteStockTransferRequest, []);
+    $shipValidator = validateInventoryRequest(new ShipStockTransferRequest, []);
+    $receiveValidator = validateInventoryRequest(new ReceiveStockTransferRequest, []);
 
     expect($submitValidator->passes())->toBeTrue()
-        ->and($completeValidator->passes())->toBeTrue();
+        ->and($shipValidator->passes())->toBeTrue()
+        ->and($receiveValidator->passes())->toBeTrue();
 });
 
 it('validates cancel stock transfer request with nullable notes', function () {

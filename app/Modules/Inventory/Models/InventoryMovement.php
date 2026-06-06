@@ -41,6 +41,7 @@ class InventoryMovement extends Model
         'inventory_location_id',
         'product_id',
         'supplier_id',
+        'inventory_batch_id',
         'movement_type',
         'movement_date',
         'quantity_in',
@@ -80,6 +81,11 @@ class InventoryMovement extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'supplier_id');
+    }
+
+    public function inventoryBatch(): BelongsTo
+    {
+        return $this->belongsTo(InventoryBatch::class, 'inventory_batch_id');
     }
 
     public function createdBy(): BelongsTo

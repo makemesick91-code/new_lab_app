@@ -11,6 +11,7 @@ use App\Modules\Inventory\Services\InventoryStockService;
 use App\Modules\Inventory\Services\StockTransferService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -77,7 +78,7 @@ it('does not list transfers from another branch on the index page', function () 
         ->assertDontSee($hidden->transfer_number);
 });
 
-it('denies viewing and completing another branch transfer through HTTP', function () {
+it('denies viewing and shipping another branch transfer through HTTP', function () {
     $transfer = hardeningSubmittedTransfer($this->otherBranch);
 
     $this->actingAs($this->manager)
@@ -85,18 +86,18 @@ it('denies viewing and completing another branch transfer through HTTP', functio
         ->assertForbidden();
 
     $this->actingAs($this->manager)
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
         ->assertForbidden();
 
     expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_SUBMITTED);
 });
 
-it('denies completing another branch transfer at the service layer', function () {
+it('denies shipping another branch transfer at the service layer', function () {
     $this->actingAs($this->manager);
 
     $transfer = hardeningSubmittedTransfer($this->otherBranch);
 
-    expect(fn () => $this->service->completeTransfer($transfer->id))
+    expect(fn () => $this->service->shipTransfer($transfer->id))
         ->toThrow(ValidationException::class);
 });
 
@@ -115,7 +116,7 @@ it('requires source and destination locations to belong to the active branch', f
     $this->assertDatabaseCount('trx_stock_transfers', 0);
 });
 
-it('blocks completion when source stock is insufficient via HTTP and leaves status submitted', function () {
+it('blocks shipping when source stock is insufficient via HTTP and leaves status submitted', function () {
     $transfer = hardeningSubmittedTransfer($this->branch, 8);
     $productId = $transfer->items->first()->product_id;
 
@@ -123,7 +124,7 @@ it('blocks completion when source stock is insufficient via HTTP and leaves stat
 
     $this->actingAs($this->manager)
         ->from(route('inventory.stock-transfers.show', $transfer))
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
         ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
         ->assertSessionHasErrors('quantity');
 
@@ -150,7 +151,8 @@ it('writes transfer out and transfer in movements at the correct locations with 
         ['product_id' => $secondProduct->id, 'quantity' => 4],
     ]);
     $this->service->submitTransfer($transfer->id);
-    $this->service->completeTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+    $this->service->receiveTransfer($transfer->id);
 
     $movements = InventoryMovement::query()
         ->where('reference_type', 'trx_stock_transfers')
@@ -171,6 +173,33 @@ it('writes transfer out and transfer in movements at the correct locations with 
         ->and($this->stock->getCurrentStock($secondProduct->id, $source->id))->toBe(11.0)
         ->and($this->stock->getCurrentStock($firstProduct->id, $destination->id))->toBe(6.0)
         ->and($this->stock->getCurrentStock($secondProduct->id, $destination->id))->toBe(4.0);
+});
+
+it('shows transfer out movements only while transfer is in transit', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    $movements = InventoryMovement::query()
+        ->where('reference_type', 'trx_stock_transfers')
+        ->where('reference_id', $transfer->id)
+        ->get();
+
+    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_IN_TRANSIT)
+        ->and($movements)->toHaveCount(1)
+        ->and($movements->first()->movement_type)->toBe(InventoryMovement::TYPE_TRANSFER_OUT)
+        ->and($this->stock->getCurrentStock($product->id, $source->id))->toBe(6.0)
+        ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(0.0);
 });
 
 it('does not introduce or use mutable stock columns on products or locations', function () {
@@ -201,7 +230,8 @@ it('does not introduce or use mutable stock columns on products or locations', f
         ['product_id' => $product->id, 'quantity' => 4],
     ]);
     $this->service->submitTransfer($transfer->id);
-    $this->service->completeTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+    $this->service->receiveTransfer($transfer->id);
 
     foreach ([$product->refresh(), $source->refresh(), $destination->refresh()] as $model) {
         expect(array_intersect(array_keys($model->getAttributes()), $forbiddenColumns))->toBe([]);
@@ -246,7 +276,7 @@ it('rejects store requests with same source and destination invalid product and 
     }
 });
 
-it('enforces draft update submitted completion and terminal status guards', function () {
+it('enforces draft update submitted ship receive and terminal status guards', function () {
     $this->actingAs($this->manager);
 
     $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
@@ -271,18 +301,19 @@ it('enforces draft update submitted completion and terminal status guards', func
 
     $this->stock->createOpeningStock($replacementProduct->id, $source->id, 10);
     $submitted = $this->service->submitTransfer($updatedDraft->id);
-    $completed = $this->service->completeTransfer($submitted->id);
+    $this->service->shipTransfer($submitted->id);
+    $received = $this->service->receiveTransfer($submitted->id);
 
-    expect($submitted->status)->toBe(StockTransfer::STATUS_SUBMITTED)
-        ->and($completed->status)->toBe(StockTransfer::STATUS_COMPLETED);
+    expect($submitted->refresh()->status)->toBe(StockTransfer::STATUS_RECEIVED)
+        ->and($received->status)->toBe(StockTransfer::STATUS_RECEIVED);
 
     expect(fn () => $this->service->updateTransfer(
-        $completed->id,
+        $received->id,
         $source->id,
         $replacementDestination->id,
         [['product_id' => $replacementProduct->id, 'quantity' => 1]],
     ))->toThrow(ValidationException::class)
-        ->and(fn () => $this->service->cancelTransfer($completed->id))
+        ->and(fn () => $this->service->cancelTransfer($received->id))
         ->toThrow(ValidationException::class);
 
     $cancelled = $this->service->createTransfer($source->id, $destination->id, [
@@ -291,39 +322,39 @@ it('enforces draft update submitted completion and terminal status guards', func
     $this->service->submitTransfer($cancelled->id);
     $this->service->cancelTransfer($cancelled->id);
 
-    expect(fn () => $this->service->completeTransfer($cancelled->id))
+    expect(fn () => $this->service->shipTransfer($cancelled->id))
         ->toThrow(ValidationException::class);
 });
 
-it('blocks editing or completing completed and cancelled transfers through HTTP', function () {
+it('blocks editing or receiving cancelled transfers through HTTP', function () {
     $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
 
-    $completed = StockTransfer::factory()->completed()->create([
+    $received = StockTransfer::factory()->received()->create([
         'branch_id' => $this->branch->id,
         'source_inventory_location_id' => $source->id,
         'destination_inventory_location_id' => $destination->id,
     ]);
     StockTransferItem::factory()->create([
-        'stock_transfer_id' => $completed->id,
+        'stock_transfer_id' => $received->id,
         'product_id' => $product->id,
         'quantity' => 2,
     ]);
 
     $this->actingAs($this->manager)
-        ->from(route('inventory.stock-transfers.show', $completed))
+        ->from(route('inventory.stock-transfers.show', $received))
         ->put(
-            route('inventory.stock-transfers.update', $completed),
+            route('inventory.stock-transfers.update', $received),
             hardeningTransferPayload($source->id, $destination->id, $product->id),
         )
-        ->assertRedirect(route('inventory.stock-transfers.show', $completed))
+        ->assertRedirect(route('inventory.stock-transfers.show', $received))
         ->assertSessionHasErrors('status');
 
     $this->actingAs($this->manager)
-        ->from(route('inventory.stock-transfers.show', $completed))
-        ->post(route('inventory.stock-transfers.cancel', $completed))
-        ->assertRedirect(route('inventory.stock-transfers.show', $completed))
+        ->from(route('inventory.stock-transfers.show', $received))
+        ->post(route('inventory.stock-transfers.cancel', $received))
+        ->assertRedirect(route('inventory.stock-transfers.show', $received))
         ->assertSessionHasErrors('status');
 
     $cancelled = StockTransfer::factory()->cancelled()->create([
@@ -339,7 +370,7 @@ it('blocks editing or completing completed and cancelled transfers through HTTP'
 
     $this->actingAs($this->manager)
         ->from(route('inventory.stock-transfers.show', $cancelled))
-        ->post(route('inventory.stock-transfers.complete', $cancelled))
+        ->post(route('inventory.stock-transfers.receive', $cancelled))
         ->assertRedirect(route('inventory.stock-transfers.show', $cancelled))
         ->assertSessionHasErrors('status');
 });
@@ -358,7 +389,8 @@ it('denies unauthorized users from all stock transfer routes', function () {
         ['get', route('inventory.stock-transfers.edit', $transfer)],
         ['put', route('inventory.stock-transfers.update', $transfer), hardeningTransferPayload($source->id, $destination->id, $product->id)],
         ['post', route('inventory.stock-transfers.submit', $transfer)],
-        ['post', route('inventory.stock-transfers.complete', $transfer)],
+        ['post', route('inventory.stock-transfers.ship', $transfer)],
+        ['post', route('inventory.stock-transfers.receive', $transfer)],
         ['post', route('inventory.stock-transfers.cancel', $transfer)],
     ];
 
@@ -378,7 +410,7 @@ it('requires authentication for stock transfer routes', function () {
 
     $this->get(route('inventory.stock-transfers.index'))->assertRedirect(route('login'));
     $this->get(route('inventory.stock-transfers.show', $transfer))->assertRedirect(route('login'));
-    $this->post(route('inventory.stock-transfers.complete', $transfer))->assertRedirect(route('login'));
+    $this->post(route('inventory.stock-transfers.ship', $transfer))->assertRedirect(route('login'));
 });
 
 it('allows view_inventory to read but not mutate stock transfers', function () {
@@ -400,7 +432,7 @@ it('allows view_inventory to read but not mutate stock transfers', function () {
         ->assertForbidden();
 
     $this->actingAs($this->viewer)
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
         ->assertForbidden();
 });
 
@@ -422,8 +454,16 @@ it('allows manage_inventory to mutate stock transfers in the active branch', fun
         ->assertRedirect();
 
     $this->actingAs($this->manager)
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
         ->assertRedirect();
 
-    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_COMPLETED);
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.receive', $transfer))
+        ->assertRedirect();
+
+    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_RECEIVED);
+});
+
+it('does not expose a complete route that posts paired ledger movements', function () {
+    expect(Route::has('inventory.stock-transfers.complete'))->toBeFalse();
 });

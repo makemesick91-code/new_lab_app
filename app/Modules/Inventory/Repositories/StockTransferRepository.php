@@ -54,6 +54,7 @@ class StockTransferRepository implements StockTransferRepositoryInterface
         foreach ($items as $item) {
             $transfer->items()->create([
                 'product_id' => $item['product_id'],
+                'inventory_batch_id' => $item['inventory_batch_id'] ?? null,
                 'quantity' => $item['quantity'],
                 'notes' => $item['notes'] ?? null,
             ]);
@@ -67,6 +68,7 @@ class StockTransferRepository implements StockTransferRepositoryInterface
                 'sourceInventoryLocation',
                 'destinationInventoryLocation',
                 'items.product.unit',
+                'items.inventoryBatch',
                 'requestedBy',
                 'approvedBy',
                 'createdBy',
@@ -81,6 +83,7 @@ class StockTransferRepository implements StockTransferRepositoryInterface
             'sourceInventoryLocation',
             'destinationInventoryLocation',
             'items.product.unit',
+            'items.inventoryBatch',
             'requestedBy',
             'approvedBy',
             'createdBy',

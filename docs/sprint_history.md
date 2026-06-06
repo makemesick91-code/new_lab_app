@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 15.2.
+Sprint 15.3.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -46,6 +46,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 13 | Stock Opname Workflow | `f4718c1` / `sprint-13.1-complete` | `trx_stock_opnames`, `trx_stock_opname_items` |
 | 14 | Stock Transfer Workflow | `72b618a` … (Sprint 14.7) / `sprint-14-ui-context-complete` | `trx_stock_transfers`, `trx_stock_transfer_items`; `TRANSFER_IN`/`TRANSFER_OUT` movement types |
 | 15.2 | Transfer Receiving Workflow | (Sprint 15.2 ship/receive refactor) | `shipped_at`, `shipped_by` on `trx_stock_transfers`; workflow `in_transit` / `received` statuses |
+| 15.3 | Batch & Lot Tracking | (Sprint 15.3 batch/lot implementation) | `inv_inventory_batches`; `inventory_batch_id` on `trx_inventory_movements` and `trx_stock_transfer_items` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -873,6 +874,171 @@ remain readable; the UI labels them **Diterima** alongside `received` rows.
 
 ---
 
+# Sprint 15.3 — Batch & Lot Tracking
+
+## Sprint 15.3 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Branch:** `feature/sprint-15-inventory-advanced`
+
+**Scope:** Inventory Advanced (Sprint 15 milestone slice)
+
+**Business objective:** Introduce batch/lot identity as a first-class inventory concept for dental
+lab material traceability, expiry visibility, and transfer integrity — while preserving the
+non-negotiable ADLMS invariant that stock quantity remains **ledger-derived only**
+(`SUM(quantity_in) - SUM(quantity_out)`), with no mutable stock columns on products, locations,
+batches, or transfer items.
+
+**Planning note:** Design authority: `docs/sprint_15_3_batch_lot_tracking_design.md`. Implemented
+in four steps: schema/model layer, `InventoryStockService` integration, `StockTransferService`
+batch propagation, and Batch UI with expiry visibility. Step 5 (this record) covers hardening,
+documentation, and release readiness.
+
+## Deliverables
+
+**Database (additive):**
+- `inv_inventory_batches` — batch/lot identity master (`batch_number`, `lot_number`, `received_date`,
+  `expiry_date`, `supplier_id`, `notes`, `is_active`; branch-scoped unique on
+  `branch_id + product_id + batch_number + lot_number`)
+- `inventory_batch_id` nullable FK on `trx_inventory_movements`
+- `inventory_batch_id` nullable FK on `trx_stock_transfer_items`
+
+**Models and factories:**
+- `InventoryBatch` model + `InventoryBatchFactory`
+
+**Repository layer:**
+- `InventoryBatchRepositoryInterface` + `InventoryBatchRepository` (branch-scoped pagination,
+  derived stock aggregates, movements, transfer references)
+
+**Services:**
+- `InventoryBatchService` — index/show data, expiry status resolution (`EXPIRING_SOON_DAYS = 30`)
+- `InventoryStockService` — receive/opening/adjust with optional batch create/select; batch stock
+  queries; expired/inactive batch guards on outbound
+- `StockTransferService` — ship/receive propagates `inventory_batch_id` on movements and items
+
+**Authorization:**
+- `InventoryBatchPolicy` — `viewAny` / `view` via `view_inventory` + active-branch ownership
+
+**Requests:**
+- `InventoryBatchFilterRequest` — index filters (product, supplier, expiry status, search)
+- `ValidatesInventoryBatchInput` concern — shared batch validation for stock/transfer requests
+
+**Controllers and routes (read-only batch UI):**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/batches` | `inventory.batches.index` |
+| GET | `inventory/batches/{inventoryBatch}` | `inventory.batches.show` |
+
+**Views:**
+- `inventory/batches/index` — filtered batch list with derived stock and expiry badges
+- `inventory/batches/show` — stock by location, movement history, transfer references
+- `inventory/stock/_batch-fields` — receive/adjust batch field partial
+- `inventory/batches/_batch-status-badge` — Kedaluwarsa / Mendekati Kedaluwarsa badges
+
+**Batch integration in stock workflows:**
+- Receive stock — create new batch or select existing batch; posts `PURCHASE` with
+  `inventory_batch_id`
+- Adjustment IN — optional batch create/select
+- Adjustment OUT — batch selection with batch-level sufficiency check
+- Transfer ship — `TRANSFER_OUT` with line `inventory_batch_id`; batch stock validated at source
+- Transfer receive — `TRANSFER_IN` with same `inventory_batch_id` (no new batch row)
+
+**Tests:**
+- `InventoryBatchTest`, `InventoryBatchModelTest`, `StockTransferBatchTest` (+ batch cases in
+  `InventoryStockServiceTest`, `InventoryUiTest`)
+
+## Ledger Notes
+
+- **Batch stores identity metadata only** — `inv_inventory_batches` has no `current_stock`,
+  `quantity_on_hand`, or any mutable balance column.
+- **Quantity remains on `trx_inventory_movements`** — append-only ledger unchanged from Sprint 12.
+- **Batch stock derivation:**
+
+```text
+batch_stock(batch, location) =
+  SUM(quantity_in) - SUM(quantity_out)
+  WHERE branch_id = active_branch
+    AND inventory_batch_id = batch
+    AND inventory_location_id = location
+```
+
+- **Product stock** remains the aggregate across all batches (and NULL-batch movements) at a
+  location.
+- **No mutable stock columns** anywhere in the batch slice.
+
+## Workflow Notes
+
+- Receive stock can **create** a new batch (batch_number, lot_number, received_date, expiry_date)
+  or **select** an existing batch via `inventory_batch_id`.
+- Adjustment IN/OUT can reference a batch when batch context is supplied on the form.
+- Transfer ship creates `TRANSFER_OUT` with the line's `inventory_batch_id`.
+- Transfer receive creates `TRANSFER_IN` with the **same** `inventory_batch_id`.
+- Inactive batches (`is_active = false`) are rejected for new movements.
+- Expired batches are **hard-blocked** on outbound movements (adjust out, transfer ship).
+- Movements with `inventory_batch_id = NULL` behave exactly as pre-15.3 (backward compatible).
+
+## UI Notes
+
+- **Batch & Lot** menu under **Persediaan** in sidebar — permission-gated via
+  `@can('viewAny', InventoryBatch::class)`; no unauthorized link exposure.
+- Batch index with filters: product, supplier, expiry status (expired / expiring soon / valid),
+  search by batch/lot number.
+- Batch show: derived total stock, stock by location, movement ledger rows, transfer line
+  references.
+- Expired and expiring-soon warnings via `_batch-status-badge` (threshold: 30 days).
+- Indonesian operator labels: **Batch & Lot**, **Nomor Batch**, **Nomor Lot**, **Tanggal Terima**,
+  **Tanggal Kedaluwarsa**, **Kedaluwarsa**, **Mendekati Kedaluwarsa**.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 15.3 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 574 tests, 1787 assertions |
+| Batch-filtered tests (`php artisan test --filter=Batch`) | PASS — 57 tests, 211 assertions |
+| Pint (`vendor/bin/pint`) | PASS |
+| Routes (`php artisan route:list`) | PASS — 192 routes total; 2 batch routes (`inventory.batches.index`, `inventory.batches.show`) |
+| Migration (`php artisan migrate:fresh --seed`) | PASS — all migrations including 15.3 batch tables |
+| Frontend build (`npm run build`) | PASS |
+
+## Architecture Notes
+
+- **Layering preserved:** `Controller → Request → Service → Repository → Model`.
+- **Ledger-only stock:** Batch quantity is always computed from `trx_inventory_movements`; batch
+  master table holds descriptive attributes only.
+- **Branch isolation:** `BranchContext::requireId()` in services; `findForBranch()` in repository;
+  policy denies cross-branch show; index scoped to active branch.
+- **Sprint 15.2 compatibility:** Ship/receive workflow unchanged; batch FK added to movement and
+  transfer item rows only.
+- **Read-only batch UI:** No create/edit/delete routes on batch master — batches are created
+  implicitly through receive/adjust workflows.
+
+## Known Risks
+
+- **Mixed NULL-batch and batch movements** — product aggregate stock may exceed the sum of batch
+  stocks until historical data is migrated or products stay on optional batch entry.
+- **Expiring-soon threshold fixed at 30 days** — not configurable per product or branch in 15.3.
+- **`requires_batch_tracking` enforcement deferred** — product-level opt-in flag from the design
+  doc was not migrated; batch fields remain optional for all products until a follow-up slice
+  adds the column and conditional validation.
+- **Large product×location batch option matrix** — transfer create/edit builds a batch options
+  matrix that may need pagination or lazy-load optimization at scale.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 15.3 — Batch & Lot Tracking |
+| Branch | `feature/sprint-15-inventory-advanced` |
+| Status | COMPLETED (full-suite gates verified) |
+| Design Doc | `docs/sprint_15_3_batch_lot_tracking_design.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -901,6 +1067,8 @@ remain readable; the UI labels them **Diterima** alongside `received` rows.
 17. **S15.2** — Stock Transfer evolved to a two-phase ship/receive workflow (`draft → submitted →
     in_transit → received`); ship posts `TRANSFER_OUT` only, receive posts `TRANSFER_IN` only;
     legacy `complete` workflow removed; `STATUS_COMPLETED` retained for legacy rows only.
+18. **S15.3** — Batch/lot identity on `inv_inventory_batches`; movements optionally reference
+    `inventory_batch_id`; batch stock ledger-derived; expired outbound blocked; read-only batch UI.
 
 ---
 
@@ -927,6 +1095,9 @@ remain readable; the UI labels them **Diterima** alongside `received` rows.
     with source sufficiency check; receive (`in_transit → received`) posts IN only; cancel blocked
     after ship/receive; duplicate ship/receive guarded; legacy `completed` rows display as
     Diterima.
+13. **S15.3** — Batch/lot identity is metadata on `inv_inventory_batches`; quantity remains on
+    the movement ledger; nullable `inventory_batch_id` preserves pre-15.3 behavior; outbound
+    movements reject inactive or expired batches.
 
 ---
 
@@ -955,6 +1126,9 @@ remain readable; the UI labels them **Diterima** alongside `received` rows.
    **Terima Transfer** replace **Selesaikan Transfer**; status badges add **Dalam Perjalanan**
    (`in_transit`) and **Diterima** (`received` + legacy `completed`); ledger panel driven by
    `isInTransit()` / `isReceived()`.
+7. **S15.3** — Batch & Lot UI under Persediaan sidebar; index/show read-only; expiry badges;
+   batch context integrated into receive, adjust, and transfer forms without menu sprawl beyond
+   one permission-gated **Batch & Lot** link.
 
 ---
 
@@ -1024,6 +1198,11 @@ remain readable; the UI labels them **Diterima** alongside `received` rows.
 - **Sprint 15.2 completed baseline — Transfer Receiving:** Future changes must preserve the
   two-phase ledger flow, duplicate ship/receive guards, cancel blocked after ship/receive, legacy
   `completed` row compatibility via `isReceived()`, and removal of the `complete` route/service.
+- **Sprint 15.3 completed baseline — Batch & Lot Tracking:** Future changes must preserve
+  ledger-derived batch stock (no mutable quantity on `inv_inventory_batches`), nullable
+  `inventory_batch_id` backward compatibility, branch-scoped batch access, inactive/expired batch
+  outbound guards, and transfer ship/receive batch FK propagation. Batch-aware stock opname and
+  `requires_batch_tracking` product flag remain follow-up work.
 - **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
 - **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
@@ -1070,7 +1249,8 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–15.2, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive).
+(S12–15.3, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
+Batch & Lot tracking).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -1083,4 +1263,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 15.2 and must be updated as each new sprint completes.*
+Sprint 15.3 and must be updated as each new sprint completes.*

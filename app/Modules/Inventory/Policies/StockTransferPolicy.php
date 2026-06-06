@@ -44,7 +44,13 @@ class StockTransferPolicy
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
-    public function complete(User $user, StockTransfer $stockTransfer): bool
+    public function ship(User $user, StockTransfer $stockTransfer): bool
+    {
+        return $this->canManageInventory($user)
+            && $this->belongsToActiveBranch($stockTransfer->branch_id);
+    }
+
+    public function receive(User $user, StockTransfer $stockTransfer): bool
     {
         return $this->canManageInventory($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);

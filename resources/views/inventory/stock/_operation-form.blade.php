@@ -1,6 +1,9 @@
 @php
     $includeCost = $includeCost ?? false;
     $includeSupplier = $includeSupplier ?? false;
+    $includeBatch = $includeBatch ?? false;
+    $batchAllowCreate = $batchAllowCreate ?? true;
+    $batchShowSelector = $batchShowSelector ?? true;
     $operationType = $operationType ?? 'opening';
     $locations = collect($locations ?? []);
     $suppliers = collect($suppliers ?? []);
@@ -194,6 +197,14 @@
                                     <p class="mt-1 text-xs font-medium text-rose-600">{{ $message }}</p>
                                 @enderror
                             </div>
+                        @endif
+
+                        @if ($includeBatch)
+                            @include('inventory.stock._batch-fields', [
+                                'batches' => $batches ?? collect(),
+                                'allowCreate' => $batchAllowCreate,
+                                'showBatchSelector' => $batchShowSelector,
+                            ])
                         @endif
 
                         @if ($includeSupplier)

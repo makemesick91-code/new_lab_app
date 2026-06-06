@@ -39,12 +39,23 @@
                     @endif
                 @endcan
 
-                @can('complete', $stockTransfer)
+                @can('ship', $stockTransfer)
                     @if ($stockTransfer->status === StockTransfer::STATUS_SUBMITTED)
-                        <form method="POST" action="{{ route('inventory.stock-transfers.complete', $stockTransfer) }}">
+                        <form method="POST" action="{{ route('inventory.stock-transfers.ship', $stockTransfer) }}">
                             @csrf
-                            <button type="submit" class="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
-                                Selesaikan Transfer
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-orange-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2">
+                                Kirim Transfer
+                            </button>
+                        </form>
+                    @endif
+                @endcan
+
+                @can('receive', $stockTransfer)
+                    @if ($stockTransfer->status === StockTransfer::STATUS_IN_TRANSIT)
+                        <form method="POST" action="{{ route('inventory.stock-transfers.receive', $stockTransfer) }}">
+                            @csrf
+                            <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                Terima Transfer
                             </button>
                         </form>
                     @endif
@@ -80,6 +91,7 @@
                             <thead class="bg-gray-50">
                                 <tr class="text-left text-gray-500">
                                     <th scope="col" class="px-4 py-3 font-medium">Produk</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Batch</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Jumlah</th>
                                     <th scope="col" class="px-4 py-3 font-medium">Catatan</th>
                                 </tr>
@@ -91,6 +103,19 @@
                                             <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
                                             <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
                                         </td>
+                                        <td class="px-3 py-3 text-gray-600">
+                                            @if ($item->inventoryBatch)
+                                                <p class="font-medium text-gray-900">{{ $item->inventoryBatch->batch_number }}</p>
+                                                @if ($item->inventoryBatch->lot_number)
+                                                    <p class="text-xs text-gray-500">Lot {{ $item->inventoryBatch->lot_number }}</p>
+                                                @endif
+                                                @if ($item->inventoryBatch->expiry_date)
+                                                    <p class="text-xs text-gray-500">Kedaluwarsa {{ format_date_id($item->inventoryBatch->expiry_date) }}</p>
+                                                @endif
+                                            @else
+                                                <span class="text-gray-400">—</span>
+                                            @endif
+                                        </td>
                                         <td class="px-3 py-3 text-right tabular-nums text-gray-700">
                                             {{ format_quantity_id($item->quantity) }}
                                             @if ($item->product?->unit?->symbol)
@@ -101,7 +126,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="3" class="px-4 py-12">
+                                        <td colspan="4" class="px-4 py-12">
                                             <div class="mx-auto max-w-sm text-center">
                                                 <p class="text-sm font-medium text-gray-900">Belum ada item transfer.</p>
                                                 <p class="mt-1 text-sm text-gray-500">Tambahkan produk saat transfer masih draft.</p>
@@ -114,11 +139,11 @@
                     </div>
                 </div>
 
-                @if ($stockTransfer->status === StockTransfer::STATUS_COMPLETED && ($ledgerMovements ?? collect())->isNotEmpty())
+                @if (($stockTransfer->isInTransit() || $stockTransfer->isReceived()) && ($ledgerMovements ?? collect())->isNotEmpty())
                     <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-4 py-3">
                             <h3 class="text-base font-semibold text-gray-900">Referensi Pergerakan Ledger</h3>
-                            <p class="mt-1 text-sm text-gray-500">Pergerakan stok yang dihasilkan saat transfer diselesaikan.</p>
+                            <p class="mt-1 text-sm text-gray-500">Pergerakan stok yang dihasilkan saat transfer dikirim atau diterima.</p>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -126,6 +151,7 @@
                                     <tr class="text-left text-gray-500">
                                         <th scope="col" class="px-4 py-3 font-medium">Produk</th>
                                         <th scope="col" class="px-3 py-3 font-medium">Lokasi</th>
+                                        <th scope="col" class="px-3 py-3 font-medium">Batch</th>
                                         <th scope="col" class="px-3 py-3 font-medium">Tipe</th>
                                         <th scope="col" class="px-3 py-3 text-right font-medium">Masuk</th>
                                         <th scope="col" class="px-3 py-3 text-right font-medium">Keluar</th>
@@ -140,6 +166,13 @@
                                                 <p class="text-xs text-gray-500">{{ $movement->product?->code ?? '-' }}</p>
                                             </td>
                                             <td class="px-3 py-3 text-gray-600">{{ $movement->inventoryLocation?->name ?? '-' }}</td>
+                                            <td class="px-3 py-3 text-gray-600">
+                                                @if ($movement->inventoryBatch)
+                                                    {{ $movement->inventoryBatch->batch_number }}
+                                                @else
+                                                    —
+                                                @endif
+                                            </td>
                                             <td class="px-3 py-3 text-gray-600">{{ $movementLabels[$movement->movement_type] ?? $movement->movement_type }}</td>
                                             <td class="px-3 py-3 text-right tabular-nums text-green-700">
                                                 @if ((float) $movement->quantity_in > 0)
@@ -193,15 +226,27 @@
                             <dt class="text-sm text-gray-600">Dibuat Oleh</dt>
                             <dd class="text-sm text-gray-900">{{ $stockTransfer->createdBy?->name ?? '-' }}</dd>
                         </div>
+                        @if ($stockTransfer->shippedBy)
+                            <div class="flex justify-between gap-3">
+                                <dt class="text-sm text-gray-600">Dikirim Oleh</dt>
+                                <dd class="text-sm text-gray-900">{{ $stockTransfer->shippedBy->name }}</dd>
+                            </div>
+                        @endif
+                        @if ($stockTransfer->shipped_at)
+                            <div class="flex justify-between gap-3">
+                                <dt class="text-sm text-gray-600">Dikirim Pada</dt>
+                                <dd class="text-sm text-gray-900">{{ format_datetime_id($stockTransfer->shipped_at) }}</dd>
+                            </div>
+                        @endif
                         @if ($stockTransfer->approvedBy)
                             <div class="flex justify-between gap-3">
-                                <dt class="text-sm text-gray-600">Disetujui Oleh</dt>
+                                <dt class="text-sm text-gray-600">Diterima Oleh</dt>
                                 <dd class="text-sm text-gray-900">{{ $stockTransfer->approvedBy->name }}</dd>
                             </div>
                         @endif
                         @if ($stockTransfer->completed_at)
                             <div class="flex justify-between gap-3">
-                                <dt class="text-sm text-gray-600">Selesai Pada</dt>
+                                <dt class="text-sm text-gray-600">Diterima Pada</dt>
                                 <dd class="text-sm text-gray-900">{{ format_datetime_id($stockTransfer->completed_at) }}</dd>
                             </div>
                         @endif

@@ -14,6 +14,8 @@ interface InventoryMovementRepositoryInterface
 
     public function currentStock(int $branchId, int $productId, ?int $locationId = null): float;
 
+    public function currentStockByBatch(int $branchId, int $productId, int $locationId, int $batchId): float;
+
     public function currentStockByLocation(int $branchId, int $locationId): Collection;
 
     public function currentStockByBranch(int $branchId): Collection;

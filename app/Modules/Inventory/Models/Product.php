@@ -56,6 +56,11 @@ class Product extends Model
         return $this->hasMany(InventoryMovement::class, 'product_id');
     }
 
+    public function batches(): HasMany
+    {
+        return $this->hasMany(InventoryBatch::class, 'product_id');
+    }
+
     protected static function newFactory(): ProductFactory
     {
         return ProductFactory::new();

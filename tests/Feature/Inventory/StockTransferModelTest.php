@@ -9,13 +9,14 @@ use App\Modules\Inventory\Models\StockTransferItem;
 use Illuminate\Support\Carbon;
 
 it('relates a stock transfer to its branch locations and users', function () {
-    $transfer = StockTransfer::factory()->completed()->create();
+    $transfer = StockTransfer::factory()->received()->create();
 
     expect($transfer->branch)->toBeInstanceOf(Branch::class)
         ->and($transfer->sourceInventoryLocation)->toBeInstanceOf(InventoryLocation::class)
         ->and($transfer->destinationInventoryLocation)->toBeInstanceOf(InventoryLocation::class)
         ->and($transfer->requestedBy)->toBeInstanceOf(User::class)
         ->and($transfer->approvedBy)->toBeInstanceOf(User::class)
+        ->and($transfer->shippedBy)->toBeInstanceOf(User::class)
         ->and($transfer->createdBy)->toBeInstanceOf(User::class);
 });
 
@@ -45,24 +46,27 @@ it('keeps transfer locations and item products in the same branch as the transfe
         ->and($item->product->branch_id)->toBe($transfer->branch_id);
 });
 
-it('casts transfer dates and item quantity decimals', function () {
-    $transfer = StockTransfer::factory()->completed()->create();
+it('casts transfer dates ship receive timestamps and item quantity decimals', function () {
+    $transfer = StockTransfer::factory()->received()->create();
     $item = StockTransferItem::factory()->create(['quantity' => 5]);
 
     expect($transfer->transfer_date)->toBeInstanceOf(Carbon::class)
+        ->and($transfer->shipped_at)->toBeInstanceOf(Carbon::class)
         ->and($transfer->completed_at)->toBeInstanceOf(Carbon::class)
         ->and($item->quantity)->toBe('5.00');
 });
 
-it('defines lowercase transfer statuses requested by Sprint 14.2', function () {
+it('defines lowercase transfer statuses for Sprint 15.2 receiving workflow', function () {
     expect(StockTransfer::STATUS_DRAFT)->toBe('draft')
         ->and(StockTransfer::STATUS_SUBMITTED)->toBe('submitted')
-        ->and(StockTransfer::STATUS_COMPLETED)->toBe('completed')
+        ->and(StockTransfer::STATUS_IN_TRANSIT)->toBe('in_transit')
+        ->and(StockTransfer::STATUS_RECEIVED)->toBe('received')
         ->and(StockTransfer::STATUS_CANCELLED)->toBe('cancelled')
         ->and(StockTransfer::STATUSES)->toBe([
             'draft',
             'submitted',
-            'completed',
+            'in_transit',
+            'received',
             'cancelled',
         ]);
 });
@@ -70,8 +74,33 @@ it('defines lowercase transfer statuses requested by Sprint 14.2', function () {
 it('defaults a new transfer to draft and supports status factory states', function () {
     expect(StockTransfer::factory()->create()->status)->toBe(StockTransfer::STATUS_DRAFT)
         ->and(StockTransfer::factory()->submitted()->create()->status)->toBe(StockTransfer::STATUS_SUBMITTED)
-        ->and(StockTransfer::factory()->completed()->create()->status)->toBe(StockTransfer::STATUS_COMPLETED)
+        ->and(StockTransfer::factory()->inTransit()->create()->status)->toBe(StockTransfer::STATUS_IN_TRANSIT)
+        ->and(StockTransfer::factory()->received()->create()->status)->toBe(StockTransfer::STATUS_RECEIVED)
+        ->and(StockTransfer::factory()->completed()->create()->status)->toBe(StockTransfer::STATUS_RECEIVED)
         ->and(StockTransfer::factory()->cancelled()->create()->status)->toBe(StockTransfer::STATUS_CANCELLED);
+});
+
+it('exposes status helper methods and terminal statuses', function () {
+    $draft = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_DRAFT]);
+    $submitted = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_SUBMITTED]);
+    $inTransit = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_IN_TRANSIT]);
+    $received = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_RECEIVED]);
+    $cancelled = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_CANCELLED]);
+    $legacyCompleted = StockTransfer::factory()->make(['status' => StockTransfer::STATUS_COMPLETED]);
+
+    expect($draft->isDraft())->toBeTrue()
+        ->and($draft->isTerminal())->toBeFalse()
+        ->and($submitted->isSubmitted())->toBeTrue()
+        ->and($submitted->isTerminal())->toBeFalse()
+        ->and($inTransit->isInTransit())->toBeTrue()
+        ->and($inTransit->isTerminal())->toBeFalse()
+        ->and($received->isReceived())->toBeTrue()
+        ->and($received->isTerminal())->toBeTrue()
+        ->and($cancelled->isCancelled())->toBeTrue()
+        ->and($cancelled->isTerminal())->toBeTrue()
+        ->and($legacyCompleted->isReceived())->toBeTrue()
+        ->and($legacyCompleted->isTerminal())->toBeTrue()
+        ->and(StockTransfer::TERMINAL_STATUSES)->toBe(['received', 'cancelled']);
 });
 
 it('mass-assigns all stock transfer fillable attributes', function () {
@@ -80,7 +109,10 @@ it('mass-assigns all stock transfer fillable attributes', function () {
     $destination = InventoryLocation::factory()->create(['branch_id' => $branch->id]);
     $requester = User::factory()->create();
     $approver = User::factory()->create();
+    $shipper = User::factory()->create();
     $creator = User::factory()->create();
+    $shippedAt = now()->subHours(2);
+    $receivedAt = now();
 
     $transfer = StockTransfer::create([
         'branch_id' => $branch->id,
@@ -88,11 +120,13 @@ it('mass-assigns all stock transfer fillable attributes', function () {
         'source_inventory_location_id' => $source->id,
         'destination_inventory_location_id' => $destination->id,
         'transfer_date' => now()->toDateString(),
-        'status' => StockTransfer::STATUS_SUBMITTED,
+        'status' => StockTransfer::STATUS_IN_TRANSIT,
         'notes' => 'Move material between branch locations',
         'requested_by' => $requester->id,
         'approved_by' => $approver->id,
-        'completed_at' => now(),
+        'shipped_by' => $shipper->id,
+        'shipped_at' => $shippedAt,
+        'completed_at' => $receivedAt,
         'created_by' => $creator->id,
     ]);
 
@@ -102,6 +136,9 @@ it('mass-assigns all stock transfer fillable attributes', function () {
         ->and($transfer->destination_inventory_location_id)->toBe($destination->id)
         ->and($transfer->requested_by)->toBe($requester->id)
         ->and($transfer->approved_by)->toBe($approver->id)
+        ->and($transfer->shipped_by)->toBe($shipper->id)
+        ->and($transfer->shipped_at->toDateTimeString())->toBe($shippedAt->toDateTimeString())
+        ->and($transfer->completed_at->toDateTimeString())->toBe($receivedAt->toDateTimeString())
         ->and($transfer->created_by)->toBe($creator->id);
 });
 

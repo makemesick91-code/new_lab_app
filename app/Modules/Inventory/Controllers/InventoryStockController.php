@@ -76,6 +76,7 @@ class InventoryStockController extends Controller
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
             'suppliers' => $this->suppliers->listActive(),
+            'batches' => $this->stock->listActiveBatchesForProduct($product->id),
         ]);
     }
 
@@ -90,6 +91,7 @@ class InventoryStockController extends Controller
             (float) ($request->validated('unit_cost') ?: 0),
             $request->validated('supplier_id') ? (int) $request->validated('supplier_id') : null,
             $request->validated('notes'),
+            $request->batchData(),
         );
 
         return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stok berhasil diterima.');
@@ -102,6 +104,7 @@ class InventoryStockController extends Controller
         return $this->renderInventoryView('inventory.stock.adjust-in', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
+            'batches' => $this->stock->listActiveBatchesForProduct($product->id),
         ]);
     }
 
@@ -114,6 +117,7 @@ class InventoryStockController extends Controller
             (int) $request->validated('inventory_location_id'),
             (float) $request->validated('quantity'),
             $request->validated('notes'),
+            $request->batchData(),
         );
 
         return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Penyesuaian stok masuk berhasil dilakukan.');
@@ -126,6 +130,7 @@ class InventoryStockController extends Controller
         return $this->renderInventoryView('inventory.stock.adjust-out', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
+            'batches' => $this->stock->listActiveBatchesForProduct($product->id),
         ]);
     }
 
@@ -138,6 +143,7 @@ class InventoryStockController extends Controller
             (int) $request->validated('inventory_location_id'),
             (float) $request->validated('quantity'),
             $request->validated('notes'),
+            $request->validated('inventory_batch_id') ? (int) $request->validated('inventory_batch_id') : null,
         );
 
         return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Penyesuaian stok keluar berhasil dilakukan.');

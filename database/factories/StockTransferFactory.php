@@ -32,6 +32,8 @@ class StockTransferFactory extends Factory
             'notes' => fake()->optional()->sentence(),
             'requested_by' => User::factory(),
             'approved_by' => null,
+            'shipped_at' => null,
+            'shipped_by' => null,
             'completed_at' => null,
             'created_by' => User::factory(),
         ];
@@ -42,13 +44,34 @@ class StockTransferFactory extends Factory
         return $this->state(fn () => ['status' => StockTransfer::STATUS_SUBMITTED]);
     }
 
-    public function completed(): static
+    public function inTransit(): static
     {
         return $this->state(fn () => [
-            'status' => StockTransfer::STATUS_COMPLETED,
+            'status' => StockTransfer::STATUS_IN_TRANSIT,
+            'shipped_by' => User::factory(),
+            'shipped_at' => now(),
+        ]);
+    }
+
+    public function received(): static
+    {
+        $shipper = User::factory()->create();
+
+        return $this->state(fn () => [
+            'status' => StockTransfer::STATUS_RECEIVED,
+            'shipped_by' => $shipper->id,
+            'shipped_at' => now()->subHour(),
             'approved_by' => User::factory(),
             'completed_at' => now(),
         ]);
+    }
+
+    /**
+     * @deprecated Sprint 15.2 — use received()
+     */
+    public function completed(): static
+    {
+        return $this->received();
     }
 
     public function cancelled(): static

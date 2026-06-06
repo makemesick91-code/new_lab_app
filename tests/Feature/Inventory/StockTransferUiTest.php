@@ -103,19 +103,46 @@ it('shows draft workflow buttons for managers and hides them for viewers', funct
         ->assertDontSee('Simpan Draft Transfer');
 });
 
-it('shows complete button for submitted transfers and hides submit button', function () {
+it('shows ship button for submitted transfers and managers only', function () {
     $transfer = createUiDraftTransfer($this->branch, 'TRF-UI-SUBMITTED');
     $transfer->update(['status' => StockTransfer::STATUS_SUBMITTED]);
 
     $this->actingAs($this->manager)
         ->get(route('inventory.stock-transfers.show', $transfer))
         ->assertOk()
-        ->assertSee('Selesaikan Transfer')
-        ->assertDontSee('Ajukan Transfer');
+        ->assertSee('Kirim Transfer')
+        ->assertDontSee('Ajukan Transfer')
+        ->assertDontSee('Selesaikan Transfer');
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.stock-transfers.show', $transfer))
+        ->assertOk()
+        ->assertDontSee('Kirim Transfer');
 });
 
-it('shows ledger movement reference on completed transfers', function () {
-    $transfer = createUiDraftTransfer($this->branch, 'TRF-UI-COMPLETE');
+it('shows receive button for in transit transfers and managers only', function () {
+    $transfer = createUiDraftTransfer($this->branch, 'TRF-UI-IN-TRANSIT');
+    $transfer->update([
+        'status' => StockTransfer::STATUS_IN_TRANSIT,
+        'shipped_at' => now(),
+        'shipped_by' => $this->manager->id,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('inventory.stock-transfers.show', $transfer))
+        ->assertOk()
+        ->assertSee('Terima Transfer')
+        ->assertDontSee('Kirim Transfer')
+        ->assertDontSee('Ajukan Transfer');
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.stock-transfers.show', $transfer))
+        ->assertOk()
+        ->assertDontSee('Terima Transfer');
+});
+
+it('shows ledger movement reference on received transfers', function () {
+    $transfer = createUiDraftTransfer($this->branch, 'TRF-UI-RECEIVED');
     $productId = $transfer->items->first()->product_id;
 
     $this->stock->createOpeningStock($productId, $transfer->source_inventory_location_id, 10, 10000);
@@ -124,7 +151,10 @@ it('shows ledger movement reference on completed transfers', function () {
         ->post(route('inventory.stock-transfers.submit', $transfer));
 
     $this->actingAs($this->manager)
-        ->post(route('inventory.stock-transfers.complete', $transfer));
+        ->post(route('inventory.stock-transfers.ship', $transfer));
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.receive', $transfer));
 
     $this->actingAs($this->viewer)
         ->get(route('inventory.stock-transfers.show', $transfer->refresh()))
@@ -132,7 +162,29 @@ it('shows ledger movement reference on completed transfers', function () {
         ->assertSee('Referensi Pergerakan Ledger')
         ->assertSee('Transfer Keluar')
         ->assertSee('Transfer Masuk')
-        ->assertSee('Produk Transfer UI');
+        ->assertSee('Produk Transfer UI')
+        ->assertSee('Diterima Oleh')
+        ->assertSee('Diterima Pada');
+});
+
+it('shows ledger movement reference on in transit transfers after ship only', function () {
+    $transfer = createUiDraftTransfer($this->branch, 'TRF-UI-IN-TRANSIT-LEDGER');
+    $productId = $transfer->items->first()->product_id;
+
+    $this->stock->createOpeningStock($productId, $transfer->source_inventory_location_id, 10, 10000);
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.submit', $transfer));
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.ship', $transfer));
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.stock-transfers.show', $transfer->refresh()))
+        ->assertOk()
+        ->assertSee('Referensi Pergerakan Ledger')
+        ->assertSee('Transfer Keluar')
+        ->assertDontSee('Transfer Masuk');
 });
 
 it('hides create transfer button on index for view-only users', function () {

@@ -84,7 +84,7 @@ it('submits a draft transfer after validating transfer details', function () {
         ->toThrow(ValidationException::class);
 });
 
-it('completes a submitted transfer with paired ledger movements and derived stock balances', function () {
+it('ships a submitted transfer with transfer out movements at source only', function () {
     $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 15000]);
@@ -96,28 +96,69 @@ it('completes a submitted transfer with paired ledger movements and derived stoc
     ]);
     $this->service->submitTransfer($transfer->id);
 
-    $completed = $this->service->completeTransfer($transfer->id);
+    $shipped = $this->service->shipTransfer($transfer->id);
     $movements = InventoryMovement::query()
         ->where('reference_type', 'trx_stock_transfers')
         ->where('reference_id', $transfer->id)
         ->orderBy('id')
         ->get();
 
-    expect($completed->status)->toBe(StockTransfer::STATUS_COMPLETED)
-        ->and($completed->approved_by)->toBe($this->user->id)
-        ->and($completed->completed_at)->not->toBeNull()
-        ->and($movements)->toHaveCount(2)
-        ->and($movements->pluck('movement_type')->all())->toBe([
-            InventoryMovement::TYPE_TRANSFER_OUT,
-            InventoryMovement::TYPE_TRANSFER_IN,
-        ])
-        ->and((float) $movements[0]->quantity_out)->toBe(4.0)
-        ->and((float) $movements[1]->quantity_in)->toBe(4.0)
+    expect($shipped->status)->toBe(StockTransfer::STATUS_IN_TRANSIT)
+        ->and($shipped->shipped_by)->toBe($this->user->id)
+        ->and($shipped->shipped_at)->not->toBeNull()
+        ->and($movements)->toHaveCount(1)
+        ->and($movements->first()->movement_type)->toBe(InventoryMovement::TYPE_TRANSFER_OUT)
+        ->and($movements->first()->inventory_location_id)->toBe($source->id)
+        ->and((float) $movements->first()->quantity_out)->toBe(4.0)
+        ->and((float) $movements->first()->quantity_in)->toBe(0.0)
         ->and($this->stock->getCurrentStock($product->id, $source->id))->toBe(6.0)
-        ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(4.0);
+        ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(0.0);
 });
 
-it('rejects completion when source location stock is insufficient and rolls back ledger writes', function () {
+it('rejects shipping draft transfers', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 2],
+    ]);
+
+    expect(fn () => $this->service->shipTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and($transfer->refresh()->status)->toBe(StockTransfer::STATUS_DRAFT)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->count())->toBe(0);
+});
+
+it('rejects shipping received or cancelled transfers', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $received = StockTransfer::factory()->received()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+
+    $cancelled = StockTransfer::factory()->cancelled()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+
+    expect(fn () => $this->service->shipTransfer($received->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->shipTransfer($cancelled->id))
+        ->toThrow(ValidationException::class);
+});
+
+it('rejects shipping when source location stock is insufficient and rolls back ledger writes', function () {
     $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
@@ -129,7 +170,7 @@ it('rejects completion when source location stock is insufficient and rolls back
     ]);
     $this->service->submitTransfer($transfer->id);
 
-    expect(fn () => $this->service->completeTransfer($transfer->id))
+    expect(fn () => $this->service->shipTransfer($transfer->id))
         ->toThrow(ValidationException::class)
         ->and($transfer->refresh()->status)->toBe(StockTransfer::STATUS_SUBMITTED)
         ->and(InventoryMovement::query()
@@ -138,6 +179,182 @@ it('rejects completion when source location stock is insufficient and rolls back
             ->count())->toBe(0)
         ->and($this->stock->getCurrentStock($product->id, $source->id))->toBe(2.0)
         ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(0.0);
+});
+
+it('receives an in transit transfer with transfer in movements at destination only', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 15000]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10, 15000);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    $received = $this->service->receiveTransfer($transfer->id);
+    $movements = InventoryMovement::query()
+        ->where('reference_type', 'trx_stock_transfers')
+        ->where('reference_id', $transfer->id)
+        ->orderBy('id')
+        ->get();
+
+    expect($received->status)->toBe(StockTransfer::STATUS_RECEIVED)
+        ->and($received->approved_by)->toBe($this->user->id)
+        ->and($received->completed_at)->not->toBeNull()
+        ->and($movements)->toHaveCount(2)
+        ->and($movements->pluck('movement_type')->all())->toBe([
+            InventoryMovement::TYPE_TRANSFER_OUT,
+            InventoryMovement::TYPE_TRANSFER_IN,
+        ])
+        ->and($movements[0]->inventory_location_id)->toBe($source->id)
+        ->and((float) $movements[0]->quantity_out)->toBe(4.0)
+        ->and((float) $movements[0]->quantity_in)->toBe(0.0)
+        ->and($movements[1]->inventory_location_id)->toBe($destination->id)
+        ->and((float) $movements[1]->quantity_in)->toBe(4.0)
+        ->and((float) $movements[1]->quantity_out)->toBe(0.0)
+        ->and($this->stock->getCurrentStock($product->id, $source->id))->toBe(6.0)
+        ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(4.0);
+});
+
+it('rejects receiving draft submitted received or cancelled transfers', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $draft = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 2],
+    ]);
+
+    $submitted = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 2],
+    ]);
+    $this->service->submitTransfer($submitted->id);
+
+    $received = StockTransfer::factory()->received()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+
+    $cancelled = StockTransfer::factory()->cancelled()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+
+    expect(fn () => $this->service->receiveTransfer($draft->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->receiveTransfer($submitted->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->receiveTransfer($received->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->receiveTransfer($cancelled->id))
+        ->toThrow(ValidationException::class);
+});
+
+it('prevents duplicate receive on the same transfer', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 3],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+    $this->service->receiveTransfer($transfer->id);
+
+    expect(fn () => $this->service->receiveTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->count())->toBe(1);
+});
+
+it('blocks terminal received transfers from edit cancel and ship', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 2],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+    $this->service->receiveTransfer($transfer->id);
+
+    expect(fn () => $this->service->updateTransfer($transfer->id, $source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 1],
+    ]))->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->cancelTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->shipTransfer($transfer->id))
+        ->toThrow(ValidationException::class);
+});
+
+it('runs the full ship and receive workflow with derived stock balances', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 15000]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10, 15000);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+    $received = $this->service->receiveTransfer($transfer->id);
+
+    $movements = InventoryMovement::query()
+        ->where('reference_type', 'trx_stock_transfers')
+        ->where('reference_id', $transfer->id)
+        ->orderBy('id')
+        ->get();
+
+    expect($received->status)->toBe(StockTransfer::STATUS_RECEIVED)
+        ->and($received->approved_by)->toBe($this->user->id)
+        ->and($received->completed_at)->not->toBeNull()
+        ->and($movements)->toHaveCount(2)
+        ->and($movements->pluck('movement_type')->all())->toBe([
+            InventoryMovement::TYPE_TRANSFER_OUT,
+            InventoryMovement::TYPE_TRANSFER_IN,
+        ])
+        ->and($this->stock->getCurrentStock($product->id, $source->id))->toBe(6.0)
+        ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(4.0);
+});
+
+it('prevents duplicate ship on the same transfer', function () {
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 3],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    expect(fn () => $this->service->shipTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_OUT)
+            ->count())->toBe(1);
 });
 
 it('rejects invalid branch inactive same location and non positive transfer data', function () {
@@ -191,10 +408,14 @@ it('blocks cross branch transfer lookup and workflow actions', function () {
         ->and(fn () => $this->service->submitTransfer($otherTransfer->id))
         ->toThrow(ValidationException::class)
         ->and(fn () => $this->service->cancelTransfer($otherTransfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->shipTransfer($otherTransfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(fn () => $this->service->receiveTransfer($otherTransfer->id))
         ->toThrow(ValidationException::class);
 });
 
-it('cancels draft or submitted transfers and blocks completed transfer cancellation', function () {
+it('cancels draft or submitted transfers and blocks received or in transit cancellation', function () {
     $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
@@ -207,13 +428,24 @@ it('cancels draft or submitted transfers and blocks completed transfer cancellat
     expect($this->service->cancelTransfer($cancelled->id, 'No longer needed')->status)
         ->toBe(StockTransfer::STATUS_CANCELLED);
 
-    $this->stock->createOpeningStock($product->id, $source->id, 3);
-    $completed = $this->service->createTransfer($source->id, $destination->id, [
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $inTransit = $this->service->createTransfer($source->id, $destination->id, [
         ['product_id' => $product->id, 'quantity' => 1],
     ]);
-    $this->service->submitTransfer($completed->id);
-    $this->service->completeTransfer($completed->id);
+    $this->service->submitTransfer($inTransit->id);
+    $this->service->shipTransfer($inTransit->id);
 
-    expect(fn () => $this->service->cancelTransfer($completed->id))
+    expect(fn () => $this->service->cancelTransfer($inTransit->id))
+        ->toThrow(ValidationException::class);
+
+    $received = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 1],
+    ]);
+    $this->service->submitTransfer($received->id);
+    $this->service->shipTransfer($received->id);
+    $this->service->receiveTransfer($received->id);
+
+    expect(fn () => $this->service->cancelTransfer($received->id))
         ->toThrow(ValidationException::class);
 });

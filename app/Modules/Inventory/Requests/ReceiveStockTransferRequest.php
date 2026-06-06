@@ -4,7 +4,7 @@ namespace App\Modules\Inventory\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 
-class CompleteStockTransferRequest extends FormRequest
+class ReceiveStockTransferRequest extends FormRequest
 {
     public function authorize(): bool
     {

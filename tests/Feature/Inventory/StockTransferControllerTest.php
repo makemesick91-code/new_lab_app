@@ -68,13 +68,16 @@ it('registers stock transfer route names', function () {
         'inventory.stock-transfers.edit',
         'inventory.stock-transfers.update',
         'inventory.stock-transfers.submit',
-        'inventory.stock-transfers.complete',
+        'inventory.stock-transfers.ship',
+        'inventory.stock-transfers.receive',
         'inventory.stock-transfers.cancel',
     ];
 
     foreach ($routes as $routeName) {
         expect(Route::has($routeName))->toBeTrue();
     }
+
+    expect(Route::has('inventory.stock-transfers.complete'))->toBeFalse();
 });
 
 it('allows view_inventory to access index and show for same branch transfers', function () {
@@ -116,7 +119,11 @@ it('denies view_inventory from mutation routes', function () {
         ->assertForbidden();
 
     $this->actingAs($this->viewer)
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
+        ->assertForbidden();
+
+    $this->actingAs($this->viewer)
+        ->post(route('inventory.stock-transfers.receive', $transfer))
         ->assertForbidden();
 
     $this->actingAs($this->viewer)
@@ -147,7 +154,11 @@ it('denies cross branch access to stock transfer routes', function () {
         ->assertForbidden();
 
     $this->actingAs($this->manager)
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
+        ->assertForbidden();
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.receive', $transfer))
         ->assertForbidden();
 
     $this->actingAs($this->manager)
@@ -206,7 +217,7 @@ it('submits a draft stock transfer through the controller', function () {
     expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_SUBMITTED);
 });
 
-it('completes a submitted stock transfer through the controller', function () {
+it('ships a submitted stock transfer through the controller', function () {
     $transfer = createDraftTransferWithItem($this->branch, 3);
     $productId = $transfer->items->first()->product_id;
 
@@ -217,11 +228,96 @@ it('completes a submitted stock transfer through the controller', function () {
 
     $this->actingAs($this->manager)
         ->from(route('inventory.stock-transfers.show', $transfer))
-        ->post(route('inventory.stock-transfers.complete', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
         ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
-        ->assertSessionHas('status', 'Transfer stok berhasil diselesaikan.');
+        ->assertSessionHas('status', 'Transfer stok berhasil dikirim.');
 
-    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_COMPLETED);
+    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_IN_TRANSIT);
+});
+
+it('receives an in transit stock transfer through the controller', function () {
+    $transfer = createDraftTransferWithItem($this->branch, 3);
+    $productId = $transfer->items->first()->product_id;
+
+    $this->stock->createOpeningStock($productId, $transfer->source_inventory_location_id, 10, 10000);
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.submit', $transfer));
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.ship', $transfer));
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->post(route('inventory.stock-transfers.receive', $transfer))
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHas('status', 'Transfer stok berhasil diterima.');
+
+    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_RECEIVED);
+});
+
+it('denies edit cancel and ship on received transfers through HTTP', function () {
+    $transfer = createDraftTransferWithItem($this->branch, 2);
+    $productId = $transfer->items->first()->product_id;
+    $newDestination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($productId, $transfer->source_inventory_location_id, 10);
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.submit', $transfer));
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.ship', $transfer));
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.receive', $transfer));
+
+    $transfer->refresh();
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->put(
+            route('inventory.stock-transfers.update', $transfer),
+            stockTransferPayload($transfer->source_inventory_location_id, $newDestination->id, $productId, 5),
+        )
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHasErrors('status');
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->post(route('inventory.stock-transfers.cancel', $transfer))
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHasErrors('status');
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHasErrors('status');
+});
+
+it('runs the full ship and receive workflow through the controller', function () {
+    $transfer = createDraftTransferWithItem($this->branch, 3);
+    $productId = $transfer->items->first()->product_id;
+
+    $this->stock->createOpeningStock($productId, $transfer->source_inventory_location_id, 10, 10000);
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.stock-transfers.submit', $transfer));
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->post(route('inventory.stock-transfers.ship', $transfer))
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHas('status', 'Transfer stok berhasil dikirim.');
+
+    $this->actingAs($this->manager)
+        ->from(route('inventory.stock-transfers.show', $transfer))
+        ->post(route('inventory.stock-transfers.receive', $transfer))
+        ->assertRedirect(route('inventory.stock-transfers.show', $transfer))
+        ->assertSessionHas('status', 'Transfer stok berhasil diterima.');
+
+    expect($transfer->refresh()->status)->toBe(StockTransfer::STATUS_RECEIVED);
 });
 
 it('cancels a draft stock transfer through the controller', function () {

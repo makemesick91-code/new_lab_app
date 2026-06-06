@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Sprint 14.2 - trx_stock_transfers (transfer document header).
+ * Sprint 14.2 / 15.2 — trx_stock_transfers (transfer document header).
  *
  * This model records transfer identity and workflow state only. Stock remains
  * ledger-derived from trx_inventory_movements.
@@ -24,14 +24,27 @@ class StockTransfer extends Model
 
     public const STATUS_SUBMITTED = 'submitted';
 
-    public const STATUS_COMPLETED = 'completed';
+    public const STATUS_IN_TRANSIT = 'in_transit';
+
+    public const STATUS_RECEIVED = 'received';
 
     public const STATUS_CANCELLED = 'cancelled';
+
+    /**
+     * @deprecated Sprint 15.2 — use STATUS_RECEIVED. Retained for unmigrated service/tests.
+     */
+    public const STATUS_COMPLETED = 'completed';
 
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_SUBMITTED,
-        self::STATUS_COMPLETED,
+        self::STATUS_IN_TRANSIT,
+        self::STATUS_RECEIVED,
+        self::STATUS_CANCELLED,
+    ];
+
+    public const TERMINAL_STATUSES = [
+        self::STATUS_RECEIVED,
         self::STATUS_CANCELLED,
     ];
 
@@ -47,6 +60,8 @@ class StockTransfer extends Model
         'notes',
         'requested_by',
         'approved_by',
+        'shipped_at',
+        'shipped_by',
         'completed_at',
         'created_by',
     ];
@@ -55,8 +70,41 @@ class StockTransfer extends Model
     {
         return [
             'transfer_date' => 'date',
+            'shipped_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
+    }
+
+    public function isDraft(): bool
+    {
+        return $this->status === self::STATUS_DRAFT;
+    }
+
+    public function isSubmitted(): bool
+    {
+        return $this->status === self::STATUS_SUBMITTED;
+    }
+
+    public function isInTransit(): bool
+    {
+        return $this->status === self::STATUS_IN_TRANSIT;
+    }
+
+    public function isReceived(): bool
+    {
+        return $this->status === self::STATUS_RECEIVED
+            || $this->status === self::STATUS_COMPLETED;
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === self::STATUS_CANCELLED;
+    }
+
+    public function isTerminal(): bool
+    {
+        return in_array($this->status, self::TERMINAL_STATUSES, true)
+            || $this->status === self::STATUS_COMPLETED;
     }
 
     public function branch(): BelongsTo
@@ -82,6 +130,11 @@ class StockTransfer extends Model
     public function approvedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function shippedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'shipped_by');
     }
 
     public function createdBy(): BelongsTo

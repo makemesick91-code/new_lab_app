@@ -3,5 +3,7 @@
         'action' => route('inventory.products.adjust-in.store', $product),
         'button' => 'Buat Penyesuaian Masuk',
         'operationType' => 'adjust_in',
+        'includeBatch' => true,
+        'batches' => $batches ?? collect(),
     ])
 </x-settings-shell>

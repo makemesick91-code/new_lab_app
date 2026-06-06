@@ -46,7 +46,8 @@ it('denies view_inventory mutation and workflow abilities', function () {
         ->and($viewer->can('update', $this->transfer))->toBeFalse()
         ->and($viewer->can('delete', $this->transfer))->toBeFalse()
         ->and($viewer->can('submit', $this->transfer))->toBeFalse()
-        ->and($viewer->can('complete', $this->transfer))->toBeFalse()
+        ->and($viewer->can('ship', $this->transfer))->toBeFalse()
+        ->and($viewer->can('receive', $this->transfer))->toBeFalse()
         ->and($viewer->can('cancel', $this->transfer))->toBeFalse();
 });
 
@@ -60,7 +61,8 @@ it('allows manage_inventory to perform workflow actions on same branch transfers
         ->and($manager->can('update', $this->transfer))->toBeTrue()
         ->and($manager->can('delete', $this->transfer))->toBeTrue()
         ->and($manager->can('submit', $this->transfer))->toBeTrue()
-        ->and($manager->can('complete', $this->transfer))->toBeTrue()
+        ->and($manager->can('ship', $this->transfer))->toBeTrue()
+        ->and($manager->can('receive', $this->transfer))->toBeTrue()
         ->and($manager->can('cancel', $this->transfer))->toBeTrue();
 });
 
@@ -77,7 +79,8 @@ it('denies cross branch transfer view and mutation for inventory users', functio
         ->and($manager->can('update', $this->otherTransfer))->toBeFalse()
         ->and($manager->can('delete', $this->otherTransfer))->toBeFalse()
         ->and($manager->can('submit', $this->otherTransfer))->toBeFalse()
-        ->and($manager->can('complete', $this->otherTransfer))->toBeFalse()
+        ->and($manager->can('ship', $this->otherTransfer))->toBeFalse()
+        ->and($manager->can('receive', $this->otherTransfer))->toBeFalse()
         ->and($manager->can('cancel', $this->otherTransfer))->toBeFalse();
 });
 
@@ -91,7 +94,8 @@ it('denies unauthorized users all stock transfer abilities', function () {
         ->and($user->can('update', $this->transfer))->toBeFalse()
         ->and($user->can('delete', $this->transfer))->toBeFalse()
         ->and($user->can('submit', $this->transfer))->toBeFalse()
-        ->and($user->can('complete', $this->transfer))->toBeFalse()
+        ->and($user->can('ship', $this->transfer))->toBeFalse()
+        ->and($user->can('receive', $this->transfer))->toBeFalse()
         ->and($user->can('cancel', $this->transfer))->toBeFalse();
 });
 

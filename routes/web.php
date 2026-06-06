@@ -6,6 +6,7 @@ use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\Inventory\Controllers\InventoryBatchController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
@@ -300,6 +301,9 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 
     Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');
 
+    Route::get('batches', [InventoryBatchController::class, 'index'])->name('batches.index');
+    Route::get('batches/{inventoryBatch}', [InventoryBatchController::class, 'show'])->name('batches.show');
+
     Route::get('products/{product}/stock-card', [StockCardController::class, 'show'])->name('products.stock-card');
     Route::get('products/{product}/opening-stock', [InventoryStockController::class, 'openingStock'])->name('products.opening-stock.create');
     Route::post('products/{product}/opening-stock', [InventoryStockController::class, 'storeOpeningStock'])->name('products.opening-stock.store');
@@ -323,7 +327,8 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 
     Route::resource('stock-transfers', StockTransferController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
     Route::post('stock-transfers/{stockTransfer}/submit', [StockTransferController::class, 'submit'])->name('stock-transfers.submit');
-    Route::post('stock-transfers/{stockTransfer}/complete', [StockTransferController::class, 'complete'])->name('stock-transfers.complete');
+    Route::post('stock-transfers/{stockTransfer}/ship', [StockTransferController::class, 'ship'])->name('stock-transfers.ship');
+    Route::post('stock-transfers/{stockTransfer}/receive', [StockTransferController::class, 'receive'])->name('stock-transfers.receive');
     Route::post('stock-transfers/{stockTransfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
 });
 

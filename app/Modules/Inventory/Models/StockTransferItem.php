@@ -21,6 +21,7 @@ class StockTransferItem extends Model
     protected $fillable = [
         'stock_transfer_id',
         'product_id',
+        'inventory_batch_id',
         'quantity',
         'notes',
     ];
@@ -40,6 +41,11 @@ class StockTransferItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'product_id');
+    }
+
+    public function inventoryBatch(): BelongsTo
+    {
+        return $this->belongsTo(InventoryBatch::class, 'inventory_batch_id');
     }
 
     protected static function newFactory(): StockTransferItemFactory

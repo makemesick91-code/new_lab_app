@@ -7,6 +7,7 @@ use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
+use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
@@ -28,7 +29,7 @@ class StockTransferService
     ) {}
 
     /**
-     * @param  array<int, array{product_id: int, quantity: float, notes?: string|null}>  $items
+     * @param  array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>  $items
      */
     public function createTransfer(
         int $sourceLocationId,
@@ -66,7 +67,7 @@ class StockTransferService
     }
 
     /**
-     * @param  array<int, array{product_id: int, quantity: float, notes?: string|null}>  $items
+     * @param  array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>  $items
      */
     public function updateTransfer(
         int $transferId,
@@ -124,27 +125,34 @@ class StockTransferService
         });
     }
 
-    public function completeTransfer(int $transferId): StockTransfer
+    public function shipTransfer(int $transferId): StockTransfer
     {
         return DB::transaction(function () use ($transferId) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
-            if ($transfer->status === StockTransfer::STATUS_COMPLETED) {
+            if ($transfer->status === StockTransfer::STATUS_IN_TRANSIT) {
                 throw ValidationException::withMessages([
-                    'status' => 'Transfer stok sudah diselesaikan.',
+                    'status' => 'Transfer stok sudah dikirim.',
+                ]);
+            }
+
+            if ($transfer->status === StockTransfer::STATUS_RECEIVED
+                || $transfer->status === StockTransfer::STATUS_COMPLETED) {
+                throw ValidationException::withMessages([
+                    'status' => 'Transfer stok yang sudah diterima tidak bisa dikirim.',
                 ]);
             }
 
             if ($transfer->status === StockTransfer::STATUS_CANCELLED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Transfer stok yang dibatalkan tidak bisa diselesaikan.',
+                    'status' => 'Transfer stok yang dibatalkan tidak bisa dikirim.',
                 ]);
             }
 
             if ($transfer->status !== StockTransfer::STATUS_SUBMITTED) {
                 throw ValidationException::withMessages([
-                    'status' => 'Transfer stok harus diajukan sebelum diselesaikan.',
+                    'status' => 'Transfer stok harus diajukan sebelum dikirim.',
                 ]);
             }
 
@@ -172,7 +180,7 @@ class StockTransferService
 
                 if ($currentStock < $quantity) {
                     throw ValidationException::withMessages([
-                        'quantity' => 'Stok sumber tidak mencukupi untuk menyelesaikan transfer.',
+                        'quantity' => 'Stok sumber tidak mencukupi untuk mengirim transfer.',
                     ]);
                 }
             }
@@ -182,12 +190,94 @@ class StockTransferService
                 $quantity = (float) $item->quantity;
                 $this->assertPositiveQuantity($quantity);
 
-                $this->createTransferMovement($transfer, $product, $source, 0, $quantity, InventoryMovement::TYPE_TRANSFER_OUT);
-                $this->createTransferMovement($transfer, $product, $destination, $quantity, 0, InventoryMovement::TYPE_TRANSFER_IN);
+                $batchId = $item->inventory_batch_id ? (int) $item->inventory_batch_id : null;
+
+                if ($batchId !== null) {
+                    $batch = $this->lockAndAssertBatchForTransfer($branchId, $product->id, $batchId, true);
+                    $batchStock = $this->movements->currentStockByBatch($branchId, $product->id, $source->id, $batch->id);
+
+                    if ($batchStock < $quantity) {
+                        throw ValidationException::withMessages([
+                            'quantity' => 'Stok batch pada lokasi ini tidak mencukupi.',
+                        ]);
+                    }
+                }
+
+                $this->createTransferMovement(
+                    $transfer,
+                    $product,
+                    $source,
+                    0,
+                    $quantity,
+                    InventoryMovement::TYPE_TRANSFER_OUT,
+                    $batchId,
+                );
             }
 
             return $this->transfers->update($transfer, [
-                'status' => StockTransfer::STATUS_COMPLETED,
+                'status' => StockTransfer::STATUS_IN_TRANSIT,
+                'shipped_by' => $this->currentActorId(),
+                'shipped_at' => now(),
+            ]);
+        });
+    }
+
+    public function receiveTransfer(int $transferId): StockTransfer
+    {
+        return DB::transaction(function () use ($transferId) {
+            $branchId = $this->branchContext->requireId();
+            $transfer = $this->lockTransferInBranch($branchId, $transferId);
+
+            if ($transfer->status === StockTransfer::STATUS_RECEIVED
+                || $transfer->status === StockTransfer::STATUS_COMPLETED) {
+                throw ValidationException::withMessages([
+                    'status' => 'Transfer stok sudah diterima.',
+                ]);
+            }
+
+            if ($transfer->status === StockTransfer::STATUS_CANCELLED) {
+                throw ValidationException::withMessages([
+                    'status' => 'Transfer stok yang dibatalkan tidak bisa diterima.',
+                ]);
+            }
+
+            if ($transfer->status !== StockTransfer::STATUS_IN_TRANSIT) {
+                throw ValidationException::withMessages([
+                    'status' => 'Transfer stok harus dalam perjalanan sebelum diterima.',
+                ]);
+            }
+
+            $destination = $this->lockAndAssertActiveLocationInBranch($branchId, (int) $transfer->destination_inventory_location_id, 'destination_inventory_location_id');
+
+            $items = StockTransferItem::query()
+                ->where('stock_transfer_id', $transfer->id)
+                ->lockForUpdate()
+                ->get();
+
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages([
+                    'items' => 'Transfer stok harus memiliki minimal satu item.',
+                ]);
+            }
+
+            foreach ($items as $item) {
+                $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $item->product_id);
+                $quantity = (float) $item->quantity;
+                $this->assertPositiveQuantity($quantity);
+
+                $this->createTransferMovement(
+                    $transfer,
+                    $product,
+                    $destination,
+                    $quantity,
+                    0,
+                    InventoryMovement::TYPE_TRANSFER_IN,
+                    $item->inventory_batch_id ? (int) $item->inventory_batch_id : null,
+                );
+            }
+
+            return $this->transfers->update($transfer, [
+                'status' => StockTransfer::STATUS_RECEIVED,
                 'approved_by' => $this->currentActorId(),
                 'completed_at' => now(),
             ]);
@@ -200,7 +290,14 @@ class StockTransferService
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
-            if ($transfer->status === StockTransfer::STATUS_COMPLETED) {
+            if ($transfer->status === StockTransfer::STATUS_IN_TRANSIT) {
+                throw ValidationException::withMessages([
+                    'status' => 'Transfer stok yang sudah dikirim tidak bisa dibatalkan.',
+                ]);
+            }
+
+            if ($transfer->status === StockTransfer::STATUS_RECEIVED
+                || $transfer->status === StockTransfer::STATUS_COMPLETED) {
                 throw ValidationException::withMessages([
                     'status' => 'Transfer stok yang sudah selesai tidak bisa dibatalkan.',
                 ]);
@@ -250,12 +347,16 @@ class StockTransferService
         foreach ($items as $item) {
             $this->assertActiveProductInBranch($branchId, (int) $item->product_id);
             $this->assertPositiveQuantity((float) $item->quantity);
+
+            if ($item->inventory_batch_id) {
+                $this->assertBatchForTransferItem($branchId, (int) $item->product_id, (int) $item->inventory_batch_id);
+            }
         }
     }
 
     /**
-     * @param  array<int, array{product_id: int, quantity: float, notes?: string|null}>  $items
-     * @return array<int, array{product_id: int, quantity: float, notes?: string|null}>
+     * @param  array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>  $items
+     * @return array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>
      */
     private function normalizeAndValidateItems(int $branchId, array $items): array
     {
@@ -271,20 +372,30 @@ class StockTransferService
             $productId = (int) ($item['product_id'] ?? 0);
             $quantity = (float) ($item['quantity'] ?? 0);
             $notes = $item['notes'] ?? null;
+            $batchId = isset($item['inventory_batch_id']) && $item['inventory_batch_id'] !== '' && $item['inventory_batch_id'] !== null
+                ? (int) $item['inventory_batch_id']
+                : null;
 
             $this->assertActiveProductInBranch($branchId, $productId);
             $this->assertPositiveQuantity($quantity);
 
-            if (! isset($normalized[$productId])) {
-                $normalized[$productId] = [
+            if ($batchId !== null) {
+                $this->assertBatchForTransferItem($branchId, $productId, $batchId);
+            }
+
+            $lineKey = $productId.':'.($batchId ?? 'none');
+
+            if (! isset($normalized[$lineKey])) {
+                $normalized[$lineKey] = [
                     'product_id' => $productId,
+                    'inventory_batch_id' => $batchId,
                     'quantity' => 0,
                     'notes' => null,
                 ];
             }
 
-            $normalized[$productId]['quantity'] = round($normalized[$productId]['quantity'] + $quantity, 2);
-            $normalized[$productId]['notes'] = $notes ?: $normalized[$productId]['notes'];
+            $normalized[$lineKey]['quantity'] = round($normalized[$lineKey]['quantity'] + $quantity, 2);
+            $normalized[$lineKey]['notes'] = $notes ?: $normalized[$lineKey]['notes'];
         }
 
         return array_values($normalized);
@@ -297,12 +408,14 @@ class StockTransferService
         float $quantityIn,
         float $quantityOut,
         string $movementType,
+        ?int $inventoryBatchId = null,
     ): InventoryMovement {
         return $this->movements->create([
             'branch_id' => $transfer->branch_id,
             'inventory_location_id' => $location->id,
             'product_id' => $product->id,
             'supplier_id' => null,
+            'inventory_batch_id' => $inventoryBatchId,
             'movement_type' => $movementType,
             'movement_date' => $transfer->transfer_date->toDateString(),
             'quantity_in' => $quantityIn,
@@ -408,6 +521,50 @@ class StockTransferService
                 'quantity' => 'Jumlah transfer harus lebih besar dari nol.',
             ]);
         }
+    }
+
+    private function assertBatchForTransferItem(int $branchId, int $productId, int $batchId): void
+    {
+        $this->lockAndAssertBatchForTransfer($branchId, $productId, $batchId, false);
+    }
+
+    private function lockAndAssertBatchForTransfer(
+        int $branchId,
+        int $productId,
+        int $batchId,
+        bool $forOutbound = false,
+    ): InventoryBatch {
+        $batch = InventoryBatch::query()
+            ->where('branch_id', $branchId)
+            ->whereKey($batchId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $batch) {
+            throw ValidationException::withMessages([
+                'inventory_batch_id' => 'Batch tidak valid untuk cabang aktif.',
+            ]);
+        }
+
+        if ($batch->product_id !== $productId) {
+            throw ValidationException::withMessages([
+                'inventory_batch_id' => 'Batch tidak sesuai dengan produk yang dipilih.',
+            ]);
+        }
+
+        if (! $batch->is_active) {
+            throw ValidationException::withMessages([
+                'inventory_batch_id' => 'Batch tidak aktif dan tidak dapat digunakan.',
+            ]);
+        }
+
+        if ($forOutbound && $batch->expiry_date !== null && $batch->expiry_date->lt(now()->startOfDay())) {
+            throw ValidationException::withMessages([
+                'inventory_batch_id' => 'Batch ini sudah kedaluwarsa dan tidak dapat dikeluarkan.',
+            ]);
+        }
+
+        return $batch;
     }
 
     private function currentActorId(): int
