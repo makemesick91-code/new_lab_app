@@ -36,5 +36,13 @@
                 Transfer Stok
             </a>
         @endcan
+        @can('create', \App\Modules\Inventory\Models\PurchaseRequest::class)
+            <a
+                href="{{ route('inventory.purchase-requests.create') }}"
+                class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+            >
+                Buat Permintaan Pembelian
+            </a>
+        @endcan
     </div>
 </x-inventory.dashboard-section>

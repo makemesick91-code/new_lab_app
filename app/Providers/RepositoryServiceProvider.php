@@ -30,6 +30,7 @@ use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
+use App\Modules\Inventory\Interfaces\PurchaseRequestRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
@@ -37,6 +38,7 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
@@ -44,6 +46,7 @@ use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
+use App\Modules\Inventory\Policies\PurchaseRequestPolicy;
 use App\Modules\Inventory\Policies\StockOpnamePolicy;
 use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
@@ -53,6 +56,7 @@ use App\Modules\Inventory\Repositories\InventoryMovementRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
 use App\Modules\Inventory\Repositories\ProductRepository;
 use App\Modules\Inventory\Repositories\ProductUnitRepository;
+use App\Modules\Inventory\Repositories\PurchaseRequestRepository;
 use App\Modules\Inventory\Repositories\StockOpnameRepository;
 use App\Modules\Inventory\Repositories\StockTransferRepository;
 use App\Modules\Inventory\Repositories\SupplierRepository;
@@ -167,6 +171,8 @@ class RepositoryServiceProvider extends ServiceProvider
         StockOpnameRepositoryInterface::class => StockOpnameRepository::class,
         // Sprint 14 - Stock Transfer
         StockTransferRepositoryInterface::class => StockTransferRepository::class,
+        // Sprint 16.1 - Purchase Request
+        PurchaseRequestRepositoryInterface::class => PurchaseRequestRepository::class,
     ];
 
     /**
@@ -242,6 +248,7 @@ class RepositoryServiceProvider extends ServiceProvider
         InventoryMovement::class => InventoryMovementPolicy::class,
         StockOpname::class => StockOpnamePolicy::class,
         StockTransfer::class => StockTransferPolicy::class,
+        PurchaseRequest::class => PurchaseRequestPolicy::class,
     ];
 
     public function register(): void

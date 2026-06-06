@@ -126,11 +126,20 @@
                                         {{ $alert['expiry_date'] ?? '—' }}
                                     </td>
                                     <td class="px-4 py-3">
-                                        @if ($alert['type'] === 'stock')
-                                            <a href="{{ route('inventory.products.show', $alert['product_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Produk</a>
-                                        @else
-                                            <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
-                                        @endif
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            @if ($alert['type'] === 'stock')
+                                                <a href="{{ route('inventory.products.show', $alert['product_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Produk</a>
+                                                @can('create', \App\Modules\Inventory\Models\PurchaseRequest::class)
+                                                    <a href="{{ route('inventory.purchase-requests.create', array_filter([
+                                                        'product_id' => $alert['product_id'],
+                                                        'inventory_location_id' => $alert['inventory_location_id'] ?? null,
+                                                        'suggested_quantity' => $alert['reorder_quantity'] ?? null,
+                                                    ])) }}" class="text-sm font-medium text-orange-700 hover:text-orange-600">Buat PR</a>
+                                                @endcan
+                                            @else
+                                                <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -175,6 +184,18 @@
                                     </div>
                                 @endif
                             </dl>
+                            @if ($alert['type'] === 'stock')
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    <a href="{{ route('inventory.products.show', $alert['product_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Produk</a>
+                                    @can('create', \App\Modules\Inventory\Models\PurchaseRequest::class)
+                                        <a href="{{ route('inventory.purchase-requests.create', array_filter([
+                                            'product_id' => $alert['product_id'],
+                                            'inventory_location_id' => $alert['inventory_location_id'] ?? null,
+                                            'suggested_quantity' => $alert['reorder_quantity'] ?? null,
+                                        ])) }}" class="text-sm font-medium text-orange-700 hover:text-orange-600">Buat PR</a>
+                                    @endcan
+                                </div>
+                            @endif
                         </article>
                     @endforeach
                 </div>

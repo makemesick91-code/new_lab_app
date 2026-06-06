@@ -32,9 +32,17 @@ Inventory Analytics.
 
 Inventory Advanced Hardening & Navigation Closure (sidebar, dashboard KPI dedup, quick actions).
 
-## Sprint 16 — PLANNED (candidate)
+## Sprint 16 — IN PROGRESS
 
-Purchase Request, Purchase Order, and Receiving workflow. POs express intent only; stock increases via receipt/ledger movement.
+Purchasing milestone split into slices. POs express intent only; stock increases via receipt/ledger movement.
+
+### Sprint 16.1 — COMPLETE
+
+Purchase Request Workflow (intent-only; no inventory movements; branch-scoped approval).
+
+### Sprint 16+ — PLANNED
+
+Purchase Order and Goods Receipt (as scoped).
 
 ## Sprint 17 — PLANNED
 

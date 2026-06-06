@@ -13,6 +13,7 @@ use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
+use App\Modules\Inventory\Controllers\PurchaseRequestController;
 use App\Modules\Inventory\Controllers\StockCardController;
 use App\Modules\Inventory\Controllers\StockOpnameController;
 use App\Modules\Inventory\Controllers\StockTransferController;
@@ -336,6 +337,12 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('stock-transfers/{stockTransfer}/ship', [StockTransferController::class, 'ship'])->name('stock-transfers.ship');
     Route::post('stock-transfers/{stockTransfer}/receive', [StockTransferController::class, 'receive'])->name('stock-transfers.receive');
     Route::post('stock-transfers/{stockTransfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
+
+    Route::resource('purchase-requests', PurchaseRequestController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::post('purchase-requests/{purchaseRequest}/submit', [PurchaseRequestController::class, 'submit'])->name('purchase-requests.submit');
+    Route::post('purchase-requests/{purchaseRequest}/approve', [PurchaseRequestController::class, 'approve'])->name('purchase-requests.approve');
+    Route::post('purchase-requests/{purchaseRequest}/reject', [PurchaseRequestController::class, 'reject'])->name('purchase-requests.reject');
+    Route::post('purchase-requests/{purchaseRequest}/cancel', [PurchaseRequestController::class, 'cancel'])->name('purchase-requests.cancel');
 });
 
 require __DIR__.'/auth.php';

@@ -42,9 +42,18 @@ Sprint 15.6 completed Inventory Advanced Hardening & Navigation Closure:
 - dashboard quick actions (permission-gated)
 - sidebar dead placeholder links removed
 
+Sprint 16.1 completed Purchase Request Workflow:
+
+- tables: `trx_purchase_requests`, `trx_purchase_request_items`
+- statuses: draft, submitted, approved, rejected, cancelled
+- service: `PurchaseRequestService` (no inventory movements)
+- policy: `PurchaseRequestPolicy` + `approve_inventory_purchase_request`
+- UI: index/create/edit/show, sidebar **Permintaan Pembelian**, alerts **Buat PR** shortcut (prefill only)
+- PR number: `PR-{YYYYMMDD}-{branch_id}-{sequence}`
+
 ## Future Inventory Work
 
-- Purchase Request / Purchase Order / Receiving workflow (Sprint 16 candidate)
+- Purchase Order / Goods Receipt workflow (Sprint 16+)
 - Production Material Usage integration
 - Notification channels for inventory alerts
 - Owner cross-branch inventory rollup

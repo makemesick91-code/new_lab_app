@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 15.6.
+Sprint 16.1.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -50,6 +50,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 15.4 | Reorder Point & Inventory Alerts | (Sprint 15.4 reorder/alerts implementation) | `reorder_point`, `reorder_quantity`, `alert_enabled` on `inv_products` |
 | 15.5 | Inventory Analytics | (Sprint 15.5 analytics implementation) | (none — read-only analytics from ledger) |
 | 15.6 | Inventory Advanced Hardening & Navigation Closure | (Sprint 15.6 navigation/dashboard hardening) | (none — UI/navigation only) |
+| 16.1 | Purchase Request Workflow | (Sprint 16.1 purchase request implementation) | `trx_purchase_requests`, `trx_purchase_request_items` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1391,6 +1392,71 @@ covers documentation and memory sync.
 
 ---
 
+# Sprint 16.1 — Purchase Request Workflow
+
+## Sprint 16.1 Overview
+
+**Business objective:** Introduce a branch-scoped Purchase Request (PR) workflow so operators can
+document material purchase needs and route them through draft → submitted → approved/rejected
+approval — **without** creating inventory movements or mutating ledger-derived stock.
+
+**Out of scope:** Purchase Order, Goods Receipt, supplier delivery, `PURCHASE` inventory movements,
+stock updates, HR module.
+
+## Deliverables
+
+**Schema:**
+- `trx_purchase_requests` — header with `purchase_request_number`, `request_date`, workflow
+  statuses (`draft`, `submitted`, `approved`, `rejected`, `cancelled`), approval/rejection audit
+  fields.
+- `trx_purchase_request_items` — line items with `product_id`, optional `inventory_location_id`,
+  `quantity_requested`, optional `estimated_unit_price`.
+
+**Application layer:**
+- `PurchaseRequest` / `PurchaseRequestItem` models with status constants and relations.
+- `PurchaseRequestRepository` + interface; `PurchaseRequestService` owns workflow transitions.
+- `PurchaseRequestPolicy` with `viewAny`, `view`, `create`, `update`, `submit`, `approve`,
+  `reject`, `cancel`; branch isolation via `ChecksInventoryAccess`.
+- Permission `approve_inventory_purchase_request` (Admin Lab); `manage_inventory` retains full
+  manage + approve path.
+- Form requests: `StorePurchaseRequestRequest`, `UpdatePurchaseRequestRequest`,
+  `RejectPurchaseRequestRequest`.
+- `PurchaseRequestController` + routes `inventory.purchase-requests.*`.
+- Blade UI under `resources/views/inventory/purchase-requests/` (Indonesian labels).
+- Sidebar link **Permintaan Pembelian**; dashboard quick action **Buat Permintaan Pembelian**.
+- Reorder alerts shortcut **Buat PR** (query-param prefill only; no auto-create).
+
+**PR number format:** `PR-{YYYYMMDD}-{branch_id}-{sequence}` (branch-scoped sequential).
+
+## Preserved Invariants
+
+- **No inventory movements** created on PR create/submit/approve/reject/cancel.
+- **Ledger-only stock** — no mutable stock columns added.
+- **Branch isolation** — `BranchContext::requireId()`; policies deny cross-branch access.
+- **Authorization** — view via `view_inventory`; mutate via `manage_inventory`; approve via
+  `approve_inventory_purchase_request` or `manage_inventory`.
+
+## Quality Gates
+
+Run at Sprint 16.1 completion: `php artisan migrate:fresh --seed`, `php artisan test`,
+`vendor/bin/pint`, `npm run build`, `php artisan route:list`.
+
+## Known Decisions
+
+- Purchase Request expresses intent only; stock increases remain a future Goods Receipt / ledger
+  movement concern (Sprint 16+).
+- Alerts shortcut pre-fills create form via query params; user must submit form to persist PR.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 16.1 — Purchase Request Workflow |
+| Status | COMPLETED |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1589,9 +1655,13 @@ covers documentation and memory sync.
   duplicate KPI strips), permission-gated sidebar and quick-action links only to implemented routes,
   Stok Opname sidebar discoverability, and removal of dead placeholder navigation. No mutable stock
   columns; branch isolation and ledger rules unchanged.
-- **Sprint 16 — Purchasing (candidate):** Purchase Request / Purchase Order / Receiving workflow.
-  POs express intent and **must not increase stock**; stock rises only
-  through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
+- **Sprint 16.1 completed baseline — Purchase Request:** Future changes must preserve PR as
+  intent-only (no `trx_inventory_movements` on PR workflow), ledger-derived stock unchanged, branch
+  isolation via `BranchContext` and `PurchaseRequestPolicy`, status-gated transitions in
+  `PurchaseRequestService`, and permission `approve_inventory_purchase_request` for approval paths.
+- **Sprint 16+ — Purchase Order / Receiving (candidate):** POs express intent and **must not
+  increase stock**; stock rises only through a receipt/ledger movement. Validate supplier branch
+  ownership and permission scope.
 - **Sprint 16+ — Goods Receipt:** May create inventory movements only after validation (active
   branch, active location, product/supplier in branch, qty > 0, documented unit-cost rules,
   transactional ledger write).
@@ -1638,7 +1708,7 @@ Implement future-sprint features by accident.
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
 (S12–15.6, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
 Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics, navigation/dashboard
-hardening).
+hardening, Purchase Request workflow).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -1651,4 +1721,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 15.6 and must be updated as each new sprint completes.*
+Sprint 16.1 and must be updated as each new sprint completes.*
