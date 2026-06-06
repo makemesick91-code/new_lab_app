@@ -47,4 +47,10 @@ interface PurchaseOrderRepositoryInterface
      * Callable only from GoodsReceiptService::post().
      */
     public function incrementItemQuantityReceived(int $purchaseOrderItemId, float $acceptedQty): void;
+
+    /**
+     * Decrement cumulative received quantity for a PO line.
+     * Callable only from GoodsReceiptService::void().
+     */
+    public function decrementItemQuantityReceived(int $purchaseOrderItemId, float $acceptedQty): void;
 }

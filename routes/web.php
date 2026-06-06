@@ -356,6 +356,7 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('goods-receipts/{goodsReceipt}/submit', [GoodsReceiptController::class, 'submit'])->name('goods-receipts.submit');
     Route::post('goods-receipts/{goodsReceipt}/post', [GoodsReceiptController::class, 'post'])->name('goods-receipts.post');
     Route::post('goods-receipts/{goodsReceipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('goods-receipts.cancel');
+    Route::post('goods-receipts/{goodsReceipt}/void', [GoodsReceiptController::class, 'void'])->name('goods-receipts.void');
 });
 
 require __DIR__.'/auth.php';

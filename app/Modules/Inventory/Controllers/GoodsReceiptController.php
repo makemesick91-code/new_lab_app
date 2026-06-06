@@ -13,6 +13,7 @@ use App\Modules\Inventory\Requests\PostGoodsReceiptRequest;
 use App\Modules\Inventory\Requests\StoreGoodsReceiptRequest;
 use App\Modules\Inventory\Requests\SubmitGoodsReceiptRequest;
 use App\Modules\Inventory\Requests\UpdateGoodsReceiptRequest;
+use App\Modules\Inventory\Requests\VoidGoodsReceiptRequest;
 use App\Modules\Inventory\Services\GoodsReceiptService;
 use App\Modules\Inventory\Services\InventoryLocationService;
 use App\Modules\Inventory\Services\InventoryStockService;
@@ -108,7 +109,7 @@ class GoodsReceiptController extends Controller
             $goodsReceipt->id,
         ) ?? abort(404);
 
-        $ledgerMovements = $goodsReceipt->isPosted()
+        $ledgerMovements = $goodsReceipt->isPosted() || $goodsReceipt->isVoid()
             ? InventoryMovement::query()
                 ->with(['product', 'inventoryLocation', 'inventoryBatch'])
                 ->where('branch_id', $goodsReceipt->branch_id)
@@ -178,10 +179,28 @@ class GoodsReceiptController extends Controller
     {
         $this->authorize('cancel', $goodsReceipt);
 
-        $this->goodsReceiptService->cancel($goodsReceipt, $request->user());
+        $this->goodsReceiptService->cancel(
+            $goodsReceipt,
+            $request->user(),
+            $request->validated()['notes'] ?? null,
+        );
 
-        return redirect()->route('inventory.goods-receipts.index')
+        return redirect()->route('inventory.goods-receipts.show', $goodsReceipt)
             ->with('status', 'Penerimaan barang berhasil dibatalkan.');
+    }
+
+    public function void(VoidGoodsReceiptRequest $request, GoodsReceipt $goodsReceipt): RedirectResponse
+    {
+        $this->authorize('void', $goodsReceipt);
+
+        $goodsReceipt = $this->goodsReceiptService->void(
+            $goodsReceipt,
+            $request->user(),
+            $request->validated()['reason'],
+        );
+
+        return redirect()->route('inventory.goods-receipts.show', $goodsReceipt)
+            ->with('status', 'Penerimaan barang berhasil divoid. Stok telah dikembalikan melalui ledger pembalikan.');
     }
 
     /**

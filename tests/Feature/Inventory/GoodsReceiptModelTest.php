@@ -19,7 +19,8 @@ it('defines goods receipt status constants', function () {
     expect(GoodsReceipt::STATUS_DRAFT)->toBe('draft')
         ->and(GoodsReceipt::STATUS_SUBMITTED)->toBe('submitted')
         ->and(GoodsReceipt::STATUS_POSTED)->toBe('posted')
-        ->and(GoodsReceipt::STATUS_CANCELLED)->toBe('cancelled');
+        ->and(GoodsReceipt::STATUS_CANCELLED)->toBe('cancelled')
+        ->and(GoodsReceipt::STATUS_VOID)->toBe('void');
 });
 
 it('resolves goods receipt relationships', function () {
@@ -93,7 +94,7 @@ it('evaluates goods receipt status helper methods', function () {
         ->and($submitted->isSubmitted())->toBeTrue()
         ->and($submitted->canBeEdited())->toBeFalse()
         ->and($submitted->canBePosted())->toBeTrue()
-        ->and($submitted->canBeCancelled())->toBeFalse()
+        ->and($submitted->canBeCancelled())->toBeTrue()
         ->and($posted->isPosted())->toBeTrue()
         ->and($posted->isTerminal())->toBeTrue()
         ->and($posted->canBeEdited())->toBeFalse()

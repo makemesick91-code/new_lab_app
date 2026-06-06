@@ -122,4 +122,11 @@ class PurchaseOrderRepository implements PurchaseOrderRepositoryInterface
             ->whereKey($purchaseOrderItemId)
             ->increment('quantity_received', $acceptedQty);
     }
+
+    public function decrementItemQuantityReceived(int $purchaseOrderItemId, float $acceptedQty): void
+    {
+        PurchaseOrderItem::query()
+            ->whereKey($purchaseOrderItemId)
+            ->decrement('quantity_received', $acceptedQty);
+    }
 }

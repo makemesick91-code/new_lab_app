@@ -177,6 +177,76 @@ class InventoryStockService
         );
     }
 
+    public function reversePurchaseMovement(
+        InventoryMovement $original,
+        ?string $notes = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        ?string $movementDate = null,
+    ): InventoryMovement {
+        if ($original->movement_type !== InventoryMovement::TYPE_PURCHASE || (float) $original->quantity_in <= 0) {
+            throw ValidationException::withMessages([
+                'movement' => 'Hanya pergerakan pembelian masuk yang dapat dibalik.',
+            ]);
+        }
+
+        $qty = (float) $original->quantity_in;
+
+        return DB::transaction(function () use ($original, $qty, $notes, $referenceType, $referenceId, $movementDate) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($original->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'movement' => 'Pergerakan stok tidak valid untuk cabang aktif.',
+                ]);
+            }
+
+            $productId = (int) $original->product_id;
+            $locationId = (int) $original->inventory_location_id;
+            $batchId = $original->inventory_batch_id !== null ? (int) $original->inventory_batch_id : null;
+
+            $this->lockAndAssertProductInBranch($branchId, $productId);
+            $this->lockAndAssertLocationInBranch($branchId, $locationId);
+
+            if ($batchId !== null) {
+                $this->lockAndAssertBatchForMovement($branchId, $productId, $batchId, forOutbound: true);
+
+                $batchStock = $this->movements->currentStockByBatch($branchId, $productId, $locationId, $batchId);
+
+                if ($batchStock < $qty) {
+                    throw ValidationException::withMessages([
+                        'quantity' => 'Stok batch pada lokasi ini tidak mencukupi untuk pembatalan penerimaan.',
+                    ]);
+                }
+            }
+
+            $currentStock = $this->movements->currentStock($branchId, $productId, $locationId);
+
+            if ($currentStock < $qty) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'Stok pada lokasi ini tidak mencukupi untuk pembatalan penerimaan.',
+                ]);
+            }
+
+            return $this->movements->create([
+                'branch_id' => $branchId,
+                'inventory_location_id' => $locationId,
+                'product_id' => $productId,
+                'supplier_id' => $original->supplier_id,
+                'inventory_batch_id' => $batchId,
+                'movement_type' => InventoryMovement::TYPE_ADJUSTMENT_OUT,
+                'movement_date' => $movementDate ?? now()->toDateString(),
+                'quantity_in' => 0,
+                'quantity_out' => $qty,
+                'unit_cost' => (float) ($original->unit_cost ?? 0),
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
+                'notes' => $notes ?? sprintf('Pembalikan pergerakan pembelian #%d', $original->id),
+                'created_by' => Auth::id(),
+            ]);
+        });
+    }
+
     public function adjustOut(
         int $productId,
         int $locationId,

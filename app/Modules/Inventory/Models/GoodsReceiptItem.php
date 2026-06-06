@@ -27,6 +27,7 @@ class GoodsReceiptItem extends Model
         'batch_received_date',
         'expiry_date',
         'inventory_movement_id',
+        'reversal_movement_id',
         'ordered_qty',
         'previously_received_qty',
         'received_qty',
@@ -80,6 +81,11 @@ class GoodsReceiptItem extends Model
     public function inventoryMovement(): BelongsTo
     {
         return $this->belongsTo(InventoryMovement::class, 'inventory_movement_id');
+    }
+
+    public function reversalMovement(): BelongsTo
+    {
+        return $this->belongsTo(InventoryMovement::class, 'reversal_movement_id');
     }
 
     protected static function newFactory(): GoodsReceiptItemFactory

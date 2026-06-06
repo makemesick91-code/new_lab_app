@@ -28,16 +28,20 @@ class GoodsReceipt extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
+    public const STATUS_VOID = 'void';
+
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_SUBMITTED,
         self::STATUS_POSTED,
         self::STATUS_CANCELLED,
+        self::STATUS_VOID,
     ];
 
     public const TERMINAL_STATUSES = [
         self::STATUS_POSTED,
         self::STATUS_CANCELLED,
+        self::STATUS_VOID,
     ];
 
     protected $table = 'trx_goods_receipts';
@@ -51,13 +55,16 @@ class GoodsReceipt extends Model
         'supplier_invoice_number',
         'status',
         'notes',
+        'cancellation_reason',
         'submitted_at',
         'posted_at',
         'cancelled_at',
+        'voided_at',
         'created_by',
         'submitted_by',
         'posted_by',
         'cancelled_by',
+        'voided_by',
     ];
 
     protected function casts(): array
@@ -67,6 +74,7 @@ class GoodsReceipt extends Model
             'submitted_at' => 'datetime',
             'posted_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'voided_at' => 'datetime',
         ];
     }
 
@@ -90,6 +98,11 @@ class GoodsReceipt extends Model
         return $this->status === self::STATUS_CANCELLED;
     }
 
+    public function isVoid(): bool
+    {
+        return $this->status === self::STATUS_VOID;
+    }
+
     public function isTerminal(): bool
     {
         return in_array($this->status, self::TERMINAL_STATUSES, true);
@@ -107,7 +120,12 @@ class GoodsReceipt extends Model
 
     public function canBeCancelled(): bool
     {
-        return $this->isDraft();
+        return $this->isDraft() || $this->isSubmitted();
+    }
+
+    public function canBeVoided(): bool
+    {
+        return $this->isPosted() && $this->posted_at !== null;
     }
 
     public function branch(): BelongsTo
@@ -138,6 +156,11 @@ class GoodsReceipt extends Model
     public function cancelledBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancelled_by');
+    }
+
+    public function voidedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by');
     }
 
     public function items(): HasMany

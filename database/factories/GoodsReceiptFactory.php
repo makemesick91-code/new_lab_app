@@ -75,6 +75,19 @@ class GoodsReceiptFactory extends Factory
         ]);
     }
 
+    public function voided(): static
+    {
+        $voider = User::factory()->create();
+
+        return $this->state(fn () => [
+            'status' => GoodsReceipt::STATUS_VOID,
+            'posted_by' => $voider->id,
+            'posted_at' => now()->subHour(),
+            'voided_by' => $voider->id,
+            'voided_at' => now(),
+        ]);
+    }
+
     public function forPurchaseOrder(PurchaseOrder $purchaseOrder): static
     {
         return $this->state(fn () => [

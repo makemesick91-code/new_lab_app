@@ -404,7 +404,7 @@ it('cancel accepts draft goods receipt', function () {
     expect($validator->passes())->toBeTrue();
 });
 
-it('cancel rejects submitted goods receipt', function () {
+it('cancel accepts submitted goods receipt', function () {
     ['sent' => $sent] = grSentPurchaseOrder($this);
 
     $goodsReceipt = GoodsReceipt::factory()
@@ -417,12 +417,11 @@ it('cancel rejects submitted goods receipt', function () {
 
     $validator = runGoodsReceiptValidation(makeGoodsReceiptRequest(
         new CancelGoodsReceiptRequest,
-        [],
+        ['notes' => 'Batalkan submit'],
         $goodsReceipt,
     ));
 
-    expect($validator->fails())->toBeTrue()
-        ->and($validator->errors()->has('goods_receipt'))->toBeTrue();
+    expect($validator->passes())->toBeTrue();
 });
 
 it('cancel rejects posted goods receipt', function () {

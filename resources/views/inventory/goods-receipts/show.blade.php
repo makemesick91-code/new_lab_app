@@ -4,6 +4,7 @@
 
     $movementLabels = [
         InventoryMovement::TYPE_PURCHASE => 'Pembelian',
+        InventoryMovement::TYPE_ADJUSTMENT_OUT => 'Pembalikan',
     ];
 @endphp
 
@@ -43,6 +44,12 @@
                 @can('cancel', $goodsReceipt)
                     <button type="button" class="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2" x-data @click="$dispatch('open-modal', 'confirm-cancel-gr-show')">
                         Batalkan
+                    </button>
+                @endcan
+
+                @can('void', $goodsReceipt)
+                    <button type="button" class="inline-flex items-center rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-600 focus:ring-offset-2" x-data @click="$dispatch('open-modal', 'confirm-void-gr-show')">
+                        Void
                     </button>
                 @endcan
 
@@ -99,11 +106,13 @@
                     </div>
                 </div>
 
-                @if ($goodsReceipt->isPosted() && $ledgerMovements->isNotEmpty())
+                @if (($goodsReceipt->isPosted() || $goodsReceipt->isVoid()) && $ledgerMovements->isNotEmpty())
                     <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div class="border-b border-gray-200 px-4 py-3">
                             <h3 class="text-base font-semibold text-gray-900">Jejak Pergerakan Stok</h3>
-                            <p class="mt-1 text-sm text-gray-500">Pergerakan ledger PURCHASE yang dihasilkan saat penerimaan diposting.</p>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Pergerakan ledger dari penerimaan ini, termasuk pembalikan jika sudah divoid.
+                            </p>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200 text-sm">
@@ -114,7 +123,8 @@
                                         <th scope="col" class="px-3 py-3 font-medium">Lokasi</th>
                                         <th scope="col" class="px-3 py-3 font-medium">Movement Type</th>
                                         <th scope="col" class="px-3 py-3 text-right font-medium">Masuk</th>
-                                        <th scope="col" class="px-3 py-3 font-medium">Tanggal Posting</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Keluar</th>
+                                        <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100">
@@ -127,8 +137,13 @@
                                             </td>
                                             <td class="px-3 py-3 text-gray-600">{{ $movement->inventoryLocation?->name ?? '—' }}</td>
                                             <td class="px-3 py-3 text-gray-600">{{ $movementLabels[$movement->movement_type] ?? $movement->movement_type }}</td>
-                                            <td class="px-3 py-3 text-right tabular-nums text-green-700">+{{ format_quantity_id($movement->quantity_in) }}</td>
-                                            <td class="px-3 py-3 text-gray-600">{{ format_datetime_id($goodsReceipt->posted_at ?? $movement->movement_date) }}</td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-green-700">
+                                                {{ (float) $movement->quantity_in > 0 ? '+'.format_quantity_id($movement->quantity_in) : '—' }}
+                                            </td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-red-700">
+                                                {{ (float) $movement->quantity_out > 0 ? '-'.format_quantity_id($movement->quantity_out) : '—' }}
+                                            </td>
+                                            <td class="px-3 py-3 text-gray-600">{{ format_date_id($movement->movement_date) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -176,6 +191,12 @@
                                 <dd class="text-gray-900">{{ $goodsReceipt->notes }}</dd>
                             </div>
                         @endif
+                        @if ($goodsReceipt->cancellation_reason)
+                            <div>
+                                <dt class="text-gray-500">Alasan Pembatalan/Void</dt>
+                                <dd class="text-gray-900">{{ $goodsReceipt->cancellation_reason }}</dd>
+                            </div>
+                        @endif
                     </dl>
                 </div>
 
@@ -212,6 +233,10 @@
                             <dt class="text-gray-500">Dibatalkan Oleh</dt>
                             <dd class="font-medium text-gray-900">{{ $goodsReceipt->cancelledBy?->name ?? '—' }}</dd>
                         </div>
+                        <div>
+                            <dt class="text-gray-500">Divid Oleh</dt>
+                            <dd class="font-medium text-gray-900">{{ $goodsReceipt->voidedBy?->name ?? '—' }}</dd>
+                        </div>
                     </dl>
                 </div>
             </div>
@@ -238,14 +263,42 @@
         <x-modal name="confirm-cancel-gr-show" focusable>
             <div class="p-6">
                 <h3 class="text-lg font-semibold text-gray-900">Konfirmasi Pembatalan</h3>
-                <p class="mt-3 text-sm text-gray-600">Batalkan draft penerimaan barang ini?</p>
-                <div class="mt-6 flex flex-wrap justify-end gap-3">
-                    <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-cancel-gr-show')">Kembali</button>
-                    <form method="POST" action="{{ route('inventory.goods-receipts.cancel', $goodsReceipt) }}">
-                        @csrf
+                <p class="mt-3 text-sm text-gray-600">
+                    Batalkan penerimaan barang {{ $goodsReceipt->isSubmitted() ? 'yang sudah diajukan' : 'draft' }} ini? Operasi ini tidak menulis pergerakan stok.
+                </p>
+                <form method="POST" action="{{ route('inventory.goods-receipts.cancel', $goodsReceipt) }}" class="mt-4 space-y-4">
+                    @csrf
+                    <div>
+                        <label for="cancel-notes" class="block text-sm font-medium text-gray-700">Alasan (opsional)</label>
+                        <textarea id="cancel-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes') }}</textarea>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-3">
+                        <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-cancel-gr-show')">Kembali</button>
                         <button type="submit" class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500">Ya, Batalkan</button>
-                    </form>
-                </div>
+                    </div>
+                </form>
+            </div>
+        </x-modal>
+    @endcan
+
+    @can('void', $goodsReceipt)
+        <x-modal name="confirm-void-gr-show" focusable>
+            <div class="p-6">
+                <h3 class="text-lg font-semibold text-gray-900">Konfirmasi Void Penerimaan</h3>
+                <p class="mt-3 text-sm text-gray-600">
+                    Void akan membuat pergerakan pembalikan ledger untuk setiap baris PURCHASE dan mengurangi cache diterima pada PO. Dokumen asli tetap tersimpan.
+                </p>
+                <form method="POST" action="{{ route('inventory.goods-receipts.void', $goodsReceipt) }}" class="mt-4 space-y-4">
+                    @csrf
+                    <div>
+                        <label for="void-reason" class="block text-sm font-medium text-gray-700">Alasan void <span class="text-red-600">*</span></label>
+                        <textarea id="void-reason" name="reason" rows="3" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('reason') }}</textarea>
+                    </div>
+                    <div class="flex flex-wrap justify-end gap-3">
+                        <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-void-gr-show')">Kembali</button>
+                        <button type="submit" class="rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700">Ya, Void Penerimaan</button>
+                    </div>
+                </form>
             </div>
         </x-modal>
     @endcan

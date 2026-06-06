@@ -8,7 +8,7 @@ use App\Modules\Inventory\Requests\Concerns\ValidatesGoodsReceiptInput;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 
-class CancelGoodsReceiptRequest extends FormRequest
+class VoidGoodsReceiptRequest extends FormRequest
 {
     use ValidatesGoodsReceiptInput {
         withValidator as protected baseWithValidator;
@@ -22,7 +22,7 @@ class CancelGoodsReceiptRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'notes' => ['nullable', 'string', 'max:2000'],
+            'reason' => ['required', 'string', 'max:2000'],
         ];
     }
 
@@ -44,16 +44,12 @@ class CancelGoodsReceiptRequest extends FormRequest
                 $validator->errors()->add('goods_receipt', 'Penerimaan barang tidak ditemukan di cabang aktif.');
             }
 
-            if ($goodsReceipt->isPosted() || $goodsReceipt->posted_at !== null) {
-                $validator->errors()->add('goods_receipt', 'Penerimaan barang yang sudah diposting harus divoid, bukan dibatalkan.');
-            }
-
             if ($goodsReceipt->isVoid() || $goodsReceipt->isCancelled()) {
                 $validator->errors()->add('goods_receipt', 'Penerimaan barang yang sudah dibatalkan atau divoid tidak dapat diproses ulang.');
             }
 
-            if (! $goodsReceipt->canBeCancelled()) {
-                $validator->errors()->add('goods_receipt', 'Hanya penerimaan barang draft atau diajukan yang dapat dibatalkan.');
+            if (! $goodsReceipt->canBeVoided()) {
+                $validator->errors()->add('goods_receipt', 'Hanya penerimaan barang yang sudah diposting yang dapat divoid.');
             }
         });
     }

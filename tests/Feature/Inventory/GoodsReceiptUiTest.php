@@ -41,6 +41,10 @@ function createUiGoodsReceipt(object $test, string $status = GoodsReceipt::STATU
             'branch_id' => $test->branch->id,
             'created_by' => $test->manager->id,
         ]),
+        GoodsReceipt::STATUS_VOID => $factory->voided()->create([
+            'branch_id' => $test->branch->id,
+            'created_by' => $test->manager->id,
+        ]),
         default => $factory->draft()->create([
             'branch_id' => $test->branch->id,
             'created_by' => $test->manager->id,
@@ -137,13 +141,31 @@ it('shows cancel button on draft goods receipt for managers', function () {
         ->assertSee('Batalkan');
 });
 
-it('hides cancel button on submitted goods receipt', function () {
+it('shows cancel button on submitted goods receipt for managers', function () {
     $goodsReceipt = createUiGoodsReceipt($this, GoodsReceipt::STATUS_SUBMITTED);
 
     $this->actingAs($this->manager)
         ->get(route('inventory.goods-receipts.show', $goodsReceipt))
         ->assertOk()
-        ->assertDontSee('Batalkan');
+        ->assertSee('Batalkan');
+});
+
+it('shows void button on posted goods receipt for managers', function () {
+    $goodsReceipt = createUiGoodsReceipt($this, GoodsReceipt::STATUS_POSTED);
+
+    $this->actingAs($this->manager)
+        ->get(route('inventory.goods-receipts.show', $goodsReceipt))
+        ->assertOk()
+        ->assertSee('Void');
+});
+
+it('hides void button on void goods receipt', function () {
+    $goodsReceipt = createUiGoodsReceipt($this, GoodsReceipt::STATUS_VOID);
+
+    $this->actingAs($this->manager)
+        ->get(route('inventory.goods-receipts.show', $goodsReceipt))
+        ->assertOk()
+        ->assertDontSee('>Void<');
 });
 
 it('hides posting button on posted goods receipt', function () {

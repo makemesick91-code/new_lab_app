@@ -6,6 +6,7 @@
         GoodsReceipt::STATUS_SUBMITTED => 'Diajukan',
         GoodsReceipt::STATUS_POSTED => 'Diposting',
         GoodsReceipt::STATUS_CANCELLED => 'Dibatalkan',
+        GoodsReceipt::STATUS_VOID => 'Divid',
     ];
 @endphp
 
@@ -15,6 +16,7 @@
     'bg-yellow-100 text-yellow-800' => $status === GoodsReceipt::STATUS_SUBMITTED,
     'bg-green-100 text-green-800' => $status === GoodsReceipt::STATUS_POSTED,
     'bg-red-100 text-red-800' => $status === GoodsReceipt::STATUS_CANCELLED,
+    'bg-gray-200 text-gray-800' => $status === GoodsReceipt::STATUS_VOID,
 ])>
     {{ $statusLabels[$status] ?? $status }}
 </span>

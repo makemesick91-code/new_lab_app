@@ -50,11 +50,13 @@ class GoodsReceiptRepository implements GoodsReceiptRepositoryInterface
                 'submittedBy',
                 'postedBy',
                 'cancelledBy',
+                'voidedBy',
                 'items.product',
                 'items.inventoryLocation',
                 'items.inventoryBatch',
                 'items.purchaseOrderItem',
                 'items.inventoryMovement',
+                'items.reversalMovement',
             ])
             ->where('branch_id', $branchId)
             ->find($id);

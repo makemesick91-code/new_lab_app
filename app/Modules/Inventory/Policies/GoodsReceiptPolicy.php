@@ -56,6 +56,18 @@ class GoodsReceiptPolicy
     {
         return $this->canManageInventory($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
-            && $goodsReceipt->isDraft();
+            && $goodsReceipt->canBeCancelled()
+            && ! $goodsReceipt->isPosted()
+            && ! $goodsReceipt->isVoid()
+            && ! $goodsReceipt->isCancelled();
+    }
+
+    public function void(User $user, GoodsReceipt $goodsReceipt): bool
+    {
+        return $this->canManageInventory($user)
+            && $this->belongsToActiveBranch($goodsReceipt->branch_id)
+            && $goodsReceipt->canBeVoided()
+            && ! $goodsReceipt->isVoid()
+            && ! $goodsReceipt->isCancelled();
     }
 }

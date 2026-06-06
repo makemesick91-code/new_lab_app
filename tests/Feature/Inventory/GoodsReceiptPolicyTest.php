@@ -52,7 +52,7 @@ it('denies view_inventory mutation and workflow abilities', function () {
         ->and($viewer->can('cancel', $this->draft))->toBeFalse();
 });
 
-it('allows manage_inventory to create update submit post draft or submitted and cancel draft only', function () {
+it('allows manage_inventory to create update submit post draft or submitted and cancel draft or submitted', function () {
     $manager = userWith(['manage_inventory']);
     $this->actingAs($manager);
 
@@ -62,12 +62,16 @@ it('allows manage_inventory to create update submit post draft or submitted and 
         ->and($manager->can('post', $this->draft))->toBeTrue()
         ->and($manager->can('post', $this->submitted))->toBeTrue()
         ->and($manager->can('cancel', $this->draft))->toBeTrue()
-        ->and($manager->can('cancel', $this->submitted))->toBeFalse();
+        ->and($manager->can('cancel', $this->submitted))->toBeTrue()
+        ->and($manager->can('void', $this->posted))->toBeTrue();
 });
 
-it('denies manage_inventory update submit post and cancel for posted or cancelled goods receipts', function () {
+it('denies manage_inventory update submit post cancel and void for terminal goods receipts', function () {
     $manager = userWith(['manage_inventory']);
     $this->actingAs($manager);
+    $voided = GoodsReceipt::factory()->forPurchaseOrder($this->posted->purchaseOrder)->voided()->create([
+        'branch_id' => $this->branch->id,
+    ]);
 
     expect($manager->can('update', $this->posted))->toBeFalse()
         ->and($manager->can('update', $this->cancelled))->toBeFalse()
@@ -75,7 +79,9 @@ it('denies manage_inventory update submit post and cancel for posted or cancelle
         ->and($manager->can('post', $this->posted))->toBeFalse()
         ->and($manager->can('post', $this->cancelled))->toBeFalse()
         ->and($manager->can('cancel', $this->posted))->toBeFalse()
-        ->and($manager->can('cancel', $this->cancelled))->toBeFalse();
+        ->and($manager->can('cancel', $this->cancelled))->toBeFalse()
+        ->and($manager->can('void', $voided))->toBeFalse()
+        ->and($manager->can('void', $this->cancelled))->toBeFalse();
 });
 
 it('denies cross branch goods receipt access', function () {
@@ -91,7 +97,8 @@ it('denies cross branch goods receipt access', function () {
         ->and($manager->can('update', $this->otherDraft))->toBeFalse()
         ->and($manager->can('submit', $this->otherDraft))->toBeFalse()
         ->and($manager->can('post', $this->otherDraft))->toBeFalse()
-        ->and($manager->can('cancel', $this->otherDraft))->toBeFalse();
+        ->and($manager->can('cancel', $this->otherDraft))->toBeFalse()
+        ->and($manager->can('void', $this->otherDraft))->toBeFalse();
 });
 
 it('denies unauthorized user without inventory permissions', function () {

@@ -30,8 +30,12 @@ trait ValidatesGoodsReceiptInput
     private const EXCLUDED_FIELDS = [
         'quantity_received',
         'inventory_movement_id',
+        'reversal_movement_id',
         'posted_at',
         'posted_by',
+        'voided_at',
+        'voided_by',
+        'cancellation_reason',
         'status',
         'unit_cost',
         'line_total',

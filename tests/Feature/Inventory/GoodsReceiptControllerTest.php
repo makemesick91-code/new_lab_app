@@ -46,6 +46,7 @@ it('registers goods receipt route names', function () {
         'inventory.goods-receipts.submit',
         'inventory.goods-receipts.post',
         'inventory.goods-receipts.cancel',
+        'inventory.goods-receipts.void',
     ];
 
     foreach ($routes as $routeName) {
@@ -222,23 +223,27 @@ it('cancels draft goods receipt through cancel route', function () {
 
     $this->actingAs($this->manager)
         ->post(route('inventory.goods-receipts.cancel', $goodsReceipt))
-        ->assertRedirect(route('inventory.goods-receipts.index'))
+        ->assertRedirect(route('inventory.goods-receipts.show', $goodsReceipt))
         ->assertSessionHas('status');
 
     expect($goodsReceipt->refresh()->status)->toBe(GoodsReceipt::STATUS_CANCELLED);
 });
 
-it('denies cancel for submitted goods receipt', function () {
-    ['sent' => $po] = createSentPurchaseOrderWithItem($this);
+it('cancels submitted goods receipt through cancel route', function () {
+    ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithItem($this);
 
-    $submitted = GoodsReceipt::factory()->forPurchaseOrder($po)->submitted()->create([
-        'branch_id' => $this->branch->id,
-        'created_by' => $this->manager->id,
-    ]);
+    $goodsReceipt = $this->service->createFromPurchaseOrder(
+        goodsReceiptPayload($po->id, $poItem->id, $product->id, $location->id, 5),
+        $this->manager,
+    );
+    $submitted = $this->service->submit($goodsReceipt, $this->manager);
 
     $this->actingAs($this->manager)
-        ->post(route('inventory.goods-receipts.cancel', $submitted))
-        ->assertSessionHasErrors('goods_receipt');
+        ->post(route('inventory.goods-receipts.cancel', $submitted), ['notes' => 'Salah ajukan'])
+        ->assertRedirect(route('inventory.goods-receipts.show', $submitted))
+        ->assertSessionHas('status');
+
+    expect($submitted->refresh()->status)->toBe(GoodsReceipt::STATUS_CANCELLED);
 });
 
 it('denies cross branch goods receipt access', function () {

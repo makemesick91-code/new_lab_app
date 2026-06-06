@@ -217,9 +217,9 @@ class GoodsReceiptService
             $this->ensureNotPosted($locked);
             $this->assertStatus($locked, [GoodsReceipt::STATUS_DRAFT, GoodsReceipt::STATUS_SUBMITTED]);
 
-            if ($locked->isCancelled()) {
+            if ($locked->isCancelled() || $locked->isVoid()) {
                 throw ValidationException::withMessages([
-                    'status' => 'Penerimaan barang yang dibatalkan tidak dapat diposting.',
+                    'status' => 'Penerimaan barang yang dibatalkan atau divoid tidak dapat diposting.',
                 ]);
             }
 
@@ -308,9 +308,9 @@ class GoodsReceiptService
         });
     }
 
-    public function cancel(GoodsReceipt $goodsReceipt, User $user): GoodsReceipt
+    public function cancel(GoodsReceipt $goodsReceipt, User $user, ?string $reason = null): GoodsReceipt
     {
-        return DB::transaction(function () use ($goodsReceipt, $user) {
+        return DB::transaction(function () use ($goodsReceipt, $user, $reason) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->goodsReceipts->lockForPosting($goodsReceipt->id, $branchId);
 
@@ -322,12 +322,103 @@ class GoodsReceiptService
 
             $this->ensureBranchMatches($locked, $branchId);
             $this->ensureNotPosted($locked);
-            $this->assertStatus($locked, GoodsReceipt::STATUS_DRAFT);
+            $this->assertNotVoidOrCancelled($locked);
+            $this->assertStatus($locked, [GoodsReceipt::STATUS_DRAFT, GoodsReceipt::STATUS_SUBMITTED]);
 
             return $this->goodsReceipts->update($locked, [
                 'status' => GoodsReceipt::STATUS_CANCELLED,
+                'cancellation_reason' => $reason,
                 'cancelled_by' => $user->id,
                 'cancelled_at' => now(),
+            ]);
+        });
+    }
+
+    public function void(GoodsReceipt $goodsReceipt, User $user, ?string $reason = null): GoodsReceipt
+    {
+        return DB::transaction(function () use ($goodsReceipt, $user, $reason) {
+            $branchId = $this->branchContext->requireId();
+            $locked = $this->goodsReceipts->lockForPosting($goodsReceipt->id, $branchId);
+
+            if ($locked === null) {
+                throw ValidationException::withMessages([
+                    'goods_receipt' => 'Penerimaan barang tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            $this->ensureBranchMatches($locked, $branchId);
+            $this->assertStatus($locked, GoodsReceipt::STATUS_POSTED);
+
+            if ($locked->isVoid() || $locked->isCancelled()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Penerimaan barang yang sudah dibatalkan atau divoid tidak dapat diproses ulang.',
+                ]);
+            }
+
+            if ($locked->voided_at !== null) {
+                throw ValidationException::withMessages([
+                    'status' => 'Penerimaan barang sudah divoid.',
+                ]);
+            }
+
+            $purchaseOrder = $this->lockPurchaseOrderInBranch($branchId, (int) $locked->purchase_order_id);
+
+            if ($purchaseOrder === null) {
+                throw ValidationException::withMessages([
+                    'purchase_order_id' => 'Pesanan pembelian tidak ditemukan atau tidak dapat diterima.',
+                ]);
+            }
+
+            $locked->load('items.inventoryMovement');
+            $reversalNotes = sprintf('Pembalikan penerimaan barang %s', $locked->receipt_number);
+
+            foreach ($locked->items as $item) {
+                if ($item->reversal_movement_id !== null) {
+                    throw ValidationException::withMessages([
+                        'goods_receipt' => 'Penerimaan barang sudah memiliki pergerakan pembalikan.',
+                    ]);
+                }
+
+                $acceptedQty = (float) $item->accepted_qty;
+
+                if ($acceptedQty <= 0 || $item->inventory_movement_id === null) {
+                    continue;
+                }
+
+                $originalMovement = $item->inventoryMovement;
+
+                if ($originalMovement === null) {
+                    throw ValidationException::withMessages([
+                        'items' => 'Pergerakan stok asal tidak ditemukan untuk item penerimaan.',
+                    ]);
+                }
+
+                $reversal = $this->inventoryStock->reversePurchaseMovement(
+                    $originalMovement,
+                    $reversalNotes,
+                    $locked->getTable(),
+                    $locked->id,
+                    now()->toDateString(),
+                );
+
+                $this->goodsReceipts->updateItem($item, [
+                    'reversal_movement_id' => $reversal->id,
+                ]);
+
+                $this->purchaseOrders->decrementItemQuantityReceived(
+                    (int) $item->purchase_order_item_id,
+                    $acceptedQty,
+                );
+            }
+
+            $purchaseOrder->refresh()->load('items');
+            $this->recalculatePurchaseOrderReceivingStatus($purchaseOrder);
+
+            return $this->goodsReceipts->update($locked, [
+                'status' => GoodsReceipt::STATUS_VOID,
+                'cancellation_reason' => $reason,
+                'voided_by' => $user->id,
+                'voided_at' => now(),
             ]);
         });
     }
@@ -447,13 +538,18 @@ class GoodsReceiptService
 
     public function updatePurchaseOrderReceivingStatus(PurchaseOrder $purchaseOrder): void
     {
+        $this->recalculatePurchaseOrderReceivingStatus($purchaseOrder);
+    }
+
+    public function recalculatePurchaseOrderReceivingStatus(PurchaseOrder $purchaseOrder): void
+    {
         $purchaseOrder->load('items');
 
         $allFullyReceived = true;
         $anyReceived = false;
 
         foreach ($purchaseOrder->items as $item) {
-            $received = (float) ($item->quantity_received ?? 0);
+            $received = max(0, (float) ($item->quantity_received ?? 0));
             $ordered = (float) $item->quantity_ordered;
 
             if ($received > 0) {
@@ -465,19 +561,21 @@ class GoodsReceiptService
             }
         }
 
-        if ($allFullyReceived && $purchaseOrder->items->isNotEmpty()) {
+        if ($anyReceived) {
             $this->purchaseOrders->update($purchaseOrder, [
-                'status' => PurchaseOrder::STATUS_FULLY_RECEIVED,
+                'status' => $allFullyReceived && $purchaseOrder->items->isNotEmpty()
+                    ? PurchaseOrder::STATUS_FULLY_RECEIVED
+                    : PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
             ]);
 
             return;
         }
 
-        if ($anyReceived) {
-            $this->purchaseOrders->update($purchaseOrder, [
-                'status' => PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
-            ]);
-        }
+        $this->purchaseOrders->update($purchaseOrder, [
+            'status' => $purchaseOrder->sent_at !== null
+                ? PurchaseOrder::STATUS_SENT
+                : PurchaseOrder::STATUS_APPROVED,
+        ]);
     }
 
     /**
@@ -610,6 +708,15 @@ class GoodsReceiptService
         if (! in_array($goodsReceipt->status, $allowed, true)) {
             throw ValidationException::withMessages([
                 'status' => 'Status penerimaan barang tidak valid untuk operasi ini.',
+            ]);
+        }
+    }
+
+    private function assertNotVoidOrCancelled(GoodsReceipt $goodsReceipt): void
+    {
+        if ($goodsReceipt->isVoid() || $goodsReceipt->isCancelled()) {
+            throw ValidationException::withMessages([
+                'status' => 'Penerimaan barang yang sudah dibatalkan atau divoid tidak dapat diproses ulang.',
             ]);
         }
     }
