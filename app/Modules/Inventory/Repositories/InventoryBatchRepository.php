@@ -144,4 +144,55 @@ class InventoryBatchRepository implements InventoryBatchRepositoryInterface
             ->orderBy('inv_inventory_batches.expiry_date')
             ->get();
     }
+
+    public function batchStockWithAge(int $branchId, ?int $locationId = null): Collection
+    {
+        $stockSub = InventoryMovement::query()
+            ->select('inventory_batch_id', 'inventory_location_id')
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as batch_stock')
+            ->where('branch_id', $branchId)
+            ->whereNotNull('inventory_batch_id')
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('inventory_batch_id', 'inventory_location_id');
+
+        $firstInSub = InventoryMovement::query()
+            ->select('inventory_batch_id')
+            ->selectRaw('MIN(movement_date) as first_in_date')
+            ->where('branch_id', $branchId)
+            ->whereNotNull('inventory_batch_id')
+            ->where('quantity_in', '>', 0)
+            ->groupBy('inventory_batch_id');
+
+        return InventoryBatch::query()
+            ->with(['product.unit'])
+            ->joinSub($stockSub, 'batch_stock', function ($join) {
+                $join->on('inv_inventory_batches.id', '=', 'batch_stock.inventory_batch_id');
+            })
+            ->leftJoinSub($firstInSub, 'first_in', function ($join) {
+                $join->on('inv_inventory_batches.id', '=', 'first_in.inventory_batch_id');
+            })
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'batch_stock.inventory_location_id')
+            ->join('inv_products', 'inv_products.id', '=', 'inv_inventory_batches.product_id')
+            ->where('inv_inventory_batches.branch_id', $branchId)
+            ->where('inv_inventory_batches.is_active', true)
+            ->where('inv_products.is_active', true)
+            ->whereRaw('batch_stock.batch_stock > 0')
+            ->select(
+                'inv_inventory_batches.id as inventory_batch_id',
+                'inv_inventory_batches.batch_number',
+                'inv_inventory_batches.lot_number',
+                'inv_inventory_batches.expiry_date',
+                'inv_inventory_batches.received_date',
+                'inv_inventory_batches.product_id',
+                'inv_products.name as product_name',
+                'inv_products.code as product_code',
+                'inv_products.average_cost',
+                'batch_stock.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+                'batch_stock.batch_stock',
+            )
+            ->selectRaw('COALESCE(inv_inventory_batches.received_date, first_in.first_in_date) as age_anchor_date')
+            ->orderBy('age_anchor_date')
+            ->get();
+    }
 }

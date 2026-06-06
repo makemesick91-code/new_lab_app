@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 15.4.
+Sprint 15.5.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -48,6 +48,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 15.2 | Transfer Receiving Workflow | (Sprint 15.2 ship/receive refactor) | `shipped_at`, `shipped_by` on `trx_stock_transfers`; workflow `in_transit` / `received` statuses |
 | 15.3 | Batch & Lot Tracking | (Sprint 15.3 batch/lot implementation) | `inv_inventory_batches`; `inventory_batch_id` on `trx_inventory_movements` and `trx_stock_transfer_items` |
 | 15.4 | Reorder Point & Inventory Alerts | (Sprint 15.4 reorder/alerts implementation) | `reorder_point`, `reorder_quantity`, `alert_enabled` on `inv_products` |
+| 15.5 | Inventory Analytics | (Sprint 15.5 analytics implementation) | (none — read-only analytics from ledger) |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1203,6 +1204,109 @@ current_stock = SUM(quantity_in) - SUM(quantity_out)
 
 ---
 
+# Sprint 15.5 — Inventory Analytics
+
+## Sprint 15.5 Overview
+
+**Status:** COMPLETED. Completion date 2026-06-06.
+
+**Branch:** `feature/sprint-15-inventory-advanced`
+
+**Scope:** Inventory Advanced (Sprint 15 milestone slice)
+
+**Business objective:** Add read-only inventory analytics computed from the movement ledger —
+fast/slow/dead stock, aging, turnover, value by category/location, and monthly outbound value
+trend — with branch-safe queries, Indonesian operator UI, and no mutable stock columns.
+
+**Planning note:** Design authority: `docs/sprint_15_5_inventory_analytics_design.md`. Implemented
+in three phases: 15.5.1 repository/service analytics, 15.5.2 controller/route/sidebar scaffold,
+15.5.3 full analytics UI, tests, documentation, and release completion.
+
+## Deliverables
+
+**Service layer:**
+- `InventoryAnalyticsService` — fast/slow/dead stock, product/batch aging, turnover, value
+  breakdowns, monthly outbound trend, analytics summary KPIs
+- Repository extensions on `InventoryMovementRepository` and `InventoryBatchRepository` for
+  analytics aggregate queries
+
+**Controllers and routes:**
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `inventory/analytics` | `inventory.analytics.index` |
+
+**Requests:**
+- `InventoryAnalyticsFilterRequest` — date range, location, category, dead-stock days,
+  slow-moving threshold, limit, aging granularity; branch-validated location/category
+
+**Views:**
+- `inventory/analytics/index` — full responsive analytics page (filters, KPI strip, all sections,
+  desktop tables, mobile cards, empty states, disclaimers)
+- `inventory/analytics/_age-bucket-badge`, `_empty-state` partials
+- Dashboard header link to analytics (permission-gated)
+- Sidebar **Analitik Persediaan** under Persediaan
+
+**Analytics domains:**
+- Produk Cepat Bergerak / Produk Lambat Bergerak / Stok Mati
+- Umur Persediaan (product or batch granularity)
+- Perputaran Persediaan
+- Nilai per Kategori / Nilai per Lokasi
+- Tren Nilai Keluar (monthly outbound value)
+
+**Tests:**
+- `InventoryAnalyticsServiceTest` — calculation and branch isolation
+- `InventoryAnalyticsControllerTest` — auth, validation, UI labels, disclaimers, empty states
+- `InventoryUiTest` — analytics page responsive sections
+
+## Ledger Rules
+
+- All stock/value analytics derive from `trx_inventory_movements` only.
+- **No mutable stock columns** on products, locations, or batches.
+- `NULL` `inventory_batch_id` movements remain valid; product-level aging uses last-inbound proxy.
+- Valuation uses `average_cost` at report time (operational, not accounting-grade COGS).
+
+## UI Notes
+
+- Indonesian operator labels throughout.
+- Responsive layout: desktop tables (`hidden md:block`) + mobile stacked cards (`md:hidden`).
+- Shared filter bar with apply/reset.
+- Empty states: *Belum ada data analitik untuk filter ini.*
+- Disclaimers: ledger-derived stock, outbound trend ≠ on-hand value history, approximate product aging.
+
+## Known Risks
+
+- **True historical on-hand value trend deferred** — monthly chart shows outbound value, not stock value snapshots.
+- **Large ledgers may need snapshot table or indexes later** — on-the-fly aggregation acceptable for pilot volume.
+- **Product aging without batch is approximate** — `last_in_date` FIFO proxy, not lot-level FIFO.
+- **Owner cross-branch analytics deferred** — same as Sprint 15.4.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 15.5 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 642 tests, 2039 assertions |
+| Analytics tests (`php artisan test --filter=InventoryAnalytics`) | PASS — 34 tests, 131 assertions |
+| Alert tests (`php artisan test --filter=InventoryAlert`) | PASS — 17 tests, 45 assertions |
+| Pint (`vendor/bin/pint`) | PASS |
+| Routes (`php artisan route:list`) | PASS — 194 routes total; 1 analytics route (`inventory.analytics.index`) |
+| Migration (`php artisan migrate:fresh --seed`) | NOT RUN — blocked by destructive-reset safety gate (requires explicit operator approval) |
+| Frontend build (`npm run build`) | PASS — Vite production build (`app-Bl1yIQXu.css`, `app-CoaHkm5D.js`) |
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-06 |
+| Sprint Slice | 15.5 — Inventory Analytics |
+| Branch | `feature/sprint-15-inventory-advanced` |
+| Status | COMPLETED |
+| Design Doc | `docs/sprint_15_5_inventory_analytics_design.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1236,6 +1340,8 @@ current_stock = SUM(quantity_in) - SUM(quantity_out)
 19. **S15.4** — Unified inventory alerts computed on read via `InventoryAlertService`; product
     reorder fields (`reorder_point`, `reorder_quantity`, `alert_enabled`) on `inv_products`; stock
     and batch alerts remain ledger-derived; no alert persistence table.
+20. **S15.5** — Read-only inventory analytics via `InventoryAnalyticsService`; all metrics
+    ledger-derived from `trx_inventory_movements`; no analytics persistence or mutable stock columns.
 
 ---
 
@@ -1381,6 +1487,11 @@ current_stock = SUM(quantity_in) - SUM(quantity_out)
   computed alerts via `InventoryAlertService`, branch-scoped alert queries, `alert_enabled`
   gating, and informational-only `reorder_quantity`. Notification channels, alert persistence,
   and owner cross-branch rollup remain follow-up work.
+- **Sprint 15.5 completed baseline — Inventory Analytics:** Future changes must preserve
+  ledger-derived analytics (no mutable stock columns, no analytics cache tables), branch-scoped
+  queries via `BranchContext::requireId()`, read-only `InventoryAnalyticsService`, and UI disclaimers
+  that outbound value trend ≠ on-hand value history. Owner cross-branch rollup and value snapshot
+  tables remain follow-up work.
 - **Sprint 15 — Purchasing:** POs express intent and **must not increase stock**; stock rises only
   through a receipt/ledger movement. Validate supplier branch ownership and permission scope.
 - **Sprint 16 — Goods Receipt:** May create inventory movements only after validation (active
@@ -1427,8 +1538,8 @@ Implement future-sprint features by accident.
 **Module map:** `AccessControl, User` (S1) · `Clinic, Doctor, Patient, LabService, Technician` (S2)
 · `LabOrder` (S3) · `Production` (S4) · `QualityControl` (S5) · `Delivery` (S6) · `Invoice` (S7,
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
-(S12–15.4, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
-Batch & Lot tracking, Reorder Point & Inventory Alerts).
+(S12–15.5, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
+Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -1441,4 +1552,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 15.4 and must be updated as each new sprint completes.*
+Sprint 15.5 and must be updated as each new sprint completes.*

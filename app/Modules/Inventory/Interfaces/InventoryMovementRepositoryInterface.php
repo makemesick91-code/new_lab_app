@@ -33,4 +33,16 @@ interface InventoryMovementRepositoryInterface
     public function inventoryValue(int $branchId, ?int $locationId = null): float;
 
     public function recentMovements(int $branchId, int $limit = 10): Collection;
+
+    public function outboundByProductInPeriod(int $branchId, array $filters = []): Collection;
+
+    public function lastOutboundDateByProduct(int $branchId, ?int $locationId = null): Collection;
+
+    public function lastInboundDateByProduct(int $branchId, ?int $locationId = null): Collection;
+
+    public function stockAtDate(int $branchId, string $asOfDate, ?int $locationId = null, ?int $productId = null): float|Collection;
+
+    public function monthlyOutboundValue(int $branchId, array $filters = []): Collection;
+
+    public function inventoryValueByCategory(int $branchId, ?int $locationId = null, ?int $categoryId = null): Collection;
 }

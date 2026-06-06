@@ -16,6 +16,11 @@
                     <a href="{{ route('inventory.products.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                         Produk
                     </a>
+                    @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                        <a href="{{ route('inventory.analytics.index') }}" class="rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            Analitik Persediaan
+                        </a>
+                    @endcan
                 </div>
             </div>
         </section>

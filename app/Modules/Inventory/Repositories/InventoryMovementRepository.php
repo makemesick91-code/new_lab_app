@@ -7,6 +7,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class InventoryMovementRepository implements InventoryMovementRepositoryInterface
 {
@@ -194,5 +195,118 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->orderByDesc('id')
             ->limit($limit)
             ->get();
+    }
+
+    public function outboundByProductInPeriod(int $branchId, array $filters = []): Collection
+    {
+        return InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('COALESCE(SUM(quantity_out), 0) as outbound_qty')
+            ->where('branch_id', $branchId)
+            ->where('quantity_out', '>', 0)
+            ->when($filters['date_from'] ?? null, fn ($q, $v) => $q->whereDate('movement_date', '>=', $v))
+            ->when($filters['date_to'] ?? null, fn ($q, $v) => $q->whereDate('movement_date', '<=', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id')
+            ->get();
+    }
+
+    public function lastOutboundDateByProduct(int $branchId, ?int $locationId = null): Collection
+    {
+        return InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('MAX(movement_date) as last_out_date')
+            ->where('branch_id', $branchId)
+            ->where('quantity_out', '>', 0)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id')
+            ->get();
+    }
+
+    public function lastInboundDateByProduct(int $branchId, ?int $locationId = null): Collection
+    {
+        return InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('MAX(movement_date) as last_in_date')
+            ->where('branch_id', $branchId)
+            ->where('quantity_in', '>', 0)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id')
+            ->get();
+    }
+
+    public function stockAtDate(int $branchId, string $asOfDate, ?int $locationId = null, ?int $productId = null): float|Collection
+    {
+        $query = InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as stock_at_date')
+            ->where('branch_id', $branchId)
+            ->whereDate('movement_date', '<=', $asOfDate)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($productId, fn ($q, $v) => $q->where('product_id', $v))
+            ->groupBy('product_id');
+
+        if ($productId !== null) {
+            return (float) ($query->clone()->value('stock_at_date') ?? 0);
+        }
+
+        return $query->get();
+    }
+
+    public function monthlyOutboundValue(int $branchId, array $filters = []): Collection
+    {
+        $monthExpression = $this->monthTruncExpression('trx_inventory_movements.movement_date');
+
+        return InventoryMovement::query()
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->selectRaw("{$monthExpression} as month")
+            ->selectRaw('COALESCE(SUM(trx_inventory_movements.quantity_out * inv_products.average_cost), 0) as outbound_value')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('trx_inventory_movements.quantity_out', '>', 0)
+            ->where('inv_products.branch_id', $branchId)
+            ->when($filters['date_from'] ?? null, fn ($q, $v) => $q->whereDate('trx_inventory_movements.movement_date', '>=', $v))
+            ->when($filters['date_to'] ?? null, fn ($q, $v) => $q->whereDate('trx_inventory_movements.movement_date', '<=', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['product_category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->groupByRaw($monthExpression)
+            ->orderBy('month')
+            ->get();
+    }
+
+    public function inventoryValueByCategory(int $branchId, ?int $locationId = null, ?int $categoryId = null): Collection
+    {
+        $stock = InventoryMovement::query()
+            ->select('product_id')
+            ->selectRaw('SUM(quantity_in) - SUM(quantity_out) as current_stock')
+            ->where('branch_id', $branchId)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->groupBy('product_id');
+
+        return Product::query()
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->leftJoinSub($stock, 'stock', fn ($join) => $join->on('stock.product_id', '=', 'inv_products.id'))
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_products.is_active', true)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->when($categoryId, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->select(
+                'inv_product_categories.id as category_id',
+                'inv_product_categories.name as category_name',
+                'inv_product_categories.code as category_code',
+            )
+            ->selectRaw('COALESCE(SUM(COALESCE(stock.current_stock, 0)), 0) as total_stock')
+            ->selectRaw('COALESCE(SUM(COALESCE(stock.current_stock, 0) * inv_products.average_cost), 0) as inventory_value')
+            ->groupBy('inv_product_categories.id', 'inv_product_categories.name', 'inv_product_categories.code')
+            ->orderBy('inv_product_categories.name')
+            ->get();
+    }
+
+    private function monthTruncExpression(string $column): string
+    {
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            return "DATE_TRUNC('month', {$column})";
+        }
+
+        return "strftime('%Y-%m-01', {$column})";
     }
 }

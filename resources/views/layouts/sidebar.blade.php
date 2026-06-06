@@ -115,6 +115,8 @@
             @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
                 <a href="{{ route('inventory.alerts.index') }}"
                    class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.alerts.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Peringatan Stok</a>
+                <a href="{{ route('inventory.analytics.index') }}"
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.analytics.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Analitik Persediaan</a>
             @endcan
             @can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
                 <a href="{{ route('inventory.stock-transfers.index') }}"

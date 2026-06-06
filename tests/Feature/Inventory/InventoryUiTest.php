@@ -32,6 +32,26 @@ it('opens the inventory dashboard for an authenticated user', function () {
         ->assertSee('Material Paling Banyak Dipakai');
 });
 
+it('opens the inventory analytics page with responsive sections', function () {
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Analytics UI Product',
+    ]);
+
+    app(InventoryStockService::class)->createOpeningStock($product->id, $location->id, 12);
+    app(InventoryStockService::class)->adjustOut($product->id, $location->id, 2);
+
+    $this->actingAs(userWith(['view_inventory']))
+        ->get(route('inventory.analytics.index'))
+        ->assertOk()
+        ->assertSee('Analitik Persediaan')
+        ->assertSee('Catatan Penting')
+        ->assertSee('Kembali ke Dasbor')
+        ->assertSee('analytics-mobile-cards', false)
+        ->assertSee('Analytics UI Product');
+});
+
 it('opens inventory product location supplier and stock indexes', function () {
     Product::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Zirconia UI Block']);
     InventoryLocation::factory()->create(['branch_id' => $this->branch->id, 'name' => 'Gudang UI']);

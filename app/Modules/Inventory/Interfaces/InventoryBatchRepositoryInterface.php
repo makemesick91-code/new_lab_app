@@ -21,4 +21,6 @@ interface InventoryBatchRepositoryInterface
     public function transferReferencesForBatch(int $branchId, int $batchId): Collection;
 
     public function batchesWithDerivedStockForAlerts(int $branchId, ?int $locationId = null): Collection;
+
+    public function batchStockWithAge(int $branchId, ?int $locationId = null): Collection;
 }
