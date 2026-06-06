@@ -83,6 +83,8 @@ class PermissionSeeder extends Seeder
         'view_inventory',
         // Sprint 16.1 - Purchase Request
         'approve_inventory_purchase_request',
+        // Sprint 16.2 - Purchase Order
+        'approve_inventory_purchase_order',
         'manage lab orders',
         'manage assignments',
         'manage qc',

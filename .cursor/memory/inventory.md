@@ -51,9 +51,27 @@ Sprint 16.1 completed Purchase Request Workflow:
 - UI: index/create/edit/show, sidebar **Permintaan Pembelian**, alerts **Buat PR** shortcut (prefill only)
 - PR number: `PR-{YYYYMMDD}-{branch_id}-{sequence}`
 
+Sprint 16.2 completed Purchase Order Workflow (document-only; no stock impact):
+
+- tables: `trx_purchase_orders`, `trx_purchase_order_items`
+- statuses: draft, submitted, approved, sent, cancelled
+- future statuses NOT implemented: partially_received, fully_received, closed (deferred to 16.3)
+- service: `PurchaseOrderService` (no inventory movements)
+- policy: `PurchaseOrderPolicy` + `approve_inventory_purchase_order` (with manage_inventory / legacy manage master data fallback)
+- PO number: `PO-{YYYYMMDD}-{branch_id}-{sequence}`
+- fields: supplier_snapshot_name, supplier_reference_number, currency default IDR
+- total_amount: computed via model accessor (NOT stored on header)
+- manual PO: purchase_request_id = null
+- PR-linked PO: from approved PR only; duplicate active PO blocked; cancelled PO allows new PO
+- supplier snapshot captured at creation; refreshed on draft edit if supplier changes
+- UI: index/create/edit/show, sidebar **Pesanan Pembelian**, dashboard **Buat Pesanan Pembelian**, **Buat PO** on approved PR show
+- NO Goods Receipt / Terima Barang / Update Stok UI
+- NO trx_inventory_movements; NO stock updates; PURCHASE movement deferred to Goods Receipt (16.3)
+- branch isolation and ledger-only rules preserved; HR module untouched
+
 ## Future Inventory Work
 
-- Purchase Order / Goods Receipt workflow (Sprint 16+)
+- Goods Receipt workflow (Sprint 16.3) — receiving, PURCHASE inventory movements, stock updates
 - Production Material Usage integration
 - Notification channels for inventory alerts
 - Owner cross-branch inventory rollup

@@ -40,9 +40,21 @@ Purchasing milestone split into slices. POs express intent only; stock increases
 
 Purchase Request Workflow (intent-only; no inventory movements; branch-scoped approval).
 
-### Sprint 16+ — PLANNED
+### Sprint 16.2 — COMPLETE
 
-Purchase Order and Goods Receipt (as scoped).
+Purchase Order Workflow (document-only; no inventory movements; no stock updates):
+
+- schema: `trx_purchase_orders`, `trx_purchase_order_items`
+- statuses: draft, submitted, approved, sent, cancelled
+- receiving statuses deferred: partially_received, fully_received, closed
+- manual PO and PR-linked PO (approved PR only; duplicate active PO blocked)
+- supplier snapshot, currency default IDR, computed total (not stored)
+- UI: Pesanan Pembelian sidebar, Buat Pesanan Pembelian quick action, Buat PO from approved PR
+- quality gates: 828 tests pass, 139 PurchaseOrder tests, Pint pass, npm build pass
+
+### Sprint 16.3 — PLANNED
+
+Goods Receipt / receiving workflow (PURCHASE inventory movements; stock updates).
 
 ## Sprint 17 — PLANNED
 

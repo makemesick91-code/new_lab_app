@@ -6,6 +6,7 @@ use Database\Factories\PurchaseRequestItemFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Sprint 16.1 — trx_purchase_request_items (per-product purchase request lines).
@@ -46,6 +47,11 @@ class PurchaseRequestItem extends Model
     public function inventoryLocation(): BelongsTo
     {
         return $this->belongsTo(InventoryLocation::class, 'inventory_location_id');
+    }
+
+    public function purchaseOrderItems(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderItem::class, 'purchase_request_item_id');
     }
 
     protected static function newFactory(): PurchaseRequestItemFactory

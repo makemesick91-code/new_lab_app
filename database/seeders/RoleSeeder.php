@@ -75,6 +75,7 @@ class RoleSeeder extends Seeder
             'manage_inventory',
             'view_inventory',
             'approve_inventory_purchase_request',
+            'approve_inventory_purchase_order',
             'manage assignments',
             'view reports',
         ],

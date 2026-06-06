@@ -1,4 +1,5 @@
 @php
+    use App\Modules\Inventory\Models\PurchaseOrder;
     use App\Modules\Inventory\Models\PurchaseRequest;
 @endphp
 
@@ -56,6 +57,15 @@
                             Batalkan
                         </button>
                     </form>
+                @endcan
+
+                @can('create', PurchaseOrder::class)
+                    @if ($purchaseRequest->isApproved() && ! $purchaseRequest->hasActivePurchaseOrder())
+                        <a href="{{ route('inventory.purchase-orders.create', ['purchase_request_id' => $purchaseRequest->id]) }}"
+                           class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            Buat PO
+                        </a>
+                    @endif
                 @endcan
 
                 <a href="{{ route('inventory.purchase-requests.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">

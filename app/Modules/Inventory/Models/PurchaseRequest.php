@@ -130,6 +130,18 @@ class PurchaseRequest extends Model
         return $this->hasMany(PurchaseRequestItem::class, 'purchase_request_id');
     }
 
+    public function purchaseOrders(): HasMany
+    {
+        return $this->hasMany(PurchaseOrder::class, 'purchase_request_id');
+    }
+
+    public function hasActivePurchaseOrder(): bool
+    {
+        return $this->purchaseOrders()
+            ->where('status', '!=', PurchaseOrder::STATUS_CANCELLED)
+            ->exists();
+    }
+
     protected static function newFactory(): PurchaseRequestFactory
     {
         return PurchaseRequestFactory::new();
