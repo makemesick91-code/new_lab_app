@@ -15,6 +15,7 @@ use App\Modules\Inventory\Requests\SubmitGoodsReceiptRequest;
 use App\Modules\Inventory\Requests\UpdateGoodsReceiptRequest;
 use App\Modules\Inventory\Services\GoodsReceiptService;
 use App\Modules\Inventory\Services\InventoryLocationService;
+use App\Modules\Inventory\Services\InventoryStockService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -31,6 +32,7 @@ class GoodsReceiptController extends Controller
         private readonly GoodsReceiptRepositoryInterface $goodsReceipts,
         private readonly GoodsReceiptService $goodsReceiptService,
         private readonly InventoryLocationService $locations,
+        private readonly InventoryStockService $inventoryStock,
         private readonly BranchContext $branchContext,
     ) {}
 
@@ -80,6 +82,7 @@ class GoodsReceiptController extends Controller
             'receivablePurchaseOrders' => $this->goodsReceipts->findReceivablePurchaseOrders($branchId),
             'purchaseOrder' => $purchaseOrder,
             'prefillItems' => $prefillItems,
+            'batchesByProduct' => $this->batchesByProductIds($this->productIdsFromPrefill($prefillItems, $purchaseOrder)),
         ]);
     }
 
@@ -131,6 +134,9 @@ class GoodsReceiptController extends Controller
         return $this->renderInventoryView('inventory.goods-receipts.edit', [
             'goodsReceipt' => $goodsReceipt,
             'locations' => $this->locations->listActive(),
+            'batchesByProduct' => $this->batchesByProductIds(
+                $goodsReceipt->items->pluck('product_id')->unique()->filter()->all(),
+            ),
         ]);
     }
 
@@ -176,5 +182,44 @@ class GoodsReceiptController extends Controller
 
         return redirect()->route('inventory.goods-receipts.index')
             ->with('status', 'Penerimaan barang berhasil dibatalkan.');
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $prefillItems
+     * @return array<int>
+     */
+    private function productIdsFromPrefill(array $prefillItems, mixed $purchaseOrder): array
+    {
+        $ids = collect($prefillItems)->pluck('product_id');
+
+        if ($purchaseOrder !== null) {
+            $ids = $ids->merge($purchaseOrder->items->pluck('product_id'));
+        }
+
+        return $ids->unique()->filter()->map(fn ($id) => (int) $id)->values()->all();
+    }
+
+    /**
+     * @param  array<int>  $productIds
+     * @return array<int, array<int, array{id: int, batch_number: string, lot_number: string|null, expiry_date: string|null}>>
+     */
+    private function batchesByProductIds(array $productIds): array
+    {
+        $map = [];
+
+        foreach ($productIds as $productId) {
+            $map[(int) $productId] = $this->inventoryStock
+                ->listActiveBatchesForProduct((int) $productId)
+                ->map(fn ($batch) => [
+                    'id' => (int) $batch->id,
+                    'batch_number' => (string) $batch->batch_number,
+                    'lot_number' => $batch->lot_number,
+                    'expiry_date' => $batch->expiry_date?->format('Y-m-d'),
+                ])
+                ->values()
+                ->all();
+        }
+
+        return $map;
     }
 }

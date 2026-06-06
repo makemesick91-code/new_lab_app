@@ -13,6 +13,8 @@ use Illuminate\Contracts\Validation\Validator;
 
 trait ValidatesGoodsReceiptInput
 {
+    use ValidatesGoodsReceiptBatchInput;
+
     /**
      * @var array<int, string>
      */
@@ -83,7 +85,7 @@ trait ValidatesGoodsReceiptInput
      */
     protected function goodsReceiptItemRules(): array
     {
-        return [
+        return array_merge([
             'items.*.purchase_order_item_id' => ['required', 'integer', 'exists:trx_purchase_order_items,id'],
             'items.*.product_id' => ['required', 'integer', 'exists:inv_products,id'],
             'items.*.inventory_location_id' => ['required', 'integer', 'exists:inv_inventory_locations,id'],
@@ -91,7 +93,7 @@ trait ValidatesGoodsReceiptInput
             'items.*.accepted_qty' => ['required', 'numeric', 'min:0'],
             'items.*.rejected_qty' => ['nullable', 'numeric', 'min:0'],
             'items.*.notes' => ['nullable', 'string', 'max:500'],
-        ];
+        ], $this->goodsReceiptBatchItemRules());
     }
 
     /**
@@ -122,6 +124,11 @@ trait ValidatesGoodsReceiptInput
             'items.*.accepted_qty.min' => 'Jumlah diterima baik harus nol atau lebih.',
             'items.*.rejected_qty.min' => 'Jumlah ditolak harus nol atau lebih.',
             'items.*.notes.max' => 'Catatan item tidak boleh lebih dari 500 karakter.',
+            'items.*.batch_number.max' => 'Nomor batch tidak boleh lebih dari 100 karakter.',
+            'items.*.lot_number.max' => 'Nomor lot tidak boleh lebih dari 100 karakter.',
+            'items.*.batch_received_date.date' => 'Tanggal terima batch tidak valid.',
+            'items.*.batch_received_date.before_or_equal' => 'Tanggal terima batch tidak boleh di masa depan.',
+            'items.*.expiry_date.date' => 'Tanggal kedaluwarsa tidak valid.',
         ];
     }
 
@@ -135,6 +142,7 @@ trait ValidatesGoodsReceiptInput
             $branchId = app(BranchContext::class)->requireId();
 
             $this->validateStoreOrUpdateItems($validator, $branchId);
+            $this->validateGoodsReceiptBatchItems($validator, $branchId);
             $this->validateBoundGoodsReceiptForMutation($validator, $branchId);
         });
     }
@@ -314,6 +322,33 @@ trait ValidatesGoodsReceiptInput
 
             if ($acceptedQty > 0) {
                 $hasAccepted = true;
+            }
+
+            $product = Product::query()
+                ->where('branch_id', $branchId)
+                ->whereKey($item->product_id)
+                ->first();
+
+            if ($product !== null && $product->requires_batch_tracking && $acceptedQty > 0) {
+                if ($item->inventory_batch_id !== null) {
+                    $this->validateExistingBatchForProduct(
+                        $validator,
+                        $branchId,
+                        (int) $item->product_id,
+                        (int) $item->inventory_batch_id,
+                        "items.{$index}.inventory_batch_id",
+                    );
+                } elseif (! filled($item->batch_number)) {
+                    $validator->errors()->add(
+                        "items.{$index}.batch_number",
+                        'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
+                    );
+                } elseif ($item->batch_received_date === null) {
+                    $validator->errors()->add(
+                        "items.{$index}.batch_received_date",
+                        'Tanggal terima batch wajib diisi untuk produk dengan pelacakan batch.',
+                    );
+                }
             }
 
             $this->validateActiveLocationInBranch(

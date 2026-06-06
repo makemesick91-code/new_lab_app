@@ -10,6 +10,7 @@ use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\PurchaseOrderRepositoryInterface;
 use App\Modules\Inventory\Models\GoodsReceipt;
 use App\Modules\Inventory\Models\GoodsReceiptItem;
+use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseOrder;
@@ -77,6 +78,7 @@ class GoodsReceiptService
                 'purchase_order_item_id' => $poItem->id,
                 'product_id' => (int) $poItem->product_id,
                 'product_name' => $poItem->product?->name,
+                'requires_batch_tracking' => (bool) ($poItem->product?->requires_batch_tracking ?? false),
                 'inventory_location_id' => $poItem->inventory_location_id,
                 'quantity_ordered' => (float) $poItem->quantity_ordered,
                 'previously_received_qty' => $this->calculatePreviouslyReceivedQty($poItem->id),
@@ -106,7 +108,7 @@ class GoodsReceiptService
             }
 
             $this->validateReceivablePurchaseOrder($purchaseOrder, $branchId);
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $purchaseOrder, $data['items']);
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $purchaseOrder, $data['items'], $data['receipt_date'] ?? null);
 
             $goodsReceipt = $this->goodsReceipts->create([
                 'branch_id' => $branchId,
@@ -154,7 +156,12 @@ class GoodsReceiptService
             }
 
             $this->validateReceivablePurchaseOrder($purchaseOrder, $branchId);
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $purchaseOrder, $data['items']);
+            $normalizedItems = $this->normalizeAndValidateItems(
+                $branchId,
+                $purchaseOrder,
+                $data['items'],
+                $data['receipt_date'] ?? $locked->receipt_date->toDateString(),
+            );
 
             $updated = $this->goodsReceipts->update($locked, [
                 'receipt_date' => $data['receipt_date'] ?? $locked->receipt_date->toDateString(),
@@ -247,6 +254,17 @@ class GoodsReceiptService
                 $costSnapshot = $this->snapshotCostFromPurchaseOrderItem($poItem, $acceptedQty);
 
                 if ($acceptedQty > 0) {
+                    $item->loadMissing('product');
+                    $product = $item->product;
+
+                    if ($product === null || $product->branch_id !== $branchId || ! $product->is_active) {
+                        throw ValidationException::withMessages([
+                            'items' => 'Produk tidak valid untuk cabang aktif.',
+                        ]);
+                    }
+
+                    $batchData = $this->buildBatchDataForPost($item, $product, $locked->receipt_date->toDateString());
+
                     $movement = $this->inventoryStock->receiveStock(
                         (int) $item->product_id,
                         (int) $item->inventory_location_id,
@@ -254,7 +272,7 @@ class GoodsReceiptService
                         $costSnapshot['unit_cost'],
                         $supplierId,
                         $movementNotes,
-                        null,
+                        $batchData,
                         $locked->getTable(),
                         $locked->id,
                         $locked->receipt_date->toDateString(),
@@ -264,6 +282,7 @@ class GoodsReceiptService
                         'unit_cost' => $costSnapshot['unit_cost'],
                         'line_total' => $costSnapshot['line_total'],
                         'inventory_movement_id' => $movement->id,
+                        'inventory_batch_id' => $movement->inventory_batch_id,
                     ]);
 
                     $this->purchaseOrders->incrementItemQuantityReceived(
@@ -465,8 +484,12 @@ class GoodsReceiptService
      * @param  array<int, array{purchase_order_item_id: int, product_id: int, inventory_location_id: int, accepted_qty: float, rejected_qty?: float, notes?: string|null}>  $items
      * @return array<int, array<string, mixed>>
      */
-    private function normalizeAndValidateItems(int $branchId, PurchaseOrder $purchaseOrder, array $items): array
-    {
+    private function normalizeAndValidateItems(
+        int $branchId,
+        PurchaseOrder $purchaseOrder,
+        array $items,
+        mixed $receiptDate = null,
+    ): array {
         if ($items === []) {
             throw ValidationException::withMessages([
                 'items' => 'Minimal satu item diperlukan.',
@@ -520,8 +543,9 @@ class GoodsReceiptService
             }
 
             $locationId = (int) $item['inventory_location_id'];
+            $product = $this->assertActiveProductInBranch($branchId, (int) $item['product_id'], $index);
             $this->assertActiveLocationInBranch($branchId, $locationId, $index);
-            $this->assertActiveProductInBranch($branchId, (int) $item['product_id'], $index);
+            $this->assertBatchInputForItem($product, $item, $receiptDate, $index);
 
             $previouslyReceived = $this->calculatePreviouslyReceivedQty($poItemId);
 
@@ -532,8 +556,9 @@ class GoodsReceiptService
             }
 
             $unitCost = (float) ($poItem->unit_price ?? 0);
+            $batchFields = $this->extractPersistedBatchFields($item, $receiptDate);
 
-            $normalized[] = [
+            $normalized[] = array_merge([
                 'purchase_order_item_id' => $poItemId,
                 'product_id' => (int) $item['product_id'],
                 'inventory_location_id' => $locationId,
@@ -545,7 +570,7 @@ class GoodsReceiptService
                 'unit_cost' => $unitCost,
                 'line_total' => round($acceptedQty * $unitCost, 2),
                 'notes' => $item['notes'] ?? null,
-            ];
+            ], $batchFields);
         }
 
         return $normalized;
@@ -634,8 +659,147 @@ class GoodsReceiptService
                 'purchaseOrder.supplier',
                 'items.product',
                 'items.inventoryLocation',
+                'items.inventoryBatch',
                 'items.purchaseOrderItem',
                 'createdBy',
             ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     */
+    private function assertBatchInputForItem(Product $product, array $item, mixed $receiptDate, int $index): void
+    {
+        $acceptedQty = (float) ($item['accepted_qty'] ?? 0);
+
+        if (! $product->requires_batch_tracking || $acceptedQty <= 0) {
+            return;
+        }
+
+        $branchId = $this->branchContext->requireId();
+        $batchMode = $item['batch_mode'] ?? null;
+
+        if ($batchMode === 'existing' || ($batchMode === null && filled($item['inventory_batch_id'] ?? null))) {
+            if (! filled($item['inventory_batch_id'] ?? null)) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.inventory_batch_id" => 'Pilih batch yang ada atau buat batch baru.',
+                ]);
+            }
+
+            $this->assertExistingBatchForItem(
+                $branchId,
+                (int) $item['product_id'],
+                (int) $item['inventory_batch_id'],
+                $index,
+            );
+
+            return;
+        }
+
+        if (! filled($item['batch_number'] ?? null)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.batch_number" => 'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
+            ]);
+        }
+
+        $batchReceivedDate = $item['batch_received_date'] ?? $receiptDate;
+
+        if (! filled($batchReceivedDate)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.batch_received_date" => 'Tanggal terima batch wajib diisi untuk produk dengan pelacakan batch.',
+            ]);
+        }
+
+        if (filled($item['expiry_date'] ?? null) && $item['expiry_date'] < $batchReceivedDate) {
+            throw ValidationException::withMessages([
+                "items.{$index}.expiry_date" => 'Tanggal kedaluwarsa tidak boleh sebelum tanggal terima batch.',
+            ]);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @return array<string, mixed>
+     */
+    private function extractPersistedBatchFields(array $item, mixed $receiptDate): array
+    {
+        $batchMode = $item['batch_mode'] ?? null;
+
+        if ($batchMode === 'existing' || ($batchMode === null && filled($item['inventory_batch_id'] ?? null))) {
+            return [
+                'inventory_batch_id' => filled($item['inventory_batch_id'] ?? null)
+                    ? (int) $item['inventory_batch_id']
+                    : null,
+                'batch_number' => null,
+                'lot_number' => null,
+                'batch_received_date' => null,
+                'expiry_date' => null,
+            ];
+        }
+
+        if (! filled($item['batch_number'] ?? null)) {
+            return [
+                'inventory_batch_id' => null,
+                'batch_number' => null,
+                'lot_number' => null,
+                'batch_received_date' => null,
+                'expiry_date' => null,
+            ];
+        }
+
+        return [
+            'inventory_batch_id' => null,
+            'batch_number' => trim((string) $item['batch_number']),
+            'lot_number' => filled($item['lot_number'] ?? null) ? trim((string) $item['lot_number']) : null,
+            'batch_received_date' => $item['batch_received_date'] ?? $receiptDate,
+            'expiry_date' => $item['expiry_date'] ?? null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function buildBatchDataForPost(GoodsReceiptItem $item, Product $product, string $receiptDate): ?array
+    {
+        if (! $product->requires_batch_tracking) {
+            return null;
+        }
+
+        if ($item->inventory_batch_id !== null) {
+            return ['inventory_batch_id' => (int) $item->inventory_batch_id];
+        }
+
+        if (! filled($item->batch_number)) {
+            throw ValidationException::withMessages([
+                'items' => 'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
+            ]);
+        }
+
+        return [
+            'batch_number' => $item->batch_number,
+            'lot_number' => $item->lot_number,
+            'received_date' => $item->batch_received_date?->toDateString() ?? $receiptDate,
+            'expiry_date' => $item->expiry_date?->toDateString(),
+        ];
+    }
+
+    private function assertExistingBatchForItem(int $branchId, int $productId, int $batchId, int $index): void
+    {
+        $batch = InventoryBatch::query()
+            ->where('branch_id', $branchId)
+            ->whereKey($batchId)
+            ->first();
+
+        if ($batch === null || ! $batch->is_active) {
+            throw ValidationException::withMessages([
+                "items.{$index}.inventory_batch_id" => 'Batch tidak valid untuk cabang aktif.',
+            ]);
+        }
+
+        if ($batch->product_id !== $productId) {
+            throw ValidationException::withMessages([
+                "items.{$index}.inventory_batch_id" => 'Batch tidak sesuai dengan produk pada baris ini.',
+            ]);
+        }
     }
 }

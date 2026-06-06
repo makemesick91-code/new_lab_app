@@ -64,6 +64,11 @@ it('creates trx_goods_receipt_items table with required columns', function () {
         'purchase_order_item_id',
         'product_id',
         'inventory_location_id',
+        'inventory_batch_id',
+        'batch_number',
+        'lot_number',
+        'batch_received_date',
+        'expiry_date',
         'inventory_movement_id',
         'ordered_qty',
         'previously_received_qty',
@@ -78,6 +83,10 @@ it('creates trx_goods_receipt_items table with required columns', function () {
     ] as $column) {
         expect($columns)->toContain($column);
     }
+});
+
+it('adds requires_batch_tracking to inv_products', function () {
+    expect(Schema::hasColumn('inv_products', 'requires_batch_tracking'))->toBeTrue();
 });
 
 it('adds quantity_received to trx_purchase_order_items', function () {
@@ -136,6 +145,7 @@ it('creates required indexes on trx_goods_receipt_items', function () {
         'trx_gr_items_po_item_id_index',
         'trx_gr_items_product_id_index',
         'trx_gr_items_location_index',
+        'trx_gr_items_batch_id_index',
         'trx_gr_items_movement_id_index',
         'trx_gr_items_movement_id_unique',
         'trx_gr_items_receipt_po_item_index',

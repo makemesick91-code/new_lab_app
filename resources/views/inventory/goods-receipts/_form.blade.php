@@ -4,19 +4,23 @@
     $goodsReceipt = $goodsReceipt ?? null;
     $purchaseOrder = $purchaseOrder ?? ($goodsReceipt?->purchaseOrder);
     $isEdit = $goodsReceipt !== null;
+    $receiptDateDefault = old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? now()->toDateString());
+    $batchesByProduct = $batchesByProduct ?? [];
 
-    $mapItem = function ($item) {
+    $mapItem = function ($item) use ($receiptDateDefault) {
         if (is_array($item)) {
             $receivedQty = (float) ($item['received_qty'] ?? (($item['accepted_qty'] ?? 0) + ($item['rejected_qty'] ?? 0)));
             $acceptedQty = (float) ($item['accepted_qty'] ?? $receivedQty);
             $rejectedQty = (float) ($item['rejected_qty'] ?? 0);
             $unitCost = (float) ($item['unit_cost'] ?? 0);
+            $batchMode = $item['batch_mode'] ?? (filled($item['inventory_batch_id'] ?? null) ? 'existing' : 'new');
 
             return [
                 'purchase_order_item_id' => $item['purchase_order_item_id'] ?? '',
                 'product_id' => $item['product_id'] ?? '',
                 'product_name' => $item['product_name'] ?? ($item['product']['name'] ?? ''),
                 'product_code' => $item['product_code'] ?? ($item['product']['code'] ?? ''),
+                'requires_batch_tracking' => (bool) ($item['requires_batch_tracking'] ?? ($item['product']['requires_batch_tracking'] ?? false)),
                 'inventory_location_id' => $item['inventory_location_id'] ?? '',
                 'quantity_ordered' => (float) ($item['quantity_ordered'] ?? $item['ordered_qty'] ?? 0),
                 'previously_received_qty' => (float) ($item['previously_received_qty'] ?? 0),
@@ -26,6 +30,12 @@
                 'rejected_qty' => $rejectedQty,
                 'unit_cost' => $unitCost,
                 'notes' => $item['notes'] ?? '',
+                'batch_mode' => $batchMode,
+                'inventory_batch_id' => $item['inventory_batch_id'] ?? '',
+                'batch_number' => $item['batch_number'] ?? '',
+                'lot_number' => $item['lot_number'] ?? '',
+                'batch_received_date' => $item['batch_received_date'] ?? $receiptDateDefault,
+                'expiry_date' => $item['expiry_date'] ?? '',
             ];
         }
 
@@ -34,6 +44,7 @@
             'product_id' => $item->product_id,
             'product_name' => $item->product?->name ?? '',
             'product_code' => $item->product?->code ?? '',
+            'requires_batch_tracking' => (bool) ($item->product?->requires_batch_tracking ?? false),
             'inventory_location_id' => $item->inventory_location_id,
             'quantity_ordered' => (float) $item->ordered_qty,
             'previously_received_qty' => (float) $item->previously_received_qty,
@@ -43,6 +54,12 @@
             'rejected_qty' => (float) $item->rejected_qty,
             'unit_cost' => (float) ($item->unit_cost ?? $item->purchaseOrderItem?->unit_price ?? 0),
             'notes' => $item->notes ?? '',
+            'batch_mode' => $item->inventory_batch_id ? 'existing' : 'new',
+            'inventory_batch_id' => $item->inventory_batch_id ?? '',
+            'batch_number' => $item->batch_number ?? '',
+            'lot_number' => $item->lot_number ?? '',
+            'batch_received_date' => optional($item->batch_received_date)->format('Y-m-d') ?? $receiptDateDefault,
+            'expiry_date' => optional($item->expiry_date)->format('Y-m-d') ?? '',
         ];
     };
 
@@ -68,6 +85,7 @@
 <div
     x-data="{
         items: @js($initialItems),
+        batchesByProduct: @js($batchesByProduct),
         formatNumber(value) {
             const number = Number(value ?? 0);
             return Number.isFinite(number) ? number.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : '0';
@@ -288,6 +306,11 @@
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatCurrency(item.unit_cost)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums font-medium text-gray-900" x-text="formatCurrency(lineTotal(item))"></td>
                             </tr>
+                            <tr x-show="item.requires_batch_tracking && Number(item.accepted_qty || 0) > 0">
+                                <td colspan="10" class="px-3 pb-3">
+                                    @include('inventory.goods-receipts._batch-item-fields')
+                                </td>
+                            </tr>
                         </template>
                     </tbody>
                 </table>
@@ -341,6 +364,7 @@
                         </div>
                         <p class="mt-2 text-xs text-gray-500">Jumlah diterima: <span class="font-medium tabular-nums" x-text="formatNumber(item.received_qty)"></span></p>
                         <p class="mt-1 text-xs text-gray-500">Harga satuan: <span class="font-medium" x-text="formatCurrency(item.unit_cost)"></span></p>
+                        @include('inventory.goods-receipts._batch-item-fields')
                     </article>
                 </template>
             </div>

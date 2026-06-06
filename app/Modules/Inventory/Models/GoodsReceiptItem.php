@@ -21,6 +21,11 @@ class GoodsReceiptItem extends Model
         'purchase_order_item_id',
         'product_id',
         'inventory_location_id',
+        'inventory_batch_id',
+        'batch_number',
+        'lot_number',
+        'batch_received_date',
+        'expiry_date',
         'inventory_movement_id',
         'ordered_qty',
         'previously_received_qty',
@@ -42,6 +47,8 @@ class GoodsReceiptItem extends Model
             'rejected_qty' => 'decimal:2',
             'unit_cost' => 'decimal:2',
             'line_total' => 'decimal:2',
+            'batch_received_date' => 'date',
+            'expiry_date' => 'date',
         ];
     }
 
@@ -63,6 +70,11 @@ class GoodsReceiptItem extends Model
     public function inventoryLocation(): BelongsTo
     {
         return $this->belongsTo(InventoryLocation::class, 'inventory_location_id');
+    }
+
+    public function inventoryBatch(): BelongsTo
+    {
+        return $this->belongsTo(InventoryBatch::class, 'inventory_batch_id');
     }
 
     public function inventoryMovement(): BelongsTo

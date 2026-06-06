@@ -28,6 +28,7 @@ class Product extends Model
         'alert_enabled',
         'average_cost',
         'is_active',
+        'requires_batch_tracking',
     ];
 
     protected function casts(): array
@@ -39,6 +40,7 @@ class Product extends Model
             'alert_enabled' => 'boolean',
             'average_cost' => 'decimal:2',
             'is_active' => 'boolean',
+            'requires_batch_tracking' => 'boolean',
         ];
     }
 

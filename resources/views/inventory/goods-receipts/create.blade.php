@@ -17,6 +17,7 @@
                 'purchaseOrder' => $purchaseOrder,
                 'prefillItems' => $prefillItems,
                 'receivablePurchaseOrders' => $receivablePurchaseOrders,
+                'batchesByProduct' => $batchesByProduct ?? [],
             ])
 
             <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4">
