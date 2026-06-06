@@ -35,8 +35,8 @@
                         <option value="{{ $technician->id }}" @selected($filters['technician_id'] === $technician->id)>{{ $technician->name }}</option>
                     @endforeach
                 </select>
-                <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('quality-control.queue') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('quality-control.queue') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
 
             <div class="overflow-x-auto">
@@ -49,7 +49,7 @@
                             <th class="px-3 py-2 font-medium">Teknisi</th>
                             <th class="px-3 py-2 font-medium">Prioritas</th>
                             <th class="px-3 py-2 font-medium">Tenggat</th>
-                            <th class="px-3 py-2 font-medium">QC Status</th>
+                            <th class="px-3 py-2 font-medium">Status QC</th>
                             <th class="px-3 py-2 font-medium text-right">Aksi</th>
                         </tr>
                     </thead>
@@ -64,7 +64,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ format_date_id($order->due_date, '—') }}</td>
                                 <td class="px-3 py-2"><span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">{{ $statusLabels[$order->status] ?? $order->status }}</span></td>
                                 <td class="px-3 py-2 text-right">
-                                    <a href="{{ route('quality-control.show', $order) }}" class="text-indigo-600 hover:text-indigo-500">Review</a>
+                                    <a href="{{ route('quality-control.show', $order) }}" class="text-indigo-600 hover:text-indigo-500">Tinjau</a>
                                 </td>
                             </tr>
                         @empty

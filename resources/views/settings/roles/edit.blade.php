@@ -1,4 +1,4 @@
-<x-settings-shell title="Edit Role">
+<x-settings-shell title="Ubah Role">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <form method="POST" action="{{ route('settings.roles.update', $role) }}" class="p-6 space-y-6">
             @csrf @method('PUT')

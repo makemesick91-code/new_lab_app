@@ -46,8 +46,8 @@
                             <option value="{{ $clinic->id }}" @selected($filters['clinic_id'] === $clinic->id)>{{ $clinic->name }}</option>
                         @endforeach
                     </select>
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                    <a href="{{ route('lab-orders.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                    <a href="{{ route('lab-orders.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
                 </form>
                 @can('create', App\Modules\LabOrder\Models\LabOrder::class)
                     <a href="{{ route('lab-orders.create') }}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">+ Tambah Order Lab</a>

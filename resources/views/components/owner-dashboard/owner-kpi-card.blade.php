@@ -38,10 +38,10 @@
 
         @if ($href)
             <a href="{{ $href }}" class="text-xs font-semibold text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                View details
+                Lihat detail
             </a>
         @else
-            <span class="text-xs text-gray-400">No drill-down available</span>
+            <span class="text-xs text-gray-400">Tidak ada akses detail</span>
         @endif
     </div>
 </div>

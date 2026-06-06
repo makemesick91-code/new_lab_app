@@ -6,7 +6,7 @@
                     <input type="text" name="search" value="{{ $search }}" placeholder="Cari nama, kode, spesialisasi"
                            class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                     <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Cari</button>
-                    @if ($search)<a href="{{ route('settings.technicians.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>@endif
+                    @if ($search)<a href="{{ route('settings.technicians.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>@endif
                 </form>
                 <a href="{{ route('settings.technicians.create') }}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">+ Tambah Teknisi</a>
             </div>
@@ -39,7 +39,7 @@
                                 </td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('settings.technicians.edit', $technician) }}" class="text-indigo-600 hover:text-indigo-500">Edit</a>
+                                        <a href="{{ route('settings.technicians.edit', $technician) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
                                         @if ($technician->is_active)
                                             <form method="POST" action="{{ route('settings.technicians.deactivate', $technician) }}">@csrf @method('PATCH')<button class="text-amber-600 hover:text-amber-500">Nonaktifkan</button></form>
                                         @else

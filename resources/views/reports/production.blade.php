@@ -1,3 +1,21 @@
+@php
+    $statusLabels = [
+        'DRAFT' => 'Draft',
+        'RECEIVED' => 'Diterima',
+        'ASSIGNED' => 'Ditugaskan',
+        'IN_PRODUCTION' => 'Dalam Produksi',
+        'ON_HOLD' => 'Dijeda',
+        'QC_PENDING' => 'Menunggu QC',
+        'QC_PASSED' => 'QC Lulus',
+        'READY_FOR_DELIVERY' => 'Siap Dikirim',
+        'IN_DELIVERY' => 'Dalam Pengiriman',
+        'DELIVERED' => 'Terkirim',
+        'COMPLETED' => 'Selesai',
+        'CANCELLED' => 'Dibatalkan',
+        'REMAKE' => 'Perbaikan',
+    ];
+@endphp
+
 <x-settings-shell title="Laporan Produksi">
     <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -10,13 +28,13 @@
                     </select></div>
                 <div><label class="block text-xs text-gray-500">Status</label>
                     <select name="status" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
-                        @foreach ($statuses as $s)<option value="{{ $s }}" @selected(($filters['status'] ?? null) === $s)>{{ $s }}</option>@endforeach
+                        @foreach ($statuses as $s)<option value="{{ $s }}" @selected(($filters['status'] ?? null) === $s)>{{ $statusLabels[$s] ?? $s }}</option>@endforeach
                     </select></div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('reports.production') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('reports.production') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
             @can('reporting.export')
-                <a href="{{ route('reports.production.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Export CSV</a>
+                <a href="{{ route('reports.production.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Ekspor CSV</a>
             @endcan
         </div>
 
@@ -44,9 +62,9 @@
                             <td class="px-3 py-2 font-medium text-gray-900">{{ $r->order_number }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->technician_name }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->clinic_name }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->status }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->assigned_at }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->completed_at ?? '—' }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $statusLabels[$r->status] ?? $r->status }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ format_datetime_id($r->assigned_at) }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $r->completed_at ? format_datetime_id($r->completed_at) : '—' }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada data produksi.</td></tr>

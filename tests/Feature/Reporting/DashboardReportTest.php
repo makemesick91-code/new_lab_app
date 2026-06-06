@@ -9,7 +9,10 @@ it('lets an authorized user view the reports dashboard', function () {
         ->get(route('reports.dashboard'))
         ->assertOk()
         ->assertViewIs('reports.dashboard')
-        ->assertSee('Total Order');
+        ->assertSee('Dasbor Laporan')
+        ->assertSee('Total Order')
+        ->assertDontSee('>Reports<', false)
+        ->assertDontSee('>Dashboard<', false);
 });
 
 it('handles an empty dataset on the dashboard', function () {

@@ -1,4 +1,4 @@
-<x-settings-shell title="Edit Layanan Lab">
+<x-settings-shell title="Ubah Layanan Lab">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <form method="POST" action="{{ route('settings.lab-services.update', $labService) }}" class="p-6 space-y-6">
             @csrf @method('PUT')

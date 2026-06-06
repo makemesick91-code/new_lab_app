@@ -1,4 +1,4 @@
-<x-settings-shell title="Edit Klinik">
+<x-settings-shell title="Ubah Klinik">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <form method="POST" action="{{ route('settings.clinics.update', $clinic) }}" class="p-6 space-y-6">
             @csrf @method('PUT')

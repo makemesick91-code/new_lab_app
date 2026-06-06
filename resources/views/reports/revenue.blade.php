@@ -8,11 +8,11 @@
                     <select name="clinic_id" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
                         @foreach ($clinics as $c)<option value="{{ $c->id }}" @selected(($filters['clinic_id'] ?? null) == $c->id)>{{ $c->name }}</option>@endforeach
                     </select></div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('reports.revenue') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('reports.revenue') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
             @can('reporting.export')
-                <a href="{{ route('reports.revenue.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Export CSV</a>
+                <a href="{{ route('reports.revenue.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Ekspor CSV</a>
             @endcan
         </div>
 

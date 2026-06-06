@@ -1,4 +1,13 @@
-<x-settings-shell title="Laporan Quality Control">
+@php
+    $resultLabels = [
+        'PASSED' => 'Lulus',
+        'REJECTED' => 'Ditolak',
+        'REVISION' => 'Perlu Revisi',
+        'IN_REVIEW' => 'Dalam Peninjauan',
+    ];
+@endphp
+
+<x-settings-shell title="Laporan QC">
     <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <form method="GET" action="{{ route('reports.qc') }}" class="flex flex-wrap items-end gap-2">
@@ -10,20 +19,20 @@
                     </select></div>
                 <div><label class="block text-xs text-gray-500">Hasil QC</label>
                     <select name="qc_status" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
-                        @foreach ($qcStatuses as $s)<option value="{{ $s }}" @selected(($filters['qc_status'] ?? null) === $s)>{{ $s }}</option>@endforeach
+                        @foreach ($qcStatuses as $s)<option value="{{ $s }}" @selected(($filters['qc_status'] ?? null) === $s)>{{ $resultLabels[$s] ?? $s }}</option>@endforeach
                     </select></div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('reports.qc') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('reports.qc') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
             @can('reporting.export')
-                <a href="{{ route('reports.qc.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Export CSV</a>
+                <a href="{{ route('reports.qc.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Ekspor CSV</a>
             @endcan
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
             <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ format_number_id($summary['total']) }}</strong></span>
             @foreach ($summary['by_result'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->result }}: <strong>{{ format_number_id($row->total) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $resultLabels[$row->result] ?? $row->result }}: <strong>{{ format_number_id($row->total) }}</strong></span>
             @endforeach
             <span class="rounded-md bg-amber-50 px-3 py-1 text-amber-700">Remake: <strong>{{ format_number_id($summary['remake_count']) }}</strong></span>
         </div>
@@ -41,8 +50,8 @@
                             <td class="px-3 py-2 font-medium text-gray-900">{{ $r->order_number }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->clinic_name }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->inspector_name }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->result ?? 'IN_REVIEW' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->completed_at ?? '—' }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $resultLabels[$r->result ?? 'IN_REVIEW'] ?? ($r->result ?? '—') }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $r->completed_at ? format_datetime_id($r->completed_at) : '—' }}</td>
                         </tr>
                     @empty
                         <tr><td colspan="5" class="px-3 py-6 text-center text-gray-400">Belum ada data QC.</td></tr>

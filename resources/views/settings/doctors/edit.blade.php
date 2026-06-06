@@ -1,4 +1,4 @@
-<x-settings-shell title="Edit Dokter">
+<x-settings-shell title="Ubah Dokter">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <form method="POST" action="{{ route('settings.doctors.update', $doctor) }}" class="p-6 space-y-6">
             @csrf @method('PUT')

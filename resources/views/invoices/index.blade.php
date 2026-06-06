@@ -30,8 +30,8 @@
                             @endforeach
                         </select>
                         <input type="date" name="invoice_date" value="{{ $filters['invoice_date'] }}" class="rounded-md border-gray-300 text-sm" />
-                        <button type="submit" class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                        <a href="{{ route('invoices.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                        <button type="submit" class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                        <a href="{{ route('invoices.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
                     </form>
 
                     @canany(['create_invoice', 'manage_invoice'])

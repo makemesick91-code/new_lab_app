@@ -1,4 +1,4 @@
-<x-settings-shell title="Edit Teknisi">
+<x-settings-shell title="Ubah Teknisi">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <form method="POST" action="{{ route('settings.technicians.update', $technician) }}" class="p-6 space-y-6">
             @csrf @method('PUT')

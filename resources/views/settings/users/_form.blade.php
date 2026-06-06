@@ -22,7 +22,7 @@
     <div>
         <label class="block text-sm font-medium text-gray-700">Role</label>
         <select name="role" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <option value="">— No role —</option>
+            <option value="">— Tanpa role —</option>
             @foreach ($roles as $role)
                 <option value="{{ $role->name }}" @selected(old('role', $currentRole ?? null) === $role->name)>{{ $role->name }}</option>
             @endforeach

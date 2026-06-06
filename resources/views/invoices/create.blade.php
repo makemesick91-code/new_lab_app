@@ -10,8 +10,8 @@
                         <option value="{{ $clinic->id }}" @selected($filters['clinic_id'] === $clinic->id)>{{ $clinic->name }}</option>
                     @endforeach
                 </select>
-                <button type="submit" class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('invoices.create') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button type="submit" class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('invoices.create') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
         </div>
 

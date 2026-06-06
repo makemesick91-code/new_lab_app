@@ -49,7 +49,7 @@
         [
             'label' => 'Nilai Persediaan',
             'value' => format_currency_id(0),
-            'secondary' => 'Nilai berbasis ledger dari Inventory Core.',
+            'secondary' => 'Nilai berbasis ledger dari Persediaan Inti.',
             'severity' => 'neutral',
             'href' => $canAny(['view_inventory', 'manage_inventory', 'manage master data']) ? route('inventory.dashboard') : null,
         ],

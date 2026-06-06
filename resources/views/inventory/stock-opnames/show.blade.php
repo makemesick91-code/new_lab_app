@@ -126,7 +126,7 @@
                                             @if (in_array($stockOpname->status, ['DRAFT', 'COUNTING']))
                                                 <form method="POST" action="{{ route('inventory.stock-opnames.update-counted-quantity', [$stockOpname, $item->product_id]) }}" class="flex items-center justify-end gap-2">
                                                     @csrf
-                                                    <input type="number" step="0.01" min="0" name="counted_quantity" value="{{ rtrim(rtrim(number_format((float) $item->counted_quantity, 2, '.', ''), '0'), '.') }}"
+                                                    <input type="number" step="0.01" min="0" name="counted_quantity" value="{{ (string) ($item->counted_quantity ?? 0) }}"
                                                            class="w-32 rounded-lg border-gray-300 text-sm text-right focus:border-teal-500 focus:ring-teal-500">
                                                     <input type="text" name="notes" value="{{ $item->notes }}" placeholder="Catatan"
                                                            class="w-40 rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">

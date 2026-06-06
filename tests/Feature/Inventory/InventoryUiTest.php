@@ -21,6 +21,8 @@ it('opens the inventory dashboard for an authenticated user', function () {
         ->get(route('inventory.dashboard'))
         ->assertOk()
         ->assertSee('Dasbor Persediaan')
+        ->assertDontSee('Inventory')
+        ->assertDontSee('Dashboard')
         ->assertSee('Kartu KPI Persediaan')
         ->assertSee('Total Nilai Persediaan')
         ->assertSee('Ringkasan Nilai Persediaan')
@@ -59,6 +61,14 @@ it('opens inventory product location supplier and stock indexes', function () {
         ->get(route('inventory.stock.index'))
         ->assertOk()
         ->assertSee('Stok Persediaan');
+});
+
+it('opens the stock opname index and uses Indonesian labels', function () {
+    $this->actingAs($this->user)
+        ->get(route('inventory.stock-opnames.index'))
+        ->assertOk()
+        ->assertSee('Stok Opname')
+        ->assertDontSee('Stock Opname');
 });
 
 it('shows product detail stock summary and safe action context', function () {

@@ -19,6 +19,9 @@
         'URGENT' => 'Mendesak',
         'SUPER_URGENT' => 'Sangat Mendesak',
     ];
+    $noteLabels = [
+        'Order created' => 'Order dibuat',
+    ];
 @endphp
 
 <x-settings-shell title="Detail Order Lab">
@@ -92,7 +95,7 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $item->tooth_number ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $item->shade_color_text ?? '—' }}</td>
                                 <td class="px-3 py-2 text-gray-600">{{ $item->material_text ?? '—' }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ rtrim(rtrim($item->quantity, '0'), '.') }}</td>
+                                <td class="px-3 py-2 text-right text-gray-600">{{ format_quantity_id($item->quantity) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->unit_price) }}</td>
                                 <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->subtotal) }}</td>
                             </tr>
@@ -162,7 +165,7 @@
                         <div>
                             <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
                             <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
-                            @if ($log->notes)<p class="text-gray-600">{{ $log->notes }}</p>@endif
+                            @if ($log->notes)<p class="text-gray-600">{{ $noteLabels[$log->notes] ?? $log->notes }}</p>@endif
                         </div>
                     </div>
                 @empty

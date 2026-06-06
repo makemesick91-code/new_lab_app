@@ -21,6 +21,9 @@ it('allows an authorized user to view the production board', function () {
     $this->actingAs(userWith(['view_production']))
         ->get(route('production.board'))
         ->assertOk()
+        ->assertSee('Papan Produksi')
+        ->assertDontSee('Production Board')
+        ->assertDontSee('Production')
         ->assertViewIs('production.board');
 });
 

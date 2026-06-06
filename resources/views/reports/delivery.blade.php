@@ -1,3 +1,13 @@
+@php
+    $statusLabels = [
+        'READY_FOR_DELIVERY' => 'Siap Dikirim',
+        'IN_DELIVERY' => 'Dalam Pengiriman',
+        'DELIVERED' => 'Terkirim',
+        'COMPLETED' => 'Selesai',
+        'CANCELLED' => 'Dibatalkan',
+    ];
+@endphp
+
 <x-settings-shell title="Laporan Pengiriman">
     <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -14,20 +24,20 @@
                     </select></div>
                 <div><label class="block text-xs text-gray-500">Status</label>
                     <select name="delivery_status" class="mt-1 rounded-md border-gray-300 text-sm"><option value="">Semua</option>
-                        @foreach ($deliveryStatuses as $s)<option value="{{ $s }}" @selected(($filters['delivery_status'] ?? null) === $s)>{{ $s }}</option>@endforeach
+                        @foreach ($deliveryStatuses as $s)<option value="{{ $s }}" @selected(($filters['delivery_status'] ?? null) === $s)>{{ $statusLabels[$s] ?? $s }}</option>@endforeach
                     </select></div>
-                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                <a href="{{ route('reports.delivery') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                <a href="{{ route('reports.delivery') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
             </form>
             @can('reporting.export')
-                <a href="{{ route('reports.delivery.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Export CSV</a>
+                <a href="{{ route('reports.delivery.export', $filters) }}" class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Ekspor CSV</a>
             @endcan
         </div>
 
         <div class="flex flex-wrap gap-3 text-sm">
             <span class="rounded-md bg-gray-50 px-3 py-1">Total: <strong>{{ format_number_id($summary['total']) }}</strong></span>
             @foreach ($summary['by_status'] as $row)
-                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $row->status }}: <strong>{{ format_number_id($row->total) }}</strong></span>
+                <span class="rounded-md bg-gray-50 px-3 py-1">{{ $statusLabels[$row->status] ?? $row->status }}: <strong>{{ format_number_id($row->total) }}</strong></span>
             @endforeach
         </div>
 
@@ -46,7 +56,7 @@
                             <td class="px-3 py-2 text-gray-600">{{ $r->order_number }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->clinic_name }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->courier_name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $r->status }}</td>
+                            <td class="px-3 py-2 text-gray-600">{{ $statusLabels[$r->status] ?? $r->status }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->receiver_name ?? '—' }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $r->receiver_signature_path ? 'Ditandatangani' : '—' }}</td>
                         </tr>

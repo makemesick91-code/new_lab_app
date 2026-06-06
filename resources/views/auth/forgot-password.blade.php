@@ -1,6 +1,6 @@
 <x-guest-layout>
     <div class="mb-4 text-sm text-gray-600">
-        {{ __('Lupa password? Tidak masalah. Masukkan alamat email Anda dan kami akan mengirim tautan reset password agar Anda dapat membuat password baru.') }}
+        {{ __('Lupa password? Tidak masalah. Masukkan alamat email Anda dan kami akan mengirim tautan atur ulang password agar Anda dapat membuat password baru.') }}
     </div>
 
     <!-- Session Status -->
@@ -18,7 +18,7 @@
 
         <div class="flex items-center justify-end mt-4">
             <x-primary-button>
-                {{ __('Kirim Tautan Reset Password') }}
+                {{ __('Kirim Tautan Atur Ulang Password') }}
             </x-primary-button>
         </div>
     </form>

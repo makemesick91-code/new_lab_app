@@ -12,7 +12,10 @@ it('lists users for an authorized user', function () {
     $this->actingAs(userWith(['manage users']))
         ->get(route('settings.users.index'))
         ->assertOk()
-        ->assertViewIs('settings.users.index');
+        ->assertViewIs('settings.users.index')
+        ->assertSee('Manajemen Pengguna')
+        ->assertSee('Pengaturan')
+        ->assertDontSee('>Settings<', false);
 });
 
 it('searches users by name', function () {

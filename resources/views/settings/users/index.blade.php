@@ -7,7 +7,7 @@
                            class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                     <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Cari</button>
                     @if ($search)
-                        <a href="{{ route('settings.users.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
+                        <a href="{{ route('settings.users.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
                     @endif
                 </form>
 
@@ -49,7 +49,7 @@
                                 </td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('settings.users.edit', $user) }}" class="text-indigo-600 hover:text-indigo-500">Edit</a>
+                                        <a href="{{ route('settings.users.edit', $user) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
 
                                         @if ($user->is_active)
                                             <form method="POST" action="{{ route('settings.users.deactivate', $user) }}">

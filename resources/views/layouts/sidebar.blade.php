@@ -71,7 +71,7 @@
             @endcanany
             @canany(['view_quality_control', 'manage_quality_control'])
                 <a href="{{ route('quality-control.queue') }}"
-                   class="block px-3 py-2 rounded-md {{ request()->routeIs('quality-control.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Quality Control</a>
+                   class="block px-3 py-2 rounded-md {{ request()->routeIs('quality-control.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">QC</a>
             @endcanany
             @canany(['view_delivery', 'manage_delivery'])
                 <a href="{{ route('deliveries.index') }}"
@@ -81,19 +81,19 @@
 
         @role('Technician')
             @can('view_production')
-                <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">My Work</p>
-                <a href="{{ route('production.board') }}" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Assignments</a>
+                <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Pekerjaan Saya</p>
+                <a href="{{ route('production.board') }}" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Penugasan Saya</a>
             @endcan
         @endrole
 
         @role('Quality Control')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Quality</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Quality Control <span class="text-xs text-gray-400">(Sprint 5)</span></a>
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">QC</p>
+            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">QC <span class="text-xs text-gray-400">(Sprint 5)</span></a>
         @endrole
 
         @role('Courier')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Delivery</p>
-            <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">My Deliveries</a>
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Pengiriman</p>
+            <a href="{{ route('deliveries.index') }}" class="block px-3 py-2 rounded-md {{ request()->routeIs('deliveries.*') ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}">Pengiriman Saya</a>
         @endrole
 
         @canany(['view_inventory', 'manage_inventory', 'manage master data'])
@@ -119,8 +119,8 @@
         @endcanany
 
         @role('Doctor')
-            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">My Lab</p>
-            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">My Orders <span class="text-xs text-gray-400">(Sprint 3)</span></a>
+            <p class="px-3 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-400">Lab Saya</p>
+            <a href="#" class="block px-3 py-2 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">Order Saya <span class="text-xs text-gray-400">(Sprint 3)</span></a>
         @endrole
 
         {{-- Reports (Sprint 8) — permission-aware menu. --}}
@@ -137,7 +137,7 @@
                 <a href="{{ route('reports.production') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.production') }}">Produksi</a>
             @endcan
             @can('reporting.qc')
-                <a href="{{ route('reports.qc') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.qc') }}">Quality Control</a>
+                <a href="{{ route('reports.qc') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.qc') }}">QC</a>
             @endcan
             @can('reporting.delivery')
                 <a href="{{ route('reports.delivery') }}" class="block px-3 py-2 rounded-md {{ $reportActive('reports.delivery') }}">Pengiriman</a>

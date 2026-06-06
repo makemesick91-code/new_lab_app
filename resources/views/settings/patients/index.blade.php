@@ -17,8 +17,8 @@
                             <option value="{{ $doctor->id }}" @selected($doctorId === $doctor->id)>{{ $doctor->name }}</option>
                         @endforeach
                     </select>
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Filter</button>
-                    @if ($search || $clinicId || $doctorId)<a href="{{ route('settings.patients.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>@endif
+                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
+                    @if ($search || $clinicId || $doctorId)<a href="{{ route('settings.patients.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>@endif
                 </form>
                 <a href="{{ route('settings.patients.create') }}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">+ Tambah Pasien</a>
             </div>
@@ -51,7 +51,7 @@
                                 </td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('settings.patients.edit', $patient) }}" class="text-indigo-600 hover:text-indigo-500">Edit</a>
+                                        <a href="{{ route('settings.patients.edit', $patient) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
                                         @if ($patient->is_active)
                                             <form method="POST" action="{{ route('settings.patients.deactivate', $patient) }}">@csrf @method('PATCH')<button class="text-amber-600 hover:text-amber-500">Nonaktifkan</button></form>
                                         @else

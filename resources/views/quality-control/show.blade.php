@@ -50,7 +50,7 @@
                 @can('qc.start', $order)
                     <form method="POST" action="{{ route('quality-control.start', $order) }}" class="flex items-end gap-2">
                         @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Mulai Review</button>
+                        <button class="rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Mulai Peninjauan</button>
                     </form>
                 @endcan
                 @can('qc.pass', $order)
