@@ -81,6 +81,7 @@ it('voids posted goods receipt and creates reversal ledger movements', function 
         ->and($voided->cancellation_reason)->toBe('Barang salah terima')
         ->and($purchaseMovement)->not->toBeNull()
         ->and($reversalMovement)->not->toBeNull()
+        ->and($reversalMovement->branch_id)->toBe($this->branch->id)
         ->and($reversalMovement->movement_type)->toBe(InventoryMovement::TYPE_ADJUSTMENT_OUT)
         ->and((float) $reversalMovement->quantity_out)->toBe(6.0)
         ->and($reversalMovement->reference_type)->toBe($posted->getTable())
@@ -156,6 +157,20 @@ it('void route requires reason and succeeds for posted goods receipt', function 
 
     expect($posted->refresh()->status)->toBe(GoodsReceipt::STATUS_VOID)
         ->and(voidLedgerStock($this, $product->id, $location->id))->toBe(0.0);
+});
+
+it('denies cancel route for posted goods receipt and requires void instead', function () {
+    $fixtures = createPostedGoodsReceipt($this, 4);
+    $posted = $fixtures['posted'];
+    $beforeMovements = InventoryMovement::count();
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.goods-receipts.cancel', $posted), ['notes' => 'Salah posting'])
+        ->assertRedirect()
+        ->assertSessionHasErrors('goods_receipt');
+
+    expect($posted->refresh()->status)->toBe(GoodsReceipt::STATUS_POSTED)
+        ->and(InventoryMovement::count())->toBe($beforeMovements);
 });
 
 it('cancel route accepts submitted goods receipt', function () {

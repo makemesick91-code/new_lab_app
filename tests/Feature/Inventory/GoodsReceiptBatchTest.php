@@ -185,6 +185,32 @@ it('service rejects batch-tracked product without batch_number on create', funct
         ->toThrow(ValidationException::class);
 });
 
+it('voids batch tracked goods receipt and preserves batch on reversal movement', function () {
+    ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithBatchProduct($this);
+
+    $goodsReceipt = $this->service->createFromPurchaseOrder(
+        grBatchPayload($po->id, $poItem->id, $product->id, $location->id, 5),
+        $this->manager,
+    );
+
+    $posted = $this->service->post($goodsReceipt, $this->manager);
+    $item = $posted->items()->first();
+    $purchaseMovement = InventoryMovement::query()->find($item->inventory_movement_id);
+    $batchId = $item->inventory_batch_id;
+
+    expect($purchaseMovement)->not->toBeNull()
+        ->and($purchaseMovement->inventory_batch_id)->toBe($batchId);
+
+    $voided = $this->service->void($posted, $this->manager, 'Koreksi batch penerimaan');
+    $reversalMovement = InventoryMovement::query()->find($voided->items()->first()->reversal_movement_id);
+
+    expect($voided->status)->toBe(GoodsReceipt::STATUS_VOID)
+        ->and($reversalMovement)->not->toBeNull()
+        ->and($reversalMovement->branch_id)->toBe($this->branch->id)
+        ->and($reversalMovement->inventory_batch_id)->toBe($batchId)
+        ->and((float) $reversalMovement->quantity_out)->toBe(5.0);
+});
+
 it('schema includes batch fields on goods receipt items and requires_batch_tracking on products', function () {
     expect(Schema::hasColumn('inv_products', 'requires_batch_tracking'))->toBeTrue()
         ->and(Schema::hasColumn('trx_goods_receipt_items', 'inventory_batch_id'))->toBeTrue()

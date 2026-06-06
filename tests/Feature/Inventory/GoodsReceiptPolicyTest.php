@@ -49,7 +49,8 @@ it('denies view_inventory mutation and workflow abilities', function () {
         ->and($viewer->can('update', $this->draft))->toBeFalse()
         ->and($viewer->can('submit', $this->draft))->toBeFalse()
         ->and($viewer->can('post', $this->draft))->toBeFalse()
-        ->and($viewer->can('cancel', $this->draft))->toBeFalse();
+        ->and($viewer->can('cancel', $this->draft))->toBeFalse()
+        ->and($viewer->can('void', $this->posted))->toBeFalse();
 });
 
 it('allows manage_inventory to create update submit post draft or submitted and cancel draft or submitted', function () {

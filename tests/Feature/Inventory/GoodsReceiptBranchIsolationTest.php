@@ -146,6 +146,25 @@ it('denies cross branch goods receipt routes', function () {
         ->assertForbidden();
 
     $this->actingAs($this->manager)
+        ->get(route('inventory.goods-receipts.edit', $otherGoodsReceipt))
+        ->assertForbidden();
+
+    $this->actingAs($this->manager)
+        ->put(route('inventory.goods-receipts.update', $otherGoodsReceipt), goodsReceiptPayload(
+            $otherPo->id,
+            $otherPoItem->id,
+            $otherProduct->id,
+            $otherLocation->id,
+        ))
+        ->assertRedirect()
+        ->assertSessionHasErrors('goods_receipt');
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.goods-receipts.submit', $otherGoodsReceipt))
+        ->assertRedirect()
+        ->assertSessionHasErrors('goods_receipt');
+
+    $this->actingAs($this->manager)
         ->post(route('inventory.goods-receipts.post', $otherGoodsReceipt))
         ->assertRedirect()
         ->assertSessionHasErrors('goods_receipt');
@@ -154,6 +173,40 @@ it('denies cross branch goods receipt routes', function () {
         ->post(route('inventory.goods-receipts.cancel', $otherGoodsReceipt))
         ->assertRedirect()
         ->assertSessionHasErrors('goods_receipt');
+
+    $otherPosted = GoodsReceipt::factory()->forPurchaseOrder($otherPo)->posted()->create([
+        'branch_id' => $this->otherBranch->id,
+        'created_by' => $this->manager->id,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('inventory.goods-receipts.void', $otherPosted), ['reason' => 'Cross branch'])
+        ->assertRedirect()
+        ->assertSessionHasErrors('goods_receipt');
+});
+
+it('lists only goods receipts from the active branch on index', function () {
+    ['sent' => $po] = createSentPurchaseOrderWithItem($this);
+
+    $branchReceipt = GoodsReceipt::factory()->forPurchaseOrder($po)->draft()->create([
+        'branch_id' => $this->branch->id,
+        'receipt_number' => 'GR-ACTIVE-BRANCH-ONLY',
+        'created_by' => $this->manager->id,
+    ]);
+
+    $otherPo = PurchaseOrder::factory()->sent()->create(['branch_id' => $this->otherBranch->id]);
+    $otherBranchReceipt = GoodsReceipt::factory()->forPurchaseOrder($otherPo)->draft()->create([
+        'branch_id' => $this->otherBranch->id,
+        'receipt_number' => 'GR-CROSS-BRANCH-ISOLATION-LEAK',
+        'created_by' => $this->manager->id,
+    ]);
+
+    $this->actingAs(userWith(['view_inventory']))
+        ->get(route('inventory.goods-receipts.index'))
+        ->assertOk()
+        ->assertSee($branchReceipt->receipt_number)
+        ->assertDontSee($otherBranchReceipt->receipt_number)
+        ->assertDontSee('GR-CROSS-BRANCH-ISOLATION-LEAK');
 });
 
 it('rejects cross branch purchase order on store route', function () {

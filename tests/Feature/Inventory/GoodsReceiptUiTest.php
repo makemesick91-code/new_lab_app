@@ -150,6 +150,31 @@ it('shows cancel button on submitted goods receipt for managers', function () {
         ->assertSee('Batalkan');
 });
 
+it('hides mutation buttons on goods receipt show for view only users', function () {
+    $draft = createUiGoodsReceipt($this, GoodsReceipt::STATUS_DRAFT);
+    $submitted = createUiGoodsReceipt($this, GoodsReceipt::STATUS_SUBMITTED);
+    $posted = createUiGoodsReceipt($this, GoodsReceipt::STATUS_POSTED);
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.goods-receipts.show', $draft))
+        ->assertOk()
+        ->assertDontSee('>Edit<')
+        ->assertDontSee('Batalkan');
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.goods-receipts.show', $submitted))
+        ->assertOk()
+        ->assertDontSee('Posting')
+        ->assertDontSee('Ya, Posting Penerimaan')
+        ->assertDontSee('Batalkan');
+
+    $this->actingAs($this->viewer)
+        ->get(route('inventory.goods-receipts.show', $posted))
+        ->assertOk()
+        ->assertDontSee('>Void<')
+        ->assertDontSee('Ya, Void Penerimaan');
+});
+
 it('shows void button on posted goods receipt for managers', function () {
     $goodsReceipt = createUiGoodsReceipt($this, GoodsReceipt::STATUS_POSTED);
 
