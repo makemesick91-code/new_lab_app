@@ -44,7 +44,7 @@ it('opens the inventory analytics page with responsive sections', function () {
     app(InventoryStockService::class)->adjustOut($product->id, $location->id, 2);
 
     $this->actingAs(userWith(['view_inventory']))
-        ->get(route('inventory.analytics.index'))
+        ->get(route('inventory.analytics.index', ['tab' => 'movement']))
         ->assertOk()
         ->assertSee('Analitik Persediaan')
         ->assertSee('Catatan Penting')

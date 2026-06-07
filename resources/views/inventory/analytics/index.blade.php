@@ -8,15 +8,18 @@
     $limit = $filters['limit'] ?? InventoryAnalyticsService::DEFAULT_FAST_LIMIT;
     $agingGranularity = $filters['aging_granularity'] ?? 'product';
 
-    $sectionNav = [
-        'fast' => ['id' => 'section-fast', 'label' => 'Produk Cepat Bergerak'],
-        'slow' => ['id' => 'section-slow', 'label' => 'Produk Lambat Bergerak'],
-        'dead' => ['id' => 'section-dead', 'label' => 'Stok Mati'],
-        'aging' => ['id' => 'section-aging', 'label' => 'Umur Persediaan'],
-        'turnover' => ['id' => 'section-turnover', 'label' => 'Perputaran Persediaan'],
-        'value' => ['id' => 'section-value', 'label' => 'Nilai per Kategori & Lokasi'],
-        'trend' => ['id' => 'section-trend', 'label' => 'Tren Nilai Keluar'],
-    ];
+    $sectionNav = $tabs ?? [];
+    $fastMoving = collect($fastMoving ?? []);
+    $slowMoving = collect($slowMoving ?? []);
+    $deadStock = collect($deadStock ?? []);
+    $turnover = collect($turnover ?? []);
+    $valueByCategory = collect($valueByCategory ?? []);
+    $valueByLocation = collect($valueByLocation ?? []);
+    $outboundTrend = $outboundTrend ?? [];
+    $aging = $aging ?? ['granularity' => $agingGranularity, 'buckets' => [], 'items' => collect()];
+    if (! ($aging['items'] ?? null) instanceof \Illuminate\Support\Collection) {
+        $aging['items'] = collect($aging['items'] ?? []);
+    }
 @endphp
 
 <x-settings-shell title="Analitik Persediaan">
@@ -36,6 +39,8 @@
                 </a>
             </div>
         </section>
+
+        @include('inventory.analytics._meta-hint')
 
         <form method="GET" action="{{ route('inventory.analytics.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:z-10">
             <input type="hidden" name="tab" value="{{ $tab }}">
@@ -147,10 +152,10 @@
         </section>
 
         <nav class="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm" aria-label="Navigasi bagian analitik">
-            @foreach ($sectionNav as $tabKey => $section)
+            @foreach ($sectionNav as $section)
                 <a
-                    href="{{ route('inventory.analytics.index', array_merge($filters, ['tab' => $tabKey])) }}#{{ $section['id'] }}"
-                    class="rounded-md px-3 py-2 text-sm font-medium {{ $tab === $tabKey ? 'bg-teal-50 text-teal-800 ring-1 ring-teal-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
+                    href="{{ route('inventory.analytics.index', array_merge($filters, ['tab' => $section['key']])) }}#{{ $section['id'] }}"
+                    class="rounded-md px-3 py-2 text-sm font-medium {{ $tab === $section['key'] ? 'bg-teal-50 text-teal-800 ring-1 ring-teal-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
                 >
                     {{ $section['label'] }}
                 </a>
@@ -166,6 +171,11 @@
             </ul>
         </aside>
 
+        @if ($tab === 'summary')
+            @include('inventory.analytics._tab-summary')
+        @endif
+
+        @if (in_array($tab, ['movement', 'fast'], true))
         {{-- Produk Cepat Bergerak --}}
         <section id="section-fast" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -228,7 +238,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if (in_array($tab, ['movement', 'slow'], true))
         {{-- Produk Lambat Bergerak --}}
         <section id="section-slow" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -282,7 +294,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if (in_array($tab, ['movement', 'dead'], true))
         {{-- Stok Mati --}}
         <section id="section-dead" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -338,7 +352,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($tab === 'aging')
         {{-- Umur Persediaan --}}
         <section id="section-aging" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -452,7 +468,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($tab === 'turnover')
         {{-- Perputaran Persediaan --}}
         <section id="section-turnover" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -501,7 +519,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($tab === 'value')
         {{-- Nilai per Kategori & Lokasi --}}
         <section id="section-value" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -578,7 +598,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($tab === 'trend')
         {{-- Tren Nilai Keluar --}}
         <section id="section-trend" class="rounded-lg border border-gray-200 bg-white shadow-sm scroll-mt-24">
             <div class="border-b border-gray-200 px-4 py-3">
@@ -616,5 +638,22 @@
                 </div>
             @endif
         </section>
+        @endif
+
+        @if ($tab === 'supplier')
+            @include('inventory.analytics._tab-supplier')
+        @endif
+
+        @if ($tab === 'reorder')
+            @include('inventory.analytics._tab-reorder')
+        @endif
+
+        @if ($tab === 'procurement')
+            @include('inventory.analytics._tab-procurement')
+        @endif
+
+        @if ($tab === 'branch-comparison')
+            @include('inventory.analytics._tab-branch-comparison')
+        @endif
     </div>
 </x-settings-shell>

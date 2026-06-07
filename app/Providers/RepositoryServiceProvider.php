@@ -66,6 +66,7 @@ use App\Modules\Inventory\Repositories\InventoryAnalyticsRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
+use App\Modules\Inventory\Repositories\InventorySummaryAnalyticsRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
 use App\Modules\Inventory\Repositories\ProductRepository;
 use App\Modules\Inventory\Repositories\ProductUnitRepository;
@@ -193,8 +194,6 @@ class RepositoryServiceProvider extends ServiceProvider
         GoodsReceiptRepositoryInterface::class => GoodsReceiptRepository::class,
         // Sprint 16.6 - Inventory Activity Log
         InventoryActivityLogRepositoryInterface::class => InventoryActivityLogRepository::class,
-        // Sprint 16.7 - Inventory Analytics
-        InventoryAnalyticsRepositoryInterface::class => InventoryAnalyticsRepository::class,
     ];
 
     /**
@@ -281,6 +280,15 @@ class RepositoryServiceProvider extends ServiceProvider
         foreach ($this->repositories as $interface => $concrete) {
             $this->app->bind($interface, $concrete);
         }
+
+        // Sprint 16.8.4 — analytics repository swap via feature flag (default: live ledger)
+        $this->app->bind(InventoryAnalyticsRepositoryInterface::class, function ($app) {
+            if (config('inventory.analytics_summary_enabled')) {
+                return $app->make(InventorySummaryAnalyticsRepository::class);
+            }
+
+            return $app->make(InventoryAnalyticsRepository::class);
+        });
     }
 
     public function boot(): void

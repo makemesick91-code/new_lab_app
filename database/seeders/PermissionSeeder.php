@@ -91,6 +91,7 @@ class PermissionSeeder extends Seeder
         'view_inventory_analytics',
         'manage_inventory_analytics',
         'view_inventory_executive_dashboard',
+        'view_inventory_cross_branch_analytics',
         'view_inventory_activity_log',
         'view_stock_transfer',
         'manage_stock_transfer',

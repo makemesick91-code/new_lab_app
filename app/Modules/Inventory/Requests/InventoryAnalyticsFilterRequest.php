@@ -14,6 +14,7 @@ class InventoryAnalyticsFilterRequest extends FormRequest
 {
     public const TABS = [
         'summary',
+        'movement',
         'fast',
         'slow',
         'dead',
@@ -21,7 +22,13 @@ class InventoryAnalyticsFilterRequest extends FormRequest
         'turnover',
         'value',
         'trend',
+        'supplier',
+        'reorder',
+        'procurement',
+        'branch-comparison',
     ];
+
+    public const DEFAULT_TAB = 'summary';
 
     public function authorize(): bool
     {
@@ -31,7 +38,7 @@ class InventoryAnalyticsFilterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'tab' => ['nullable', 'string', Rule::in(self::TABS)],
+            'tab' => ['nullable', 'string'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'location_id' => ['nullable', 'integer', 'exists:inv_inventory_locations,id'],
@@ -60,7 +67,16 @@ class InventoryAnalyticsFilterRequest extends FormRequest
 
     public function tab(): string
     {
-        return $this->validated('tab') ?? 'fast';
+        return self::normalizeTab($this->validated('tab'));
+    }
+
+    public static function normalizeTab(?string $tab): string
+    {
+        if ($tab === null || $tab === '' || ! in_array($tab, self::TABS, true)) {
+            return self::DEFAULT_TAB;
+        }
+
+        return $tab;
     }
 
     /**

@@ -46,4 +46,9 @@ class InventoryMovementPolicy
     {
         return $this->canManageInventoryAnalytics($user);
     }
+
+    public function viewCrossBranchAnalytics(User $user): bool
+    {
+        return $this->canViewCrossBranchInventoryAnalytics($user);
+    }
 }

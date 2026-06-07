@@ -123,7 +123,7 @@ it('renders full analytics page with Indonesian section labels', function () {
 
     $this->actingAs($user)
         ->get(route('inventory.analytics.index', [
-            'tab' => 'fast',
+            'tab' => 'movement',
             'date_from' => now()->subDays(30)->toDateString(),
             'date_to' => now()->toDateString(),
         ]))
@@ -133,11 +133,6 @@ it('renders full analytics page with Indonesian section labels', function () {
         ->assertSee('Produk Cepat Bergerak')
         ->assertSee('Produk Lambat Bergerak')
         ->assertSee('Stok Mati')
-        ->assertSee('Umur Persediaan')
-        ->assertSee('Perputaran Persediaan')
-        ->assertSee('Nilai per Kategori')
-        ->assertSee('Nilai per Lokasi')
-        ->assertSee('Tren Nilai Keluar')
         ->assertSee('Nilai Keluar Bulanan')
         ->assertSee('Resin Analytics Product');
 });
@@ -174,6 +169,7 @@ it('renders analytics section tables and mobile card markup', function () {
 
     $this->actingAs($user)
         ->get(route('inventory.analytics.index', [
+            'tab' => 'movement',
             'date_from' => now()->subDays(30)->toDateString(),
             'date_to' => now()->toDateString(),
         ]))
@@ -181,10 +177,6 @@ it('renders analytics section tables and mobile card markup', function () {
         ->assertSee('id="section-fast"', false)
         ->assertSee('id="section-slow"', false)
         ->assertSee('id="section-dead"', false)
-        ->assertSee('id="section-aging"', false)
-        ->assertSee('id="section-turnover"', false)
-        ->assertSee('id="section-value"', false)
-        ->assertSee('id="section-trend"', false)
         ->assertSee('analytics-mobile-cards', false)
         ->assertSee('Section Table Product');
 });
@@ -205,7 +197,7 @@ it('shows empty states when analytics data is empty', function () {
     $user = userWith(['view_inventory']);
 
     $this->actingAs($user)
-        ->get(route('inventory.analytics.index'))
+        ->get(route('inventory.analytics.index', ['tab' => 'movement']))
         ->assertOk()
         ->assertSee('Belum ada data analitik untuk filter ini.')
         ->assertSee('Coba ubah periode atau filter.');

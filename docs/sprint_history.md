@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 16.7.
+Sprint 16.8.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -56,6 +56,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 16.5 | Inventory Permission Hardening | (Sprint 16.5 permission/policy hardening) | (none — permission/policy alignment) |
 | 16.6 | Inventory Audit Trail & Activity Log | `sprint-16.6-complete` | `inv_inventory_activity_logs` |
 | 16.7 | Inventory Analytics & Executive Dashboard | `sprint-16.7-complete` | (none — read-only analytics from ledger + procurement) |
+| 16.8 | Analytics Optimization & Summary Tables | `sprint-16.8-complete` | `rpt_inventory_daily_summaries`, `rpt_inventory_branch_summaries`, `rpt_inventory_product_summaries`, `rpt_procurement_daily_summaries` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1900,6 +1901,124 @@ Redis cache, CSV/PDF export, enhanced analytics page tabs, accounting-grade valu
 
 ---
 
+# Sprint 16.8 — Analytics Optimization & Summary Tables
+
+## Sprint 16.8 Overview
+
+**Goal:** Reduce on-read query cost for inventory analytics (executive dashboard, analytics page,
+operational widgets) via **read-only summary tables** refreshed from ledger and procurement — without
+mutable stock columns, without changing Sprint 16.7 KPI formulas, and without altering Sprint
+16.1–16.7 transaction workflows.
+
+**Status:** COMPLETE
+**Branch:** `feature/sprint-16-procurement`
+**Release tag:** `sprint-16.8-complete`
+
+**Delivered:**
+
+- Design authority: `docs/sprint_16_8_analytics_optimization_design.md`
+- 4 summary tables (`rpt_*`) — derived read models, not transaction sources
+- `InventoryAnalyticsSummaryRefreshService` + `RefreshInventoryAnalyticsSummaryCommand`
+- `InventorySummaryAnalyticsRepository` — swap implementation behind existing
+  `InventoryAnalyticsRepositoryInterface`; original `InventoryAnalyticsRepository` retained
+- Feature flag `INVENTORY_ANALYTICS_SUMMARY_ENABLED=false` (default) via `config/inventory.php`
+- Conditional binding in `RepositoryServiceProvider`
+- Reconciliation, incremental refresh, binding swap, and selective refresh tests
+- `InventoryAnalyticsPageService` — deferred analytics tabs (summary default; movement, supplier,
+  reorder, procurement, branch-comparison on demand)
+- `InventoryBranchComparisonService` + branch comparison UI tab
+- Permission `view_inventory_cross_branch_analytics` (Admin Lab, Super Admin)
+- Scheduler: daily refresh 01:30, monthly prune 02:30 (1st)
+- `PruneInventoryAnalyticsSummaryCommand` with retention `INVENTORY_ANALYTICS_SUMMARY_RETENTION_DAYS=730`
+- Production notes: `docs/sprint_16_8_production_notes.md`
+- Performance regression tests
+- Completion summary: `docs/sprint_16_8_completion_summary.md`
+
+**Summary tables added:**
+
+| Table | Granularity | Purpose |
+|---|---|---|
+| `rpt_inventory_daily_summaries` | branch × day | Daily consumption/inbound trends |
+| `rpt_inventory_branch_summaries` | branch × snapshot_date | Branch KPI strip, branch comparison |
+| `rpt_inventory_product_summaries` | branch × product × snapshot_date | Movement intel, aging, reorder |
+| `rpt_procurement_daily_summaries` | branch × day [× supplier] | PO/GR trends, supplier rollup |
+
+**Key services/commands:**
+
+- `InventoryAnalyticsSummaryRefreshService`
+- `InventorySummaryAnalyticsRepository`
+- `InventoryAnalyticsPageService`
+- `InventoryBranchComparisonService`
+- `RefreshInventoryAnalyticsSummaryCommand` (`inventory:analytics-summary:refresh`)
+- `PruneInventoryAnalyticsSummaryCommand` (`inventory:analytics-summary:prune`)
+
+**Feature flags / config:**
+
+| Env | Default | Effect |
+|---|---|---|
+| `INVENTORY_ANALYTICS_SUMMARY_ENABLED` | **`false`** | `false` → live ledger repo; `true` → summary repo |
+| `INVENTORY_ANALYTICS_SUMMARY_RETENTION_DAYS` | **730** | Prune retention for daily/procurement summaries |
+
+**Permissions:**
+
+- `view_inventory_cross_branch_analytics` — cross-branch analytics tab (Admin Lab, Super Admin)
+
+**Analytics architecture (post-16.8):**
+
+```text
+InventoryAnalyticsController
+  → InventoryAnalyticsPageService (deferred tabs)
+  → InventoryAnalyticsService
+    → InventoryAnalyticsRepositoryInterface
+      → InventoryAnalyticsRepository (live ledger)  [flag false]
+      → InventorySummaryAnalyticsRepository (rpt_*)   [flag true]
+```
+
+Refresh path (scheduled + manual):
+
+```text
+RefreshInventoryAnalyticsSummaryCommand
+  → InventoryAnalyticsSummaryRefreshService
+    → trx_inventory_movements + procurement tables → rpt_* (upsert)
+```
+
+**Invariants preserved:**
+
+- `trx_inventory_movements` remains source of truth
+- `rpt_*` read model/cache only — never written by transaction workflows
+- No mutable stock columns
+- Branch isolation via `BranchContext::requireId()`
+- Instant rollback: set flag `false`, clear config cache
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 16.8 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 1289 tests, 4584 assertions |
+| Refresh command (`inventory:analytics-summary:refresh --all`) | PASS |
+| Selective date refresh (`--date=2026-06-07 --all`) | PASS |
+| Scheduler (`php artisan schedule:list`) | PASS |
+| Pint (`./vendor/bin/pint`) | PASS |
+| Frontend build (`npm run build`) | PASS |
+| Git diff check (`git diff --check`) | PASS |
+| `migrate:fresh --seed` | Not run (destructive safety); `RefreshDatabase` tests PASS |
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-07 |
+| Sprint Slice | 16.8 — Analytics Optimization & Summary Tables |
+| Status | COMPLETED (full-suite gates verified) |
+| Tag | `sprint-16.8-complete` |
+| Design doc | `docs/sprint_16_8_analytics_optimization_design.md` |
+| Production notes | `docs/sprint_16_8_production_notes.md` |
+| Completion doc | `docs/sprint_16_8_completion_summary.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1950,6 +2069,10 @@ Redis cache, CSV/PDF export, enhanced analytics page tabs, accounting-grade valu
 25. **S16.6** — Dedicated `inv_inventory_activity_logs` for inventory/procurement audit trail;
     branch-scoped append-only logs; non-blocking workflow logging; optional `correlation_id`; UI at
     `/inventory/activity-logs`; permission `view_inventory_activity_log`; no ledger or workflow changes.
+26. **S16.8** — Analytics summary tables (`rpt_*`) as read-only derived cache refreshed from ledger
+    and procurement; swap via `InventoryAnalyticsRepositoryInterface` + feature flag default `false`;
+    original live ledger repository retained for instant rollback; scheduler refresh/prune; cross-branch
+    comparison tab gated by `view_inventory_cross_branch_analytics`; deferred analytics tabs on index page.
 
 ---
 
@@ -2142,12 +2265,18 @@ Redis cache, CSV/PDF export, enhanced analytics page tabs, accounting-grade valu
   stock unchanged; Activity Log UI permission-gated via `view_inventory_activity_log` with inventory
   view fallbacks.
 - **Sprint 16.7 completed baseline — Inventory Analytics & Executive Dashboard:** Future changes
-  must preserve ledger-derived analytics (no mutable stock columns, no analytics cache tables in
-  MVP), branch-scoped queries via `BranchContext::requireId()`, read-only
-  `InventoryAnalyticsService` behind `InventoryAnalyticsRepositoryInterface`, compose-only
-  `InventoryExecutiveDashboardService`, KPI Lock Matrix formulas, activity log forbidden as KPI
-  source, and Operational Inventory Value disclaimer. Cross-branch rollup, summary tables, and
-  `view_inventory_cross_branch` permission remain follow-up work (Sprint 16.8).
+  must preserve ledger-derived analytics (no mutable stock columns), branch-scoped queries via
+  `BranchContext::requireId()`, read-only `InventoryAnalyticsService` behind
+  `InventoryAnalyticsRepositoryInterface`, compose-only `InventoryExecutiveDashboardService`, KPI
+  Lock Matrix formulas, activity log forbidden as KPI source, and Operational Inventory Value
+  disclaimer. Summary tables and cross-branch analytics were delivered in Sprint 16.8.
+- **Sprint 16.8 completed baseline — Analytics Optimization & Summary Tables:** Future changes
+  must preserve `trx_inventory_movements` as source of truth; `rpt_*` tables as read model/cache only
+  (never written by transaction workflows); feature flag `INVENTORY_ANALYTICS_SUMMARY_ENABLED` default
+  `false`; original `InventoryAnalyticsRepository` retained; instant rollback via flag without truncate;
+  branch isolation via `BranchContext`; cross-branch comparison gated by
+  `view_inventory_cross_branch_analytics`; no mutable stock columns; refresh idempotent via
+  `InventoryAnalyticsSummaryRefreshService`.
 - **Sprint 17 — HR Core:** Separate module; not directly coupled to production/payroll/attendance
   except through explicit services/relationships. Branch-owned employees use `branch_id` +
   `BranchContext`.
@@ -2204,4 +2333,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 16.7 and must be updated as each new sprint completes.*
+Sprint 16.8 and must be updated as each new sprint completes.*

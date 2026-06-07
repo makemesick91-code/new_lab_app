@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Policies\Concerns;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Services\InventoryBranchComparisonService;
 
 trait ChecksInventoryAccess
 {
@@ -114,6 +115,11 @@ trait ChecksInventoryAccess
             'manage_inventory',
             'manage master data',
         ]);
+    }
+
+    protected function canViewCrossBranchInventoryAnalytics(User $user): bool
+    {
+        return $user->can(InventoryBranchComparisonService::CROSS_BRANCH_PERMISSION);
     }
 
     protected function canViewStockTransfer(User $user): bool

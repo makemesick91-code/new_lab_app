@@ -3454,3 +3454,31 @@ source data mutation from reports
 - Materialized views excluded
 - Source data mutation excluded
 ```
+
+---
+
+# 20. Sprint 16.8 — Inventory Analytics Reporting Summaries
+
+Read-only derived cache tables (`rpt_*`). **Not** source of truth for stock; ledger authority remains `trx_inventory_movements`.
+
+## 20.1 Tables
+
+| Table | Granularity | Purpose |
+| ----- | ----------- | ------- |
+| `rpt_inventory_daily_summaries` | `branch_id` × `summary_date` | Daily movement in/out, inbound/outbound value, PURCHASE subset |
+| `rpt_inventory_branch_summaries` | `branch_id` × `snapshot_date` | Branch KPI snapshot (value, SKU counts, low/dead stock, procurement open counts) |
+| `rpt_inventory_product_summaries` | `branch_id` × `product_id` × `snapshot_date` | Per-product derived stock cache, movement windows, aging, reorder flags |
+| `rpt_procurement_daily_summaries` | `branch_id` × `summary_date` [× `supplier_id`] | Daily PO/GR aggregates; `supplier_id` NULL = branch rollup |
+
+## 20.2 Constraints
+
+- All tables: `branch_id` → `mst_branches` (`restrictOnDelete`).
+- Product summary: `product_id` → `inv_products`, optional `product_category_id`, `preferred_supplier_id`.
+- Procurement: optional `supplier_id` → `inv_suppliers`; partial unique indexes for branch rollup vs supplier slice.
+- No mutable stock columns added to `inv_products` or `inv_inventory_locations`.
+
+## 20.3 Analytics composite indexes (Sprint 16.8.2)
+
+Added on source tables: `trx_inventory_movements` (`branch_id` + `movement_date` / `movement_type` / `product_id`), `trx_purchase_orders` (`branch_id`, `supplier_id`, `status`), `trx_goods_receipts` (`branch_id`, `status`, `posted_at`), `inv_products` (`branch_id`, `is_active`, `alert_enabled`).
+
+Authority: `docs/sprint_16_8_analytics_optimization_design.md`.
