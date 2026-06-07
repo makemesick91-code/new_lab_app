@@ -2,7 +2,9 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
@@ -13,6 +15,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\StockTransferItem;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -20,12 +23,15 @@ use Illuminate\Validation\ValidationException;
 
 class StockTransferService
 {
+    use LogsInventoryActivity;
+
     public function __construct(
         private readonly StockTransferRepositoryInterface $transfers,
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly ProductRepositoryInterface $products,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     /**
@@ -38,7 +44,7 @@ class StockTransferService
         ?string $notes = null,
         ?string $transferDate = null,
     ): StockTransfer {
-        return DB::transaction(function () use ($sourceLocationId, $destinationLocationId, $items, $notes, $transferDate) {
+        $result = DB::transaction(function () use ($sourceLocationId, $destinationLocationId, $items, $notes, $transferDate) {
             $branchId = $this->branchContext->requireId();
             $actorId = $this->currentActorId();
             $source = $this->assertActiveLocationInBranch($branchId, $sourceLocationId, 'source_inventory_location_id');
@@ -64,6 +70,10 @@ class StockTransferService
 
             return $this->transfers->loadDetails($transfer->refresh());
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_CREATED, $result, null);
+
+        return $result;
     }
 
     /**
@@ -77,7 +87,11 @@ class StockTransferService
         ?string $notes = null,
         ?string $transferDate = null,
     ): StockTransfer {
-        return DB::transaction(function () use ($transferId, $sourceLocationId, $destinationLocationId, $items, $notes, $transferDate) {
+        $branchId = $this->branchContext->requireId();
+        $existing = $this->transfers->findById($branchId, $transferId);
+        $statusFrom = $existing?->status;
+
+        $result = DB::transaction(function () use ($transferId, $sourceLocationId, $destinationLocationId, $items, $notes, $transferDate) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
@@ -103,11 +117,19 @@ class StockTransferService
 
             return $this->transfers->loadDetails($updated->refresh());
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_UPDATED, $result, $statusFrom);
+
+        return $result;
     }
 
     public function submitTransfer(int $transferId): StockTransfer
     {
-        return DB::transaction(function () use ($transferId) {
+        $branchId = $this->branchContext->requireId();
+        $existing = $this->transfers->findById($branchId, $transferId);
+        $statusFrom = $existing?->status;
+
+        $result = DB::transaction(function () use ($transferId) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
@@ -123,11 +145,20 @@ class StockTransferService
                 'status' => StockTransfer::STATUS_SUBMITTED,
             ]);
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_SUBMITTED, $result, $statusFrom);
+
+        return $result;
     }
 
     public function shipTransfer(int $transferId): StockTransfer
     {
-        return DB::transaction(function () use ($transferId) {
+        $branchId = $this->branchContext->requireId();
+        $existing = $this->transfers->findById($branchId, $transferId);
+        $statusFrom = $existing?->status;
+        $createdMovements = [];
+
+        $result = DB::transaction(function () use ($transferId, &$createdMovements) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
@@ -203,7 +234,7 @@ class StockTransferService
                     }
                 }
 
-                $this->createTransferMovement(
+                $movement = $this->createTransferMovement(
                     $transfer,
                     $product,
                     $source,
@@ -212,6 +243,7 @@ class StockTransferService
                     InventoryMovement::TYPE_TRANSFER_OUT,
                     $batchId,
                 );
+                $createdMovements[] = $movement;
             }
 
             return $this->transfers->update($transfer, [
@@ -220,11 +252,24 @@ class StockTransferService
                 'shipped_at' => now(),
             ]);
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_APPROVED, $result, $statusFrom);
+
+        foreach ($createdMovements as $movement) {
+            $this->logInventoryMovement($movement);
+        }
+
+        return $result;
     }
 
     public function receiveTransfer(int $transferId): StockTransfer
     {
-        return DB::transaction(function () use ($transferId) {
+        $branchId = $this->branchContext->requireId();
+        $existing = $this->transfers->findById($branchId, $transferId);
+        $statusFrom = $existing?->status;
+        $createdMovements = [];
+
+        $result = DB::transaction(function () use ($transferId, &$createdMovements) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
@@ -265,7 +310,7 @@ class StockTransferService
                 $quantity = (float) $item->quantity;
                 $this->assertPositiveQuantity($quantity);
 
-                $this->createTransferMovement(
+                $movement = $this->createTransferMovement(
                     $transfer,
                     $product,
                     $destination,
@@ -274,6 +319,7 @@ class StockTransferService
                     InventoryMovement::TYPE_TRANSFER_IN,
                     $item->inventory_batch_id ? (int) $item->inventory_batch_id : null,
                 );
+                $createdMovements[] = $movement;
             }
 
             return $this->transfers->update($transfer, [
@@ -282,11 +328,23 @@ class StockTransferService
                 'completed_at' => now(),
             ]);
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_RECEIVED, $result, $statusFrom);
+
+        foreach ($createdMovements as $movement) {
+            $this->logInventoryMovement($movement);
+        }
+
+        return $result;
     }
 
     public function cancelTransfer(int $transferId, ?string $notes = null): StockTransfer
     {
-        return DB::transaction(function () use ($transferId, $notes) {
+        $branchId = $this->branchContext->requireId();
+        $existing = $this->transfers->findById($branchId, $transferId);
+        $statusFrom = $existing?->status;
+
+        $result = DB::transaction(function () use ($transferId, $notes) {
             $branchId = $this->branchContext->requireId();
             $transfer = $this->lockTransferInBranch($branchId, $transferId);
 
@@ -314,6 +372,10 @@ class StockTransferService
                 'notes' => $notes ?? $transfer->notes,
             ]);
         });
+
+        $this->logStockTransferActivity(InventoryActivityAction::STOCK_TRANSFER_CANCELLED, $result, $statusFrom);
+
+        return $result;
     }
 
     public function getTransferDetails(int $transferId): StockTransfer
@@ -583,5 +645,46 @@ class StockTransferService
     private function generateTransferNumber(): string
     {
         return 'TRF-'.now()->format('Ym').'-'.Str::upper(Str::random(6));
+    }
+
+    private function logStockTransferActivity(string $action, StockTransfer $transfer, ?string $statusFrom): void
+    {
+        $transfer->loadMissing('items');
+
+        $metadata = [
+            'document_number' => $transfer->transfer_number,
+            'branch_id' => $transfer->branch_id,
+            'status_to' => $transfer->status,
+            'source_location_id' => $transfer->source_inventory_location_id,
+            'destination_location_id' => $transfer->destination_inventory_location_id,
+            'item_count' => $transfer->items->count(),
+        ];
+
+        if ($statusFrom !== null) {
+            $metadata['status_from'] = $statusFrom;
+        }
+
+        $user = Auth::user();
+        $this->logActivity($action, $transfer, $metadata, null, $user instanceof User ? $user : null);
+    }
+
+    private function logInventoryMovement(InventoryMovement $movement): void
+    {
+        $quantity = max((float) $movement->quantity_in, (float) $movement->quantity_out);
+
+        $user = Auth::user();
+        $this->logActivity(
+            InventoryActivityAction::INVENTORY_MOVEMENT_CREATED,
+            $movement,
+            [
+                'branch_id' => $movement->branch_id,
+                'product_id' => $movement->product_id,
+                'inventory_location_id' => $movement->inventory_location_id,
+                'quantity' => $quantity,
+                'movement_type' => $movement->movement_type,
+            ],
+            null,
+            $user instanceof User ? $user : null,
+        );
     }
 }

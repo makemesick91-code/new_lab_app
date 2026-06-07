@@ -2,7 +2,9 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
@@ -12,6 +14,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -19,12 +22,15 @@ use Illuminate\Validation\ValidationException;
 
 class StockOpnameService
 {
+    use LogsInventoryActivity;
+
     public function __construct(
         private readonly StockOpnameRepositoryInterface $opnames,
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly ProductRepositoryInterface $products,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     /**
@@ -36,7 +42,7 @@ class StockOpnameService
         ?string $notes = null,
         ?string $opnameDate = null,
     ): StockOpname {
-        return DB::transaction(function () use ($locationId, $productIds, $notes, $opnameDate) {
+        $result = DB::transaction(function () use ($locationId, $productIds, $notes, $opnameDate) {
             $branchId = $this->branchContext->requireId();
             $location = $this->assertActiveLocationInBranch($branchId, $locationId);
 
@@ -58,6 +64,10 @@ class StockOpnameService
 
             return $this->opnames->loadItems($opname->refresh());
         });
+
+        $this->logStockOpnameActivity(InventoryActivityAction::STOCK_OPNAME_CREATED, $result, null);
+
+        return $result;
     }
 
     public function updateCountedQuantity(int $opnameId, int $productId, float $countedQuantity, ?string $notes = null): StockOpnameItem
@@ -68,7 +78,11 @@ class StockOpnameService
             ]);
         }
 
-        return DB::transaction(function () use ($opnameId, $productId, $countedQuantity, $notes) {
+        $branchId = $this->branchContext->requireId();
+        $existing = StockOpname::query()->where('branch_id', $branchId)->find($opnameId);
+        $statusFrom = $existing?->status;
+
+        $item = DB::transaction(function () use ($opnameId, $productId, $countedQuantity, $notes) {
             $branchId = $this->branchContext->requireId();
             $opname = $this->lockOpnameInBranch($branchId, $opnameId);
             $this->assertEditable($opname);
@@ -95,11 +109,25 @@ class StockOpnameService
 
             return $item->refresh();
         });
+
+        if ($existing !== null) {
+            $this->logStockOpnameActivity(
+                InventoryActivityAction::STOCK_OPNAME_UPDATED,
+                $existing->refresh(),
+                $statusFrom,
+            );
+        }
+
+        return $item;
     }
 
     public function reviewOpname(int $opnameId): StockOpname
     {
-        return DB::transaction(function () use ($opnameId) {
+        $branchId = $this->branchContext->requireId();
+        $existing = StockOpname::query()->where('branch_id', $branchId)->find($opnameId);
+        $statusFrom = $existing?->status;
+
+        $result = DB::transaction(function () use ($opnameId) {
             $branchId = $this->branchContext->requireId();
             $opname = $this->lockOpnameInBranch($branchId, $opnameId);
 
@@ -122,11 +150,20 @@ class StockOpnameService
                 'counted_by' => Auth::id(),
             ]);
         });
+
+        $this->logStockOpnameActivity(InventoryActivityAction::STOCK_OPNAME_UPDATED, $result, $statusFrom);
+
+        return $result;
     }
 
     public function finalizeOpname(int $opnameId): StockOpname
     {
-        return DB::transaction(function () use ($opnameId) {
+        $branchId = $this->branchContext->requireId();
+        $existing = StockOpname::query()->where('branch_id', $branchId)->find($opnameId);
+        $statusFrom = $existing?->status;
+        $createdMovements = [];
+
+        $result = DB::transaction(function () use ($opnameId, &$createdMovements) {
             $branchId = $this->branchContext->requireId();
             $opname = $this->lockOpnameInBranch($branchId, $opnameId);
 
@@ -163,7 +200,7 @@ class StockOpnameService
                 $variance = round((float) $item->variance_quantity, 4);
 
                 if ($variance > 0) {
-                    $this->createAdjustmentMovement($opname, $product, $variance, 0, (float) $item->unit_cost);
+                    $createdMovements[] = $this->createAdjustmentMovement($opname, $product, $variance, 0, (float) $item->unit_cost);
                 }
 
                 if ($variance < 0) {
@@ -176,7 +213,7 @@ class StockOpnameService
                         ]);
                     }
 
-                    $this->createAdjustmentMovement($opname, $product, 0, $quantityOut, (float) $item->unit_cost);
+                    $createdMovements[] = $this->createAdjustmentMovement($opname, $product, 0, $quantityOut, (float) $item->unit_cost);
                 }
             }
 
@@ -185,11 +222,29 @@ class StockOpnameService
                 'completed_at' => now(),
             ]);
         });
+
+        $movementIds = array_map(fn (InventoryMovement $movement) => $movement->id, $createdMovements);
+        $this->logStockOpnameActivity(
+            InventoryActivityAction::STOCK_OPNAME_COMPLETED,
+            $result,
+            $statusFrom,
+            $movementIds,
+        );
+
+        foreach ($createdMovements as $movement) {
+            $this->logInventoryMovement($movement);
+        }
+
+        return $result;
     }
 
     public function cancelOpname(int $opnameId, ?string $notes = null): StockOpname
     {
-        return DB::transaction(function () use ($opnameId, $notes) {
+        $branchId = $this->branchContext->requireId();
+        $existing = StockOpname::query()->where('branch_id', $branchId)->find($opnameId);
+        $statusFrom = $existing?->status;
+
+        $result = DB::transaction(function () use ($opnameId, $notes) {
             $branchId = $this->branchContext->requireId();
             $opname = $this->lockOpnameInBranch($branchId, $opnameId);
 
@@ -210,6 +265,10 @@ class StockOpnameService
                 'notes' => $notes ?? $opname->notes,
             ]);
         });
+
+        $this->logStockOpnameActivity(InventoryActivityAction::STOCK_OPNAME_CANCELLED, $result, $statusFrom);
+
+        return $result;
     }
 
     private function createSnapshotItem(StockOpname $opname, Product $product, int $locationId): StockOpnameItem
@@ -318,5 +377,56 @@ class StockOpnameService
     private function generateOpnameNumber(): string
     {
         return 'OPN-'.now()->format('Ym').'-'.Str::upper(Str::random(6));
+    }
+
+    /**
+     * @param  array<int, int>  $movementIds
+     */
+    private function logStockOpnameActivity(
+        string $action,
+        StockOpname $opname,
+        ?string $statusFrom,
+        array $movementIds = [],
+    ): void {
+        $opname->loadMissing('items');
+
+        $metadata = [
+            'document_number' => $opname->opname_number,
+            'branch_id' => $opname->branch_id,
+            'status_to' => $opname->status,
+            'inventory_location_id' => $opname->inventory_location_id,
+            'item_count' => $opname->items->count(),
+        ];
+
+        if ($statusFrom !== null) {
+            $metadata['status_from'] = $statusFrom;
+        }
+
+        if ($movementIds !== []) {
+            $metadata['movement_ids'] = $movementIds;
+        }
+
+        $user = Auth::user();
+        $this->logActivity($action, $opname, $metadata, null, $user instanceof User ? $user : null);
+    }
+
+    private function logInventoryMovement(InventoryMovement $movement): void
+    {
+        $quantity = max((float) $movement->quantity_in, (float) $movement->quantity_out);
+
+        $user = Auth::user();
+        $this->logActivity(
+            InventoryActivityAction::INVENTORY_MOVEMENT_CREATED,
+            $movement,
+            [
+                'branch_id' => $movement->branch_id,
+                'product_id' => $movement->product_id,
+                'inventory_location_id' => $movement->inventory_location_id,
+                'quantity' => $quantity,
+                'movement_type' => $movement->movement_type,
+            ],
+            null,
+            $user instanceof User ? $user : null,
+        );
     }
 }

@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\GoodsReceipt;
+use App\Modules\Inventory\Models\InventoryActivityLog;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
@@ -32,7 +33,8 @@ describe('backward compatibility with legacy inventory permissions', function ()
             ->and($viewer->can('viewAny', StockTransfer::class))->toBeTrue()
             ->and($viewer->can('viewAny', PurchaseRequest::class))->toBeTrue()
             ->and($viewer->can('viewAny', PurchaseOrder::class))->toBeTrue()
-            ->and($viewer->can('viewAny', GoodsReceipt::class))->toBeTrue();
+            ->and($viewer->can('viewAny', GoodsReceipt::class))->toBeTrue()
+            ->and($viewer->can('viewAny', InventoryActivityLog::class))->toBeTrue();
     });
 
     it('keeps manage_inventory as superset for granular manage abilities', function () {
@@ -71,6 +73,7 @@ describe('backward compatibility with legacy inventory permissions', function ()
         expect($admin->can('viewAny', Product::class))->toBeTrue()
             ->and($admin->can('viewAny', PurchaseRequest::class))->toBeTrue()
             ->and($admin->can('viewAny', GoodsReceipt::class))->toBeTrue()
+            ->and($admin->can('viewAny', InventoryActivityLog::class))->toBeTrue()
             ->and($admin->can('create', Product::class))->toBeTrue();
     });
 
@@ -263,6 +266,18 @@ describe('sidebar visibility with granular permissions', function () {
             ->assertOk()
             ->assertSee('Produk')
             ->assertSee('Peringatan Stok')
-            ->assertSee('Analitik Persediaan');
+            ->assertSee('Analitik Persediaan')
+            ->assertSee('Log Aktivitas');
+    });
+
+    it('shows activity log group entry for granular analytics viewers', function () {
+        $user = userWith(['view_inventory_analytics']);
+        $this->actingAs($user);
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Persediaan')
+            ->assertSee('Log Aktivitas')
+            ->assertDontSee('>Produk</a>', false);
     });
 });

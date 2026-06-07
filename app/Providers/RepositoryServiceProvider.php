@@ -25,6 +25,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -37,6 +38,7 @@ use App\Modules\Inventory\Interfaces\StockOpnameRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\GoodsReceipt;
+use App\Modules\Inventory\Models\InventoryActivityLog;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -47,6 +49,7 @@ use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Policies\GoodsReceiptPolicy;
+use App\Modules\Inventory\Policies\InventoryActivityLogPolicy;
 use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
@@ -57,6 +60,7 @@ use App\Modules\Inventory\Policies\StockOpnamePolicy;
 use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\GoodsReceiptRepository;
+use App\Modules\Inventory\Repositories\InventoryActivityLogRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -185,6 +189,8 @@ class RepositoryServiceProvider extends ServiceProvider
         PurchaseOrderRepositoryInterface::class => PurchaseOrderRepository::class,
         // Sprint 16.3 - Goods Receipt
         GoodsReceiptRepositoryInterface::class => GoodsReceiptRepository::class,
+        // Sprint 16.6 - Inventory Activity Log
+        InventoryActivityLogRepositoryInterface::class => InventoryActivityLogRepository::class,
     ];
 
     /**
@@ -263,6 +269,7 @@ class RepositoryServiceProvider extends ServiceProvider
         PurchaseRequest::class => PurchaseRequestPolicy::class,
         PurchaseOrder::class => PurchaseOrderPolicy::class,
         GoodsReceipt::class => GoodsReceiptPolicy::class,
+        InventoryActivityLog::class => InventoryActivityLogPolicy::class,
     ];
 
     public function register(): void
@@ -283,6 +290,14 @@ class RepositoryServiceProvider extends ServiceProvider
             Delivery::ENTITY_TYPE => Delivery::class,
             Invoice::ENTITY_TYPE => Invoice::class,
             Payment::ENTITY_TYPE => Payment::class,
+            // Sprint 16.6 — inventory activity log subjects (table-name keys)
+            (new PurchaseRequest)->getTable() => PurchaseRequest::class,
+            (new PurchaseOrder)->getTable() => PurchaseOrder::class,
+            (new GoodsReceipt)->getTable() => GoodsReceipt::class,
+            (new StockTransfer)->getTable() => StockTransfer::class,
+            (new StockOpname)->getTable() => StockOpname::class,
+            (new InventoryMovement)->getTable() => InventoryMovement::class,
+            (new InventoryBatch)->getTable() => InventoryBatch::class,
         ]);
 
         foreach ($this->policies as $model => $policy) {

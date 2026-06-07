@@ -7,6 +7,7 @@ use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
+use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
@@ -308,6 +309,9 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::get('alerts', [InventoryAlertController::class, 'index'])->name('alerts.index');
 
     Route::get('analytics', [InventoryAnalyticsController::class, 'index'])->name('analytics.index');
+
+    Route::get('activity-logs', [InventoryActivityLogController::class, 'index'])->name('activity-logs.index');
+    Route::get('activity-logs/{inventoryActivityLog}', [InventoryActivityLogController::class, 'show'])->name('activity-logs.show');
 
     Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');
 

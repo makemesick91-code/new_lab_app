@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 16.3.
+Sprint 16.6.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -53,6 +53,8 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 16.1 | Purchase Request Workflow | (Sprint 16.1 purchase request implementation) | `trx_purchase_requests`, `trx_purchase_request_items` |
 | 16.2 | Purchase Order Workflow | (Sprint 16.2 purchase order implementation) | `trx_purchase_orders`, `trx_purchase_order_items` |
 | 16.3 | Goods Receipt Workflow | (Sprint 16.3 goods receipt implementation) | `trx_goods_receipts`, `trx_goods_receipt_items`; `quantity_received` on `trx_purchase_order_items` |
+| 16.5 | Inventory Permission Hardening | (Sprint 16.5 permission/policy hardening) | (none — permission/policy alignment) |
+| 16.6 | Inventory Audit Trail & Activity Log | `sprint-16.6-complete` | `inv_inventory_activity_logs` |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1786,6 +1788,47 @@ PO eligibility for new GR: `approved`, `sent`, `partially_received`.
 
 ---
 
+# Sprint 16.6 — Inventory Audit Trail & Activity Log
+
+## Sprint 16.6 Overview
+
+**Goal:** Append-only activity log for inventory/procurement workflows without changing ledger
+stock, BranchContext, or Sprint 16.5 permissions.
+
+**Delivered:**
+
+- Dedicated table `inv_inventory_activity_logs` (not `sys_audit_logs`)
+- `InventoryActivityLogService` with `log()` / `logForBranch()` and optional `correlation_id`
+- Workflow logging in PR, PO, GR, Stock Transfer, Stock Opname, movement, and batch services
+- Read-only UI at `/inventory/activity-logs` with branch-scoped filters
+- Permission `view_inventory_activity_log` with fallback to existing inventory view permissions
+- Non-blocking logging — business transactions succeed even if log write fails
+
+**Out of scope:** Mutable stock columns, workflow changes, correlation chain full propagation,
+export, log retention/archival.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 16.6 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 1121 tests, 3778 assertions |
+| Pint (`./vendor/bin/pint`) | PASS |
+| Frontend build (`npm run build`) | PASS |
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-07 |
+| Sprint Slice | 16.6 — Inventory Audit Trail & Activity Log |
+| Status | COMPLETED (full-suite gates verified) |
+| Tag | `sprint-16.6-complete` |
+| Completion doc | `docs/sprint_16_6_inventory_audit_trail_completion.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -1833,6 +1876,9 @@ PO eligibility for new GR: `approved`, `sent`, `partially_received`.
     with `reference_type/id` traceability; PO item `quantity_received` as service-owned derived cache
     (accepted qty only); PO receiving statuses `partially_received`/`fully_received`; posted GR immutable;
     intermediate `submitted` review step; no mutable stock columns.
+25. **S16.6** — Dedicated `inv_inventory_activity_logs` for inventory/procurement audit trail;
+    branch-scoped append-only logs; non-blocking workflow logging; optional `correlation_id`; UI at
+    `/inventory/activity-logs`; permission `view_inventory_activity_log`; no ledger or workflow changes.
 
 ---
 
@@ -2016,10 +2062,14 @@ PO eligibility for new GR: `approved`, `sent`, `partially_received`.
   `approve_inventory_purchase_order` (with `manage_inventory` / legacy `manage master data`
   fallback) for approval paths. Receiving statuses (`partially_received`, `fully_received`,
   `closed`) remain unimplemented until Sprint 16.3.
-- **Sprint 16.3 — Goods Receipt (planned):** May create inventory movements only after validation
-  (active branch, active location, product/supplier in branch, qty > 0, documented unit-cost rules,
-  transactional ledger write). Stock rises only through receipt/ledger movement — not through PO
-  workflow alone.
+- **Sprint 16.3 completed baseline — Goods Receipt:** Future changes must preserve GR as the first
+  procurement ledger write; PO alone does not increase stock; posted GR immutability; branch isolation
+  via `BranchContext` and `GoodsReceiptPolicy`.
+- **Sprint 16.6 completed baseline — Inventory Activity Log:** Future changes must preserve
+  `inv_inventory_activity_logs` as the dedicated inventory audit store (not `sys_audit_logs`);
+  append-only logs with `branch_id` scope; non-blocking logging in workflow services; ledger-derived
+  stock unchanged; Activity Log UI permission-gated via `view_inventory_activity_log` with inventory
+  view fallbacks.
 - **Sprint 17 — HR Core:** Separate module; not directly coupled to production/payroll/attendance
   except through explicit services/relationships. Branch-owned employees use `branch_id` +
   `BranchContext`.
@@ -2076,4 +2126,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 16.2 and must be updated as each new sprint completes.*
+Sprint 16.6 and must be updated as each new sprint completes.*

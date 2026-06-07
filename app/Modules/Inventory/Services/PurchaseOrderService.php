@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\PurchaseOrderRepositoryInterface;
@@ -15,6 +16,7 @@ use App\Modules\Inventory\Models\PurchaseOrder;
 use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\PurchaseRequestItem;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +24,8 @@ use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderService
 {
+    use LogsInventoryActivity;
+
     public function __construct(
         private readonly PurchaseOrderRepositoryInterface $purchaseOrders,
         private readonly PurchaseRequestRepositoryInterface $purchaseRequests,
@@ -29,6 +33,7 @@ class PurchaseOrderService
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     /**
@@ -68,7 +73,7 @@ class PurchaseOrderService
      */
     public function createDraft(array $data, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($data, $user) {
+        $result = DB::transaction(function () use ($data, $user) {
             $branchId = $this->branchContext->requireId();
             $normalizedItems = $this->normalizeAndValidateItems($branchId, $data['items']);
 
@@ -96,6 +101,10 @@ class PurchaseOrderService
 
             return $this->loadDetails($purchaseOrder->refresh());
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_CREATED, $result, null, $user);
+
+        return $result;
     }
 
     /**
@@ -103,7 +112,7 @@ class PurchaseOrderService
      */
     public function createDraftFromPurchaseRequest(PurchaseRequest $purchaseRequest, array $data, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($purchaseRequest, $data, $user) {
+        $result = DB::transaction(function () use ($purchaseRequest, $data, $user) {
             $branchId = $this->branchContext->requireId();
             $this->assertPurchaseRequestEligible($purchaseRequest, $branchId);
             $this->assertNoActivePurchaseOrderForPurchaseRequest($purchaseRequest);
@@ -141,6 +150,10 @@ class PurchaseOrderService
 
             return $this->loadDetails($purchaseOrder->refresh());
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_CREATED, $result, null, $user);
+
+        return $result;
     }
 
     /**
@@ -148,7 +161,9 @@ class PurchaseOrderService
      */
     public function updateDraft(PurchaseOrder $purchaseOrder, array $data, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($purchaseOrder, $data) {
+        $statusFrom = $purchaseOrder->status;
+
+        $result = DB::transaction(function () use ($purchaseOrder, $data) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
@@ -186,11 +201,17 @@ class PurchaseOrderService
 
             return $this->loadDetails($updated->refresh());
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_UPDATED, $result, $statusFrom, $user);
+
+        return $result;
     }
 
     public function submit(PurchaseOrder $purchaseOrder, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($purchaseOrder, $user) {
+        $statusFrom = $purchaseOrder->status;
+
+        $result = DB::transaction(function () use ($purchaseOrder, $user) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
@@ -203,11 +224,17 @@ class PurchaseOrderService
                 'submitted_at' => now(),
             ]);
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_SUBMITTED, $result, $statusFrom, $user);
+
+        return $result;
     }
 
     public function approve(PurchaseOrder $purchaseOrder, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($purchaseOrder, $user) {
+        $statusFrom = $purchaseOrder->status;
+
+        $result = DB::transaction(function () use ($purchaseOrder, $user) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
@@ -220,6 +247,10 @@ class PurchaseOrderService
                 'approved_at' => now(),
             ]);
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_APPROVED, $result, $statusFrom, $user);
+
+        return $result;
     }
 
     public function markAsSent(PurchaseOrder $purchaseOrder, User $user): PurchaseOrder
@@ -241,7 +272,9 @@ class PurchaseOrderService
 
     public function cancel(PurchaseOrder $purchaseOrder, User $user): PurchaseOrder
     {
-        return DB::transaction(function () use ($purchaseOrder) {
+        $statusFrom = $purchaseOrder->status;
+
+        $result = DB::transaction(function () use ($purchaseOrder) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
@@ -251,6 +284,36 @@ class PurchaseOrderService
                 'status' => PurchaseOrder::STATUS_CANCELLED,
             ]);
         });
+
+        $this->logPurchaseOrderActivity(InventoryActivityAction::PURCHASE_ORDER_CANCELLED, $result, $statusFrom, $user);
+
+        return $result;
+    }
+
+    private function logPurchaseOrderActivity(string $action, PurchaseOrder $purchaseOrder, ?string $statusFrom, User $user): void
+    {
+        $purchaseOrder->loadMissing('items');
+
+        $metadata = [
+            'document_number' => $purchaseOrder->purchase_order_number,
+            'branch_id' => $purchaseOrder->branch_id,
+            'status_to' => $purchaseOrder->status,
+            'item_count' => $purchaseOrder->items->count(),
+        ];
+
+        if ($statusFrom !== null) {
+            $metadata['status_from'] = $statusFrom;
+        }
+
+        if ($purchaseOrder->supplier_id !== null) {
+            $metadata['supplier_id'] = $purchaseOrder->supplier_id;
+        }
+
+        if ($purchaseOrder->purchase_request_id !== null) {
+            $metadata['purchase_request_id'] = $purchaseOrder->purchase_request_id;
+        }
+
+        $this->logActivity($action, $purchaseOrder, $metadata, null, $user);
     }
 
     private function lockPurchaseOrderInBranch(int $branchId, int $purchaseOrderId): PurchaseOrder

@@ -2,7 +2,9 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
@@ -12,6 +14,7 @@ use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\Supplier;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,12 +22,15 @@ use Illuminate\Validation\ValidationException;
 
 class InventoryStockService
 {
+    use LogsInventoryActivity;
+
     public function __construct(
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly ProductRepositoryInterface $products,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     public function getCurrentStock(int $productId, ?int $locationId = null): float
@@ -119,7 +125,7 @@ class InventoryStockService
         ?string $notes = null,
         ?array $batchData = null,
     ): InventoryMovement {
-        return $this->createInboundMovement(
+        $movement = $this->createInboundMovement(
             InventoryMovement::TYPE_OPENING,
             $productId,
             $locationId,
@@ -129,6 +135,10 @@ class InventoryStockService
             $notes,
             $batchData,
         );
+
+        $this->logInventoryMovement($movement);
+
+        return $movement;
     }
 
     public function receiveStock(
@@ -143,7 +153,7 @@ class InventoryStockService
         ?int $referenceId = null,
         ?string $movementDate = null,
     ): InventoryMovement {
-        return $this->createInboundMovement(
+        $movement = $this->createInboundMovement(
             InventoryMovement::TYPE_PURCHASE,
             $productId,
             $locationId,
@@ -156,6 +166,10 @@ class InventoryStockService
             $referenceId,
             $movementDate,
         );
+
+        $this->logInventoryMovement($movement);
+
+        return $movement;
     }
 
     public function adjustIn(
@@ -165,7 +179,7 @@ class InventoryStockService
         ?string $notes = null,
         ?array $batchData = null,
     ): InventoryMovement {
-        return $this->createInboundMovement(
+        $movement = $this->createInboundMovement(
             InventoryMovement::TYPE_ADJUSTMENT_IN,
             $productId,
             $locationId,
@@ -175,6 +189,10 @@ class InventoryStockService
             $notes,
             $batchData,
         );
+
+        $this->logInventoryMovement($movement);
+
+        return $movement;
     }
 
     public function reversePurchaseMovement(
@@ -192,7 +210,7 @@ class InventoryStockService
 
         $qty = (float) $original->quantity_in;
 
-        return DB::transaction(function () use ($original, $qty, $notes, $referenceType, $referenceId, $movementDate) {
+        $movement = DB::transaction(function () use ($original, $qty, $notes, $referenceType, $referenceId, $movementDate) {
             $branchId = $this->branchContext->requireId();
 
             if ($original->branch_id !== $branchId) {
@@ -245,6 +263,10 @@ class InventoryStockService
                 'created_by' => Auth::id(),
             ]);
         });
+
+        $this->logInventoryMovement($movement);
+
+        return $movement;
     }
 
     public function adjustOut(
@@ -256,7 +278,7 @@ class InventoryStockService
     ): InventoryMovement {
         $this->assertPositiveQuantity($qty);
 
-        return DB::transaction(function () use ($productId, $locationId, $qty, $notes, $inventoryBatchId) {
+        $movement = DB::transaction(function () use ($productId, $locationId, $qty, $notes, $inventoryBatchId) {
             $branchId = $this->branchContext->requireId();
             $this->lockAndAssertProductInBranch($branchId, $productId);
             $this->lockAndAssertLocationInBranch($branchId, $locationId);
@@ -300,6 +322,10 @@ class InventoryStockService
                 'created_by' => Auth::id(),
             ]);
         });
+
+        $this->logInventoryMovement($movement);
+
+        return $movement;
     }
 
     public function getStockCard(int $productId, ?int $locationId = null, array $filters = []): Collection
@@ -483,7 +509,7 @@ class InventoryStockService
             ]);
         }
 
-        return InventoryBatch::create([
+        $batch = InventoryBatch::create([
             'branch_id' => $branchId,
             'product_id' => $productId,
             'supplier_id' => $supplierId,
@@ -495,6 +521,22 @@ class InventoryStockService
             'is_active' => true,
             'created_by' => Auth::id(),
         ]);
+
+        $user = Auth::user();
+        $this->logActivity(
+            InventoryActivityAction::INVENTORY_BATCH_CREATED,
+            $batch,
+            [
+                'branch_id' => $batch->branch_id,
+                'product_id' => $batch->product_id,
+                'batch_number' => $batch->batch_number,
+                'supplier_id' => $batch->supplier_id,
+            ],
+            null,
+            $user instanceof User ? $user : null,
+        );
+
+        return $batch;
     }
 
     private function lockAndAssertBatchForMovement(
@@ -632,5 +674,25 @@ class InventoryStockService
         }
 
         return $location;
+    }
+
+    private function logInventoryMovement(InventoryMovement $movement): void
+    {
+        $quantity = max((float) $movement->quantity_in, (float) $movement->quantity_out);
+
+        $user = Auth::user();
+        $this->logActivity(
+            InventoryActivityAction::INVENTORY_MOVEMENT_CREATED,
+            $movement,
+            [
+                'branch_id' => $movement->branch_id,
+                'product_id' => $movement->product_id,
+                'inventory_location_id' => $movement->inventory_location_id,
+                'quantity' => $quantity,
+                'movement_type' => $movement->movement_type,
+            ],
+            null,
+            $user instanceof User ? $user : null,
+        );
     }
 }

@@ -4,23 +4,28 @@ namespace App\Modules\Inventory\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\PurchaseRequestRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseRequest;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseRequestService
 {
+    use LogsInventoryActivity;
+
     public function __construct(
         private readonly PurchaseRequestRepositoryInterface $purchaseRequests,
         private readonly ProductRepositoryInterface $products,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     /**
@@ -37,7 +42,7 @@ class PurchaseRequestService
      */
     public function createDraft(array $data, User $user): PurchaseRequest
     {
-        return DB::transaction(function () use ($data, $user) {
+        $result = DB::transaction(function () use ($data, $user) {
             $branchId = $this->branchContext->requireId();
             $normalizedItems = $this->normalizeAndValidateItems($branchId, $data['items']);
 
@@ -55,6 +60,21 @@ class PurchaseRequestService
 
             return $this->purchaseRequests->loadDetails($purchaseRequest->refresh());
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_CREATED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_to' => $result->status,
+                'item_count' => $result->items->count(),
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     /**
@@ -62,7 +82,9 @@ class PurchaseRequestService
      */
     public function updateDraft(PurchaseRequest $purchaseRequest, array $data, User $user): PurchaseRequest
     {
-        return DB::transaction(function () use ($purchaseRequest, $data) {
+        $statusFrom = $purchaseRequest->status;
+
+        $result = DB::transaction(function () use ($purchaseRequest, $data) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseRequestInBranch($branchId, $purchaseRequest->id);
 
@@ -83,11 +105,29 @@ class PurchaseRequestService
 
             return $this->purchaseRequests->loadDetails($updated->refresh());
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_UPDATED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_from' => $statusFrom,
+                'status_to' => $result->status,
+                'item_count' => $result->items->count(),
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     public function submit(PurchaseRequest $purchaseRequest, User $user): PurchaseRequest
     {
-        return DB::transaction(function () use ($purchaseRequest, $user) {
+        $statusFrom = $purchaseRequest->status;
+
+        $result = DB::transaction(function () use ($purchaseRequest, $user) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseRequestInBranch($branchId, $purchaseRequest->id);
 
@@ -110,11 +150,28 @@ class PurchaseRequestService
                 'requested_by' => $user->id,
             ]);
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_SUBMITTED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_from' => $statusFrom,
+                'status_to' => $result->status,
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     public function approve(PurchaseRequest $purchaseRequest, User $user): PurchaseRequest
     {
-        return DB::transaction(function () use ($purchaseRequest, $user) {
+        $statusFrom = $purchaseRequest->status;
+
+        $result = DB::transaction(function () use ($purchaseRequest, $user) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseRequestInBranch($branchId, $purchaseRequest->id);
 
@@ -130,11 +187,28 @@ class PurchaseRequestService
                 'approved_at' => now(),
             ]);
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_APPROVED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_from' => $statusFrom,
+                'status_to' => $result->status,
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     public function reject(PurchaseRequest $purchaseRequest, User $user, string $reason): PurchaseRequest
     {
-        return DB::transaction(function () use ($purchaseRequest, $user, $reason) {
+        $statusFrom = $purchaseRequest->status;
+
+        $result = DB::transaction(function () use ($purchaseRequest, $user, $reason) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseRequestInBranch($branchId, $purchaseRequest->id);
 
@@ -151,11 +225,29 @@ class PurchaseRequestService
                 'rejection_reason' => $reason,
             ]);
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_REJECTED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_from' => $statusFrom,
+                'status_to' => $result->status,
+                'rejection_reason' => $reason,
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     public function cancel(PurchaseRequest $purchaseRequest, User $user): PurchaseRequest
     {
-        return DB::transaction(function () use ($purchaseRequest) {
+        $statusFrom = $purchaseRequest->status;
+
+        $result = DB::transaction(function () use ($purchaseRequest) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->lockPurchaseRequestInBranch($branchId, $purchaseRequest->id);
 
@@ -169,6 +261,21 @@ class PurchaseRequestService
                 'status' => PurchaseRequest::STATUS_CANCELLED,
             ]);
         });
+
+        $this->logActivity(
+            InventoryActivityAction::PURCHASE_REQUEST_CANCELLED,
+            $result,
+            [
+                'document_number' => $result->purchase_request_number,
+                'branch_id' => $result->branch_id,
+                'status_from' => $statusFrom,
+                'status_to' => $result->status,
+            ],
+            null,
+            $user,
+        );
+
+        return $result;
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Enums\InventoryActivityAction;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
@@ -15,6 +16,7 @@ use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseOrder;
 use App\Modules\Inventory\Models\PurchaseOrderItem;
+use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use DomainException;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -23,6 +25,8 @@ use Illuminate\Validation\ValidationException;
 
 class GoodsReceiptService
 {
+    use LogsInventoryActivity;
+
     private const RECEIVABLE_PO_STATUSES = [
         PurchaseOrder::STATUS_APPROVED,
         PurchaseOrder::STATUS_SENT,
@@ -36,6 +40,7 @@ class GoodsReceiptService
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly InventoryStockService $inventoryStock,
         private readonly BranchContext $branchContext,
+        private readonly InventoryActivityLogService $activityLogger,
     ) {}
 
     public function listForBranch(int $branchId, array $filters = []): LengthAwarePaginator
@@ -97,7 +102,7 @@ class GoodsReceiptService
      */
     public function createFromPurchaseOrder(array $data, User $user): GoodsReceipt
     {
-        return DB::transaction(function () use ($data, $user) {
+        $result = DB::transaction(function () use ($data, $user) {
             $branchId = $this->branchContext->requireId();
             $purchaseOrder = $this->lockPurchaseOrderInBranch($branchId, (int) $data['purchase_order_id']);
 
@@ -126,6 +131,10 @@ class GoodsReceiptService
 
             return $this->loadDetails($goodsReceipt->refresh());
         });
+
+        $this->logGoodsReceiptActivity(InventoryActivityAction::GOODS_RECEIPT_CREATED, $result, null, $user);
+
+        return $result;
     }
 
     /**
@@ -133,7 +142,9 @@ class GoodsReceiptService
      */
     public function updateDraft(GoodsReceipt $goodsReceipt, array $data, User $user): GoodsReceipt
     {
-        return DB::transaction(function () use ($goodsReceipt, $data) {
+        $statusFrom = $goodsReceipt->status;
+
+        $result = DB::transaction(function () use ($goodsReceipt, $data) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->goodsReceipts->lockForPosting($goodsReceipt->id, $branchId);
 
@@ -174,6 +185,10 @@ class GoodsReceiptService
 
             return $this->loadDetails($updated->refresh());
         });
+
+        $this->logGoodsReceiptActivity(InventoryActivityAction::GOODS_RECEIPT_UPDATED, $result, $statusFrom, $user);
+
+        return $result;
     }
 
     public function submit(GoodsReceipt $goodsReceipt, User $user): GoodsReceipt
@@ -203,7 +218,9 @@ class GoodsReceiptService
 
     public function post(GoodsReceipt $goodsReceipt, User $user): GoodsReceipt
     {
-        return DB::transaction(function () use ($goodsReceipt, $user) {
+        $statusFrom = $goodsReceipt->status;
+
+        $result = DB::transaction(function () use ($goodsReceipt, $user) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->goodsReceipts->lockForPosting($goodsReceipt->id, $branchId);
 
@@ -306,11 +323,30 @@ class GoodsReceiptService
                 'posted_at' => now(),
             ]);
         });
+
+        $result->load('items');
+        $movementIds = $result->items
+            ->pluck('inventory_movement_id')
+            ->filter()
+            ->values()
+            ->all();
+
+        $this->logGoodsReceiptActivity(
+            InventoryActivityAction::GOODS_RECEIPT_COMPLETED,
+            $result,
+            $statusFrom,
+            $user,
+            $movementIds,
+        );
+
+        return $result;
     }
 
     public function cancel(GoodsReceipt $goodsReceipt, User $user, ?string $reason = null): GoodsReceipt
     {
-        return DB::transaction(function () use ($goodsReceipt, $user, $reason) {
+        $statusFrom = $goodsReceipt->status;
+
+        $result = DB::transaction(function () use ($goodsReceipt, $user, $reason) {
             $branchId = $this->branchContext->requireId();
             $locked = $this->goodsReceipts->lockForPosting($goodsReceipt->id, $branchId);
 
@@ -332,6 +368,22 @@ class GoodsReceiptService
                 'cancelled_at' => now(),
             ]);
         });
+
+        $metadata = [];
+        if ($reason !== null) {
+            $metadata['cancellation_reason'] = $reason;
+        }
+
+        $this->logGoodsReceiptActivity(
+            InventoryActivityAction::GOODS_RECEIPT_CANCELLED,
+            $result,
+            $statusFrom,
+            $user,
+            [],
+            $metadata,
+        );
+
+        return $result;
     }
 
     public function void(GoodsReceipt $goodsReceipt, User $user, ?string $reason = null): GoodsReceipt
@@ -672,6 +724,39 @@ class GoodsReceiptService
         }
 
         return $normalized;
+    }
+
+    /**
+     * @param  array<int, int>  $movementIds
+     * @param  array<string, mixed>  $extraMetadata
+     */
+    private function logGoodsReceiptActivity(
+        string $action,
+        GoodsReceipt $goodsReceipt,
+        ?string $statusFrom,
+        User $user,
+        array $movementIds = [],
+        array $extraMetadata = [],
+    ): void {
+        $goodsReceipt->loadMissing('items');
+
+        $metadata = array_merge([
+            'document_number' => $goodsReceipt->receipt_number,
+            'branch_id' => $goodsReceipt->branch_id,
+            'status_to' => $goodsReceipt->status,
+            'purchase_order_id' => $goodsReceipt->purchase_order_id,
+            'item_count' => $goodsReceipt->items->count(),
+        ], $extraMetadata);
+
+        if ($statusFrom !== null) {
+            $metadata['status_from'] = $statusFrom;
+        }
+
+        if ($movementIds !== []) {
+            $metadata['movement_ids'] = $movementIds;
+        }
+
+        $this->logActivity($action, $goodsReceipt, $metadata, null, $user);
     }
 
     private function lockPurchaseOrderInBranch(int $branchId, int $purchaseOrderId): ?PurchaseOrder
