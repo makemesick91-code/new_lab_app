@@ -285,6 +285,10 @@
                         <a href="{{ route('inventory.analytics.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.analytics.*') ? $linkActive : $linkIdle }}">Analitik Persediaan</a>
                     @endcan
+                    @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                        <a href="{{ route('inventory.reports.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.reports.*') ? $linkActive : $linkIdle }}">Laporan Inventory</a>
+                    @endcan
                     @can('viewAny', \App\Modules\Inventory\Models\InventoryActivityLog::class)
                         <a href="{{ route('inventory.activity-logs.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.activity-logs.*') ? $linkActive : $linkIdle }}">Log Aktivitas</a>

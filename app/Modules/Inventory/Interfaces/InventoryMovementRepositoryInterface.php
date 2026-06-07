@@ -27,6 +27,24 @@ interface InventoryMovementRepositoryInterface
 
     public function stockRows(int $branchId, ?int $locationId = null): Collection;
 
+    public function getCurrentStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
+    public function getLowStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
+    public function getStockMutationReport(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage = 15): LengthAwarePaginator;
+
+    public function getInventoryValuationReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
+    public function getRoomStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
+    public function getStockAvailabilityForProducts(int $branchId, array $productIds): Collection;
+
+    public function getStockCardReport(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage = 15): LengthAwarePaginator;
+
+    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom): float;
+
+    public function getStockCardPeriodBalanceBeforePage(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage, int $page): float;
+
     public function stockByLocationSummary(int $branchId): Collection;
 
     public function stockCard(int $branchId, int $productId, ?int $locationId = null, array $filters = []): Collection;

@@ -124,6 +124,446 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->get();
     }
 
+    public function getCurrentStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        $stockExpression = 'COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0)';
+
+        $query = InventoryMovement::query()
+            ->join('mst_branches', 'mst_branches.id', '=', 'trx_inventory_movements.branch_id')
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name as branch_name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code as product_code',
+                'inv_products.name as product_name',
+                'inv_product_categories.name as category_name',
+                'inv_product_units.name as unit_name',
+                'inv_product_units.symbol as unit_symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+                'inv_products.minimum_stock',
+            ])
+            ->selectRaw("{$stockExpression} as current_stock")
+            ->selectRaw("CASE
+                WHEN {$stockExpression} <= 0 THEN 'empty'
+                WHEN {$stockExpression} > 0 AND {$stockExpression} < inv_products.minimum_stock THEN 'low'
+                ELSE 'normal'
+            END as stock_status")
+            ->selectRaw('MAX(trx_inventory_movements.movement_date) as last_movement_date')
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code',
+                'inv_products.name',
+                'inv_product_categories.name',
+                'inv_product_units.name',
+                'inv_product_units.symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name',
+                'inv_products.minimum_stock',
+            ]);
+
+        match ($filters['stock_status'] ?? null) {
+            'empty' => $query->havingRaw("{$stockExpression} <= 0"),
+            'low' => $query
+                ->havingRaw("{$stockExpression} > 0")
+                ->havingRaw("{$stockExpression} < inv_products.minimum_stock"),
+            'normal' => $query->havingRaw("{$stockExpression} >= inv_products.minimum_stock"),
+            'overstock' => $query->havingRaw('1 = 0'),
+            default => null,
+        };
+
+        return $query
+            ->orderBy('inv_products.name')
+            ->orderByDesc('last_movement_date')
+            ->paginate($perPage, ['*'], 'current_stock_page')
+            ->withQueryString();
+    }
+
+    public function getLowStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        if (in_array($filters['stock_status'] ?? null, ['normal', 'overstock'], true)) {
+            return InventoryMovement::query()
+                ->whereRaw('1 = 0')
+                ->paginate($perPage, ['*'], 'low_stock_page')
+                ->withQueryString();
+        }
+
+        $stockExpression = 'COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0)';
+        $shortageExpression = "CASE
+            WHEN inv_products.minimum_stock - {$stockExpression} < 0 THEN 0
+            ELSE inv_products.minimum_stock - {$stockExpression}
+        END";
+
+        $query = InventoryMovement::query()
+            ->join('mst_branches', 'mst_branches.id', '=', 'trx_inventory_movements.branch_id')
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_products.is_active', true)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name as branch_name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code as product_code',
+                'inv_products.name as product_name',
+                'inv_product_categories.name as category_name',
+                'inv_product_units.name as unit_name',
+                'inv_product_units.symbol as unit_symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+                'inv_products.minimum_stock',
+            ])
+            ->selectRaw("{$stockExpression} as current_stock")
+            ->selectRaw("{$shortageExpression} as shortage_qty")
+            ->selectRaw("CASE
+                WHEN {$stockExpression} <= 0 THEN 'empty'
+                WHEN {$stockExpression} > 0 AND {$stockExpression} < inv_products.minimum_stock THEN 'low'
+                ELSE 'normal'
+            END as stock_status")
+            ->selectRaw('MAX(trx_inventory_movements.movement_date) as last_movement_date')
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code',
+                'inv_products.name',
+                'inv_product_categories.name',
+                'inv_product_units.name',
+                'inv_product_units.symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name',
+                'inv_products.minimum_stock',
+            ]);
+
+        match ($filters['stock_status'] ?? null) {
+            'empty' => $query->havingRaw("{$stockExpression} <= 0"),
+            'low' => $query
+                ->havingRaw("{$stockExpression} > 0")
+                ->havingRaw("{$stockExpression} < inv_products.minimum_stock"),
+            default => $query->havingRaw("({$stockExpression} <= 0 OR ({$stockExpression} > 0 AND {$stockExpression} < inv_products.minimum_stock))"),
+        };
+
+        return $query
+            ->orderByRaw("CASE WHEN {$stockExpression} <= 0 THEN 0 ELSE 1 END")
+            ->orderByDesc('shortage_qty')
+            ->orderBy('inv_products.name')
+            ->paginate($perPage, ['*'], 'low_stock_page')
+            ->withQueryString();
+    }
+
+    public function getStockMutationReport(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage = 15): LengthAwarePaginator
+    {
+        $period = InventoryMovement::query()
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+            ])
+            ->selectRaw('COALESCE(SUM(trx_inventory_movements.quantity_in), 0) as total_in')
+            ->selectRaw('COALESCE(SUM(trx_inventory_movements.quantity_out), 0) as total_out')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->whereDate('trx_inventory_movements.movement_date', '>=', $dateFrom)
+            ->whereDate('trx_inventory_movements.movement_date', '<=', $dateTo)
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['movement_type'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.movement_type', $v))
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+            ]);
+
+        // Opening balance is the true stock position before the period; movement_type only filters period totals.
+        $opening = InventoryMovement::query()
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+            ])
+            ->selectRaw('COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0) as opening_balance')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->whereDate('trx_inventory_movements.movement_date', '<', $dateFrom)
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+            ]);
+
+        return DB::query()
+            ->fromSub($period, 'period_movements')
+            ->leftJoinSub($opening, 'opening_movements', function ($join) {
+                $join->on('opening_movements.branch_id', '=', 'period_movements.branch_id')
+                    ->on('opening_movements.product_id', '=', 'period_movements.product_id')
+                    ->on('opening_movements.inventory_location_id', '=', 'period_movements.inventory_location_id');
+            })
+            ->join('mst_branches', 'mst_branches.id', '=', 'period_movements.branch_id')
+            ->join('inv_products', 'inv_products.id', '=', 'period_movements.product_id')
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'period_movements.inventory_location_id')
+            ->where('period_movements.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->select([
+                'period_movements.branch_id',
+                'mst_branches.name as branch_name',
+                'period_movements.product_id',
+                'inv_products.code as product_code',
+                'inv_products.name as product_name',
+                'inv_product_categories.name as category_name',
+                'inv_product_units.name as unit_name',
+                'inv_product_units.symbol as unit_symbol',
+                'period_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+            ])
+            ->selectRaw('COALESCE(opening_movements.opening_balance, 0) as opening_balance')
+            ->selectRaw('period_movements.total_in as total_in')
+            ->selectRaw('period_movements.total_out as total_out')
+            ->selectRaw('(COALESCE(opening_movements.opening_balance, 0) + period_movements.total_in - period_movements.total_out) as ending_balance')
+            ->orderBy('inv_products.name')
+            ->orderBy('inv_inventory_locations.name')
+            ->paginate($perPage, ['*'], 'mutation_page')
+            ->withQueryString();
+    }
+
+    public function getInventoryValuationReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        $stockExpression = 'COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0)';
+        $unitCostExpression = 'COALESCE(inv_products.average_cost, 0)';
+
+        return InventoryMovement::query()
+            ->join('mst_branches', 'mst_branches.id', '=', 'trx_inventory_movements.branch_id')
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name as branch_name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code as product_code',
+                'inv_products.name as product_name',
+                'inv_product_categories.name as category_name',
+                'inv_product_units.name as unit_name',
+                'inv_product_units.symbol as unit_symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+            ])
+            ->selectRaw("{$stockExpression} as current_stock")
+            // Sprint 17.7 operational valuation: product average_cost only, not FIFO/LIFO/WAC.
+            ->selectRaw("{$unitCostExpression} as unit_cost")
+            ->selectRaw("({$stockExpression} * {$unitCostExpression}) as total_value")
+            ->selectRaw("CASE
+                WHEN {$unitCostExpression} > 0 THEN 'average_cost produk'
+                ELSE 'Cost produk tidak tersedia'
+            END as valuation_source")
+            ->selectRaw('MAX(trx_inventory_movements.movement_date) as last_movement_date')
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code',
+                'inv_products.name',
+                'inv_product_categories.name',
+                'inv_product_units.name',
+                'inv_product_units.symbol',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name',
+                'inv_products.average_cost',
+            ])
+            ->orderBy('inv_products.name')
+            ->orderBy('inv_inventory_locations.name')
+            ->paginate($perPage, ['*'], 'valuation_page')
+            ->withQueryString();
+    }
+
+    public function getRoomStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        if (($filters['stock_status'] ?? null) === 'overstock') {
+            return InventoryMovement::query()
+                ->whereRaw('1 = 0')
+                ->paginate($perPage, ['*'], 'room_stock_page')
+                ->withQueryString();
+        }
+
+        $stockExpression = 'COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0)';
+
+        $query = InventoryMovement::query()
+            ->join('mst_branches', 'mst_branches.id', '=', 'trx_inventory_movements.branch_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+            ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_product_categories.branch_id', $branchId)
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
+            ->select([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name as branch_name',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code as product_code',
+                'inv_products.name as product_name',
+                'inv_product_categories.name as category_name',
+                'inv_product_units.name as unit_name',
+                'inv_product_units.symbol as unit_symbol',
+                'inv_products.minimum_stock',
+            ])
+            ->selectRaw("{$stockExpression} as current_stock")
+            ->selectRaw("CASE
+                WHEN {$stockExpression} <= 0 THEN 'empty'
+                WHEN {$stockExpression} > 0 AND {$stockExpression} < inv_products.minimum_stock THEN 'low'
+                ELSE 'normal'
+            END as stock_status")
+            ->selectRaw('MAX(trx_inventory_movements.movement_date) as last_movement_date')
+            ->groupBy([
+                'trx_inventory_movements.branch_id',
+                'mst_branches.name',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name',
+                'trx_inventory_movements.product_id',
+                'inv_products.code',
+                'inv_products.name',
+                'inv_product_categories.name',
+                'inv_product_units.name',
+                'inv_product_units.symbol',
+                'inv_products.minimum_stock',
+            ]);
+
+        match ($filters['stock_status'] ?? null) {
+            'empty' => $query->havingRaw("{$stockExpression} <= 0"),
+            'low' => $query
+                ->havingRaw("{$stockExpression} > 0")
+                ->havingRaw("{$stockExpression} < inv_products.minimum_stock"),
+            'normal' => $query->havingRaw("{$stockExpression} >= inv_products.minimum_stock"),
+            default => null,
+        };
+
+        return $query
+            ->orderBy('inv_inventory_locations.name')
+            ->orderBy('inv_products.name')
+            ->paginate($perPage, ['*'], 'room_stock_page')
+            ->withQueryString();
+    }
+
+    public function getStockAvailabilityForProducts(int $branchId, array $productIds): Collection
+    {
+        $productIds = collect($productIds)
+            ->filter()
+            ->map(fn ($productId) => (int) $productId)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($productIds === []) {
+            return collect();
+        }
+
+        return InventoryMovement::query()
+            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
+            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
+            ->where('trx_inventory_movements.branch_id', $branchId)
+            ->where('inv_products.branch_id', $branchId)
+            ->where('inv_inventory_locations.branch_id', $branchId)
+            ->whereIn('trx_inventory_movements.product_id', $productIds)
+            ->select([
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name as inventory_location_name',
+                'inv_products.minimum_stock',
+            ])
+            ->selectRaw('COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0) as current_stock')
+            ->groupBy([
+                'trx_inventory_movements.product_id',
+                'trx_inventory_movements.inventory_location_id',
+                'inv_inventory_locations.name',
+                'inv_products.minimum_stock',
+            ])
+            ->havingRaw('COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0) > 0')
+            ->get();
+    }
+
+    public function getStockCardReport(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage = 15): LengthAwarePaginator
+    {
+        return $this->stockCardReportQuery($branchId, $filters, $dateFrom, $dateTo)
+            ->paginate($perPage, ['*'], 'stock_card_page')
+            ->withQueryString();
+    }
+
+    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom): float
+    {
+        $value = InventoryMovement::query()
+            ->where('branch_id', $branchId)
+            ->where('product_id', $productId)
+            ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->whereDate('movement_date', '<', $dateFrom)
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as opening_balance')
+            ->value('opening_balance');
+
+        return (float) $value;
+    }
+
+    public function getStockCardPeriodBalanceBeforePage(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage, int $page): float
+    {
+        $offset = max(0, ($page - 1) * $perPage);
+
+        if ($offset === 0) {
+            return 0.0;
+        }
+
+        $pagePrefix = $this->stockCardReportQuery($branchId, $filters, $dateFrom, $dateTo)
+            ->select([
+                'trx_inventory_movements.id',
+                'trx_inventory_movements.quantity_in',
+                'trx_inventory_movements.quantity_out',
+            ])
+            ->limit($offset);
+
+        $value = InventoryMovement::query()
+            ->fromSub($pagePrefix, 'page_prefix')
+            ->selectRaw('COALESCE(SUM(page_prefix.quantity_in) - SUM(page_prefix.quantity_out), 0) as period_balance')
+            ->value('period_balance');
+
+        return (float) $value;
+    }
+
     public function stockByLocationSummary(int $branchId): Collection
     {
         $stock = InventoryMovement::query()
@@ -339,5 +779,19 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
         }
 
         return "strftime('%Y-%m-01', {$column})";
+    }
+
+    private function stockCardReportQuery(int $branchId, array $filters, string $dateFrom, string $dateTo)
+    {
+        return InventoryMovement::query()
+            ->with(['branch', 'inventoryLocation', 'product', 'createdBy'])
+            ->where('branch_id', $branchId)
+            ->where('product_id', $filters['product_id'])
+            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($filters['movement_type'] ?? null, fn ($q, $v) => $q->where('movement_type', $v))
+            ->whereDate('movement_date', '>=', $dateFrom)
+            ->whereDate('movement_date', '<=', $dateTo)
+            ->orderBy('movement_date')
+            ->orderBy('id');
     }
 }
