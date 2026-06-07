@@ -1,5 +1,16 @@
 @php($product = $product ?? null)
 
+@if ($categories->isEmpty() || $units->isEmpty())
+    <div class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        @if ($categories->isEmpty())
+            <p class="font-medium">Tambahkan Kategori Produk terlebih dahulu.</p>
+        @endif
+        @if ($units->isEmpty())
+            <p @class(['font-medium' => $categories->isEmpty()])>Tambahkan Satuan Produk terlebih dahulu.</p>
+        @endif
+    </div>
+@endif
+
 <div class="grid gap-4 sm:grid-cols-2">
     <div>
         <label class="block text-sm font-medium text-gray-700">Kode</label>

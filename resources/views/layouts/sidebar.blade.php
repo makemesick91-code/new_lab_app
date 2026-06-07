@@ -17,6 +17,8 @@
         || $user->can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryActivityLog::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\ProductUnit::class)
     );
 
     $showProcurementGroup = $user && (
@@ -248,6 +250,14 @@
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dasbor</a>
                         <a href="{{ route('inventory.products.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
+                        @can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
+                            <a href="{{ route('inventory.product-categories.index') }}"
+                               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.product-categories.*') ? $linkActive : $linkIdle }}">Kategori Produk</a>
+                        @endcan
+                        @can('viewAny', \App\Modules\Inventory\Models\ProductUnit::class)
+                            <a href="{{ route('inventory.product-units.index') }}"
+                               class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.product-units.*') ? $linkActive : $linkIdle }}">Satuan Produk</a>
+                        @endcan
                         <a href="{{ route('inventory.locations.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.locations.*') ? $linkActive : $linkIdle }}">Lokasi Persediaan</a>
                         <a href="{{ route('inventory.suppliers.index') }}"

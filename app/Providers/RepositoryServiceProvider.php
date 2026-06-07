@@ -44,6 +44,8 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\ProductCategory;
+use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\Inventory\Models\PurchaseOrder;
 use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\StockOpname;
@@ -54,7 +56,9 @@ use App\Modules\Inventory\Policies\InventoryActivityLogPolicy;
 use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
+use App\Modules\Inventory\Policies\ProductCategoryPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
+use App\Modules\Inventory\Policies\ProductUnitPolicy;
 use App\Modules\Inventory\Policies\PurchaseOrderPolicy;
 use App\Modules\Inventory\Policies\PurchaseRequestPolicy;
 use App\Modules\Inventory\Policies\StockOpnamePolicy;
@@ -265,6 +269,8 @@ class RepositoryServiceProvider extends ServiceProvider
         InventoryBatch::class => InventoryBatchPolicy::class,
         InventoryLocation::class => InventoryLocationPolicy::class,
         Product::class => ProductPolicy::class,
+        ProductCategory::class => ProductCategoryPolicy::class,
+        ProductUnit::class => ProductUnitPolicy::class,
         Supplier::class => SupplierPolicy::class,
         InventoryMovement::class => InventoryMovementPolicy::class,
         StockOpname::class => StockOpnamePolicy::class,
