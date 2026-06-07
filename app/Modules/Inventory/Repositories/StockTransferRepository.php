@@ -69,8 +69,10 @@ class StockTransferRepository implements StockTransferRepositoryInterface
                 'destinationInventoryLocation',
                 'items.product.unit',
                 'items.inventoryBatch',
+                'branch',
                 'requestedBy',
                 'approvedBy',
+                'shippedBy',
                 'createdBy',
             ])
             ->where('branch_id', $branchId)
@@ -84,8 +86,10 @@ class StockTransferRepository implements StockTransferRepositoryInterface
             'destinationInventoryLocation',
             'items.product.unit',
             'items.inventoryBatch',
+            'branch',
             'requestedBy',
             'approvedBy',
+            'shippedBy',
             'createdBy',
         ]);
     }

@@ -346,6 +346,7 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('stock-opnames/{stockOpname}/products/{productId}/counted-quantity', [StockOpnameController::class, 'updateCountedQuantity'])->name('stock-opnames.update-counted-quantity');
 
     Route::resource('stock-transfers', StockTransferController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
+    Route::get('stock-transfers/{stockTransfer}/checklist', [StockTransferController::class, 'downloadChecklist'])->name('stock-transfers.checklist');
     Route::post('stock-transfers/{stockTransfer}/submit', [StockTransferController::class, 'submit'])->name('stock-transfers.submit');
     Route::post('stock-transfers/{stockTransfer}/ship', [StockTransferController::class, 'ship'])->name('stock-transfers.ship');
     Route::post('stock-transfers/{stockTransfer}/receive', [StockTransferController::class, 'receive'])->name('stock-transfers.receive');

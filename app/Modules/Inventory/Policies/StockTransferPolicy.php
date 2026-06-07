@@ -56,6 +56,12 @@ class StockTransferPolicy
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
+    public function downloadChecklist(User $user, StockTransfer $stockTransfer): bool
+    {
+        return $this->canDownloadStockTransferChecklist($user)
+            && $this->belongsToActiveBranch($stockTransfer->branch_id);
+    }
+
     public function cancel(User $user, StockTransfer $stockTransfer): bool
     {
         return $this->canManageStockTransfer($user)

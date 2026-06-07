@@ -7,7 +7,6 @@ use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Inventory\Controllers\Concerns\RendersInventoryViews;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\StockTransferRepositoryInterface;
-use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Requests\CancelStockTransferRequest;
 use App\Modules\Inventory\Requests\ReceiveStockTransferRequest;
@@ -18,6 +17,7 @@ use App\Modules\Inventory\Requests\UpdateStockTransferRequest;
 use App\Modules\Inventory\Services\InventoryLocationService;
 use App\Modules\Inventory\Services\InventoryStockService;
 use App\Modules\Inventory\Services\StockTransferService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -92,21 +92,27 @@ class StockTransferController extends Controller
         $this->authorize('view', $stockTransfer);
 
         $stockTransfer = $this->transfers->loadDetails($stockTransfer);
-
-        $ledgerMovements = $stockTransfer->isInTransit() || $stockTransfer->isReceived()
-            ? InventoryMovement::query()
-                ->with(['product', 'inventoryLocation', 'inventoryBatch'])
-                ->where('branch_id', $stockTransfer->branch_id)
-                ->where('reference_type', $stockTransfer->getTable())
-                ->where('reference_id', $stockTransfer->id)
-                ->orderBy('id')
-                ->get()
-            : collect();
+        $movementSummary = $this->transferService->getTransferMovementSummary($stockTransfer);
 
         return $this->renderInventoryView('inventory.stock-transfers.show', [
             'stockTransfer' => $stockTransfer,
-            'ledgerMovements' => $ledgerMovements,
+            'ledgerMovements' => $movementSummary['ledger_movements'],
+            'movementSummary' => $movementSummary,
         ]);
+    }
+
+    public function downloadChecklist(StockTransfer $stockTransfer): Response
+    {
+        $this->authorize('downloadChecklist', $stockTransfer);
+
+        abort_unless($stockTransfer->isInTransit() || $stockTransfer->isReceived(), 403);
+
+        $stockTransfer = $this->transfers->loadDetails($stockTransfer);
+        $filename = 'stock-transfer-checklist-'.$stockTransfer->transfer_number.'.pdf';
+
+        return Pdf::loadView('inventory.stock-transfers.checklist-pdf', [
+            'stockTransfer' => $stockTransfer,
+        ])->download($filename);
     }
 
     public function edit(StockTransfer $stockTransfer): View|Response

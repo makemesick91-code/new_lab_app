@@ -77,6 +77,7 @@ class RoleSeeder extends Seeder
             'view_inventory_executive_dashboard',
             'view_inventory_cross_branch_analytics',
             'view_inventory_activity_log',
+            'download_stock_transfer_checklist',
             'approve_inventory_purchase_request',
             'approve_inventory_purchase_order',
             'manage assignments',

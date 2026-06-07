@@ -95,6 +95,7 @@ class PermissionSeeder extends Seeder
         'view_inventory_activity_log',
         'view_stock_transfer',
         'manage_stock_transfer',
+        'download_stock_transfer_checklist',
         // Sprint 16.1 - Purchase Request
         'approve_inventory_purchase_request',
         'view_purchase_request',

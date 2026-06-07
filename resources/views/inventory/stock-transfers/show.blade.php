@@ -57,6 +57,14 @@
                     @endcan
                 </div>
                 <div class="flex flex-wrap items-center justify-end gap-2">
+                    @can('downloadChecklist', $stockTransfer)
+                        @if ($stockTransfer->isInTransit() || $stockTransfer->isReceived())
+                            <a href="{{ route('inventory.stock-transfers.checklist', $stockTransfer) }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                Download Checklist PDF
+                            </a>
+                        @endif
+                    @endcan
+
                     @can('update', $stockTransfer)
                         @if ($stockTransfer->status === StockTransfer::STATUS_DRAFT)
                             <a href="{{ route('inventory.stock-transfers.edit', $stockTransfer) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">

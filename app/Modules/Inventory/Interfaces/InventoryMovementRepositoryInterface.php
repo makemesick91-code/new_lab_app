@@ -3,6 +3,7 @@
 namespace App\Modules\Inventory\Interfaces;
 
 use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\StockTransfer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -11,6 +12,10 @@ interface InventoryMovementRepositoryInterface
     public function paginate(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
 
     public function create(array $data): InventoryMovement;
+
+    public function transferMovements(int $branchId, StockTransfer $transfer): Collection;
+
+    public function lockTransferMovementsForUpdate(int $branchId, StockTransfer $transfer): Collection;
 
     public function currentStock(int $branchId, int $productId, ?int $locationId = null): float;
 

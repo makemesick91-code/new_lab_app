@@ -142,6 +142,11 @@ trait ChecksInventoryAccess
         ]);
     }
 
+    protected function canDownloadStockTransferChecklist(User $user): bool
+    {
+        return $user->can('download_stock_transfer_checklist');
+    }
+
     protected function canViewPurchaseRequest(User $user): bool
     {
         return $user->canAny([

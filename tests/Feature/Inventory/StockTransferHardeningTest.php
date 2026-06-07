@@ -202,6 +202,172 @@ it('shows transfer out movements only while transfer is in transit', function ()
         ->and($this->stock->getCurrentStock($product->id, $destination->id))->toBe(0.0);
 });
 
+it('rejects receiving an in transit transfer when transfer out ledger is missing', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $transfer = StockTransfer::factory()->inTransit()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+    StockTransferItem::factory()->create([
+        'stock_transfer_id' => $transfer->id,
+        'product_id' => $product->id,
+        'quantity' => 3,
+    ]);
+
+    expect(fn () => $this->service->receiveTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and($transfer->refresh()->status)->toBe(StockTransfer::STATUS_IN_TRANSIT)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->count())->toBe(0);
+});
+
+it('rejects receiving when transfer out ledger product does not match transfer items', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $expectedProduct = Product::factory()->create(['branch_id' => $this->branch->id]);
+    $unexpectedProduct = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $transfer = StockTransfer::factory()->inTransit()->create([
+        'branch_id' => $this->branch->id,
+        'source_inventory_location_id' => $source->id,
+        'destination_inventory_location_id' => $destination->id,
+    ]);
+    StockTransferItem::factory()->create([
+        'stock_transfer_id' => $transfer->id,
+        'product_id' => $expectedProduct->id,
+        'quantity' => 3,
+    ]);
+    InventoryMovement::factory()->create([
+        'branch_id' => $this->branch->id,
+        'inventory_location_id' => $source->id,
+        'product_id' => $unexpectedProduct->id,
+        'supplier_id' => null,
+        'movement_type' => InventoryMovement::TYPE_TRANSFER_OUT,
+        'movement_date' => $transfer->transfer_date->toDateString(),
+        'quantity_in' => 0,
+        'quantity_out' => 3,
+        'reference_type' => $transfer->getTable(),
+        'reference_id' => $transfer->id,
+    ]);
+
+    expect(fn () => $this->service->receiveTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->count())->toBe(0);
+});
+
+it('rejects receiving when a transfer in ledger already exists for an in transit transfer', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    InventoryMovement::factory()->create([
+        'branch_id' => $this->branch->id,
+        'inventory_location_id' => $destination->id,
+        'product_id' => $product->id,
+        'supplier_id' => null,
+        'movement_type' => InventoryMovement::TYPE_TRANSFER_IN,
+        'movement_date' => $transfer->transfer_date->toDateString(),
+        'quantity_in' => 4,
+        'quantity_out' => 0,
+        'reference_type' => $transfer->getTable(),
+        'reference_id' => $transfer->id,
+    ]);
+
+    expect(fn () => $this->service->receiveTransfer($transfer->id))
+        ->toThrow(ValidationException::class)
+        ->and($transfer->refresh()->status)->toBe(StockTransfer::STATUS_IN_TRANSIT)
+        ->and(InventoryMovement::query()
+            ->where('reference_type', 'trx_stock_transfers')
+            ->where('reference_id', $transfer->id)
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->count())->toBe(1);
+});
+
+it('returns branch scoped movement summary totals for transfer detail reads', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    $inTransitSummary = $this->service->getTransferMovementSummary($transfer->refresh());
+
+    expect($inTransitSummary['ledger_movements'])->toHaveCount(1)
+        ->and($inTransitSummary['transfer_out_movements'])->toHaveCount(1)
+        ->and($inTransitSummary['transfer_in_movements'])->toHaveCount(0)
+        ->and($inTransitSummary['total_out'])->toBe(4.0)
+        ->and($inTransitSummary['total_in'])->toBe(0.0)
+        ->and($inTransitSummary['in_transit_qty'])->toBe(4.0);
+
+    $this->service->receiveTransfer($transfer->id);
+
+    $receivedSummary = $this->service->getTransferMovementSummary($transfer->refresh());
+
+    expect($receivedSummary['ledger_movements'])->toHaveCount(2)
+        ->and($receivedSummary['transfer_out_movements'])->toHaveCount(1)
+        ->and($receivedSummary['transfer_in_movements'])->toHaveCount(1)
+        ->and($receivedSummary['total_out'])->toBe(4.0)
+        ->and($receivedSummary['total_in'])->toBe(4.0)
+        ->and($receivedSummary['in_transit_qty'])->toBe(0.0);
+});
+
+it('opens transfer show through read layer without a direct controller movement query', function () {
+    $this->actingAs($this->manager);
+
+    $source = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $destination = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $product = Product::factory()->create(['branch_id' => $this->branch->id]);
+
+    $this->stock->createOpeningStock($product->id, $source->id, 10);
+
+    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+        ['product_id' => $product->id, 'quantity' => 4],
+    ]);
+    $this->service->submitTransfer($transfer->id);
+    $this->service->shipTransfer($transfer->id);
+
+    $this->get(route('inventory.stock-transfers.show', $transfer))
+        ->assertOk()
+        ->assertSee('Referensi Pergerakan Ledger')
+        ->assertSee('Transfer Keluar');
+
+    expect(file_get_contents(app_path('Modules/Inventory/Controllers/StockTransferController.php')))
+        ->not->toContain('InventoryMovement::query()');
+});
+
 it('does not introduce or use mutable stock columns on products or locations', function () {
     $forbiddenColumns = [
         'current_stock',

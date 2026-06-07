@@ -16,6 +16,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\StockTransferItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -292,7 +293,9 @@ class StockTransferService
                 ]);
             }
 
+            $source = $this->lockAndAssertActiveLocationInBranch($branchId, (int) $transfer->source_inventory_location_id, 'source_inventory_location_id');
             $destination = $this->lockAndAssertActiveLocationInBranch($branchId, (int) $transfer->destination_inventory_location_id, 'destination_inventory_location_id');
+            $this->assertDifferentLocations($source, $destination);
 
             $items = StockTransferItem::query()
                 ->where('stock_transfer_id', $transfer->id)
@@ -304,6 +307,8 @@ class StockTransferService
                     'items' => 'Transfer stok harus memiliki minimal satu item.',
                 ]);
             }
+
+            $this->assertReceiveLedgerIntegrity($branchId, $transfer, $items);
 
             foreach ($items as $item) {
                 $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $item->product_id);
@@ -336,6 +341,33 @@ class StockTransferService
         }
 
         return $result;
+    }
+
+    /**
+     * @return array{
+     *     ledger_movements: Collection<int, InventoryMovement>,
+     *     transfer_out_movements: Collection<int, InventoryMovement>,
+     *     transfer_in_movements: Collection<int, InventoryMovement>,
+     *     total_out: float,
+     *     total_in: float,
+     *     in_transit_qty: float
+     * }
+     */
+    public function getTransferMovementSummary(StockTransfer $transfer): array
+    {
+        $branchId = $this->branchContext->requireId();
+
+        if ((int) $transfer->branch_id !== $branchId) {
+            throw ValidationException::withMessages([
+                'stock_transfer_id' => 'Transfer stok tidak valid untuk cabang aktif.',
+            ]);
+        }
+
+        $movements = $transfer->isInTransit() || $transfer->isReceived()
+            ? $this->movements->transferMovements($branchId, $transfer)
+            : collect();
+
+        return $this->buildTransferMovementSummary($movements);
     }
 
     public function cancelTransfer(int $transferId, ?string $notes = null): StockTransfer
@@ -390,6 +422,98 @@ class StockTransferService
         }
 
         return $transfer;
+    }
+
+    /**
+     * @param  Collection<int, StockTransferItem>  $items
+     */
+    private function assertReceiveLedgerIntegrity(int $branchId, StockTransfer $transfer, Collection $items): void
+    {
+        $movements = $this->movements->lockTransferMovementsForUpdate($branchId, $transfer);
+        $outMovements = $movements
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_OUT)
+            ->values();
+        $inMovements = $movements
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->values();
+
+        if ($inMovements->isNotEmpty()) {
+            throw ValidationException::withMessages([
+                'status' => 'Transfer stok sudah memiliki ledger masuk dan tidak bisa diterima ulang.',
+            ]);
+        }
+
+        if ($outMovements->isEmpty()) {
+            throw ValidationException::withMessages([
+                'movement' => 'Transfer stok belum memiliki ledger keluar yang valid.',
+            ]);
+        }
+
+        $expected = [];
+
+        foreach ($items as $item) {
+            $productId = (int) $item->product_id;
+            $batchId = $item->inventory_batch_id ? (int) $item->inventory_batch_id : null;
+            $quantity = (float) $item->quantity;
+            $this->assertPositiveQuantity($quantity);
+
+            $key = $this->movementLineKey($productId, $batchId);
+            $expected[$key] = [
+                'product_id' => $productId,
+                'inventory_batch_id' => $batchId,
+                'quantity' => round(($expected[$key]['quantity'] ?? 0) + $quantity, 4),
+            ];
+        }
+
+        $actualOut = [];
+
+        foreach ($outMovements as $movement) {
+            $quantityOut = (float) $movement->quantity_out;
+            $quantityIn = (float) $movement->quantity_in;
+            $productId = (int) $movement->product_id;
+            $batchId = $movement->inventory_batch_id ? (int) $movement->inventory_batch_id : null;
+            $key = $this->movementLineKey($productId, $batchId);
+
+            if ((int) $movement->branch_id !== (int) $transfer->branch_id
+                || $movement->reference_type !== $transfer->getTable()
+                || (int) $movement->reference_id !== (int) $transfer->id
+                || (int) $movement->inventory_location_id !== (int) $transfer->source_inventory_location_id
+                || $quantityOut <= 0
+                || $quantityIn !== 0.0
+                || ! isset($expected[$key])) {
+                throw ValidationException::withMessages([
+                    'movement' => 'Ledger keluar transfer tidak sesuai dengan dokumen transfer.',
+                ]);
+            }
+
+            $actualOut[$key] = [
+                'quantity' => round(($actualOut[$key]['quantity'] ?? 0) + $quantityOut, 4),
+            ];
+        }
+
+        foreach ($expected as $key => $line) {
+            if (! isset($actualOut[$key]) || ! $this->quantitiesMatch($actualOut[$key]['quantity'], $line['quantity'])) {
+                throw ValidationException::withMessages([
+                    'movement' => 'Ledger keluar transfer tidak sesuai dengan dokumen transfer.',
+                ]);
+            }
+        }
+
+        $totalOut = round(array_sum(array_column($actualOut, 'quantity')), 4);
+        $proposedIn = round(array_sum(array_column($expected, 'quantity')), 4);
+        $existingIn = round((float) $inMovements->sum(fn (InventoryMovement $movement) => (float) $movement->quantity_in), 4);
+
+        if ($totalOut <= 0) {
+            throw ValidationException::withMessages([
+                'movement' => 'Transfer stok belum memiliki ledger keluar yang valid.',
+            ]);
+        }
+
+        if (($existingIn + $proposedIn) - $totalOut > 0.0001) {
+            throw ValidationException::withMessages([
+                'quantity' => 'Jumlah ledger masuk transfer tidak boleh melebihi ledger keluar.',
+            ]);
+        }
     }
 
     private function assertTransferReady(int $branchId, StockTransfer $transfer): void
@@ -583,6 +707,48 @@ class StockTransferService
                 'quantity' => 'Jumlah transfer harus lebih besar dari nol.',
             ]);
         }
+    }
+
+    /**
+     * @param  Collection<int, InventoryMovement>  $movements
+     * @return array{
+     *     ledger_movements: Collection<int, InventoryMovement>,
+     *     transfer_out_movements: Collection<int, InventoryMovement>,
+     *     transfer_in_movements: Collection<int, InventoryMovement>,
+     *     total_out: float,
+     *     total_in: float,
+     *     in_transit_qty: float
+     * }
+     */
+    private function buildTransferMovementSummary(Collection $movements): array
+    {
+        $outMovements = $movements
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_OUT)
+            ->values();
+        $inMovements = $movements
+            ->where('movement_type', InventoryMovement::TYPE_TRANSFER_IN)
+            ->values();
+        $totalOut = round((float) $outMovements->sum(fn (InventoryMovement $movement) => (float) $movement->quantity_out), 4);
+        $totalIn = round((float) $inMovements->sum(fn (InventoryMovement $movement) => (float) $movement->quantity_in), 4);
+
+        return [
+            'ledger_movements' => $movements->values(),
+            'transfer_out_movements' => $outMovements,
+            'transfer_in_movements' => $inMovements,
+            'total_out' => $totalOut,
+            'total_in' => $totalIn,
+            'in_transit_qty' => max(0.0, round($totalOut - $totalIn, 4)),
+        ];
+    }
+
+    private function movementLineKey(int $productId, ?int $batchId): string
+    {
+        return $productId.':'.($batchId ?? 'none');
+    }
+
+    private function quantitiesMatch(float $left, float $right): bool
+    {
+        return abs(round($left, 4) - round($right, 4)) <= 0.0001;
     }
 
     private function assertBatchForTransferItem(int $branchId, int $productId, int $batchId): void

@@ -5,6 +5,7 @@ namespace App\Modules\Inventory\Repositories;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\StockTransfer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,36 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
     public function create(array $data): InventoryMovement
     {
         return InventoryMovement::create($data);
+    }
+
+    public function transferMovements(int $branchId, StockTransfer $transfer): Collection
+    {
+        return InventoryMovement::query()
+            ->with(['product', 'inventoryLocation', 'inventoryBatch'])
+            ->where('branch_id', $branchId)
+            ->where('reference_type', $transfer->getTable())
+            ->where('reference_id', $transfer->id)
+            ->whereIn('movement_type', [
+                InventoryMovement::TYPE_TRANSFER_OUT,
+                InventoryMovement::TYPE_TRANSFER_IN,
+            ])
+            ->orderBy('id')
+            ->get();
+    }
+
+    public function lockTransferMovementsForUpdate(int $branchId, StockTransfer $transfer): Collection
+    {
+        return InventoryMovement::query()
+            ->where('branch_id', $branchId)
+            ->where('reference_type', $transfer->getTable())
+            ->where('reference_id', $transfer->id)
+            ->whereIn('movement_type', [
+                InventoryMovement::TYPE_TRANSFER_OUT,
+                InventoryMovement::TYPE_TRANSFER_IN,
+            ])
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
     }
 
     public function currentStock(int $branchId, int $productId, ?int $locationId = null): float
