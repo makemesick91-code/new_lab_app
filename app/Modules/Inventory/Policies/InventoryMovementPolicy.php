@@ -26,4 +26,19 @@ class InventoryMovementPolicy
     {
         return $this->canManageInventory($user);
     }
+
+    public function viewAlerts(User $user): bool
+    {
+        return $this->canViewStockAlert($user);
+    }
+
+    public function viewAnalytics(User $user): bool
+    {
+        return $this->canViewInventoryAnalytics($user);
+    }
+
+    public function exportAnalytics(User $user): bool
+    {
+        return $this->canManageInventoryAnalytics($user);
+    }
 }

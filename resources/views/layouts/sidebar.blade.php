@@ -8,6 +8,15 @@
 --}}
 @php
     $user = auth()->user();
+    $showInventoryGroup = $user && (
+        $user->can('viewAny', \App\Modules\Inventory\Models\Product::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryBatch::class)
+        || $user->can('viewAlerts', \App\Modules\Inventory\Models\InventoryMovement::class)
+        || $user->can('viewAnalytics', \App\Modules\Inventory\Models\InventoryMovement::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
+    );
+
     $showProcurementGroup = $user && (
         $user->can('viewAny', \App\Modules\Inventory\Models\PurchaseRequest::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\PurchaseOrder::class)
@@ -218,7 +227,7 @@
             @endcanany
         @endrole
 
-        @canany(['view_inventory', 'manage_inventory', 'manage master data'])
+        @if ($showInventoryGroup)
             <div class="pt-2">
                 <button type="button"
                         @click="toggle('inventory')"
@@ -232,16 +241,18 @@
                     </svg>
                 </button>
                 <div data-sidebar-panel="inventory" x-show="isOpen('inventory')" class="mt-0.5 space-y-0.5 pl-1">
-                    <a href="{{ route('inventory.dashboard') }}"
-                       class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dasbor</a>
-                    <a href="{{ route('inventory.products.index') }}"
-                       class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
-                    <a href="{{ route('inventory.locations.index') }}"
-                       class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.locations.*') ? $linkActive : $linkIdle }}">Lokasi Persediaan</a>
-                    <a href="{{ route('inventory.suppliers.index') }}"
-                       class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? $linkActive : $linkIdle }}">Pemasok</a>
-                    <a href="{{ route('inventory.stock.index') }}"
-                       class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok</a>
+                    @can('viewAny', \App\Modules\Inventory\Models\Product::class)
+                        <a href="{{ route('inventory.dashboard') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dasbor</a>
+                        <a href="{{ route('inventory.products.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
+                        <a href="{{ route('inventory.locations.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.locations.*') ? $linkActive : $linkIdle }}">Lokasi Persediaan</a>
+                        <a href="{{ route('inventory.suppliers.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? $linkActive : $linkIdle }}">Pemasok</a>
+                        <a href="{{ route('inventory.stock.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok</a>
+                    @endcan
                     @can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
                         <a href="{{ route('inventory.stock-opnames.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock-opnames.*') ? $linkActive : $linkIdle }}">Stok Opname</a>
@@ -250,9 +261,11 @@
                         <a href="{{ route('inventory.batches.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.batches.*') ? $linkActive : $linkIdle }}">Batch & Lot</a>
                     @endcan
-                    @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                    @can('viewAlerts', \App\Modules\Inventory\Models\InventoryMovement::class)
                         <a href="{{ route('inventory.alerts.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.alerts.*') ? $linkActive : $linkIdle }}">Peringatan Stok</a>
+                    @endcan
+                    @can('viewAnalytics', \App\Modules\Inventory\Models\InventoryMovement::class)
                         <a href="{{ route('inventory.analytics.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.analytics.*') ? $linkActive : $linkIdle }}">Analitik Persediaan</a>
                     @endcan
@@ -262,7 +275,7 @@
                     @endcan
                 </div>
             </div>
-        @endcanany
+        @endif
 
         @if ($showProcurementGroup)
             <div class="pt-2">

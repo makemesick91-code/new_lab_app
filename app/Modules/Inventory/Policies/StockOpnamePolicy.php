@@ -12,47 +12,47 @@ class StockOpnamePolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user);
+        return $this->canViewStockOpname($user);
     }
 
     public function view(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user);
+        return $this->canManageStockOpname($user);
     }
 
     public function update(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 
     public function delete(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 
     public function review(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 
     public function finalize(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 
     public function cancel(User $user, StockOpname $stockOpname): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockOpname($user)
             && $this->belongsToActiveBranch($stockOpname->branch_id);
     }
 }

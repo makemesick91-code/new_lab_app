@@ -81,10 +81,28 @@ class PermissionSeeder extends Seeder
         // Sprint 12 - Inventory Core
         'manage_inventory',
         'view_inventory',
+        // Sprint 13+ - Inventory granular permissions (role assignment UI)
+        'view_stock_opname',
+        'manage_stock_opname',
+        'view_inventory_batch_lot',
+        'manage_inventory_batch_lot',
+        'view_stock_alert',
+        'manage_stock_alert',
+        'view_inventory_analytics',
+        'manage_inventory_analytics',
+        'view_stock_transfer',
+        'manage_stock_transfer',
         // Sprint 16.1 - Purchase Request
         'approve_inventory_purchase_request',
+        'view_purchase_request',
+        'manage_purchase_request',
         // Sprint 16.2 - Purchase Order
         'approve_inventory_purchase_order',
+        'view_purchase_order',
+        'manage_purchase_order',
+        // Sprint 16.3 - Goods Receipt
+        'view_goods_receipt',
+        'manage_goods_receipt',
         'manage lab orders',
         'manage assignments',
         'manage qc',

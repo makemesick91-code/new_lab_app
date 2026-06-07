@@ -12,53 +12,53 @@ class StockTransferPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user);
+        return $this->canViewStockTransfer($user);
     }
 
     public function view(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user);
+        return $this->canManageStockTransfer($user);
     }
 
     public function update(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function delete(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function submit(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function ship(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function receive(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 
     public function cancel(User $user, StockTransfer $stockTransfer): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageStockTransfer($user)
             && $this->belongsToActiveBranch($stockTransfer->branch_id);
     }
 }

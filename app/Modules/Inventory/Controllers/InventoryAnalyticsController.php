@@ -28,7 +28,7 @@ class InventoryAnalyticsController extends Controller
 
     public function index(InventoryAnalyticsFilterRequest $request): View|Response
     {
-        $this->authorize('viewAny', InventoryMovement::class);
+        $this->authorize('viewAnalytics', InventoryMovement::class);
 
         $branchId = $this->branchContext->requireId();
         $filters = $request->serviceFilters();

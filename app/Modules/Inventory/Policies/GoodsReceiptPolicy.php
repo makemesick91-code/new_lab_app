@@ -12,39 +12,39 @@ class GoodsReceiptPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewGoodsReceipt($user)
             && $this->activeBranchId() !== null;
     }
 
     public function view(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->activeBranchId() !== null;
     }
 
     public function update(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
             && $goodsReceipt->isDraft();
     }
 
     public function submit(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
             && $goodsReceipt->isDraft();
     }
 
     public function post(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
             && $goodsReceipt->posted_at === null
             && ! $goodsReceipt->isPosted()
@@ -54,7 +54,7 @@ class GoodsReceiptPolicy
 
     public function cancel(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
             && $goodsReceipt->canBeCancelled()
             && ! $goodsReceipt->isPosted()
@@ -64,7 +64,7 @@ class GoodsReceiptPolicy
 
     public function void(User $user, GoodsReceipt $goodsReceipt): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManageGoodsReceipt($user)
             && $this->belongsToActiveBranch($goodsReceipt->branch_id)
             && $goodsReceipt->canBeVoided()
             && ! $goodsReceipt->isVoid()

@@ -98,7 +98,7 @@ it('shows inventory permission group on create role page', function () {
         ->get(route('settings.roles.create'))
         ->assertOk()
         ->assertSee('data-permission-group="inventory"', false)
-        ->assertSee('Inventory');
+        ->assertSee('Inventory / Persediaan');
 });
 
 it('shows inventory permissions on create role page', function () {
@@ -111,14 +111,16 @@ it('shows inventory permissions on create role page', function () {
         ->assertSee('Kelola persediaan, stok, dan operasi gudang');
 });
 
-it('shows procurement group when procurement permissions exist', function () {
+it('shows procurement permissions inside inventory group on create role page', function () {
     $this->actingAs(userWith(['manage roles']))
         ->get(route('settings.roles.create'))
         ->assertOk()
-        ->assertSee('data-permission-group="procurement"', false)
-        ->assertSee('Procurement')
+        ->assertDontSee('data-permission-group="procurement"', false)
         ->assertSee('approve_inventory_purchase_request')
-        ->assertSee('approve_inventory_purchase_order');
+        ->assertSee('approve_inventory_purchase_order')
+        ->assertSee('view_purchase_request')
+        ->assertSee('manage_purchase_order')
+        ->assertSee('view_goods_receipt');
 });
 
 it('preserves checked permissions on edit role page', function () {
@@ -182,26 +184,43 @@ it('keeps view_inventory on Technician and Quality Control roles', function () {
     expect(Role::findByName('Quality Control')->hasPermissionTo('view_inventory'))->toBeTrue();
 });
 
-it('does not seed granular procurement permissions while policies use inventory gates', function () {
+it('seeds granular inventory permissions for role assignment', function () {
     $granular = [
-        'view_purchase_requests',
-        'manage_purchase_requests',
-        'view_purchase_orders',
-        'manage_purchase_orders',
-        'view_goods_receipts',
-        'manage_goods_receipts',
+        'view_stock_opname',
+        'manage_stock_opname',
+        'view_inventory_batch_lot',
+        'manage_inventory_batch_lot',
+        'view_stock_alert',
+        'manage_stock_alert',
+        'view_inventory_analytics',
+        'manage_inventory_analytics',
+        'view_stock_transfer',
+        'manage_stock_transfer',
+        'view_purchase_request',
+        'manage_purchase_request',
+        'view_purchase_order',
+        'manage_purchase_order',
+        'view_goods_receipt',
+        'manage_goods_receipt',
     ];
 
     foreach ($granular as $permission) {
-        expect(Permission::where('name', $permission)->count())->toBe(0);
+        expect(Permission::where('name', $permission)->count())->toBe(1);
     }
+});
 
-    $role = Role::findByName('Admin Lab');
+it('groups inventory permissions under inventory module bucket', function () {
+    $groups = app(PermissionGroupingService::class)->group(Permission::orderBy('name')->get());
+    $inventoryGroup = collect($groups)->firstWhere('key', 'inventory');
 
-    expect($role->hasPermissionTo('view_inventory'))->toBeTrue();
-    expect($role->hasPermissionTo('manage_inventory'))->toBeTrue();
-    expect($role->hasPermissionTo('approve_inventory_purchase_request'))->toBeTrue();
-    expect($role->hasPermissionTo('approve_inventory_purchase_order'))->toBeTrue();
+    expect($inventoryGroup)->not->toBeNull();
+    expect($inventoryGroup['label'])->toBe('Inventory / Persediaan');
+    expect(collect($inventoryGroup['permissions'])->pluck('name')->all())->toContain(
+        'view_stock_transfer',
+        'view_purchase_request',
+        'view_goods_receipt',
+    );
+    expect(collect($groups)->contains('key', 'procurement'))->toBeFalse();
 });
 
 it('groups every seeded permission into a module bucket', function () {

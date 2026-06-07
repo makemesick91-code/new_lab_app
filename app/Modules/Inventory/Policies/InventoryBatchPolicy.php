@@ -12,12 +12,12 @@ class InventoryBatchPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user);
+        return $this->canViewInventoryBatchLot($user);
     }
 
     public function view(User $user, InventoryBatch $inventoryBatch): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewInventoryBatchLot($user)
             && $this->belongsToActiveBranch($inventoryBatch->branch_id);
     }
 }

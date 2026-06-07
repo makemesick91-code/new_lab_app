@@ -24,7 +24,7 @@ class InventoryAlertController extends Controller
 
     public function index(InventoryAlertFilterRequest $request): View|Response
     {
-        $this->authorize('viewAny', InventoryMovement::class);
+        $this->authorize('viewAlerts', InventoryMovement::class);
 
         $locationId = $request->locationId();
 

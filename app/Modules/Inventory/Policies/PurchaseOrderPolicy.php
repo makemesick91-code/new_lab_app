@@ -12,30 +12,30 @@ class PurchaseOrderPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user);
+        return $this->canViewPurchaseOrder($user);
     }
 
     public function view(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewPurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user);
+        return $this->canManagePurchaseOrder($user);
     }
 
     public function update(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id)
             && $purchaseOrder->isDraft();
     }
 
     public function submit(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id)
             && $purchaseOrder->isDraft();
     }
@@ -49,31 +49,26 @@ class PurchaseOrderPolicy
 
     public function send(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id)
             && $purchaseOrder->isApproved();
     }
 
     public function cancel(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id)
             && ($purchaseOrder->isDraft() || $purchaseOrder->isSubmitted());
     }
 
     public function receive(User $user, PurchaseOrder $purchaseOrder): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseOrder($user)
             && $this->belongsToActiveBranch($purchaseOrder->branch_id)
             && in_array($purchaseOrder->status, [
                 PurchaseOrder::STATUS_APPROVED,
                 PurchaseOrder::STATUS_SENT,
                 PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
             ], true);
-    }
-
-    protected function canApprovePurchaseOrder(User $user): bool
-    {
-        return $user->canAny(['approve_inventory_purchase_order', 'manage_inventory', 'manage master data']);
     }
 }

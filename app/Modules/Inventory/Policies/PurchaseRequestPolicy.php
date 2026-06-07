@@ -12,30 +12,30 @@ class PurchaseRequestPolicy
 
     public function viewAny(User $user): bool
     {
-        return $this->canViewInventory($user);
+        return $this->canViewPurchaseRequest($user);
     }
 
     public function view(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canViewInventory($user)
+        return $this->canViewPurchaseRequest($user)
             && $this->belongsToActiveBranch($purchaseRequest->branch_id);
     }
 
     public function create(User $user): bool
     {
-        return $this->canManageInventory($user);
+        return $this->canManagePurchaseRequest($user);
     }
 
     public function update(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseRequest($user)
             && $this->belongsToActiveBranch($purchaseRequest->branch_id)
             && $purchaseRequest->isDraft();
     }
 
     public function submit(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseRequest($user)
             && $this->belongsToActiveBranch($purchaseRequest->branch_id)
             && $purchaseRequest->isDraft();
     }
@@ -56,13 +56,8 @@ class PurchaseRequestPolicy
 
     public function cancel(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canManageInventory($user)
+        return $this->canManagePurchaseRequest($user)
             && $this->belongsToActiveBranch($purchaseRequest->branch_id)
             && ($purchaseRequest->isDraft() || $purchaseRequest->isSubmitted());
-    }
-
-    protected function canApprovePurchaseRequest(User $user): bool
-    {
-        return $user->canAny(['approve_inventory_purchase_request', 'manage_inventory', 'manage master data']);
     }
 }
