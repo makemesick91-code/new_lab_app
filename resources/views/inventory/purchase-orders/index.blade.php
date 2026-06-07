@@ -44,15 +44,15 @@
         </div>
 
         <form method="GET" action="{{ route('inventory.purchase-orders.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem_12rem_12rem_auto_auto] md:items-end">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
                 <div>
-                    <label for="po-search" class="text-sm font-medium text-gray-700">Cari pesanan</label>
+                    <label for="po-search" class="mb-1 block text-sm font-medium text-gray-700">Cari pesanan</label>
                     <input id="po-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Nomor, supplier, atau referensi"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div>
-                    <label for="po-status" class="text-sm font-medium text-gray-700">Status</label>
-                    <select id="po-status" name="status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="po-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                    <select id="po-status" name="status" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua status</option>
                         @foreach ($statuses as $status)
                             <option value="{{ $status }}" @selected(($filters['status'] ?? '') == $status)>{{ $statusLabels[$status] ?? $status }}</option>
@@ -60,8 +60,8 @@
                     </select>
                 </div>
                 <div>
-                    <label for="po-supplier" class="text-sm font-medium text-gray-700">Pemasok</label>
-                    <select id="po-supplier" name="supplier_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="po-supplier" class="mb-1 block text-sm font-medium text-gray-700">Pemasok</label>
+                    <select id="po-supplier" name="supplier_id" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua pemasok</option>
                         @foreach ($suppliers as $supplier)
                             <option value="{{ $supplier->id }}" @selected((string) ($filters['supplier_id'] ?? '') === (string) $supplier->id)>{{ $supplier->name }}</option>
@@ -69,24 +69,19 @@
                     </select>
                 </div>
                 <div>
-                    <label for="po-date-from" class="text-sm font-medium text-gray-700">Dari tanggal</label>
+                    <label for="po-date-from" class="mb-1 block text-sm font-medium text-gray-700">Dari tanggal</label>
                     <input id="po-date-from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div>
-                    <label for="po-date-to" class="text-sm font-medium text-gray-700">Sampai tanggal</label>
+                    <label for="po-date-to" class="mb-1 block text-sm font-medium text-gray-700">Sampai tanggal</label>
                     <input id="po-date-to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 @if (! empty($filters['purchase_request_id']))
                     <input type="hidden" name="purchase_request_id" value="{{ $filters['purchase_request_id'] }}">
                 @endif
-                <button class="inline-flex justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                    Terapkan
-                </button>
-                <a href="{{ route('inventory.purchase-orders.index') }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Atur Ulang
-                </a>
+                @include('inventory._filter-actions', ['resetUrl' => route('inventory.purchase-orders.index')])
             </div>
         </form>
 

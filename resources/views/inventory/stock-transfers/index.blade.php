@@ -27,15 +27,15 @@
         </div>
 
         <form method="GET" action="{{ route('inventory.stock-transfers.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem_12rem_12rem_auto_auto] md:items-end">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
                 <div>
-                    <label for="transfer-search" class="text-sm font-medium text-gray-700">Cari transfer</label>
+                    <label for="transfer-search" class="mb-1 block text-sm font-medium text-gray-700">Cari transfer</label>
                     <input id="transfer-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Nomor atau lokasi"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div>
-                    <label for="transfer-source" class="text-sm font-medium text-gray-700">Lokasi Sumber</label>
-                    <select id="transfer-source" name="source_inventory_location_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="transfer-source" class="mb-1 block text-sm font-medium text-gray-700">Lokasi Sumber</label>
+                    <select id="transfer-source" name="source_inventory_location_id" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua lokasi</option>
                         @foreach ($locations as $location)
                             <option value="{{ $location->id }}" @selected(($filters['source_inventory_location_id'] ?? '') == $location->id)>{{ $location->name }}</option>
@@ -43,8 +43,8 @@
                     </select>
                 </div>
                 <div>
-                    <label for="transfer-destination" class="text-sm font-medium text-gray-700">Lokasi Tujuan</label>
-                    <select id="transfer-destination" name="destination_inventory_location_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="transfer-destination" class="mb-1 block text-sm font-medium text-gray-700">Lokasi Tujuan</label>
+                    <select id="transfer-destination" name="destination_inventory_location_id" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua lokasi</option>
                         @foreach ($locations as $location)
                             <option value="{{ $location->id }}" @selected(($filters['destination_inventory_location_id'] ?? '') == $location->id)>{{ $location->name }}</option>
@@ -52,8 +52,8 @@
                     </select>
                 </div>
                 <div>
-                    <label for="transfer-status" class="text-sm font-medium text-gray-700">Status</label>
-                    <select id="transfer-status" name="status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="transfer-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                    <select id="transfer-status" name="status" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua status</option>
                         @foreach ($statuses as $status)
                             <option value="{{ $status }}" @selected(($filters['status'] ?? '') == $status)>{{ $statusLabels[$status] ?? $status }}</option>
@@ -61,16 +61,11 @@
                     </select>
                 </div>
                 <div>
-                    <label for="transfer-date-from" class="text-sm font-medium text-gray-700">Dari tanggal</label>
+                    <label for="transfer-date-from" class="mb-1 block text-sm font-medium text-gray-700">Dari tanggal</label>
                     <input id="transfer-date-from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
-                <button class="inline-flex justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                    Terapkan
-                </button>
-                <a href="{{ route('inventory.stock-transfers.index') }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Atur Ulang
-                </a>
+                @include('inventory._filter-actions', ['resetUrl' => route('inventory.stock-transfers.index')])
             </div>
         </form>
 

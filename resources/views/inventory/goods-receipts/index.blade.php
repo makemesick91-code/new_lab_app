@@ -25,15 +25,15 @@
         </div>
 
         <form method="GET" action="{{ route('inventory.goods-receipts.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem_12rem_12rem_auto_auto] md:items-end">
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
                 <div>
-                    <label for="gr-search" class="text-sm font-medium text-gray-700">Pencarian No. Penerimaan</label>
+                    <label for="gr-search" class="mb-1 block text-sm font-medium text-gray-700">Pencarian No. Penerimaan</label>
                     <input id="gr-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Nomor penerimaan atau PO"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div>
-                    <label for="gr-status" class="text-sm font-medium text-gray-700">Status</label>
-                    <select id="gr-status" name="status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="gr-status" class="mb-1 block text-sm font-medium text-gray-700">Status</label>
+                    <select id="gr-status" name="status" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua status</option>
                         @foreach ($statuses as $status)
                             <option value="{{ $status }}" @selected(($filters['status'] ?? '') == $status)>{{ $statusLabels[$status] ?? $status }}</option>
@@ -41,8 +41,8 @@
                     </select>
                 </div>
                 <div>
-                    <label for="gr-po" class="text-sm font-medium text-gray-700">Purchase Order</label>
-                    <select id="gr-po" name="purchase_order_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <label for="gr-po" class="mb-1 block text-sm font-medium text-gray-700">Purchase Order</label>
+                    <select id="gr-po" name="purchase_order_id" class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua PO</option>
                         @foreach ($purchaseOrders as $purchaseOrder)
                             <option value="{{ $purchaseOrder->id }}" @selected((string) ($filters['purchase_order_id'] ?? '') === (string) $purchaseOrder->id)>{{ $purchaseOrder->purchase_order_number }}</option>
@@ -50,21 +50,16 @@
                     </select>
                 </div>
                 <div>
-                    <label for="gr-date-from" class="text-sm font-medium text-gray-700">Tanggal Dari</label>
+                    <label for="gr-date-from" class="mb-1 block text-sm font-medium text-gray-700">Tanggal Dari</label>
                     <input id="gr-date-from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div>
-                    <label for="gr-date-to" class="text-sm font-medium text-gray-700">Tanggal Sampai</label>
+                    <label for="gr-date-to" class="mb-1 block text-sm font-medium text-gray-700">Tanggal Sampai</label>
                     <input id="gr-date-to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
-                <button class="inline-flex justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                    Terapkan
-                </button>
-                <a href="{{ route('inventory.goods-receipts.index') }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Atur Ulang
-                </a>
+                @include('inventory._filter-actions', ['resetUrl' => route('inventory.goods-receipts.index')])
             </div>
         </form>
 
