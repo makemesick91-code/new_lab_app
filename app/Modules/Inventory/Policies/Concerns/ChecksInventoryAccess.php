@@ -95,6 +95,18 @@ trait ChecksInventoryAccess
         ]);
     }
 
+    protected function canViewInventoryExecutiveDashboard(User $user): bool
+    {
+        return $user->canAny([
+            'view_inventory_executive_dashboard',
+            'view_inventory_analytics',
+            'manage_inventory_analytics',
+            'view_inventory',
+            'manage_inventory',
+            'manage master data',
+        ]);
+    }
+
     protected function canManageInventoryAnalytics(User $user): bool
     {
         return $user->canAny([

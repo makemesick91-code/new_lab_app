@@ -14,6 +14,7 @@
         || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryBatch::class)
         || $user->can('viewAlerts', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewAnalytics', \App\Modules\Inventory\Models\InventoryMovement::class)
+        || $user->can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryActivityLog::class)
     );
@@ -253,6 +254,10 @@
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.suppliers.*') ? $linkActive : $linkIdle }}">Pemasok</a>
                         <a href="{{ route('inventory.stock.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok</a>
+                    @endcan
+                    @can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
+                        <a href="{{ route('inventory.executive-dashboard') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.executive-dashboard') ? $linkActive : $linkIdle }}">Dasbor Eksekutif</a>
                     @endcan
                     @can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
                         <a href="{{ route('inventory.stock-opnames.index') }}"

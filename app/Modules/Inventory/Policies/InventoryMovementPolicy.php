@@ -37,6 +37,11 @@ class InventoryMovementPolicy
         return $this->canViewInventoryAnalytics($user);
     }
 
+    public function viewExecutiveDashboard(User $user): bool
+    {
+        return $this->canViewInventoryExecutiveDashboard($user);
+    }
+
     public function exportAnalytics(User $user): bool
     {
         return $this->canManageInventoryAnalytics($user);

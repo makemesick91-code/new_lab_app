@@ -2,14 +2,31 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\Product;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
+/**
+ * Official analytics entry point for inventory KPIs (Sprint 16.7).
+ *
+ * ## Data source guardrails (LOCKED)
+ *
+ * - KPI aggregates MUST use ledger, procurement, and opname tables via {@see InventoryAnalyticsRepositoryInterface}.
+ * - `inv_inventory_activity_logs` is FORBIDDEN as a KPI source — audit/drill-down only.
+ * - Inventory value is operational only (`average_cost` × derived stock) — not FIFO/LIFO/WAC accounting valuation.
+ * - Inventory accuracy returns `null` when no completed stock opname exists (never fake 0%).
+ * - Open PO count includes `approved`, `sent`, and `partially_received` statuses.
+ * - Consumption = SUM(quantity_out) including TRANSFER_OUT and ADJUSTMENT_OUT.
+ */
 class InventoryAnalyticsService
 {
+    public const OPERATIONAL_VALUATION_NOTE = 'Operational inventory value based on current stock × average cost. Not accounting valuation.';
+
+    public const VALUATION_TYPE_OPERATIONAL = 'operational';
+
     public const DEFAULT_PERIOD_DAYS = 30;
 
     public const DEFAULT_FAST_LIMIT = 25;
@@ -39,7 +56,161 @@ class InventoryAnalyticsService
     public function __construct(
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly InventoryBatchRepositoryInterface $batches,
+        private readonly InventoryAnalyticsRepositoryInterface $analyticsRepository,
     ) {}
+
+    /**
+     * Executive overview — repository KPIs plus movement intelligence from Sprint 15.5.
+     *
+     * @return array<string, mixed>
+     */
+    public function getInventoryOverview(int $branchId): array
+    {
+        $movementSummary = $this->getAnalyticsSummary($branchId);
+
+        return [
+            'inventory_value' => $this->analyticsRepository->getInventoryValue($branchId),
+            'active_sku' => $this->analyticsRepository->getActiveSkuCount($branchId),
+            'low_stock_count' => $this->analyticsRepository->getLowStockCount($branchId),
+            'dead_stock_count' => $this->analyticsRepository->getDeadStockCount($branchId),
+            'open_pr' => $this->analyticsRepository->getOpenPurchaseRequestCount($branchId),
+            'open_po' => $this->analyticsRepository->getOpenPurchaseOrderCount($branchId),
+            'pending_gr' => $this->analyticsRepository->getPendingGoodsReceiptCount($branchId),
+            'in_transit_transfer' => $this->analyticsRepository->getInTransitTransferCount($branchId),
+            'inventory_accuracy' => $this->analyticsRepository->getInventoryAccuracy($branchId),
+            'fast_moving_count' => $movementSummary['fast_moving_count'],
+            'slow_moving_count' => $movementSummary['slow_moving_count'],
+            'branch_turnover_ratio' => $movementSummary['branch_turnover_ratio'],
+            'period_outbound_value' => $movementSummary['period_outbound_value'],
+            'period_from' => $movementSummary['period_from'],
+            'period_to' => $movementSummary['period_to'],
+            'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Operational stock valuation snapshot — not accounting-grade costing.
+     *
+     * @return array{
+     *     total_value: float,
+     *     valuation_type: string,
+     *     valuation_note: string,
+     *     generated_at: string,
+     * }
+     */
+    public function getStockValuation(int $branchId): array
+    {
+        return [
+            'total_value' => $this->analyticsRepository->getInventoryValue($branchId),
+            'valuation_type' => self::VALUATION_TYPE_OPERATIONAL,
+            'valuation_note' => self::OPERATIONAL_VALUATION_NOTE,
+            'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    public function getFastMovingItems(int $branchId, int $days = 90, int $limit = 10): Collection
+    {
+        return $this->analyticsRepository->getFastMovingItems($branchId, $days, $limit);
+    }
+
+    public function getSlowMovingItems(int $branchId, int $days = 90, int $limit = 10): Collection
+    {
+        return $this->analyticsRepository->getSlowMovingItems($branchId, $days, $limit);
+    }
+
+    public function getDeadStockItems(int $branchId, int $days = 90, int $limit = 10): Collection
+    {
+        return $this->analyticsRepository->getDeadStockItems($branchId, $days, $limit);
+    }
+
+    /**
+     * @return array{
+     *     granularity: string,
+     *     buckets: array<string, array{label: string, product_count: int, total_qty: float, total_value: float}>,
+     *     items: Collection<int, array<string, mixed>>,
+     * }
+     */
+    public function getStockAging(int $branchId): array
+    {
+        return $this->analyticsRepository->getStockAging($branchId);
+    }
+
+    /**
+     * @return array<int, array{
+     *     period: string,
+     *     po_count: int,
+     *     po_value: float,
+     *     gr_count: int,
+     *     gr_received_value: float,
+     *     ledger_purchase_value: float,
+     * }>
+     */
+    public function getPurchaseTrend(int $branchId, string $period = 'monthly'): array
+    {
+        return $this->analyticsRepository->getPurchaseTrend($branchId, $period);
+    }
+
+    /**
+     * @return array<int, array{period: string, outbound_qty: float, outbound_value: float}>
+     */
+    public function getConsumptionTrend(int $branchId, string $period = 'monthly'): array
+    {
+        return $this->analyticsRepository->getConsumptionTrend($branchId, $period);
+    }
+
+    public function getSupplierPerformance(int $branchId): Collection
+    {
+        return $this->analyticsRepository->getSupplierPerformance($branchId);
+    }
+
+    public function getReorderRecommendations(int $branchId): Collection
+    {
+        return $this->analyticsRepository->getReorderRecommendations($branchId);
+    }
+
+    /**
+     * Executive KPI strip — delegates all scalar counts to the analytics repository.
+     *
+     * @return array{
+     *     inventory_value: float,
+     *     active_sku: int,
+     *     low_stock_count: int,
+     *     dead_stock_count: int,
+     *     open_pr: int,
+     *     open_po: int,
+     *     pending_gr: int,
+     *     in_transit_transfer: int,
+     *     inventory_accuracy: float|null,
+     * }
+     */
+    public function getKpiSummary(int $branchId): array
+    {
+        return [
+            'inventory_value' => $this->analyticsRepository->getInventoryValue($branchId),
+            'active_sku' => $this->analyticsRepository->getActiveSkuCount($branchId),
+            'low_stock_count' => $this->analyticsRepository->getLowStockCount($branchId),
+            'dead_stock_count' => $this->analyticsRepository->getDeadStockCount($branchId),
+            'open_pr' => $this->analyticsRepository->getOpenPurchaseRequestCount($branchId),
+            'open_po' => $this->analyticsRepository->getOpenPurchaseOrderCount($branchId),
+            'pending_gr' => $this->analyticsRepository->getPendingGoodsReceiptCount($branchId),
+            'in_transit_transfer' => $this->analyticsRepository->getInTransitTransferCount($branchId),
+            'inventory_accuracy' => $this->analyticsRepository->getInventoryAccuracy($branchId),
+        ];
+    }
+
+    /**
+     * Sprint 15.5 alias — preserves backward compatibility for consumers expecting this name.
+     *
+     * @return array{
+     *     granularity: string,
+     *     buckets: array<string, array{label: string, product_count: int, total_qty: float, total_value: float}>,
+     *     items: Collection<int, array<string, mixed>>,
+     * }
+     */
+    public function getStockAgingAnalysis(int $branchId, array $filters = []): array
+    {
+        return $this->getInventoryAging($branchId, $filters);
+    }
 
     public function getFastMovingProducts(int $branchId, array $filters = []): Collection
     {

@@ -12,6 +12,7 @@ use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
+use App\Modules\Inventory\Controllers\InventoryExecutiveDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
@@ -309,6 +310,8 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::get('alerts', [InventoryAlertController::class, 'index'])->name('alerts.index');
 
     Route::get('analytics', [InventoryAnalyticsController::class, 'index'])->name('analytics.index');
+
+    Route::get('executive-dashboard', [InventoryExecutiveDashboardController::class, 'index'])->name('executive-dashboard');
 
     Route::get('activity-logs', [InventoryActivityLogController::class, 'index'])->name('activity-logs.index');
     Route::get('activity-logs/{inventoryActivityLog}', [InventoryActivityLogController::class, 'show'])->name('activity-logs.show');

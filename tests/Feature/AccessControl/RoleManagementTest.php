@@ -177,6 +177,7 @@ it('assigns inventory permissions to Admin Lab role', function () {
 
     expect($role->hasPermissionTo('view_inventory'))->toBeTrue();
     expect($role->hasPermissionTo('manage_inventory'))->toBeTrue();
+    expect($role->hasPermissionTo('view_inventory_executive_dashboard'))->toBeTrue();
 });
 
 it('keeps view_inventory on Technician and Quality Control roles', function () {
@@ -194,6 +195,7 @@ it('seeds granular inventory permissions for role assignment', function () {
         'manage_stock_alert',
         'view_inventory_analytics',
         'manage_inventory_analytics',
+        'view_inventory_executive_dashboard',
         'view_stock_transfer',
         'manage_stock_transfer',
         'view_purchase_request',
@@ -219,6 +221,7 @@ it('groups inventory permissions under inventory module bucket', function () {
         'view_stock_transfer',
         'view_purchase_request',
         'view_goods_receipt',
+        'view_inventory_executive_dashboard',
     );
     expect(collect($groups)->contains('key', 'procurement'))->toBeFalse();
 });

@@ -3,7 +3,7 @@
 Version: 1.0
 Last updated: June 2026
 Status: **Permanent project memory.** Captures the major decisions from Sprint 0 through
-Sprint 16.6.
+Sprint 16.7.
 
 This document is a durable record for humans and future AI agents. It is **descriptive**
 (what was decided and why) and subordinate to the authoritative rule docs
@@ -55,6 +55,7 @@ It was reconstructed from primary sources: `git log` (commit-by-commit), `databa
 | 16.3 | Goods Receipt Workflow | (Sprint 16.3 goods receipt implementation) | `trx_goods_receipts`, `trx_goods_receipt_items`; `quantity_received` on `trx_purchase_order_items` |
 | 16.5 | Inventory Permission Hardening | (Sprint 16.5 permission/policy hardening) | (none — permission/policy alignment) |
 | 16.6 | Inventory Audit Trail & Activity Log | `sprint-16.6-complete` | `inv_inventory_activity_logs` |
+| 16.7 | Inventory Analytics & Executive Dashboard | `sprint-16.7-complete` | (none — read-only analytics from ledger + procurement) |
 
 Architecture has been **additive and consistent** throughout: every sprint extended the modular
 monolith rather than replacing patterns. Stack held constant: Laravel modular monolith, Blade +
@@ -1829,6 +1830,76 @@ export, log retention/archival.
 
 ---
 
+# Sprint 16.7 — Inventory Analytics & Executive Dashboard
+
+## Sprint 16.7 Overview
+
+**Goal:** Unified analytics layer and executive dashboard for inventory management — answering
+business questions on stock value, movement intelligence, purchase/consumption trends, supplier
+performance, and reorder recommendations — with read-only, ledger-derived, branch-safe metrics.
+
+**Delivered:**
+
+- `InventoryAnalyticsRepositoryInterface` with 17 KPI methods and provider binding
+- `InventoryAnalyticsRepository` — on-read aggregates from ledger, procurement, opname tables
+- `InventoryAnalyticsService` extended with KPI Lock Matrix (16 KPI) per governance design lock
+- `InventoryExecutiveSnapshot` immutable DTO (9 typed executive KPI fields)
+- `InventoryExecutiveDashboardService` — compose-only dashboard orchestration (no direct DB)
+- Executive Dashboard UI at `/inventory/executive-dashboard` with KPI strip, trends, movement
+  intelligence, valuation/aging, supplier table, reorder recommendations
+- Permission `view_inventory_executive_dashboard` with policy gate and sidebar link
+- Performance audit (16.7.9) — branch isolation PASS, supplier on-time N+1 fix, 16.8 readiness 82/100
+
+**Analytics architecture:**
+
+```text
+Controller → InventoryExecutiveDashboardService → InventoryAnalyticsService
+  → InventoryAnalyticsRepositoryInterface → ledger + procurement + master tables
+```
+
+Activity log (`inv_inventory_activity_logs`) explicitly **not** used as KPI source — audit/drill-down only.
+
+**Executive dashboard:**
+
+- Route `inventory.executive-dashboard`; thin `InventoryExecutiveDashboardController`
+- Operational Inventory Value disclaimer (derived stock × `average_cost`, not accounting valuation)
+- Reuse Sprint 15.5 fast/slow/dead/aging definitions; extend with procurement intelligence
+
+**Performance audit:**
+
+- Branch isolation: PASS (all methods `where branch_id = ?`)
+- MVP index coverage: ADEQUATE; composite index follow-up deferred to 16.8
+- Dashboard load: ~100–120 SQL statements at 10 suppliers (acceptable at pilot scale)
+- Supplier on-time N+1 batched; stock subquery/product derived-stock repetition deferred to 16.8
+
+**Out of scope:** Cross-branch rollup UI (`view_inventory_cross_branch` not seeded), summary tables,
+Redis cache, CSV/PDF export, enhanced analytics page tabs, accounting-grade valuation.
+
+## Quality Gates
+
+**Full-suite verification (recorded at Sprint 16.7 completion):**
+
+| Gate | Result |
+|---|---|
+| Full test suite (`php artisan test`) | PASS — 1189 tests, 4124 assertions |
+| Inventory analytics filter | PASS — 54 tests, 210 assertions |
+| Inventory executive filter | PASS — 47 tests, 256 assertions |
+| Pint (`./vendor/bin/pint`) | PASS |
+| Frontend build (`npm run build`) | PASS |
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Completion Date | 2026-06-07 |
+| Sprint Slice | 16.7 — Inventory Analytics & Executive Dashboard |
+| Status | COMPLETED (full-suite gates verified) |
+| Tag | `sprint-16.7-complete` |
+| Completion doc | `docs/sprint_16_7_inventory_analytics_completion.md` |
+| Performance audit | `docs/sprint_16_7_performance_audit.md` |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -2070,6 +2141,13 @@ export, log retention/archival.
   append-only logs with `branch_id` scope; non-blocking logging in workflow services; ledger-derived
   stock unchanged; Activity Log UI permission-gated via `view_inventory_activity_log` with inventory
   view fallbacks.
+- **Sprint 16.7 completed baseline — Inventory Analytics & Executive Dashboard:** Future changes
+  must preserve ledger-derived analytics (no mutable stock columns, no analytics cache tables in
+  MVP), branch-scoped queries via `BranchContext::requireId()`, read-only
+  `InventoryAnalyticsService` behind `InventoryAnalyticsRepositoryInterface`, compose-only
+  `InventoryExecutiveDashboardService`, KPI Lock Matrix formulas, activity log forbidden as KPI
+  source, and Operational Inventory Value disclaimer. Cross-branch rollup, summary tables, and
+  `view_inventory_cross_branch` permission remain follow-up work (Sprint 16.8).
 - **Sprint 17 — HR Core:** Separate module; not directly coupled to production/payroll/attendance
   except through explicit services/relationships. Branch-owned employees use `branch_id` +
   `BranchContext`.
@@ -2126,4 +2204,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 16.6 and must be updated as each new sprint completes.*
+Sprint 16.7 and must be updated as each new sprint completes.*

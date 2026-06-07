@@ -1,15 +1,24 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
+use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
+use App\Modules\Inventory\Models\GoodsReceipt;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
+use App\Modules\Inventory\Models\PurchaseOrder;
+use App\Modules\Inventory\Models\PurchaseRequest;
+use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\InventoryAnalyticsService;
 use App\Modules\Inventory\Services\InventoryStockService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Schema;
+use Mockery\MockInterface;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -345,4 +354,182 @@ it('builds analytics summary from ledger derived metrics', function () {
     ])
         ->and($summary['inventory_value'])->toBe(800.0)
         ->and($summary['fast_moving_count'])->toBeGreaterThanOrEqual(1);
+});
+
+it('resolves inventory analytics service from the container', function () {
+    expect(app(InventoryAnalyticsService::class))->toBeInstanceOf(InventoryAnalyticsService::class);
+});
+
+it('delegates getKpiSummary values to the analytics repository', function () {
+    $branch = Branch::factory()->create(['code' => 'KPI-'.uniqid(), 'name' => 'KPI Test Branch']);
+    $location = InventoryLocation::factory()->create(['branch_id' => $branch->id]);
+    $product = Product::factory()->create([
+        'branch_id' => $branch->id,
+        'average_cost' => 100,
+        'is_active' => true,
+    ]);
+
+    createMovementWithDate($branch, $product, $location, now()->subDays(5)->toDateString(), qtyIn: 8);
+
+    $approvedPo = PurchaseOrder::factory()->approved()->create(['branch_id' => $branch->id]);
+    PurchaseOrder::factory()->sent()->create(['branch_id' => $branch->id]);
+    PurchaseRequest::factory()->approved()->create(['branch_id' => $branch->id]);
+    GoodsReceipt::factory()->draft()->forPurchaseOrder($approvedPo)->create(['branch_id' => $branch->id]);
+
+    $summary = $this->analytics->getKpiSummary($branch->id);
+
+    expect($summary)->toHaveKeys([
+        'inventory_value',
+        'active_sku',
+        'low_stock_count',
+        'dead_stock_count',
+        'open_pr',
+        'open_po',
+        'pending_gr',
+        'in_transit_transfer',
+        'inventory_accuracy',
+    ])
+        ->and($summary['inventory_value'])->toBe(800.0)
+        ->and($summary['active_sku'])->toBe(1)
+        ->and($summary['open_po'])->toBe(2)
+        ->and($summary['open_pr'])->toBe(1)
+        ->and($summary['pending_gr'])->toBe(1)
+        ->and($summary['inventory_accuracy'])->toBeNull();
+});
+
+it('returns operational valuation note from getStockValuation', function () {
+    $valuation = $this->analytics->getStockValuation($this->branch->id);
+
+    expect($valuation)->toHaveKeys(['total_value', 'valuation_type', 'valuation_note', 'generated_at'])
+        ->and($valuation['valuation_type'])->toBe('operational')
+        ->and($valuation['valuation_note'])->toContain('Operational inventory value')
+        ->and($valuation['valuation_note'])->toContain('Not accounting valuation');
+});
+
+it('delegates getFastMovingItems to the analytics repository', function () {
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $fastProduct = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 50]);
+    $slowProduct = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 50]);
+
+    createMovementWithDate($this->branch, $fastProduct, $location, now()->subDays(20)->toDateString(), qtyIn: 50);
+    createMovementWithDate($this->branch, $slowProduct, $location, now()->subDays(20)->toDateString(), qtyIn: 50);
+    createMovementWithDate($this->branch, $fastProduct, $location, now()->subDays(5)->toDateString(), qtyOut: 20);
+    createMovementWithDate($this->branch, $slowProduct, $location, now()->subDays(5)->toDateString(), qtyOut: 2);
+
+    $items = $this->analytics->getFastMovingItems($this->branch->id, days: 90, limit: 5);
+
+    expect($items)->toHaveCount(2)
+        ->and($items->first()['product_id'])->toBe($fastProduct->id)
+        ->and($items->first()['outbound_qty_period'])->toBe(20.0);
+});
+
+it('delegates getSupplierPerformance to the analytics repository', function () {
+    $supplier = Supplier::factory()->create(['branch_id' => $this->branch->id, 'is_active' => true]);
+
+    PurchaseOrder::factory()->approved()->create([
+        'branch_id' => $this->branch->id,
+        'supplier_id' => $supplier->id,
+        'expected_delivery_date' => now()->addDays(5)->toDateString(),
+    ]);
+
+    $performance = $this->analytics->getSupplierPerformance($this->branch->id);
+    $row = $performance->firstWhere('supplier_id', $supplier->id);
+
+    expect($row)->not->toBeNull()
+        ->and($row)->toHaveKeys([
+            'supplier_id',
+            'supplier_name',
+            'order_count',
+            'coverage_percentage',
+        ]);
+});
+
+it('delegates getReorderRecommendations to the analytics repository', function () {
+    $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $lowProduct = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'reorder_point' => 20,
+        'minimum_stock' => 10,
+        'alert_enabled' => true,
+        'is_active' => true,
+    ]);
+
+    createMovementWithDate($this->branch, $lowProduct, $location, now()->subDays(3)->toDateString(), qtyIn: 12);
+
+    $recommendations = $this->analytics->getReorderRecommendations($this->branch->id);
+
+    expect($recommendations->pluck('product_id')->all())->toBe([$lowProduct->id]);
+});
+
+it('preserves sprint 15.5 backward compatible analytics methods', function () {
+    $service = app(InventoryAnalyticsService::class);
+
+    expect(method_exists($service, 'getFastMovingProducts'))->toBeTrue()
+        ->and(method_exists($service, 'getSlowMovingProducts'))->toBeTrue()
+        ->and(method_exists($service, 'getDeadStockProducts'))->toBeTrue()
+        ->and(method_exists($service, 'getInventoryAging'))->toBeTrue()
+        ->and(method_exists($service, 'getStockAgingAnalysis'))->toBeTrue()
+        ->and(method_exists($service, 'getInventoryTurnover'))->toBeTrue()
+        ->and(method_exists($service, 'getInventoryValueByCategory'))->toBeTrue()
+        ->and(method_exists($service, 'getInventoryValueByLocation'))->toBeTrue()
+        ->and(method_exists($service, 'getMonthlyOutboundValueTrend'))->toBeTrue()
+        ->and(method_exists($service, 'getAnalyticsSummary'))->toBeTrue();
+});
+
+it('does not require controller or ui to expose analytics service methods', function () {
+    expect(class_exists(InventoryAnalyticsController::class))->toBeTrue();
+
+    $reflection = new ReflectionClass(InventoryAnalyticsService::class);
+
+    expect($reflection->getNamespaceName())->toBe('App\\Modules\\Inventory\\Services');
+});
+
+it('forwards mocked repository values in getKpiSummary without recalculating scalars', function () {
+    $mockRepository = Mockery::mock(InventoryAnalyticsRepositoryInterface::class, function (MockInterface $mock) {
+        $mock->shouldReceive('getInventoryValue')->once()->with(99)->andReturn(12345.67);
+        $mock->shouldReceive('getActiveSkuCount')->once()->with(99)->andReturn(7);
+        $mock->shouldReceive('getLowStockCount')->once()->with(99)->andReturn(3);
+        $mock->shouldReceive('getDeadStockCount')->once()->with(99)->andReturn(2);
+        $mock->shouldReceive('getOpenPurchaseRequestCount')->once()->with(99)->andReturn(4);
+        $mock->shouldReceive('getOpenPurchaseOrderCount')->once()->with(99)->andReturn(5);
+        $mock->shouldReceive('getPendingGoodsReceiptCount')->once()->with(99)->andReturn(1);
+        $mock->shouldReceive('getInTransitTransferCount')->once()->with(99)->andReturn(0);
+        $mock->shouldReceive('getInventoryAccuracy')->once()->with(99)->andReturn(null);
+    });
+
+    $service = new InventoryAnalyticsService(
+        app(InventoryMovementRepositoryInterface::class),
+        app(InventoryBatchRepositoryInterface::class),
+        $mockRepository,
+    );
+
+    expect($service->getKpiSummary(99))->toBe([
+        'inventory_value' => 12345.67,
+        'active_sku' => 7,
+        'low_stock_count' => 3,
+        'dead_stock_count' => 2,
+        'open_pr' => 4,
+        'open_po' => 5,
+        'pending_gr' => 1,
+        'in_transit_transfer' => 0,
+        'inventory_accuracy' => null,
+    ]);
+});
+
+it('delegates getFastMovingItems through mocked repository contract', function () {
+    $expected = collect([
+        ['product_id' => 1, 'product_code' => 'SKU-1', 'product_name' => 'Resin A', 'current_stock' => 10.0, 'outbound_qty_period' => 5.0, 'outbound_value_period' => 50.0, 'stock_value' => 100.0],
+    ]);
+
+    $mockRepository = Mockery::mock(InventoryAnalyticsRepositoryInterface::class, function (MockInterface $mock) use ($expected) {
+        $mock->shouldReceive('getFastMovingItems')->once()->with(42, 30, 3)->andReturn($expected);
+    });
+
+    $service = new InventoryAnalyticsService(
+        app(InventoryMovementRepositoryInterface::class),
+        app(InventoryBatchRepositoryInterface::class),
+        $mockRepository,
+    );
+
+    expect($service->getFastMovingItems(42, days: 30, limit: 3))->toBe($expected);
 });

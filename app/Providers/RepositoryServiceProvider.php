@@ -26,6 +26,7 @@ use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -61,6 +62,7 @@ use App\Modules\Inventory\Policies\StockTransferPolicy;
 use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\GoodsReceiptRepository;
 use App\Modules\Inventory\Repositories\InventoryActivityLogRepository;
+use App\Modules\Inventory\Repositories\InventoryAnalyticsRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -191,6 +193,8 @@ class RepositoryServiceProvider extends ServiceProvider
         GoodsReceiptRepositoryInterface::class => GoodsReceiptRepository::class,
         // Sprint 16.6 - Inventory Activity Log
         InventoryActivityLogRepositoryInterface::class => InventoryActivityLogRepository::class,
+        // Sprint 16.7 - Inventory Analytics
+        InventoryAnalyticsRepositoryInterface::class => InventoryAnalyticsRepository::class,
     ];
 
     /**

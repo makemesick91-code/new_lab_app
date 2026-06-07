@@ -30,6 +30,7 @@ describe('backward compatibility with legacy inventory permissions', function ()
             ->and($viewer->can('viewAny', InventoryBatch::class))->toBeTrue()
             ->and($viewer->can('viewAlerts', InventoryMovement::class))->toBeTrue()
             ->and($viewer->can('viewAnalytics', InventoryMovement::class))->toBeTrue()
+            ->and($viewer->can('viewExecutiveDashboard', InventoryMovement::class))->toBeTrue()
             ->and($viewer->can('viewAny', StockTransfer::class))->toBeTrue()
             ->and($viewer->can('viewAny', PurchaseRequest::class))->toBeTrue()
             ->and($viewer->can('viewAny', PurchaseOrder::class))->toBeTrue()
@@ -74,6 +75,7 @@ describe('backward compatibility with legacy inventory permissions', function ()
             ->and($admin->can('viewAny', PurchaseRequest::class))->toBeTrue()
             ->and($admin->can('viewAny', GoodsReceipt::class))->toBeTrue()
             ->and($admin->can('viewAny', InventoryActivityLog::class))->toBeTrue()
+            ->and($admin->can('viewExecutiveDashboard', InventoryMovement::class))->toBeTrue()
             ->and($admin->can('create', Product::class))->toBeTrue();
     });
 
@@ -267,6 +269,7 @@ describe('sidebar visibility with granular permissions', function () {
             ->assertSee('Produk')
             ->assertSee('Peringatan Stok')
             ->assertSee('Analitik Persediaan')
+            ->assertSee('Dasbor Eksekutif')
             ->assertSee('Log Aktivitas');
     });
 
@@ -279,5 +282,17 @@ describe('sidebar visibility with granular permissions', function () {
             ->assertSee('Persediaan')
             ->assertSee('Log Aktivitas')
             ->assertDontSee('>Produk</a>', false);
+    });
+
+    it('shows executive dashboard entry for granular executive viewers without core inventory links', function () {
+        $user = userWith(['view_inventory_executive_dashboard']);
+        $this->actingAs($user);
+
+        $this->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Persediaan')
+            ->assertSee('Dasbor Eksekutif')
+            ->assertDontSee('>Produk</a>', false)
+            ->assertDontSee('>Dasbor</a>', false);
     });
 });
