@@ -138,6 +138,10 @@
                     @canany(['view_clinic_master_data', 'manage_clinic_master_data'])
                         <a href="{{ route('settings.clinic-rooms.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.clinic-rooms.*') ? $linkActive : $linkIdle }}">Master Ruangan</a>
+                        <a href="{{ route('settings.treatment-categories.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.treatment-categories.*') ? $linkActive : $linkIdle }}">Master Kategori Perawatan</a>
+                        <a href="{{ route('settings.treatments.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.treatments.*') ? $linkActive : $linkIdle }}">Master Perawatan</a>
                     @endcanany
                 </div>
             </div>

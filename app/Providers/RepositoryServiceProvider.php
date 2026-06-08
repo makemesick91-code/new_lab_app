@@ -142,6 +142,14 @@ use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Policies\TechnicianPolicy;
 use App\Modules\Technician\Repositories\TechnicianRepository;
+use App\Modules\Treatment\Interfaces\TreatmentRepositoryInterface;
+use App\Modules\Treatment\Models\Treatment;
+use App\Modules\Treatment\Policies\TreatmentPolicy;
+use App\Modules\Treatment\Repositories\TreatmentRepository;
+use App\Modules\TreatmentCategory\Interfaces\TreatmentCategoryRepositoryInterface;
+use App\Modules\TreatmentCategory\Models\TreatmentCategory;
+use App\Modules\TreatmentCategory\Policies\TreatmentCategoryPolicy;
+use App\Modules\TreatmentCategory\Repositories\TreatmentCategoryRepository;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use App\Modules\User\Policies\UserPolicy;
 use App\Modules\User\Repositories\UserRepository;
@@ -168,6 +176,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRepositoryInterface::class => ClinicRepository::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
+        TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,
+        TreatmentRepositoryInterface::class => TreatmentRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -269,6 +279,8 @@ class RepositoryServiceProvider extends ServiceProvider
         Clinic::class => ClinicPolicy::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoom::class => ClinicRoomPolicy::class,
+        TreatmentCategory::class => TreatmentCategoryPolicy::class,
+        Treatment::class => TreatmentPolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,

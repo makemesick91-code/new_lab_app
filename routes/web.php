@@ -45,6 +45,8 @@ use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardC
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\Technician\Controllers\TechnicianController;
+use App\Modules\Treatment\Controllers\TreatmentController;
+use App\Modules\TreatmentCategory\Controllers\TreatmentCategoryController;
 use App\Modules\User\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -139,6 +141,13 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('clinic-rooms', ClinicRoomController::class)
             ->except(['show'])
             ->parameters(['clinic-rooms' => 'clinicRoom']);
+
+        // Sprint 19 Phase 2 — Treatment master data (global, not branch-scoped).
+        Route::resource('treatment-categories', TreatmentCategoryController::class)
+            ->except(['show'])
+            ->parameters(['treatment-categories' => 'treatmentCategory']);
+        Route::resource('treatments', TreatmentController::class)
+            ->except(['show']);
     });
 });
 
