@@ -34,7 +34,12 @@
             'settings.doctors.*',
             'settings.patients.*',
             'settings.lab-services.*',
-            'settings.technicians.*'
+            'settings.technicians.*',
+            'settings.clinic-rooms.*',
+            'settings.treatment-categories.*',
+            'settings.treatments.*',
+            'settings.tariffs.*',
+            'settings.payment-methods.*'
         ),
         'operational' => request()->routeIs('lab-orders.*', 'production.*', 'quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
@@ -142,6 +147,10 @@
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.treatment-categories.*') ? $linkActive : $linkIdle }}">Master Kategori Perawatan</a>
                         <a href="{{ route('settings.treatments.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.treatments.*') ? $linkActive : $linkIdle }}">Master Perawatan</a>
+                        <a href="{{ route('settings.tariffs.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.tariffs.*') ? $linkActive : $linkIdle }}">Master Tarif</a>
+                        <a href="{{ route('settings.payment-methods.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.payment-methods.*') ? $linkActive : $linkIdle }}">Master Metode Pembayaran</a>
                     @endcanany
                 </div>
             </div>

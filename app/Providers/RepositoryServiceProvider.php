@@ -115,6 +115,10 @@ use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Policies\PatientPolicy;
 use App\Modules\Patient\Repositories\PatientRepository;
+use App\Modules\PaymentMethod\Interfaces\PaymentMethodRepositoryInterface;
+use App\Modules\PaymentMethod\Models\PaymentMethod;
+use App\Modules\PaymentMethod\Policies\PaymentMethodPolicy;
+use App\Modules\PaymentMethod\Repositories\PaymentMethodRepository;
 use App\Modules\Production\Interfaces\AssignmentRepositoryInterface;
 use App\Modules\Production\Interfaces\ProductionStepRepositoryInterface;
 use App\Modules\Production\Interfaces\WorkLogRepositoryInterface;
@@ -183,6 +187,7 @@ class RepositoryServiceProvider extends ServiceProvider
         TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,
         TreatmentRepositoryInterface::class => TreatmentRepository::class,
         TariffRepositoryInterface::class => TariffRepository::class,
+        PaymentMethodRepositoryInterface::class => PaymentMethodRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -287,6 +292,7 @@ class RepositoryServiceProvider extends ServiceProvider
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,
+        PaymentMethod::class => PaymentMethodPolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,

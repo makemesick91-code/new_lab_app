@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             MasterDataSeeder::class,
             TreatmentCategorySeeder::class,
             TreatmentSeeder::class,
+            PaymentMethodSeeder::class,
             InventorySeeder::class,
             LabOrderSeeder::class,
             ProductionSeeder::class,

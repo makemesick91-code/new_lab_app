@@ -44,6 +44,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -153,6 +154,11 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         // Sprint 19 Phase 3 — Tariff master data (branch-scoped pricing for treatments).
         Route::resource('tariffs', TariffController::class)
             ->except(['show']);
+
+        // Sprint 19 Phase 4 — Payment Method master data (global, not branch-scoped).
+        Route::resource('payment-methods', PaymentMethodController::class)
+            ->except(['show'])
+            ->parameters(['payment-methods' => 'paymentMethod']);
     });
 });
 
