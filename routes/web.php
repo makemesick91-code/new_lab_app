@@ -44,6 +44,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
 use App\Modules\TreatmentCategory\Controllers\TreatmentCategoryController;
@@ -147,6 +148,10 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->except(['show'])
             ->parameters(['treatment-categories' => 'treatmentCategory']);
         Route::resource('treatments', TreatmentController::class)
+            ->except(['show']);
+
+        // Sprint 19 Phase 3 — Tariff master data (branch-scoped pricing for treatments).
+        Route::resource('tariffs', TariffController::class)
             ->except(['show']);
     });
 });

@@ -138,6 +138,10 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
+use App\Modules\Tariff\Models\Tariff;
+use App\Modules\Tariff\Policies\TariffPolicy;
+use App\Modules\Tariff\Repositories\TariffRepository;
 use App\Modules\Technician\Interfaces\TechnicianRepositoryInterface;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Policies\TechnicianPolicy;
@@ -178,6 +182,7 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
         TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,
         TreatmentRepositoryInterface::class => TreatmentRepository::class,
+        TariffRepositoryInterface::class => TariffRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -281,6 +286,7 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRoom::class => ClinicRoomPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
+        Tariff::class => TariffPolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,
