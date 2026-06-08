@@ -265,6 +265,10 @@
                         <a href="{{ route('inventory.stock.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok</a>
                     @endcan
+                    @can('viewAny', \App\Modules\Inventory\Models\LocationProductMinimum::class)
+                        <a href="{{ route('inventory.location-minimums.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.location-minimums.*') ? $linkActive : $linkIdle }}">Minimum Stok Ruangan</a>
+                    @endcan
                     @can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
                         <a href="{{ route('inventory.executive-dashboard') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('inventory.executive-dashboard') ? $linkActive : $linkIdle }}">Dasbor Eksekutif</a>

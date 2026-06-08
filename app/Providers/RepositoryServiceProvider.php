@@ -30,6 +30,7 @@ use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
+use App\Modules\Inventory\Interfaces\LocationProductMinimumRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductUnitRepositoryInterface;
@@ -43,6 +44,7 @@ use App\Modules\Inventory\Models\InventoryActivityLog;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\LocationProductMinimum;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
@@ -56,6 +58,7 @@ use App\Modules\Inventory\Policies\InventoryActivityLogPolicy;
 use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
+use App\Modules\Inventory\Policies\LocationProductMinimumPolicy;
 use App\Modules\Inventory\Policies\ProductCategoryPolicy;
 use App\Modules\Inventory\Policies\ProductPolicy;
 use App\Modules\Inventory\Policies\ProductUnitPolicy;
@@ -71,6 +74,7 @@ use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
 use App\Modules\Inventory\Repositories\InventorySummaryAnalyticsRepository;
+use App\Modules\Inventory\Repositories\LocationProductMinimumRepository;
 use App\Modules\Inventory\Repositories\ProductCategoryRepository;
 use App\Modules\Inventory\Repositories\ProductRepository;
 use App\Modules\Inventory\Repositories\ProductUnitRepository;
@@ -198,6 +202,8 @@ class RepositoryServiceProvider extends ServiceProvider
         GoodsReceiptRepositoryInterface::class => GoodsReceiptRepository::class,
         // Sprint 16.6 - Inventory Activity Log
         InventoryActivityLogRepositoryInterface::class => InventoryActivityLogRepository::class,
+        // Sprint 17.8 - Minimum Stock per Room
+        LocationProductMinimumRepositoryInterface::class => LocationProductMinimumRepository::class,
     ];
 
     /**
@@ -279,6 +285,8 @@ class RepositoryServiceProvider extends ServiceProvider
         PurchaseOrder::class => PurchaseOrderPolicy::class,
         GoodsReceipt::class => GoodsReceiptPolicy::class,
         InventoryActivityLog::class => InventoryActivityLogPolicy::class,
+        // Sprint 17.8 — per-room minimum/maximum stock threshold configuration
+        LocationProductMinimum::class => LocationProductMinimumPolicy::class,
     ];
 
     public function register(): void

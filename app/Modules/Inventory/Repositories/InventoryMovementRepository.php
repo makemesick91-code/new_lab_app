@@ -409,70 +409,123 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->withQueryString();
     }
 
+    /**
+     * Sprint 17.8 — room stock report with per-room thresholds (inv_location_product_minimums).
+     *
+     * The (location, product) key set is the UNION of:
+     *   A. pairs that have ledger movements, and
+     *   B. pairs that have an active configured per-room threshold.
+     * UNION (not UNION ALL) de-duplicates overlaps, so a configured room still
+     * appears with current_stock = 0 even when it has no movement rows yet.
+     *
+     * Stock stays ledger-derived (SUM(in) - SUM(out)); thresholds are configuration
+     * only. effective_minimum_stock prefers the per-room minimum, then falls back to
+     * the product-level minimum, then 0.
+     */
     public function getRoomStockReport(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        if (($filters['stock_status'] ?? null) === 'overstock') {
-            return InventoryMovement::query()
-                ->whereRaw('1 = 0')
-                ->paginate($perPage, ['*'], 'room_stock_page')
-                ->withQueryString();
-        }
+        $locationFilter = $filters['inventory_location_id'] ?? null;
+        $productFilter = $filters['product_id'] ?? null;
 
-        $stockExpression = 'COALESCE(SUM(trx_inventory_movements.quantity_in) - SUM(trx_inventory_movements.quantity_out), 0)';
+        $movementKeys = DB::table('trx_inventory_movements')
+            ->select('inventory_location_id', 'product_id')
+            ->where('branch_id', $branchId)
+            ->when($locationFilter, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($productFilter, fn ($q, $v) => $q->where('product_id', $v))
+            ->groupBy('inventory_location_id', 'product_id');
 
-        $query = InventoryMovement::query()
-            ->join('mst_branches', 'mst_branches.id', '=', 'trx_inventory_movements.branch_id')
-            ->join('inv_inventory_locations', 'inv_inventory_locations.id', '=', 'trx_inventory_movements.inventory_location_id')
-            ->join('inv_products', 'inv_products.id', '=', 'trx_inventory_movements.product_id')
-            ->join('inv_product_categories', 'inv_product_categories.id', '=', 'inv_products.product_category_id')
+        $thresholdKeys = DB::table('inv_location_product_minimums')
+            ->select('inventory_location_id', 'product_id')
+            ->where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->when($locationFilter, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($productFilter, fn ($q, $v) => $q->where('product_id', $v));
+
+        $keys = $movementKeys->union($thresholdKeys);
+
+        $movementAgg = DB::table('trx_inventory_movements')
+            ->select('inventory_location_id', 'product_id')
+            ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as current_stock')
+            ->selectRaw('MAX(movement_date) as last_movement_date')
+            ->where('branch_id', $branchId)
+            ->groupBy('inventory_location_id', 'product_id');
+
+        // Query aliases only — never persisted. Stock remains ledger-derived.
+        $stockExpression = 'COALESCE(room_movements.current_stock, 0)';
+        $minimumExpression = 'COALESCE(room_minimums.minimum_stock, inv_products.minimum_stock, 0)';
+        $maximumExpression = 'room_minimums.maximum_stock';
+
+        $query = DB::query()
+            ->fromSub($keys, 'room_keys')
+            ->join('inv_inventory_locations', function ($join) use ($branchId) {
+                $join->on('inv_inventory_locations.id', '=', 'room_keys.inventory_location_id')
+                    ->where('inv_inventory_locations.branch_id', $branchId);
+            })
+            ->join('inv_products', function ($join) use ($branchId) {
+                $join->on('inv_products.id', '=', 'room_keys.product_id')
+                    ->where('inv_products.branch_id', $branchId);
+            })
+            ->join('inv_product_categories', function ($join) use ($branchId) {
+                $join->on('inv_product_categories.id', '=', 'inv_products.product_category_id')
+                    ->where('inv_product_categories.branch_id', $branchId);
+            })
             ->join('inv_product_units', 'inv_product_units.id', '=', 'inv_products.product_unit_id')
-            ->where('trx_inventory_movements.branch_id', $branchId)
-            ->where('inv_inventory_locations.branch_id', $branchId)
-            ->where('inv_products.branch_id', $branchId)
-            ->where('inv_product_categories.branch_id', $branchId)
-            ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
-            ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
+            ->join('mst_branches', 'mst_branches.id', '=', 'inv_inventory_locations.branch_id')
+            ->leftJoinSub($movementAgg, 'room_movements', function ($join) {
+                $join->on('room_movements.inventory_location_id', '=', 'room_keys.inventory_location_id')
+                    ->on('room_movements.product_id', '=', 'room_keys.product_id');
+            })
+            ->leftJoin('inv_location_product_minimums as room_minimums', function ($join) use ($branchId) {
+                $join->on('room_minimums.inventory_location_id', '=', 'room_keys.inventory_location_id')
+                    ->on('room_minimums.product_id', '=', 'room_keys.product_id')
+                    ->where('room_minimums.branch_id', $branchId)
+                    ->where('room_minimums.is_active', true);
+            })
             ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
             ->select([
-                'trx_inventory_movements.branch_id',
+                'inv_inventory_locations.branch_id',
                 'mst_branches.name as branch_name',
-                'trx_inventory_movements.inventory_location_id',
+                'room_keys.inventory_location_id',
                 'inv_inventory_locations.name as inventory_location_name',
-                'trx_inventory_movements.product_id',
+                'room_keys.product_id',
                 'inv_products.code as product_code',
                 'inv_products.name as product_name',
                 'inv_product_categories.name as category_name',
                 'inv_product_units.name as unit_name',
                 'inv_product_units.symbol as unit_symbol',
-                'inv_products.minimum_stock',
             ])
             ->selectRaw("{$stockExpression} as current_stock")
+            ->selectRaw("{$minimumExpression} as minimum_stock")
+            ->selectRaw("{$minimumExpression} as effective_minimum_stock")
+            ->selectRaw("{$maximumExpression} as maximum_stock")
             ->selectRaw("CASE
                 WHEN {$stockExpression} <= 0 THEN 'empty'
-                WHEN {$stockExpression} > 0 AND {$stockExpression} < inv_products.minimum_stock THEN 'low'
+                WHEN {$maximumExpression} IS NOT NULL AND {$stockExpression} > {$maximumExpression} THEN 'overstock'
+                WHEN {$stockExpression} < {$minimumExpression} THEN 'low'
                 ELSE 'normal'
             END as stock_status")
-            ->selectRaw('MAX(trx_inventory_movements.movement_date) as last_movement_date')
-            ->groupBy([
-                'trx_inventory_movements.branch_id',
-                'mst_branches.name',
-                'trx_inventory_movements.inventory_location_id',
-                'inv_inventory_locations.name',
-                'trx_inventory_movements.product_id',
-                'inv_products.code',
-                'inv_products.name',
-                'inv_product_categories.name',
-                'inv_product_units.name',
-                'inv_product_units.symbol',
-                'inv_products.minimum_stock',
-            ]);
+            ->selectRaw("CASE
+                WHEN {$stockExpression} >= {$minimumExpression} THEN 0
+                WHEN {$maximumExpression} IS NOT NULL THEN
+                    CASE WHEN {$maximumExpression} - {$stockExpression} < 0 THEN 0 ELSE {$maximumExpression} - {$stockExpression} END
+                ELSE
+                    CASE WHEN {$minimumExpression} - {$stockExpression} < 0 THEN 0 ELSE {$minimumExpression} - {$stockExpression} END
+            END as suggested_refill_qty")
+            ->selectRaw('room_movements.last_movement_date as last_movement_date');
 
         match ($filters['stock_status'] ?? null) {
-            'empty' => $query->havingRaw("{$stockExpression} <= 0"),
+            'empty' => $query->whereRaw("{$stockExpression} <= 0"),
             'low' => $query
-                ->havingRaw("{$stockExpression} > 0")
-                ->havingRaw("{$stockExpression} < inv_products.minimum_stock"),
-            'normal' => $query->havingRaw("{$stockExpression} >= inv_products.minimum_stock"),
+                ->whereRaw("{$stockExpression} > 0")
+                ->whereRaw("({$maximumExpression} IS NULL OR {$stockExpression} <= {$maximumExpression})")
+                ->whereRaw("{$stockExpression} < {$minimumExpression}"),
+            'normal' => $query
+                ->whereRaw("{$stockExpression} > 0")
+                ->whereRaw("({$maximumExpression} IS NULL OR {$stockExpression} <= {$maximumExpression})")
+                ->whereRaw("{$stockExpression} >= {$minimumExpression}"),
+            'overstock' => $query
+                ->whereRaw("{$maximumExpression} IS NOT NULL")
+                ->whereRaw("{$stockExpression} > {$maximumExpression}"),
             default => null,
         };
 

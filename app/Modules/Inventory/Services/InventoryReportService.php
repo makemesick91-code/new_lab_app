@@ -11,6 +11,7 @@ use App\Modules\Inventory\Models\InventoryMovement;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InventoryReportService
@@ -153,12 +154,39 @@ class InventoryReportService
             ->groupBy('product_id');
 
         $rows->setCollection($rows->getCollection()->map(function ($row) use ($stockSources) {
-            $row->setAttribute('recommendation', $this->recommendRoomStockRefill($row, $stockSources->get($row->product_id, collect())));
+            // Rows are stdClass (DB::query fromSub), so assign directly rather than setAttribute().
+            $row->recommendation = $this->recommendRoomStockRefill($row, $stockSources->get($row->product_id, collect()));
 
             return $row;
         }));
 
         return $rows;
+    }
+
+    /**
+     * Threshold-aware room_stock rows that need a refill, for the printable checklist.
+     *
+     * Reuses getRoomStockReport() so the checklist never diverges from the on-screen
+     * report. A row needs refill when current_stock < effective_minimum_stock. Filtering
+     * on the numeric comparison (not stock_status) is deliberate: zero-stock rows that
+     * have a configured room threshold are classified 'empty' before 'low', so a
+     * status-only filter would drop them. The numeric test catches both 'empty' (with a
+     * threshold) and 'low' rows. Normal and overstock rows fall out naturally. Rows are
+     * read-only query aliases — no stock is mutated and no movement is created.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, object>
+     */
+    public function getRoomStockRefillChecklist(array $filters): Collection
+    {
+        $checklistFilters = array_merge($filters, ['per_page' => self::EXPORT_ROW_CAP]);
+        // Do not force a single stock_status: empty-with-threshold and low both need refill.
+        unset($checklistFilters['stock_status']);
+
+        return $this->getRoomStockReport($checklistFilters)
+            ->getCollection()
+            ->filter(fn ($row) => (float) $row->current_stock < (float) $row->effective_minimum_stock)
+            ->values();
     }
 
     public function exportCsv(array $filters): StreamedResponse
@@ -407,7 +435,9 @@ class InventoryReportService
                     'Kategori',
                     'Satuan',
                     'Stok Saat Ini',
-                    'Minimum',
+                    'Minimum Stok Ruangan',
+                    'Maksimum Stok Ruangan',
+                    'Saran Refill',
                     'Status',
                     'Rekomendasi Refill',
                     'Movement Terakhir',
@@ -421,6 +451,8 @@ class InventoryReportService
                     (string) ($row->unit_symbol ?: $row->unit_name),
                     $this->formatQuantity($row->current_stock),
                     $this->formatQuantity($row->minimum_stock),
+                    $row->maximum_stock === null ? '' : $this->formatQuantity($row->maximum_stock),
+                    $this->formatQuantity($row->suggested_refill_qty),
                     $this->stockStatusLabel((string) $row->stock_status),
                     (string) $row->recommendation,
                     $this->formatDate($row->last_movement_date),

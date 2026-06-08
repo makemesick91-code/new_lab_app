@@ -16,6 +16,7 @@ use App\Modules\Inventory\Controllers\InventoryExecutiveDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
 use App\Modules\Inventory\Controllers\InventoryReportController;
 use App\Modules\Inventory\Controllers\InventoryStockController;
+use App\Modules\Inventory\Controllers\LocationProductMinimumController;
 use App\Modules\Inventory\Controllers\ProductCategoryController;
 use App\Modules\Inventory\Controllers\ProductController as InventoryProductController;
 use App\Modules\Inventory\Controllers\ProductImportController;
@@ -321,6 +322,7 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 
     Route::get('reports', [InventoryReportController::class, 'index'])->name('reports.index');
     Route::get('reports/export', [InventoryReportController::class, 'export'])->name('reports.export');
+    Route::get('reports/room-stock/refill-checklist', [InventoryReportController::class, 'downloadRoomStockRefillChecklist'])->name('reports.room-stock.refill-checklist');
 
     Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');
 
@@ -344,6 +346,10 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::resource('product-units', ProductUnitController::class)
         ->except(['show'])
         ->parameters(['product-units' => 'productUnit']);
+    Route::resource('location-minimums', LocationProductMinimumController::class)
+        ->except(['show'])
+        ->names('location-minimums')
+        ->parameters(['location-minimums' => 'locationProductMinimum']);
     Route::get('products/import/template', [ProductImportController::class, 'template'])->name('products.import.template');
     Route::get('products/import', [ProductImportController::class, 'create'])->name('products.import');
     Route::post('products/import', [ProductImportController::class, 'store'])->name('products.import.store');

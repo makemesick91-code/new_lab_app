@@ -716,11 +716,15 @@
         <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <h3 class="text-base font-semibold text-gray-900">Stok per Ruangan</h3>
             <p class="mt-1 text-sm text-sky-700">Ruangan menggunakan data Lokasi Inventory.</p>
-            <p class="mt-1 text-sm text-gray-500">Minimum stock saat ini masih menggunakan minimum produk. Minimum per ruangan dapat ditambahkan pada sprint lanjutan.</p>
-            <div class="mt-3">
+            <p class="mt-1 text-sm text-gray-500">Minimum/maksimum per ruangan diambil dari konfigurasi Minimum Stok Ruangan. Bila ruangan belum dikonfigurasi, minimum mengikuti minimum produk. Produk dengan ambang per ruangan tetap tampil meski belum ada pergerakan.</p>
+            <div class="mt-3 flex flex-wrap gap-2">
                 <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'room_stock'])) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
+                </a>
+                <a href="{{ route('inventory.reports.room-stock.refill-checklist', $exportFilters) }}"
+                   class="inline-flex items-center rounded-lg border border-teal-600 bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    Cetak Checklist Refill
                 </a>
             </div>
 
@@ -735,7 +739,9 @@
                             <th scope="col" class="px-3 py-2 font-medium">Kategori</th>
                             <th scope="col" class="px-3 py-2 font-medium">Satuan</th>
                             <th scope="col" class="px-3 py-2 text-right font-medium">Stok Saat Ini</th>
-                            <th scope="col" class="px-3 py-2 text-right font-medium">Minimum</th>
+                            <th scope="col" class="px-3 py-2 text-right font-medium">Min. Ruangan</th>
+                            <th scope="col" class="px-3 py-2 text-right font-medium">Maks. Ruangan</th>
+                            <th scope="col" class="px-3 py-2 text-right font-medium">Saran Refill</th>
                             <th scope="col" class="px-3 py-2 font-medium">Status</th>
                             <th scope="col" class="px-3 py-2 font-medium">Rekomendasi Refill</th>
                             <th scope="col" class="px-3 py-2 font-medium">Movement Terakhir</th>
@@ -770,6 +776,8 @@
                                 <td class="px-3 py-2 text-gray-700">{{ $row->unit_symbol ?: $row->unit_name }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums text-gray-900">{{ number_format((float) $row->current_stock, 4) }}</td>
                                 <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ number_format((float) $row->minimum_stock, 4) }}</td>
+                                <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ $row->maximum_stock !== null ? number_format((float) $row->maximum_stock, 4) : '-' }}</td>
+                                <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ number_format((float) $row->suggested_refill_qty, 4) }}</td>
                                 <td class="px-3 py-2">
                                     <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $statusClasses }}">{{ $statusLabel }}</span>
                                 </td>
@@ -780,7 +788,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="11" class="px-3 py-6 text-center text-sm text-gray-500">Tidak ada stok pada ruangan yang dipilih.</td>
+                                <td colspan="13" class="px-3 py-6 text-center text-sm text-gray-500">Tidak ada stok pada ruangan yang dipilih.</td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -822,16 +830,20 @@
                                 <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format((float) $row->current_stock, 4) }}</dd>
                             </div>
                             <div class="rounded-lg bg-gray-50 p-3">
-                                <dt class="text-xs text-gray-500">Minimum</dt>
+                                <dt class="text-xs text-gray-500">Min. Ruangan</dt>
                                 <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format((float) $row->minimum_stock, 4) }}</dd>
+                            </div>
+                            <div class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">Maks. Ruangan</dt>
+                                <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ $row->maximum_stock !== null ? number_format((float) $row->maximum_stock, 4) : '-' }}</dd>
+                            </div>
+                            <div class="rounded-lg bg-gray-50 p-3">
+                                <dt class="text-xs text-gray-500">Saran Refill</dt>
+                                <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ number_format((float) $row->suggested_refill_qty, 4) }}</dd>
                             </div>
                             <div class="rounded-lg bg-gray-50 p-3">
                                 <dt class="text-xs text-gray-500">Movement Terakhir</dt>
                                 <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ $row->last_movement_date ? \Illuminate\Support\Carbon::parse($row->last_movement_date)->format('d M Y') : '-' }}</dd>
-                            </div>
-                            <div class="rounded-lg bg-gray-50 p-3">
-                                <dt class="text-xs text-gray-500">Ruangan</dt>
-                                <dd class="mt-1 font-semibold text-gray-900">{{ $row->inventory_location_name }}</dd>
                             </div>
                         </dl>
                         <p class="mt-3 text-sm font-medium text-gray-900">{{ $row->recommendation }}</p>

@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\LocationProductMinimum;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
@@ -1801,7 +1802,7 @@ it('renders the room stock report section', function () {
         ->assertOk()
         ->assertSee('Stok per Ruangan')
         ->assertSee('Ruangan menggunakan data Lokasi Inventory.')
-        ->assertSee('Minimum stock saat ini masih menggunakan minimum produk.')
+        ->assertSee('Minimum/maksimum per ruangan diambil dari konfigurasi Minimum Stok Ruangan.')
         ->assertSee('Tidak ada stok pada ruangan yang dipilih.');
 });
 
@@ -2322,6 +2323,127 @@ it('paginates room stock report with room stock page parameter', function () {
         ->get(route('inventory.reports.index', ['report_tab' => 'room_stock']))
         ->assertOk()
         ->assertSee('room_stock_page=2', false);
+});
+
+it('registers the room stock refill checklist route', function () {
+    expect(route('inventory.reports.room-stock.refill-checklist'))
+        ->toContain('/inventory/reports/room-stock/refill-checklist');
+});
+
+it('builds the room stock refill checklist with only below minimum and zero stock threshold items', function () {
+    // Below minimum (movement netting to 4, room minimum 10) -> needs refill.
+    createReportStockRow($this->branch, [
+        'product_code' => 'ROOM-CHK-LOW',
+        'product_name' => 'Room Checklist Low Product',
+        'minimum_stock' => 10,
+        'quantity_in' => 4,
+    ]);
+    // Normal (at minimum) -> excluded.
+    createReportStockRow($this->branch, [
+        'product_code' => 'ROOM-CHK-NORMAL',
+        'product_name' => 'Room Checklist Normal Product',
+        'minimum_stock' => 10,
+        'quantity_in' => 10,
+    ]);
+
+    // Zero-stock row with a configured room threshold and NO movement -> must appear.
+    $zeroLocation = InventoryLocation::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Ruang Threshold Kosong',
+    ]);
+    $zeroProduct = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'code' => 'ROOM-CHK-ZERO',
+        'name' => 'Room Checklist Zero Threshold Product',
+        'minimum_stock' => 1,
+    ]);
+    LocationProductMinimum::factory()->withoutMaximum()->create([
+        'branch_id' => $this->branch->id,
+        'inventory_location_id' => $zeroLocation->id,
+        'product_id' => $zeroProduct->id,
+        'minimum_stock' => 8,
+        'created_by' => null,
+    ]);
+
+    // Overstock against a configured maximum -> current stock is above minimum, excluded.
+    $overLocation = InventoryLocation::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Ruang Overstock',
+    ]);
+    $overProduct = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'code' => 'ROOM-CHK-OVER',
+        'name' => 'Room Checklist Overstock Product',
+        'minimum_stock' => 5,
+    ]);
+    createReportMovement($this->branch, $overProduct, $overLocation, 30, 0);
+    LocationProductMinimum::factory()->create([
+        'branch_id' => $this->branch->id,
+        'inventory_location_id' => $overLocation->id,
+        'product_id' => $overProduct->id,
+        'minimum_stock' => 5,
+        'maximum_stock' => 20,
+        'created_by' => null,
+    ]);
+
+    $checklist = app(InventoryReportService::class)->getRoomStockRefillChecklist([]);
+    $codes = $checklist->pluck('product_code')->all();
+
+    expect($codes)->toContain('ROOM-CHK-LOW')
+        ->and($codes)->toContain('ROOM-CHK-ZERO')
+        ->and($codes)->not->toContain('ROOM-CHK-NORMAL')
+        ->and($codes)->not->toContain('ROOM-CHK-OVER');
+});
+
+it('suggests a maximum based refill quantity in the room stock checklist', function () {
+    $location = InventoryLocation::factory()->create([
+        'branch_id' => $this->branch->id,
+        'name' => 'Ruang Saran Maksimum',
+    ]);
+    $product = Product::factory()->create([
+        'branch_id' => $this->branch->id,
+        'code' => 'ROOM-CHK-MAX',
+        'name' => 'Room Checklist Max Refill Product',
+        'minimum_stock' => 1,
+    ]);
+    createReportMovement($this->branch, $product, $location, 4, 0);
+    LocationProductMinimum::factory()->create([
+        'branch_id' => $this->branch->id,
+        'inventory_location_id' => $location->id,
+        'product_id' => $product->id,
+        'minimum_stock' => 10,
+        'maximum_stock' => 25,
+        'created_by' => null,
+    ]);
+
+    $row = app(InventoryReportService::class)
+        ->getRoomStockRefillChecklist([])
+        ->firstWhere('product_code', 'ROOM-CHK-MAX');
+
+    // Refill tops the room back up to its configured maximum: 25 - 4 = 21.
+    expect((float) $row->suggested_refill_qty)->toBe(21.0)
+        ->and((string) $row->recommendation)->not->toBe('Stok ruangan cukup');
+});
+
+it('allows authorized users to download the room stock refill checklist pdf', function () {
+    createReportStockRow($this->branch, [
+        'product_code' => 'ROOM-CHK-PDF',
+        'product_name' => 'Room Checklist Pdf Product',
+        'minimum_stock' => 10,
+        'quantity_in' => 2,
+    ]);
+
+    $response = $this->actingAs(userWith(['view_inventory']))
+        ->get(route('inventory.reports.room-stock.refill-checklist'))
+        ->assertOk();
+
+    expect($response->headers->get('content-type'))->toContain('application/pdf');
+});
+
+it('blocks unauthorized users from the room stock refill checklist', function () {
+    $this->actingAs(User::factory()->create())
+        ->get(route('inventory.reports.room-stock.refill-checklist'))
+        ->assertForbidden();
 });
 
 it('registers the inventory reports export route', function () {
