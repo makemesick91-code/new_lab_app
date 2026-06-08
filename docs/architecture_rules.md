@@ -1227,6 +1227,15 @@ Every AI agent must:
 
 ## Future Sprint Protection Rules
 
+> Numbering note: Sprints 13-16 below were delivered as numbered (Stock Opname,
+> Stock Transfer, Purchasing, Goods Receipt). The HR / Attendance / Payroll rules
+> that follow were originally pencilled in as Sprints 17-19, but those slots were
+> actually taken by other work — Sprint 17.8 (room stock thresholds), Sprint 18
+> (rebranding to Daengtisia Management System), and Sprint 19 (Clinic Master Data:
+> rooms, treatments, tariffs, payment methods, WA reminder templates). The HR
+> modules below remain valid protection rules but are unscheduled, so they are no
+> longer pinned to specific sprint numbers.
+
 ### Sprint 13 - Inventory Advanced / Stock Opname
 
 Must preserve:
@@ -1273,19 +1282,19 @@ Receipt rules:
 - Unit cost rules documented.
 - Ledger movement created in a transaction.
 
-### Sprint 17 - HR Core
+### Planned (unscheduled) - HR Core
 
 HR must be a separate module. It must not be coupled directly to production, payroll, or attendance tables except through explicit services or relationships.
 
 Employee records that are branch-owned must use `branch_id` and BranchContext.
 
-### Sprint 18 - Attendance
+### Planned (unscheduled) - Attendance
 
 Attendance must be branch-aware and employee-aware. Attendance events must be transactional records, not mutable daily summary fields as source of truth.
 
 Reports may aggregate attendance, but raw attendance logs remain source of truth.
 
-### Sprint 19 - Payroll
+### Planned (unscheduled) - Payroll
 
 Payroll must be isolated from attendance and HR through services/repositories. Payroll calculations must be auditable and reproducible.
 

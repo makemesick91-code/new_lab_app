@@ -82,6 +82,9 @@ class RoleSeeder extends Seeder
             'approve_inventory_purchase_order',
             'manage assignments',
             'view reports',
+            // Sprint 19 - Clinic Master Data
+            'view_clinic_master_data',
+            'manage_clinic_master_data',
         ],
         'Technician' => [
             'view dashboard',

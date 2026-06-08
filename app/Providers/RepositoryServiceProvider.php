@@ -16,6 +16,10 @@ use App\Modules\Clinic\Interfaces\ClinicRepositoryInterface;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Policies\ClinicPolicy;
 use App\Modules\Clinic\Repositories\ClinicRepository;
+use App\Modules\ClinicRoom\Interfaces\ClinicRoomRepositoryInterface;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
+use App\Modules\ClinicRoom\Policies\ClinicRoomPolicy;
+use App\Modules\ClinicRoom\Repositories\ClinicRoomRepository;
 use App\Modules\Delivery\Interfaces\DeliveryRepositoryInterface;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Policies\DeliveryPolicy;
@@ -162,6 +166,8 @@ class RepositoryServiceProvider extends ServiceProvider
         RoleRepositoryInterface::class => RoleRepository::class,
         PermissionRepositoryInterface::class => PermissionRepository::class,
         ClinicRepositoryInterface::class => ClinicRepository::class,
+        // Sprint 19 — Clinic Master Data
+        ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -261,6 +267,8 @@ class RepositoryServiceProvider extends ServiceProvider
         User::class => UserPolicy::class,
         Role::class => RolePolicy::class,
         Clinic::class => ClinicPolicy::class,
+        // Sprint 19 — Clinic Master Data
+        ClinicRoom::class => ClinicRoomPolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,

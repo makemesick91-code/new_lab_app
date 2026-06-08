@@ -107,6 +107,9 @@ class PermissionSeeder extends Seeder
         // Sprint 16.3 - Goods Receipt
         'view_goods_receipt',
         'manage_goods_receipt',
+        // Sprint 19 - Clinic Master Data
+        'view_clinic_master_data',
+        'manage_clinic_master_data',
         'manage lab orders',
         'manage assignments',
         'manage qc',

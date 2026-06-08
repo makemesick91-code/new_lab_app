@@ -101,7 +101,7 @@
         @endcanany
 
         {{-- Master Data: each link appears only with the matching permission (TASK-0207). --}}
-        @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians'])
+        @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data'])
             <div class="pt-2">
                 <button type="button"
                         @click="toggle('master-data')"
@@ -135,6 +135,10 @@
                         <a href="{{ route('settings.technicians.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.technicians.*') ? $linkActive : $linkIdle }}">Teknisi</a>
                     @endcan
+                    @canany(['view_clinic_master_data', 'manage_clinic_master_data'])
+                        <a href="{{ route('settings.clinic-rooms.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.clinic-rooms.*') ? $linkActive : $linkIdle }}">Master Ruangan</a>
+                    @endcanany
                 </div>
             </div>
         @endcanany

@@ -4,6 +4,7 @@ use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
+use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
@@ -125,6 +126,19 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('technicians', TechnicianController::class)->except(['show']);
         Route::patch('technicians/{technician}/activate', [TechnicianController::class, 'activate'])->name('technicians.activate');
         Route::patch('technicians/{technician}/deactivate', [TechnicianController::class, 'deactivate'])->name('technicians.deactivate');
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Sprint 19 — Clinic Master Data: Rooms (branch-scoped)
+    |----------------------------------------------------------------------
+    | Group gated by either permission; write actions are further restricted
+    | to manage_clinic_master_data via ClinicRoomPolicy.
+    */
+    Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {
+        Route::resource('clinic-rooms', ClinicRoomController::class)
+            ->except(['show'])
+            ->parameters(['clinic-rooms' => 'clinicRoom']);
     });
 });
 
