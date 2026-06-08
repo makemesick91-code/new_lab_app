@@ -246,7 +246,7 @@
                     {{ $showBranchAdminDashboard ? 'Dasbor Admin Cabang' : 'Dasbor Owner' }}
                 </h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    {{ $showBranchAdminDashboard ? 'Ringkasan operasional harian untuk cabang aktif.' : 'Ringkasan eksekutif untuk operasional pilot ADLMS.' }}
+                    {{ $showBranchAdminDashboard ? 'Ringkasan operasional harian untuk cabang aktif.' : 'Ringkasan eksekutif untuk operasional pilot DaengtisiaMS.' }}
                 </p>
             </div>
             <div class="text-left sm:text-right">
@@ -270,7 +270,7 @@
                             <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Ringkasan Owner</p>
                             <h1 class="mt-1 text-2xl font-semibold text-gray-900">Kondisi bisnis secara ringkas</h1>
                             <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                                Dasbor ini menggunakan tujuan ADLMS yang sudah tersedia dan empty state yang aman. Metrik live terperinci tetap tersedia melalui Laporan, Persediaan, dan modul operasional sampai layanan data owner khusus terhubung.
+                                Dasbor ini menggunakan tujuan Daengtisia Management System yang sudah tersedia dan empty state yang aman. Metrik live terperinci tetap tersedia melalui Laporan, Persediaan, dan modul operasional sampai layanan data owner khusus terhubung.
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2">
@@ -348,7 +348,7 @@
                     empty-title="Belum ada aktivitas terbaru"
                 />
 
-                <x-owner-dashboard.dashboard-section title="Akses Detail Tersedia" description="Gunakan modul ADLMS yang sudah ada untuk detail operasional live." density="compact">
+                <x-owner-dashboard.dashboard-section title="Akses Detail Tersedia" description="Gunakan modul DaengtisiaMS yang sudah ada untuk detail operasional live." density="compact">
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         @canany(['view_order_report', 'manage_report'])
                             <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Laporan Order</a>

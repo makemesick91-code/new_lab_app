@@ -31,7 +31,7 @@ class BranchFactory extends Factory
     {
         return $this->state(fn () => [
             'code' => 'MAIN',
-            'name' => 'Asia Dental Lab Pusat',
+            'name' => 'Klinik Gigi Daengtisia Pusat',
             'address' => 'Makassar',
             'phone' => null,
         ]);

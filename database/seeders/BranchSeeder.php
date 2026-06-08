@@ -12,7 +12,7 @@ class BranchSeeder extends Seeder
         Branch::firstOrCreate(
             ['code' => 'MAIN'],
             [
-                'name' => 'Asia Dental Lab Pusat',
+                'name' => 'Klinik Gigi Daengtisia Pusat',
                 'address' => 'Makassar',
                 'phone' => null,
                 'is_active' => true,

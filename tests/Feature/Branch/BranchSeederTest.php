@@ -11,7 +11,7 @@ it('seeds the default MAIN branch', function () {
 
     expect($main)->not->toBeNull()
         ->and($main->code)->toBe('MAIN')
-        ->and($main->name)->toBe('Asia Dental Lab Pusat')
+        ->and($main->name)->toBe('Klinik Gigi Daengtisia Pusat')
         ->and($main->is_active)->toBeTrue();
 });
 
