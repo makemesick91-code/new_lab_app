@@ -34,6 +34,7 @@ use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\Patient\Controllers\PatientController;
+use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
 use App\Modules\Production\Controllers\ProductionStepController;
 use App\Modules\Production\Controllers\ProductionWorkflowController;
@@ -44,7 +45,6 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
-use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
