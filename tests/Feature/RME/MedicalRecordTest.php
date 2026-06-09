@@ -6,6 +6,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
@@ -520,4 +521,85 @@ it('final record remains read-only from UI perspective', function () {
         'id' => $record->id,
         'subjective' => 'original subjective',
     ]);
+});
+
+// --- Metadata & finalization polish (Sprint 20 Phase 1.2.5) ---
+
+it('finalize sets finalized_at', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $service = app(MedicalRecordService::class);
+    $draft = $service->createDraft($visit);
+    $final = $service->finalize($draft);
+
+    expect($final->finalized_at)->not->toBeNull();
+    expect($final->fresh()->finalized_at)->not->toBeNull();
+    $this->assertDatabaseHas('trx_medical_records', [
+        'id' => $final->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+    ]);
+});
+
+it('finalize does not overwrite finalized_at when already final', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $service = app(MedicalRecordService::class);
+    $draft = $service->createDraft($visit);
+    $first = $service->finalize($draft);
+    $originalFinalizedAt = $first->fresh()->finalized_at;
+
+    Carbon::setTestNow(now()->addHour());
+
+    $service->finalize($first->fresh());
+
+    Carbon::setTestNow();
+
+    expect($first->fresh()->finalized_at->toDateTimeString())
+        ->toBe($originalFinalizedAt->toDateTimeString());
+});
+
+it('show page displays recorded_by and created_at metadata', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'recorded_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Dicatat oleh')
+        ->assertSee($manager->name)
+        ->assertSee('Dibuat pada');
+});
+
+it('final show page displays finalized_at', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $finalizedAt = Carbon::parse('2026-01-15 09:30:00');
+    $record = MedicalRecord::factory()->final()->create([
+        'branch_id' => $branch->id,
+        'finalized_at' => $finalizedAt,
+    ]);
+    $visit = $record->clinicVisit;
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Difinalisasi pada')
+        ->assertSee('15/01/2026 09:30');
 });

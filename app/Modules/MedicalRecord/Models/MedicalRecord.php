@@ -31,7 +31,11 @@ class MedicalRecord extends Model
     protected $fillable = [
         'clinic_visit_id', 'branch_id', 'patient_id', 'doctor_id',
         'subjective', 'objective', 'assessment', 'plan', 'notes',
-        'status', 'recorded_by',
+        'status', 'recorded_by', 'finalized_at',
+    ];
+
+    protected $casts = [
+        'finalized_at' => 'datetime',
     ];
 
     public function clinicVisit(): BelongsTo

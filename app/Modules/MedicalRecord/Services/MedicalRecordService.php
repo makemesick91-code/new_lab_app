@@ -65,6 +65,7 @@ class MedicalRecordService
 
             return $this->medicalRecords->update($medicalRecord, [
                 'status' => MedicalRecord::STATUS_FINAL,
+                'finalized_at' => now(),
             ]);
         });
     }
