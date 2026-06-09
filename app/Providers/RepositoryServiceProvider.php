@@ -115,6 +115,8 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
+use App\Modules\MedicalRecord\Repositories\MedicalRecordRepository;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Policies\PatientPolicy;
@@ -241,6 +243,8 @@ class RepositoryServiceProvider extends ServiceProvider
         InventoryActivityLogRepositoryInterface::class => InventoryActivityLogRepository::class,
         // Sprint 17.8 - Minimum Stock per Room
         LocationProductMinimumRepositoryInterface::class => LocationProductMinimumRepository::class,
+        // Sprint 20 Phase 1.2.2
+        MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
     ];
 
     /**

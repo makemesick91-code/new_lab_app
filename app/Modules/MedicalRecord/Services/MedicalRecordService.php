@@ -1,0 +1,71 @@
+<?php
+
+namespace App\Modules\MedicalRecord\Services;
+
+use App\Modules\Branch\Services\BranchContext;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class MedicalRecordService
+{
+    public function __construct(
+        private readonly MedicalRecordRepositoryInterface $medicalRecords,
+        private readonly BranchContext $branchContext,
+    ) {}
+
+    public function createDraft(ClinicVisit $clinicVisit, ?int $recordedBy = null, array $data = []): MedicalRecord
+    {
+        return DB::transaction(function () use ($clinicVisit, $recordedBy, $data) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($clinicVisit->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => 'Kunjungan tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            if ($this->medicalRecords->findByVisitId($clinicVisit->id) !== null) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => 'Rekam medis sudah ada untuk kunjungan ini.',
+                ]);
+            }
+
+            $safe = array_intersect_key($data, array_flip([
+                'subjective', 'objective', 'assessment', 'plan', 'notes',
+            ]));
+
+            return $this->medicalRecords->create(array_merge($safe, [
+                'clinic_visit_id' => $clinicVisit->id,
+                'branch_id' => $clinicVisit->branch_id,
+                'patient_id' => $clinicVisit->patient_id,
+                'doctor_id' => $clinicVisit->doctor_id,
+                'status' => MedicalRecord::STATUS_DRAFT,
+                'recorded_by' => $recordedBy,
+            ]));
+        });
+    }
+
+    public function finalize(MedicalRecord $medicalRecord): MedicalRecord
+    {
+        return DB::transaction(function () use ($medicalRecord) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($medicalRecord->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'medical_record_id' => 'Rekam medis tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
+                return $medicalRecord;
+            }
+
+            return $this->medicalRecords->update($medicalRecord, [
+                'status' => MedicalRecord::STATUS_FINAL,
+            ]);
+        });
+    }
+}
