@@ -372,14 +372,13 @@ it('completed visit cannot transition to any status', function () {
 });
 
 it('cancelled visit cannot transition to any status', function () {
-    $visit = ClinicVisit::factory()->create([
+    $visit = ClinicVisit::factory()->cancelled()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
         'patient_id' => $this->patient->id,
         'doctor_id' => $this->doctor->id,
         'created_by' => $this->manager->id,
         'queue_number' => 1,
-        'status' => ClinicVisit::STATUS_CANCELLED,
     ]);
 
     foreach ([ClinicVisit::STATUS_REGISTERED, ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS, ClinicVisit::STATUS_COMPLETED] as $target) {

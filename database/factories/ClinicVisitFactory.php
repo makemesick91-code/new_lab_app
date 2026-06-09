@@ -59,4 +59,12 @@ class ClinicVisitFactory extends Factory
             'completed_at' => now(),
         ]);
     }
+
+    public function cancelled(): static
+    {
+        return $this->state(fn () => [
+            'status' => ClinicVisit::STATUS_CANCELLED,
+            'cancelled_at' => now(),
+        ]);
+    }
 }

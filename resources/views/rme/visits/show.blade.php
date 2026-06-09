@@ -79,7 +79,7 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Keluhan Utama</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->chief_complaint ?? '—' }}</dd>
                 </div>
-                @if ($visit->check_in_at || $visit->started_at || $visit->completed_at)
+                @if ($visit->check_in_at || $visit->started_at || $visit->completed_at || $visit->cancelled_at)
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Check-in</dt>
                         <dd class="mt-1 text-sm text-gray-900">{{ $visit->check_in_at?->format('d/m/Y H:i') ?? '—' }}</dd>
@@ -92,6 +92,12 @@
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Selesai</dt>
                         <dd class="mt-1 text-sm text-gray-900">{{ $visit->completed_at?->format('d/m/Y H:i') ?? '—' }}</dd>
                     </div>
+                    @if (($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED || $visit->status === 'cancelled') && $visit->cancelled_at)
+                        <div>
+                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibatalkan</dt>
+                            <dd class="mt-1 text-sm text-gray-900">{{ $visit->cancelled_at->format('d/m/Y H:i') }}</dd>
+                        </div>
+                    @endif
                 @endif
             </dl>
 
