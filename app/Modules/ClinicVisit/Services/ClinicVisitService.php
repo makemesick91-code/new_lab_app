@@ -50,6 +50,8 @@ class ClinicVisitService
 
     public function update(ClinicVisit $visit, array $data): ClinicVisit
     {
+        unset($data['status']);
+
         return DB::transaction(fn () => $this->visits->update($visit, $data));
     }
 

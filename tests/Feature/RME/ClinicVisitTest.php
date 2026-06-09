@@ -181,7 +181,7 @@ it('ignores branch_id supplied in request', function () {
     ]);
 });
 
-it('updates status and room', function () {
+it('updates room but ignores status field', function () {
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -199,8 +199,28 @@ it('updates status and room', function () {
         ])
         ->assertRedirect(route('rme.visits.show', $visit));
 
-    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED)
         ->and($visit->clinic_room_id)->toBe($room->id);
+});
+
+it('update endpoint cannot bypass transition — status change is ignored', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->put(route('rme.visits.update', $visit), [
+            'status' => ClinicVisit::STATUS_COMPLETED,
+        ])
+        ->assertRedirect(route('rme.visits.show', $visit));
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
 });
 
 it('denies viewer from creating or updating', function () {
