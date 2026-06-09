@@ -179,6 +179,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::resource('visits', ClinicVisitController::class)
             ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->parameters(['visits' => 'clinicVisit']);
+
+        Route::middleware('permission:manage_clinic_visits')
+            ->post('visits/{clinicVisit}/transition', [ClinicVisitController::class, 'transitionStatus'])
+            ->name('visits.transition');
     });
 });
 

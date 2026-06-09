@@ -14,6 +14,19 @@
             'completed'   => 'bg-green-50 text-green-700',
             'cancelled'   => 'bg-red-50 text-red-700',
         ];
+        $transitionLabels = [
+            'waiting'     => 'Check-in',
+            'in_progress' => 'Mulai Pemeriksaan',
+            'completed'   => 'Selesaikan',
+            'cancelled'   => 'Batalkan',
+        ];
+        $transitionStyle = [
+            'waiting'     => 'bg-amber-600 hover:bg-amber-500',
+            'in_progress' => 'bg-indigo-600 hover:bg-indigo-500',
+            'completed'   => 'bg-green-600 hover:bg-green-500',
+            'cancelled'   => 'bg-red-600 hover:bg-red-500',
+        ];
+        $validNextStatuses = \App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];
     @endphp
 
     <div class="bg-white shadow-sm sm:rounded-lg">
@@ -27,6 +40,18 @@
                     <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium {{ $statusBadge[$visit->status] ?? 'bg-gray-100 text-gray-600' }}">
                         {{ $statusLabels[$visit->status] ?? $visit->status }}
                     </span>
+                    @can('transition', $visit)
+                        @foreach ($validNextStatuses as $nextStatus)
+                            <form method="POST" action="{{ route('rme.visits.transition', $visit) }}">
+                                @csrf
+                                <input type="hidden" name="status" value="{{ $nextStatus }}">
+                                <button type="submit"
+                                        class="inline-flex items-center rounded-md px-3 py-2 text-sm font-medium text-white {{ $transitionStyle[$nextStatus] ?? 'bg-gray-600 hover:bg-gray-500' }}">
+                                    {{ $transitionLabels[$nextStatus] ?? $nextStatus }}
+                                </button>
+                            </form>
+                        @endforeach
+                    @endcan
                     @can('update', $visit)
                         <a href="{{ route('rme.visits.edit', $visit) }}" class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Ubah</a>
                     @endcan
@@ -54,6 +79,20 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Keluhan Utama</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->chief_complaint ?? '—' }}</dd>
                 </div>
+                @if ($visit->check_in_at || $visit->started_at || $visit->completed_at)
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Check-in</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $visit->check_in_at?->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Mulai Pemeriksaan</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $visit->started_at?->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Selesai</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $visit->completed_at?->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                @endif
             </dl>
 
             <div class="border-t pt-4">

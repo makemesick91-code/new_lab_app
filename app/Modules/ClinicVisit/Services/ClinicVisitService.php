@@ -9,6 +9,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ClinicVisitService
 {
@@ -50,5 +51,34 @@ class ClinicVisitService
     public function update(ClinicVisit $visit, array $data): ClinicVisit
     {
         return DB::transaction(fn () => $this->visits->update($visit, $data));
+    }
+
+    public function transitionStatus(ClinicVisit $visit, string $newStatus): ClinicVisit
+    {
+        $allowed = ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];
+
+        if (! in_array($newStatus, $allowed, true)) {
+            throw ValidationException::withMessages([
+                'status' => "Transisi status dari '{$visit->status}' ke '{$newStatus}' tidak diizinkan.",
+            ]);
+        }
+
+        return DB::transaction(function () use ($visit, $newStatus) {
+            $timestamps = [];
+
+            if ($newStatus === ClinicVisit::STATUS_WAITING && $visit->check_in_at === null) {
+                $timestamps['check_in_at'] = now();
+            }
+
+            if ($newStatus === ClinicVisit::STATUS_IN_PROGRESS && $visit->started_at === null) {
+                $timestamps['started_at'] = now();
+            }
+
+            if ($newStatus === ClinicVisit::STATUS_COMPLETED && $visit->completed_at === null) {
+                $timestamps['completed_at'] = now();
+            }
+
+            return $this->visits->update($visit, array_merge(['status' => $newStatus], $timestamps));
+        });
     }
 }

@@ -36,6 +36,14 @@ class ClinicVisit extends Model
         self::STATUS_CANCELLED,
     ];
 
+    public const VALID_TRANSITIONS = [
+        self::STATUS_REGISTERED => [self::STATUS_WAITING, self::STATUS_CANCELLED],
+        self::STATUS_WAITING => [self::STATUS_IN_PROGRESS, self::STATUS_CANCELLED],
+        self::STATUS_IN_PROGRESS => [self::STATUS_COMPLETED, self::STATUS_CANCELLED],
+        self::STATUS_COMPLETED => [],
+        self::STATUS_CANCELLED => [],
+    ];
+
     protected $table = 'trx_clinic_visits';
 
     protected $fillable = [

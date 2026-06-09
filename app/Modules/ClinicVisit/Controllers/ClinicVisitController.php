@@ -7,6 +7,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\StoreClinicVisitRequest;
+use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
@@ -86,5 +87,13 @@ class ClinicVisitController extends Controller
         $this->visits->update($clinicVisit, $request->validated());
 
         return redirect()->route('rme.visits.show', $clinicVisit)->with('status', 'Kunjungan berhasil diperbarui.');
+    }
+
+    public function transitionStatus(TransitionStatusRequest $request, ClinicVisit $clinicVisit): RedirectResponse
+    {
+        $this->authorize('transition', $clinicVisit);
+        $this->visits->transitionStatus($clinicVisit, $request->validated()['status']);
+
+        return redirect()->route('rme.visits.show', $clinicVisit)->with('status', 'Status kunjungan berhasil diperbarui.');
     }
 }

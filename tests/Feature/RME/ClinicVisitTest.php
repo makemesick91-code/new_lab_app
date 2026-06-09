@@ -249,3 +249,268 @@ it('prevents updating visits from another branch', function () {
 
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
 });
+
+// ─── Status Transition Workflow Tests ────────────────────────────────────────
+
+it('manager can transition registered to waiting', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_WAITING])
+        ->assertRedirect(route('rme.visits.show', $visit));
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_WAITING);
+});
+
+it('manager can transition waiting to in_progress', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_WAITING,
+        'check_in_at' => now(),
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_IN_PROGRESS])
+        ->assertRedirect(route('rme.visits.show', $visit));
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+});
+
+it('manager can transition in_progress to completed', function () {
+    $visit = ClinicVisit::factory()->inProgress()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED])
+        ->assertRedirect(route('rme.visits.show', $visit));
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('manager can cancel from registered, waiting, or in_progress', function () {
+    foreach ([
+        ClinicVisit::STATUS_REGISTERED,
+        ClinicVisit::STATUS_WAITING,
+        ClinicVisit::STATUS_IN_PROGRESS,
+    ] as $i => $fromStatus) {
+        $visit = ClinicVisit::factory()->create([
+            'branch_id' => $this->branch->id,
+            'clinic_id' => $this->clinic->id,
+            'patient_id' => $this->patient->id,
+            'doctor_id' => $this->doctor->id,
+            'created_by' => $this->manager->id,
+            'queue_number' => $i + 10,
+            'status' => $fromStatus,
+            'check_in_at' => in_array($fromStatus, [ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS]) ? now() : null,
+            'started_at' => $fromStatus === ClinicVisit::STATUS_IN_PROGRESS ? now() : null,
+        ]);
+
+        $this->actingAs($this->manager)
+            ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CANCELLED])
+            ->assertRedirect(route('rme.visits.show', $visit));
+
+        expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
+    }
+});
+
+it('completed visit cannot transition to any status', function () {
+    $visit = ClinicVisit::factory()->completed()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    foreach ([ClinicVisit::STATUS_REGISTERED, ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS, ClinicVisit::STATUS_CANCELLED] as $target) {
+        $this->actingAs($this->manager)
+            ->post(route('rme.visits.transition', $visit), ['status' => $target])
+            ->assertSessionHasErrors('status');
+    }
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('cancelled visit cannot transition to any status', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_CANCELLED,
+    ]);
+
+    foreach ([ClinicVisit::STATUS_REGISTERED, ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_IN_PROGRESS, ClinicVisit::STATUS_COMPLETED] as $target) {
+        $this->actingAs($this->manager)
+            ->post(route('rme.visits.transition', $visit), ['status' => $target])
+            ->assertSessionHasErrors('status');
+    }
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CANCELLED);
+});
+
+it('rejects invalid backward transitions', function () {
+    $visit = ClinicVisit::factory()->inProgress()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    // in_progress -> waiting and in_progress -> registered are both invalid
+    foreach ([ClinicVisit::STATUS_WAITING, ClinicVisit::STATUS_REGISTERED] as $target) {
+        $this->actingAs($this->manager)
+            ->post(route('rme.visits.transition', $visit), ['status' => $target])
+            ->assertSessionHasErrors('status');
+    }
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+});
+
+it('rejects direct registered to completed transition', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED])
+        ->assertSessionHasErrors('status');
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
+});
+
+it('viewer cannot transition status', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_WAITING])
+        ->assertForbidden();
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
+});
+
+it('user from another branch cannot transition visit status', function () {
+    $otherBranch = Branch::factory()->create(['code' => 'OTH4']);
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $otherBranch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_WAITING])
+        ->assertForbidden();
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
+});
+
+it('sets check_in_at on transition to waiting, started_at on in_progress, completed_at on completed', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+        'check_in_at' => null,
+        'started_at' => null,
+        'completed_at' => null,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_WAITING]);
+    expect($visit->refresh()->check_in_at)->not->toBeNull();
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+    expect($visit->refresh()->started_at)->not->toBeNull();
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED]);
+    $visit->refresh();
+    expect($visit->completed_at)->not->toBeNull()
+        ->and($visit->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('does not overwrite existing timestamps on transition', function () {
+    $fixedCheckIn = now()->subHour();
+    $fixedStarted = now()->subMinutes(30);
+
+    $visit = ClinicVisit::factory()->inProgress()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+        'check_in_at' => $fixedCheckIn,
+        'started_at' => $fixedStarted,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED]);
+
+    $visit->refresh();
+    expect($visit->check_in_at->timestamp)->toBe($fixedCheckIn->timestamp)
+        ->and($visit->started_at->timestamp)->toBe($fixedStarted->timestamp)
+        ->and($visit->completed_at)->not->toBeNull();
+
+    // completed_at is not set on cancel — test it separately
+    $cancelVisit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 2,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $cancelVisit), ['status' => ClinicVisit::STATUS_CANCELLED]);
+
+    expect($cancelVisit->refresh()->completed_at)->toBeNull();
+});
