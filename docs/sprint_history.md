@@ -2142,6 +2142,137 @@ Closure gate results (2026-06-08):
 
 ---
 
+# Sprint 19 — Clinic Master Data
+
+## Sprint 19 Overview
+
+**Status:** COMPLETE. Branch `feature/sprint-19-clinic-master-data`, final commit `0247d0a`,
+completion date 2026-06-09.
+
+**Business objective:** Extend Daengtisia Management System with six clinic-specific master data
+modules needed as a prerequisite for future RME, cashier, and WhatsApp reminder workflows.
+All modules are master data only — no transaction, billing, or messaging logic is implemented.
+
+**Timeline:**
+- Phase 0–1: Clinic Room (`cadba17`)
+- Phase 2: Treatment Category & Treatment (`d605e0d`)
+- Phase 3: Tariff (`42a9647`, tag `sprint-19-phase-3-tariff-master-data`)
+- Phase 4: Payment Method (`b935949`, tag `sprint-19-phase-4-payment-method-master-data`)
+- Phase 5: WA Reminder Templates (`0247d0a`, tag `sprint-19-phase-5-wa-reminder-template-master-data`)
+
+## Modules Added
+
+| Module | Scope |
+|---|---|
+| `ClinicRoom` | Branch-scoped |
+| `TreatmentCategory` | Global |
+| `Treatment` | Global |
+| `Tariff` | Branch-scoped |
+| `PaymentMethod` | Global |
+| `WaReminderTemplate` | Global |
+
+## Tables Added
+
+| Table | Scope |
+|---|---|
+| `mst_clinic_rooms` | Branch-scoped (`branch_id` FK) |
+| `mst_treatment_categories` | Global |
+| `mst_treatments` | Global |
+| `mst_tariffs` | Branch-scoped (`branch_id` FK) |
+| `mst_payment_methods` | Global |
+| `mst_wa_reminder_templates` | Global |
+
+## Route Groups Added
+
+All under `settings.*` prefix with `auth` middleware and permission gates:
+
+| Route Group | Resource |
+|---|---|
+| `settings.clinic-rooms.*` | CRUD clinic rooms |
+| `settings.treatment-categories.*` | CRUD treatment categories |
+| `settings.treatments.*` | CRUD treatments |
+| `settings.tariffs.*` | CRUD tariffs |
+| `settings.payment-methods.*` | CRUD payment methods |
+| `settings.wa-reminder-templates.*` | CRUD WA reminder templates |
+
+## Permission Model
+
+- `view_clinic_master_data` — read access to all Sprint 19 modules
+- `manage_clinic_master_data` — write access (create/update/delete)
+
+Both seeded in `PermissionSeeder` and assigned in `RoleSeeder`. Super Admin covered by
+centralized `Gate::before` in `RepositoryServiceProvider`.
+
+## Branch Scope Decisions
+
+- **Branch-scoped:** `ClinicRoom` (physical rooms per branch) and `Tariff` (branch-level pricing
+  per treatment per effective date; unique key `(branch_id, treatment_id, effective_date)`).
+- **Global:** `TreatmentCategory`, `Treatment`, `PaymentMethod`, `WaReminderTemplate` — shared
+  catalogues with no branch isolation requirement.
+
+Branch-scoped services call `BranchContext::requireId()` and repositories scope by `branch_id`.
+
+## Architecture Pattern
+
+Sprint 19 modules follow the canonical flow:
+```
+Controller → FormRequest → Service → Interface → Repository → Model → Policy → Blade → Routes → Seeder/Factory/Test
+```
+Interface-to-repository bindings for all six modules registered in `RepositoryServiceProvider`.
+
+## Quality Gates
+
+Quality gate run: 2026-06-09
+
+| Gate | Result |
+|---|---|
+| `php artisan migrate:fresh --seed` | PASS — 61 migrations, 15 seeders |
+| `php artisan test tests/Feature/ClinicMasterData` | **PASS — 129 tests, 444 assertions** |
+| `php artisan test` (full suite) | **PASS — 1565 tests, 5601 assertions** |
+| `./vendor/bin/pint` | PASS — no changes |
+| `npm run build` | PASS |
+| `git status` | Clean |
+
+## Architecture Notes
+
+- `TreatmentCategory` is global; `Treatment` references it globally; branch-level pricing is
+  modelled entirely in `Tariff` so the treatment catalogue stays shared while pricing stays
+  isolated.
+- `WaReminderTemplate` stores message body templates and variable metadata only. No WhatsApp
+  API integration, no job/scheduler, and no automatic delivery — templates are a library for
+  future wiring.
+- All modules use `is_active` + soft deletes for lifecycle management; no hard deletes on records
+  referenced by future transactions.
+- Tariff seeder seeds default pricing for the MAIN branch only; branch admins seed their own.
+
+## Known Limitations
+
+- Master data only; cashier, RME, and WhatsApp workflows deferred.
+- Tariff records the master price per treatment but is not yet connected to a billing/RME flow.
+- WA templates do not send messages automatically.
+
+## Explicit Out-of-Scope
+
+No RME workflow, no patient visit workflow, no odontogram, no cashier payment transactions,
+no payment installment, no WhatsApp API integration or scheduler, no changes to the Inventory
+ledger stock rules.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-19-clinic-master-data` |
+| Final commit | `0247d0a` |
+| Completion date | 2026-06-09 |
+| Status | COMPLETE |
+
+## Documentation Added
+
+- `docs/sprint_19_completion_summary.md`
+- Sprint 19 section added to `docs/sprint_history.md`
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -2403,11 +2534,15 @@ Closure gate results (2026-06-08):
 - **Sprint 17 — HR Core:** Separate module; not directly coupled to production/payroll/attendance
   except through explicit services/relationships. Branch-owned employees use `branch_id` +
   `BranchContext`.
-- **Sprint 18 — Attendance:** Branch- and employee-aware; attendance events are **transactional
-  records**, not mutable daily-summary fields; reports may aggregate, raw logs stay source of truth.
-- **Sprint 19 — Payroll:** Isolated from HR/attendance via services/repositories; calculations
-  auditable and reproducible; must not mutate attendance; reference **locked periods/snapshots** if
-  immutability is required.
+- **Sprint 18 — Daengtisia Rebranding:** Safe branding-only sprint; all technical names, routes,
+  namespaces, and module structures retained. `APP_NAME`, dashboard text, and MAIN branch seed
+  name changed to Daengtisia Management System. No schema changes; no module renames.
+- **Sprint 19 completed baseline — Clinic Master Data:** Future changes must preserve
+  `view_clinic_master_data` / `manage_clinic_master_data` as the permission pair for all six
+  clinic master data modules; `BranchContext::requireId()` for ClinicRoom and Tariff; global
+  (no `branch_id`) for TreatmentCategory, Treatment, PaymentMethod, and WaReminderTemplate;
+  `is_active` + soft deletes lifecycle; no WhatsApp sending, no cashier/RME billing transactions,
+  no Inventory ledger changes; Tariff as master price only (not yet wired to billing workflow).
 
 **Universal gate before any sprint starts:** answer (1) which module owns it, (2) which records are
 branch-owned, (3) which policies/permissions protect it, (4) which service owns the rule, (5) which
@@ -2443,7 +2578,9 @@ Implement future-sprint features by accident.
 invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchContext`) · `Inventory`
 (S12–15.6, ledger-derived, location-aware, Stock Opname, Stock Transfer with ship/receive,
 Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics, navigation/dashboard
-hardening, Purchase Request workflow, Purchase Order workflow).
+hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, TreatmentCategory,
+Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
+`settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -2456,4 +2593,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 16.8 and must be updated as each new sprint completes.*
+Sprint 19 (Clinic Master Data, 2026-06-09) and must be updated as each new sprint completes.*
