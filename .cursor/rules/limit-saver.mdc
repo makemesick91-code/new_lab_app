@@ -1,0 +1,53 @@
+---
+description: Limit saver mode for DaengtisiaMS Laravel Modular Monolith
+alwaysApply: true
+---
+
+# LIMIT SAVER MODE — DaengtisiaMS
+
+Always work in token-saving mode.
+
+Do not scan the whole repository.
+Do not read large files fully unless necessary.
+Do not inspect vendor, node_modules, storage, bootstrap/cache, public/build, or graphify-out fully.
+
+Prefer:
+- git status --short
+- git diff --stat
+- git diff on relevant files
+- rg/grep specific keywords
+- php artisan route:list | grep keyword
+- targeted file reads
+
+Use Graphify only for architecture navigation.
+Use Explore Agent only to find relevant files, maximum 5 files.
+Use Context7 MCP only for specific framework documentation.
+Use PostgreSQL MCP only for specific schema/data checks with LIMIT.
+Use Git MCP for status/diff/history instead of reading many files.
+
+Before editing:
+- Provide a plan of maximum 5 bullets.
+- List files to inspect.
+- List files likely to change.
+- Mention tests to run.
+- Mention risk.
+
+During editing:
+- Make the smallest safe patch.
+- Follow existing Laravel Modular Monolith patterns.
+- Preserve branch context.
+- Preserve permissions and policies.
+- Preserve repository bindings.
+- Preserve route naming.
+- Preserve migration conventions.
+- Preserve test patterns.
+- Do not add features outside the task.
+
+After editing:
+- List changed files.
+- Summarize changes briefly.
+- Provide exact test commands.
+- Mention manual checks and risks.
+
+Never do broad refactors unless explicitly requested.
+Never rewrite large files when a small patch is enough.

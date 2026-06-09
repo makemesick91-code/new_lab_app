@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "filesystem-project": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/mnt/new_lab_app"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "git-project": {
+      "command": "uvx",
+      "args": ["mcp-server-git", "--repository", "/mnt/new_lab_app"]
+    }
+  }
+}
