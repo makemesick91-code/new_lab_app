@@ -116,6 +116,8 @@ use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Policies\MedicalRecordPolicy;
 use App\Modules\MedicalRecord\Repositories\MedicalRecordRepository;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
@@ -306,6 +308,7 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRoom::class => ClinicRoomPolicy::class,
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisit::class => ClinicVisitPolicy::class,
+        MedicalRecord::class => MedicalRecordPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

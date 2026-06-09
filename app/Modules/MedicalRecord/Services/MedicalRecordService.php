@@ -68,4 +68,29 @@ class MedicalRecordService
             ]);
         });
     }
+
+    public function updateDraft(MedicalRecord $medicalRecord, array $data): MedicalRecord
+    {
+        return DB::transaction(function () use ($medicalRecord, $data) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($medicalRecord->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'medical_record_id' => 'Rekam medis tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
+                throw ValidationException::withMessages([
+                    'status' => 'Rekam medis yang sudah final tidak dapat diubah.',
+                ]);
+            }
+
+            $safe = array_intersect_key($data, array_flip([
+                'subjective', 'objective', 'assessment', 'plan', 'notes',
+            ]));
+
+            return $this->medicalRecords->update($medicalRecord, $safe);
+        });
+    }
 }

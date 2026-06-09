@@ -34,6 +34,7 @@ use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
@@ -183,6 +184,18 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::middleware('permission:manage_clinic_visits')
             ->post('visits/{clinicVisit}/transition', [ClinicVisitController::class, 'transitionStatus'])
             ->name('visits.transition');
+
+        Route::get('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'show'])
+            ->name('visits.medical-record.show');
+
+        Route::middleware('permission:manage_clinic_visits')->group(function () {
+            Route::post('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'store'])
+                ->name('visits.medical-record.store');
+            Route::patch('visits/{clinicVisit}/medical-record/{medicalRecord}', [MedicalRecordController::class, 'update'])
+                ->name('visits.medical-record.update');
+            Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/finalize', [MedicalRecordController::class, 'finalize'])
+                ->name('visits.medical-record.finalize');
+        });
     });
 });
 
