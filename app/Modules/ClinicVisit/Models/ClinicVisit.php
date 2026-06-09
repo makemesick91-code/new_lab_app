@@ -49,7 +49,7 @@ class ClinicVisit extends Model
     protected $fillable = [
         'visit_number', 'branch_id', 'clinic_id', 'patient_id', 'doctor_id',
         'clinic_room_id', 'visit_date', 'queue_number', 'status',
-        'chief_complaint', 'check_in_at', 'started_at', 'completed_at', 'created_by',
+        'chief_complaint', 'check_in_at', 'started_at', 'completed_at', 'cancelled_at', 'created_by',
     ];
 
     protected function casts(): array
@@ -66,6 +66,7 @@ class ClinicVisit extends Model
             'check_in_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 

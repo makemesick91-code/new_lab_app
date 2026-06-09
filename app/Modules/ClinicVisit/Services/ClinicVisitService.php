@@ -80,6 +80,10 @@ class ClinicVisitService
                 $timestamps['completed_at'] = now();
             }
 
+            if ($newStatus === ClinicVisit::STATUS_CANCELLED && $visit->cancelled_at === null) {
+                $timestamps['cancelled_at'] = now();
+            }
+
             return $this->visits->update($visit, array_merge(['status' => $newStatus], $timestamps));
         });
     }

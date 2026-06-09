@@ -16,7 +16,12 @@ class TransitionStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => ['required', 'string', Rule::in(ClinicVisit::STATUSES)],
+            'status' => ['required', 'string', Rule::in([
+                ClinicVisit::STATUS_WAITING,
+                ClinicVisit::STATUS_IN_PROGRESS,
+                ClinicVisit::STATUS_COMPLETED,
+                ClinicVisit::STATUS_CANCELLED,
+            ])],
         ];
     }
 }

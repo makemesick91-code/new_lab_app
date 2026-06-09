@@ -534,3 +534,62 @@ it('does not overwrite existing timestamps on transition', function () {
 
     expect($cancelVisit->refresh()->completed_at)->toBeNull();
 });
+
+it('sets cancelled_at on transition to cancelled', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 99,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+        'cancelled_at' => null,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CANCELLED]);
+
+    $visit->refresh();
+    expect($visit->status)->toBe(ClinicVisit::STATUS_CANCELLED)
+        ->and($visit->cancelled_at)->not->toBeNull();
+});
+
+it('does not overwrite cancelled_at if already set', function () {
+    $fixed = now()->subHours(2);
+
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 98,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+        'cancelled_at' => $fixed,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CANCELLED]);
+
+    $visit->refresh();
+    expect($visit->cancelled_at->timestamp)->toBe($fixed->timestamp);
+});
+
+it('rejects transition request with status registered', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 97,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_REGISTERED])
+        ->assertSessionHasErrors('status');
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_WAITING);
+});
