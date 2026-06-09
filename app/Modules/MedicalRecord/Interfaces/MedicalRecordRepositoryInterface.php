@@ -3,9 +3,13 @@
 namespace App\Modules\MedicalRecord\Interfaces;
 
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 
 interface MedicalRecordRepositoryInterface
 {
+    /** @param array<string, mixed> $filters */
+    public function paginateForBranch(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
     public function findByVisitId(int $clinicVisitId): ?MedicalRecord;
 
     /** @param array<string, mixed> $data */

@@ -177,6 +177,9 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 */
 Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
+        Route::get('medical-records', [MedicalRecordController::class, 'index'])
+            ->name('medical-records.index');
+
         Route::resource('visits', ClinicVisitController::class)
             ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->parameters(['visits' => 'clinicVisit']);

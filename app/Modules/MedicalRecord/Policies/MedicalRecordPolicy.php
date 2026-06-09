@@ -9,6 +9,11 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 
 class MedicalRecordPolicy
 {
+    public function viewAny(User $user): bool
+    {
+        return $this->canView($user);
+    }
+
     public function view(User $user, MedicalRecord $medicalRecord): bool
     {
         return $this->canView($user) && $this->belongsToActiveBranch($medicalRecord->branch_id);

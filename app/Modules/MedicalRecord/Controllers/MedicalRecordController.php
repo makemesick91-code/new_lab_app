@@ -12,6 +12,7 @@ use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class MedicalRecordController extends Controller
@@ -22,6 +23,24 @@ class MedicalRecordController extends Controller
         private readonly MedicalRecordService $service,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
     ) {}
+
+    public function index(Request $request): View
+    {
+        $this->authorize('viewAny', MedicalRecord::class);
+
+        $filters = [
+            'search' => $request->string('search')->toString() ?: null,
+            'status' => $request->string('status')->toString() ?: null,
+            'visit_date_from' => $request->string('visit_date_from')->toString() ?: null,
+            'visit_date_to' => $request->string('visit_date_to')->toString() ?: null,
+        ];
+
+        return view('rme.visits.medical-record.index', [
+            'medicalRecords' => $this->service->paginate($filters),
+            'filters' => $filters,
+            'statuses' => MedicalRecord::STATUSES,
+        ]);
+    }
 
     public function show(ClinicVisit $clinicVisit): View
     {

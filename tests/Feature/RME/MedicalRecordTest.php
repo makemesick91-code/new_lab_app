@@ -3,8 +3,10 @@
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\Patient\Models\Patient;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
@@ -602,4 +604,172 @@ it('final show page displays finalized_at', function () {
         ->assertOk()
         ->assertSee('Difinalisasi pada')
         ->assertSee('15/01/2026 09:30');
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1.2.6 — Medical Record Index / Search
+// ---------------------------------------------------------------------------
+
+it('manager can view medical record index page', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    MedicalRecord::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk();
+});
+
+it('viewer can view medical record index page', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    MedicalRecord::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($viewer)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk();
+});
+
+it('user without permission cannot view medical record index', function () {
+    $user = userWith([]);
+
+    $this->actingAs($user)
+        ->get(route('rme.medical-records.index'))
+        ->assertForbidden();
+});
+
+it('index only shows records from active branch', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $otherBranch = Branch::factory()->create();
+
+    $patient = Patient::factory()->create(['name' => 'Pasien Aktif']);
+    $otherPatient = Patient::factory()->create(['name' => 'Pasien Lain']);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'patient_id' => $patient->id]);
+    MedicalRecord::factory()->create(['branch_id' => $otherBranch->id, 'patient_id' => $otherPatient->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee('Pasien Aktif')
+        ->assertDontSee('Pasien Lain');
+});
+
+it('index can filter by status draft', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $patient = Patient::factory()->create(['name' => 'Pasien Draft']);
+    $patientFinal = Patient::factory()->create(['name' => 'Pasien Final']);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'patient_id' => $patient->id, 'status' => MedicalRecord::STATUS_DRAFT]);
+    MedicalRecord::factory()->final()->create(['branch_id' => $branch->id, 'patient_id' => $patientFinal->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index', ['status' => 'draft']))
+        ->assertOk()
+        ->assertSee('Pasien Draft')
+        ->assertDontSee('Pasien Final');
+});
+
+it('index can filter by status final', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $patient = Patient::factory()->create(['name' => 'Pasien Draft']);
+    $patientFinal = Patient::factory()->create(['name' => 'Pasien Final']);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'patient_id' => $patient->id, 'status' => MedicalRecord::STATUS_DRAFT]);
+    MedicalRecord::factory()->final()->create(['branch_id' => $branch->id, 'patient_id' => $patientFinal->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index', ['status' => 'final']))
+        ->assertOk()
+        ->assertSee('Pasien Final')
+        ->assertDontSee('Pasien Draft');
+});
+
+it('index can search by patient name', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $patient = Patient::factory()->create(['name' => 'Budi Santoso']);
+    $otherPatient = Patient::factory()->create(['name' => 'Siti Rahayu']);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'patient_id' => $patient->id]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'patient_id' => $otherPatient->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index', ['search' => 'budi']))
+        ->assertOk()
+        ->assertSee('Budi Santoso')
+        ->assertDontSee('Siti Rahayu');
+});
+
+it('index can search by doctor name', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $doctor = Doctor::factory()->create(['name' => 'Dr. Hendra']);
+    $otherDoctor = Doctor::factory()->create(['name' => 'Dr. Wulan']);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'doctor_id' => $doctor->id]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'doctor_id' => $otherDoctor->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index', ['search' => 'hendra']))
+        ->assertOk()
+        ->assertSee('Dr. Hendra')
+        ->assertDontSee('Dr. Wulan');
+});
+
+it('index can filter by visit date range', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $patient = Patient::factory()->create(['name' => 'Pasien Januari']);
+    $patientMarch = Patient::factory()->create(['name' => 'Pasien Maret']);
+
+    $visitJan = ClinicVisit::factory()->create([
+        'branch_id' => $branch->id,
+        'visit_date' => '2026-01-15',
+        'patient_id' => $patient->id,
+    ]);
+    $visitMar = ClinicVisit::factory()->create([
+        'branch_id' => $branch->id,
+        'visit_date' => '2026-03-20',
+        'patient_id' => $patientMarch->id,
+    ]);
+
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visitJan->id, 'patient_id' => $patient->id]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visitMar->id, 'patient_id' => $patientMarch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index', ['visit_date_from' => '2026-01-01', 'visit_date_to' => '2026-01-31']))
+        ->assertOk()
+        ->assertSee('Pasien Januari')
+        ->assertDontSee('Pasien Maret');
+});
+
+it('index shows empty state when no records exist', function () {
+    $manager = userWith(['manage_clinic_visits']);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee('Belum ada rekam medis.');
+});
+
+it('index links to medical record show page', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $record = MedicalRecord::factory()->create(['branch_id' => $branch->id]);
+    $visit = $record->clinicVisit;
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee(route('rme.visits.medical-record.show', $visit));
 });

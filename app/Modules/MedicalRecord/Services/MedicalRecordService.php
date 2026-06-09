@@ -6,6 +6,7 @@ use App\Modules\Branch\Services\BranchContext;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,6 +16,16 @@ class MedicalRecordService
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly BranchContext $branchContext,
     ) {}
+
+    /** @param array<string, mixed> $filters */
+    public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        return $this->medicalRecords->paginateForBranch(
+            $this->branchContext->requireId(),
+            $filters,
+            $perPage,
+        );
+    }
 
     public function createDraft(ClinicVisit $clinicVisit, ?int $recordedBy = null, array $data = []): MedicalRecord
     {
