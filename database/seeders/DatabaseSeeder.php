@@ -25,6 +25,7 @@ class DatabaseSeeder extends Seeder
             PaymentMethodSeeder::class,
             WaReminderTemplateSeeder::class,
             ClinicRoomSeeder::class,
+            TariffSeeder::class,
             InventorySeeder::class,
             LabOrderSeeder::class,
             ProductionSeeder::class,
