@@ -375,3 +375,149 @@ it('manager can view medical record show page', function () {
         ->get(route('rme.visits.medical-record.show', $visit))
         ->assertOk();
 });
+
+// --- UI tests (Sprint 20 Phase 1.2.4) ---
+
+it('clinic visit show displays create medical record action when no record exists', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.show', $visit))
+        ->assertOk()
+        ->assertSee('Rekam medis belum dibuat.')
+        ->assertSee('Buat Rekam Medis');
+});
+
+it('clinic visit show displays view medical record action when record exists', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.show', $visit))
+        ->assertOk()
+        ->assertSee('Lihat Rekam Medis')
+        ->assertDontSee('Buat Rekam Medis');
+});
+
+it('medical record show page displays SOAP draft form for draft record', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Simpan Draft')
+        ->assertSee('name="subjective"', false)
+        ->assertSee('name="objective"', false)
+        ->assertSee('name="assessment"', false)
+        ->assertSee('name="plan"', false);
+});
+
+it('medical record show page hides draft form for final record', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
+    $visit = $record->clinicVisit;
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Simpan Draft')
+        ->assertDontSee('name="subjective"', false);
+});
+
+it('medical record show page displays finalize action for draft record', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Finalisasi');
+});
+
+it('medical record show page hides finalize action for final record', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
+    $visit = $record->clinicVisit;
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Finalisasi');
+});
+
+it('manager can update SOAP fields from show page', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
+            'subjective' => 'nyeri kepala',
+            'objective' => 'tekanan darah tinggi',
+            'assessment' => 'hipertensi',
+            'plan' => 'resepkan obat',
+        ])
+        ->assertRedirect(route('rme.visits.medical-record.show', $visit));
+
+    $this->assertDatabaseHas('trx_medical_records', [
+        'id' => $record->id,
+        'subjective' => 'nyeri kepala',
+        'objective' => 'tekanan darah tinggi',
+        'assessment' => 'hipertensi',
+        'plan' => 'resepkan obat',
+    ]);
+});
+
+it('final record remains read-only from UI perspective', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $record = MedicalRecord::factory()->final()->create([
+        'branch_id' => $branch->id,
+        'subjective' => 'original subjective',
+    ]);
+    $visit = $record->clinicVisit;
+
+    $this->actingAs($manager)
+        ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
+            'subjective' => 'coba ubah paksa',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasErrors(['status']);
+
+    $this->assertDatabaseHas('trx_medical_records', [
+        'id' => $record->id,
+        'subjective' => 'original subjective',
+    ]);
+});

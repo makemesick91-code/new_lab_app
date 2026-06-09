@@ -113,6 +113,37 @@
                 </div>
             @endif
 
+            {{-- Rekam Medis --}}
+            @php $medicalRecord = $visit->medicalRecord; @endphp
+            <div class="border-t pt-4">
+                <h4 class="text-sm font-semibold text-gray-700 mb-3">Rekam Medis</h4>
+                @if ($medicalRecord)
+                    <div class="flex items-center gap-3">
+                        <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium
+                            {{ $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700' }}">
+                            {{ $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL ? 'Final' : 'Draft' }}
+                        </span>
+                        <a href="{{ route('rme.visits.medical-record.show', $visit) }}"
+                           class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                            Lihat Rekam Medis
+                        </a>
+                    </div>
+                @else
+                    <p class="text-sm text-gray-500 mb-3">Rekam medis belum dibuat.</p>
+                    @if ($visit->status !== \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
+                        @can('create', [\App\Modules\MedicalRecord\Models\MedicalRecord::class, $visit])
+                            <form method="POST" action="{{ route('rme.visits.medical-record.store', $visit) }}">
+                                @csrf
+                                <button type="submit"
+                                        class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                                    Buat Rekam Medis
+                                </button>
+                            </form>
+                        @endcan
+                    @endif
+                @endif
+            </div>
+
             <div class="border-t pt-4">
                 <a href="{{ route('rme.visits.index') }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke daftar</a>
             </div>
