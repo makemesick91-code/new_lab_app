@@ -50,6 +50,7 @@ use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
 use App\Modules\TreatmentCategory\Controllers\TreatmentCategoryController;
 use App\Modules\User\Controllers\UserController;
+use App\Modules\WaReminderTemplate\Controllers\WaReminderTemplateController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -159,6 +160,11 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('payment-methods', PaymentMethodController::class)
             ->except(['show'])
             ->parameters(['payment-methods' => 'paymentMethod']);
+
+        // Sprint 19 Phase 5 — WA Reminder Template master data (global, not branch-scoped).
+        Route::resource('wa-reminder-templates', WaReminderTemplateController::class)
+            ->except(['show'])
+            ->parameters(['wa-reminder-templates' => 'waReminderTemplate']);
     });
 });
 

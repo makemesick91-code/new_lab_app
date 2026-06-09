@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             TreatmentCategorySeeder::class,
             TreatmentSeeder::class,
             PaymentMethodSeeder::class,
+            WaReminderTemplateSeeder::class,
             InventorySeeder::class,
             LabOrderSeeder::class,
             ProductionSeeder::class,

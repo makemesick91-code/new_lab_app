@@ -39,7 +39,8 @@
             'settings.treatment-categories.*',
             'settings.treatments.*',
             'settings.tariffs.*',
-            'settings.payment-methods.*'
+            'settings.payment-methods.*',
+            'settings.wa-reminder-templates.*'
         ),
         'operational' => request()->routeIs('lab-orders.*', 'production.*', 'quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
@@ -151,6 +152,8 @@
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.tariffs.*') ? $linkActive : $linkIdle }}">Master Tarif</a>
                         <a href="{{ route('settings.payment-methods.index') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.payment-methods.*') ? $linkActive : $linkIdle }}">Master Metode Pembayaran</a>
+                        <a href="{{ route('settings.wa-reminder-templates.index') }}"
+                           class="block px-3 py-2 rounded-md {{ request()->routeIs('settings.wa-reminder-templates.*') ? $linkActive : $linkIdle }}">Template Reminder WA</a>
                     @endcanany
                 </div>
             </div>

@@ -161,6 +161,10 @@ use App\Modules\TreatmentCategory\Repositories\TreatmentCategoryRepository;
 use App\Modules\User\Interfaces\UserRepositoryInterface;
 use App\Modules\User\Policies\UserPolicy;
 use App\Modules\User\Repositories\UserRepository;
+use App\Modules\WaReminderTemplate\Interfaces\WaReminderTemplateRepositoryInterface;
+use App\Modules\WaReminderTemplate\Models\WaReminderTemplate;
+use App\Modules\WaReminderTemplate\Policies\WaReminderTemplatePolicy;
+use App\Modules\WaReminderTemplate\Repositories\WaReminderTemplateRepository;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -188,6 +192,7 @@ class RepositoryServiceProvider extends ServiceProvider
         TreatmentRepositoryInterface::class => TreatmentRepository::class,
         TariffRepositoryInterface::class => TariffRepository::class,
         PaymentMethodRepositoryInterface::class => PaymentMethodRepository::class,
+        WaReminderTemplateRepositoryInterface::class => WaReminderTemplateRepository::class,
         DoctorRepositoryInterface::class => DoctorRepository::class,
         PatientRepositoryInterface::class => PatientRepository::class,
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
@@ -293,6 +298,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,
         PaymentMethod::class => PaymentMethodPolicy::class,
+        WaReminderTemplate::class => WaReminderTemplatePolicy::class,
         Doctor::class => DoctorPolicy::class,
         Patient::class => PatientPolicy::class,
         LabService::class => LabServicePolicy::class,
