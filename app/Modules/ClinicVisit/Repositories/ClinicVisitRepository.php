@@ -1,0 +1,59 @@
+<?php
+
+namespace App\Modules\ClinicVisit\Repositories;
+
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use Carbon\Carbon;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+
+class ClinicVisitRepository implements ClinicVisitRepositoryInterface
+{
+    public function paginate(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        return ClinicVisit::query()
+            ->with(['patient', 'doctor', 'clinicRoom'])
+            ->where('branch_id', $branchId)
+            ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($filters['visit_date'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', $v))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(visit_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', [$term]));
+                });
+            })
+            ->orderByDesc('visit_date')
+            ->orderBy('queue_number')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    public function findInBranch(int $branchId, int $id): ?ClinicVisit
+    {
+        return ClinicVisit::query()->where('branch_id', $branchId)->find($id);
+    }
+
+    public function nextQueueNumber(int $branchId, Carbon $visitDate): int
+    {
+        $max = ClinicVisit::query()
+            ->where('branch_id', $branchId)
+            ->whereDate('visit_date', $visitDate->toDateString())
+            ->lockForUpdate()
+            ->max('queue_number');
+
+        return (int) ($max ?? 0) + 1;
+    }
+
+    public function create(array $data): ClinicVisit
+    {
+        return ClinicVisit::create($data);
+    }
+
+    public function update(ClinicVisit $visit, array $data): ClinicVisit
+    {
+        $visit->update($data);
+
+        return $visit->refresh();
+    }
+}

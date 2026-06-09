@@ -5,6 +5,7 @@ use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
+use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
@@ -165,6 +166,19 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('wa-reminder-templates', WaReminderTemplateController::class)
             ->except(['show'])
             ->parameters(['wa-reminder-templates' => 'waReminderTemplate']);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 20 — RME: Clinic Visit Queue
+|--------------------------------------------------------------------------
+*/
+Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
+    Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
+        Route::resource('visits', ClinicVisitController::class)
+            ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
+            ->parameters(['visits' => 'clinicVisit']);
     });
 });
 

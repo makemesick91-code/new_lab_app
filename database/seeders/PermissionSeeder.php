@@ -110,6 +110,9 @@ class PermissionSeeder extends Seeder
         // Sprint 19 - Clinic Master Data
         'view_clinic_master_data',
         'manage_clinic_master_data',
+        // Sprint 20 - RME: Clinic Visit Queue
+        'view_clinic_visits',
+        'manage_clinic_visits',
         'manage lab orders',
         'manage assignments',
         'manage qc',

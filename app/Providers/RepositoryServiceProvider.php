@@ -20,6 +20,10 @@ use App\Modules\ClinicRoom\Interfaces\ClinicRoomRepositoryInterface;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicRoom\Policies\ClinicRoomPolicy;
 use App\Modules\ClinicRoom\Repositories\ClinicRoomRepository;
+use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Policies\ClinicVisitPolicy;
+use App\Modules\ClinicVisit\Repositories\ClinicVisitRepository;
 use App\Modules\Delivery\Interfaces\DeliveryRepositoryInterface;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Policies\DeliveryPolicy;
@@ -188,6 +192,8 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRepositoryInterface::class => ClinicRepository::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
+        // Sprint 20 — RME: Clinic Visit Queue
+        ClinicVisitRepositoryInterface::class => ClinicVisitRepository::class,
         TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,
         TreatmentRepositoryInterface::class => TreatmentRepository::class,
         TariffRepositoryInterface::class => TariffRepository::class,
@@ -294,6 +300,8 @@ class RepositoryServiceProvider extends ServiceProvider
         Clinic::class => ClinicPolicy::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoom::class => ClinicRoomPolicy::class,
+        // Sprint 20 — RME: Clinic Visit Queue
+        ClinicVisit::class => ClinicVisitPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,
