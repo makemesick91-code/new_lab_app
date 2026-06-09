@@ -55,7 +55,13 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($visits as $visit)
-                            <tr>
+                            @php
+                                $isTerminal = in_array($visit->status, [
+                                    \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED,
+                                    \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED,
+                                ]);
+                            @endphp
+                            <tr class="{{ $isTerminal ? 'opacity-60' : '' }}">
                                 <td class="px-3 py-2 font-mono text-gray-700">{{ $visit->visit_number }}</td>
                                 <td class="px-3 py-2 text-center font-semibold text-gray-900">{{ $visit->queue_number }}</td>
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</td>
@@ -69,9 +75,11 @@
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
                                         <a href="{{ route('rme.visits.show', $visit) }}" class="text-indigo-600 hover:text-indigo-500">Detail</a>
-                                        @can('update', $visit)
-                                            <a href="{{ route('rme.visits.edit', $visit) }}" class="text-amber-600 hover:text-amber-500">Ubah</a>
-                                        @endcan
+                                        @if (!$isTerminal)
+                                            @can('update', $visit)
+                                                <a href="{{ route('rme.visits.edit', $visit) }}" class="text-amber-600 hover:text-amber-500">Ubah</a>
+                                            @endcan
+                                        @endif
                                     </div>
                                 </td>
                             </tr>

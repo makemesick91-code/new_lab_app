@@ -52,9 +52,11 @@
                             </form>
                         @endforeach
                     @endcan
-                    @can('update', $visit)
-                        <a href="{{ route('rme.visits.edit', $visit) }}" class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Ubah</a>
-                    @endcan
+                    @if ($visit->status !== \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED && $visit->status !== \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
+                        @can('update', $visit)
+                            <a href="{{ route('rme.visits.edit', $visit) }}" class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Ubah</a>
+                        @endcan
+                    @endif
                 </div>
             </div>
 
@@ -92,7 +94,7 @@
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Selesai</dt>
                         <dd class="mt-1 text-sm text-gray-900">{{ $visit->completed_at?->format('d/m/Y H:i') ?? '—' }}</dd>
                     </div>
-                    @if (($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED || $visit->status === 'cancelled') && $visit->cancelled_at)
+                    @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED && $visit->cancelled_at)
                         <div>
                             <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibatalkan</dt>
                             <dd class="mt-1 text-sm text-gray-900">{{ $visit->cancelled_at->format('d/m/Y H:i') }}</dd>
@@ -100,6 +102,16 @@
                     @endif
                 @endif
             </dl>
+
+            @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
+                <div class="rounded-md bg-green-50 px-4 py-3 text-sm text-green-700">
+                    Kunjungan telah selesai, tidak ada aksi perubahan status tersedia.
+                </div>
+            @elseif ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
+                <div class="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
+                    Kunjungan telah dibatalkan, tidak ada aksi perubahan status tersedia.
+                </div>
+            @endif
 
             <div class="border-t pt-4">
                 <a href="{{ route('rme.visits.index') }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke daftar</a>
