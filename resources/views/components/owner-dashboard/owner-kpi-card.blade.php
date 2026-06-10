@@ -20,7 +20,7 @@
     $content = trim($slot) !== '' ? $slot : null;
 @endphp
 
-<div {{ $attributes->merge(['class' => "rounded-lg border {$tone} p-4 shadow-sm"]) }}>
+<div {{ $attributes->merge(['class' => "rounded-xl border {$tone} p-4 shadow-sm transition-shadow hover:shadow-md"]) }}>
     <div class="flex min-h-28 flex-col justify-between gap-3">
         <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ $label }}</p>
