@@ -113,6 +113,8 @@ class PermissionSeeder extends Seeder
         // Sprint 20 - RME: Clinic Visit Queue
         'view_clinic_visits',
         'manage_clinic_visits',
+        // Sprint 20 Phase 1.10 — RME Cashier Billing
+        'manage_rme_billing',
         'manage lab orders',
         'manage assignments',
         'manage qc',

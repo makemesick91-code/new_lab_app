@@ -49,6 +49,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -225,6 +226,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('odontograms/{odontogram}/finalize', [OdontogramController::class, 'finalize'])
                 ->name('odontograms.finalize');
         });
+    });
+
+    // Sprint 20 Phase 1.10 — Cashier RME Billing
+    Route::middleware('permission:manage_rme_billing')->group(function () {
+        Route::get('cashier', [RmeInvoiceController::class, 'index'])->name('cashier.index');
+        Route::get('cashier/{clinicVisit}/billing/create', [RmeInvoiceController::class, 'create'])->name('cashier.create');
+        Route::post('cashier/{clinicVisit}/billing', [RmeInvoiceController::class, 'store'])->name('cashier.store');
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');
     });
 });
 

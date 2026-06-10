@@ -156,6 +156,10 @@ use App\Modules\QualityControl\Repositories\RemakeRequestRepository;
 use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
+use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
+use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Tariff\Policies\TariffPolicy;
@@ -257,6 +261,8 @@ class RepositoryServiceProvider extends ServiceProvider
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
         // Sprint 20 Phase 1.8
         MedicalRecordHandwritingRepositoryInterface::class => MedicalRecordHandwritingRepository::class,
+        // Sprint 20 Phase 1.10 — RME Cashier Billing
+        RmeInvoiceRepositoryInterface::class => RmeInvoiceRepository::class,
     ];
 
     /**
@@ -321,6 +327,8 @@ class RepositoryServiceProvider extends ServiceProvider
         MedicalRecord::class => MedicalRecordPolicy::class,
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder
         Odontogram::class => OdontogramPolicy::class,
+        // Sprint 20 Phase 1.10 — RME Cashier Billing
+        RmeInvoice::class => RmeInvoicePolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

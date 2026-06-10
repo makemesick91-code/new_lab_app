@@ -10,6 +10,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Factories\ClinicVisitFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -123,6 +124,12 @@ class ClinicVisit extends Model
     public function odontogram(): HasOne
     {
         return $this->hasOne(Odontogram::class);
+    }
+
+    public function rmeInvoice(): HasOne
+    {
+        return $this->hasOne(RmeInvoice::class, 'clinic_visit_id')
+            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID]);
     }
 
     protected static function newFactory(): ClinicVisitFactory
