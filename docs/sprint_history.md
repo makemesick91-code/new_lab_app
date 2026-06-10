@@ -3453,6 +3453,19 @@ All 69 Phase 1.3.x–1.5 tests retained and passing.
   fallback for missing medical record / odontogram; "Cetak RME" button on visit show page gated by
   `@can('print', $visit)`; no new permissions, roles, or schema changes introduced; no treatment
   plan, no billing, no PDF library, no canvas/SVG, no handwriting tablet.
+- **Sprint 20 Phase 1.7.1 — RME Test Stability Hardening:** No functional or behavioural change.
+  Flaky test `finalize sets status to finalized` was caused by `OdontogramFactory::definition()`
+  eagerly calling `ClinicVisit::factory()->create()` unconditionally — even when `clinic_visit_id`
+  was explicitly overridden by the caller — creating a "ghost" `ClinicVisit` that competed for the
+  same random `visit_number` space as the test's explicit visit; the globally-unique `visit_number`
+  constraint (`trx_clinic_visits.visit_number UNIQUE`) then fired intermittently (birthday-paradox
+  collision with `fake()->numberBetween(1, 999)`). Fix: (1) `OdontogramFactory` converted to lazy
+  factory reference (`'clinic_visit_id' => ClinicVisit::factory()`) with a `configure/afterMaking`
+  hook that derives `branch_id` from the linked visit when not explicitly supplied — eliminates
+  ghost records entirely; (2) `ClinicVisitFactory` switched to `fake()->unique()->numberBetween(1,
+  999)` so all factory calls within a single test get distinct queue numbers. Both changes are
+  factory-only: no migrations, no service logic, no route/policy/permission changes, no test
+  assertions altered. Full suite: 84 Odontogram + 46 ClinicVisit tests all pass.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
   existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set

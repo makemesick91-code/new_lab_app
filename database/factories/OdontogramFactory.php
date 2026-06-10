@@ -15,11 +15,9 @@ class OdontogramFactory extends Factory
 
     public function definition(): array
     {
-        $visit = ClinicVisit::factory()->create();
-
         return [
-            'clinic_visit_id' => $visit->id,
-            'branch_id' => $visit->branch_id,
+            'clinic_visit_id' => ClinicVisit::factory(),
+            'branch_id' => null,
             'medical_record_id' => null,
             'status' => Odontogram::STATUS_DRAFT,
             'summary_notes' => null,
@@ -27,5 +25,14 @@ class OdontogramFactory extends Factory
             'created_by' => null,
             'updated_by' => null,
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterMaking(function (Odontogram $odontogram) {
+            if (is_null($odontogram->branch_id) && $odontogram->clinic_visit_id) {
+                $odontogram->branch_id = ClinicVisit::find($odontogram->clinic_visit_id)?->branch_id;
+            }
+        });
     }
 }

@@ -20,7 +20,7 @@ class ClinicVisitFactory extends Factory
 
     public function definition(): array
     {
-        $queueNumber = fake()->numberBetween(1, 999);
+        $queueNumber = fake()->unique()->numberBetween(1, 999);
         $visitDate = Carbon::today();
 
         return [
