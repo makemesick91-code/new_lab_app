@@ -108,6 +108,84 @@ it('patient import avoids duplicate', function () {
         ->and(Patient::query()->where('medical_record_number', 'MRN-PILOT002')->count())->toBe(1);
 });
 
+it('lab service import matches existing treatment by name and avoids duplicate', function () {
+    $category = TreatmentCategory::factory()->create(['name' => 'Orthodontics', 'code' => 'ORTH']);
+    $existing = Treatment::factory()->create([
+        'code' => 'TRT-RETAINER',
+        'name' => 'Retainer',
+        'treatment_category_id' => $category->id,
+        'requires_lab' => true,
+        'description' => null,
+    ]);
+
+    $extracted = [
+        'tables' => [
+            'mst_lab_services' => [
+                [
+                    'id' => '801',
+                    'code' => 'SVC-BZAFJH',
+                    'name' => 'Retainer',
+                    'category' => 'Orthodontics',
+                    'description' => 'Pilot retainer import',
+                    'turnaround_days' => '3',
+                    'price' => '500000.00',
+                    'is_active' => 't',
+                ],
+            ],
+        ],
+        'skipped_tables' => [],
+        'whitelisted_row_counts' => ['mst_lab_services' => 1],
+    ];
+
+    $this->importService->import($extracted, dryRun: false, only: 'treatments');
+
+    expect(Treatment::query()->where('name', 'Retainer')->count())->toBe(1)
+        ->and(Treatment::query()->where('code', 'SVC-BZAFJH')->exists())->toBeFalse()
+        ->and($existing->fresh()->code)->toBe('TRT-RETAINER')
+        ->and($existing->fresh()->description)->toBe('Pilot retainer import')
+        ->and(Tariff::query()->where('treatment_id', $existing->id)->exists())->toBeTrue();
+
+    $tariffCount = Tariff::query()->where('treatment_id', $existing->id)->count();
+    $treatmentCount = Treatment::count();
+
+    $this->importService->import($extracted, dryRun: false, only: 'treatments');
+
+    expect(Treatment::count())->toBe($treatmentCount)
+        ->and(Tariff::query()->where('treatment_id', $existing->id)->count())->toBe($tariffCount);
+});
+
+it('dry-run reports matched-by-name for lab service with conflicting code', function () {
+    Treatment::factory()->create([
+        'code' => 'TRT-RETAINER',
+        'name' => 'Retainer',
+    ]);
+
+    $extracted = [
+        'tables' => [
+            'mst_lab_services' => [
+                [
+                    'id' => '801',
+                    'code' => 'SVC-BZAFJH',
+                    'name' => 'Retainer',
+                    'category' => 'Orthodontics',
+                    'description' => 'Pilot retainer import',
+                    'price' => '500000.00',
+                    'is_active' => 't',
+                ],
+            ],
+        ],
+        'skipped_tables' => [],
+        'whitelisted_row_counts' => ['mst_lab_services' => 1],
+    ];
+
+    $result = $this->importService->import($extracted, dryRun: true, only: 'treatments');
+    $notes = implode(' ', $result->messages);
+
+    expect($notes)->toContain('Would match existing treatment by name Retainer')
+        ->and($notes)->toContain('Would create/update tariff for Retainer')
+        ->and($notes)->toContain('backup code SVC-BZAFJH not applied');
+});
+
 it('lab services create treatments categories and tariffs', function () {
     $extracted = pilotExtract($this->fixture);
 

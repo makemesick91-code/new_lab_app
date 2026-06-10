@@ -416,12 +416,14 @@ class PilotBackupImportService
         }
 
         $requiresLab = $this->requiresLab($name, $categoryName, (string) ($row['description'] ?? ''));
+        $isActive = $this->toBool($row['is_active'] ?? true);
+        $description = $row['description'] ?? null;
+        $resolvedName = $name !== '' ? $name : $code;
+        $resolvedCode = $code !== '' ? $code : Str::upper(Str::slug($name, '_'));
+        $match = $this->resolveLabServiceTreatment($code, $name);
 
         if ($dryRun) {
-            return [
-                'action' => Treatment::query()->where('code', $code)->exists() ? 'updated' : 'imported',
-                'message' => sprintf('[dry-run] Would map lab service %s to treatment/tariff', $code ?: $name),
-            ];
+            return $this->dryRunLabServiceResult($match, $resolvedName, $code);
         }
 
         $category = TreatmentCategory::query()->firstOrCreate(
@@ -434,21 +436,134 @@ class PilotBackupImportService
             ]
         );
 
-        $treatment = Treatment::query()->updateOrCreate(
-            ['code' => $code !== '' ? $code : Str::upper(Str::slug($name, '_'))],
-            [
+        $message = null;
+
+        if ($match['treatment'] === null) {
+            $treatment = Treatment::query()->create([
+                'code' => $resolvedCode,
                 'treatment_category_id' => $category->id,
-                'name' => $name !== '' ? $name : $code,
-                'description' => $row['description'] ?? null,
+                'name' => $resolvedName,
+                'description' => $description,
                 'default_duration_minutes' => null,
                 'requires_doctor' => true,
                 'requires_room' => false,
                 'requires_lab' => $requiresLab,
-                'is_active' => $this->toBool($row['is_active'] ?? true),
-            ]
-        );
+                'is_active' => $isActive,
+            ]);
+            $wasCreated = true;
+        } elseif ($match['match'] === 'code') {
+            $treatment = $match['treatment'];
+            $treatment->update([
+                'treatment_category_id' => $category->id,
+                'name' => $resolvedName,
+                'description' => $description ?? $treatment->description,
+                'requires_lab' => $requiresLab,
+                'is_active' => $isActive,
+            ]);
+            $wasCreated = false;
+        } else {
+            $treatment = $match['treatment'];
+            $updates = [
+                'requires_lab' => $requiresLab,
+                'is_active' => $isActive,
+            ];
 
-        Tariff::query()->firstOrCreate(
+            if ($this->isBlank($treatment->description) && ! $this->isBlank($description)) {
+                $updates['description'] = $description;
+            }
+
+            if ($treatment->treatment_category_id === null) {
+                $updates['treatment_category_id'] = $category->id;
+            }
+
+            $treatment->update($updates);
+
+            if ($code !== '' && $code !== $treatment->code) {
+                $message = sprintf(
+                    'Matched existing treatment by name %s; backup code %s not applied to avoid duplicate.',
+                    $resolvedName,
+                    $code
+                );
+            } else {
+                $message = sprintf('Matched existing treatment by name %s.', $resolvedName);
+            }
+
+            $wasCreated = false;
+        }
+
+        $this->importOrUpdateTariff($branch, $treatment, $row, $isActive);
+
+        return [
+            'action' => $wasCreated ? 'imported' : 'updated',
+            'message' => $message,
+        ];
+    }
+
+    /**
+     * @return array{treatment: ?Treatment, match: ?string}
+     */
+    private function resolveLabServiceTreatment(string $code, string $name): array
+    {
+        if ($code !== '') {
+            $byCode = Treatment::query()->where('code', $code)->first();
+            if ($byCode !== null) {
+                return ['treatment' => $byCode, 'match' => 'code'];
+            }
+        }
+
+        if ($name !== '') {
+            $byName = Treatment::query()->where('name', $name)->first();
+            if ($byName !== null) {
+                return ['treatment' => $byName, 'match' => 'name'];
+            }
+        }
+
+        return ['treatment' => null, 'match' => null];
+    }
+
+    /**
+     * @param  array{treatment: ?Treatment, match: ?string}  $match
+     * @return array{action: string, message: ?string}
+     */
+    private function dryRunLabServiceResult(array $match, string $resolvedName, string $code): array
+    {
+        if ($match['treatment'] !== null && $match['match'] === 'name') {
+            $parts = [
+                sprintf('[dry-run] Would match existing treatment by name %s', $resolvedName),
+            ];
+
+            if ($code !== '' && $code !== $match['treatment']->code) {
+                $parts[] = sprintf(
+                    'Matched existing treatment by name %s; backup code %s not applied to avoid duplicate.',
+                    $resolvedName,
+                    $code
+                );
+            }
+
+            $parts[] = sprintf('[dry-run] Would create/update tariff for %s', $resolvedName);
+
+            return [
+                'action' => 'updated',
+                'message' => implode(' ', $parts),
+            ];
+        }
+
+        $exists = $match['treatment'] !== null;
+
+        return [
+            'action' => $exists ? 'updated' : 'imported',
+            'message' => sprintf(
+                '[dry-run] Would %s lab service %s to treatment/tariff%s',
+                $exists ? 'update' : 'import',
+                $code ?: $resolvedName,
+                $exists ? sprintf(' and create/update tariff for %s', $resolvedName) : ''
+            ),
+        ];
+    }
+
+    private function importOrUpdateTariff(Branch $branch, Treatment $treatment, array $row, bool $isActive): void
+    {
+        $tariff = Tariff::query()->firstOrCreate(
             [
                 'branch_id' => $branch->id,
                 'treatment_id' => $treatment->id,
@@ -456,15 +571,22 @@ class PilotBackupImportService
             ],
             [
                 'price' => $row['price'] ?? 0,
-                'is_active' => true,
+                'is_active' => $isActive,
                 'notes' => 'Imported from pilot backup mst_lab_services',
             ]
         );
 
-        return [
-            'action' => $treatment->wasRecentlyCreated ? 'imported' : 'updated',
-            'message' => null,
-        ];
+        if (! $tariff->wasRecentlyCreated) {
+            $tariff->update([
+                'price' => $row['price'] ?? $tariff->price,
+                'is_active' => $isActive,
+            ]);
+        }
+    }
+
+    private function isBlank(mixed $value): bool
+    {
+        return trim((string) $value) === '';
     }
 
     private function resolvePilotClinic(bool $dryRun): ?Clinic
