@@ -12,4 +12,6 @@ interface OdontogramRepositoryInterface
     public function createForClinicVisit(ClinicVisit $clinicVisit, array $data = []): Odontogram;
 
     public function updatePlaceholder(Odontogram $odontogram, array $data): Odontogram;
+
+    public function finalize(Odontogram $odontogram, array $data): Odontogram;
 }

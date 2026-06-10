@@ -21,6 +21,13 @@ class OdontogramPolicy
 
     public function update(User $user, Odontogram $odontogram): bool
     {
+        return $this->canManage($user)
+            && $this->belongsToActiveBranch($odontogram->branch_id)
+            && ! $odontogram->isFinalized();
+    }
+
+    public function finalize(User $user, Odontogram $odontogram): bool
+    {
         return $this->canManage($user) && $this->belongsToActiveBranch($odontogram->branch_id);
     }
 

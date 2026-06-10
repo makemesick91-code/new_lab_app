@@ -45,10 +45,40 @@ class OdontogramService
                 ]);
             }
 
+            if ($odontogram->isFinalized()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Odontogram yang sudah final tidak dapat diubah.',
+                ]);
+            }
+
             $safe = array_intersect_key($payload, array_flip(['summary_notes', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;
 
             return $this->odontograms->updatePlaceholder($odontogram, $safe);
+        });
+    }
+
+    public function finalize(Odontogram $odontogram, User $user): Odontogram
+    {
+        return DB::transaction(function () use ($odontogram, $user) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($odontogram->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'odontogram_id' => 'Odontogram tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            if ($odontogram->isFinalized()) {
+                return $odontogram;
+            }
+
+            return $this->odontograms->finalize($odontogram, [
+                'status' => Odontogram::STATUS_FINALIZED,
+                'finalized_at' => now(),
+                'finalized_by' => $user->id,
+                'updated_by' => $user->id,
+            ]);
         });
     }
 }

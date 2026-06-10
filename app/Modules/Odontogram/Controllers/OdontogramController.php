@@ -38,4 +38,15 @@ class OdontogramController extends Controller
             ->route('rme.visits.odontogram.show', $odontogram->clinicVisit)
             ->with('status', 'Odontogram berhasil disimpan.');
     }
+
+    public function finalize(Odontogram $odontogram): RedirectResponse
+    {
+        $this->authorize('finalize', $odontogram);
+
+        $this->service->finalize($odontogram, auth()->user());
+
+        return redirect()
+            ->route('rme.visits.odontogram.show', $odontogram->clinicVisit)
+            ->with('status', 'Odontogram berhasil difinalisasi.');
+    }
 }

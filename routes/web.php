@@ -205,9 +205,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'show'])
             ->name('visits.odontogram.show');
 
-        Route::middleware('permission:manage_clinic_visits')
-            ->patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
-            ->name('odontograms.update');
+        Route::middleware('permission:manage_clinic_visits')->group(function () {
+            Route::patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
+                ->name('odontograms.update');
+
+            // Sprint 20 Phase 1.3.3 — Odontogram Finalize
+            Route::post('odontograms/{odontogram}/finalize', [OdontogramController::class, 'finalize'])
+                ->name('odontograms.finalize');
+        });
     });
 });
 

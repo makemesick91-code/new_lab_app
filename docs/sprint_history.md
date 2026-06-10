@@ -2726,6 +2726,100 @@ no lab workflow, no new permissions, no new roles, no schema changes, no invento
 
 ---
 
+## Sprint 20 Phase 1.3.3 — Odontogram Finalize
+
+### Summary
+
+Adds a finalize workflow to the Odontogram module. A draft odontogram can be locked by a Manager, transitioning it to `finalized` status. Once finalized, `tooth_map_payload` and `summary_notes` are permanently immutable. The UI shows a **Draft** or **Final** badge on the header and hides the save form after finalization.
+
+### Scope
+
+- New migration: `2026_06_10_200002_add_finalized_columns_to_trx_odontograms.php` — adds `finalized_at` (nullable timestamp) and `finalized_by` (nullable FK → `users`) to `trx_odontograms`.
+- `Odontogram` model: `STATUS_FINALIZED` constant, `finalized_at`/`finalized_by` in `$fillable`, `finalized_at` datetime cast, `finalizer()` BelongsTo relation, `isFinalized(): bool` helper.
+- `OdontogramRepositoryInterface` and `OdontogramRepository`: new `finalize(Odontogram, array): Odontogram` method.
+- `OdontogramService::finalize()`: branch guard, idempotent (returns existing if already finalized), sets `status=finalized`, `finalized_at=now()`, `finalized_by`, `updated_by`.
+- `OdontogramService::updatePlaceholder()`: rejects with `ValidationException` if odontogram is finalized.
+- `OdontogramPolicy::finalize()`: requires `manage_clinic_visits` + same active branch.
+- `OdontogramPolicy::update()`: returns `false` if odontogram is finalized (policy-level immutability).
+- New route: `POST rme/odontograms/{odontogram}/finalize` → `rme.odontograms.finalize`.
+- `OdontogramController::finalize()`: authorizes via policy, delegates to service, redirects with success message.
+- `show.blade.php`: Draft/Final badge in header; finalize button (manager + draft only) with JS confirm; save form hidden when finalized; read-only notice banner when finalized; tooth grid and status selector remain reactive but `canEdit` is false after finalization.
+
+### Status Workflow
+
+```
+draft  →  finalized
+```
+
+Transition is one-way. Once finalized, the odontogram cannot revert to draft. Calling `finalize()` on an already-finalized odontogram is idempotent (service returns existing record, no duplicate written).
+
+### Permission Behaviour
+
+| Action | Required permission | Extra condition |
+|---|---|---|
+| view | `view_clinic_visits` OR `manage_clinic_visits` | same active branch |
+| update (save tooth map / notes) | `manage_clinic_visits` | same branch + not finalized |
+| finalize | `manage_clinic_visits` | same active branch |
+
+Cross-branch access is rejected with 403 at the policy layer. Viewer (`view_clinic_visits` only) can never finalize or update.
+
+### Immutable Rule After Finalized
+
+- `OdontogramPolicy::update()` returns `false` when `isFinalized()` is true → HTTP 403 on PATCH.
+- `OdontogramService::updatePlaceholder()` additionally throws `ValidationException` with a domain message if called directly on a finalized odontogram.
+- `finalized_at` and `finalized_by` are set exactly once; subsequent `finalize()` calls are no-ops.
+
+### Tests (Phase 1.3.3 additions — 13 new tests, 48 total)
+
+| Test | Coverage |
+|---|---|
+| finalize sets status, timestamp, user | service happy path |
+| finalize is idempotent for already-finalized | service no-op guard |
+| finalize service rejects cross-branch odontogram | branch isolation |
+| updatePlaceholder throws for finalized odontogram | service immutability |
+| manager can finalize draft odontogram | HTTP happy path |
+| viewer cannot finalize | permission denial |
+| user without permission cannot finalize | permission denial |
+| cross-branch user cannot finalize | branch isolation HTTP |
+| finalize does not duplicate odontogram | idempotency |
+| finalized odontogram cannot update summary_notes via HTTP | HTTP immutability |
+| finalized odontogram cannot update tooth_map_payload via HTTP | HTTP immutability |
+| finalized odontogram page shows final badge | UI badge |
+| draft odontogram page shows draft badge | UI badge |
+
+All 35 Phase 1.3.1+1.3.2 tests retained and passing (48 total, 122 assertions).
+
+### Out of Scope
+
+- No canvas/SVG tooth map.
+- No handwriting tablet.
+- No treatment plan.
+- No ICD-10 structured field.
+- No PDF export.
+- No lab workflow integration.
+- No payment/billing.
+- No per-tooth notes field.
+- No new permissions or roles.
+- HR, Inventory, Procurement, Payment, Cicilan, Lab Workflow untouched.
+
+### Next Phase Suggestion
+
+**Sprint 20 Phase 1.4 — Odontogram Extended / Treatment Plan**
+- Per-tooth notes or multi-condition support
+- Treatment plan linked to odontogram conditions
+- Or: RME PDF export / print view
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-3-3-odontogram-finalize` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -3031,6 +3125,15 @@ no lab workflow, no new permissions, no new roles, no schema changes, no invento
   branch isolation via `BranchContext::requireId()` and `OdontogramPolicy`; `view_clinic_visits`/
   `manage_clinic_visits` as the permission pair (no new permissions); no canvas/SVG/interactive
   tooth map in this phase; interactive chart deferred to Phase 1.3.2.
+- **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
+  `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
+  existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set
+  exactly once on first finalization; `OdontogramPolicy::update()` returns `false` when
+  `isFinalized()` is true (policy-layer immutability); `OdontogramService::updatePlaceholder()`
+  throws `ValidationException` for finalized odontograms (service-layer immutability); `finalize`
+  action gated by `manage_clinic_visits` + same active branch; cross-branch finalize is 403;
+  `view_clinic_visits`/`manage_clinic_visits` remain the only permission pair (no new permissions);
+  no canvas/SVG, no per-tooth notes, no treatment plan, no PDF export in this phase.
 
 **Universal gate before any sprint starts:** answer (1) which module owns it, (2) which records are
 branch-owned, (3) which policies/permissions protect it, (4) which service owns the rule, (5) which
@@ -3070,9 +3173,10 @@ hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, T
 Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
 `settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`) ·
 `MedicalRecord, ClinicVisit` (S20 Phase 1.2, RME core under `rme.*` routes, permissions
-`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.1, placeholder
-foundation under `rme.*` routes, reuses `view_clinic_visits`/`manage_clinic_visits`, table
-`trx_odontograms` with unique `clinic_visit_id`, idempotent get-or-create, no tooth-map UI yet).
+`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.3, finalize workflow,
+table `trx_odontograms`, status `draft→finalized`, `finalized_at`/`finalized_by` columns, policy-
+and service-layer immutability after finalization, 32-tooth FDI interactive map, Draft/Final badge,
+reuses `view_clinic_visits`/`manage_clinic_visits`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -3085,4 +3189,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.2 (RME Core Medical Record, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.3.3 (Odontogram Finalize, 2026-06-10) and must be updated as each new sprint completes.*

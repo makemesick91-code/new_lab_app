@@ -18,6 +18,8 @@ class Odontogram extends Model
 
     public const STATUS_DRAFT = 'draft';
 
+    public const STATUS_FINALIZED = 'finalized';
+
     protected $table = 'trx_odontograms';
 
     protected $fillable = [
@@ -27,13 +29,21 @@ class Odontogram extends Model
         'status',
         'summary_notes',
         'tooth_map_payload',
+        'finalized_at',
+        'finalized_by',
         'created_by',
         'updated_by',
     ];
 
     protected $casts = [
         'tooth_map_payload' => 'array',
+        'finalized_at' => 'datetime',
     ];
+
+    public function isFinalized(): bool
+    {
+        return $this->status === self::STATUS_FINALIZED;
+    }
 
     public function clinicVisit(): BelongsTo
     {
@@ -58,6 +68,11 @@ class Odontogram extends Model
     public function updater(): BelongsTo
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function finalizer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'finalized_by');
     }
 
     protected static function newFactory(): OdontogramFactory

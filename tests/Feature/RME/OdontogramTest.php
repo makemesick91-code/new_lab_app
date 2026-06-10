@@ -528,3 +528,225 @@ it('can update summary_notes and tooth_map_payload together', function () {
         ->and($fresh->tooth_map_payload['teeth']['11']['status'])->toBe('caries')
         ->and($fresh->tooth_map_payload['teeth']['18']['status'])->toBe('root_treated');
 });
+
+// ============================================================
+// Phase 1.3.3 — Odontogram Finalize
+// ============================================================
+
+// --- Service: finalize ---
+
+it('finalize sets status to finalized and records timestamp and user', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $result = app(OdontogramService::class)->finalize($odontogram, $user);
+
+    expect($result->status)->toBe(Odontogram::STATUS_FINALIZED)
+        ->and($result->finalized_at)->not->toBeNull()
+        ->and($result->finalized_by)->toBe($user->id);
+});
+
+it('finalize is idempotent for already-finalized odontogram', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $user->id,
+    ]);
+
+    $result = app(OdontogramService::class)->finalize($odontogram, $user);
+
+    expect($result->id)->toBe($odontogram->id)
+        ->and($result->status)->toBe(Odontogram::STATUS_FINALIZED);
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+});
+
+it('finalize service rejects odontogram from another branch', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $otherBranch = Branch::factory()->create();
+    $odontogram = Odontogram::factory()->create(['branch_id' => $otherBranch->id]);
+
+    expect(fn () => app(OdontogramService::class)->finalize($odontogram, $user))
+        ->toThrow(ValidationException::class);
+});
+
+it('updatePlaceholder throws ValidationException for finalized odontogram', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $user->id,
+    ]);
+
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder(
+        $odontogram,
+        ['summary_notes' => 'tidak boleh'],
+        $user
+    ))->toThrow(ValidationException::class);
+});
+
+// --- HTTP: finalize ---
+
+it('manager can finalize draft odontogram', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->post(route('rme.odontograms.finalize', $odontogram))
+        ->assertRedirect(route('rme.visits.odontogram.show', $visit));
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->status)->toBe(Odontogram::STATUS_FINALIZED)
+        ->and($fresh->finalized_at)->not->toBeNull()
+        ->and($fresh->finalized_by)->toBe($manager->id);
+});
+
+it('viewer cannot finalize odontogram', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($viewer)
+        ->post(route('rme.odontograms.finalize', $odontogram))
+        ->assertForbidden();
+});
+
+it('user without permission cannot finalize odontogram', function () {
+    $user = User::factory()->create();
+    $odontogram = Odontogram::factory()->create();
+
+    $this->actingAs($user)
+        ->post(route('rme.odontograms.finalize', $odontogram))
+        ->assertForbidden();
+});
+
+it('cross-branch user cannot finalize odontogram', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $otherBranch = Branch::factory()->create();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $otherBranch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->post(route('rme.odontograms.finalize', $odontogram))
+        ->assertForbidden();
+});
+
+it('finalize does not duplicate odontogram', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->post(route('rme.odontograms.finalize', $odontogram))
+        ->assertRedirect();
+
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+});
+
+// --- HTTP: immutability after finalize ---
+
+it('finalized odontogram cannot update summary_notes via HTTP', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'summary_notes' => 'coba ubah',
+        ])
+        ->assertForbidden();
+});
+
+it('finalized odontogram cannot update tooth_map_payload via HTTP', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
+        ])
+        ->assertForbidden();
+});
+
+// --- UI: badge visibility ---
+
+it('finalized odontogram page shows final badge', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Final');
+});
+
+it('draft odontogram page shows draft badge', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Draft');
+});

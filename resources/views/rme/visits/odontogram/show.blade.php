@@ -2,7 +2,9 @@
     @php
         $payload   = $odontogram->tooth_map_payload ?? [];
         $teethData = ! empty($payload['teeth']) ? (object) $payload['teeth'] : new \stdClass();
-        $canUpdate = auth()->user()?->can('update', $odontogram) ?? false;
+        $isFinalized = $odontogram->isFinalized();
+        $canUpdate = (! $isFinalized) && (auth()->user()?->can('update', $odontogram) ?? false);
+        $canFinalize = (! $isFinalized) && (auth()->user()?->can('finalize', $odontogram) ?? false);
 
         // FDI display order: center → outer
         $upperRight = [18, 17, 16, 15, 14, 13, 12, 11]; // Q1 right-to-center
@@ -55,6 +57,21 @@
             </div>
         @endif
 
+        {{-- Finalized notice --}}
+        @if ($isFinalized)
+            <div class="rounded-md bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
+                Odontogram sudah final dan tidak bisa diedit.
+                @if ($odontogram->finalized_at)
+                    Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
+                    @if ($odontogram->finalizer)
+                        oleh {{ $odontogram->finalizer->name }}.
+                    @else
+                        .
+                    @endif
+                @endif
+            </div>
+        @endif
+
         {{-- Header --}}
         <div class="bg-white shadow-sm sm:rounded-lg">
             <div class="p-6">
@@ -65,9 +82,15 @@
                             {{ $clinicVisit->visit_number }} &mdash; {{ $clinicVisit->visit_date?->format('d/m/Y') }}
                         </p>
                     </div>
-                    <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset bg-amber-50 text-amber-700 ring-amber-600/20">
-                        {{ $odontogram->status === 'draft' ? 'Draft' : ucfirst($odontogram->status) }}
-                    </span>
+                    @if ($isFinalized)
+                        <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset bg-blue-50 text-blue-700 ring-blue-600/20">
+                            Final
+                        </span>
+                    @else
+                        <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset bg-amber-50 text-amber-700 ring-amber-600/20">
+                            Draft
+                        </span>
+                    @endif
                 </div>
 
                 <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -81,11 +104,22 @@
                     </div>
                 </dl>
 
-                <div class="mt-4">
+                <div class="mt-4 flex items-center gap-3">
                     <a href="{{ route('rme.visits.show', $clinicVisit) }}"
                        class="inline-flex items-center rounded-md bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">
                         &larr; Kembali ke Kunjungan
                     </a>
+
+                    @if ($canFinalize)
+                        <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
+                              onsubmit="return confirm('Finalisasi odontogram ini? Data tidak akan bisa diedit setelah difinalisasi.')">
+                            @csrf
+                            <button type="submit"
+                                    class="inline-flex items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                                Finalisasi Odontogram
+                            </button>
+                        </form>
+                    @endif
                 </div>
             </div>
         </div>
@@ -128,12 +162,14 @@
             <div class="p-6">
                 <div class="flex items-center justify-between mb-4">
                     <h4 class="text-base font-semibold text-gray-900">Peta Gigi (FDI)</h4>
-                    @if (! $canUpdate)
+                    @if ($isFinalized)
+                        <span class="text-xs italic text-gray-400">Read-only (sudah final)</span>
+                    @elseif (! $canUpdate)
                         <span class="text-xs italic text-gray-400">Hanya lihat</span>
                     @endif
                 </div>
 
-                {{-- Status selector — manager only --}}
+                {{-- Status selector — manager only, draft only --}}
                 @if ($canUpdate)
                     <div class="mb-5">
                         <p class="text-xs text-gray-500 mb-2">Status aktif — klik gigi untuk menerapkan (klik ulang untuk hapus):</p>
@@ -243,8 +279,8 @@
             </div>
         </div>
 
-        {{-- Save form (manager only) --}}
-        @can('update', $odontogram)
+        {{-- Save form (manager + draft only) --}}
+        @if ($canUpdate)
             <div class="bg-white shadow-sm sm:rounded-lg">
                 <div class="p-6">
                     <h4 class="text-base font-semibold text-gray-900 mb-4">Simpan Odontogram</h4>
@@ -288,7 +324,7 @@
                 </div>
             </div>
         @else
-            {{-- Read-only notes for viewer --}}
+            {{-- Read-only notes --}}
             @if ($odontogram->summary_notes)
                 <div class="bg-white shadow-sm sm:rounded-lg">
                     <div class="p-6">
@@ -297,7 +333,7 @@
                     </div>
                 </div>
             @endif
-        @endcan
+        @endif
 
     </div>
 </x-settings-shell>

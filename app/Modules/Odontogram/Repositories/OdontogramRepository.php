@@ -37,4 +37,11 @@ class OdontogramRepository implements OdontogramRepositoryInterface
 
         return $odontogram->refresh();
     }
+
+    public function finalize(Odontogram $odontogram, array $data): Odontogram
+    {
+        $odontogram->update($data);
+
+        return $odontogram->refresh();
+    }
 }
