@@ -32,6 +32,7 @@
                 if (! this.canEdit) return;
                 const current = this.teeth[key] ? this.teeth[key].status : null;
                 const existingNote = this.teeth[key] ? (this.teeth[key].note || '') : '';
+                const existingConditions = (this.teeth[key] && Array.isArray(this.teeth[key].conditions)) ? this.teeth[key].conditions : [];
                 if (current === this.activeStatus) {
                     const copy = Object.assign({}, this.teeth);
                     delete copy[key];
@@ -39,7 +40,7 @@
                     this.toothNote = '';
                 } else {
                     this.teeth = Object.assign({}, this.teeth, {
-                        [key]: { status: this.activeStatus, note: existingNote }
+                        [key]: { status: this.activeStatus, note: existingNote, conditions: existingConditions }
                     });
                 }
             },
@@ -49,6 +50,23 @@
                 const key = String(this.selectedTooth);
                 if (! this.teeth[key]) return;
                 this.teeth[key].note = this.toothNote;
+            },
+
+            hasCondition(condition) {
+                const key = String(this.selectedTooth);
+                if (! this.teeth[key]) return false;
+                const conds = this.teeth[key].conditions;
+                return Array.isArray(conds) && conds.includes(condition);
+            },
+
+            toggleCondition(condition) {
+                if (! this.canEdit || this.selectedTooth === null) return;
+                const key = String(this.selectedTooth);
+                if (! this.teeth[key]) return;
+                const current = Array.isArray(this.teeth[key].conditions) ? this.teeth[key].conditions : [];
+                const idx = current.indexOf(condition);
+                const updated = idx === -1 ? [...current, condition] : current.filter((_, i) => i !== idx);
+                this.teeth[key] = Object.assign({}, this.teeth[key], { conditions: updated });
             },
 
             cellClass(num) {
@@ -319,8 +337,51 @@
                                 class="text-xs text-gray-400 hover:text-gray-700 focus:outline-none">&#10005; Tutup</button>
                     </div>
 
-                    {{-- Tooth has a status: show note area --}}
+                    {{-- Tooth has a status: show conditions + note area --}}
                     <div x-show="teeth[String(selectedTooth)]">
+                        {{-- Conditions --}}
+                        <div class="mb-3">
+                            <p class="text-xs font-medium text-gray-600 mb-2">Kondisi Tambahan:</p>
+                            <div class="flex flex-wrap gap-x-4 gap-y-1.5">
+                                @php
+                                    $conditionLabels = [
+                                        'caries'       => 'Karies',
+                                        'missing'      => 'Hilang',
+                                        'crown'        => 'Crown',
+                                        'root_treated' => 'PSA',
+                                        'mobility'     => 'Mobility',
+                                        'impaction'    => 'Impaksi',
+                                        'filling'      => 'Tambalan',
+                                    ];
+                                @endphp
+                                @foreach ($conditionLabels as $condValue => $condLabel)
+                                    @if ($canUpdate)
+                                        <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                :checked="hasCondition('{{ $condValue }}')"
+                                                @change="toggleCondition('{{ $condValue }}')"
+                                                class="rounded border-gray-300 text-teal-600 shadow-sm focus:ring-teal-500 focus:ring-offset-0">
+                                            <span class="text-xs text-gray-700">{{ $condLabel }}</span>
+                                        </label>
+                                    @else
+                                        <span
+                                            x-show="hasCondition('{{ $condValue }}')"
+                                            class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200">
+                                            {{ $condLabel }}
+                                        </span>
+                                    @endif
+                                @endforeach
+                                @if (! $canUpdate)
+                                    <span
+                                        x-show="! teeth[String(selectedTooth)] || ! Array.isArray(teeth[String(selectedTooth)].conditions) || teeth[String(selectedTooth)].conditions.length === 0"
+                                        class="text-xs text-gray-400 italic">
+                                        Tidak ada kondisi tambahan.
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+
                         @if ($canUpdate)
                             <label class="block text-xs font-medium text-gray-600 mb-1">
                                 Catatan Gigi <span class="text-gray-400 font-normal">(maks. 1000 karakter)</span>

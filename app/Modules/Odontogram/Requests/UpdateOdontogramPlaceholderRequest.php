@@ -33,6 +33,8 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
             'tooth_map_payload.teeth.*' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*.status' => ['nullable', 'string', 'in:normal,caries,missing,crown,root_treated'],
             'tooth_map_payload.teeth.*.note' => ['nullable', 'string', 'max:1000'],
+            'tooth_map_payload.teeth.*.conditions' => ['nullable', 'array'],
+            'tooth_map_payload.teeth.*.conditions.*' => ['nullable', 'string', 'in:caries,missing,crown,root_treated,mobility,impaction,filling'],
         ];
     }
 
@@ -52,6 +54,19 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
                     $v->errors()->add(
                         'tooth_map_payload.teeth',
                         "Nomor gigi '{$toothNum}' tidak valid. Gunakan nomor FDI (11–18, 21–28, 31–38, 41–48)."
+                    );
+                }
+            }
+
+            foreach ($teeth as $toothNum => $toothData) {
+                if (! isset($toothData['conditions']) || ! is_array($toothData['conditions'])) {
+                    continue;
+                }
+                $conditions = array_values(array_filter($toothData['conditions'], fn ($c) => $c !== null));
+                if (count($conditions) !== count(array_unique($conditions))) {
+                    $v->errors()->add(
+                        "tooth_map_payload.teeth.{$toothNum}.conditions",
+                        "Gigi '{$toothNum}' memiliki kondisi duplikat."
                     );
                 }
             }

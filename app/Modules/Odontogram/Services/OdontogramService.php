@@ -54,6 +54,16 @@ class OdontogramService
             $safe = array_intersect_key($payload, array_flip(['summary_notes', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;
 
+            if (isset($safe['tooth_map_payload']['teeth']) && is_array($safe['tooth_map_payload']['teeth'])) {
+                foreach ($safe['tooth_map_payload']['teeth'] as $num => $data) {
+                    if (isset($data['conditions']) && is_array($data['conditions'])) {
+                        $safe['tooth_map_payload']['teeth'][$num]['conditions'] = array_values(
+                            array_unique(array_filter($data['conditions'], fn ($c) => $c !== null))
+                        );
+                    }
+                }
+            }
+
             return $this->odontograms->updatePlaceholder($odontogram, $safe);
         });
     }

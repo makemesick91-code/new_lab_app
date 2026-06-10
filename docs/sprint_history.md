@@ -2908,10 +2908,7 @@ All 48 Phase 1.3.1+1.3.2+1.3.3 tests retained and passing (57 total, 141 asserti
 
 ### Next Phase Suggestion
 
-**Sprint 20 Phase 1.5 — Odontogram Multi-Condition or Treatment Plan Link**
-- Support multiple conditions per tooth (e.g. both `caries` and `crown`)
-- Or: link odontogram tooth conditions to a treatment plan line
-- Or: RME PDF export / print view
+**Sprint 20 Phase 1.5 — Odontogram Multi-Condition Per Tooth Foundation** *(completed)*
 
 ### Release Information
 
@@ -2919,6 +2916,128 @@ All 48 Phase 1.3.1+1.3.2+1.3.3 tests retained and passing (57 total, 141 asserti
 |---|---|
 | Branch | `feature/sprint-20-rme-core` |
 | Tag | `sprint-20-phase-1-4-odontogram-per-tooth-notes` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
+## Sprint 20 Phase 1.5 — Odontogram Multi-Condition Per Tooth Foundation
+
+### Summary
+
+Extends `tooth_map_payload` with an optional `conditions` array per tooth. A manager can assign multiple clinical conditions (e.g. `["caries", "crown"]`) to a single tooth in addition to the existing primary `status`. On the interactive FDI map, the per-tooth panel gains a set of checkboxes (manager + draft) or read-only badge chips (viewer / finalized). No schema migration required — conditions live inside the existing JSONB column. Finalized odontograms remain fully immutable.
+
+### Scope
+
+- **`UpdateOdontogramPlaceholderRequest`**: added `tooth_map_payload.teeth.*.conditions` rule (`nullable|array`) and `tooth_map_payload.teeth.*.conditions.*` (`nullable|string|in:caries,missing,crown,root_treated,mobility,impaction,filling`). `withValidator` now also rejects duplicate values within the same tooth's `conditions` array. Existing FDI whitelist and status enum validation unchanged.
+- **`OdontogramService::updatePlaceholder()`**: after `array_intersect_key`, iterates each tooth's `conditions` and applies `array_unique` + `array_filter` as a safety-net normalisation (duplicates from non-HTTP paths are silently deduplicated).
+- **`show.blade.php`**: Alpine.js `x-data` extended with `hasCondition(condition)` and `toggleCondition(condition)` methods; `clickTooth()` now preserves `existingConditions` when a tooth status changes. Per-tooth panel gains a "Kondisi Tambahan" section rendered with `@foreach` over the 7 allowed conditions — checkboxes for managers on draft, teal badge chips for viewers / finalized. No new JS dependencies.
+
+### JSON Format (target)
+
+```json
+{
+  "teeth": {
+    "11": {
+      "status": "caries",
+      "conditions": ["caries", "crown"],
+      "note": "Karies oklusal ringan"
+    }
+  }
+}
+```
+
+`conditions` is optional per tooth. Existing payloads without `conditions` continue to work. Primary `status` remains the source of truth for grid colour.
+
+### Allowed Conditions
+
+| Value | Label |
+|---|---|
+| `caries` | Karies |
+| `missing` | Hilang |
+| `crown` | Crown |
+| `root_treated` | PSA |
+| `mobility` | Mobility |
+| `impaction` | Impaksi |
+| `filling` | Tambalan |
+
+Note: `mobility`, `impaction`, and `filling` are valid condition values but are **not** valid primary `status` values.
+
+### Validation Rules
+
+| Field | Rule |
+|---|---|
+| `tooth_map_payload` | `nullable\|array` |
+| `tooth_map_payload.teeth` | `nullable\|array` |
+| `tooth_map_payload.teeth.*` | `nullable\|array` |
+| `tooth_map_payload.teeth.*.status` | `nullable\|string\|in:normal,caries,missing,crown,root_treated` |
+| `tooth_map_payload.teeth.*.note` | `nullable\|string\|max:1000` |
+| `tooth_map_payload.teeth.*.conditions` | `nullable\|array` |
+| `tooth_map_payload.teeth.*.conditions.*` | `nullable\|string\|in:caries,missing,crown,root_treated,mobility,impaction,filling` |
+| conditions uniqueness | duplicate values in same tooth's `conditions` array → validation error |
+| `summary_notes` | `nullable\|string\|max:5000` |
+| tooth number keys | must be valid FDI numbers: 11–18, 21–28, 31–38, 41–48 |
+
+### Permission Behaviour
+
+| Action | Required permission | Extra condition |
+|---|---|---|
+| view (+ inspect conditions panel) | `view_clinic_visits` OR `manage_clinic_visits` | same active branch |
+| save conditions | `manage_clinic_visits` | same branch + status draft |
+| finalize | `manage_clinic_visits` | same active branch |
+
+Viewer can click teeth to read conditions but cannot check/uncheck. Cross-branch access is 403 at the policy layer.
+
+### Finalized Immutable Rule
+
+`OdontogramPolicy::update()` returns `false` for finalized odontograms → any PATCH (including one carrying `conditions`) results in HTTP 403. `OdontogramService::updatePlaceholder()` additionally throws `ValidationException` if called directly on a finalized odontogram. No separate conditions-specific gate is needed.
+
+### Tests (Phase 1.5 additions — 12 new tests, 69 total)
+
+| Test | Coverage |
+|---|---|
+| manager can save multiple conditions per tooth | HTTP happy path |
+| conditions persist alongside existing status and note | DB persistence |
+| conditions can be empty array | empty array valid |
+| conditions can be null or omitted | nullable |
+| duplicate conditions per tooth are rejected | validation denial |
+| invalid condition value is rejected | validation denial |
+| viewer cannot update conditions | permission denial |
+| cross-branch cannot update conditions | branch isolation |
+| finalized odontogram cannot update conditions via HTTP | HTTP immutability |
+| updating conditions does not create duplicate odontogram | idempotency |
+| existing tooth status update still works after phase 1.5 | regression check |
+| filling and mobility are not valid status values | status enum boundary |
+| existing note update still works after phase 1.5 | regression check |
+
+All 57 Phase 1.3.x + 1.4 tests retained and passing (69+ total).
+
+### Out of Scope
+
+- No canvas/SVG tooth map.
+- No handwriting tablet.
+- No treatment plan or treatment plan linking.
+- No ICD-10 structured field.
+- No PDF export.
+- No lab workflow integration.
+- No payment/billing.
+- No new permissions or roles.
+- No schema migration (conditions live inside existing JSONB column).
+- No final treatment plan generation.
+- HR, Inventory, Procurement, Payment, Cicilan, Lab Workflow untouched.
+
+### Next Phase Suggestion
+
+**Sprint 20 Phase 1.6 — Odontogram Treatment Plan Link or PDF Export**
+- Link tooth conditions to a treatment plan line
+- Or: RME PDF export / print view of the odontogram
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-5-odontogram-multi-condition` |
 | Completion date | 2026-06-10 |
 | Status | COMPLETE |
 
@@ -3229,6 +3348,7 @@ All 48 Phase 1.3.1+1.3.2+1.3.3 tests retained and passing (57 total, 141 asserti
   branch isolation via `BranchContext::requireId()` and `OdontogramPolicy`; `view_clinic_visits`/
   `manage_clinic_visits` as the permission pair (no new permissions); no canvas/SVG/interactive
   tooth map in this phase; interactive chart deferred to Phase 1.3.2.
+- **Sprint 20 Phase 1.5 completed baseline — Odontogram Multi-Condition Per Tooth:** Future changes must preserve `tooth_map_payload.teeth.*.conditions` as a `nullable|array` field inside the existing JSONB column (no schema migration); `conditions` is optional per tooth — absence is valid; allowed values: `caries`, `missing`, `crown`, `root_treated`, `mobility`, `impaction`, `filling`; `mobility`, `impaction`, `filling` are NOT valid primary `status` values; duplicate conditions within a tooth are rejected by `UpdateOdontogramPlaceholderRequest` and also deduplicated by `OdontogramService`; primary `status` remains the grid-colour source of truth; finalized odontograms remain immutable; no new permissions or roles introduced; `conditions` editable only when status is `draft` and user has `manage_clinic_visits`.
 - **Sprint 20 Phase 1.4 completed baseline — Odontogram Per-Tooth Notes:** Future changes must preserve `tooth_map_payload.teeth.*.note` as a `nullable|string|max:1000` field inside the existing JSONB column (no schema migration); `note` is optional per tooth — absence is valid; finalized odontograms remain immutable (policy + service layer both guard); no new permissions or roles introduced; `note` is editable only when status is `draft` and user has `manage_clinic_visits`; `summary_notes` and FDI whitelist rules unchanged.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
@@ -3278,10 +3398,11 @@ hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, T
 Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
 `settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`) ·
 `MedicalRecord, ClinicVisit` (S20 Phase 1.2, RME core under `rme.*` routes, permissions
-`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.3–1.4, finalize
-workflow + per-tooth notes, table `trx_odontograms`, status `draft→finalized`,
+`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.3–1.5, finalize
+workflow + per-tooth notes + multi-condition, table `trx_odontograms`, status `draft→finalized`,
 `finalized_at`/`finalized_by` columns, policy- and service-layer immutability after finalization,
 32-tooth FDI interactive map, Draft/Final badge, per-tooth note panel (JSONB, max 1 000 chars),
+per-tooth conditions array (7 allowed values: caries/missing/crown/root_treated/mobility/impaction/filling),
 reuses `view_clinic_visits`/`manage_clinic_visits`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
@@ -3295,4 +3416,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.4 (Odontogram Per-Tooth Notes, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.5 (Odontogram Multi-Condition Per Tooth, 2026-06-10) and must be updated as each new sprint completes.*
