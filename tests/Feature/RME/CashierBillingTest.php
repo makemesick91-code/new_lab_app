@@ -80,7 +80,27 @@ it('completed visits do not appear in cashier index', function () {
         ->assertDontSee($completedVisit->visit_number);
 });
 
-// ─── Test 3: Cannot create invoice for non-cashier-pending visit ─────────────
+// ─── Test 3: Cannot bill unfinalized RME ─────────────────────────────────────
+
+it('service rejects invoice creation when medical record is not finalized', function () {
+    $this->actingAs($this->cashier);
+
+    $visit = ClinicVisit::factory()->cashierPending()->create(['branch_id' => $this->branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    expect(fn () => app(RmeInvoiceService::class)->create(
+        $visit,
+        $this->cashier,
+        ['items' => [makeItemPayload()]]
+    ))->toThrow(ValidationException::class);
+});
+
+// ─── Test 4: Cannot create invoice for non-cashier-pending visit ─────────────
 
 it('service rejects invoice creation for non-cashier-pending visit', function () {
     $this->actingAs($this->cashier);

@@ -184,6 +184,9 @@ class RoleSeeder extends Seeder
         'Doctor' => [
             'view dashboard',
             'view_lab_orders',
+            // Sprint 20 Phase 1.12 — RME pilot: doctor workflow
+            'view_clinic_visits',
+            'manage_clinic_visits',
         ],
     ];
 

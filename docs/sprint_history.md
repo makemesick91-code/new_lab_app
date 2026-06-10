@@ -3550,8 +3550,10 @@ summary, accessible by viewer + manager same-branch, `ClinicVisitPolicy::print()
 as PNG, `MedicalRecordHandwritingController`, alignment helpers on `MedicalRecordService` for
 Phase 1.9 finalization gate).
 
-**Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
-Finance, Doctor.
+**Roles:** Super Admin, Admin Lab, Admin Klinik, Technician, Quality Control, Delivery
+Coordinator, Courier, Finance, Doctor. RME pilot: Admin Lab + Admin Klinik (full RME);
+Doctor (`view_clinic_visits` + `manage_clinic_visits`); cashier via Admin Klinik
+(`manage_rme_billing`). No Kasir role.
 
 **Read before coding:** `docs/architecture_rules.md`, `docs/ai_development_guide.md`, this file,
 the target module under `app/Modules`, relevant routes/policies/tests, and (branch work)
@@ -3560,5 +3562,122 @@ Constraints above are binding.
 
 ---
 
+## Sprint 20 Phase 1.12 — RME Limited Pilot Hardening & Documentation
+
+### Summary
+
+Sprint 20 RME is hardened and documented for a **single-branch limited pilot** covering admin/front
+office, doctor, and cashier roles. End-to-end workflow is verified: visit creation → odontogram →
+handwriting RME → finalization → cashier billing → full payment → receipt/print. No new features;
+hardening, permission alignment, one missing test, and pilot documentation only.
+
+### Final RME Workflow
+
+1. **Admin/front office** creates visit with required initial service (triage context only).
+2. **Doctor** fills odontogram (draft → finalize).
+3. **Doctor** saves full handwriting RME (PNG canvas, mandatory before finalization).
+4. **Doctor** finalizes RME → visit becomes `cashier_pending`.
+5. **Cashier** (Admin Klinik or user with `manage_rme_billing`) creates final treatment invoice.
+6. **Cashier** records **full payment only** → invoice `PAID`, visit `completed`.
+7. **Staff** prints RME bundle, odontogram, invoice detail, or receipt via browser print.
+
+### Route Summary (`rme.*`)
+
+| Route name | Method | Permission |
+|---|---|---|
+| `rme.visits.*` | GET/POST/PATCH | `view_clinic_visits` / `manage_clinic_visits` |
+| `rme.visits.transition` | POST | `manage_clinic_visits` |
+| `rme.visits.medical-record.*` | GET/POST/PATCH | view / manage |
+| `rme.visits.medical-record.finalize` | POST | `manage_clinic_visits` |
+| `rme.visits.medical-record.handwriting.store` | POST | `manage_clinic_visits` |
+| `rme.visits.odontogram.show` | GET | `view_clinic_visits` / `manage_clinic_visits` |
+| `rme.odontograms.update` / `finalize` | PATCH/POST | `manage_clinic_visits` |
+| `rme.odontograms.print` | GET | `view_clinic_visits` / `manage_clinic_visits` |
+| `rme.visits.print` | GET | `view_clinic_visits` / `manage_clinic_visits` |
+| `rme.medical-records.index` | GET | `view_clinic_visits` / `manage_clinic_visits` |
+| `rme.cashier.*` | GET/POST | `manage_rme_billing` |
+| `rme.cashier.payment.*` | GET/POST | `manage_rme_billing` |
+| `rme.cashier.receipt.show` | GET | `manage_rme_billing` |
+
+### Permission Summary
+
+| Permission | Purpose |
+|---|---|
+| `view_clinic_visits` | Read-only RME/visit/odontogram/print |
+| `manage_clinic_visits` | Create/update/finalize visits, RME, odontogram |
+| `manage_rme_billing` | Cashier index, invoice, payment, receipt |
+
+**Role assignments (pilot):**
+
+| Role | RME permissions |
+|---|---|
+| Super Admin | all |
+| Admin Lab | `view_clinic_visits`, `manage_clinic_visits`, `manage_rme_billing` |
+| Admin Klinik | `view_clinic_visits`, `manage_clinic_visits`, `manage_rme_billing` |
+| Doctor | `view_clinic_visits`, `manage_clinic_visits` (added Phase 1.12) |
+| Finance | lab invoice/payment only — **no** `manage_rme_billing` |
+| Kasir | role does not exist; **Admin Klinik** serves as cashier in pilot |
+
+### Hardening Verified
+
+- All `rme.*` routes permission-protected.
+- Finalized RME immutable (service + policy + HTTP).
+- Cashier cannot bill unfinalized RME (`RmeInvoiceService` + new test).
+- Payment requires invoice items; full payment only (no partial/cicilan).
+- Full payment → invoice `PAID`, visit `completed`.
+- Initial service remains non-billing (no invoice/payment on create).
+- Handwriting immutable after finalization.
+- Branch isolation tests exist for billing, payment, finalization, visits, odontogram.
+- Print pages (RME bundle, odontogram, invoice, receipt) tested — browser `window.print()` only.
+
+### Tests & Quality Gates
+
+```bash
+php artisan migrate:fresh --seed
+php artisan test --filter=RME          # 256 tests (Phase 1.12 +1)
+php artisan test --filter=ClinicVisit
+php artisan test --filter=MedicalRecord
+php artisan test --filter=Odontogram
+php artisan test --filter=CashierBilling
+php artisan test --filter=RmePayment
+./vendor/bin/pint --dirty
+```
+
+### Known Limitations (Pilot)
+
+- **Browser print only** — no server-side PDF export; users save via browser print-to-PDF.
+- **Full payment only** — partial payments and cicilan/installment deferred to Sprint 21+.
+- **No lab order integration** from RME visit.
+- **No RME dashboard** beyond existing visit widgets.
+- **No Kasir role** — cashier duties via Admin Klinik + `manage_rme_billing`.
+- **Single-branch pilot** — cross-branch analytics not in scope.
+
+### Sprint 21 Recommendations
+
+1. Dedicated **Kasir** role with `manage_rme_billing` only (least privilege).
+2. Partial payment / cicilan workflow with outstanding balance tracking.
+3. Lab order creation from finalized RME visit.
+4. Server-side PDF export (optional DomPDF) for RME bundle and receipt.
+5. RME operational dashboard (cashier queue, unpaid invoices, daily totals).
+6. Owner/manager read-only RME reports (`view_clinic_visits` without manage).
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-rme-limited-pilot-complete` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE — limited pilot ready |
+
+### Code Changes (Phase 1.12)
+
+- `RoleSeeder`: Doctor role granted `view_clinic_visits` + `manage_clinic_visits`.
+- `CashierBillingTest`: test for unfinalized RME billing rejection.
+- `docs/sprint_20_rme_limited_pilot_summary.md`: pilot operator guide.
+- `CLAUDE.md`: RME module quick reference.
+
+---
+
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.8 (RME Initial Service + Full Handwriting, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.12 (RME Limited Pilot Hardening, 2026-06-10) and must be updated as each new sprint completes.*

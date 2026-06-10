@@ -1,3 +1,27 @@
+## RME Module (Sprint 20)
+
+**Modules:** `ClinicVisit`, `MedicalRecord`, `Odontogram`, `RmeInvoice` under `app/Modules/`.
+
+**Routes:** `rme.*` prefix in `routes/web.php`.
+
+**Workflow:** Admin creates visit → Doctor odontogram + handwriting RME → finalize →
+`cashier_pending` → Cashier invoice + full payment → `completed` → print receipt.
+
+**Visit statuses:** `registered`, `waiting`, `in_progress`, `cashier_pending`, `completed`, `cancelled`.
+
+**Invoice statuses:** `DRAFT`, `UNPAID`, `PAID`, `VOID`.
+
+**Rules:**
+- Handwriting PNG **mandatory** before RME finalization; immutable after finalize.
+- Initial service is triage-only — **no billing**.
+- Cashier billing requires finalized RME + `cashier_pending` visit (`manage_rme_billing`).
+- **Full payment only** in pilot — partial/cicilan deferred.
+- Print via browser `window.print()` — no server PDF.
+
+**Permissions:** `view_clinic_visits`, `manage_clinic_visits`, `manage_rme_billing`.
+
+**Pilot doc:** `docs/sprint_20_rme_limited_pilot_summary.md`
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
