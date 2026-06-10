@@ -2,9 +2,9 @@
 @php($minimum = (float) $minimum)
 
 @if ($current <= 0)
-    <span class="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700">Habis</span>
+    <x-ui.badge tone="danger">Habis</x-ui.badge>
 @elseif ($current <= $minimum)
-    <span class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Menipis</span>
+    <x-ui.badge tone="warning">Menipis</x-ui.badge>
 @else
-    <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aman</span>
+    <x-ui.badge tone="success">Aman</x-ui.badge>
 @endif

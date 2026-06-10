@@ -24,21 +24,17 @@
                 <p class="mt-1 text-sm text-gray-500">Stok dihitung dari pergerakan persediaan. Tidak ada kolom stok mutable yang digunakan.</p>
             </div>
             <div class="flex flex-wrap gap-2">
-                <a href="{{ route('inventory.products.show', $product) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Detail Produk
-                </a>
-                <a href="{{ route('inventory.stock.index') }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Daftar Stok
-                </a>
+                <x-ui.button variant="secondary" :href="route('inventory.products.show', $product)">Detail Produk</x-ui.button>
+                <x-ui.button variant="primary" :href="route('inventory.stock.index')">Daftar Stok</x-ui.button>
             </div>
         </div>
 
-        <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <x-ui.card>
             <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-start">
                 <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
                         @include('inventory._low-stock-badge', ['current' => $currentStock, 'minimum' => $minimumStock])
-                        <span class="inline-flex rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">{{ $scopeLabel }}</span>
+                        <x-ui.badge tone="info">{{ $scopeLabel }}</x-ui.badge>
                     </div>
                     <h3 class="mt-3 text-lg font-semibold text-gray-900">{{ $product->code }} - {{ $product->name }}</h3>
                     <p class="mt-1 text-sm text-gray-500">
@@ -92,9 +88,10 @@
                     ])>{{ $product->unit?->symbol ?? 'satuan' }} di {{ $scopeLabel }}</p>
                 </div>
             </div>
-        </section>
+        </x-ui.card>
 
-        <form method="GET" action="{{ route('inventory.products.stock-card', $product) }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        <x-ui.card padding="p-4">
+        <form method="GET" action="{{ route('inventory.products.stock-card', $product) }}">
             <div class="grid gap-3 md:grid-cols-5 md:items-end">
                 <div>
                     <label for="inventory_location_id" class="text-sm font-medium text-gray-700">Lokasi Persediaan</label>
@@ -126,23 +123,20 @@
                     <input id="date_to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 </div>
                 <div class="flex gap-2">
-                    <button class="flex-1 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                        Terapkan
-                    </button>
-                    <a href="{{ route('inventory.products.stock-card', $product) }}" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Atur Ulang
-                    </a>
+                    <x-ui.button type="submit" variant="neutral" class="flex-1">Terapkan</x-ui.button>
+                    <x-ui.button variant="secondary" :href="route('inventory.products.stock-card', $product)">Atur Ulang</x-ui.button>
                 </div>
             </div>
         </form>
+        </x-ui.card>
 
-        <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <x-ui.card padding="">
             <div class="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 px-4 py-4">
                 <div>
                     <h3 class="text-base font-semibold text-gray-900">Riwayat Pergerakan Stok</h3>
                     <p class="mt-1 text-sm text-gray-500">Pergerakan masuk dan keluar membentuk saldo berjalan berdasarkan urutan tanggal pergerakan dan id.</p>
                 </div>
-                <span class="inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">Fokus Saldo Berjalan</span>
+                <x-ui.badge tone="neutral">Fokus Saldo Berjalan</x-ui.badge>
             </div>
 
             @if ($stockCard->isEmpty())
@@ -216,8 +210,8 @@
                     </ol>
                 </div>
 
-                <div class="hidden overflow-x-auto lg:block">
-                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <div class="hidden lg:block">
+                    <x-ui.table class="!border-0 !shadow-none !rounded-none">
                         <thead class="bg-gray-50">
                             <tr class="text-left text-gray-500">
                                 <th scope="col" class="px-4 py-3 font-medium">Pergerakan</th>
@@ -266,7 +260,7 @@
                                         <span class="font-semibold text-amber-700">{{ $quantityOut > 0 ? '-'.format_quantity_id($quantityOut) : format_quantity_id($quantityOut) }}</span>
                                     </td>
                                     <td class="px-3 py-3 text-right tabular-nums">
-                                        <span class="rounded-full bg-teal-50 px-2.5 py-1 font-semibold text-teal-800">{{ format_quantity_id($movement->running_balance) }}</span>
+                                        <x-ui.badge tone="primary" class="!font-semibold">{{ format_quantity_id($movement->running_balance) }}</x-ui.badge>
                                     </td>
                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">
                                         {{ (float) $movement->unit_cost > 0 ? format_currency_id($movement->unit_cost) : 'Biaya tidak dicatat' }}
@@ -274,9 +268,9 @@
                                 </tr>
                             @endforeach
                         </tbody>
-                    </table>
+                    </x-ui.table>
                 </div>
             @endif
-        </section>
+        </x-ui.card>
     </div>
 </x-settings-shell>
