@@ -6,6 +6,7 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use Database\Seeders\BranchSeeder;
 
@@ -743,4 +744,180 @@ it('widget finalized today count shows only finalized on today date', function (
         ->get(route('rme.visits.index'))
         ->assertOk()
         ->assertSee('RM Final Hari Ini');
+});
+
+// ─── Sprint 20 Phase 1.7 — RME Visit Print Bundle ────────────────────────────
+
+it('manager can open visit print view', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk();
+});
+
+it('viewer can open visit print view', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk();
+});
+
+it('user without permission cannot open visit print view', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs(userWith([]))
+        ->get(route('rme.visits.print', $visit))
+        ->assertForbidden();
+});
+
+it('cross-branch user cannot open visit print view', function () {
+    $otherBranch = Branch::factory()->create(['code' => 'XBRP1']);
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $otherBranch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertForbidden();
+});
+
+it('print view displays patient and visit info', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 5,
+        'visit_number' => 'VIS-20260610-005',
+        'chief_complaint' => 'Gigi berlubang',
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee($this->patient->name)
+        ->assertSee('VIS-20260610-005')
+        ->assertSee('Gigi berlubang');
+});
+
+it('print view displays medical record info if available', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'subjective' => 'Keluhan sakit gigi kiri',
+        'assessment' => 'Karies profunda',
+        'plan' => 'Cabut gigi 36',
+        'status' => MedicalRecord::STATUS_FINAL,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee('Keluhan sakit gigi kiri')
+        ->assertSee('Karies profunda')
+        ->assertSee('Cabut gigi 36');
+});
+
+it('print view displays odontogram info if available', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'summary_notes' => 'Catatan odontogram kunjungan ini',
+        'tooth_map_payload' => [
+            'teeth' => ['16' => ['status' => 'caries', 'conditions' => ['filling']]],
+        ],
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee('Catatan odontogram kunjungan ini')
+        ->assertSee('Karies')
+        ->assertSee('Tambalan');
+});
+
+it('print view handles missing odontogram gracefully', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee('Odontogram belum tersedia');
+});
+
+it('Cetak RME button appears on visit show for authorized user', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.show', $visit))
+        ->assertOk()
+        ->assertSee('Cetak RME');
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.show', $visit))
+        ->assertOk()
+        ->assertSee('Cetak RME');
 });

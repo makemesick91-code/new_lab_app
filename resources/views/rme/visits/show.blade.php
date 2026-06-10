@@ -57,6 +57,10 @@
                             <a href="{{ route('rme.visits.edit', $visit) }}" class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Ubah</a>
                         @endcan
                     @endif
+                    @can('print', $visit)
+                        <a href="{{ route('rme.visits.print', $visit) }}" target="_blank"
+                           class="inline-flex items-center rounded-md bg-gray-600 px-3 py-2 text-sm font-medium text-white hover:bg-gray-500">Cetak RME</a>
+                    @endcan
                 </div>
             </div>
 

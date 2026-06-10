@@ -107,4 +107,12 @@ class ClinicVisitController extends Controller
 
         return redirect()->route('rme.visits.show', $clinicVisit)->with('status', 'Status kunjungan berhasil diperbarui.');
     }
+
+    public function print(ClinicVisit $clinicVisit): View
+    {
+        $this->authorize('print', $clinicVisit);
+        $clinicVisit->load(['patient', 'doctor', 'medicalRecord', 'odontogram']);
+
+        return view('rme.visits.print', ['visit' => $clinicVisit]);
+    }
 }

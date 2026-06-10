@@ -33,6 +33,11 @@ class ClinicVisitPolicy
         return $this->canManage($user) && $this->belongsToActiveBranch($visit->branch_id);
     }
 
+    public function print(User $user, ClinicVisit $visit): bool
+    {
+        return $this->canView($user) && $this->belongsToActiveBranch($visit->branch_id);
+    }
+
     private function canView(User $user): bool
     {
         return $user->canAny(['view_clinic_visits', 'manage_clinic_visits']);

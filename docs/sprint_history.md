@@ -3441,6 +3441,18 @@ All 69 Phase 1.3.x–1.5 tests retained and passing.
 - **Sprint 20 Phase 1.5 completed baseline — Odontogram Multi-Condition Per Tooth:** Future changes must preserve `tooth_map_payload.teeth.*.conditions` as a `nullable|array` field inside the existing JSONB column (no schema migration); `conditions` is optional per tooth — absence is valid; allowed values: `caries`, `missing`, `crown`, `root_treated`, `mobility`, `impaction`, `filling`; `mobility`, `impaction`, `filling` are NOT valid primary `status` values; duplicate conditions within a tooth are rejected by `UpdateOdontogramPlaceholderRequest` and also deduplicated by `OdontogramService`; primary `status` remains the grid-colour source of truth; finalized odontograms remain immutable; no new permissions or roles introduced; `conditions` editable only when status is `draft` and user has `manage_clinic_visits`.
 - **Sprint 20 Phase 1.4 completed baseline — Odontogram Per-Tooth Notes:** Future changes must preserve `tooth_map_payload.teeth.*.note` as a `nullable|string|max:1000` field inside the existing JSONB column (no schema migration); `note` is optional per tooth — absence is valid; finalized odontograms remain immutable (policy + service layer both guard); no new permissions or roles introduced; `note` is editable only when status is `draft` and user has `manage_clinic_visits`; `summary_notes` and FDI whitelist rules unchanged.
 - **Sprint 20 Phase 1.6 completed baseline — Odontogram Print View:** Future changes must preserve `rme.odontograms.print` as a GET route accessible by `view_clinic_visits` OR `manage_clinic_visits` (same active branch); `OdontogramPolicy::print()` mirrors the `view` rule — viewer may print, cross-branch is 403; `print.blade.php` is a standalone HTML page with no `x-settings-shell` and no new JS or PDF library dependencies; `@media print` hides the print/close button strip; no new permissions, roles, or schema changes introduced.
+- **Sprint 20 Phase 1.7 completed baseline — RME Visit Print Bundle Foundation:** Future changes
+  must preserve `rme.visits.print` as a GET route (`rme/visits/{clinicVisit}/print`) accessible by
+  `view_clinic_visits` OR `manage_clinic_visits` (same active branch); `ClinicVisitPolicy::print()`
+  mirrors the `view` rule — viewer may print, cross-branch is 403; `print.blade.php` is a
+  standalone HTML page (no `x-settings-shell`, no new JS or PDF library); `@media print` hides the
+  print/close button strip; bundle includes: patient name + medical_record_number, visit_number +
+  visit_date + queue_number + doctor + chief_complaint, medical record (subjective / objective /
+  assessment / plan / notes) with draft/final badge if present, odontogram summary (status badge,
+  summary_notes, marked-tooth table with status+conditions+note) if present, or "belum tersedia"
+  fallback for missing medical record / odontogram; "Cetak RME" button on visit show page gated by
+  `@can('print', $visit)`; no new permissions, roles, or schema changes introduced; no treatment
+  plan, no billing, no PDF library, no canvas/SVG, no handwriting tablet.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
   existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set
@@ -3495,7 +3507,10 @@ workflow + per-tooth notes + multi-condition, table `trx_odontograms`, status `d
 32-tooth FDI interactive map, Draft/Final badge, per-tooth note panel (JSONB, max 1 000 chars),
 per-tooth conditions array (7 allowed values: caries/missing/crown/root_treated/mobility/impaction/filling),
 print view at `rme.odontograms.print` accessible by viewer + manager same-branch,
-reuses `view_clinic_visits`/`manage_clinic_visits`).
+reuses `view_clinic_visits`/`manage_clinic_visits`) · `RME Visit Print Bundle` (S20 Phase 1.7,
+route `rme.visits.print`, standalone HTML bundle with patient info + medical record + odontogram
+summary, accessible by viewer + manager same-branch, `ClinicVisitPolicy::print()` mirrors view rule,
+"Cetak RME" button on visit show page).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -3508,4 +3523,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.6 (Odontogram Print/PDF Export Foundation, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.7 (RME Visit Print Bundle Foundation, 2026-06-10) and must be updated as each new sprint completes.*
