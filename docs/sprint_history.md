@@ -2273,6 +2273,181 @@ ledger stock rules.
 
 ---
 
+# Sprint 20 — RME Core
+
+## Sprint 20 Phase 1.2 — RME Core Medical Record
+
+**Status:** COMPLETE / CLOSED. Branch `feature/sprint-20-rme-core`, final commit `ccf08dd`,
+tag `sprint-20-phase-1-2-9-rme-polish`, completion date 2026-06-10.
+
+**Business objective:** Build the RME (Rekam Medis Elektronik) foundation — a medical record
+linked 1:1 to every ClinicVisit, covering schema, service layer, HTTP layer, SOAP draft/final UI,
+finalization metadata, listing/search, sidebar navigation, dashboard widgets, and UI permission
+polish. Designed to be extended with odontogram, ICD-10, PDF export, and lab workflow in future
+phases.
+
+**Timeline (Phase 1.2):**
+- Phase 1.2.1: Medical Record Foundation (`f0e9763`, tag `sprint-20-phase-1-2-1-medical-record-foundation`)
+- Phase 1.2.2: Repository & Service Layer (`5042e5e`, tag `sprint-20-phase-1-2-2-medical-record-service-layer`)
+- Phase 1.2.3: HTTP Layer (`a6f2277`, tag `sprint-20-phase-1-2-3-medical-record-http-layer`)
+- Phase 1.2.4: ClinicVisit Integration UI (`f2a80ee`, tag `sprint-20-phase-1-2-4-medical-record-ui-integration`)
+- Phase 1.2.5: Metadata & Finalization Polish (`cade2fd`, tag `sprint-20-phase-1-2-5-medical-record-metadata-finalization`)
+- Phase 1.2.6: List & Search Polish (`84f2fed`, tag `sprint-20-phase-1-2-6-medical-record-list-search`)
+- Phase 1.2.7: RME Sidebar Navigation (`4ba8b3e`, tag `sprint-20-phase-1-2-7-rme-sidebar-navigation`)
+- Phase 1.2.8: RME Dashboard Widgets (`d7ca4e7`, tag `sprint-20-phase-1-2-8-rme-dashboard-widgets`)
+- Phase 1.2.9: UI Permission Polish (`ccf08dd`, tag `sprint-20-phase-1-2-9-rme-polish`)
+
+## Sub-phases Completed
+
+### Phase 1.2.1 — Medical Record Foundation
+- Migration `trx_medical_records`
+- `MedicalRecord` model, `MedicalRecordFactory`
+- `ClinicVisit` `hasOne` `MedicalRecord`
+- Basic model/factory/relation tests
+
+### Phase 1.2.2 — Repository & Service Layer
+- `MedicalRecordRepositoryInterface`, `MedicalRecordRepository`
+- `MedicalRecordService`: `createDraft()`, `finalize()`
+- Branch-safe and duplicate-safe service tests
+
+### Phase 1.2.3 — HTTP Layer
+- `MedicalRecordPolicy`
+- Store/Update/Finalize Form Requests
+- `MedicalRecordController`
+- Nested routes under `ClinicVisit`
+- `updateDraft()` method
+- HTTP tests: create/update/finalize/show/permissions/branch isolation
+
+### Phase 1.2.4 — ClinicVisit Integration UI
+- Rekam Medis section in `ClinicVisit` show
+- `MedicalRecord` show view with SOAP draft form
+- Final records rendered read-only
+- Finalize action for draft records
+- UI tests for draft/final behavior
+
+### Phase 1.2.5 — Metadata & Finalization Polish
+- `finalized_at` migration, fillable, cast
+- `finalize()` sets `finalized_at`; idempotent (does not overwrite)
+- Metadata display: `recorded_by`, `created_at`, `updated_at`, `finalized_at`
+
+### Phase 1.2.6 — List & Search Polish
+- `rme.medical-records.index` route
+- Branch-safe listing with filters: status, patient/doctor/visit number search, visit date range
+- Pagination, empty state, `ViewAny` policy
+
+### Phase 1.2.7 — RME Sidebar Navigation
+- Sidebar group **RME**
+- Links: **Kunjungan**, **Rekam Medis**
+- Permission gate: `view_clinic_visits|manage_clinic_visits`
+- Sidebar visibility tests
+
+### Phase 1.2.8 — RME Dashboard Widgets
+- Widget cards on `rme.visits.index`:
+  - Kunjungan Hari Ini
+  - Menunggu
+  - Sedang Dilayani
+  - RM Draft
+  - RM Final Hari Ini
+- Branch-safe count methods; widget tests
+
+### Phase 1.2.9 — UI Permission Polish
+- Viewer sees read-only SOAP; no edit/finalize UI shown
+- Null-safe action link in medical record index
+- Clearer date filter labels
+- UI permission tests
+
+## Tables Added
+
+| Table | Scope |
+|---|---|
+| `trx_medical_records` | Branch-scoped (`branch_id`, `patient_id`, `doctor_id` denormalized) |
+
+## Route Groups Added
+
+All under `rme.*` prefix with `auth` middleware:
+
+| Route | Description |
+|---|---|
+| `rme.medical-records.index` | Medical record listing |
+| `rme.visits.index` | Visit listing with dashboard widgets |
+| `rme.visits.create` | New visit form |
+| `rme.visits.store` | Create visit |
+| `rme.visits.show` | Visit detail |
+| `rme.visits.edit` | Edit visit form |
+| `rme.visits.update` | Update visit |
+| `rme.visits.medical-record.show` | Medical record show (nested) |
+| `rme.visits.medical-record.store` | Create medical record draft (nested) |
+| `rme.visits.medical-record.update` | Update medical record draft (nested) |
+| `rme.visits.medical-record.finalize` | Finalize medical record (nested) |
+| `rme.visits.transition` | ClinicVisit status transition |
+
+## Permission Model
+
+- `view_clinic_visits` — read access to visits and medical records (read-only SOAP)
+- `manage_clinic_visits` — create/update/finalize medical records and manage visits
+
+Both permissions gate the RME sidebar group and are checked in `MedicalRecordPolicy`.
+
+## Architecture Notes
+
+- `MedicalRecord` linked 1:1 to `ClinicVisit` via unique `visit_id` FK.
+- `branch_id`, `patient_id`, `doctor_id` denormalized on `trx_medical_records` for query
+  performance and branch isolation — never derived from join at query time.
+- Branch isolation enforced via `BranchContext::requireId()` in service and `branch_id` filter
+  in repository.
+- `finalize()` is idempotent: sets `status = final` and `finalized_at` only if not already set;
+  calling again is a no-op.
+- Final medical records are immutable: no update or re-finalization after `finalized_at` is set.
+- Viewer role sees SOAP content read-only; Manager role may create/update/finalize.
+- Listing always branch-safe and paginated; no unscoped queries.
+
+## Quality Gates
+
+Quality gate run: 2026-06-10
+
+| Gate | Result |
+|---|---|
+| `php artisan route:list --name=rme` | **12 RME routes active** |
+| `php artisan test --filter=MedicalRecord` | **PASS — 49 tests, 123 assertions** |
+| `php artisan test --filter=ClinicVisit` | **PASS — 37 tests, 126 assertions** |
+| `./vendor/bin/pint --dirty` | PASS — no changes |
+| `git status` | Clean |
+
+## Known Limitations / Backlog
+
+1. **Registered visit rule** — business decision pending: whether "Buat Rekam Medis" is allowed
+   when visit status is still `registered`, or requires at least `waiting`/`in_progress`.
+2. **Status badge refactor** — status label/badge duplicated across several Blade views; candidate
+   for helper/component extraction.
+3. **Odontogram** — not implemented; candidate for Sprint 20 Phase 1.3.1 (Odontogram Placeholder
+   Foundation).
+4. **ICD-10 / structured diagnosis field** — not implemented; SOAP fields are free-text only.
+5. **PDF export** — not implemented; deferred until final medical record layout is agreed.
+6. **Lab workflow integration** — not in Phase 1.2; will be a separate phase.
+7. **Treatment / payment / cicilan** — out of scope Phase 1.2; will be a separate phase.
+
+## Explicit Out-of-Scope
+
+No odontogram, no ICD-10 structured field, no PDF export, no lab workflow integration,
+no treatment/payment/cicilan, no cashier module, no changes to Inventory ledger rules,
+no changes to clinic master data modules.
+
+## Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Final commit | `ccf08dd` |
+| Final tag | `sprint-20-phase-1-2-9-rme-polish` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE / CLOSED |
+
+## Documentation Added
+
+- Sprint 20 Phase 1.2 section added to `docs/sprint_history.md`
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -2327,6 +2502,11 @@ ledger stock rules.
     and procurement; swap via `InventoryAnalyticsRepositoryInterface` + feature flag default `false`;
     original live ledger repository retained for instant rollback; scheduler refresh/prune; cross-branch
     comparison tab gated by `view_inventory_cross_branch_analytics`; deferred analytics tabs on index page.
+27. **S20** — `MedicalRecord` 1:1 with `ClinicVisit`; `trx_medical_records` denormalizes
+    `branch_id`, `patient_id`, `doctor_id` for query performance and branch isolation; branch safety
+    via `BranchContext::requireId()` and `branch_id` filter in repository; draft/finalize workflow;
+    idempotent `finalize()` never overwrites `finalized_at`; final record immutable after
+    `finalized_at` is set; Viewer read-only, Manager may create/update/finalize.
 
 ---
 
@@ -2366,6 +2546,10 @@ ledger stock rules.
 17. **S16.3** — Goods Receipt post creates PURCHASE ledger movements; `accepted_qty` enters stock;
     `rejected_qty` is audit-only; PO `quantity_received` cache updated by service on post (accepted
     only); over-receive blocked; posted GR immutable; stock remains `SUM(in) − SUM(out)`.
+18. **S20** — `MedicalRecord` linked 1:1 to `ClinicVisit`; branch isolation via
+    `BranchContext::requireId()` and `branch_id` filter; Manager may create/update/finalize;
+    Viewer is read-only; final record immutable; `finalize()` idempotent — never overwrites
+    `finalized_at`; registered-visit-create-rule pending business decision.
 
 ---
 
@@ -2409,6 +2593,11 @@ ledger stock rules.
     Pembelian**; alerts **Buat PR** shortcut (prefill only).
 12. **S16.2** — **Pesanan Pembelian** sidebar link; dashboard quick action **Buat Pesanan Pembelian**;
     **Buat PO** on approved PR show page; no Goods Receipt / Terima Barang / Update Stok UI.
+13. **S20** — RME module UI: SOAP draft form on `ClinicVisit` show; read-only final record display;
+    Finalize action for draft records; metadata panel (`recorded_by`, `created_at`, `updated_at`,
+    `finalized_at`); medical records listing with status/search/date-range filters; RME sidebar
+    group (Kunjungan + Rekam Medis) permission-gated; dashboard widget strip (Kunjungan Hari Ini /
+    Menunggu / Sedang Dilayani / RM Draft / RM Final Hari Ini); Viewer sees read-only SOAP only.
 
 ---
 
@@ -2543,6 +2732,15 @@ ledger stock rules.
   (no `branch_id`) for TreatmentCategory, Treatment, PaymentMethod, and WaReminderTemplate;
   `is_active` + soft deletes lifecycle; no WhatsApp sending, no cashier/RME billing transactions,
   no Inventory ledger changes; Tariff as master price only (not yet wired to billing workflow).
+- **Sprint 20 Phase 1.2 completed baseline — RME Core Medical Record:** Future changes must
+  preserve `MedicalRecord` 1:1 with `ClinicVisit` (unique `visit_id` FK); `branch_id`,
+  `patient_id`, `doctor_id` denormalized on `trx_medical_records` (never derived from join at
+  query time); `finalize()` idempotent — never overwrites `finalized_at`; final record immutable
+  (no update or re-finalization after `finalized_at` is set); Viewer permission is read-only;
+  Manager may create/update/finalize; listing always branch-safe and paginated via
+  `BranchContext::requireId()`; `view_clinic_visits` / `manage_clinic_visits` as the permission
+  pair for all RME routes; no odontogram, no ICD-10 structured field, no PDF export, no lab
+  workflow integration, no treatment/payment/cicilan in this phase.
 
 **Universal gate before any sprint starts:** answer (1) which module owns it, (2) which records are
 branch-owned, (3) which policies/permissions protect it, (4) which service owns the rule, (5) which
@@ -2580,7 +2778,9 @@ invoices+payments) · `Reporting` (S8) · `Branch` (S10–11, incl. `BranchConte
 Batch & Lot tracking, Reorder Point & Inventory Alerts, Inventory Analytics, navigation/dashboard
 hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, TreatmentCategory,
 Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
-`settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`).
+`settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`) ·
+`MedicalRecord, ClinicVisit` (S20 Phase 1.2, RME core under `rme.*` routes, permissions
+`view_clinic_visits` / `manage_clinic_visits`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -2593,4 +2793,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 19 (Clinic Master Data, 2026-06-09) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.2 (RME Core Medical Record, 2026-06-10) and must be updated as each new sprint completes.*
