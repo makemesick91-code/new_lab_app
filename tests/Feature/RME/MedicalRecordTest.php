@@ -773,3 +773,48 @@ it('index links to medical record show page', function () {
         ->assertOk()
         ->assertSee(route('rme.visits.medical-record.show', $visit));
 });
+
+// --- Phase 1.2.9 — Permission UI & read-only viewer ---
+
+it('viewer can view medical record show page', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    $this->actingAs($viewer)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Rekam Medis');
+});
+
+it('viewer sees read-only SOAP on draft record show page', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'subjective' => 'Pasien mengeluh pusing',
+        'objective' => 'TD 120/80',
+        'assessment' => 'Hipertensi ringan',
+        'plan' => 'Istirahat cukup',
+    ]);
+
+    $this->actingAs($viewer)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('Pasien mengeluh pusing')
+        ->assertSee('TD 120/80')
+        ->assertDontSee('name="subjective"', false)
+        ->assertDontSee('name="objective"', false)
+        ->assertDontSee('Simpan Draft')
+        ->assertDontSee('Finalisasi');
+});

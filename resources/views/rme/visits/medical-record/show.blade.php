@@ -44,7 +44,13 @@
                 @endif
             </dl>
 
-            @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT)
+            @php
+                $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
+                $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
+                $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
+            @endphp
+
+            @if ($isDraft && $canUpdate)
                 {{-- SOAP update form --}}
                 <form method="POST" action="{{ route('rme.visits.medical-record.update', [$clinicVisit, $medicalRecord]) }}">
                     @csrf
@@ -95,18 +101,8 @@
                         </button>
                     </div>
                 </form>
-
-                {{-- Finalize form --}}
-                <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
-                    @csrf
-                    <button type="submit"
-                            class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">
-                        Finalisasi
-                    </button>
-                </form>
-
             @else
-                {{-- Read-only SOAP for final record --}}
+                {{-- Read-only SOAP (viewer role, or final record) --}}
                 <dl class="space-y-4">
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Subjective</dt>
@@ -129,6 +125,17 @@
                         <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->notes ?? '—' }}</dd>
                     </div>
                 </dl>
+            @endif
+
+            {{-- Finalize form: draft only, manager only --}}
+            @if ($isDraft && $canFinalize)
+                <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
+                    @csrf
+                    <button type="submit"
+                            class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">
+                        Finalisasi
+                    </button>
+                </form>
             @endif
 
             <div class="border-t pt-4">

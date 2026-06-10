@@ -23,10 +23,16 @@
                             <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
                         @endforeach
                     </select>
-                    <input type="date" name="visit_date_from" value="{{ $filters['visit_date_from'] }}"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                    <input type="date" name="visit_date_to" value="{{ $filters['visit_date_to'] }}"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-500">
+                        Dari tanggal
+                        <input type="date" name="visit_date_from" value="{{ $filters['visit_date_from'] }}"
+                               class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                    </label>
+                    <label class="flex flex-col gap-0.5 text-xs text-gray-500">
+                        Sampai tanggal
+                        <input type="date" name="visit_date_to" value="{{ $filters['visit_date_to'] }}"
+                               class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+                    </label>
                     <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
                     @if ($hasFilter)
                         <a href="{{ route('rme.medical-records.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
@@ -61,7 +67,11 @@
                                 </td>
                                 <td class="px-3 py-2 text-gray-600">{{ $record->finalized_at?->format('d/m/Y H:i') ?? '—' }}</td>
                                 <td class="px-3 py-2 text-right">
-                                    <a href="{{ route('rme.visits.medical-record.show', $record->clinicVisit) }}" class="text-indigo-600 hover:text-indigo-500">Lihat</a>
+                                    @if ($record->clinicVisit)
+                                        <a href="{{ route('rme.visits.medical-record.show', $record->clinicVisit) }}" class="text-indigo-600 hover:text-indigo-500">Lihat</a>
+                                    @else
+                                        <span class="text-gray-400">—</span>
+                                    @endif
                                 </td>
                             </tr>
                         @empty
