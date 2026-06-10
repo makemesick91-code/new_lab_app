@@ -1209,6 +1209,195 @@ it('existing note update still works after phase 1.5', function () {
     expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['note'])->toBe('Catatan 1.5');
 });
 
+// ============================================================
+// Sprint 20 Phase 1.6 — Odontogram Print View Foundation
+// ============================================================
+
+// --- Authorization ---
+
+it('authorized manager can open print view', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk();
+});
+
+it('authorized viewer can open print view', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($viewer)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk();
+});
+
+it('user without permission cannot open print view', function () {
+    $user = User::factory()->create();
+    $odontogram = Odontogram::factory()->create();
+
+    $this->actingAs($user)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertForbidden();
+});
+
+it('cross-branch user cannot open print view', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $otherBranch = Branch::factory()->create();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $otherBranch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertForbidden();
+});
+
+// --- Content: patient / visit / RM info ---
+
+it('print view displays patient name', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee($visit->patient->name);
+});
+
+it('print view displays visit number', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee($visit->visit_number);
+});
+
+it('print view displays odontogram status', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee('Final');
+});
+
+// --- Content: tooth status ---
+
+it('print view displays tooth status', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee('Karies');
+});
+
+// --- Content: conditions ---
+
+it('print view displays tooth conditions', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'tooth_map_payload' => [
+            'teeth' => ['21' => ['status' => 'crown', 'conditions' => ['crown', 'filling']]],
+        ],
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee('Tambalan');
+});
+
+// --- Content: per-tooth note ---
+
+it('print view displays per-tooth note', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'tooth_map_payload' => [
+            'teeth' => ['11' => ['status' => 'caries', 'note' => 'Karies oklusal print test']],
+        ],
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
+        ->assertOk()
+        ->assertSee('Karies oklusal print test');
+});
+
+// --- Print button on show page ---
+
+it('print button appears on odontogram show page for manager', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Cetak Odontogram');
+});
+
+it('print button appears on odontogram show page for viewer', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $this->actingAs($viewer)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('Cetak Odontogram');
+});
+
 // --- Regression: status-only update still works after Phase 1.4 ---
 
 it('existing tooth status update still works after phase 1.4', function () {

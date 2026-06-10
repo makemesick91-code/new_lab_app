@@ -3028,9 +3028,7 @@ All 57 Phase 1.3.x + 1.4 tests retained and passing (69+ total).
 
 ### Next Phase Suggestion
 
-**Sprint 20 Phase 1.6 — Odontogram Treatment Plan Link or PDF Export**
-- Link tooth conditions to a treatment plan line
-- Or: RME PDF export / print view of the odontogram
+**Sprint 20 Phase 1.6 — Odontogram Treatment Plan Link or PDF Export** *(completed)*
 
 ### Release Information
 
@@ -3038,6 +3036,98 @@ All 57 Phase 1.3.x + 1.4 tests retained and passing (69+ total).
 |---|---|
 | Branch | `feature/sprint-20-rme-core` |
 | Tag | `sprint-20-phase-1-5-odontogram-multi-condition` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
+## Sprint 20 Phase 1.6 — Odontogram Print/PDF Export Foundation
+
+### Summary
+
+Adds a print-friendly HTML view for the odontogram. Any authorized user (viewer or manager) with the correct branch can open `rme/odontograms/{odontogram}/print` to see a standalone printable page, then print or save as PDF via the browser. The page displays full patient/visit/RM data, the 32-tooth FDI grid (colour-coded by status), a per-tooth condition and note table, and the odontogram summary notes. Because `barryvdh/laravel-dompdf` was already present in the project, a separate PDF export route was not added — the browser print-to-PDF path covers the use case without a new dependency.
+
+### Scope
+
+- **`OdontogramPolicy::print()`**: new ability — same rule as `view` (`view_clinic_visits` OR `manage_clinic_visits` + same active branch). Viewer can print; cross-branch is 403.
+- **`OdontogramController::print()`**: authorizes via `print` policy, eager-loads `clinicVisit.patient`, `clinicVisit.doctor`, and `finalizer`, returns the print view.
+- **`routes/web.php`**: `GET rme/odontograms/{odontogram}/print` → `rme.odontograms.print` inside the outer `view_clinic_visits|manage_clinic_visits` middleware group.
+- **`show.blade.php`**: added "Cetak Odontogram" anchor link (opens in new tab) guarded by `@can('print', $odontogram)`. Visible to both viewer and manager.
+- **`print.blade.php`**: standalone HTML page (no `x-settings-shell`, no heavy JS). CSS `@media print` hides the print/close button strip. Content includes:
+  - App name + document title
+  - Patient name, No. Rekam Medis (from `patient.medical_record_number`)
+  - No. Kunjungan, Tanggal Kunjungan, Dokter
+  - Status badge (Draft / Final) with finalized_at and finalizer name when finalized
+  - Catatan Ringkasan (`summary_notes`)
+  - Colour-coded FDI 32-tooth grid rendered in pure PHP/Blade (no Alpine.js)
+  - Kondisi Per Gigi table: tooth number | status label | condition chips | note — only marked teeth shown
+  - Legend for tooth status colours
+  - Footer: app name, print timestamp, odontogram ID
+
+### Route
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `rme/odontograms/{odontogram}/print` | `rme.odontograms.print` |
+
+### Print View Content
+
+| Section | Content |
+|---|---|
+| Header | App name, "Odontogram" title |
+| Info grid | Pasien, No. RM, No. Kunjungan, Tanggal, Dokter, Status |
+| Catatan Ringkasan | `summary_notes` or italicised placeholder |
+| Legend | Six status colour swatches |
+| Peta Gigi | 32-cell FDI grid (Q1/Q2 upper, Q4/Q3 lower) colour-coded by status |
+| Kondisi Per Gigi | Table listing only marked teeth: status label + condition chips + note |
+| Footer | App name, printed timestamp, odontogram ID + visit number |
+
+### Permission Behaviour
+
+| Action | Required permission | Extra condition |
+|---|---|---|
+| Open print view | `view_clinic_visits` OR `manage_clinic_visits` | same active branch |
+| Cross-branch access | — | 403 |
+
+No new permissions or roles introduced.
+
+### Out of Scope
+
+- No canvas/SVG tooth map rendering.
+- No handwriting tablet.
+- No treatment plan or treatment plan linking.
+- No ICD-10 structured field.
+- No new PDF library installed (browser print-to-PDF used instead).
+- No lab workflow integration.
+- No payment/billing.
+- No schema migration.
+- HR, Inventory, Procurement, Payment, Cicilan, Lab Workflow untouched.
+
+### Tests (Phase 1.6 additions — 12 new tests)
+
+| Test | Coverage |
+|---|---|
+| authorized manager can open print view | HTTP happy path |
+| authorized viewer can open print view | HTTP happy path (viewer) |
+| user without permission cannot open print view | permission denial |
+| cross-branch user cannot open print view | branch isolation |
+| print view displays patient name | content |
+| print view displays visit number | content |
+| print view displays odontogram status | content (finalized badge) |
+| print view displays tooth status | content (status label) |
+| print view displays tooth conditions | content (condition chip) |
+| print view displays per-tooth note | content (note text) |
+| print button appears on odontogram show page for manager | UI visibility (manager) |
+| print button appears on odontogram show page for viewer | UI visibility (viewer) |
+
+All 69 Phase 1.3.x–1.5 tests retained and passing.
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-6-odontogram-print-view` |
 | Completion date | 2026-06-10 |
 | Status | COMPLETE |
 
@@ -3350,6 +3440,7 @@ All 57 Phase 1.3.x + 1.4 tests retained and passing (69+ total).
   tooth map in this phase; interactive chart deferred to Phase 1.3.2.
 - **Sprint 20 Phase 1.5 completed baseline — Odontogram Multi-Condition Per Tooth:** Future changes must preserve `tooth_map_payload.teeth.*.conditions` as a `nullable|array` field inside the existing JSONB column (no schema migration); `conditions` is optional per tooth — absence is valid; allowed values: `caries`, `missing`, `crown`, `root_treated`, `mobility`, `impaction`, `filling`; `mobility`, `impaction`, `filling` are NOT valid primary `status` values; duplicate conditions within a tooth are rejected by `UpdateOdontogramPlaceholderRequest` and also deduplicated by `OdontogramService`; primary `status` remains the grid-colour source of truth; finalized odontograms remain immutable; no new permissions or roles introduced; `conditions` editable only when status is `draft` and user has `manage_clinic_visits`.
 - **Sprint 20 Phase 1.4 completed baseline — Odontogram Per-Tooth Notes:** Future changes must preserve `tooth_map_payload.teeth.*.note` as a `nullable|string|max:1000` field inside the existing JSONB column (no schema migration); `note` is optional per tooth — absence is valid; finalized odontograms remain immutable (policy + service layer both guard); no new permissions or roles introduced; `note` is editable only when status is `draft` and user has `manage_clinic_visits`; `summary_notes` and FDI whitelist rules unchanged.
+- **Sprint 20 Phase 1.6 completed baseline — Odontogram Print View:** Future changes must preserve `rme.odontograms.print` as a GET route accessible by `view_clinic_visits` OR `manage_clinic_visits` (same active branch); `OdontogramPolicy::print()` mirrors the `view` rule — viewer may print, cross-branch is 403; `print.blade.php` is a standalone HTML page with no `x-settings-shell` and no new JS or PDF library dependencies; `@media print` hides the print/close button strip; no new permissions, roles, or schema changes introduced.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
   existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set
@@ -3403,6 +3494,7 @@ workflow + per-tooth notes + multi-condition, table `trx_odontograms`, status `d
 `finalized_at`/`finalized_by` columns, policy- and service-layer immutability after finalization,
 32-tooth FDI interactive map, Draft/Final badge, per-tooth note panel (JSONB, max 1 000 chars),
 per-tooth conditions array (7 allowed values: caries/missing/crown/root_treated/mobility/impaction/filling),
+print view at `rme.odontograms.print` accessible by viewer + manager same-branch,
 reuses `view_clinic_visits`/`manage_clinic_visits`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
@@ -3416,4 +3508,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.5 (Odontogram Multi-Condition Per Tooth, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.6 (Odontogram Print/PDF Export Foundation, 2026-06-10) and must be updated as each new sprint completes.*

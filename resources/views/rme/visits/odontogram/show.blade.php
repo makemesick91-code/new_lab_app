@@ -148,6 +148,13 @@
                         &larr; Kembali ke Kunjungan
                     </a>
 
+                    @can('print', $odontogram)
+                        <a href="{{ route('rme.odontograms.print', $odontogram) }}" target="_blank"
+                           class="inline-flex items-center rounded-md bg-white border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            Cetak Odontogram
+                        </a>
+                    @endcan
+
                     @if ($canFinalize)
                         <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
                               onsubmit="return confirm('Finalisasi odontogram ini? Data tidak akan bisa diedit setelah difinalisasi.')">

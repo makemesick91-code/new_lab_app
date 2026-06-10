@@ -49,4 +49,14 @@ class OdontogramController extends Controller
             ->route('rme.visits.odontogram.show', $odontogram->clinicVisit)
             ->with('status', 'Odontogram berhasil difinalisasi.');
     }
+
+    public function print(Odontogram $odontogram): View
+    {
+        $this->authorize('print', $odontogram);
+
+        $odontogram->load(['clinicVisit.patient', 'clinicVisit.doctor', 'finalizer']);
+        $clinicVisit = $odontogram->clinicVisit;
+
+        return view('rme.visits.odontogram.print', compact('odontogram', 'clinicVisit'));
+    }
 }

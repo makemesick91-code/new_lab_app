@@ -14,6 +14,11 @@ class OdontogramPolicy
         return $this->canView($user) && $this->belongsToActiveBranch($odontogram->branch_id);
     }
 
+    public function print(User $user, Odontogram $odontogram): bool
+    {
+        return $this->canView($user) && $this->belongsToActiveBranch($odontogram->branch_id);
+    }
+
     public function create(User $user, ClinicVisit $clinicVisit): bool
     {
         return $this->canView($user) && $this->belongsToActiveBranch($clinicVisit->branch_id);
