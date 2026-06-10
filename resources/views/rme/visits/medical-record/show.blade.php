@@ -63,83 +63,50 @@
                 $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
                 $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
                 $hasHandwriting = $medicalRecord->hasHandwriting();
+                $hasLegacySoap = filled($medicalRecord->subjective)
+                    || filled($medicalRecord->objective)
+                    || filled($medicalRecord->assessment)
+                    || filled($medicalRecord->plan)
+                    || filled($medicalRecord->notes);
             @endphp
 
-            @if ($isDraft && $canUpdate)
-                {{-- SOAP update form --}}
-                <form method="POST" action="{{ route('rme.visits.medical-record.update', [$clinicVisit, $medicalRecord]) }}">
-                    @csrf
-                    @method('PATCH')
-
-                    <div class="space-y-4">
-                        <div>
-                            <label for="subjective" class="block text-sm font-medium text-gray-700">Subjective</label>
-                            <textarea id="subjective" name="subjective" rows="3"
-                                      class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('subjective', $medicalRecord->subjective) }}</textarea>
-                        </div>
-                        <div>
-                            <label for="objective" class="block text-sm font-medium text-gray-700">Objective</label>
-                            <textarea id="objective" name="objective" rows="3"
-                                      class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('objective', $medicalRecord->objective) }}</textarea>
-                        </div>
-                        <div>
-                            <label for="assessment" class="block text-sm font-medium text-gray-700">Assessment</label>
-                            <textarea id="assessment" name="assessment" rows="3"
-                                      class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('assessment', $medicalRecord->assessment) }}</textarea>
-                        </div>
-                        <div>
-                            <label for="plan" class="block text-sm font-medium text-gray-700">Plan</label>
-                            <textarea id="plan" name="plan" rows="3"
-                                      class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('plan', $medicalRecord->plan) }}</textarea>
-                        </div>
-                        <div>
-                            <label for="notes" class="block text-sm font-medium text-gray-700">Catatan</label>
-                            <textarea id="notes" name="notes" rows="2"
-                                      class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('notes', $medicalRecord->notes) }}</textarea>
-                        </div>
-                    </div>
-
-                    @if ($errors->any())
-                        <div class="mt-3 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
-                            <ul class="list-disc list-inside space-y-1">
-                                @foreach ($errors->all() as $error)
-                                    <li>{{ $error }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
-
-                    <div class="mt-4">
-                        <button type="submit"
-                                class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">
-                            Simpan Draft
-                        </button>
-                    </div>
-                </form>
-            @else
-                {{-- Read-only SOAP (viewer role, or final record) --}}
-                <dl class="space-y-4">
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Subjective</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->subjective ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Objective</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->objective ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Assessment</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->assessment ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Plan</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->plan ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan</dt>
-                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->notes ?? '—' }}</dd>
-                    </div>
-                </dl>
+            @if ($hasLegacySoap)
+                {{-- Legacy SOAP data (read-only; hidden from doctor input workflow) --}}
+                <div class="border-t pt-4">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-3">Data SOAP (Legacy)</h4>
+                    <dl class="space-y-4">
+                        @if (filled($medicalRecord->subjective))
+                            <div>
+                                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Subjective</dt>
+                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->subjective }}</dd>
+                            </div>
+                        @endif
+                        @if (filled($medicalRecord->objective))
+                            <div>
+                                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Objective</dt>
+                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->objective }}</dd>
+                            </div>
+                        @endif
+                        @if (filled($medicalRecord->assessment))
+                            <div>
+                                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Assessment</dt>
+                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->assessment }}</dd>
+                            </div>
+                        @endif
+                        @if (filled($medicalRecord->plan))
+                            <div>
+                                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Plan</dt>
+                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->plan }}</dd>
+                            </div>
+                        @endif
+                        @if (filled($medicalRecord->notes))
+                            <div>
+                                <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan</dt>
+                                <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->notes }}</dd>
+                            </div>
+                        @endif
+                    </dl>
+                </div>
             @endif
 
             {{-- Handwriting RME Canvas — Phase 1.8 --}}
@@ -147,8 +114,8 @@
                 @php $savedHandwriting = $medicalRecord->latestHandwriting(); @endphp
                 <div class="border-t pt-6">
                     <h4 class="text-sm font-semibold text-gray-700 mb-1">RME Tulisan Tangan Lengkap</h4>
-                    <p class="text-xs text-gray-400 mb-3">
-                        Tuliskan RME lengkap, tindakan tambahan, estimasi biaya, dan tanda tangan dokter di area ini.
+                    <p class="text-xs text-gray-500 mb-3">
+                        Isi Rekam Medis lengkap, tindakan, catatan tambahan, estimasi biaya/tindakan, dan tanda tangan dokter pada area handwriting berikut.
                     </p>
 
                     @if ($savedHandwriting)

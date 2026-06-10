@@ -58,6 +58,23 @@ it('authorized user can save handwriting', function () {
     expect(MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->exists())->toBeTrue();
 });
 
+it('saving handwriting preserves existing SOAP data', function () {
+    $this->record->update([
+        'subjective' => 'keluhan sebelumnya',
+        'assessment' => 'diagnosis lama',
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ])
+        ->assertRedirect(route('rme.visits.medical-record.show', $this->visit));
+
+    $fresh = $this->record->fresh();
+    expect($fresh->subjective)->toBe('keluhan sebelumnya')
+        ->and($fresh->assessment)->toBe('diagnosis lama');
+});
+
 it('saved handwriting is linked to the correct medical record and visit', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [

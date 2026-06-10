@@ -3691,5 +3691,18 @@ Safe pilot backup import tooling for RME limited pilot testing:
 
 ---
 
+### Sprint 20 Post-Completion — Hide SOAP from Doctor RME UI
+
+**Status:** COMPLETE. Branch `feature/sprint-20-rme-core`. Tag: `sprint-20-rme-hide-soap-doctor-ui`.
+
+Sprint 20 pilot uses **handwriting RM** as the primary doctor-facing clinical input. SOAP fields
+(`subjective`, `objective`, `assessment`, `plan`, `notes`) remain optional legacy structured fields
+in `trx_medical_records` but are **hidden from the doctor-facing RME show page** — no editable
+SOAP form, no empty SOAP labels on finalized records. Existing SOAP data is shown read-only only when
+present (legacy import/history). Finalization still requires handwriting only; cashier billing unchanged.
+
+---
+
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.12 + pilot backup import tooling (2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.12 + pilot backup import tooling + hide SOAP doctor UI (2026-06-10) and must be
+updated as each new sprint completes.*

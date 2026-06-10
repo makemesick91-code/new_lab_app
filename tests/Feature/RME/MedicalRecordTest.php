@@ -86,6 +86,22 @@ it('service can create draft medical record for clinic visit', function () {
         ->and($record->clinic_visit_id)->toBe($visit->id);
 });
 
+it('createDraft creates medical record without SOAP fields', function () {
+    $user = User::factory()->create();
+    $this->actingAs($user);
+
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $record = app(MedicalRecordService::class)->createDraft($visit);
+
+    expect($record->subjective)->toBeNull()
+        ->and($record->objective)->toBeNull()
+        ->and($record->assessment)->toBeNull()
+        ->and($record->plan)->toBeNull()
+        ->and($record->notes)->toBeNull();
+});
+
 it('createDraft copies branch_id, patient_id, doctor_id from clinic visit', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
@@ -431,7 +447,7 @@ it('clinic visit show displays view medical record action when record exists', f
         ->assertDontSee('Buat Rekam Medis');
 });
 
-it('medical record show page displays SOAP draft form for draft record', function () {
+it('doctor-facing show page hides SOAP editable fields for draft record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
@@ -445,11 +461,15 @@ it('medical record show page displays SOAP draft form for draft record', functio
     $this->actingAs($manager)
         ->get(route('rme.visits.medical-record.show', $visit))
         ->assertOk()
-        ->assertSee('Simpan Draft')
-        ->assertSee('name="subjective"', false)
-        ->assertSee('name="objective"', false)
-        ->assertSee('name="assessment"', false)
-        ->assertSee('name="plan"', false);
+        ->assertDontSee('Simpan Draft')
+        ->assertDontSee('name="subjective"', false)
+        ->assertDontSee('name="objective"', false)
+        ->assertDontSee('name="assessment"', false)
+        ->assertDontSee('name="plan"', false)
+        ->assertSee('id="rme-canvas"', false)
+        ->assertSee('Simpan Tulisan Tangan')
+        ->assertSee('Bersihkan')
+        ->assertSee('Isi Rekam Medis lengkap');
 });
 
 it('medical record show page hides draft form for final record', function () {
@@ -462,7 +482,29 @@ it('medical record show page hides draft form for final record', function () {
         ->get(route('rme.visits.medical-record.show', $visit))
         ->assertOk()
         ->assertDontSee('Simpan Draft')
-        ->assertDontSee('name="subjective"', false);
+        ->assertDontSee('name="subjective"', false)
+        ->assertDontSee('Data SOAP (Legacy)');
+});
+
+it('finalized show page hides empty SOAP labels', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
+    $visit = $record->clinicVisit;
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->assertSee('RME Tulisan Tangan')
+        ->assertDontSee('Subjective')
+        ->assertDontSee('Objective')
+        ->assertDontSee('Assessment');
 });
 
 it('medical record show page displays finalize action for draft record', function () {
@@ -827,7 +869,7 @@ it('viewer can view medical record show page', function () {
         ->assertSee('Rekam Medis');
 });
 
-it('viewer sees read-only SOAP on draft record show page', function () {
+it('viewer sees legacy read-only SOAP when data exists on draft record show page', function () {
     $viewer = userWith(['view_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);

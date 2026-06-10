@@ -288,3 +288,33 @@ it('show page shows finalize button when draft has handwriting', function () {
         ->assertOk()
         ->assertSee('Finalisasi');
 });
+
+it('finalization succeeds with empty SOAP when handwriting exists', function () {
+    $this->actingAs($this->manager);
+
+    [$visit, $record] = makeVisitWithDraft($this->branch);
+    addHandwriting($record, $visit);
+
+    $final = app(MedicalRecordService::class)->finalize($record->fresh());
+
+    expect($final->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and($final->subjective)->toBeNull()
+        ->and($final->objective)->toBeNull();
+});
+
+it('finalization preserves existing SOAP data', function () {
+    $this->actingAs($this->manager);
+
+    [$visit, $record] = makeVisitWithDraft($this->branch);
+    $record->update([
+        'subjective' => 'keluhan lama',
+        'plan' => 'rencana lama',
+    ]);
+    addHandwriting($record, $visit);
+
+    app(MedicalRecordService::class)->finalize($record->fresh());
+
+    $fresh = $record->fresh();
+    expect($fresh->subjective)->toBe('keluhan lama')
+        ->and($fresh->plan)->toBe('rencana lama');
+});

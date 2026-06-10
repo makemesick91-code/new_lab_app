@@ -62,8 +62,8 @@ Admin creates visit (+ initial service)
 ### Doctor (`manage_clinic_visits`)
 
 1. Open visit → **Odontogram** — mark teeth, conditions, notes → **Finalize odontogram**.
-2. Open **Rekam Medis** — fill SOAP fields.
-3. Draw **handwriting** on canvas → Save (PNG, mandatory before finalize).
+2. Open **Rekam Medis** — draw full **handwriting RME** on canvas (primary doctor input).
+3. Save handwriting (PNG, mandatory before finalize).
 4. **Finalize RME** — visit moves to `cashier_pending`.
 5. Cannot edit RME or handwriting after finalization.
 
@@ -112,8 +112,8 @@ Users with `view_clinic_visits` only:
 
 ### Medical Record & Handwriting
 
-- [ ] Doctor can save SOAP draft
-- [ ] Doctor can save handwriting (PNG)
+- [ ] Doctor can save handwriting RME (PNG) — primary clinical input
+- [ ] SOAP fields hidden from doctor UI (legacy data preserved if present)
 - [ ] Finalize blocked without handwriting
 - [ ] Finalized RME cannot be edited
 - [ ] Handwriting read-only after finalization
@@ -194,12 +194,13 @@ Users with `view_clinic_visits` only:
 1. **Branch isolation** — all RME data scoped to `BranchContext::requireId()`.
 2. **Initial service** — triage only; never creates invoice or payment.
 3. **Handwriting mandatory** — finalize blocked until PNG saved.
-4. **Finalized RME immutable** — no SOAP/handwriting edits after `finalized_at`.
-5. **Cashier gate** — invoice only when visit is `cashier_pending` AND RME is `final`.
-6. **Full payment only** — partial payments rejected in pilot.
-7. **Payment completion** — full pay → invoice `PAID`, visit `completed`.
-8. **No lab payment bleed** — RME payments do not touch lab-order payment tables.
-9. **Odontogram finalize** — one-way `draft → finalized`, immutable after.
+4. **Finalized RME immutable** — no handwriting edits after `finalized_at`.
+5. **Handwriting RM primary** — SOAP fields remain optional legacy structured data in DB; hidden from doctor-facing UI.
+6. **Cashier gate** — invoice only when visit is `cashier_pending` AND RME is `final`.
+7. **Full payment only** — partial payments rejected in pilot.
+8. **Payment completion** — full pay → invoice `PAID`, visit `completed`.
+9. **No lab payment bleed** — RME payments do not touch lab-order payment tables.
+10. **Odontogram finalize** — one-way `draft → finalized`, immutable after.
 
 ---
 

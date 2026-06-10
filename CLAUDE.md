@@ -12,6 +12,7 @@
 **Invoice statuses:** `DRAFT`, `UNPAID`, `PAID`, `VOID`.
 
 **Rules:**
+- Handwriting RM is the **primary doctor-facing clinical input**; SOAP fields are optional legacy structured fields hidden from doctor UI.
 - Handwriting PNG **mandatory** before RME finalization; immutable after finalize.
 - Initial service is triage-only — **no billing**.
 - Cashier billing requires finalized RME + `cashier_pending` visit (`manage_rme_billing`).
