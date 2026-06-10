@@ -36,13 +36,14 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int
     {
-        $max = ClinicVisit::query()
+        $lastQueueNumber = ClinicVisit::query()
             ->where('branch_id', $branchId)
             ->whereDate('visit_date', $visitDate->toDateString())
+            ->orderByDesc('queue_number')
             ->lockForUpdate()
-            ->max('queue_number');
+            ->value('queue_number');
 
-        return (int) ($max ?? 0) + 1;
+        return ((int) $lastQueueNumber) + 1;
     }
 
     public function countTodayByBranch(int $branchId, string $date): int
