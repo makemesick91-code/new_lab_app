@@ -13,6 +13,7 @@ use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -62,6 +63,7 @@ class ClinicVisitController extends Controller
             'patients' => Patient::orderBy('name')->get(),
             'doctors' => Doctor::orderBy('name')->get(),
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
+            'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
         ]);
     }
 
@@ -76,7 +78,7 @@ class ClinicVisitController extends Controller
     public function show(ClinicVisit $clinicVisit): View
     {
         $this->authorize('view', $clinicVisit);
-        $clinicVisit->load(['patient', 'doctor', 'clinic', 'clinicRoom', 'branch']);
+        $clinicVisit->load(['patient', 'doctor', 'clinic', 'clinicRoom', 'branch', 'initialTreatment']);
 
         return view('rme.visits.show', ['visit' => $clinicVisit]);
     }
@@ -88,6 +90,7 @@ class ClinicVisitController extends Controller
         return view('rme.visits.edit', [
             'visit' => $clinicVisit,
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
+            'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'statuses' => ClinicVisit::STATUSES,
         ]);
     }

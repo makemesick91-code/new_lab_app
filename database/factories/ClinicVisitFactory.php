@@ -34,6 +34,8 @@ class ClinicVisitFactory extends Factory
             'queue_number' => $queueNumber,
             'status' => ClinicVisit::STATUS_REGISTERED,
             'chief_complaint' => fake()->optional()->sentence(),
+            'initial_treatment_id' => null,
+            'initial_service_note' => null,
             'check_in_at' => null,
             'started_at' => null,
             'completed_at' => null,

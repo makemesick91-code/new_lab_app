@@ -121,4 +121,26 @@ class MedicalRecordService
             return $this->medicalRecords->update($medicalRecord, $safe);
         });
     }
+
+    // --- Phase 1.8 alignment helpers (used by Phase 1.9 finalization enforcement) ---
+
+    public function requiresHandwritingBeforeFinal(): bool
+    {
+        return true;
+    }
+
+    public function hasRequiredHandwriting(MedicalRecord $medicalRecord): bool
+    {
+        return $medicalRecord->hasHandwriting();
+    }
+
+    public function canFinalizeRme(MedicalRecord $medicalRecord): bool
+    {
+        if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
+            return false;
+        }
+
+        // TODO Phase 1.9: enforce hasRequiredHandwriting() before allowing finalization.
+        return true;
+    }
 }

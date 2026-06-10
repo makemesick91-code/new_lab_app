@@ -3466,6 +3466,27 @@ All 69 Phase 1.3.x–1.5 tests retained and passing.
   999)` so all factory calls within a single test get distinct queue numbers. Both changes are
   factory-only: no migrations, no service logic, no route/policy/permission changes, no test
   assertions altered. Full suite: 84 Odontogram + 46 ClinicVisit tests all pass.
+- **Sprint 20 Phase 1.8 completed baseline — RME Initial Service + Full Handwriting:** Future changes
+  must preserve: (A) `initial_treatment_id` (FK → `mst_treatments`, nullable, nullOnDelete) and
+  `initial_service_note` (nullable text) columns on `trx_clinic_visits`; `initial_treatment_id` is
+  **required** in `StoreClinicVisitRequest` and optional in `UpdateClinicVisitRequest`; only active
+  treatments (`is_active = true`) are accepted; initial service is **triage/queue context only** —
+  it must NOT create any invoice or payment record; `ClinicVisitController` passes `$treatments` to
+  `create()` and `edit()` views; `MedicalRecordController::show()` eager-loads `initialTreatment`
+  so the RME page can display it. (B) `trx_medical_record_handwritings` table with columns:
+  `medical_record_id` (FK restrictOnDelete), `clinic_visit_id` (FK), `branch_id` (FK), `doctor_id`
+  (nullable FK), `handwriting_path`, `handwriting_hash` (sha256, 64 chars), `saved_at`, `created_by`;
+  route `rme.visits.medical-record.handwriting.store` (POST) gated by `manage_clinic_visits` +
+  same active branch via `MedicalRecord` policy `update` action; handwriting stored to `public` disk
+  at `handwritings/{branch_id}/{visit_id}/handwriting_{YmdHis}.png`; validation rejects missing /
+  empty / non-PNG payloads (PNG magic bytes check: `\x89PNG`); finalized records are immutable
+  (ValidationException); canvas UI (900×500, mouse + touch) with Clear + Save buttons lives in
+  `medical-record/show.blade.php`; read-only preview shown for finalized or viewer-only state.
+  (C) `MedicalRecordService` alignment helpers: `requiresHandwritingBeforeFinal()` → `true`,
+  `hasRequiredHandwriting(MedicalRecord)` delegates to `$record->hasHandwriting()`,
+  `canFinalizeRme(MedicalRecord)` → `false` if already final, `true` otherwise (Phase 1.9 will
+  enforce handwriting before finalization). No cashier billing, no new permissions/roles introduced;
+  full test suite: 205 RME tests all passing.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
   existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set
@@ -3523,7 +3544,11 @@ print view at `rme.odontograms.print` accessible by viewer + manager same-branch
 reuses `view_clinic_visits`/`manage_clinic_visits`) · `RME Visit Print Bundle` (S20 Phase 1.7,
 route `rme.visits.print`, standalone HTML bundle with patient info + medical record + odontogram
 summary, accessible by viewer + manager same-branch, `ClinicVisitPolicy::print()` mirrors view rule,
-"Cetak RME" button on visit show page).
+"Cetak RME" button on visit show page) · `RME Initial Service + Handwriting` (S20 Phase 1.8,
+`initial_treatment_id`/`initial_service_note` on `trx_clinic_visits`, triage-only — no invoice;
+`trx_medical_record_handwritings` table, canvas-based freehand handwriting stored to `public` disk
+as PNG, `MedicalRecordHandwritingController`, alignment helpers on `MedicalRecordService` for
+Phase 1.9 finalization gate).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.
@@ -3536,4 +3561,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.7 (RME Visit Print Bundle Foundation, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.8 (RME Initial Service + Full Handwriting, 2026-06-10) and must be updated as each new sprint completes.*

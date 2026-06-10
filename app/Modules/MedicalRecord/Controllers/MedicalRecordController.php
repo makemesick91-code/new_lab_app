@@ -50,6 +50,8 @@ class MedicalRecordController extends Controller
 
         $this->authorize('view', $medicalRecord);
 
+        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment']);
+
         return view('rme.visits.medical-record.show', compact('clinicVisit', 'medicalRecord'));
     }
 

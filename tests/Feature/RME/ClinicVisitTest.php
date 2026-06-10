@@ -8,6 +8,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 
 beforeEach(function () {
@@ -21,6 +22,7 @@ beforeEach(function () {
     $this->clinic = Clinic::factory()->create();
     $this->patient = Patient::factory()->create();
     $this->doctor = Doctor::factory()->create();
+    $this->treatment = Treatment::factory()->create(['is_active' => true]);
 });
 
 it('denies users without clinic visit permission', function () {
@@ -90,6 +92,7 @@ it('stores valid clinic visit in active branch', function () {
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
             'chief_complaint' => 'Sakit gigi',
+            'initial_treatment_id' => $this->treatment->id,
         ])
         ->assertRedirect();
 
@@ -125,6 +128,7 @@ it('auto-generates queue_number per branch per visit_date', function () {
             'clinic_id' => $this->clinic->id,
             'patient_id' => $patient2->id,
             'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
         ])
         ->assertRedirect();
 
@@ -142,6 +146,7 @@ it('auto-generates visit_number in VIS-YYYYMMDD-NNN format', function () {
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
         ]);
 
     $visit = ClinicVisit::where('branch_id', $this->branch->id)->first();
@@ -172,6 +177,7 @@ it('ignores branch_id supplied in request', function () {
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
         ]);
 
     $this->assertDatabaseHas('trx_clinic_visits', [
@@ -244,6 +250,7 @@ it('denies viewer from creating or updating', function () {
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
         ])
         ->assertForbidden();
 

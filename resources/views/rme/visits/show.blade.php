@@ -85,6 +85,14 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Keluhan Utama</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->chief_complaint ?? '—' }}</dd>
                 </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->initialTreatment?->name ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
+                    <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $visit->initial_service_note ?? '—' }}</dd>
+                </div>
                 @if ($visit->check_in_at || $visit->started_at || $visit->completed_at || $visit->cancelled_at)
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Check-in</dt>

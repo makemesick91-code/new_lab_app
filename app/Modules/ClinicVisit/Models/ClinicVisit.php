@@ -10,6 +10,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Treatment\Models\Treatment;
 use Database\Factories\ClinicVisitFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -52,7 +53,8 @@ class ClinicVisit extends Model
     protected $fillable = [
         'visit_number', 'branch_id', 'clinic_id', 'patient_id', 'doctor_id',
         'clinic_room_id', 'visit_date', 'queue_number', 'status',
-        'chief_complaint', 'check_in_at', 'started_at', 'completed_at', 'cancelled_at', 'created_by',
+        'chief_complaint', 'initial_treatment_id', 'initial_service_note',
+        'check_in_at', 'started_at', 'completed_at', 'cancelled_at', 'created_by',
     ];
 
     protected function casts(): array
@@ -70,6 +72,7 @@ class ClinicVisit extends Model
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
+            'initial_treatment_id' => 'integer',
         ];
     }
 
@@ -101,6 +104,11 @@ class ClinicVisit extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function initialTreatment(): BelongsTo
+    {
+        return $this->belongsTo(Treatment::class, 'initial_treatment_id');
     }
 
     public function medicalRecord(): HasOne

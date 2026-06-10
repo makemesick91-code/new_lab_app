@@ -11,6 +11,7 @@ use Database\Factories\MedicalRecordFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MedicalRecord extends Model
@@ -61,6 +62,24 @@ class MedicalRecord extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    public function handwriting(): HasOne
+    {
+        return $this->hasOne(MedicalRecordHandwriting::class)->latestOfMany();
+    }
+
+    public function hasHandwriting(): bool
+    {
+        return $this->handwriting()->exists();
+    }
+
+    public function latestHandwriting(): ?MedicalRecordHandwriting
+    {
+        return MedicalRecordHandwriting::query()
+            ->where('medical_record_id', $this->id)
+            ->latest()
+            ->first();
     }
 
     protected static function newFactory(): MedicalRecordFactory

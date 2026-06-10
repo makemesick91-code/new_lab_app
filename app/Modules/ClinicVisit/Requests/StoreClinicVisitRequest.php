@@ -20,6 +20,8 @@ class StoreClinicVisitRequest extends FormRequest
             'doctor_id' => ['required', 'integer', Rule::exists('mst_doctors', 'id')],
             'clinic_room_id' => ['nullable', 'integer', Rule::exists('mst_clinic_rooms', 'id')],
             'chief_complaint' => ['nullable', 'string', 'max:5000'],
+            'initial_treatment_id' => ['required', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
+            'initial_service_note' => ['nullable', 'string', 'max:2000'],
         ];
     }
 }

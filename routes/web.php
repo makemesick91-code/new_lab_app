@@ -35,6 +35,7 @@ use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
+use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
@@ -199,6 +200,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
                 ->name('visits.medical-record.update');
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/finalize', [MedicalRecordController::class, 'finalize'])
                 ->name('visits.medical-record.finalize');
+            // Sprint 20 Phase 1.8 — Handwriting RME
+            Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/handwriting', [MedicalRecordHandwritingController::class, 'store'])
+                ->name('visits.medical-record.handwriting.store');
         });
 
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder Foundation

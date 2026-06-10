@@ -115,9 +115,11 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Policies\MedicalRecordPolicy;
+use App\Modules\MedicalRecord\Repositories\MedicalRecordHandwritingRepository;
 use App\Modules\MedicalRecord\Repositories\MedicalRecordRepository;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
@@ -253,6 +255,8 @@ class RepositoryServiceProvider extends ServiceProvider
         MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
+        // Sprint 20 Phase 1.8
+        MedicalRecordHandwritingRepositoryInterface::class => MedicalRecordHandwritingRepository::class,
     ];
 
     /**

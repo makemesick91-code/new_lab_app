@@ -21,6 +21,16 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
                 </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Tindakan Awal</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->initialTreatment?->name ?? '—' }}</dd>
+                </div>
+                @if ($clinicVisit->initial_service_note)
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
+                        <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
+                    </div>
+                @endif
             </dl>
 
             <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 border-t pt-4">
@@ -125,6 +135,121 @@
                         <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->notes ?? '—' }}</dd>
                     </div>
                 </dl>
+            @endif
+
+            {{-- Handwriting RME Canvas — Phase 1.8 --}}
+            @if ($isDraft && $canUpdate)
+                @php $savedHandwriting = $medicalRecord->latestHandwriting(); @endphp
+                <div class="border-t pt-6">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-1">RME Tulisan Tangan Lengkap</h4>
+                    <p class="text-xs text-gray-400 mb-3">
+                        Tuliskan RME lengkap, tindakan tambahan, estimasi biaya, dan tanda tangan dokter di area ini.
+                    </p>
+
+                    @if ($savedHandwriting)
+                        <div class="mb-4">
+                            <p class="text-xs text-green-700 font-medium mb-2">
+                                Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
+                            </p>
+                            <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($savedHandwriting->handwriting_path) }}"
+                                 alt="RME Tulisan Tangan"
+                                 class="border border-gray-300 rounded-md max-w-full" />
+                        </div>
+                    @endif
+
+                    <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}"
+                          id="handwriting-form">
+                        @csrf
+                        <input type="hidden" name="handwriting_data" id="handwriting-data-input">
+
+                        <canvas id="rme-canvas"
+                                width="900" height="500"
+                                class="block w-full border border-gray-400 rounded-md cursor-crosshair bg-white touch-none"
+                                style="max-width:100%;height:auto;"></canvas>
+
+                        @error('handwriting_data')
+                            <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                        @enderror
+
+                        <div class="mt-3 flex items-center gap-3">
+                            <button type="button" id="clear-canvas-btn"
+                                    class="inline-flex items-center rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                Bersihkan
+                            </button>
+                            <button type="submit" id="save-handwriting-btn"
+                                    class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                                Simpan Tulisan Tangan
+                            </button>
+                        </div>
+                    </form>
+
+                    <script>
+                    (function () {
+                        const canvas = document.getElementById('rme-canvas');
+                        const ctx = canvas.getContext('2d');
+                        let drawing = false;
+
+                        function getPos(e) {
+                            const rect = canvas.getBoundingClientRect();
+                            const scaleX = canvas.width / rect.width;
+                            const scaleY = canvas.height / rect.height;
+                            const src = e.touches ? e.touches[0] : e;
+                            return {
+                                x: (src.clientX - rect.left) * scaleX,
+                                y: (src.clientY - rect.top) * scaleY,
+                            };
+                        }
+
+                        function start(e) {
+                            e.preventDefault();
+                            drawing = true;
+                            const p = getPos(e);
+                            ctx.beginPath();
+                            ctx.moveTo(p.x, p.y);
+                        }
+
+                        function draw(e) {
+                            if (!drawing) return;
+                            e.preventDefault();
+                            const p = getPos(e);
+                            ctx.lineWidth = 2;
+                            ctx.lineCap = 'round';
+                            ctx.strokeStyle = '#111827';
+                            ctx.lineTo(p.x, p.y);
+                            ctx.stroke();
+                        }
+
+                        function stop(e) {
+                            drawing = false;
+                        }
+
+                        canvas.addEventListener('mousedown', start);
+                        canvas.addEventListener('mousemove', draw);
+                        canvas.addEventListener('mouseup', stop);
+                        canvas.addEventListener('mouseleave', stop);
+                        canvas.addEventListener('touchstart', start, { passive: false });
+                        canvas.addEventListener('touchmove', draw, { passive: false });
+                        canvas.addEventListener('touchend', stop);
+
+                        document.getElementById('clear-canvas-btn').addEventListener('click', function () {
+                            ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        });
+
+                        document.getElementById('handwriting-form').addEventListener('submit', function (e) {
+                            document.getElementById('handwriting-data-input').value = canvas.toDataURL('image/png');
+                        });
+                    })();
+                    </script>
+                </div>
+            @elseif ($medicalRecord->latestHandwriting())
+                @php $savedHandwriting = $medicalRecord->latestHandwriting(); @endphp
+                <div class="border-t pt-4">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-2">RME Tulisan Tangan</h4>
+                    <p class="text-xs text-gray-500 mb-2">Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}</p>
+                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($savedHandwriting->handwriting_path) }}"
+                         alt="RME Tulisan Tangan"
+                         class="border border-gray-300 rounded-md max-w-full" />
+                </div>
             @endif
 
             {{-- Finalize form: draft only, manager only --}}

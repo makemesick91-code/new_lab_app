@@ -18,6 +18,8 @@ class UpdateClinicVisitRequest extends FormRequest
             'clinic_room_id' => ['sometimes', 'nullable', 'integer', Rule::exists('mst_clinic_rooms', 'id')],
             'chief_complaint' => ['sometimes', 'nullable', 'string', 'max:5000'],
             'doctor_id' => ['sometimes', 'integer', Rule::exists('mst_doctors', 'id')],
+            'initial_treatment_id' => ['sometimes', 'nullable', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
+            'initial_service_note' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ];
     }
 }
