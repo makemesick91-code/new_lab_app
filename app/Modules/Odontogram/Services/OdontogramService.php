@@ -34,7 +34,7 @@ class OdontogramService
         });
     }
 
-    public function updateNotes(Odontogram $odontogram, array $payload, User $user): Odontogram
+    public function updatePlaceholder(Odontogram $odontogram, array $payload, User $user): Odontogram
     {
         return DB::transaction(function () use ($odontogram, $payload, $user) {
             $branchId = $this->branchContext->requireId();

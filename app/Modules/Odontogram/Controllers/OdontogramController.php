@@ -32,10 +32,10 @@ class OdontogramController extends Controller
     {
         $this->authorize('update', $odontogram);
 
-        $this->service->updateNotes($odontogram, $request->validated(), auth()->user());
+        $this->service->updatePlaceholder($odontogram, $request->validated(), auth()->user());
 
         return redirect()
             ->route('rme.visits.odontogram.show', $odontogram->clinicVisit)
-            ->with('status', 'Catatan odontogram berhasil disimpan.');
+            ->with('status', 'Odontogram berhasil disimpan.');
     }
 }

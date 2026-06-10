@@ -116,7 +116,7 @@ it('getOrCreateForVisit rejects visit from another branch', function () {
         ->toThrow(ValidationException::class);
 });
 
-it('updateNotes updates summary_notes correctly', function () {
+it('updatePlaceholder updates summary_notes correctly', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
@@ -127,7 +127,7 @@ it('updateNotes updates summary_notes correctly', function () {
         'branch_id' => $branch->id,
     ]);
 
-    $updated = app(OdontogramService::class)->updateNotes(
+    $updated = app(OdontogramService::class)->updatePlaceholder(
         $odontogram,
         ['summary_notes' => 'Gigi 11 karies'],
         $user
@@ -137,14 +137,14 @@ it('updateNotes updates summary_notes correctly', function () {
         ->and($updated->updated_by)->toBe($user->id);
 });
 
-it('updateNotes rejects odontogram from another branch', function () {
+it('updatePlaceholder rejects odontogram from another branch', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
     $otherBranch = Branch::factory()->create();
     $odontogram = Odontogram::factory()->create(['branch_id' => $otherBranch->id]);
 
-    expect(fn () => app(OdontogramService::class)->updateNotes(
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder(
         $odontogram,
         ['summary_notes' => 'test'],
         $user
@@ -326,4 +326,205 @@ it('visit show page contains odontogram link for authorized user', function () {
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
         ->assertSee('Buka Odontogram');
+});
+
+// ============================================================
+// Phase 1.3.2 — Tooth Map Draft UI
+// ============================================================
+
+// --- UI: tooth number presence ---
+
+it('odontogram page displays all 32 FDI tooth numbers', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+
+    $response = $this->actingAs($manager)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk();
+
+    $allTeeth = array_merge(
+        range(11, 18), range(21, 28), range(31, 38), range(41, 48)
+    );
+    foreach ($allTeeth as $tooth) {
+        $response->assertSee((string) $tooth);
+    }
+});
+
+// --- HTTP update: valid tooth_map_payload (JSON string format, simulates form) ---
+
+it('manager can update tooth_map_payload with valid FDI teeth via JSON string', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'caries'], '21' => ['status' => 'crown']]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect(route('rme.visits.odontogram.show', $visit));
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->tooth_map_payload['teeth']['11']['status'])->toBe('caries')
+        ->and($fresh->tooth_map_payload['teeth']['21']['status'])->toBe('crown');
+});
+
+// --- HTTP update: invalid status ---
+
+it('update rejects invalid tooth status', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'rotten']]],
+        ])
+        ->assertSessionHasErrors('tooth_map_payload.teeth.11.status');
+});
+
+// --- HTTP update: invalid FDI tooth number ---
+
+it('update rejects invalid FDI tooth number', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['99' => ['status' => 'caries']]],
+        ])
+        ->assertSessionHasErrors('tooth_map_payload.teeth');
+});
+
+it('update rejects tooth number out of FDI range', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    // 10 is not valid (valid range per quadrant starts at 1 → tooth 11, 21, 31, 41)
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['10' => ['status' => 'caries']]],
+        ])
+        ->assertSessionHasErrors('tooth_map_payload.teeth');
+});
+
+it('update rejects alphabetic tooth number', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['abc' => ['status' => 'caries']]],
+        ])
+        ->assertSessionHasErrors('tooth_map_payload.teeth');
+});
+
+// --- Permission: viewer cannot update ---
+
+it('viewer cannot update tooth_map_payload', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($viewer)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
+        ])
+        ->assertForbidden();
+});
+
+// --- Permission: cross-branch cannot update ---
+
+it('cross-branch user cannot update tooth_map_payload', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $otherBranch = Branch::factory()->create();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $otherBranch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
+        ])
+        ->assertForbidden();
+});
+
+// --- Idempotency: update does not duplicate odontogram ---
+
+it('updating tooth map does not create duplicate odontogram', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
+        ])
+        ->assertRedirect();
+
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+});
+
+// --- summary_notes can be updated alongside tooth_map_payload ---
+
+it('can update summary_notes and tooth_map_payload together', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'summary_notes' => 'Gigi 11 karies, gigi 18 PSA',
+            'tooth_map_payload' => [
+                'teeth' => [
+                    '11' => ['status' => 'caries'],
+                    '18' => ['status' => 'root_treated'],
+                ],
+            ],
+        ])
+        ->assertRedirect();
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->summary_notes)->toBe('Gigi 11 karies, gigi 18 PSA')
+        ->and($fresh->tooth_map_payload['teeth']['11']['status'])->toBe('caries')
+        ->and($fresh->tooth_map_payload['teeth']['18']['status'])->toBe('root_treated');
 });

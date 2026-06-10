@@ -2583,6 +2583,149 @@ inventory/lab module changes, no new permissions, no new roles.
 
 ---
 
+## Sprint 20 Phase 1.3.2 — Odontogram Tooth Map Draft UI
+
+**Status:** COMPLETE. Branch `feature/sprint-20-rme-core`,
+tag `sprint-20-phase-1-3-2-odontogram-tooth-map-draft-ui`,
+completion date 2026-06-10.
+
+**Business objective:** Extend the Phase 1.3.1 odontogram placeholder with a functional
+draft tooth-map UI: a 32-tooth FDI grid rendered in Blade + Alpine.js, status-per-tooth
+selection, JSON serialisation into `tooth_map_payload`, and validated PATCH persistence.
+No canvas, no SVG, no final diagnosis logic, no billing.
+
+### Scope
+
+- `UpdateOdontogramPlaceholderRequest` hardened: JSON string decode in
+  `prepareForValidation()`, nested tooth-map rules, FDI tooth-number whitelist via
+  `withValidator()`.
+- `OdontogramService::updateNotes()` renamed to `updatePlaceholder()` (branch guard,
+  `summary_notes` + `tooth_map_payload`, `updated_by` — unchanged behaviour).
+- `OdontogramController::update()` wired to `updatePlaceholder()`; success message updated.
+- `show.blade.php` fully replaced: legend, Alpine.js status selector (manager only),
+  32-tooth FDI grid (clickable for managers / read-only for viewers), reactive hidden
+  `tooth_map_payload` input, `summary_notes` textarea, single save action.
+- 10 new Pest tests added (35 total, 98 assertions). All Phase 1.3.1 tests retained.
+
+### FDI Tooth Layout
+
+```
+Upper:  [18 17 16 15 14 13 12 11] | [21 22 23 24 25 26 27 28]
+                       right ← center → left
+Lower:  [48 47 46 45 44 43 42 41] | [31 32 33 34 35 36 37 38]
+```
+
+### Allowed Status Values
+
+| Value | Label | Colour |
+|---|---|---|
+| `normal` | Normal (ditandai) | green-100 |
+| `caries` | Karies | red-200 |
+| `missing` | Hilang | gray-800 |
+| `crown` | Crown | amber-200 |
+| `root_treated` | PSA | sky-200 |
+
+Teeth with no entry in `teeth` object display as white (default/normal unset).
+
+### JSON Format
+
+```json
+{
+  "teeth": {
+    "11": { "status": "caries" },
+    "21": { "status": "crown" },
+    "18": { "status": "root_treated" }
+  }
+}
+```
+
+### Validation Rules
+
+- `tooth_map_payload` — nullable, array (or JSON string decoded by `prepareForValidation`)
+- `tooth_map_payload.teeth` — nullable array; keys must be valid FDI numbers (11–18,
+  21–28, 31–38, 41–48); enforced in `withValidator()`
+- `tooth_map_payload.teeth.*.status` — nullable, `in:normal,caries,missing,crown,root_treated`
+- `summary_notes` — nullable, string, max:5000
+- Invalid tooth numbers (e.g. `99`, `10`, `abc`) → error on `tooth_map_payload.teeth`
+- Invalid status → error on `tooth_map_payload.teeth.{N}.status`
+
+### UI Behaviour
+
+- **Manager** (`manage_clinic_visits`): sees status selector (5 coloured buttons), tooth
+  grid is clickable; clicking a tooth applies active status; clicking same status again
+  removes the tooth entry; save form with `summary_notes` textarea and submit button.
+- **Viewer** (`view_clinic_visits`): sees tooth grid in read-only mode (no selector, no
+  save form, no save button); `summary_notes` displayed read-only if present.
+- Both roles see the legend and full 32-tooth grid on page load.
+- Alpine.js serialises `{ teeth: {...} }` into a hidden `tooth_map_payload` input
+  reactively; standard form POST carries the JSON string; FormRequest decodes it.
+
+### Permission
+
+Reuses existing permissions — **no new permissions**:
+- `view_clinic_visits` or `manage_clinic_visits` → open odontogram page
+- `manage_clinic_visits` → update (tooth map + notes)
+- Branch isolation via `BranchContext::requireId()` and `OdontogramPolicy` (unchanged)
+
+### Tests (Phase 1.3.2 additions)
+
+| Test | Description |
+|---|---|
+| `displays all 32 FDI tooth numbers` | All teeth 11–18, 21–28, 31–38, 41–48 visible on page |
+| `manager can update tooth_map_payload via JSON string` | Full form-POST flow: JSON → decode → save → DB |
+| `update rejects invalid tooth status` | `rotten` fails `in:` rule |
+| `update rejects invalid FDI tooth number` | `99` fails whitelist |
+| `update rejects tooth number out of FDI range` | `10` fails whitelist |
+| `update rejects alphabetic tooth number` | `abc` fails whitelist |
+| `viewer cannot update tooth_map_payload` | 403 for `view_clinic_visits` user |
+| `cross-branch user cannot update tooth_map_payload` | 403 for cross-branch manager |
+| `updating tooth map does not create duplicate odontogram` | Count stays 1 after update |
+| `can update summary_notes and tooth_map_payload together` | Both fields persisted |
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `app/Modules/Odontogram/Requests/UpdateOdontogramPlaceholderRequest.php` | JSON decode, nested rules, FDI whitelist |
+| `app/Modules/Odontogram/Services/OdontogramService.php` | Renamed `updateNotes` → `updatePlaceholder` |
+| `app/Modules/Odontogram/Controllers/OdontogramController.php` | Calls `updatePlaceholder`, updated flash message |
+| `resources/views/rme/visits/odontogram/show.blade.php` | Full tooth map UI (legend, selector, grid, form) |
+| `tests/Feature/RME/OdontogramTest.php` | Updated 2 service tests, added 10 new tests |
+| `docs/sprint_history.md` | This entry |
+
+### Quality Gates
+
+| Gate | Result |
+|---|---|
+| `php artisan test --filter=Odontogram` | **PASS — 35 tests, 98 assertions** |
+| `php artisan test --filter=ClinicVisit` | **PASS — 37 tests, 126 assertions** |
+| `php artisan route:list \| grep odontogram` | PASS — 2 routes registered |
+| `./vendor/bin/pint --dirty` | PASS — 2 files fixed (spacing only) |
+
+### Explicit Out-of-Scope
+
+No canvas/SVG, no ICD-10/diagnosis codes, no treatment plan, no billing, no cicilan,
+no lab workflow, no new permissions, no new roles, no schema changes, no inventory changes.
+
+### Next Phase Suggestion
+
+**Sprint 20 Phase 1.3.3 — Odontogram Status Polish & Finalize**
+- Finalize odontogram (lock tooth map, change status from `draft` → `final`)
+- Status badge progression (Draft → Final)
+- Read-only display after finalization
+- Optional: per-tooth notes field
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-3-2-odontogram-tooth-map-draft-ui` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
