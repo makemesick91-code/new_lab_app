@@ -27,6 +27,22 @@ class MedicalRecordService
         );
     }
 
+    public function draftCount(): int
+    {
+        return $this->medicalRecords->countByBranchStatus(
+            $this->branchContext->requireId(),
+            MedicalRecord::STATUS_DRAFT,
+        );
+    }
+
+    public function finalizedTodayCount(): int
+    {
+        return $this->medicalRecords->countFinalizedTodayByBranch(
+            $this->branchContext->requireId(),
+            now()->toDateString(),
+        );
+    }
+
     public function createDraft(ClinicVisit $clinicVisit, ?int $recordedBy = null, array $data = []): MedicalRecord
     {
         return DB::transaction(function () use ($clinicVisit, $recordedBy, $data) {

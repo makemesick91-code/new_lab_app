@@ -45,6 +45,22 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         return (int) ($max ?? 0) + 1;
     }
 
+    public function countTodayByBranch(int $branchId, string $date): int
+    {
+        return ClinicVisit::query()
+            ->where('branch_id', $branchId)
+            ->whereDate('visit_date', $date)
+            ->count();
+    }
+
+    public function countByBranchStatus(int $branchId, string $status): int
+    {
+        return ClinicVisit::query()
+            ->where('branch_id', $branchId)
+            ->where('status', $status)
+            ->count();
+    }
+
     public function create(array $data): ClinicVisit
     {
         return ClinicVisit::create($data);

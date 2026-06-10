@@ -16,6 +16,45 @@
         ];
     @endphp
 
+    <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        @php
+            $rmeWidgetDefs = [
+                [
+                    'label' => 'Kunjungan Hari Ini',
+                    'value' => $rmeWidgets['visits_today'] ?? 0,
+                    'href'  => route('rme.visits.index'),
+                ],
+                [
+                    'label' => 'Menunggu',
+                    'value' => $rmeWidgets['waiting'] ?? 0,
+                    'href'  => route('rme.visits.index', ['status' => 'waiting']),
+                ],
+                [
+                    'label' => 'Sedang Dilayani',
+                    'value' => $rmeWidgets['in_progress'] ?? 0,
+                    'href'  => route('rme.visits.index', ['status' => 'in_progress']),
+                ],
+                [
+                    'label' => 'RM Draft',
+                    'value' => $rmeWidgets['draft_medical_records'] ?? 0,
+                    'href'  => route('rme.medical-records.index', ['status' => 'draft']),
+                ],
+                [
+                    'label' => 'RM Final Hari Ini',
+                    'value' => $rmeWidgets['finalized_today'] ?? 0,
+                    'href'  => route('rme.medical-records.index', ['status' => 'final']),
+                ],
+            ];
+        @endphp
+        @foreach ($rmeWidgetDefs as $widget)
+            <a href="{{ $widget['href'] }}"
+               class="flex flex-col rounded-lg border border-gray-200 bg-white p-4 shadow-sm hover:border-indigo-300 hover:shadow-md transition-shadow">
+                <span class="text-2xl font-bold text-gray-900">{{ $widget['value'] }}</span>
+                <span class="mt-1 text-xs font-medium text-gray-500">{{ $widget['label'] }}</span>
+            </a>
+        @endforeach
+    </div>
+
     <div class="bg-white shadow-sm sm:rounded-lg">
         <div class="p-6 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-3">

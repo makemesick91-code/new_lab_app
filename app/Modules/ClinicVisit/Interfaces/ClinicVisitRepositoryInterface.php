@@ -15,6 +15,10 @@ interface ClinicVisitRepositoryInterface
 
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;
 
+    public function countTodayByBranch(int $branchId, string $date): int;
+
+    public function countByBranchStatus(int $branchId, string $status): int;
+
     /** @param array<string, mixed> $data */
     public function create(array $data): ClinicVisit;
 

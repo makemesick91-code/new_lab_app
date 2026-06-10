@@ -12,6 +12,10 @@ interface MedicalRecordRepositoryInterface
 
     public function findByVisitId(int $clinicVisitId): ?MedicalRecord;
 
+    public function countByBranchStatus(int $branchId, string $status): int;
+
+    public function countFinalizedTodayByBranch(int $branchId, string $date): int;
+
     /** @param array<string, mixed> $data */
     public function create(array $data): MedicalRecord;
 

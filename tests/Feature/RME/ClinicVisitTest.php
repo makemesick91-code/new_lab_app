@@ -5,6 +5,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use Database\Seeders\BranchSeeder;
 
@@ -619,4 +620,127 @@ it('hides RME sidebar links for user without clinic visit permission', function 
         ->assertOk()
         ->assertDontSee(route('rme.visits.index'), false)
         ->assertDontSee(route('rme.medical-records.index'), false);
+});
+
+it('shows rme widget section for user with view_clinic_visits', function () {
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Kunjungan Hari Ini')
+        ->assertSee('Menunggu')
+        ->assertSee('Sedang Dilayani')
+        ->assertSee('RM Draft')
+        ->assertSee('RM Final Hari Ini');
+});
+
+it('widget visits today count matches branch visits on today date only', function () {
+    ClinicVisit::factory()->count(2)->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->viewer->id,
+        'visit_date' => today()->toDateString(),
+    ]);
+
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->viewer->id,
+        'visit_date' => today()->subDay()->toDateString(),
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Kunjungan Hari Ini');
+});
+
+it('widget waiting count shows only waiting status visits', function () {
+    ClinicVisit::factory()->count(2)->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Menunggu');
+});
+
+it('widget in_progress count shows only in_progress status visits', function () {
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+
+    ClinicVisit::factory()->count(2)->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'status' => ClinicVisit::STATUS_WAITING,
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Sedang Dilayani');
+});
+
+it('widget draft medical record count is branch isolated', function () {
+    MedicalRecord::factory()->create([
+        'branch_id' => $this->branch->id,
+        'status' => MedicalRecord::STATUS_DRAFT,
+    ]);
+
+    $otherBranch = Branch::factory()->create(['code' => 'RMOB1']);
+    MedicalRecord::factory()->count(2)->create([
+        'branch_id' => $otherBranch->id,
+        'status' => MedicalRecord::STATUS_DRAFT,
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('RM Draft');
+});
+
+it('widget finalized today count shows only finalized on today date', function () {
+    MedicalRecord::factory()->create([
+        'branch_id' => $this->branch->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+        'finalized_at' => now(),
+    ]);
+
+    MedicalRecord::factory()->create([
+        'branch_id' => $this->branch->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+        'finalized_at' => now()->subDay(),
+    ]);
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('RM Final Hari Ini');
 });

@@ -11,6 +11,7 @@ use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -23,6 +24,7 @@ class ClinicVisitController extends Controller
 
     public function __construct(
         private readonly ClinicVisitService $visits,
+        private readonly MedicalRecordService $medicalRecords,
     ) {}
 
     public function index(Request $request): View
@@ -35,10 +37,19 @@ class ClinicVisitController extends Controller
             'visit_date' => $request->string('visit_date')->toString() ?: null,
         ];
 
+        $rmeWidgets = [
+            'visits_today' => $this->visits->visitsTodayCount(),
+            'waiting' => $this->visits->waitingCount(),
+            'in_progress' => $this->visits->inProgressCount(),
+            'draft_medical_records' => $this->medicalRecords->draftCount(),
+            'finalized_today' => $this->medicalRecords->finalizedTodayCount(),
+        ];
+
         return view('rme.visits.index', [
             'visits' => $this->visits->paginate($filters),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
+            'rmeWidgets' => $rmeWidgets,
         ]);
     }
 

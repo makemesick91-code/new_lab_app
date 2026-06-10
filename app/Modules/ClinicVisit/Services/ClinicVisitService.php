@@ -55,6 +55,30 @@ class ClinicVisitService
         return DB::transaction(fn () => $this->visits->update($visit, $data));
     }
 
+    public function visitsTodayCount(): int
+    {
+        return $this->visits->countTodayByBranch(
+            $this->branchContext->requireId(),
+            Carbon::today()->toDateString(),
+        );
+    }
+
+    public function waitingCount(): int
+    {
+        return $this->visits->countByBranchStatus(
+            $this->branchContext->requireId(),
+            ClinicVisit::STATUS_WAITING,
+        );
+    }
+
+    public function inProgressCount(): int
+    {
+        return $this->visits->countByBranchStatus(
+            $this->branchContext->requireId(),
+            ClinicVisit::STATUS_IN_PROGRESS,
+        );
+    }
+
     public function transitionStatus(ClinicVisit $visit, string $newStatus): ClinicVisit
     {
         $allowed = ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];

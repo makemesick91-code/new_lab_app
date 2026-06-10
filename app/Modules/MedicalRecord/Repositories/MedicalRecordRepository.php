@@ -34,6 +34,23 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
         return MedicalRecord::query()->where('clinic_visit_id', $clinicVisitId)->first();
     }
 
+    public function countByBranchStatus(int $branchId, string $status): int
+    {
+        return MedicalRecord::query()
+            ->where('branch_id', $branchId)
+            ->where('status', $status)
+            ->count();
+    }
+
+    public function countFinalizedTodayByBranch(int $branchId, string $date): int
+    {
+        return MedicalRecord::query()
+            ->where('branch_id', $branchId)
+            ->where('status', MedicalRecord::STATUS_FINAL)
+            ->whereDate('finalized_at', $date)
+            ->count();
+    }
+
     public function create(array $data): MedicalRecord
     {
         return MedicalRecord::create($data);
