@@ -11,81 +11,16 @@
         $upperLeft  = [21, 22, 23, 24, 25, 26, 27, 28]; // Q2 center-to-left
         $lowerRight = [48, 47, 46, 45, 44, 43, 42, 41]; // Q4 right-to-center
         $lowerLeft  = [31, 32, 33, 34, 35, 36, 37, 38]; // Q3 center-to-left
+
+        $odontogramEditorConfig = [
+            'canEdit' => $canUpdate,
+            'teeth' => (array) $teethData,
+        ];
     @endphp
 
     <div
         class="space-y-6"
-        x-data="{
-            activeStatus: 'caries',
-            canEdit: @json($canUpdate),
-            teeth: @json($teethData),
-            selectedTooth: null,
-            toothNote: '',
-
-            clickTooth(num) {
-                const key = String(num);
-                // Always select the tooth so the panel appears (read-only users can inspect too)
-                if (this.selectedTooth !== num) {
-                    this.selectedTooth = num;
-                    this.toothNote = (this.teeth[key] && this.teeth[key].note) ? this.teeth[key].note : '';
-                }
-                if (! this.canEdit) return;
-                const current = this.teeth[key] ? this.teeth[key].status : null;
-                const existingNote = this.teeth[key] ? (this.teeth[key].note || '') : '';
-                const existingConditions = (this.teeth[key] && Array.isArray(this.teeth[key].conditions)) ? this.teeth[key].conditions : [];
-                if (current === this.activeStatus) {
-                    const copy = Object.assign({}, this.teeth);
-                    delete copy[key];
-                    this.teeth = copy;
-                    this.toothNote = '';
-                } else {
-                    this.teeth = Object.assign({}, this.teeth, {
-                        [key]: { status: this.activeStatus, note: existingNote, conditions: existingConditions }
-                    });
-                }
-            },
-
-            syncNote() {
-                if (! this.canEdit || this.selectedTooth === null) return;
-                const key = String(this.selectedTooth);
-                if (! this.teeth[key]) return;
-                this.teeth[key].note = this.toothNote;
-            },
-
-            hasCondition(condition) {
-                const key = String(this.selectedTooth);
-                if (! this.teeth[key]) return false;
-                const conds = this.teeth[key].conditions;
-                return Array.isArray(conds) && conds.includes(condition);
-            },
-
-            toggleCondition(condition) {
-                if (! this.canEdit || this.selectedTooth === null) return;
-                const key = String(this.selectedTooth);
-                if (! this.teeth[key]) return;
-                const current = Array.isArray(this.teeth[key].conditions) ? this.teeth[key].conditions : [];
-                const idx = current.indexOf(condition);
-                const updated = idx === -1 ? [...current, condition] : current.filter((_, i) => i !== idx);
-                this.teeth[key] = Object.assign({}, this.teeth[key], { conditions: updated });
-            },
-
-            cellClass(num) {
-                const s = this.teeth[String(num)] ? this.teeth[String(num)].status : null;
-                const base = this.canEdit
-                    ? 'cursor-pointer hover:opacity-75 active:scale-95 '
-                    : 'cursor-pointer hover:opacity-60 ';
-                if (s === 'caries')       return base + 'bg-red-200 text-red-900 ring-red-400';
-                if (s === 'missing')      return base + 'bg-gray-800 text-white ring-gray-600';
-                if (s === 'crown')        return base + 'bg-amber-200 text-amber-900 ring-amber-400';
-                if (s === 'root_treated') return base + 'bg-sky-200 text-sky-900 ring-sky-400';
-                if (s === 'normal')       return base + 'bg-green-100 text-green-900 ring-green-400';
-                return base + 'bg-white text-gray-600 ring-gray-200';
-            },
-
-            getPayload() {
-                return JSON.stringify({ teeth: this.teeth });
-            }
-        }"
+        x-data="odontogramEditor(@js($odontogramEditorConfig))"
     >
 
         {{-- Flash --}}
