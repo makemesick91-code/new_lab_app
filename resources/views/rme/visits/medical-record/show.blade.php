@@ -51,6 +51,10 @@
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
                         <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
                     </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                    </div>
                 @endif
             </dl>
 
@@ -58,6 +62,7 @@
                 $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
                 $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
                 $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
+                $hasHandwriting = $medicalRecord->hasHandwriting();
             @endphp
 
             @if ($isDraft && $canUpdate)
@@ -254,13 +259,27 @@
 
             {{-- Finalize form: draft only, manager only --}}
             @if ($isDraft && $canFinalize)
-                <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
-                    @csrf
-                    <button type="submit"
-                            class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">
+                @if (! $hasHandwriting)
+                    <div class="rounded-md bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800">
+                        RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
+                    </div>
+                    <button type="button" disabled
+                            class="inline-flex items-center rounded-md bg-gray-300 px-3 py-2 text-sm font-medium text-gray-500 cursor-not-allowed">
                         Finalisasi
                     </button>
-                </form>
+                @else
+                    <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
+                        @csrf
+                        <button type="submit"
+                                class="inline-flex items-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">
+                            Finalisasi
+                        </button>
+                    </form>
+                @endif
+            @elseif (! $isDraft)
+                <div class="rounded-md bg-green-50 border border-green-300 px-4 py-3 text-sm text-green-800 font-medium">
+                    Rekam Medis ini telah difinalkan dan tidak dapat diubah.
+                </div>
             @endif
 
             <div class="border-t pt-4">

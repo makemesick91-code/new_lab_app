@@ -136,10 +136,22 @@ it('canFinalizeRme returns false for finalized record', function () {
     expect($service->canFinalizeRme($this->record->fresh()))->toBeFalse();
 });
 
-it('canFinalizeRme returns true for draft record', function () {
+it('canFinalizeRme returns true for draft record with handwriting', function () {
     $service = app(MedicalRecordService::class);
 
-    expect($service->canFinalizeRme($this->record))->toBeTrue();
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+    ]);
+
+    expect($service->canFinalizeRme($this->record->fresh()))->toBeTrue();
+});
+
+it('canFinalizeRme returns false for draft record without handwriting', function () {
+    $service = app(MedicalRecordService::class);
+
+    expect($service->canFinalizeRme($this->record))->toBeFalse();
 });
 
 it('hasRequiredHandwriting returns false when no handwriting', function () {

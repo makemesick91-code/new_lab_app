@@ -32,7 +32,7 @@ class MedicalRecord extends Model
     protected $fillable = [
         'clinic_visit_id', 'branch_id', 'patient_id', 'doctor_id',
         'subjective', 'objective', 'assessment', 'plan', 'notes',
-        'status', 'recorded_by', 'finalized_at',
+        'status', 'recorded_by', 'finalized_at', 'finalized_by',
     ];
 
     protected $casts = [
@@ -62,6 +62,11 @@ class MedicalRecord extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    public function finalizedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'finalized_by');
     }
 
     public function handwriting(): HasOne

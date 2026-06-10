@@ -4,9 +4,11 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,6 +17,7 @@ class MedicalRecordService
     public function __construct(
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly BranchContext $branchContext,
+        private readonly ClinicVisitService $visitService,
     ) {}
 
     /** @param array<string, mixed> $filters */
@@ -90,10 +93,24 @@ class MedicalRecordService
                 return $medicalRecord;
             }
 
-            return $this->medicalRecords->update($medicalRecord, [
+            if (! $this->hasRequiredHandwriting($medicalRecord)) {
+                throw ValidationException::withMessages([
+                    'handwriting' => 'RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.',
+                ]);
+            }
+
+            $finalized = $this->medicalRecords->update($medicalRecord, [
                 'status' => MedicalRecord::STATUS_FINAL,
                 'finalized_at' => now(),
+                'finalized_by' => Auth::id(),
             ]);
+
+            $visit = $medicalRecord->clinicVisit;
+            if ($visit && $visit->status === ClinicVisit::STATUS_IN_PROGRESS) {
+                $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
+            }
+
+            return $finalized;
         });
     }
 
@@ -140,7 +157,6 @@ class MedicalRecordService
             return false;
         }
 
-        // TODO Phase 1.9: enforce hasRequiredHandwriting() before allowing finalization.
-        return true;
+        return $this->hasRequiredHandwriting($medicalRecord);
     }
 }

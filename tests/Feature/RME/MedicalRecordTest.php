@@ -5,6 +5,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use Database\Seeders\BranchSeeder;
@@ -147,6 +148,12 @@ it('service can finalize draft medical record', function () {
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
 
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $draft->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
     $final = $service->finalize($draft);
 
     expect($final->status)->toBe(MedicalRecord::STATUS_FINAL);
@@ -161,6 +168,13 @@ it('finalize is idempotent when record is already final', function () {
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $draft->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
     $service->finalize($draft);
 
     $finalAgain = $service->finalize($draft->refresh());
@@ -337,6 +351,12 @@ it('manager can finalize draft medical record', function () {
         'branch_id' => $branch->id,
         'patient_id' => $visit->patient_id,
         'doctor_id' => $visit->doctor_id,
+    ]);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
     ]);
 
     $this->actingAs($manager)
@@ -536,6 +556,13 @@ it('finalize sets finalized_at', function () {
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $draft->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
     $final = $service->finalize($draft);
 
     expect($final->finalized_at)->not->toBeNull();
@@ -555,6 +582,13 @@ it('finalize does not overwrite finalized_at when already final', function () {
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $draft->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
     $first = $service->finalize($draft);
     $originalFinalizedAt = $first->fresh()->finalized_at;
 

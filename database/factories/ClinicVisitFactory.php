@@ -69,4 +69,13 @@ class ClinicVisitFactory extends Factory
             'cancelled_at' => now(),
         ]);
     }
+
+    public function cashierPending(): static
+    {
+        return $this->state(fn () => [
+            'status' => ClinicVisit::STATUS_CASHIER_PENDING,
+            'check_in_at' => now()->subHour(),
+            'started_at' => now()->subHour(),
+        ]);
+    }
 }

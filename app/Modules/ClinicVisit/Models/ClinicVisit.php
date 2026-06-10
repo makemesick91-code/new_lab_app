@@ -32,10 +32,13 @@ class ClinicVisit extends Model
 
     public const STATUS_CANCELLED = 'cancelled';
 
+    public const STATUS_CASHIER_PENDING = 'cashier_pending';
+
     public const STATUSES = [
         self::STATUS_REGISTERED,
         self::STATUS_WAITING,
         self::STATUS_IN_PROGRESS,
+        self::STATUS_CASHIER_PENDING,
         self::STATUS_COMPLETED,
         self::STATUS_CANCELLED,
     ];
@@ -43,7 +46,8 @@ class ClinicVisit extends Model
     public const VALID_TRANSITIONS = [
         self::STATUS_REGISTERED => [self::STATUS_WAITING, self::STATUS_CANCELLED],
         self::STATUS_WAITING => [self::STATUS_IN_PROGRESS, self::STATUS_CANCELLED],
-        self::STATUS_IN_PROGRESS => [self::STATUS_COMPLETED, self::STATUS_CANCELLED],
+        self::STATUS_IN_PROGRESS => [self::STATUS_CASHIER_PENDING, self::STATUS_COMPLETED, self::STATUS_CANCELLED],
+        self::STATUS_CASHIER_PENDING => [self::STATUS_COMPLETED],
         self::STATUS_COMPLETED => [],
         self::STATUS_CANCELLED => [],
     ];
