@@ -23,6 +23,16 @@ class RmeInvoicePolicy
         return $this->canManage($user);
     }
 
+    public function pay(User $user, RmeInvoice $invoice): bool
+    {
+        return $this->canManage($user) && $this->belongsToActiveBranch($invoice->branch_id);
+    }
+
+    public function viewReceipt(User $user, RmeInvoice $invoice): bool
+    {
+        return $this->canManage($user) && $this->belongsToActiveBranch($invoice->branch_id);
+    }
+
     private function canManage(User $user): bool
     {
         return $user->can('manage_rme_billing');

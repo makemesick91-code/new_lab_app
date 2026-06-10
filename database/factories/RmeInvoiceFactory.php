@@ -42,6 +42,13 @@ class RmeInvoiceFactory extends Factory
         ]);
     }
 
+    public function paid(): static
+    {
+        return $this->state(fn () => [
+            'status' => RmeInvoice::STATUS_PAID,
+        ]);
+    }
+
     public function void(): static
     {
         return $this->state(fn () => [

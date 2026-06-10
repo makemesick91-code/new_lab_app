@@ -22,11 +22,14 @@ class RmeInvoice extends Model
 
     public const STATUS_UNPAID = 'UNPAID';
 
+    public const STATUS_PAID = 'PAID';
+
     public const STATUS_VOID = 'VOID';
 
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_UNPAID,
+        self::STATUS_PAID,
         self::STATUS_VOID,
     ];
 
@@ -90,6 +93,11 @@ class RmeInvoice extends Model
         return $this->hasMany(RmeInvoiceItem::class);
     }
 
+    public function payments(): HasMany
+    {
+        return $this->hasMany(RmePayment::class);
+    }
+
     public function recalculateTotals(): void
     {
         $subtotal = $this->items->sum('subtotal');
@@ -97,6 +105,21 @@ class RmeInvoice extends Model
         $this->subtotal = $subtotal;
         $this->discount_total = $discountTotal;
         $this->grand_total = $subtotal - $discountTotal;
+    }
+
+    public function paidAmount(): float
+    {
+        return (float) $this->payments()->sum('amount');
+    }
+
+    public function remainingAmount(): float
+    {
+        return max(0, round((float) $this->grand_total - $this->paidAmount(), 2));
+    }
+
+    public function isPaid(): bool
+    {
+        return $this->status === self::STATUS_PAID;
     }
 
     public function isActive(): bool

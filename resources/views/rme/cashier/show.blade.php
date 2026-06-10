@@ -3,6 +3,7 @@
         $statusBadge = [
             'DRAFT'  => 'bg-gray-100 text-gray-700',
             'UNPAID' => 'bg-amber-50 text-amber-700',
+            'PAID'   => 'bg-green-50 text-green-700',
             'VOID'   => 'bg-red-50 text-red-700',
         ];
     @endphp
@@ -113,7 +114,16 @@
                 &larr; Kembali ke Daftar
             </a>
             @if ($invoice->status === 'UNPAID')
-                <span class="text-sm text-amber-600 font-medium">Menunggu pembayaran (fitur pembayaran akan tersedia di fase berikutnya)</span>
+                <a href="{{ route('rme.cashier.payment.create', [$visit, $invoice]) }}"
+                    class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700">
+                    Bayar Sekarang
+                </a>
+            @endif
+            @if ($invoice->status === 'PAID')
+                <a href="{{ route('rme.cashier.receipt.show', [$visit, $invoice]) }}"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-md hover:bg-indigo-700">
+                    Lihat Kwitansi
+                </a>
             @endif
         </div>
     </div>

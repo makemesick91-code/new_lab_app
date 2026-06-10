@@ -1,0 +1,71 @@
+<?php
+
+namespace App\Modules\RmeInvoice\Controllers;
+
+use App\Http\Controllers\Controller;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\PaymentMethod\Services\PaymentMethodService;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
+use App\Modules\RmeInvoice\Services\RmePaymentService;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class RmePaymentController extends Controller
+{
+    use AuthorizesRequests;
+
+    public function __construct(
+        private readonly RmePaymentService $service,
+        private readonly PaymentMethodService $paymentMethods,
+    ) {}
+
+    public function create(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
+    {
+        $this->authorize('pay', $rmeInvoice);
+
+        if ($rmeInvoice->status !== RmeInvoice::STATUS_UNPAID) {
+            return redirect()
+                ->route('rme.cashier.show', [$clinicVisit, $rmeInvoice])
+                ->with('error', 'Invoice ini tidak dapat dibayar (status: '.$rmeInvoice->status.').');
+        }
+
+        return view('rme.cashier.payment.create', [
+            'visit' => $clinicVisit->load(['patient', 'doctor']),
+            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier']),
+            'paymentMethods' => $this->paymentMethods->listActive(),
+        ]);
+    }
+
+    public function store(CreateRmePaymentRequest $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): RedirectResponse
+    {
+        $this->authorize('pay', $rmeInvoice);
+
+        $payment = $this->service->pay($rmeInvoice, $request->user(), $request->validated());
+
+        return redirect()
+            ->route('rme.cashier.receipt.show', [$clinicVisit, $rmeInvoice])
+            ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
+    }
+
+    public function receipt(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
+    {
+        $this->authorize('viewReceipt', $rmeInvoice);
+
+        if ($rmeInvoice->status !== RmeInvoice::STATUS_PAID) {
+            return redirect()
+                ->route('rme.cashier.show', [$clinicVisit, $rmeInvoice])
+                ->with('error', 'Kwitansi hanya tersedia untuk invoice yang sudah PAID.');
+        }
+
+        $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();
+
+        return view('rme.cashier.receipt.show', [
+            'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment']),
+            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'branch']),
+            'payment' => $payment,
+        ]);
+    }
+}

@@ -157,9 +157,11 @@ use App\Modules\Reporting\Interfaces\ReportingRepositoryInterface;
 use App\Modules\Reporting\Policies\ReportingPolicy;
 use App\Modules\Reporting\Repositories\ReportingRepository;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
+use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
+use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Tariff\Policies\TariffPolicy;
@@ -263,6 +265,8 @@ class RepositoryServiceProvider extends ServiceProvider
         MedicalRecordHandwritingRepositoryInterface::class => MedicalRecordHandwritingRepository::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoiceRepositoryInterface::class => RmeInvoiceRepository::class,
+        // Sprint 20 Phase 1.11 — RME Payment
+        RmePaymentRepositoryInterface::class => RmePaymentRepository::class,
     ];
 
     /**

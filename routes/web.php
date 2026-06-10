@@ -50,6 +50,7 @@ use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardC
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
+use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -234,6 +235,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/create', [RmeInvoiceController::class, 'create'])->name('cashier.create');
         Route::post('cashier/{clinicVisit}/billing', [RmeInvoiceController::class, 'store'])->name('cashier.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/payment/create', [RmePaymentController::class, 'create'])->name('cashier.payment.create');
+        Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/payment', [RmePaymentController::class, 'store'])->name('cashier.payment.store');
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt', [RmePaymentController::class, 'receipt'])->name('cashier.receipt.show');
     });
 });
 
