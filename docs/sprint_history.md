@@ -2820,6 +2820,110 @@ All 35 Phase 1.3.1+1.3.2 tests retained and passing (48 total, 122 assertions).
 
 ---
 
+## Sprint 20 Phase 1.4 — Odontogram Per-Tooth Notes Foundation
+
+### Summary
+
+Adds a simple free-text note field to each tooth entry in `tooth_map_payload`. When a manager clicks a tooth on the interactive FDI map, a small panel appears below the grid showing the tooth number, its status badge, and an editable textarea (max 1 000 chars). The note is serialised inside the existing JSONB column — no schema migration is required. Finalized odontograms remain fully immutable.
+
+### Scope
+
+- **`UpdateOdontogramPlaceholderRequest`**: added `tooth_map_payload.teeth.*.note` rule (`nullable|string|max:1000`). FDI whitelist and status enum validation unchanged.
+- **`OdontogramService::updatePlaceholder()`**: no changes required — `tooth_map_payload` is already passed through as an opaque array; the `note` field travels inside it.
+- **`show.blade.php`**: Alpine.js `x-data` extended with `selectedTooth`, `toothNote`, `clickTooth()` (now sets `selectedTooth` before the `canEdit` guard so viewers can inspect too), `syncNote()` (keeps `toothNote` ↔ `teeth[key].note` in sync on every keypress). Per-tooth note panel rendered after the tooth grid, inside the Tooth Map card. Read-only users see the note as plain text; managers see a textarea. Tooth buttons now show `cursor-pointer` for both edit and read-only modes. No new JS dependencies.
+
+### JSON Format
+
+```json
+{
+  "teeth": {
+    "11": {
+      "status": "caries",
+      "note": "Karies oklusal ringan"
+    },
+    "21": {
+      "status": "crown",
+      "note": ""
+    }
+  }
+}
+```
+
+`note` is optional per-tooth. Existing payloads without `note` continue to work.
+
+### Validation Rules
+
+| Field | Rule |
+|---|---|
+| `tooth_map_payload` | `nullable\|array` |
+| `tooth_map_payload.teeth` | `nullable\|array` |
+| `tooth_map_payload.teeth.*` | `nullable\|array` |
+| `tooth_map_payload.teeth.*.status` | `nullable\|string\|in:normal,caries,missing,crown,root_treated` |
+| `tooth_map_payload.teeth.*.note` | `nullable\|string\|max:1000` |
+| `summary_notes` | `nullable\|string\|max:5000` |
+| tooth number keys | must be valid FDI numbers: 11–18, 21–28, 31–38, 41–48 |
+
+### Permission Behaviour
+
+| Action | Required permission | Extra condition |
+|---|---|---|
+| view (+ inspect note panel) | `view_clinic_visits` OR `manage_clinic_visits` | same active branch |
+| save note | `manage_clinic_visits` | same branch + status draft |
+| finalize | `manage_clinic_visits` | same active branch |
+
+Viewer can click teeth to read notes but cannot edit. Cross-branch access is 403 at the policy layer.
+
+### Immutable Finalized Rule
+
+`OdontogramPolicy::update()` returns `false` for finalized odontograms → any PATCH (including one carrying a `note`) results in HTTP 403. `OdontogramService::updatePlaceholder()` additionally throws `ValidationException` if called directly on a finalized odontogram. No separate note-specific gate is needed.
+
+### Tests (Phase 1.4 additions — 9 new tests, 57 total)
+
+| Test | Coverage |
+|---|---|
+| manager can save per-tooth note | HTTP happy path |
+| per-tooth note is persisted alongside status | DB persistence |
+| per-tooth note of exactly 1000 chars is accepted | max boundary |
+| per-tooth note exceeding 1000 chars is rejected | max boundary violation |
+| per-tooth note can be null | nullable |
+| viewer cannot update per-tooth note | permission denial |
+| cross-branch user cannot update per-tooth note | branch isolation |
+| finalized odontogram cannot update per-tooth note via HTTP | HTTP immutability |
+| existing tooth status update still works after phase 1.4 | regression check |
+
+All 48 Phase 1.3.1+1.3.2+1.3.3 tests retained and passing (57 total, 141 assertions).
+
+### Out of Scope
+
+- No canvas/SVG tooth map.
+- No handwriting tablet.
+- No treatment plan or treatment plan linking.
+- No ICD-10 structured field.
+- No PDF export.
+- No lab workflow integration.
+- No payment/billing.
+- No new permissions or roles.
+- No schema migration (note lives inside existing JSONB column).
+- HR, Inventory, Procurement, Payment, Cicilan, Lab Workflow untouched.
+
+### Next Phase Suggestion
+
+**Sprint 20 Phase 1.5 — Odontogram Multi-Condition or Treatment Plan Link**
+- Support multiple conditions per tooth (e.g. both `caries` and `crown`)
+- Or: link odontogram tooth conditions to a treatment plan line
+- Or: RME PDF export / print view
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-4-odontogram-per-tooth-notes` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -3125,6 +3229,7 @@ All 35 Phase 1.3.1+1.3.2 tests retained and passing (48 total, 122 assertions).
   branch isolation via `BranchContext::requireId()` and `OdontogramPolicy`; `view_clinic_visits`/
   `manage_clinic_visits` as the permission pair (no new permissions); no canvas/SVG/interactive
   tooth map in this phase; interactive chart deferred to Phase 1.3.2.
+- **Sprint 20 Phase 1.4 completed baseline — Odontogram Per-Tooth Notes:** Future changes must preserve `tooth_map_payload.teeth.*.note` as a `nullable|string|max:1000` field inside the existing JSONB column (no schema migration); `note` is optional per tooth — absence is valid; finalized odontograms remain immutable (policy + service layer both guard); no new permissions or roles introduced; `note` is editable only when status is `draft` and user has `manage_clinic_visits`; `summary_notes` and FDI whitelist rules unchanged.
 - **Sprint 20 Phase 1.3.3 completed baseline — Odontogram Finalize:** Future changes must preserve
   `draft → finalized` as a one-way, irreversible status transition; `finalize()` idempotent (returns
   existing record if already finalized, never duplicates); `finalized_at` and `finalized_by` set
@@ -3173,9 +3278,10 @@ hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, T
 Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
 `settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`) ·
 `MedicalRecord, ClinicVisit` (S20 Phase 1.2, RME core under `rme.*` routes, permissions
-`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.3, finalize workflow,
-table `trx_odontograms`, status `draft→finalized`, `finalized_at`/`finalized_by` columns, policy-
-and service-layer immutability after finalization, 32-tooth FDI interactive map, Draft/Final badge,
+`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.3–1.4, finalize
+workflow + per-tooth notes, table `trx_odontograms`, status `draft→finalized`,
+`finalized_at`/`finalized_by` columns, policy- and service-layer immutability after finalization,
+32-tooth FDI interactive map, Draft/Final badge, per-tooth note panel (JSONB, max 1 000 chars),
 reuses `view_clinic_visits`/`manage_clinic_visits`).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
@@ -3189,4 +3295,4 @@ Constraints above are binding.
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.3.3 (Odontogram Finalize, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.4 (Odontogram Per-Tooth Notes, 2026-06-10) and must be updated as each new sprint completes.*

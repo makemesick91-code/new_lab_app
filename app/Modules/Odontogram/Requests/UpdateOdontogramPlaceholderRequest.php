@@ -32,6 +32,7 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
             'tooth_map_payload.teeth' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*.status' => ['nullable', 'string', 'in:normal,caries,missing,crown,root_treated'],
+            'tooth_map_payload.teeth.*.note' => ['nullable', 'string', 'max:1000'],
         ];
     }
 

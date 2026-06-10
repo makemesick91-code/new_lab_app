@@ -19,29 +19,49 @@
             activeStatus: 'caries',
             canEdit: @json($canUpdate),
             teeth: @json($teethData),
+            selectedTooth: null,
+            toothNote: '',
 
             clickTooth(num) {
-                if (! this.canEdit) return;
                 const key = String(num);
+                // Always select the tooth so the panel appears (read-only users can inspect too)
+                if (this.selectedTooth !== num) {
+                    this.selectedTooth = num;
+                    this.toothNote = (this.teeth[key] && this.teeth[key].note) ? this.teeth[key].note : '';
+                }
+                if (! this.canEdit) return;
                 const current = this.teeth[key] ? this.teeth[key].status : null;
+                const existingNote = this.teeth[key] ? (this.teeth[key].note || '') : '';
                 if (current === this.activeStatus) {
                     const copy = Object.assign({}, this.teeth);
                     delete copy[key];
                     this.teeth = copy;
+                    this.toothNote = '';
                 } else {
-                    this.teeth = Object.assign({}, this.teeth, { [key]: { status: this.activeStatus } });
+                    this.teeth = Object.assign({}, this.teeth, {
+                        [key]: { status: this.activeStatus, note: existingNote }
+                    });
                 }
+            },
+
+            syncNote() {
+                if (! this.canEdit || this.selectedTooth === null) return;
+                const key = String(this.selectedTooth);
+                if (! this.teeth[key]) return;
+                this.teeth[key].note = this.toothNote;
             },
 
             cellClass(num) {
                 const s = this.teeth[String(num)] ? this.teeth[String(num)].status : null;
-                const cur = this.canEdit ? 'cursor-pointer hover:opacity-75 active:scale-95 ' : 'cursor-default ';
-                if (s === 'caries')       return cur + 'bg-red-200 text-red-900 ring-red-400';
-                if (s === 'missing')      return cur + 'bg-gray-800 text-white ring-gray-600';
-                if (s === 'crown')        return cur + 'bg-amber-200 text-amber-900 ring-amber-400';
-                if (s === 'root_treated') return cur + 'bg-sky-200 text-sky-900 ring-sky-400';
-                if (s === 'normal')       return cur + 'bg-green-100 text-green-900 ring-green-400';
-                return cur + 'bg-white text-gray-600 ring-gray-200';
+                const base = this.canEdit
+                    ? 'cursor-pointer hover:opacity-75 active:scale-95 '
+                    : 'cursor-pointer hover:opacity-60 ';
+                if (s === 'caries')       return base + 'bg-red-200 text-red-900 ring-red-400';
+                if (s === 'missing')      return base + 'bg-gray-800 text-white ring-gray-600';
+                if (s === 'crown')        return base + 'bg-amber-200 text-amber-900 ring-amber-400';
+                if (s === 'root_treated') return base + 'bg-sky-200 text-sky-900 ring-sky-400';
+                if (s === 'normal')       return base + 'bg-green-100 text-green-900 ring-green-400';
+                return base + 'bg-white text-gray-600 ring-gray-200';
             },
 
             getPayload() {
@@ -276,6 +296,63 @@
 
                     </div>
                 </div>
+
+                {{-- Per-tooth note panel — appears when a tooth is selected --}}
+                <div x-show="selectedTooth !== null" class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <p class="text-sm font-semibold text-gray-800">
+                            Gigi <span x-text="selectedTooth"></span>
+                            <span
+                                x-show="teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status"
+                                class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
+                                :class="{
+                                    'bg-red-100 text-red-700 ring-red-300':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'caries',
+                                    'bg-gray-700 text-white ring-gray-500':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'missing',
+                                    'bg-amber-100 text-amber-700 ring-amber-300': teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'crown',
+                                    'bg-sky-100 text-sky-700 ring-sky-300':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'root_treated',
+                                    'bg-green-100 text-green-700 ring-green-300': teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'normal',
+                                }"
+                                x-text="teeth[String(selectedTooth)] ? teeth[String(selectedTooth)].status : ''">
+                            </span>
+                        </p>
+                        <button type="button" @click="selectedTooth = null"
+                                class="text-xs text-gray-400 hover:text-gray-700 focus:outline-none">&#10005; Tutup</button>
+                    </div>
+
+                    {{-- Tooth has a status: show note area --}}
+                    <div x-show="teeth[String(selectedTooth)]">
+                        @if ($canUpdate)
+                            <label class="block text-xs font-medium text-gray-600 mb-1">
+                                Catatan Gigi <span class="text-gray-400 font-normal">(maks. 1000 karakter)</span>
+                            </label>
+                            <textarea
+                                x-model="toothNote"
+                                @input="syncNote()"
+                                rows="3"
+                                maxlength="1000"
+                                placeholder="Catatan untuk gigi ini…"
+                                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                            </textarea>
+                        @else
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Catatan Gigi</label>
+                            <p class="text-sm text-gray-700 whitespace-pre-wrap min-h-[2rem]"
+                               x-text="(teeth[String(selectedTooth)] && teeth[String(selectedTooth)].note) ? teeth[String(selectedTooth)].note : '—'">
+                            </p>
+                        @endif
+                    </div>
+
+                    {{-- Tooth has no status yet --}}
+                    <div x-show="!teeth[String(selectedTooth)]">
+                        <p class="text-xs text-gray-400 italic">
+                            @if ($canUpdate)
+                                Pilih status di atas lalu klik gigi untuk memberi tanda, kemudian tambahkan catatan.
+                            @else
+                                Gigi ini belum ditandai.
+                            @endif
+                        </p>
+                    </div>
+                </div>
+
             </div>
         </div>
 

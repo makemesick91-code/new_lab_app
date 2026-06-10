@@ -750,3 +750,196 @@ it('draft odontogram page shows draft badge', function () {
         ->assertOk()
         ->assertSee('Draft');
 });
+
+// ============================================================
+// Sprint 20 Phase 1.4 — Per-Tooth Notes Foundation
+// ============================================================
+
+// --- Happy path: note saved alongside status ---
+
+it('manager can save per-tooth note', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'caries', 'note' => 'Karies oklusal ringan']]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect(route('rme.visits.odontogram.show', $visit));
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->tooth_map_payload['teeth']['11']['note'])->toBe('Karies oklusal ringan');
+});
+
+it('per-tooth note is persisted in tooth_map_payload alongside status', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = [
+        'teeth' => [
+            '11' => ['status' => 'caries', 'note' => 'Karies oklusal'],
+            '21' => ['status' => 'crown', 'note' => ''],
+        ],
+    ];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect();
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->tooth_map_payload['teeth']['11']['status'])->toBe('caries')
+        ->and($fresh->tooth_map_payload['teeth']['11']['note'])->toBe('Karies oklusal')
+        ->and($fresh->tooth_map_payload['teeth']['21']['status'])->toBe('crown')
+        ->and($fresh->tooth_map_payload['teeth']['21']['note'])->toBe('');
+});
+
+// --- Note length validation ---
+
+it('per-tooth note of exactly 1000 chars is accepted', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'caries', 'note' => str_repeat('a', 1000)]]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect();
+});
+
+it('per-tooth note exceeding 1000 chars is rejected', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'caries', 'note' => str_repeat('a', 1001)]]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertSessionHasErrors('tooth_map_payload.teeth.11.note');
+});
+
+it('per-tooth note can be null', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'caries', 'note' => null]]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect();
+});
+
+// --- Permission: viewer cannot update note ---
+
+it('viewer cannot update per-tooth note', function () {
+    $viewer = userWith(['view_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $this->actingAs($viewer)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode(['teeth' => ['11' => ['status' => 'caries', 'note' => 'test']]]),
+        ])
+        ->assertForbidden();
+});
+
+// --- Permission: cross-branch cannot update note ---
+
+it('cross-branch user cannot update per-tooth note', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $otherBranch = Branch::factory()->create();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $otherBranch->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode(['teeth' => ['11' => ['status' => 'caries', 'note' => 'test']]]),
+        ])
+        ->assertForbidden();
+});
+
+// --- Immutability: finalized odontogram cannot receive note update ---
+
+it('finalized odontogram cannot update per-tooth note via HTTP', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'finalized_at' => now(),
+        'finalized_by' => $manager->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode(['teeth' => ['11' => ['status' => 'caries', 'note' => 'test']]]),
+        ])
+        ->assertForbidden();
+});
+
+// --- Regression: status-only update still works after Phase 1.4 ---
+
+it('existing tooth status update still works after phase 1.4', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $branch->id,
+    ]);
+
+    $payload = ['teeth' => ['11' => ['status' => 'missing'], '31' => ['status' => 'root_treated']]];
+
+    $this->actingAs($manager)
+        ->patch(route('rme.odontograms.update', $odontogram), [
+            'tooth_map_payload' => json_encode($payload),
+        ])
+        ->assertRedirect(route('rme.visits.odontogram.show', $visit));
+
+    $fresh = $odontogram->fresh();
+    expect($fresh->tooth_map_payload['teeth']['11']['status'])->toBe('missing')
+        ->and($fresh->tooth_map_payload['teeth']['31']['status'])->toBe('root_treated');
+});
