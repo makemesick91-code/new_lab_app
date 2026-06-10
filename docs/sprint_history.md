@@ -3677,7 +3677,19 @@ php artisan test --filter=RmePayment
 - `docs/sprint_20_rme_limited_pilot_summary.md`: pilot operator guide.
 - `CLAUDE.md`: RME module quick reference.
 
+### Sprint 20 Post-Completion — Pilot Backup Import Tooling
+
+**Status:** COMPLETE. Branch `feature/sprint-20-rme-core`.
+
+Safe pilot backup import tooling for RME limited pilot testing:
+
+- Artisan command `rme:import-pilot-backup` with `--dry-run`, `--only`, `--limit`
+- Whitelisted master data only: `mst_branches`, `mst_doctors`, `mst_patients`, `mst_lab_services` (mapped to treatment/tariff)
+- No transaction restore; no roles/users/sessions; no old invoice/payment import
+- Parser reads PostgreSQL COPY blocks line-by-line; never executes raw SQL from dump
+- Guide: `docs/rme_pilot_backup_import_guide.md`
+
 ---
 
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.12 (RME Limited Pilot Hardening, 2026-06-10) and must be updated as each new sprint completes.*
+Sprint 20 Phase 1.12 + pilot backup import tooling (2026-06-10) and must be updated as each new sprint completes.*

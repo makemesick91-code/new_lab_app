@@ -22,6 +22,8 @@
 
 **Pilot doc:** `docs/sprint_20_rme_limited_pilot_summary.md`
 
+**Pilot master data import:** use `php artisan rme:import-pilot-backup` (see `docs/rme_pilot_backup_import_guide.md`). Never restore backup SQL directly over the Sprint 20 database.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
