@@ -8,6 +8,7 @@ use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use Database\Factories\ClinicVisitFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -105,6 +106,11 @@ class ClinicVisit extends Model
     public function medicalRecord(): HasOne
     {
         return $this->hasOne(MedicalRecord::class);
+    }
+
+    public function odontogram(): HasOne
+    {
+        return $this->hasOne(Odontogram::class);
     }
 
     protected static function newFactory(): ClinicVisitFactory

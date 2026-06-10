@@ -2448,6 +2448,141 @@ no changes to clinic master data modules.
 
 ---
 
+## Sprint 20 Phase 1.3.1 — Odontogram Placeholder Foundation
+
+**Status:** COMPLETE. Branch `feature/sprint-20-rme-core`, tag `sprint-20-phase-1-3-1-odontogram-placeholder`,
+completion date 2026-06-10.
+
+**Business objective:** Lay the data and HTTP foundation for the Odontogram feature — a placeholder
+record linked 1:1 to each ClinicVisit — without implementing the interactive tooth-map chart, SVG,
+canvas drawing, or any clinical diagnosis logic. The placeholder is idempotent, branch-safe, and
+ready to be extended in Sprint 20 Phase 1.3.2.
+
+### Scope
+
+- Database table `trx_odontograms` (unique `clinic_visit_id`, branch-scoped, JSON `tooth_map_payload`
+  reserved for future use, soft deletes).
+- Odontogram module: Model, Factory, Repository + Interface, Service, Policy, FormRequest, Controller.
+- Routes under `rme.*` prefix.
+- Blade view placeholder (no canvas/SVG/chart).
+- "Buka Odontogram" link in ClinicVisit show page (permission-gated).
+- `ClinicVisit` model extended with `odontogram()` hasOne relation.
+- 25 Pest tests proving auth, branch isolation, idempotency, validation, and UI presence.
+- sprint_history.md updated.
+
+### Tables Added
+
+| Table | Scope |
+|---|---|
+| `trx_odontograms` | Branch-scoped; unique `clinic_visit_id` |
+
+**Schema:**
+- `id`, `clinic_visit_id` (unique FK → `trx_clinic_visits`), `branch_id` (FK → `mst_branches`)
+- `medical_record_id` (nullable FK → `trx_medical_records`)
+- `status` string default `draft`
+- `summary_notes` nullable text
+- `tooth_map_payload` nullable jsonb
+- `created_by`, `updated_by` (nullable FK → `users`)
+- `timestamps`, `softDeletes`
+- Indexes: `(branch_id, status)`, `medical_record_id`
+
+### Module Added
+
+`app/Modules/Odontogram/` with:
+
+| File | Purpose |
+|---|---|
+| `Models/Odontogram.php` | Model with casts, relations, STATUS_DRAFT constant |
+| `Interfaces/OdontogramRepositoryInterface.php` | Repository contract |
+| `Repositories/OdontogramRepository.php` | `findByClinicVisit`, idempotent `createForClinicVisit`, `updatePlaceholder` |
+| `Services/OdontogramService.php` | `getOrCreateForVisit`, `updateNotes` with branch isolation |
+| `Policies/OdontogramPolicy.php` | view (view_clinic_visits+branch), update (manage_clinic_visits+branch) |
+| `Requests/UpdateOdontogramPlaceholderRequest.php` | `summary_notes` max:5000, `tooth_map_payload` array |
+| `Controllers/OdontogramController.php` | `show` (get-or-create), `update` (notes only) |
+
+**Factory:** `database/factories/OdontogramFactory.php`
+
+### Routes Added
+
+All under `rme.*` prefix with `auth` + `view_clinic_visits|manage_clinic_visits` middleware:
+
+| Method | URI | Name |
+|---|---|---|
+| GET | `rme/visits/{clinicVisit}/odontogram` | `rme.visits.odontogram.show` |
+| PATCH | `rme/odontograms/{odontogram}` | `rme.odontograms.update` (manage_clinic_visits required) |
+
+### Permission Rules
+
+Reuses existing Sprint 20 permissions — **no new permissions created**:
+
+- **View / open placeholder:** `view_clinic_visits` or `manage_clinic_visits` + active branch ownership.
+- **Update summary_notes:** `manage_clinic_visits` + active branch ownership.
+- **Branch isolation:** `BranchContext::requireId()` in service; policy denies cross-branch access.
+- Super Admin bypass remains centralized in `RepositoryServiceProvider`.
+
+### ClinicVisit Changes
+
+- `odontogram()` hasOne relation added to `ClinicVisit` model.
+- "Buka Odontogram" link added to `rme/visits/show.blade.php` (gated by `@can('create', [Odontogram, $visit])`).
+
+### Tests
+
+`tests/Feature/RME/OdontogramTest.php` — **25 tests, 45 assertions** (PASS):
+
+| Group | Tests |
+|---|---|
+| Model / factory / relation | factory create, default status, json cast, hasOne/belongsTo relations |
+| Service layer | getOrCreateForVisit creates, idempotent, cross-branch rejected, updateNotes, cross-branch update rejected |
+| HTTP show | manager OK, viewer OK, creates on first open, no duplicate on second open, unauthenticated redirect, cross-branch 403 |
+| HTTP update | manager updates, viewer 403, no-permission 403, cross-branch 403, max-length validation, null allowed |
+| UI | visit show page has "Buka Odontogram" link for authorized user |
+
+### Quality Gates
+
+| Gate | Result |
+|---|---|
+| `php artisan test --filter=Odontogram` | **PASS — 25 tests, 45 assertions** |
+| `php artisan test --filter=ClinicVisit` | **PASS — 37 tests, 126 assertions** |
+| `php artisan test` (full suite) | PASS — 1672 passed; 4 pre-existing ClinicMasterData failures unrelated to this phase |
+| `./vendor/bin/pint --dirty` | PASS — no changes |
+| `php artisan route:list \| grep odontogram` | PASS — 2 routes registered |
+
+### Architecture Notes
+
+- `clinic_visit_id` is unique on `trx_odontograms` — 1:1 relationship enforced at DB level.
+- `createForClinicVisit()` is idempotent: if a row already exists, it is returned unchanged.
+- `tooth_map_payload` reserved as nullable JSONB — accepted through `UpdateOdontogramPlaceholderRequest`
+  but no clinical logic operates on it in Phase 1.3.1.
+- Branch isolation follows the same pattern as `MedicalRecord`: `BranchContext::requireId()` in
+  service, `branch_id` on the record, policy denies cross-branch `view`/`update`.
+- Layering preserved: `Controller → Request → Service → Repository → Model`.
+
+### Explicit Out-of-Scope
+
+No interactive tooth map (canvas/SVG/chart), no per-tooth diagnosis codes, no ICD-10 dental codes,
+no treatment plan from odontogram, no billing, no cicilan, no lab prosthesis integration, no
+inventory/lab module changes, no new permissions, no new roles.
+
+### Next Phase Suggestion
+
+**Sprint 20 Phase 1.3.2 — Odontogram Tooth Map Draft UI**
+- Add tooth number constants (FDI notation 11–48) to the Odontogram model.
+- Alpine.js-based interactive tooth-map grid (click to mark status per tooth).
+- `tooth_map_payload` persisted as structured JSON via the existing PATCH endpoint.
+- Condition codes: normal, karies, missing, crown, root-treated (basic set only).
+- Visual-only status badges per tooth cell; no billing or ICD-10 integration.
+
+### Release Information
+
+| Field | Value |
+|---|---|
+| Branch | `feature/sprint-20-rme-core` |
+| Tag | `sprint-20-phase-1-3-1-odontogram-placeholder` |
+| Completion date | 2026-06-10 |
+| Status | COMPLETE |
+
+---
+
 # Architectural Decisions Timeline
 
 1. **S0** — Modular monolith; `Controller → Request → Service → Repository → Model`; central
@@ -2507,6 +2642,11 @@ no changes to clinic master data modules.
     via `BranchContext::requireId()` and `branch_id` filter in repository; draft/finalize workflow;
     idempotent `finalize()` never overwrites `finalized_at`; final record immutable after
     `finalized_at` is set; Viewer read-only, Manager may create/update/finalize.
+28. **S20 Phase 1.3.1** — `Odontogram` placeholder 1:1 with `ClinicVisit` via unique
+    `clinic_visit_id` FK; `trx_odontograms` branch-scoped; `createForClinicVisit()` is idempotent
+    (find-or-create); `tooth_map_payload` reserved as nullable JSONB for future tooth-map data;
+    reuses `view_clinic_visits`/`manage_clinic_visits` permissions (no new permissions); Viewer may
+    open, Manager may update `summary_notes`; interactive chart deferred to Phase 1.3.2.
 
 ---
 
@@ -2741,6 +2881,13 @@ no changes to clinic master data modules.
   `BranchContext::requireId()`; `view_clinic_visits` / `manage_clinic_visits` as the permission
   pair for all RME routes; no odontogram, no ICD-10 structured field, no PDF export, no lab
   workflow integration, no treatment/payment/cicilan in this phase.
+- **Sprint 20 Phase 1.3.1 completed baseline — Odontogram Placeholder Foundation:** Future changes
+  must preserve `Odontogram` 1:1 with `ClinicVisit` (unique `clinic_visit_id` FK on
+  `trx_odontograms`); `createForClinicVisit()` idempotent (find-or-create, never duplicate);
+  `tooth_map_payload` as nullable JSONB (no clinical logic operating on it until Phase 1.3.2+);
+  branch isolation via `BranchContext::requireId()` and `OdontogramPolicy`; `view_clinic_visits`/
+  `manage_clinic_visits` as the permission pair (no new permissions); no canvas/SVG/interactive
+  tooth map in this phase; interactive chart deferred to Phase 1.3.2.
 
 **Universal gate before any sprint starts:** answer (1) which module owns it, (2) which records are
 branch-owned, (3) which policies/permissions protect it, (4) which service owns the rule, (5) which
@@ -2780,7 +2927,9 @@ hardening, Purchase Request workflow, Purchase Order workflow) · `ClinicRoom, T
 Treatment, Tariff, PaymentMethod, WaReminderTemplate` (S19, clinic master data under
 `settings.*` routes, permissions `view_clinic_master_data` / `manage_clinic_master_data`) ·
 `MedicalRecord, ClinicVisit` (S20 Phase 1.2, RME core under `rme.*` routes, permissions
-`view_clinic_visits` / `manage_clinic_visits`).
+`view_clinic_visits` / `manage_clinic_visits`) · `Odontogram` (S20 Phase 1.3.1, placeholder
+foundation under `rme.*` routes, reuses `view_clinic_visits`/`manage_clinic_visits`, table
+`trx_odontograms` with unique `clinic_visit_id`, idempotent get-or-create, no tooth-map UI yet).
 
 **Roles:** Super Admin, Admin Lab, Technician, Quality Control, Delivery Coordinator, Courier,
 Finance, Doctor.

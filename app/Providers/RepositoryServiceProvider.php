@@ -119,6 +119,10 @@ use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Policies\MedicalRecordPolicy;
 use App\Modules\MedicalRecord\Repositories\MedicalRecordRepository;
+use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
+use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\Odontogram\Policies\OdontogramPolicy;
+use App\Modules\Odontogram\Repositories\OdontogramRepository;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Policies\PatientPolicy;
@@ -247,6 +251,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LocationProductMinimumRepositoryInterface::class => LocationProductMinimumRepository::class,
         // Sprint 20 Phase 1.2.2
         MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
+        // Sprint 20 Phase 1.3.1
+        OdontogramRepositoryInterface::class => OdontogramRepository::class,
     ];
 
     /**
@@ -309,6 +315,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisit::class => ClinicVisitPolicy::class,
         MedicalRecord::class => MedicalRecordPolicy::class,
+        // Sprint 20 Phase 1.3.1 — Odontogram Placeholder
+        Odontogram::class => OdontogramPolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,
         Treatment::class => TreatmentPolicy::class,
         Tariff::class => TariffPolicy::class,

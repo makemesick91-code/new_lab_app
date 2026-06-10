@@ -1,0 +1,54 @@
+<?php
+
+namespace App\Modules\Odontogram\Services;
+
+use App\Models\User;
+use App\Modules\Branch\Services\BranchContext;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
+use App\Modules\Odontogram\Models\Odontogram;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
+
+class OdontogramService
+{
+    public function __construct(
+        private readonly OdontogramRepositoryInterface $odontograms,
+        private readonly BranchContext $branchContext,
+    ) {}
+
+    public function getOrCreateForVisit(ClinicVisit $clinicVisit, User $user): Odontogram
+    {
+        return DB::transaction(function () use ($clinicVisit, $user) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($clinicVisit->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => 'Kunjungan tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            return $this->odontograms->createForClinicVisit($clinicVisit, [
+                'created_by' => $user->id,
+            ]);
+        });
+    }
+
+    public function updateNotes(Odontogram $odontogram, array $payload, User $user): Odontogram
+    {
+        return DB::transaction(function () use ($odontogram, $payload, $user) {
+            $branchId = $this->branchContext->requireId();
+
+            if ($odontogram->branch_id !== $branchId) {
+                throw ValidationException::withMessages([
+                    'odontogram_id' => 'Odontogram tidak ditemukan di cabang aktif.',
+                ]);
+            }
+
+            $safe = array_intersect_key($payload, array_flip(['summary_notes', 'tooth_map_payload']));
+            $safe['updated_by'] = $user->id;
+
+            return $this->odontograms->updatePlaceholder($odontogram, $safe);
+        });
+    }
+}

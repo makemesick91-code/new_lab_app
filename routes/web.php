@@ -35,6 +35,7 @@ use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
+use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
@@ -199,6 +200,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/finalize', [MedicalRecordController::class, 'finalize'])
                 ->name('visits.medical-record.finalize');
         });
+
+        // Sprint 20 Phase 1.3.1 — Odontogram Placeholder Foundation
+        Route::get('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'show'])
+            ->name('visits.odontogram.show');
+
+        Route::middleware('permission:manage_clinic_visits')
+            ->patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
+            ->name('odontograms.update');
     });
 });
 

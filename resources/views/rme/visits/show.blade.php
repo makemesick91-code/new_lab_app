@@ -144,6 +144,18 @@
                 @endif
             </div>
 
+            {{-- Odontogram --}}
+            @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $visit])
+                <div class="border-t pt-4">
+                    <h4 class="text-sm font-semibold text-gray-700 mb-3">Odontogram</h4>
+                    <a href="{{ route('rme.visits.odontogram.show', $visit) }}"
+                       class="inline-flex items-center rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-600">
+                        Buka Odontogram
+                    </a>
+                    <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
+                </div>
+            @endcan
+
             <div class="border-t pt-4">
                 <a href="{{ route('rme.visits.index') }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke daftar</a>
             </div>
