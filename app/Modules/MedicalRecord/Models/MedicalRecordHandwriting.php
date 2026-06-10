@@ -10,6 +10,7 @@ use Database\Factories\MedicalRecordHandwritingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class MedicalRecordHandwriting extends Model
 {
@@ -55,6 +56,21 @@ class MedicalRecordHandwriting extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function previewUrl(): ?string
+    {
+        $path = $this->handwriting_path;
+
+        if (blank($path)) {
+            return null;
+        }
+
+        if (str_starts_with($path, 'data:image/')) {
+            return $path;
+        }
+
+        return Storage::disk('public')->url($path);
     }
 
     protected static function newFactory(): MedicalRecordHandwritingFactory

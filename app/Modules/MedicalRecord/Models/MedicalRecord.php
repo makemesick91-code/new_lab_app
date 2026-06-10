@@ -83,7 +83,8 @@ class MedicalRecord extends Model
     {
         return MedicalRecordHandwriting::query()
             ->where('medical_record_id', $this->id)
-            ->latest()
+            ->orderByDesc('saved_at')
+            ->orderByDesc('id')
             ->first();
     }
 

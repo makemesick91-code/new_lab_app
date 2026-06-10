@@ -62,7 +62,9 @@
                 $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
                 $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
                 $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
-                $hasHandwriting = $medicalRecord->hasHandwriting();
+                $canEditHandwriting = $isDraft && $canUpdate;
+                $savedHandwriting = $medicalRecord->latestHandwriting();
+                $hasHandwriting = $savedHandwriting !== null;
                 $hasLegacySoap = filled($medicalRecord->subjective)
                     || filled($medicalRecord->objective)
                     || filled($medicalRecord->assessment)
@@ -109,28 +111,36 @@
                 </div>
             @endif
 
-            {{-- Handwriting RME Canvas — Phase 1.8 --}}
-            @if ($isDraft && $canUpdate)
-                @php $savedHandwriting = $medicalRecord->latestHandwriting(); @endphp
-                <div class="border-t pt-6">
-                    <h4 class="text-sm font-semibold text-gray-700 mb-1">RME Tulisan Tangan Lengkap</h4>
+            {{-- Handwriting RME preview (always) + canvas (draft editors only) --}}
+            <div class="border-t pt-6">
+                <h4 class="text-sm font-semibold text-gray-700 mb-1">
+                    {{ $canEditHandwriting ? 'RME Tulisan Tangan Lengkap' : 'RME Tulisan Tangan' }}
+                </h4>
+
+                @if ($canEditHandwriting)
                     <p class="text-xs text-gray-500 mb-3">
                         Isi Rekam Medis lengkap, tindakan, catatan tambahan, estimasi biaya/tindakan, dan tanda tangan dokter pada area handwriting berikut.
                     </p>
+                @endif
 
-                    @if ($savedHandwriting)
-                        <div class="mb-4">
-                            <p class="text-xs text-green-700 font-medium mb-2">
-                                Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
-                            </p>
-                            <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($savedHandwriting->handwriting_path) }}"
-                                 alt="RME Tulisan Tangan"
-                                 class="border border-gray-300 rounded-md max-w-full" />
-                        </div>
-                    @endif
+                @if ($savedHandwriting && $savedHandwriting->previewUrl())
+                    <div class="{{ $canEditHandwriting ? 'mb-4' : '' }}">
+                        <p class="text-xs {{ $canEditHandwriting ? 'text-green-700 font-medium' : 'text-gray-500' }} mb-2">
+                            Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
+                        </p>
+                        <img src="{{ $savedHandwriting->previewUrl() }}"
+                             alt="RME Tulisan Tangan"
+                             class="border border-gray-300 rounded-md max-w-full" />
+                    </div>
+                @else
+                    <div class="rounded-md bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                        Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
+                    </div>
+                @endif
 
+                @if ($canEditHandwriting)
                     <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}"
-                          id="handwriting-form">
+                          id="handwriting-form" class="{{ $savedHandwriting ? 'mt-4' : 'mt-3' }}">
                         @csrf
                         <input type="hidden" name="handwriting_data" id="handwriting-data-input">
 
@@ -207,22 +217,13 @@
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
                         });
 
-                        document.getElementById('handwriting-form').addEventListener('submit', function (e) {
+                        document.getElementById('handwriting-form').addEventListener('submit', function () {
                             document.getElementById('handwriting-data-input').value = canvas.toDataURL('image/png');
                         });
                     })();
                     </script>
-                </div>
-            @elseif ($medicalRecord->latestHandwriting())
-                @php $savedHandwriting = $medicalRecord->latestHandwriting(); @endphp
-                <div class="border-t pt-4">
-                    <h4 class="text-sm font-semibold text-gray-700 mb-2">RME Tulisan Tangan</h4>
-                    <p class="text-xs text-gray-500 mb-2">Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}</p>
-                    <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($savedHandwriting->handwriting_path) }}"
-                         alt="RME Tulisan Tangan"
-                         class="border border-gray-300 rounded-md max-w-full" />
-                </div>
-            @endif
+                @endif
+            </div>
 
             {{-- Finalize form: draft only, manager only --}}
             @if ($isDraft && $canFinalize)

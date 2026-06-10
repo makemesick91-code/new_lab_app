@@ -188,3 +188,105 @@ it('hasRequiredHandwriting returns true when handwriting exists', function () {
 
     expect($service->hasRequiredHandwriting($this->record->fresh()))->toBeTrue();
 });
+
+it('draft show page displays saved handwriting preview', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('RME Tulisan Tangan Lengkap')
+        ->assertSee('Tersimpan pada')
+        ->assertSee($handwriting->previewUrl(), false)
+        ->assertSee('id="rme-canvas"', false)
+        ->assertSee('Simpan Tulisan Tangan');
+});
+
+it('final show page displays saved handwriting preview', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    app(MedicalRecordService::class)->finalize($this->record->fresh());
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('RME Tulisan Tangan')
+        ->assertSee('Tersimpan pada')
+        ->assertSee($handwriting->previewUrl(), false)
+        ->assertDontSee('id="rme-canvas"', false)
+        ->assertDontSee('Simpan Tulisan Tangan');
+});
+
+it('show page displays empty handwriting message when none exists', function () {
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.');
+});
+
+it('viewer sees handwriting preview on draft without edit canvas', function () {
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => 'handwritings/test/preview.png',
+    ]);
+
+    Storage::disk('public')->put('handwritings/test/preview.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+        true
+    ));
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('RME Tulisan Tangan')
+        ->assertSee($handwriting->previewUrl(), false)
+        ->assertDontSee('id="rme-canvas"', false)
+        ->assertDontSee('Simpan Tulisan Tangan');
+});
+
+it('previewUrl supports data image paths', function () {
+    $dataUrl = validHandwritingData();
+
+    $handwriting = MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => $dataUrl,
+    ]);
+
+    expect($handwriting->previewUrl())->toBe($dataUrl);
+});
+
+it('latestHandwriting returns the most recently saved record', function () {
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => 'handwritings/test/older.png',
+        'saved_at' => now()->subHour(),
+    ]);
+
+    $latest = MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => 'handwritings/test/newer.png',
+        'saved_at' => now(),
+    ]);
+
+    expect($this->record->fresh()->latestHandwriting()?->id)->toBe($latest->id);
+});
