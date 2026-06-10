@@ -592,3 +592,31 @@ it('rejects transition request with status registered', function () {
 
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_WAITING);
 });
+
+it('shows RME sidebar links for user with view_clinic_visits', function () {
+    $this->actingAs($this->viewer)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Kunjungan')
+        ->assertSee('Rekam Medis')
+        ->assertSee(route('rme.visits.index'), false)
+        ->assertSee(route('rme.medical-records.index'), false);
+});
+
+it('shows RME sidebar links for user with manage_clinic_visits', function () {
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.index'))
+        ->assertOk()
+        ->assertSee('Kunjungan')
+        ->assertSee('Rekam Medis')
+        ->assertSee(route('rme.visits.index'), false)
+        ->assertSee(route('rme.medical-records.index'), false);
+});
+
+it('hides RME sidebar links for user without clinic visit permission', function () {
+    $this->actingAs(userWith([]))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertDontSee(route('rme.visits.index'), false)
+        ->assertDontSee(route('rme.medical-records.index'), false);
+});

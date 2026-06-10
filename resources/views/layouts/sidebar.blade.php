@@ -43,6 +43,7 @@
             'settings.wa-reminder-templates.*'
         ),
         'operational' => request()->routeIs('lab-orders.*', 'production.*', 'quality-control.*'),
+        'rme' => request()->routeIs('rme.*'),
         'my-work' => request()->routeIs('production.*'),
         'delivery' => request()->routeIs('deliveries.*'),
         'inventory' => request()->routeIs('inventory.*')
@@ -185,6 +186,28 @@
                         <a href="{{ route('quality-control.queue') }}"
                            class="block px-3 py-2 rounded-md {{ request()->routeIs('quality-control.*') ? $linkActive : $linkIdle }}">QC</a>
                     @endcanany
+                </div>
+            </div>
+        @endcanany
+
+        @canany(['view_clinic_visits', 'manage_clinic_visits'])
+            <div class="pt-2">
+                <button type="button"
+                        @click="toggle('rme')"
+                        class="{{ $groupToggle }}"
+                        :aria-expanded="isOpen('rme')">
+                    <span>RME</span>
+                    <svg class="h-4 w-4 shrink-0 text-gray-500 transition-transform duration-150"
+                         :class="{ 'rotate-180': isOpen('rme') }"
+                         xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+                <div data-sidebar-panel="rme" x-show="isOpen('rme')" class="mt-0.5 space-y-0.5 pl-1">
+                    <a href="{{ route('rme.visits.index') }}"
+                       class="block px-3 py-2 rounded-md {{ (request()->routeIs('rme.visits.*') && !request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
+                    <a href="{{ route('rme.medical-records.index') }}"
+                       class="block px-3 py-2 rounded-md {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
                 </div>
             </div>
         @endcanany
