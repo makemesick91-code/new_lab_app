@@ -157,6 +157,27 @@
             font-size: 12px;
         }
 
+        .handwriting-preview {
+            padding: 8px 12px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+        }
+        .handwriting-preview img {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            page-break-inside: avoid;
+        }
+        .handwriting-saved-at {
+            font-size: 10px;
+            color: #6b7280;
+            margin-bottom: 6px;
+        }
+
         .print-actions {
             margin-bottom: 16px;
             display: flex;
@@ -270,28 +291,60 @@
             @endif
         </div>
         @if ($medicalRecord)
-            <div class="field-grid">
-                <div class="field-item">
-                    <dt>Subjektif (Anamnesis)</dt>
-                    <dd>{{ $medicalRecord->subjective ?? '—' }}</dd>
+            @php
+                $savedHandwriting = $medicalRecord->latestHandwriting();
+                $hasLegacySoap = filled($medicalRecord->subjective)
+                    || filled($medicalRecord->objective)
+                    || filled($medicalRecord->assessment)
+                    || filled($medicalRecord->plan)
+                    || filled($medicalRecord->notes);
+            @endphp
+
+            @if ($hasLegacySoap)
+                <div class="field-grid" style="margin-bottom: 10px;">
+                    @if (filled($medicalRecord->subjective))
+                        <div class="field-item">
+                            <dt>Subjektif (Anamnesis)</dt>
+                            <dd>{{ $medicalRecord->subjective }}</dd>
+                        </div>
+                    @endif
+                    @if (filled($medicalRecord->objective))
+                        <div class="field-item">
+                            <dt>Objektif (Pemeriksaan)</dt>
+                            <dd>{{ $medicalRecord->objective }}</dd>
+                        </div>
+                    @endif
+                    @if (filled($medicalRecord->assessment))
+                        <div class="field-item">
+                            <dt>Assessment (Diagnosis)</dt>
+                            <dd>{{ $medicalRecord->assessment }}</dd>
+                        </div>
+                    @endif
+                    @if (filled($medicalRecord->plan))
+                        <div class="field-item">
+                            <dt>Plan (Rencana Perawatan)</dt>
+                            <dd>{{ $medicalRecord->plan }}</dd>
+                        </div>
+                    @endif
+                    @if (filled($medicalRecord->notes))
+                        <div class="field-item full-width">
+                            <dt>Catatan Tambahan</dt>
+                            <dd>{{ $medicalRecord->notes }}</dd>
+                        </div>
+                    @endif
                 </div>
-                <div class="field-item">
-                    <dt>Objektif (Pemeriksaan)</dt>
-                    <dd>{{ $medicalRecord->objective ?? '—' }}</dd>
-                </div>
-                <div class="field-item">
-                    <dt>Assessment (Diagnosis)</dt>
-                    <dd>{{ $medicalRecord->assessment ?? '—' }}</dd>
-                </div>
-                <div class="field-item">
-                    <dt>Plan (Rencana Perawatan)</dt>
-                    <dd>{{ $medicalRecord->plan ?? '—' }}</dd>
-                </div>
-                @if ($medicalRecord->notes)
-                    <div class="field-item full-width">
-                        <dt>Catatan Tambahan</dt>
-                        <dd>{{ $medicalRecord->notes }}</dd>
-                    </div>
+            @endif
+
+            <div class="handwriting-preview">
+                <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>
+                @if ($savedHandwriting && $savedHandwriting->previewUrl())
+                    <p class="handwriting-saved-at">
+                        Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
+                    </p>
+                    <img src="{{ $savedHandwriting->previewUrl() }}"
+                         alt="RME Tulisan Tangan">
+                @else
+                    <p class="field-empty">Belum ada handwriting RM.</p>
                 @endif
             </div>
         @else

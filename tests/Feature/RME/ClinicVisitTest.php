@@ -6,10 +6,12 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -906,6 +908,120 @@ it('print view handles missing odontogram gracefully', function () {
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
         ->assertSee('Odontogram belum tersedia');
+});
+
+it('print view displays saved handwriting preview', function () {
+    Storage::fake('public');
+
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'status' => MedicalRecord::STATUS_FINAL,
+    ]);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => 'handwritings/test/print-preview.png',
+    ]);
+
+    Storage::disk('public')->put('handwritings/test/print-preview.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+        true
+    ));
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $record->id)->firstOrFail();
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee('RME Tulisan Tangan')
+        ->assertSee('Tersimpan pada')
+        ->assertSee($handwriting->previewUrl(), false);
+});
+
+it('print view displays empty handwriting message when none exists', function () {
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee('Belum ada handwriting RM.');
+});
+
+it('print view does not require SOAP fields when handwriting exists', function () {
+    Storage::fake('public');
+
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'subjective' => null,
+        'objective' => null,
+        'assessment' => null,
+        'plan' => null,
+        'notes' => null,
+        'status' => MedicalRecord::STATUS_FINAL,
+    ]);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'handwriting_path' => 'handwritings/test/print-no-soap.png',
+    ]);
+
+    Storage::disk('public')->put('handwritings/test/print-no-soap.png', base64_decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
+        true
+    ));
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $record->id)->firstOrFail();
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.print', $visit))
+        ->assertOk()
+        ->assertSee($handwriting->previewUrl(), false)
+        ->assertDontSee('Subjektif (Anamnesis)')
+        ->assertDontSee('Objektif (Pemeriksaan)')
+        ->assertDontSee('Assessment (Diagnosis)')
+        ->assertDontSee('Plan (Rencana Perawatan)');
 });
 
 it('Cetak RME button appears on visit show for authorized user', function () {

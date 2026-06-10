@@ -114,7 +114,7 @@ class ClinicVisitController extends Controller
     public function print(ClinicVisit $clinicVisit): View
     {
         $this->authorize('print', $clinicVisit);
-        $clinicVisit->load(['patient', 'doctor', 'medicalRecord', 'odontogram']);
+        $clinicVisit->load(['patient', 'doctor', 'medicalRecord.handwriting', 'odontogram']);
 
         return view('rme.visits.print', ['visit' => $clinicVisit]);
     }
