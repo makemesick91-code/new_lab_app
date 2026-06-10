@@ -5,6 +5,7 @@ use App\Modules\Invoice\Models\Payment;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use Database\Seeders\PaymentMethodSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -325,5 +326,7 @@ it('does not create Invoice, Payment, LabOrder, installment, or RME records when
         ->and(Payment::count())->toBe(0)
         ->and(LabOrder::count())->toBe(0);
 
-    expect(Schema::hasTable('trx_medical_records'))->toBeFalse();
+    if (Schema::hasTable('trx_medical_records')) {
+        expect(DB::table('trx_medical_records')->count())->toBe(0);
+    }
 });

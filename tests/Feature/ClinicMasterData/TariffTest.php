@@ -11,6 +11,7 @@ use Database\Seeders\BranchSeeder;
 use Database\Seeders\TariffSeeder;
 use Database\Seeders\TreatmentCategorySeeder;
 use Database\Seeders\TreatmentSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -439,6 +440,10 @@ it('does not create any billing, invoice, payment or RME records when a tariff i
         ->and(Invoice::count())->toBe(0)
         ->and(Payment::count())->toBe(0);
 
-    expect(Schema::hasTable('trx_dental_lab_cases'))->toBeFalse()
-        ->and(Schema::hasTable('trx_medical_records'))->toBeFalse();
+    if (Schema::hasTable('trx_dental_lab_cases')) {
+        expect(DB::table('trx_dental_lab_cases')->count())->toBe(0);
+    }
+    if (Schema::hasTable('trx_medical_records')) {
+        expect(DB::table('trx_medical_records')->count())->toBe(0);
+    }
 });

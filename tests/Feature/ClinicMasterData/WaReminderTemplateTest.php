@@ -5,6 +5,7 @@ use App\Modules\Invoice\Models\Payment;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\WaReminderTemplate\Models\WaReminderTemplate;
 use Database\Seeders\WaReminderTemplateSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -490,7 +491,9 @@ it('does not create Invoice, Payment, LabOrder, or RME records when a template i
         ->and(Payment::count())->toBe(0)
         ->and(LabOrder::count())->toBe(0);
 
-    expect(Schema::hasTable('trx_medical_records'))->toBeFalse();
+    if (Schema::hasTable('trx_medical_records')) {
+        expect(DB::table('trx_medical_records')->count())->toBe(0);
+    }
 });
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ use App\Modules\Treatment\Models\Treatment;
 use App\Modules\TreatmentCategory\Models\TreatmentCategory;
 use Database\Seeders\TreatmentCategorySeeder;
 use Database\Seeders\TreatmentSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 beforeEach(function () {
@@ -269,7 +270,10 @@ it('does not create any lab case, billing or RME records when a treatment is sto
         ->and(Invoice::count())->toBe(0)
         ->and(Payment::count())->toBe(0);
 
-    // No RME/dental-lab tables should have been introduced by this phase.
-    expect(Schema::hasTable('trx_dental_lab_cases'))->toBeFalse()
-        ->and(Schema::hasTable('trx_medical_records'))->toBeFalse();
+    if (Schema::hasTable('trx_dental_lab_cases')) {
+        expect(DB::table('trx_dental_lab_cases')->count())->toBe(0);
+    }
+    if (Schema::hasTable('trx_medical_records')) {
+        expect(DB::table('trx_medical_records')->count())->toBe(0);
+    }
 });
