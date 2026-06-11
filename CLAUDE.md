@@ -25,7 +25,9 @@
 
 **Pilot master data import:** use `php artisan rme:import-pilot-backup` (see `docs/rme_pilot_backup_import_guide.md`). Never restore backup SQL directly over the Sprint 20 database.
 
-**UI:** All RME views use TailAdmin components (`x-ui.card`, `x-ui.table`, `x-ui.badge`, `x-ui.button`, `x-settings-shell`). UI modernization complete — branch `feature/ui-tailadmin-integration`, tag `sprint-20-rme-ui-modernization-complete` (2026-06-11).
+**UI:** All RME views use TailAdmin components (`x-ui.card`, `x-ui.table`, `x-ui.badge`, `x-ui.button`, `x-settings-shell`). UI modernization merged into `feature/sprint-20-rme-core` (merge commit `8246008`, tag `sprint-20-rme-ui-modernization-merged`).
+
+**Sprint 20 closure (2026-06-11):** Final branch `feature/sprint-20-rme-core`. Closure tag `sprint-20-rme-core-ui-complete`. Full suite: 1842 passed / 6290 assertions. RME suite: 283 passed / 718 assertions. Do NOT re-open SOAP in doctor UI — handwriting RM is the primary clinical input and SOAP is hidden by design. Full-payment-only rule remains in force (partial/cicilan deferred to Sprint 21). Closure report: `docs/sprint_20_final_closure_report.md`.
 
 ## graphify
 

@@ -268,3 +268,22 @@ routes, permissions, field names, or workflow was changed.
 - `php artisan test`: 1842 passed, 6290 assertions
 - `./vendor/bin/pint --dirty`: no changes
 - `npm run build`: success
+
+---
+
+## Sprint 20 Final Closure Note
+
+**Status:** CLOSED
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-20-rme-core` (authoritative — UI modernization merged in)
+**Final merge commit:** `8246008`
+**Final closure tag:** `sprint-20-rme-core-ui-complete`
+
+The RME limited pilot is complete. The UI modernization branch
+(`feature/ui-tailadmin-integration`, tag `sprint-20-rme-ui-modernization-complete`) has been
+merged into `feature/sprint-20-rme-core` at commit `8246008`. The `feature/sprint-20-rme-core`
+branch is the **sole source for future deployment** — do not deploy the UI branch separately.
+
+**Sprint 20 is closed.** Sprint 21 backlog remains separate and has not been started.
+
+See `docs/sprint_20_final_closure_report.md` for the full closure report.

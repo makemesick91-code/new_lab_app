@@ -3748,6 +3748,58 @@ All RME views modernized from raw Tailwind/Bootstrap-era HTML to TailAdmin-style
 
 ---
 
+### Sprint 20 Final Closure — RME Core + UI Modernization
+
+**Status:** CLOSED
+**Branch:** `feature/sprint-20-rme-core`
+**Final merge commit:** `8246008` (Merge TailAdmin UI modernization into Sprint 20 core)
+**Merge tag:** `sprint-20-rme-ui-modernization-merged`
+**Final closure tag:** `sprint-20-rme-core-ui-complete`
+**Date:** 2026-06-11
+
+Sprint 20 is formally closed. The UI modernization branch (`feature/ui-tailadmin-integration`,
+tag `sprint-20-rme-ui-modernization-complete`) was merged into `feature/sprint-20-rme-core`
+at commit `8246008`. The `feature/sprint-20-rme-core` branch is the single authoritative
+source for future deployment.
+
+#### Full Scope Delivered
+
+| Area | Result |
+|---|---|
+| RME core workflow (phases 1.2–1.12) | COMPLETE |
+| Pilot hardening (SOAP hide, queue lock, Alpine fix, import tooling, handwriting previews) | COMPLETE |
+| UI modernization — inventory views (TailAdmin) | COMPLETE |
+| UI modernization — RME visit/doctor views | COMPLETE |
+| UI modernization — RME cashier views (index, create, show, payment, receipt) | COMPLETE |
+| Final UI audit (Phase 2C.6) | COMPLETE |
+
+#### Test Results (final merge validation)
+
+| Suite | Result |
+|---|---|
+| Full test suite (`php artisan test`) | **1842 passed, 6290 assertions** |
+| RME suite (`php artisan test --filter=RME`) | **283 passed, 718 assertions** |
+| Pint (`./vendor/bin/pint --dirty`) | Passed — no changes |
+| npm run build | Success |
+
+#### Deployment Note
+
+No VPS deployment was performed in this phase. The branch is ready for single-branch pilot
+deployment pending UAT sign-off. Full deployment recommendation in
+`docs/sprint_20_final_closure_report.md`.
+
+#### Sprint 21 Backlog (documented, not started)
+
+- Lab integration for RME treatments requiring lab work
+- PDF export for RME bundle / receipt
+- Cicilan / installment payment workflow
+- Dedicated Kasir role with least-privilege `manage_rme_billing`
+- Owner RME analytics dashboard
+- WhatsApp / notification integration
+- Multi-branch pilot hardening
+- Production VPS deployment checklist
+
+---
+
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 2C.6 (RME UI modernization complete, 2026-06-11) and must be
-updated as each new sprint completes.*
+Sprint 20 Final Closure (2026-06-11) and must be updated as each new sprint completes.*
