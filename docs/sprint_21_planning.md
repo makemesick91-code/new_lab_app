@@ -794,3 +794,52 @@ Create a safe, detailed, copy-pasteable VPS pilot deployment runbook for deployi
 ### Note on phase numbering
 
 Original planning listed VPS deployment as Phase 21.8. Implementation order diverged (21.3–21.6 delivered lab queue, conversion, polish, PDF). This phase documents VPS deployment as **21.7** per Sprint 21 execution track.
+
+---
+
+## 20. Phase 21.8 — Sprint 21 Closure / Release Candidate Merge Plan
+
+**Status:** COMPLETE (documentation only — 2026-06-11)
+**Branch:** `feature/sprint-21-closure-rc-plan`
+**Tag:** `sprint-21-phase-21-8-closure-rc-plan`
+**Plan:** `docs/sprint_21_closure_release_candidate_plan.md`
+
+### Goal
+
+Close Sprint 21 cleanly and document the release candidate merge/deployment plan without performing merge or VPS deployment.
+
+### What was delivered
+
+| Item | Detail |
+|---|---|
+| Closure plan | `docs/sprint_21_closure_release_candidate_plan.md` — deliverables, RC baseline, merge order, VPS order, rollback, smoke tests |
+| RC baseline documented | Branch `feature/sprint-21-vps-pilot-checklist`, commit `18d2eec`, tag `sprint-21-phase-21-7-vps-pilot-checklist` |
+| Phase 21.7 runbook referenced | VPS deployment must follow `docs/sprint_21_vps_pilot_deployment_checklist.md` |
+| Sprint history updated | Phase 21.8 entry in `docs/sprint_history.md` |
+| Agent memory updated | `CLAUDE.md` Phase 21.8 note |
+
+### Sprint 21 functional completeness
+
+Sprint 21 is functionally complete through:
+
+- RME → Lab candidate generation (21.2)
+- Admin Lab queue and conversion (21.3–21.4)
+- Workflow visibility polish (21.5)
+- Print/PDF hardening (21.6)
+- VPS deployment planning (21.7)
+- Closure / RC planning (21.8)
+
+### Phase boundaries preserved
+
+- **No merge performed** — `main` and `feature/sprint-20-rme-core` unchanged
+- **No VPS deployment performed** — no SSH, no production commands
+- **No application code changes** — documentation/release planning only
+- **`sprint-21-release-candidate` tag deferred** — create only after stakeholder approval and full test suite pass
+
+### Test Results (Phase 21.8 minimum gates)
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=RME` | **359 passed, 938 assertions** |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |

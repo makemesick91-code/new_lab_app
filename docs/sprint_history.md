@@ -4183,3 +4183,47 @@ Safe VPS pilot deployment runbook for Sprint 21 — backup, git pull, `migrate -
 | Branch | `feature/sprint-21-rme-pdf-print-hardening` |
 | Tag | `sprint-21-phase-21-6-rme-pdf-print-hardening` |
 | Commit | `327e55f` or newer approved deploy commit |
+
+---
+
+## Sprint 21 Phase 21.8 — Sprint 21 Closure / Release Candidate Merge Plan
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-closure-rc-plan`
+**Tag:** `sprint-21-phase-21-8-closure-rc-plan`
+**Base:** `18d2eec` (Sprint 21.7)
+**Document:** `docs/sprint_21_closure_release_candidate_plan.md`
+
+### Goal
+
+Close Sprint 21 and document the release candidate merge/deployment plan — deliverables summary, RC baseline, merge order, VPS deployment order, rollback strategy, and post-merge verification.
+
+### What changed
+
+- New closure plan: `docs/sprint_21_closure_release_candidate_plan.md`
+- Updated `docs/sprint_21_planning.md` (Phase 21.8 note)
+- Updated `CLAUDE.md` (Phase 21.8 memory)
+- Updated `docs/sprint_history.md` (this entry)
+
+### Phase boundaries preserved
+
+- **Type:** documentation / release planning only
+- **No application behavior changes**
+- **No merge performed** — `main` and `feature/sprint-20-rme-core` not merged
+- **No deployment performed** — no SSH, no VPS migrations, no production commands
+- RC baseline, rollback, and deployment order documented for stakeholder review
+
+### RC baseline documented
+
+| Item | Value |
+|---|---|
+| Functional RC branch | `feature/sprint-21-vps-pilot-checklist` |
+| Functional RC commit | `18d2eec` |
+| Functional RC tag | `sprint-21-phase-21-7-vps-pilot-checklist` |
+| Closure branch | `feature/sprint-21-closure-rc-plan` |
+| Deferred RC tag | `sprint-21-release-candidate` (after approval) |
+| Pre-Sprint 21 rollback | `sprint-20-rme-core-ui-complete` / `48c9fe6` |
+
+### VPS deployment reference
+
+Follow `docs/sprint_21_vps_pilot_deployment_checklist.md` with updated baseline `18d2eec`. Never `migrate:fresh` or `db:wipe` on VPS.
