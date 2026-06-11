@@ -471,6 +471,32 @@ The design document must resolve:
 No service, controller, migration, or test code should be written until Phase 21.1 design is
 reviewed and approved.
 
+---
+
+## 14. Phase 21.1 — Completion Note
+
+**Status:** COMPLETE (2026-06-11)  
+**Branch:** `feature/sprint-21-rme-lab-architecture`  
+**Tag:** `sprint-21-phase-21-1-rme-lab-architecture`  
+**Document:** `docs/sprint_21_rme_lab_integration_architecture.md`  
+**Type:** Design / Documentation only — no application code changed
+
+**Key decisions made in Phase 21.1:**
+
+| Decision | Resolution |
+|---|---|
+| Integration trigger | After `RmePaymentService::pay()` sets invoice to `PAID` (post-payment) |
+| Creation strategy | `LabCaseCandidate` staging table first (Option B) |
+| Eligibility filter | `mst_treatments.requires_lab = true` — column already exists |
+| Idempotency key | `UNIQUE(rme_invoice_item_id)` on `trx_lab_case_candidates` |
+| Transaction strategy | Payment commits first; candidate generation is post-commit (Option 2) |
+| Branch isolation | `branch_id` copied from RME invoice; validated against `BranchContext` |
+| Lab payment records | Must not be created from RME payment — `trx_rme_payments` only |
+| LabOrder mapping gap | `LabOrderItem` uses `lab_service_id`; RME items use `treatment_id` — no mapping exists; resolving deferred to Phase 21.2 |
+
+**Phase 21.2 is now unblocked** pending project owner approval of the architecture document.
+See `docs/sprint_21_rme_lab_integration_architecture.md` for full detail.
+
 ### Phase 21.2 — Tests First, Then Implementation
 
 Once Phase 21.1 design is approved, Phase 21.2 starts by writing failing feature tests:

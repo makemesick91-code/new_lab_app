@@ -31,6 +31,8 @@
 
 **Sprint 21 planning (2026-06-11):** Planning branch `feature/sprint-21-planning`. Theme: RME Advanced Workflow + Pilot Deployment. Planning doc: `docs/sprint_21_planning.md`. First implementation phase: Phase 21.1 RME → Lab integration architecture (design only), then Phase 21.2 lab order generation (tests-first). SOAP doctor UI remains hidden. Full-payment-only behavior is the baseline — partial/cicilan changes begin only when Phase 21.4 is explicitly approved. No feature code added in planning phase.
 
+**Sprint 21 Phase 21.1 — RME → Lab architecture (2026-06-11):** Branch `feature/sprint-21-rme-lab-architecture`. Tag `sprint-21-phase-21-1-rme-lab-architecture`. Architecture doc: `docs/sprint_21_rme_lab_integration_architecture.md`. Design only — no code changed. Key decisions: (1) RME → Lab trigger is after `RmePaymentService::pay()` sets invoice to `PAID`. (2) Pilot strategy: create `LabCaseCandidate` staging record first (not direct LabOrder) — `LabOrderItem` uses `lab_service_id` but RME items use `treatment_id`; no mapping exists yet. (3) One candidate per eligible `trx_rme_invoice_items` row where `mst_treatments.requires_lab = true` (column already exists). (4) Idempotent via `UNIQUE(rme_invoice_item_id)` on `trx_lab_case_candidates`. (5) Payment commits first; candidate generation is post-commit (failure does not roll back payment). (6) `branch_id` copied from RME invoice; validated against `BranchContext::requireId()`. (7) Do NOT create `trx_payments` (lab billing) records from RME payment — `trx_rme_payments` only. Phase 21.2 unblocked after project owner approves this architecture.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

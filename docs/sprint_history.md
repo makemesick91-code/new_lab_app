@@ -3838,3 +3838,35 @@ Sprint 21 planning branch created from `feature/sprint-20-rme-core` at tag
 - Full-payment-only rule remains in force until Phase 21.4 is explicitly approved.
 - No `migrate:fresh` on VPS.
 - Branch isolation mandatory on all new RME-linked records.
+
+---
+
+### Sprint 21 Phase 21.1 — RME → Lab Integration Architecture
+
+**Status:** COMPLETE  
+**Branch:** `feature/sprint-21-rme-lab-architecture`  
+**Tag:** `sprint-21-phase-21-1-rme-lab-architecture`  
+**Document:** `docs/sprint_21_rme_lab_integration_architecture.md`  
+**Date:** 2026-06-11  
+**Type:** Design / Documentation only — no behavior changes
+
+**Purpose:** Produce a written integration architecture before any code is written, covering
+trigger point, creation strategy, data mapping, duplicate prevention, branch isolation, audit
+trail, error handling, and pilot recommendation.
+
+**Key decisions:**
+
+| Decision | Outcome |
+|---|---|
+| Integration trigger | After `RmePaymentService::pay()` sets `trx_rme_invoices.status = PAID` |
+| Creation strategy | `LabCaseCandidate` staging table first (not direct LabOrder) |
+| Eligibility filter | `mst_treatments.requires_lab = true` (column already exists in migration) |
+| Idempotency | `UNIQUE(rme_invoice_item_id)` on `trx_lab_case_candidates` |
+| Transaction strategy | Payment commits first; candidate generation is post-commit |
+| Branch isolation | `branch_id` from RME invoice; validated against `BranchContext::requireId()` |
+| Lab payment bleed | No `trx_payments` (lab billing) records from RME payment — enforced |
+| LabOrder mapping gap | `LabOrderItem.lab_service_id` vs `RmeInvoiceItem.treatment_id` — no mapping exists; deferred to Phase 21.2 |
+
+**Phase 21.2 readiness:** unblocked pending project owner approval of architecture document.
+
+*No application code, migrations, routes, views, or tests were changed in this phase.*
