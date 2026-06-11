@@ -12,6 +12,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class RmePaymentService
@@ -29,7 +30,7 @@ class RmePaymentService
      */
     public function pay(RmeInvoice $invoice, User $cashier, array $data): RmePayment
     {
-        return DB::transaction(function () use ($invoice, $cashier, $data) {
+        $payment = DB::transaction(function () use ($invoice, $cashier, $data) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
             if ($invoice->branch_id !== $this->branchContext->requireId()) {
@@ -90,6 +91,23 @@ class RmePaymentService
 
             return $payment->refresh();
         });
+
+        // Post-commit: generate lab case candidates for eligible invoice items.
+        // Runs after the payment transaction commits so a generation failure never
+        // rolls back a successful RME payment. Errors are logged, not re-thrown.
+        try {
+            app(RmeLabIntegrationService::class)->generateForPaidInvoice(
+                RmeInvoice::findOrFail($payment->rme_invoice_id),
+                $cashier,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Lab case candidate generation failed after RME payment', [
+                'rme_invoice_id' => $payment->rme_invoice_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $payment;
     }
 
     public function paymentsForInvoice(RmeInvoice $invoice): Collection

@@ -3870,3 +3870,106 @@ trail, error handling, and pilot recommendation.
 **Phase 21.2 readiness:** unblocked pending project owner approval of architecture document.
 
 *No application code, migrations, routes, views, or tests were changed in this phase.*
+
+---
+
+### Sprint 21 Phase 21.2 — RME → Lab Case Candidate Generation
+
+**Status:** COMPLETE
+**Branch:** `feature/sprint-21-lab-case-candidates`
+**Tag:** `sprint-21-phase-21-2-lab-case-candidates`
+**Date:** 2026-06-11
+**Type:** Implementation (tests-first)
+
+**Purpose:** Implement the first functional RME → Lab integration layer. When a patient's RME
+invoice is fully paid, items whose linked treatment has `requires_lab = true` automatically
+create `trx_lab_case_candidates` staging records. No real `LabOrder` is created in this phase
+— candidates wait for Admin Lab review before conversion.
+
+**Files added:**
+
+| File | Role |
+|---|---|
+| `database/migrations/2026_06_14_210001_create_trx_lab_case_candidates_table.php` | New staging table |
+| `app/Modules/LabOrder/Models/LabCaseCandidate.php` | Eloquent model, status constants, relationships |
+| `database/factories/LabCaseCandidateFactory.php` | Factory for tests |
+| `app/Modules/RmeInvoice/Services/RmeLabIntegrationService.php` | Generation service |
+| `tests/Feature/RME/LabIntegrationTest.php` | 11 integration tests |
+
+**Files modified:**
+
+| File | Change |
+|---|---|
+| `app/Modules/RmeInvoice/Services/RmePaymentService.php` | Post-commit hook to `RmeLabIntegrationService` |
+| `docs/sprint_21_planning.md` | Phase 21.2 marked complete |
+| `docs/sprint_21_rme_lab_integration_architecture.md` | Phase 21.2 implementation note |
+| `docs/sprint_history.md` | This entry |
+| `CLAUDE.md` | Phase 21.2 memory entry |
+
+**Data model:** `trx_lab_case_candidates`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | bigint PK | |
+| `branch_id` | FK → mst_branches | Mandatory; enforces branch isolation |
+| `clinic_visit_id` | FK → trx_clinic_visits | Source visit |
+| `rme_invoice_id` | FK → trx_rme_invoices | Source invoice |
+| `rme_invoice_item_id` | FK → trx_rme_invoice_items, UNIQUE | Idempotency key |
+| `patient_id` | FK → mst_patients | |
+| `doctor_id` | FK → mst_doctors, nullable | Item-level doctor, else visit-level |
+| `treatment_id` | FK → mst_treatments, nullable | Carries requires_lab treatment reference |
+| `medical_record_id` | FK → trx_medical_records, nullable | |
+| `source_description` | string | Cashier-entered item description |
+| `quantity` | unsigned int | From invoice item qty |
+| `estimated_price` | decimal(15,2) | From invoice item unit_price |
+| `status` | string | pending_review / converted_to_lab_order / rejected / cancelled |
+| `converted_lab_order_id` | unsigned bigint, nullable | Set when Admin Lab converts to LabOrder |
+| `reviewed_by` | FK → users, nullable | Admin Lab reviewer |
+| `reviewed_at` | timestamp, nullable | |
+| `notes` | text, nullable | |
+| `metadata` | json, nullable | Extensible; can store odontogram id, invoice_number, etc. |
+| `created_by` | FK → users, nullable | Cashier who triggered payment |
+| `timestamps` | | |
+| `deleted_at` | softDeletes | |
+
+**Service behavior (`RmeLabIntegrationService`):**
+- `generateForPaidInvoice(RmeInvoice $invoice, ?User $actor)`: iterates invoice items, skips items
+  with `requires_lab = false` or null treatment, calls `generateForInvoiceItem` for each eligible.
+- `generateForInvoiceItem(RmeInvoiceItem $item, ...)`: uses `firstOrCreate` keyed on
+  `rme_invoice_item_id` — idempotent, duplicate-safe.
+- Branch isolation: validates `invoice.branch_id === BranchContext::id()`; throws
+  `ValidationException` if mismatch while a branch context is active.
+- Returns `Collection<LabCaseCandidate>`.
+
+**Payment hook behavior:**
+- `RmePaymentService::pay()` now assigns the transaction result to `$payment` instead of returning
+  it directly.
+- After the transaction commits, calls `RmeLabIntegrationService::generateForPaidInvoice()` in a
+  `try/catch(\Throwable)`.
+- If generation fails: `Log::warning(...)` — payment is NOT rolled back.
+- Returns the `$payment` object unchanged.
+
+**Duplicate prevention:** `UNIQUE(rme_invoice_item_id)` database constraint + `firstOrCreate`
+service semantics. Safe to call multiple times with the same invoice.
+
+**Branch isolation:** Every candidate carries `branch_id` from the source invoice. Cross-branch
+generation throws `ValidationException`. Tests 7 and 8 cover this.
+
+**Sprint 20 preservation:**
+- Full-payment-only rule: unchanged — partial payment still throws `ValidationException`.
+- `trx_payments` (lab billing): not created by RME payment.
+- No real `LabOrder` created in this phase.
+- SOAP doctor UI: remains hidden.
+- `trx_rme_invoices` total/payment calculation: unchanged.
+
+**Test results:**
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabIntegration` | **11 passed, 24 assertions** |
+| `php artisan test --filter=RmePayment` | **16 passed, 24 assertions** |
+| `php artisan test --filter=CashierBilling` | **17 passed, 28 assertions** |
+| `php artisan test --filter=RME` | **294 passed, 742 assertions** |
+| `php artisan test` (full suite) | **1853 passed** |
+| `./vendor/bin/pint --dirty` | Passed — no changes |
+| `npm run build` | Success |

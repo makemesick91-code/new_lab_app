@@ -1,10 +1,18 @@
 # Sprint 21 Phase 21.1 — RME to Lab Integration Architecture
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-06-11  
-**Branch:** `feature/sprint-21-rme-lab-architecture`  
-**Type:** Design / Documentation only — no behavior changes  
-**Status:** Draft for implementation approval before Phase 21.2
+**Branch:** `feature/sprint-21-rme-lab-architecture` (design) → `feature/sprint-21-lab-case-candidates` (implementation)  
+**Type:** Design + Implementation  
+**Status:** IMPLEMENTED — Phase 21.2 complete (tag: `sprint-21-phase-21-2-lab-case-candidates`)
+
+**Phase 21.2 implementation summary:**
+- `trx_lab_case_candidates` table created (migration `2026_06_14_210001`).
+- `LabCaseCandidate` model at `app/Modules/LabOrder/Models/LabCaseCandidate.php`.
+- `RmeLabIntegrationService` at `app/Modules/RmeInvoice/Services/RmeLabIntegrationService.php`.
+- Post-commit hook added to `RmePaymentService::pay()` (Option 2 — separate transaction, non-blocking).
+- 11 integration tests added to `tests/Feature/RME/LabIntegrationTest.php`.
+- All architecture decisions from Section 6 implemented as specified.
 
 ---
 

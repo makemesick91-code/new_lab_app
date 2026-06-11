@@ -120,21 +120,35 @@ The following are explicitly out of scope for Sprint 21 and must not be implemen
 
 ### Phase 21.2 — Lab Case Candidate / Lab Order Generation
 
+**Status:** COMPLETE  
+**Branch:** `feature/sprint-21-lab-case-candidates`  
+**Tag:** `sprint-21-phase-21-2-lab-case-candidates`  
+**Date:** 2026-06-11
+
 **Type:** Implementation (tests-first)  
 **Risk:** Medium — requires careful scoping to avoid breaking existing LabOrder workflow  
 **Depends on:** Phase 21.1 design approved
 
-**Scope:**
-- Add `requires_lab` boolean flag to `trx_rme_invoice_items` (migration, backfill false).
-- On RME invoice `PAID` event: for each item where `requires_lab = true`, generate one
-  `trx_lab_orders` record sourced from the RME visit.
-- Prevent duplicate lab orders: unique constraint on `(rme_invoice_item_id)` in lab orders or
-  equivalent.
-- Preserve existing LabOrder workflow — do not alter lab-order status machine or payment logic.
-- Do not create lab payment records from RME payment — `trx_payments` (lab billing) is separate
-  from `trx_rme_payments`.
-- Add integration tests before implementation: RME paid → lab order created; second payment
-  attempt → no duplicate; different branch → no cross-branch order.
+**Scope implemented:**
+- New table `trx_lab_case_candidates` (migration `2026_06_14_210001`).
+- New model `App\Modules\LabOrder\Models\LabCaseCandidate` with status constants and relationships.
+- New factory `LabCaseCandidateFactory`.
+- New service `App\Modules\RmeInvoice\Services\RmeLabIntegrationService` with
+  `generateForPaidInvoice()` and `generateForInvoiceItem()`.
+- Post-commit hook in `RmePaymentService::pay()` — payment transaction commits first; candidate
+  generation runs after in a safe try/catch; generation failure logs a warning without rolling
+  back the payment.
+- Idempotency via `UNIQUE(rme_invoice_item_id)` and `firstOrCreate` semantics.
+- Branch isolation: service validates `invoice.branch_id === BranchContext::id()`.
+- 11 new integration tests in `tests/Feature/RME/LabIntegrationTest.php`.
+
+**Preserved from Sprint 20:**
+- Full-payment-only rule unchanged.
+- `trx_payments` (lab billing) not touched by RME payment.
+- No real `LabOrder` created in this phase — staging candidate only.
+- SOAP doctor UI remains hidden.
+
+**Test results:** 294 RME tests passed / 742 assertions (283 baseline + 11 new).
 
 ---
 
@@ -494,25 +508,8 @@ reviewed and approved.
 | Lab payment records | Must not be created from RME payment — `trx_rme_payments` only |
 | LabOrder mapping gap | `LabOrderItem` uses `lab_service_id`; RME items use `treatment_id` — no mapping exists; resolving deferred to Phase 21.2 |
 
-**Phase 21.2 is now unblocked** pending project owner approval of the architecture document.
-See `docs/sprint_21_rme_lab_integration_architecture.md` for full detail.
-
-### Phase 21.2 — Tests First, Then Implementation
-
-Once Phase 21.1 design is approved, Phase 21.2 starts by writing failing feature tests:
-
-```php
-// tests/Feature/RME/LabIntegrationTest.php
-
-// Test 1: Paying an RME invoice with requires_lab items creates a LabOrder
-// Test 2: Paying the same invoice twice does not create a duplicate LabOrder
-// Test 3: Cross-branch visit cannot create a lab order in another branch
-// Test 4: Invoice items with requires_lab = false do not generate lab orders
-// Test 5: Lab order carries correct branch_id, patient_id, doctor references
-```
-
-Implementation of the service and repository follows only after these tests are written and
-confirmed failing.
+**Phase 21.2 is COMPLETE.** See `docs/sprint_history.md` for the full Phase 21.2 entry.
+See `docs/sprint_21_rme_lab_integration_architecture.md` for architecture detail.
 
 ---
 
