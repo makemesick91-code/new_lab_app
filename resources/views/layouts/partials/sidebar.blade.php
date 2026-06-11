@@ -108,6 +108,10 @@
                            class="menu-subitem {{ (request()->routeIs('rme.visits.*') && ! request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
                         <a href="{{ route('rme.medical-records.index') }}"
                            class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
+                        @can('manage_rme_billing')
+                            <a href="{{ route('rme.cashier.index') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.cashier.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
+                        @endcan
                     </div>
                 </div>
             @endcanany
