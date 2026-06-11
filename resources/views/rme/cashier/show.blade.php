@@ -128,5 +128,7 @@
             @endif
         </x-ui.card>
 
+        <x-rme.lab-workflow-panel :invoice="$invoice" :candidates="$labCaseCandidates" />
+
     </div>
 </x-settings-shell>

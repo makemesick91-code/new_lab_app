@@ -78,13 +78,30 @@
                 <div>
                     <dt class="text-gray-500">No. Invoice</dt>
                     <dd class="font-mono font-medium text-gray-900">
-                        {{ $candidate->rmeInvoice?->invoice_number ?? '—' }}
+                        @if ($candidate->rmeInvoice && $candidate->clinicVisit)
+                            @can('view', $candidate->rmeInvoice)
+                                <a href="{{ route('rme.cashier.show', [$candidate->clinicVisit, $candidate->rmeInvoice]) }}"
+                                   class="text-teal-700 hover:text-teal-900 hover:underline">
+                                    {{ $candidate->rmeInvoice->invoice_number }}
+                                </a>
+                            @else
+                                {{ $candidate->rmeInvoice->invoice_number }}
+                            @endcan
+                        @else
+                            —
+                        @endif
                     </dd>
                 </div>
                 <div>
                     <dt class="text-gray-500">Status Invoice</dt>
                     <dd class="text-gray-900">{{ $candidate->rmeInvoice?->status ?? '—' }}</dd>
                 </div>
+                @if ($candidate->clinicVisit)
+                    <div>
+                        <dt class="text-gray-500">No. Kunjungan</dt>
+                        <dd class="font-mono font-medium text-gray-900">{{ $candidate->clinicVisit->visit_number }}</dd>
+                    </div>
+                @endif
                 <div class="col-span-2">
                     <dt class="text-gray-500">Deskripsi Item</dt>
                     <dd class="text-gray-900">{{ $candidate->source_description ?? '—' }}</dd>
@@ -112,18 +129,42 @@
             </dl>
         </x-ui.card>
 
-        {{-- Converted Lab Order (if applicable) --}}
-        @if ($candidate->converted_lab_order_id)
-            <x-ui.card title="Lab Order Terkait">
-                <p class="text-sm text-gray-600">
-                    Kandidat ini telah dikonversi ke Lab Order
-                    <a href="{{ route('lab-orders.show', $candidate->converted_lab_order_id) }}"
-                       class="font-mono font-medium text-teal-700 hover:text-teal-900">
-                        #{{ $candidate->converted_lab_order_id }}
-                    </a>.
+        {{-- Conversion status --}}
+        <x-ui.card title="Status Konversi">
+            @if ($candidate->isConverted() && $candidate->convertedLabOrder)
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    <div>
+                        <dt class="text-gray-500">Lab Order</dt>
+                        <dd>
+                            @can('view', $candidate->convertedLabOrder)
+                                <a href="{{ route('lab-orders.show', $candidate->convertedLabOrder) }}"
+                                   class="font-mono font-medium text-teal-700 hover:text-teal-900 hover:underline">
+                                    {{ $candidate->convertedLabOrder->order_number }}
+                                </a>
+                            @else
+                                <span class="font-mono font-medium text-gray-900">{{ $candidate->convertedLabOrder->order_number }}</span>
+                            @endcan
+                        </dd>
+                    </div>
+                    @if ($candidate->reviewed_at)
+                        <div>
+                            <dt class="text-gray-500">Dikonversi Pada</dt>
+                            <dd class="text-gray-900">{{ $candidate->reviewed_at->format('d/m/Y H:i') }}</dd>
+                        </div>
+                    @endif
+                    @if ($candidate->reviewedBy)
+                        <div>
+                            <dt class="text-gray-500">Direview Oleh</dt>
+                            <dd class="text-gray-900">{{ $candidate->reviewedBy->name }}</dd>
+                        </div>
+                    @endif
+                </dl>
+            @else
+                <p class="text-sm text-amber-800 bg-amber-50 rounded-md px-3 py-2">
+                    Belum dikonversi — kandidat masih menunggu review dan pemilihan layanan lab.
                 </p>
-            </x-ui.card>
-        @endif
+            @endif
+        </x-ui.card>
 
         {{-- Conversion form (Phase 21.4) --}}
         @can('convert', $candidate)

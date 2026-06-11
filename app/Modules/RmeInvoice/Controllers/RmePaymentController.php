@@ -62,10 +62,19 @@ class RmePaymentController extends Controller
 
         $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();
 
+        $invoice = $rmeInvoice->load([
+            'items.treatment',
+            'cashier',
+            'branch',
+            'labCaseCandidates.convertedLabOrder',
+            'labCaseCandidates.treatment',
+        ]);
+
         return view('rme.cashier.receipt.show', [
             'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment']),
-            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'branch']),
+            'invoice' => $invoice,
             'payment' => $payment,
+            'labCaseCandidates' => $invoice->labCaseCandidates,
         ]);
     }
 }

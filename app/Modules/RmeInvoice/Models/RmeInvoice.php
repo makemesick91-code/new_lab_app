@@ -5,6 +5,7 @@ namespace App\Modules\RmeInvoice\Models;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use Database\Factories\RmeInvoiceFactory;
@@ -96,6 +97,11 @@ class RmeInvoice extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(RmePayment::class);
+    }
+
+    public function labCaseCandidates(): HasMany
+    {
+        return $this->hasMany(LabCaseCandidate::class, 'rme_invoice_id');
     }
 
     public function recalculateTotals(): void

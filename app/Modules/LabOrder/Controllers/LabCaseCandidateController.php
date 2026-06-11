@@ -35,7 +35,7 @@ class LabCaseCandidateController extends Controller
         $status = $request->string('status')->toString() ?: null;
 
         $candidates = LabCaseCandidate::query()
-            ->with(['patient', 'doctor', 'treatment', 'rmeInvoice', 'branch'])
+            ->with(['patient', 'doctor', 'treatment', 'rmeInvoice', 'branch', 'convertedLabOrder'])
             ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
             ->when($status, fn ($q) => $q->where('status', $status))
             ->when($search, function ($q) use ($search) {
@@ -68,6 +68,8 @@ class LabCaseCandidateController extends Controller
             'patient',
             'doctor',
             'treatment',
+            'convertedLabOrder',
+            'reviewedBy',
         ]);
 
         return view('lab.case-candidates.show', [

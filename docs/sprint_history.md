@@ -4070,44 +4070,41 @@ RME payment continues to generate candidates only.
 
 ---
 
-## Sprint 21 Phase 21.4 — Convert LabCaseCandidate to LabOrder
+## Sprint 21 Phase 21.5 — RME Lab Workflow Polish
 
 **Date:** 2026-06-11
-**Branch:** `feature/sprint-21-candidate-to-laborder`
-**Tag:** `sprint-21-phase-21-4-candidate-to-laborder`
-**Base:** `0eed855` (Sprint 21.3)
+**Branch:** `feature/sprint-21-rme-lab-workflow-polish`
+**Tag:** `sprint-21-phase-21-5-rme-lab-workflow-polish`
+**Base:** `cb68615` (Sprint 21.4)
 
 ### Goal
 
-Explicit manual conversion from `LabCaseCandidate` to `LabOrder` after Admin Lab review.
-RME payment continues to generate candidates only.
+Improve workflow visibility across the full RME → Lab Candidate → LabOrder path without changing payment, generation, or conversion business rules.
 
 ### What changed
 
-- Added `LabCaseCandidateConversionService` — idempotent, branch-scoped, transaction-safe
-- Added `ConvertLabCaseCandidateRequest` — requires explicit `lab_service_id` and `due_date`
-- Extended `LabCaseCandidate` model with `isPendingReview()`, `isConverted()`, `canConvert()`, `convertedLabOrder()`
-- Extended `LabCaseCandidatePolicy` with `convert` (reuses `create_lab_orders` / `manage_lab_orders`)
-- Added `POST /lab/case-candidates/{candidate}/convert` route
-- Show page: conversion form for authorized pending candidates; link to converted Lab Order
-
-### Lab service mapping rule
-
-- `lab_service_id` must be selected explicitly by Admin Lab.
-- No automatic mapping from RME `treatment_id` to `lab_service_id`.
+- RME cashier invoice show + receipt: read-only **Status Pekerjaan Lab RME** / **Kandidat Lab RME** panels (counts, status, authorized links)
+- Lab case candidate index: Lab Order column with order number link when converted; model status helpers
+- Lab case candidate show: linked RME invoice, visit number, conversion metadata, pending state
+- Lab order show: **Sumber RME** section when order originated from a candidate
+- Model relations: `RmeInvoice::labCaseCandidates()`, `LabOrder::rmeLabCaseCandidate()`
+- Reusable Blade partial: `components/rme/lab-workflow-panel`
 
 ### Phase boundaries preserved
 
-- RME payment does not create `LabOrder`.
-- No lab invoice/payment records created during conversion.
-- Full-payment-only RME rule unchanged.
-- SOAP doctor UI unchanged.
+- No RME payment rule changes
+- No candidate generation rule changes
+- No conversion business rule changes
+- No auto LabOrder from RME payment
+- No lab invoice/payment records
+- No PDF, cicilan, WhatsApp, or SOAP doctor UI changes
 
 **Test results:**
 
 | Suite | Result |
 |---|---|
-| `php artisan test --filter=LabCaseCandidateConversion` | **16 passed, 39 assertions** |
+| `php artisan test --filter=RmeLabWorkflowPolish` | **16 passed, 59 assertions** |
+| `php artisan test --filter=LabCaseCandidateConversion` | **16 passed** |
 | `php artisan test --filter=LabCaseCandidateQueue` | **12 passed** |
 | `php artisan test --filter=LabIntegration` | **11 passed** |
 | `php artisan test --filter=RME` | All passed |

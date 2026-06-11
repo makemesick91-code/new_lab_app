@@ -150,6 +150,38 @@ class LabCaseCandidate extends Model
         return $this->isPendingReview();
     }
 
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING_REVIEW => 'Menunggu Review',
+            self::STATUS_CONVERTED_TO_LAB_ORDER => 'Sudah Dikonversi',
+            self::STATUS_REJECTED => 'Ditolak',
+            self::STATUS_CANCELLED => 'Dibatalkan',
+            default => $this->status,
+        };
+    }
+
+    public function statusTone(): string
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING_REVIEW => 'warning',
+            self::STATUS_CONVERTED_TO_LAB_ORDER => 'success',
+            self::STATUS_REJECTED => 'danger',
+            self::STATUS_CANCELLED => 'neutral',
+            default => 'neutral',
+        };
+    }
+
+    public function displayEstimatedPrice(): string
+    {
+        return 'Rp '.number_format((float) $this->estimated_price, 0, ',', '.');
+    }
+
+    public function displayConvertedOrderNumber(): ?string
+    {
+        return $this->convertedLabOrder?->order_number;
+    }
+
     protected static function newFactory(): LabCaseCandidateFactory
     {
         return LabCaseCandidateFactory::new();

@@ -64,7 +64,58 @@
 
         <div class="p-6">
             {{-- Overview --}}
-            <div x-show="tab === 'overview'" class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+            <div x-show="tab === 'overview'" class="space-y-6">
+            @if ($rmeSourceCandidate)
+                <div class="rounded-lg border border-teal-200 bg-teal-50/50 p-4">
+                    <h3 class="text-sm font-semibold text-teal-900">Sumber RME</h3>
+                    <p class="mt-1 text-xs text-teal-800">Lab order ini dibuat dari kandidat pekerjaan lab RME.</p>
+                    <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                        <div>
+                            <dt class="text-teal-700">Kandidat</dt>
+                            <dd class="font-medium text-gray-900">
+                                @can('view', $rmeSourceCandidate)
+                                    <a href="{{ route('lab-case-candidates.show', $rmeSourceCandidate) }}"
+                                       class="text-teal-700 hover:text-teal-900 hover:underline">
+                                        Kandidat #{{ $rmeSourceCandidate->id }}
+                                    </a>
+                                @else
+                                    Kandidat #{{ $rmeSourceCandidate->id }}
+                                @endcan
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-teal-700">Invoice RME</dt>
+                            <dd class="font-mono font-medium text-gray-900">
+                                @if ($rmeSourceCandidate->rmeInvoice && $rmeSourceCandidate->clinicVisit)
+                                    @can('view', $rmeSourceCandidate->rmeInvoice)
+                                        <a href="{{ route('rme.cashier.show', [$rmeSourceCandidate->clinicVisit, $rmeSourceCandidate->rmeInvoice]) }}"
+                                           class="text-teal-700 hover:text-teal-900 hover:underline">
+                                            {{ $rmeSourceCandidate->rmeInvoice->invoice_number }}
+                                        </a>
+                                    @else
+                                        {{ $rmeSourceCandidate->rmeInvoice->invoice_number }}
+                                    @endcan
+                                @else
+                                    —
+                                @endif
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-teal-700">Pasien</dt>
+                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->patient?->name ?? '—' }}</dd>
+                        </div>
+                        <div>
+                            <dt class="text-teal-700">Dokter</dt>
+                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->doctor?->name ?? '—' }}</dd>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <dt class="text-teal-700">Tindakan Sumber</dt>
+                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->source_description ?? $rmeSourceCandidate->treatment?->name ?? '—' }}</dd>
+                        </div>
+                    </dl>
+                </div>
+            @endif
+            <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div><dt class="text-gray-500">Klinik</dt><dd class="font-medium">{{ $order->clinic?->name }}</dd></div>
                 <div><dt class="text-gray-500">Dokter</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
                 <div><dt class="text-gray-500">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
@@ -74,6 +125,7 @@
                 <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
                 <div class="sm:col-span-2"><dt class="text-gray-500">Catatan</dt><dd class="font-medium">{{ $order->notes ?? '—' }}</dd></div>
                 <div><dt class="text-gray-500">Dibuat Oleh</dt><dd class="font-medium">{{ $order->creator?->name ?? '—' }}</dd></div>
+            </div>
             </div>
 
             {{-- Items --}}

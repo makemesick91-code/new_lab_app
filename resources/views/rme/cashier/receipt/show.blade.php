@@ -124,6 +124,14 @@
                 </div>
             </x-ui.card>
 
+            {{-- Lab workflow (read-only visibility) --}}
+            <x-rme.lab-workflow-panel
+                :invoice="$invoice"
+                :candidates="$labCaseCandidates"
+                compact
+                class="print:hidden"
+            />
+
             {{-- Payment Summary --}}
             <x-ui.card>
                 <div class="space-y-3 text-sm">

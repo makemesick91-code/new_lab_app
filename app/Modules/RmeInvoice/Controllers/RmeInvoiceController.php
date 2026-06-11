@@ -70,9 +70,18 @@ class RmeInvoiceController extends Controller
     {
         $this->authorize('view', $rmeInvoice);
 
+        $invoice = $rmeInvoice->load([
+            'items.treatment',
+            'cashier',
+            'medicalRecord',
+            'labCaseCandidates.convertedLabOrder',
+            'labCaseCandidates.treatment',
+        ]);
+
         return view('rme.cashier.show', [
             'visit' => $clinicVisit->load(['patient', 'doctor']),
-            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'medicalRecord']),
+            'invoice' => $invoice,
+            'labCaseCandidates' => $invoice->labCaseCandidates,
         ]);
     }
 }

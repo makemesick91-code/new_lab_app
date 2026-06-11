@@ -200,6 +200,11 @@ class LabOrder extends Model
         return $this->hasMany(InvoiceItem::class, 'lab_order_id');
     }
 
+    public function rmeLabCaseCandidate(): HasOne
+    {
+        return $this->hasOne(LabCaseCandidate::class, 'converted_lab_order_id');
+    }
+
     protected static function newFactory(): LabOrderFactory
     {
         return LabOrderFactory::new();

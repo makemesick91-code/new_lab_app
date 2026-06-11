@@ -84,6 +84,7 @@
                         <th scope="col" class="px-3 py-3 font-medium text-right">Qty</th>
                         <th scope="col" class="px-3 py-3 font-medium text-right">Estimasi</th>
                         <th scope="col" class="px-3 py-3 font-medium">Status</th>
+                        <th scope="col" class="px-3 py-3 font-medium">Lab Order</th>
                         <th scope="col" class="px-3 py-3 font-medium">Invoice</th>
                         <th scope="col" class="px-4 py-3 font-medium text-right">Aksi</th>
                     </tr>
@@ -111,9 +112,19 @@
                                 Rp {{ number_format((float) $candidate->estimated_price, 0, ',', '.') }}
                             </td>
                             <td class="px-3 py-3">
-                                <x-ui.badge :tone="$statusTones[$candidate->status] ?? 'neutral'">
-                                    {{ $statusLabels[$candidate->status] ?? $candidate->status }}
+                                <x-ui.badge :tone="$candidate->statusTone()">
+                                    {{ $candidate->statusLabel() }}
                                 </x-ui.badge>
+                            </td>
+                            <td class="px-3 py-3 text-gray-600 font-mono text-xs whitespace-nowrap">
+                                @if ($candidate->isConverted() && $candidate->convertedLabOrder)
+                                    <a href="{{ route('lab-orders.show', $candidate->convertedLabOrder) }}"
+                                       class="text-teal-700 hover:text-teal-900 hover:underline">
+                                        {{ $candidate->convertedLabOrder->order_number }}
+                                    </a>
+                                @else
+                                    <span class="text-gray-400">—</span>
+                                @endif
                             </td>
                             <td class="px-3 py-3 text-gray-600 font-mono text-xs">
                                 {{ $candidate->rmeInvoice?->invoice_number ?? '—' }}
@@ -128,7 +139,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="px-4 py-12 text-center">
+                            <td colspan="10" class="px-4 py-12 text-center">
                                 <p class="font-medium text-gray-700">Belum ada kandidat pekerjaan lab.</p>
                                 <p class="mt-1 text-sm text-gray-500">
                                     Kandidat akan muncul setelah tagihan RME lunas dan item tindakan membutuhkan pekerjaan lab.

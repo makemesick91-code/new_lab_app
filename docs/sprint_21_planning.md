@@ -640,3 +640,59 @@ RME payment still creates candidates only — never `LabOrder`.
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
 | `php artisan test` (full suite) | All passed |
+
+---
+
+## 17. Phase 21.5 — RME Lab Workflow Polish
+
+**Status:** COMPLETE (2026-06-11)
+**Branch:** `feature/sprint-21-rme-lab-workflow-polish`
+**Tag:** `sprint-21-phase-21-5-rme-lab-workflow-polish`
+
+### Goal
+
+Polish UI/visibility only — help clinic and lab staff trace RME invoice → lab candidate → lab order without changing Sprint 20/21 business rules.
+
+### Files Added
+
+| File | Purpose |
+|---|---|
+| `tests/Feature/RME/RmeLabWorkflowPolishTest.php` | 16 tests for visibility, auth, branch isolation, regression guards |
+| `resources/views/components/rme/lab-workflow-panel.blade.php` | Shared read-only lab workflow summary for invoice/receipt |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `app/Modules/RmeInvoice/Models/RmeInvoice.php` | `labCaseCandidates()` relation |
+| `app/Modules/LabOrder/Models/LabOrder.php` | `rmeLabCaseCandidate()` relation |
+| `app/Modules/LabOrder/Models/LabCaseCandidate.php` | Display helpers (`statusLabel`, `statusTone`, etc.) |
+| `app/Modules/RmeInvoice/Controllers/RmeInvoiceController.php` | Eager-load candidates for show |
+| `app/Modules/RmeInvoice/Controllers/RmePaymentController.php` | Eager-load candidates for receipt |
+| `app/Modules/LabOrder/Controllers/LabCaseCandidateController.php` | Eager-load `convertedLabOrder`, `reviewedBy` |
+| `app/Modules/LabOrder/Controllers/LabOrderController.php` | Pass `rmeSourceCandidate` to show view |
+| `resources/views/rme/cashier/show.blade.php` | Lab workflow section |
+| `resources/views/rme/cashier/receipt/show.blade.php` | Compact lab workflow section |
+| `resources/views/lab/case-candidates/index.blade.php` | Lab Order column + status badges |
+| `resources/views/lab/case-candidates/show.blade.php` | Invoice link, conversion metadata, pending state |
+| `resources/views/lab-orders/show.blade.php` | Sumber RME section |
+
+### Authorization
+
+- Candidate links: `@can('view', $candidate)` (`view_lab_orders | manage_lab_orders` + branch)
+- Lab order links: `@can('view', $labOrder)`
+- RME invoice links: `@can('view', $rmeInvoice)` (`manage_rme_billing` + branch)
+- No new permissions
+
+### Test Results
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=RmeLabWorkflowPolish` | 16 passed |
+| `php artisan test --filter=LabCaseCandidateConversion` | 16 passed |
+| `php artisan test --filter=LabCaseCandidateQueue` | 12 passed |
+| `php artisan test --filter=LabIntegration` | 11 passed |
+| `php artisan test --filter=RME` | All passed |
+| `php artisan test` | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |

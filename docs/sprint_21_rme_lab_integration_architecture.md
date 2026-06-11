@@ -650,3 +650,20 @@ Conversion is explicit/manual via `LabCaseCandidateConversionService::convertToL
 
 Candidate show page displays conversion form only for `@can('convert', $candidate)` (pending status).
 Converted candidates link to `lab-orders.show`.
+
+### Phase 21.5 — Workflow Visibility Polish (2026-06-11)
+
+**Branch:** `feature/sprint-21-rme-lab-workflow-polish`
+**Tag:** `sprint-21-phase-21-5-rme-lab-workflow-polish`
+
+Read-only UI polish across the integration path. No changes to payment, candidate generation, or conversion services.
+
+| Surface | Visibility added |
+|---|---|
+| RME invoice show | Status Pekerjaan Lab RME — counts, per-item status, authorized candidate/LabOrder links |
+| RME receipt | Compact Kandidat Lab RME section (hidden on print) |
+| Candidate index | Lab Order number column when converted |
+| Candidate show | Linked RME invoice, visit number, conversion metadata, Belum dikonversi state |
+| Lab order show | Sumber RME block when `LabOrder::rmeLabCaseCandidate()` exists |
+
+Relations used (no new migrations): `RmeInvoice::labCaseCandidates()`, `LabCaseCandidate::convertedLabOrder()`, `LabOrder::rmeLabCaseCandidate()`.

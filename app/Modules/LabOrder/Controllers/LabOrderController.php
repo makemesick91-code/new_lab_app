@@ -78,9 +78,13 @@ class LabOrderController extends Controller
         $this->authorize('view', $labOrder);
 
         $order = $this->labOrderService->findDetail($labOrder->id);
+        $rmeSourceCandidate = $order->rmeLabCaseCandidate()
+            ->with(['rmeInvoice', 'clinicVisit', 'patient', 'doctor', 'treatment', 'reviewedBy'])
+            ->first();
 
         return view('lab-orders.show', [
             'order' => $order,
+            'rmeSourceCandidate' => $rmeSourceCandidate,
             'auditLogs' => $this->auditLogService->paginateForEntity(LabOrder::ENTITY_TYPE, $labOrder->id, 15),
         ]);
     }
