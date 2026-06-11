@@ -761,3 +761,36 @@ Harden RME visit print and receipt print outputs for pilot use. Add optional PDF
 | `php artisan test` | All passed |
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
+
+---
+
+## 19. Phase 21.7 — VPS Pilot Deployment Checklist
+
+**Status:** COMPLETE (documentation only — 2026-06-11)
+**Branch:** `feature/sprint-21-vps-pilot-checklist`
+**Tag:** `sprint-21-phase-21-7-vps-pilot-checklist`
+**Runbook:** `docs/sprint_21_vps_pilot_deployment_checklist.md`
+
+### Goal
+
+Create a safe, detailed, copy-pasteable VPS pilot deployment runbook for deploying Sprint 21 to the VPS without data loss.
+
+### What was delivered
+
+| Item | Detail |
+|---|---|
+| Runbook | `docs/sprint_21_vps_pilot_deployment_checklist.md` — backup, git pull, migrate `--force`, permissions, smoke tests, rollback |
+| Deployment target branch | `feature/sprint-21-rme-pdf-print-hardening` |
+| Deployment target tag | `sprint-21-phase-21-6-rme-pdf-print-hardening` |
+| Baseline commit | `327e55f` |
+
+### Phase boundaries preserved
+
+- **No VPS deployment performed** during this phase
+- **No production commands executed** (no SSH, no `migrate`, no `composer install` on VPS)
+- **No application code changes** — documentation/runbook only
+- Reinforces: never `migrate:fresh` / `db:wipe` on VPS; always backup before migrate
+
+### Note on phase numbering
+
+Original planning listed VPS deployment as Phase 21.8. Implementation order diverged (21.3–21.6 delivered lab queue, conversion, polish, PDF). This phase documents VPS deployment as **21.7** per Sprint 21 execution track.

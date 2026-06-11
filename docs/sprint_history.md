@@ -4147,3 +4147,39 @@ Harden RME visit print and receipt print for pilot deployment. Add PDF download 
 | `php artisan test` (full suite) | **1918 passed** |
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
+
+---
+
+## Sprint 21 Phase 21.7 — VPS Pilot Deployment Checklist
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-vps-pilot-checklist`
+**Tag:** `sprint-21-phase-21-7-vps-pilot-checklist`
+**Base:** `327e55f` (Sprint 21.6)
+**Document:** `docs/sprint_21_vps_pilot_deployment_checklist.md`
+
+### Goal
+
+Safe VPS pilot deployment runbook for Sprint 21 — backup, git pull, `migrate --force`, permissions, smoke tests, rollback. Documentation only.
+
+### What changed
+
+- New runbook: `docs/sprint_21_vps_pilot_deployment_checklist.md`
+- Updated `docs/sprint_21_planning.md` (Phase 21.7 note)
+- Updated `CLAUDE.md` (Phase 21.7 memory)
+
+### Phase boundaries preserved
+
+- **Type:** documentation / runbook only
+- **No application behavior changes**
+- **No deployment performed** — no SSH, no VPS migrations, no production commands
+- **No `migrate:fresh` / `db:wipe` on VPS** rule reinforced in runbook
+
+### Deployment target (when runbook is executed)
+
+| Item | Value |
+|---|---|
+| VPS path | `/var/www/asia-dental-lab-v2` |
+| Branch | `feature/sprint-21-rme-pdf-print-hardening` |
+| Tag | `sprint-21-phase-21-6-rme-pdf-print-hardening` |
+| Commit | `327e55f` or newer approved deploy commit |
