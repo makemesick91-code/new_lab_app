@@ -29,6 +29,8 @@
 
 **Sprint 20 closure (2026-06-11):** Final branch `feature/sprint-20-rme-core`. Closure tag `sprint-20-rme-core-ui-complete`. Full suite: 1842 passed / 6290 assertions. RME suite: 283 passed / 718 assertions. Do NOT re-open SOAP in doctor UI — handwriting RM is the primary clinical input and SOAP is hidden by design. Full-payment-only rule remains in force (partial/cicilan deferred to Sprint 21). Closure report: `docs/sprint_20_final_closure_report.md`.
 
+**Sprint 21 planning (2026-06-11):** Planning branch `feature/sprint-21-planning`. Theme: RME Advanced Workflow + Pilot Deployment. Planning doc: `docs/sprint_21_planning.md`. First implementation phase: Phase 21.1 RME → Lab integration architecture (design only), then Phase 21.2 lab order generation (tests-first). SOAP doctor UI remains hidden. Full-payment-only behavior is the baseline — partial/cicilan changes begin only when Phase 21.4 is explicitly approved. No feature code added in planning phase.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

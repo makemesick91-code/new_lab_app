@@ -3803,3 +3803,38 @@ deployment pending UAT sign-off. Full deployment recommendation in
 
 *Historical record only — this document changes no application code. It reflects decisions as of
 Sprint 20 Final Closure (2026-06-11) and must be updated as each new sprint completes.*
+
+---
+
+### Sprint 21 Planning — RME Advanced Workflow + Pilot Deployment
+
+**Status:** PLANNING
+**Branch:** `feature/sprint-21-planning`
+**Planning doc:** `docs/sprint_21_planning.md`
+**Date:** 2026-06-11
+
+Sprint 21 planning branch created from `feature/sprint-20-rme-core` at tag
+`sprint-20-rme-core-ui-complete`. No feature code added in this phase — documentation only.
+
+**Sprint 21 theme:** RME Advanced Workflow + Pilot Deployment
+
+**Planned phases:**
+
+| Phase | Focus |
+|---|---|
+| 21.1 | RME → Lab Integration Architecture (design only) |
+| 21.2 | Lab Order Generation from paid RME invoice (tests-first) |
+| 21.3 | RME PDF Export |
+| 21.4 | Cicilan / Installment Payment Design (approval-gated) |
+| 21.5 | Owner Dashboard RME Analytics |
+| 21.6 | WhatsApp / Notification Planning (templates only) |
+| 21.7 | Multi-Branch Pilot Hardening |
+| 21.8 | VPS Pilot Deployment Checklist |
+
+**Recommended first implementation phase:** 21.1 design → 21.2 lab integration (tests-first).
+
+**Key constraints carried forward from Sprint 20:**
+- SOAP doctor UI remains hidden — handwriting RM is primary clinical input.
+- Full-payment-only rule remains in force until Phase 21.4 is explicitly approved.
+- No `migrate:fresh` on VPS.
+- Branch isolation mandatory on all new RME-linked records.
