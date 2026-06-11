@@ -4473,3 +4473,68 @@ php artisan test --filter=Pilot                # 34 passed (Cursor terminal)
 3. Cashier visit has final MR but no pre-built invoice — kasir creates during manual test.
 4. Owner dashboard KPIs may remain placeholder until Phase 22.5+.
 5. `BranchContext` still falls back to MAIN when users lack `branch_id` assignment.
+
+---
+
+## Sprint 22 Phase 22.3 — VPS Pilot Deployment Checklist & Safe Seeder Rollout
+
+**Branch:** `feature/sprint-22-vps-pilot-deployment-checklist`  
+**Tag:** `sprint-22-phase-22-3-vps-pilot-deployment-checklist`  
+**Type:** Documentation / runbook — no VPS deployment performed
+
+### Objective
+
+Provide a safe, operator-friendly VPS pilot deployment checklist and safe seeder rollout process for Sprint 22 Phase 22.1 and 22.2 changes without damaging existing pilot data.
+
+### Checklist docs created
+
+- `docs/pilot/vps_pilot_deployment_checklist.md` — Indonesian VPS deploy runbook (backup, deploy sequence, verification, rollback, forbidden commands)
+- `docs/pilot/safe_seeder_rollout.md` — Indonesian safe seeder rollout guide
+
+### Safe seeder command order
+
+```bash
+php artisan db:seed --class=PermissionSeeder
+php artisan db:seed --class=RoleSeeder
+php artisan db:seed --class=RmeSmokeTestSeeder
+```
+
+`RmeSmokeTestSeeder` is **opt-in** only. `DatabaseSeeder` unchanged — not for VPS production reset.
+
+### Backup / rollback summary
+
+- **Backup:** `pg_dump -U "$DB_USER" -d "$DB_NAME" -F c -f "$BACKUP_FILE"` after creating `BACKUP_DIR`; verify non-zero file size before deploy.
+- **Rollback app:** `git checkout` previous stable tag, `composer install`, cache rebuild, optional `queue:restart`.
+- **Rollback DB:** restore only from verified backup if corruption occurred; prefer not restoring otherwise.
+- **Forbidden on VPS:** `migrate:fresh`, `migrate:fresh --seed`, `db:wipe`, unqualified `db:seed`.
+
+### Files changed
+
+- `docs/pilot/vps_pilot_deployment_checklist.md` (new)
+- `docs/pilot/safe_seeder_rollout.md` (new)
+- `scripts/vps_pilot_preflight.sh` (new — read-only preflight)
+- `tests/Feature/Pilot/VpsPilotDeploymentChecklistTest.php` (new)
+- `docs/sprint_history.md`
+
+### Tests added
+
+- `tests/Feature/Pilot/VpsPilotDeploymentChecklistTest.php` — doc existence, backup guidance, safe seeder commands, forbidden commands section, Ubuntu Terminal rule, rollback guidance, smoke-test identifiers, preflight script safety
+
+### Verification commands
+
+```bash
+php artisan optimize:clear
+php artisan test --filter=VpsPilotDeploymentChecklist
+php artisan test --filter=Pilot
+./vendor/bin/pint --dirty
+```
+
+Heavy suites (RME + full) run separately in Ubuntu Terminal per project terminal rule.
+
+### Risks / follow-up for Phase 22.4
+
+1. Map real VPS pilot users to Owner/Kasir/Perawat roles if not using smoke-test accounts.
+2. Confirm no new migrations before enabling `migrate --force` on VPS.
+3. Operator must run backup manually — preflight script does not automate backup.
+4. Handwriting RM PNG and cashier invoice still manual during smoke test.
+5. Phase 22.4 (RME → Lab candidate end-to-end validation) remains separate implementation scope.
