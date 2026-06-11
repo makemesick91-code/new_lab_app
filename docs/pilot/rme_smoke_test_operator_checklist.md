@@ -149,6 +149,14 @@ Perintah di atas **menghapus semua data** dan tidak boleh digunakan di lingkunga
 
 ---
 
+## Validasi RME → Lab (Phase 22.4)
+
+Untuk validasi alur lengkap **RME → pembayaran kasir → kandidat lab → lab order**, gunakan checklist terpisah:
+
+- `docs/pilot/rme_lab_candidate_e2e_operator_checklist.md`
+
+---
+
 ## Catatan
 
 - Smoke test ini **tidak menggantikan** uji coba klinis lengkap dengan pasien nyata.

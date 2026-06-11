@@ -4538,3 +4538,69 @@ Heavy suites (RME + full) run separately in Ubuntu Terminal per project terminal
 3. Operator must run backup manually — preflight script does not automate backup.
 4. Handwriting RM PNG and cashier invoice still manual during smoke test.
 5. Phase 22.4 (RME → Lab candidate end-to-end validation) remains separate implementation scope.
+
+---
+
+## Sprint 22 Phase 22.4 — RME → Lab Candidate End-to-End Validation
+
+**Branch:** `feature/sprint-22-rme-lab-candidate-e2e-validation`  
+**Tag:** `sprint-22-phase-22-4-rme-lab-candidate-e2e-validation`  
+**Type:** Validation / documentation / tests — no schema changes, no payment/generation/conversion logic changes
+
+### Objective
+
+Validate and document the full pilot RME-to-lab handoff: visit/RME finalize → cashier billing → full payment → lab case candidate → Admin Lab conversion → traceable lab order, with role boundaries and finance isolation.
+
+### Flow validated
+
+```text
+ClinicVisit → MedicalRecord finalize → cashier_pending
+→ RmeInvoice → RmePayment (full) → PAID + visit completed
+→ LabCaseCandidate (requires_lab items)
+→ LabCaseCandidateConversionService → LabOrder
+```
+
+Boundaries confirmed: no `trx_payments` / lab `Invoice` auto-created; partial payment rejected; idempotent generation and conversion.
+
+### Files changed
+
+- `tests/Feature/Pilot/RmeLabCandidateE2EValidationTest.php` (new)
+- `docs/pilot/rme_lab_candidate_e2e_operator_checklist.md` (new — Indonesian)
+- `docs/pilot/rme_lab_candidate_e2e_developer_notes.md` (new)
+- `docs/pilot/rme_smoke_test_operator_checklist.md` (reference section)
+- `docs/pilot/rme_smoke_test_developer_notes.md` (reference section)
+- `docs/sprint_history.md`
+
+**Not changed:** `RmeSmokeTestSeeder`, `DatabaseSeeder`, application business logic, schema.
+
+### Tests added
+
+- `tests/Feature/Pilot/RmeLabCandidateE2EValidationTest.php` — full happy path, idempotency, non-lab guard, partial payment guard, role boundaries, cross-branch denial, visit status transition, pilot doc presence
+
+### Operator checklist
+
+- `docs/pilot/rme_lab_candidate_e2e_operator_checklist.md`
+
+### Developer notes
+
+- `docs/pilot/rme_lab_candidate_e2e_developer_notes.md`
+
+### Verification commands
+
+```bash
+php artisan optimize:clear
+php artisan test --filter=RmeLabCandidateE2EValidation
+php artisan test --filter=LabCaseCandidate
+php artisan test --filter=Pilot
+./vendor/bin/pint --dirty
+```
+
+Heavy: `php artisan test --filter=RME` and full suite in Ubuntu Terminal only.
+
+### Risks / follow-up for Phase 22.5
+
+1. Optional smoke seeder: lab-required treatment + Admin Lab smoke account (not done in 22.4).
+2. VPS operators must pick `requires_lab` treatment manually during kasir step.
+3. Handwriting RM still manual before finalize in smoke data.
+4. Treatment → `lab_service_id` mapping still explicit at conversion.
+5. Owner dashboard / RME→lab funnel metrics deferred.

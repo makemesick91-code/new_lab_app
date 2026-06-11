@@ -115,6 +115,18 @@ php artisan test
 
 ---
 
+## RME → Lab end-to-end validation (Phase 22.4)
+
+Validasi alur RME sampai kandidat lab dan konversi lab order didokumentasikan di:
+
+- Operator: `docs/pilot/rme_lab_candidate_e2e_operator_checklist.md`
+- Developer: `docs/pilot/rme_lab_candidate_e2e_developer_notes.md`
+- Tests: `tests/Feature/Pilot/RmeLabCandidateE2EValidationTest.php`
+
+`RmeSmokeTestSeeder` tidak diubah di Phase 22.4 — operator memilih tindakan `requires_lab` saat uji kasir manual.
+
+---
+
 ## Known limitations / Phase 22.3 follow-up
 
 1. Smoke users have no `branch_id` column assignment — `BranchContext` falls back to `MAIN` (current schema).
