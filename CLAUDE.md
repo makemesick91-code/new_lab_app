@@ -44,3 +44,23 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+
+## Sprint 21 Phase 21.3 — Admin Lab Candidate Queue UI (2026-06-11)
+
+**Branch:** `feature/sprint-21-lab-candidate-queue`
+**Tag:** `sprint-21-phase-21-3-lab-candidate-queue`
+
+### What was added
+
+- Read-only `LabCaseCandidate` queue for Admin Lab
+- Routes: `lab-case-candidates.index` / `lab-case-candidates.show` under `/lab/case-candidates`
+- `LabCaseCandidatePolicy` (viewAny + view with branch isolation)
+- Registered in `RepositoryServiceProvider.$policies`
+- `LabCaseCandidateController` — branch-scoped, filter by status, search
+- Views: `resources/views/lab/case-candidates/index.blade.php` and `show.blade.php`
+- Sidebar: "Kandidat Lab RME" item, gated by `view_lab_orders | manage_lab_orders`
+
+### Phase 21.4 TODO
+
+- Conversion-to-LabOrder action and service
+- No convert button exists yet — Phase 21.3 is strictly read-only

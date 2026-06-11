@@ -27,7 +27,7 @@
 
     $sidebarRouteOpen = [
         'rme' => request()->routeIs('rme.*'),
-        'lab' => request()->routeIs('lab-orders.*'),
+        'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*'),
         'production' => request()->routeIs('production.*'),
         'qc' => request()->routeIs('quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
@@ -119,6 +119,17 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12h6m-6 4h6M9 8h6M5 6h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z" />
                     </svg>
                     <span>Order Lab</span>
+                </a>
+            @endcanany
+
+            {{-- Sprint 21 Phase 21.3 — RME → Lab candidate queue (read-only) --}}
+            @canany(['view_lab_orders', 'manage_lab_orders'])
+                <a href="{{ route('lab-case-candidates.index') }}"
+                   class="menu-item {{ request()->routeIs('lab-case-candidates.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                    </svg>
+                    <span>Kandidat Lab RME</span>
                 </a>
             @endcanany
 

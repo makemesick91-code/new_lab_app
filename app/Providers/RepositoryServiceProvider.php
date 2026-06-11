@@ -104,8 +104,10 @@ use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\StatusLogRepositoryInterface;
 use App\Modules\LabOrder\Models\Attachment;
+use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Policies\AttachmentPolicy;
+use App\Modules\LabOrder\Policies\LabCaseCandidatePolicy;
 use App\Modules\LabOrder\Policies\LabOrderPolicy;
 use App\Modules\LabOrder\Repositories\AttachmentRepository;
 use App\Modules\LabOrder\Repositories\AuditLogRepository;
@@ -343,6 +345,7 @@ class RepositoryServiceProvider extends ServiceProvider
         LabService::class => LabServicePolicy::class,
         Technician::class => TechnicianPolicy::class,
         LabOrder::class => LabOrderPolicy::class,
+        LabCaseCandidate::class => LabCaseCandidatePolicy::class,
         Attachment::class => AttachmentPolicy::class,
         Delivery::class => DeliveryPolicy::class,
         Invoice::class => InvoicePolicy::class,

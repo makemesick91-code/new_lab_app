@@ -32,6 +32,7 @@ use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierCon
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
+use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
@@ -267,6 +268,22 @@ Route::middleware('auth')->group(function () {
         ->name('lab-orders.attachments.upload');
     Route::delete('lab-orders/{labOrder}/attachments/{attachment}', [AttachmentController::class, 'destroy'])
         ->name('lab-orders.attachments.destroy');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Sprint 21 Phase 21.3 — Lab Case Candidate Queue (read-only)
+|--------------------------------------------------------------------------
+| Admin Lab read-only queue of LabCaseCandidate records generated from paid
+| RME invoices. Phase 21.4 will add the conversion-to-LabOrder action.
+*/
+Route::middleware('auth')->prefix('lab')->name('lab-')->group(function () {
+    Route::get('case-candidates', [LabCaseCandidateController::class, 'index'])
+        ->name('case-candidates.index')
+        ->middleware('permission:view_lab_orders|manage_lab_orders');
+    Route::get('case-candidates/{candidate}', [LabCaseCandidateController::class, 'show'])
+        ->name('case-candidates.show')
+        ->middleware('permission:view_lab_orders|manage_lab_orders');
 });
 
 /*

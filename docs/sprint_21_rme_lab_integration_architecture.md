@@ -600,3 +600,38 @@ All Phase 21.2 coding tasks are blocked on project owner approval of this archit
 *End of Sprint 21 Phase 21.1 Architecture Document.*  
 *Design only — no application code changed.*  
 *Next: project owner reviews and approves → Phase 21.2 implementation begins.*
+
+---
+
+## Phase 21.3 — Admin Lab Candidate Queue UI
+
+**Status:** COMPLETE (2026-06-11)
+
+### Summary
+
+Phase 21.3 adds a read-only Admin Lab queue for `LabCaseCandidate` records.
+No conversion to `LabOrder` is implemented in this phase.
+
+### Routes
+
+```
+GET  /lab/case-candidates            → lab-case-candidates.index
+GET  /lab/case-candidates/{id}       → lab-case-candidates.show
+```
+
+### Authorization
+
+`LabCaseCandidatePolicy` uses existing `view_lab_orders | manage_lab_orders` permissions.
+Branch isolation enforced: `candidate->branch_id` must equal `BranchContext::forUser($user)`.
+
+### UI
+
+- TailAdmin shell (`x-settings-shell`)
+- Index: filter by status, search by patient/doctor/description, paginated table
+- Show: full candidate detail with patient, visit, invoice, treatment, and estimated price
+- Sidebar: "Kandidat Lab RME" item visible to `view_lab_orders | manage_lab_orders`
+
+### Phase 21.4 Boundary
+
+Phase 21.4 will add the convert-to-LabOrder action and service.
+No convert button or POST endpoint exists in Phase 21.3.

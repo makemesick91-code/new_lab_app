@@ -517,3 +517,62 @@ See `docs/sprint_21_rme_lab_integration_architecture.md` for architecture detail
 routes, policies, seeders, factories, tests, or Blade views were modified as part of this
 planning phase. Sprint 20 behavior is fully preserved. This document should be updated as each
 Sprint 21 phase begins and completes.*
+
+---
+
+## 15. Phase 21.3 — Admin Lab Candidate Queue UI
+
+**Status:** COMPLETE (2026-06-11)
+**Branch:** `feature/sprint-21-lab-candidate-queue`
+**Tag:** `sprint-21-phase-21-3-lab-candidate-queue`
+
+### Goal
+
+Create a read-only Admin Lab queue UI for `LabCaseCandidate` records generated
+from paid RME invoices. Phase 21.4 will add conversion to `LabOrder`.
+
+### Files Added
+
+| File | Purpose |
+|---|---|
+| `tests/Feature/RME/LabCaseCandidateQueueTest.php` | 12 TDD tests covering auth, branch isolation, filters, sidebar |
+| `app/Modules/LabOrder/Policies/LabCaseCandidatePolicy.php` | viewAny + view with branch isolation |
+| `app/Modules/LabOrder/Controllers/LabCaseCandidateController.php` | index + show, branch-scoped |
+| `resources/views/lab/case-candidates/index.blade.php` | TailAdmin-style paginated queue |
+| `resources/views/lab/case-candidates/show.blade.php` | Candidate detail page |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `app/Providers/RepositoryServiceProvider.php` | Registered `LabCaseCandidatePolicy` |
+| `routes/web.php` | Added `lab-case-candidates.index` and `lab-case-candidates.show` |
+| `resources/views/layouts/partials/sidebar.blade.php` | Added "Kandidat Lab RME" menu item |
+
+### Routes
+
+| Name | URL | Permission |
+|---|---|---|
+| `lab-case-candidates.index` | `GET /lab/case-candidates` | `view_lab_orders\|manage_lab_orders` |
+| `lab-case-candidates.show` | `GET /lab/case-candidates/{candidate}` | `view_lab_orders\|manage_lab_orders` |
+
+### Authorization
+
+- Reuses existing `view_lab_orders` / `manage_lab_orders` permissions (no new permissions).
+- Admin Lab role already holds both. Super Admin bypasses via `Gate::before`.
+- Branch isolation: `LabCaseCandidatePolicy::view()` checks `candidate->branch_id === BranchContext::forUser($user)`.
+
+### Scope Boundary
+
+- **Read-only**: no conversion to `LabOrder`, no mutation endpoints.
+- Phase 21.4 will implement the conversion action.
+
+### Test Results
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabCaseCandidateQueue` | 12 passed, 26 assertions |
+| `php artisan test --filter=LabIntegration` | 11 passed |
+| `php artisan test --filter=RmePayment` | 16 passed |
+| `php artisan test --filter=RME` | 306 passed |
+| `php artisan test` (full suite) | All passed |

@@ -3973,3 +3973,50 @@ generation throws `ValidationException`. Tests 7 and 8 cover this.
 | `php artisan test` (full suite) | **1853 passed** |
 | `./vendor/bin/pint --dirty` | Passed — no changes |
 | `npm run build` | Success |
+
+---
+
+## Sprint 21 Phase 21.3 — Admin Lab Candidate Queue UI
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-lab-candidate-queue`
+**Tag:** `sprint-21-phase-21-3-lab-candidate-queue`
+**Base:** `bd047fe` (Sprint 21.2)
+
+### Goal
+
+Read-only Admin Lab queue UI for `LabCaseCandidate` records generated from paid RME invoices.
+
+### What changed
+
+- Added `LabCaseCandidatePolicy` (viewAny + view with branch isolation)
+- Registered policy in `RepositoryServiceProvider`
+- Added `LabCaseCandidateController` (index + show, branch-scoped, eager-loaded)
+- Routes: `GET /lab/case-candidates` and `GET /lab/case-candidates/{candidate}`
+- Views: `resources/views/lab/case-candidates/index.blade.php` and `show.blade.php`
+- Sidebar: "Kandidat Lab RME" menu item gated by `view_lab_orders | manage_lab_orders`
+
+### Authorization
+
+- Reuses existing `view_lab_orders` / `manage_lab_orders` permissions — no new permissions added.
+- Branch isolation: Policy enforces `candidate->branch_id === BranchContext::forUser($user)`.
+
+### Phase boundaries preserved
+
+- No `LabOrder` records created.
+- No `LabOrderItem` records created.
+- No convert-to-LabOrder action (Phase 21.4).
+- No RME payment hook modified.
+- No candidate generation logic changed.
+
+**Test results:**
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabCaseCandidateQueue` | **12 passed, 26 assertions** |
+| `php artisan test --filter=LabIntegration` | **11 passed, 24 assertions** |
+| `php artisan test --filter=RmePayment` | **16 passed, 24 assertions** |
+| `php artisan test --filter=RME` | **306 passed** |
+| `php artisan test` (full suite) | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |
