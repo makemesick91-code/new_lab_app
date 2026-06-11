@@ -184,7 +184,7 @@ it('enforces branch isolation on executive dashboard movement data', function ()
 });
 
 it('shows Dasbor Eksekutif sidebar link for permitted users', function () {
-    $user = userWith(['view_inventory_executive_dashboard']);
+    $user = userWith(['view dashboard', 'view_inventory_executive_dashboard']);
 
     $this->actingAs($user)
         ->get(route('dashboard'))
@@ -193,7 +193,7 @@ it('shows Dasbor Eksekutif sidebar link for permitted users', function () {
 });
 
 it('shows Dasbor Eksekutif sidebar link for view_inventory fallback users', function () {
-    $user = userWith(['view_inventory']);
+    $user = userWith(['view dashboard', 'view_inventory']);
 
     $this->actingAs($user)
         ->get(route('dashboard'))

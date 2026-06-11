@@ -337,7 +337,7 @@ it('hides Batch & Lot sidebar link for unauthorized users', function () {
         ->get(route('inventory.dashboard'))
         ->assertForbidden();
 
-    $this->actingAs($this->unauthorized)
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Batch & Lot');

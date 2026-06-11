@@ -18,6 +18,7 @@ class RoleSeeder extends Seeder
         'Super Admin' => '*', // all permissions
         'Admin Lab' => [
             'view dashboard',
+            'view_branch_dashboard',
             'manage master data',
             'manage clinics',
             'manage doctors',
@@ -93,7 +94,9 @@ class RoleSeeder extends Seeder
         ],
         'Admin Klinik' => [
             'view dashboard',
+            'view_branch_dashboard',
             'manage patients',
+            'view_clinic_master_data',
             // Sprint 20 - RME: Clinic Visit Queue
             'view_clinic_visits',
             'manage_clinic_visits',
@@ -183,8 +186,34 @@ class RoleSeeder extends Seeder
         ],
         'Doctor' => [
             'view dashboard',
-            'view_lab_orders',
-            // Sprint 20 Phase 1.12 — RME pilot: doctor workflow
+            // Sprint 20 Phase 1.12 — RME pilot: doctor workflow (no cashier billing)
+            'view_clinic_visits',
+            'manage_clinic_visits',
+        ],
+        // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)
+        'Owner' => [
+            'view dashboard',
+            'view_owner_dashboard',
+            'manage_report',
+            'view_dashboard',
+            'view_order_report',
+            'view_production_report',
+            'view_qc_report',
+            'view_delivery_report',
+            'view_invoice_report',
+            'view_payment_report',
+            'view_inventory_executive_dashboard',
+            'view_inventory_cross_branch_analytics',
+            'view_clinic_visits',
+        ],
+        'Kasir' => [
+            'view dashboard',
+            'view_clinic_visits',
+            'manage_rme_billing',
+        ],
+        'Perawat' => [
+            'view dashboard',
+            'manage patients',
             'view_clinic_visits',
             'manage_clinic_visits',
         ],

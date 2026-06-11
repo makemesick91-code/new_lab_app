@@ -82,13 +82,15 @@
         x-data="adlmsSidebar(@js($sidebarRouteOpen))"
     >
         <div class="space-y-1">
-            <a href="{{ route('dashboard') }}"
-               class="menu-item {{ request()->routeIs('dashboard') ? 'menu-item-active' : 'menu-item-inactive' }}">
-                <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12l9-7 9 7M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />
-                </svg>
-                <span>Dasbor</span>
-            </a>
+            @canany(['view dashboard', 'view_owner_dashboard'])
+                <a href="{{ route('dashboard') }}"
+                   class="menu-item {{ request()->routeIs('dashboard') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12l9-7 9 7M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />
+                    </svg>
+                    <span>Dasbor</span>
+                </a>
+            @endcanany
 
             @canany(['view_clinic_visits', 'manage_clinic_visits'])
                 <div class="pt-2">

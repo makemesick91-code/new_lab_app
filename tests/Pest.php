@@ -179,6 +179,14 @@ function userWith(array $permissions): User
     return $user;
 }
 
+/**
+ * A user assigned to a seeded role (no Super Admin bypass).
+ */
+function userInRole(string $role): User
+{
+    return User::factory()->create()->assignRole($role);
+}
+
 function validPodSignatureData(): string
 {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC';

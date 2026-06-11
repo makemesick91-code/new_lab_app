@@ -1,15 +1,8 @@
 <?php
 
-use App\Models\User;
-
 beforeEach(function () {
     seedAccessControl();
 });
-
-function userInRole(string $role): User
-{
-    return User::factory()->create()->assignRole($role);
-}
 
 it('grants Admin Lab access to every report', function () {
     $admin = userInRole('Admin Lab');

@@ -11,7 +11,7 @@ beforeEach(function () {
 
 it('lists roles for an authorized user', function () {
     $this->actingAs(userWith(['manage roles']))
-        ->get(route('settings.roles.index'))
+        ->get(route('settings.roles.index', ['search' => 'Super Admin']))
         ->assertOk()
         ->assertViewIs('settings.roles.index')
         ->assertSee('Super Admin');

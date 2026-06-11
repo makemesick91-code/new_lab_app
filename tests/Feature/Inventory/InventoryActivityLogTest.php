@@ -512,21 +512,21 @@ describe('activity log index filters via http', function () {
 
 describe('activity log sidebar visibility', function () {
     it('shows Log Aktivitas for users with view_inventory_activity_log', function () {
-        $this->actingAs(userWith(['view_inventory_activity_log']))
+        $this->actingAs(userWith(['view dashboard', 'view_inventory_activity_log']))
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Log Aktivitas');
     });
 
     it('shows Log Aktivitas for users with view_inventory', function () {
-        $this->actingAs(userWith(['view_inventory']))
+        $this->actingAs(userWith(['view dashboard', 'view_inventory']))
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Log Aktivitas');
     });
 
     it('shows Log Aktivitas for users with view_inventory_analytics', function () {
-        $this->actingAs(userWith(['view_inventory_analytics']))
+        $this->actingAs(userWith(['view dashboard', 'view_inventory_analytics']))
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('Log Aktivitas');

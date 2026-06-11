@@ -238,7 +238,7 @@ describe('granular permissions without legacy supersets', function () {
 
 describe('sidebar visibility with granular permissions', function () {
     it('shows inventory group for granular stock transfer viewer without core inventory links', function () {
-        $user = userWith(['view_stock_transfer']);
+        $user = userWith(['view dashboard', 'view_stock_transfer']);
         $this->actingAs($user);
 
         $this->get(route('dashboard'))
@@ -250,7 +250,7 @@ describe('sidebar visibility with granular permissions', function () {
     });
 
     it('shows procurement group for granular purchase request viewer', function () {
-        $user = userWith(['view_purchase_request']);
+        $user = userWith(['view dashboard', 'view_purchase_request']);
         $this->actingAs($user);
 
         $this->get(route('dashboard'))
@@ -261,7 +261,7 @@ describe('sidebar visibility with granular permissions', function () {
     });
 
     it('shows core inventory links for view_inventory users', function () {
-        $user = userWith(['view_inventory']);
+        $user = userWith(['view dashboard', 'view_inventory']);
         $this->actingAs($user);
 
         $this->get(route('dashboard'))
@@ -274,7 +274,7 @@ describe('sidebar visibility with granular permissions', function () {
     });
 
     it('shows activity log group entry for granular analytics viewers', function () {
-        $user = userWith(['view_inventory_analytics']);
+        $user = userWith(['view dashboard', 'view_inventory_analytics']);
         $this->actingAs($user);
 
         $this->get(route('dashboard'))
@@ -285,7 +285,7 @@ describe('sidebar visibility with granular permissions', function () {
     });
 
     it('shows executive dashboard entry for granular executive viewers without core inventory links', function () {
-        $user = userWith(['view_inventory_executive_dashboard']);
+        $user = userWith(['view dashboard', 'view_inventory_executive_dashboard']);
         $this->actingAs($user);
 
         $this->get(route('dashboard'))

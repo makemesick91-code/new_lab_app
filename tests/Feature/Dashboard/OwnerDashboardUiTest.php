@@ -4,8 +4,8 @@ beforeEach(function () {
     seedAccessControl();
 });
 
-it('renders the owner dashboard sections for an authenticated user', function () {
-    $this->actingAs(userWith(['manage_report']))
+it('renders the owner dashboard sections for the Owner role', function () {
+    $this->actingAs(userInRole('Owner'))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Dasbor Owner')
@@ -17,8 +17,15 @@ it('renders the owner dashboard sections for an authenticated user', function ()
         ->assertSee('Timeline Aktivitas Terbaru');
 });
 
+it('renders the owner dashboard for legacy manage_report users', function () {
+    $this->actingAs(userWith(['view dashboard', 'manage_report']))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Dasbor Owner');
+});
+
 it('shows safe empty states when owner dashboard data is unavailable', function () {
-    $this->actingAs(userWith(['manage_report']))
+    $this->actingAs(userInRole('Owner'))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Tidak ada peringatan mendesak')

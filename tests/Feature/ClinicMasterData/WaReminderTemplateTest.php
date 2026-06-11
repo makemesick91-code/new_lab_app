@@ -529,7 +529,7 @@ it('sidebar shows Template Reminder WA for a permitted user', function () {
 });
 
 it('sidebar hides Template Reminder WA for an unauthorized user', function () {
-    $this->actingAs(userWith([]))
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Template Reminder WA');

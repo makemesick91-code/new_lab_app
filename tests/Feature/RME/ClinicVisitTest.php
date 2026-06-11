@@ -625,11 +625,17 @@ it('shows RME sidebar links for user with manage_clinic_visits', function () {
 });
 
 it('hides RME sidebar links for user without clinic visit permission', function () {
-    $this->actingAs(userWith([]))
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee(route('rme.visits.index'), false)
         ->assertDontSee(route('rme.medical-records.index'), false);
+});
+
+it('denies dashboard access to users without dashboard permissions', function () {
+    $this->actingAs(userWith([]))
+        ->get(route('dashboard'))
+        ->assertForbidden();
 });
 
 it('shows rme widget section for user with view_clinic_visits', function () {

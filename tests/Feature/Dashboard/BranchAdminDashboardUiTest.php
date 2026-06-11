@@ -6,6 +6,7 @@ beforeEach(function () {
 
 it('renders the branch admin dashboard for an operational branch user', function () {
     $this->actingAs(userWith([
+        'view dashboard',
         'view_lab_orders',
         'view_production',
         'view_quality_control',
@@ -28,7 +29,7 @@ it('renders the branch admin dashboard for an operational branch user', function
 });
 
 it('shows safe branch admin empty states when dashboard data is unavailable', function () {
-    $this->actingAs(userWith(['view_lab_orders', 'view_production']))
+    $this->actingAs(userWith(['view dashboard', 'view_lab_orders', 'view_production']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Belum ada order baru hari ini.')
@@ -38,6 +39,7 @@ it('shows safe branch admin empty states when dashboard data is unavailable', fu
 
 it('uses Indonesian sidebar labels for key modules', function () {
     $this->actingAs(userWith([
+        'view dashboard',
         'view_lab_orders',
         'view_inventory',
         'view_production',

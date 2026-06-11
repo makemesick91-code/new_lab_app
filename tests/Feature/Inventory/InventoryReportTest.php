@@ -89,7 +89,7 @@ it('renders all six inventory report labels and notes', function () {
 });
 
 it('shows reports sidebar link for authorized inventory users', function () {
-    $this->actingAs(userWith(['view_inventory']))
+    $this->actingAs(userWith(['view dashboard', 'view_inventory']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Laporan Inventory')
@@ -97,7 +97,7 @@ it('shows reports sidebar link for authorized inventory users', function () {
 });
 
 it('hides reports sidebar link for unauthorized users', function () {
-    $this->actingAs(User::factory()->create())
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Laporan Inventory')

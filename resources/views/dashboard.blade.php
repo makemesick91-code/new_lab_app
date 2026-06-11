@@ -16,6 +16,8 @@
         'manage_invoice',
     ];
     $showBranchAdminDashboard = $canAny($branchOperationalPermissions);
+    $showOwnerDashboard = ! $showBranchAdminDashboard
+        && ($user?->can('view_owner_dashboard') || $user?->can('manage_report'));
 
     $ownerKpis = $ownerKpis ?? [
         [
@@ -243,10 +245,22 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                    {{ $showBranchAdminDashboard ? 'Dasbor Admin Cabang' : 'Dasbor Owner' }}
+                    @if ($showBranchAdminDashboard)
+                        Dasbor Admin Cabang
+                    @elseif ($showOwnerDashboard)
+                        Dasbor Owner
+                    @else
+                        Dasbor
+                    @endif
                 </h2>
                 <p class="mt-1 text-sm text-gray-500">
-                    {{ $showBranchAdminDashboard ? 'Ringkasan operasional harian untuk cabang aktif.' : 'Ringkasan eksekutif untuk operasional pilot DaengtisiaMS.' }}
+                    @if ($showBranchAdminDashboard)
+                        Ringkasan operasional harian untuk cabang aktif.
+                    @elseif ($showOwnerDashboard)
+                        Ringkasan eksekutif untuk operasional pilot DaengtisiaMS.
+                    @else
+                        Ringkasan operasional untuk peran Anda.
+                    @endif
                 </p>
             </div>
             <div class="text-left sm:text-right">
@@ -259,7 +273,7 @@
     <div class="mx-auto max-w-7xl space-y-6">
                 @if ($showBranchAdminDashboard)
                     @include('dashboards.branch-admin')
-                @else
+                @elseif ($showOwnerDashboard)
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
@@ -360,6 +374,26 @@
                         @endcanany
                     </div>
                 </x-owner-dashboard.dashboard-section>
+                @else
+                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Dasbor Operasional</p>
+                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Mulai dari menu modul Anda</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                        Peran ini tidak memiliki ringkasan eksekutif atau operasional cabang penuh. Gunakan menu samping untuk kunjungan klinik, kasir RME, atau modul lain yang diizinkan.
+                    </p>
+                    <div class="mt-4 flex flex-wrap gap-2">
+                        @canany(['view_clinic_visits', 'manage_clinic_visits'])
+                            <a href="{{ route('rme.visits.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                                Buka Kunjungan
+                            </a>
+                        @endcanany
+                        @can('manage_rme_billing')
+                            <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                Buka Kasir RME
+                            </a>
+                        @endcan
+                    </div>
+                </section>
                 @endif
     </div>
 </x-app-layout>

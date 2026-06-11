@@ -156,7 +156,7 @@ it('shows product category and unit sidebar menus only for authorized inventory 
         ->assertSee('Kategori Produk')
         ->assertSee('Satuan Produk');
 
-    $this->actingAs(userWith([]))
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Kategori Produk')

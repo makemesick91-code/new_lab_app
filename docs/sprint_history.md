@@ -4291,3 +4291,95 @@ Docs-only lightweight verification planned:
 | `git diff -- docs/sprint_22_planning.md docs/sprint_history.md CLAUDE.md` | Review Sprint 22 documentation diff |
 
 Heavy test suites were intentionally not planned for Phase 22.0 because no application code changes are included.
+
+---
+
+## Sprint 22 Phase 22.1 — Pilot Role/Permission/Menu Hardening
+
+**Branch:** `feature/sprint-22-role-permission-menu-hardening`  
+**Tag:** `sprint-22-phase-22-1-pilot-role-permission-menu-hardening`  
+**Type:** Implementation — pilot access hardening only
+
+### Objective
+
+Harden pilot-facing roles, permissions, route guards, and sidebar/menu visibility so RME, cashier, lab, owner, and operational users only see and access features appropriate to their role during VPS pilot testing.
+
+### Permissions added
+
+| Permission | Purpose |
+|---|---|
+| `view_owner_dashboard` | Explicit read-only owner landing dashboard access |
+| `view_branch_dashboard` | Reserved explicit branch-dashboard permission (seeded; assignment starts with Admin Lab / Admin Klinik) |
+
+### Roles hardened / added
+
+| Role | Pilot permissions (summary) |
+|---|---|
+| **Owner** (new) | Read-only executive: reports, owner dashboard, read-only RME visits, inventory executive/cross-branch analytics; no manage/operational writes |
+| **Kasir** (new) | `view_clinic_visits` + `manage_rme_billing` only (least-privilege cashier) |
+| **Perawat** (new) | Clinic front-desk: `manage patients`, `view/manage_clinic_visits`; no cashier or lab access |
+| **Doctor** | Clinical only; removed `view_lab_orders`; no `manage_rme_billing` |
+| **Admin Klinik** | Added `view_clinic_master_data`, `view_branch_dashboard` |
+| **Admin Lab** | Added `view_branch_dashboard` (unchanged operational superset) |
+
+### Route / menu hardening
+
+- `/dashboard` now requires `view dashboard` or `view_owner_dashboard` (auth + verified preserved).
+- Sidebar **Dasbor** link gated with the same permissions.
+- Dashboard shell now distinguishes **Owner**, **Admin Cabang**, and **clinic operational** users; clinic-only roles get a lightweight operational landing with RME shortcuts.
+- Existing `rme.*`, `lab-case-candidates.*`, and module permission middleware preserved; no payment/generation/conversion behavior changed.
+
+### Files changed
+
+- `database/seeders/PermissionSeeder.php`
+- `database/seeders/RoleSeeder.php`
+- `routes/web.php`
+- `resources/views/layouts/partials/sidebar.blade.php`
+- `resources/views/dashboard.blade.php`
+- `tests/Pest.php` (`userInRole` helper)
+- `tests/Feature/Auth/RolePermissionHardeningTest.php` (new)
+- `tests/Feature/Navigation/SidebarPermissionVisibilityTest.php` (new)
+- `tests/Feature/Pilot/PilotRouteAuthorizationTest.php` (new)
+- `tests/Feature/Dashboard/OwnerDashboardUiTest.php`
+- `tests/Feature/Dashboard/BranchAdminDashboardUiTest.php`
+- `tests/Feature/RME/ClinicVisitTest.php`
+- `tests/Feature/Inventory/InventoryPermissionHardeningTest.php`
+- `tests/Feature/Inventory/InventoryActivityLogTest.php`
+- `tests/Feature/Inventory/InventoryBatchTest.php`
+- `tests/Feature/Inventory/InventoryExecutiveDashboardUiTest.php`
+- `tests/Feature/Inventory/InventoryReportTest.php`
+- `tests/Feature/Inventory/ProductCategoryCrudTest.php`
+- `tests/Feature/ClinicMasterData/WaReminderTemplateTest.php`
+- `tests/Feature/AccessControl/RoleManagementTest.php`
+- `tests/Feature/Reporting/ReportPermissionTest.php`
+- `docs/sprint_history.md`
+
+### Tests run
+
+```bash
+php artisan optimize:clear
+php artisan test --filter=RolePermissionHardening      # 8 passed
+php artisan test --filter=SidebarPermissionVisibility  # 6 passed
+php artisan test --filter=PilotRouteAuthorization      # 6 passed
+php artisan test --filter=RME                          # 366 passed
+php artisan test --filter=Permission                   # 149 passed
+php artisan test --filter=Authorization                # 50 passed
+./vendor/bin/pint --dirty
+php artisan test                                       # 1940 passed
+```
+
+### Preserved Sprint 21 / pilot boundaries
+
+- No RME payment behavior changes (full payment only).
+- No auto `LabOrder` from RME payment; `LabCaseCandidate` staging unchanged.
+- No lab payment records from RME payment.
+- SOAP doctor UI remains hidden; handwriting-first RM unchanged.
+- No database schema migrations.
+
+### Follow-up items for Phase 22.2
+
+1. RME end-to-end smoke-test data and operator checklist.
+2. Map pilot VPS users to new **Owner** / **Kasir** / **Perawat** roles (seeders only define roles; user assignment remains manual).
+3. Owner Dashboard live KPI wiring (Phase 22.5+) — foundation permissions now explicit.
+4. Super Admin still lands on branch-admin dashboard when holding operational permissions (known Sprint 14 audit item; deferred).
+5. Re-run `php artisan db:seed --class=PermissionSeeder` and `RoleSeeder` on VPS after deploy (no `migrate:fresh` / `db:wipe`).
