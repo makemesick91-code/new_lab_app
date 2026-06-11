@@ -4383,3 +4383,93 @@ php artisan test                                       # 1940 passed
 3. Owner Dashboard live KPI wiring (Phase 22.5+) — foundation permissions now explicit.
 4. Super Admin still lands on branch-admin dashboard when holding operational permissions (known Sprint 14 audit item; deferred).
 5. Re-run `php artisan db:seed --class=PermissionSeeder` and `RoleSeeder` on VPS after deploy (no `migrate:fresh` / `db:wipe`).
+
+---
+
+## Sprint 22 Phase 22.2 — RME End-to-End Smoke-Test Data & Operator Checklist
+
+**Branch:** `feature/sprint-22-rme-smoke-test-checklist`  
+**Tag:** `sprint-22-phase-22-2-rme-smoke-test-checklist`  
+**Type:** Implementation — smoke-test seed data, operator checklist, developer notes, tests
+
+### Objective
+
+Prepare reliable RME pilot smoke-test data and an operator checklist so clinic users can test the RME flow end-to-end without developer guidance.
+
+### Smoke-test data created
+
+| Entity | Identifier |
+|--------|------------|
+| Branch | `MAIN` — Klinik Gigi Daengtisia Pusat |
+| Clinic | `CLN-SMOKE-TEST` |
+| Doctor (master) | `DOC-SMOKE-TEST` — DOKTER SMOKE TEST |
+| Patient | `MRN-SMOKE-TEST-RME` — PASIEN SMOKE TEST RME |
+| Visit (clinical) | `VIS-SMOKE-TEST-RME` — `in_progress` + draft MR + draft odontogram |
+| Visit (cashier) | `VIS-SMOKE-CASHIER-RME` — `cashier_pending` + final MR |
+
+### Test accounts created
+
+| Role | Email | Password |
+|------|-------|----------|
+| Doctor | `dokter.smoke@pilot-test.local` | `SmokeTestPilot!` |
+| Perawat | `perawat.smoke@pilot-test.local` | `SmokeTestPilot!` |
+| Kasir | `kasir.smoke@pilot-test.local` | `SmokeTestPilot!` |
+| Owner | `owner.smoke@pilot-test.local` | `SmokeTestPilot!` |
+
+### Checklist docs created
+
+- `docs/pilot/rme_smoke_test_operator_checklist.md` — Indonesian operator checklist
+- `docs/pilot/rme_smoke_test_developer_notes.md` — seeder design, routes, verification commands
+
+### Safe commands
+
+```bash
+php artisan db:seed --class=PermissionSeeder
+php artisan db:seed --class=RoleSeeder
+php artisan db:seed --class=RmeSmokeTestSeeder
+```
+
+`RmeSmokeTestSeeder` is **not** registered in `DatabaseSeeder` — explicit invocation only.
+
+### Forbidden commands
+
+```bash
+php artisan migrate:fresh
+php artisan db:wipe
+php artisan migrate:fresh --seed
+```
+
+### Files changed
+
+- `database/seeders/RmeSmokeTestSeeder.php` (new)
+- `docs/pilot/rme_smoke_test_operator_checklist.md` (new)
+- `docs/pilot/rme_smoke_test_developer_notes.md` (new)
+- `tests/Feature/Pilot/RmeSmokeTestSeederTest.php` (new)
+- `tests/Feature/Pilot/RmeSmokeTestRouteTest.php` (new)
+- `docs/sprint_history.md`
+
+### Tests run
+
+```bash
+php artisan optimize:clear
+php artisan test --filter=RmeSmokeTestSeeder   # 6 passed (Cursor terminal)
+php artisan test --filter=RmeSmokeTestRoute    # 6 passed (Cursor terminal)
+php artisan test --filter=Pilot                # 34 passed (Cursor terminal)
+./vendor/bin/pint --dirty
+```
+
+### Preserved boundaries
+
+- No HR work.
+- No global UI redesign.
+- No database schema migrations.
+- No RME payment/generation/conversion behavior changes.
+- `DatabaseSeeder` unchanged — smoke seeder opt-in only.
+
+### Risks / follow-up for Phase 22.3
+
+1. Map real VPS pilot users to Owner/Kasir/Perawat roles if not using smoke-test accounts.
+2. Handwriting RM PNG not pre-seeded — doctor adds during manual finalize step.
+3. Cashier visit has final MR but no pre-built invoice — kasir creates during manual test.
+4. Owner dashboard KPIs may remain placeholder until Phase 22.5+.
+5. `BranchContext` still falls back to MAIN when users lack `branch_id` assignment.
