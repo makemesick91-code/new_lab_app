@@ -212,6 +212,73 @@
     $deliveryWorkload = $deliveryWorkload ?? [];
     $inventoryAlerts = $inventoryAlerts ?? [];
     $financeAlerts = $financeAlerts ?? [];
+    $ownerRmeLabPilot = $ownerRmeLabPilot ?? null;
+    $ownerRmeLabKpiCards = [];
+    $ownerRmeLabFunnel = [];
+    $ownerRmeLabAttention = [];
+
+    if (is_array($ownerRmeLabPilot)) {
+        $ownerRmeLabKpiCards = [
+            [
+                'label' => 'Kunjungan RME Hari Ini',
+                'value' => format_number_id($ownerRmeLabPilot['visits_today'] ?? 0),
+                'secondary' => 'Kunjungan terdaftar hari ini (tidak termasuk dibatalkan).',
+                'severity' => ($ownerRmeLabPilot['visits_today'] ?? 0) > 0 ? 'info' : 'neutral',
+            ],
+            [
+                'label' => 'RM Draft',
+                'value' => format_number_id($ownerRmeLabPilot['medical_records_draft'] ?? 0),
+                'secondary' => 'Rekam medis belum difinalisasi.',
+                'severity' => ($ownerRmeLabPilot['medical_records_draft'] ?? 0) > 0 ? 'warning' : 'success',
+            ],
+            [
+                'label' => 'RM Final Hari Ini',
+                'value' => format_number_id($ownerRmeLabPilot['medical_records_final_today'] ?? 0),
+                'secondary' => 'RM difinalisasi hari ini.',
+                'severity' => ($ownerRmeLabPilot['medical_records_final_today'] ?? 0) > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'Menunggu Kasir',
+                'value' => format_number_id($ownerRmeLabPilot['visits_cashier_pending'] ?? 0),
+                'secondary' => 'Kunjungan status cashier_pending.',
+                'severity' => ($ownerRmeLabPilot['visits_cashier_pending'] ?? 0) > 0 ? 'warning' : 'success',
+            ],
+            [
+                'label' => 'Invoice RME Belum Dibayar',
+                'value' => format_number_id($ownerRmeLabPilot['rme_invoices_unpaid'] ?? 0),
+                'secondary' => 'Invoice DRAFT/UNPAID saat ini.',
+                'severity' => ($ownerRmeLabPilot['rme_invoices_unpaid'] ?? 0) > 0 ? 'warning' : 'success',
+            ],
+            [
+                'label' => 'Pembayaran RME Hari Ini',
+                'value' => format_number_id($ownerRmeLabPilot['rme_invoices_paid_today'] ?? 0),
+                'secondary' => format_currency_id($ownerRmeLabPilot['rme_revenue_paid_today'] ?? 0).' pendapatan dibayar hari ini.',
+                'severity' => ($ownerRmeLabPilot['rme_invoices_paid_today'] ?? 0) > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'Kandidat Lab RME Pending',
+                'value' => format_number_id($ownerRmeLabPilot['lab_candidates_pending'] ?? 0),
+                'secondary' => 'Menunggu review Admin Lab.',
+                'severity' => ($ownerRmeLabPilot['lab_candidates_pending'] ?? 0) > 0 ? 'warning' : 'success',
+            ],
+            [
+                'label' => 'Kandidat Lab Dikonversi',
+                'value' => format_number_id($ownerRmeLabPilot['lab_candidates_converted_today'] ?? 0),
+                'secondary' => $ownerRmeLabPilot['conversion_rate_display'] ?? 'Belum ada konversi hari ini.',
+                'severity' => ($ownerRmeLabPilot['lab_candidates_converted_today'] ?? 0) > 0 ? 'success' : 'neutral',
+            ],
+            [
+                'label' => 'Lab Order dari RME Hari Ini',
+                'value' => format_number_id($ownerRmeLabPilot['lab_orders_from_rme_today'] ?? 0),
+                'secondary' => 'Lab order hasil konversi kandidat RME hari ini.',
+                'severity' => ($ownerRmeLabPilot['lab_orders_from_rme_today'] ?? 0) > 0 ? 'success' : 'neutral',
+            ],
+        ];
+
+        $ownerRmeLabFunnel = $ownerRmeLabPilot['funnel_stages'] ?? [];
+        $ownerRmeLabAttention = $ownerRmeLabPilot['attention_items'] ?? [];
+    }
+
     $branchQuickActions = $branchQuickActions ?? [
         [
             'label' => 'Buat Order Lab',
@@ -297,6 +364,53 @@
                         </div>
                     </div>
                 </section>
+
+                @if (is_array($ownerRmeLabPilot))
+                    <section aria-labelledby="rme-lab-pilot-monitoring" class="space-y-6">
+                        <div class="rounded-lg border border-teal-100 bg-teal-50/40 p-5 shadow-sm">
+                            <div class="flex flex-wrap items-start justify-between gap-4">
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Monitoring Pilot RME &amp; Lab</p>
+                                    <h3 id="rme-lab-pilot-monitoring" class="mt-1 text-lg font-semibold text-gray-900">Ringkasan operasional klinik pilot</h3>
+                                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                                        Data bersifat monitoring pilot dan dihitung dari transaksi RME/Lab saat ini.
+                                        Cakupan: {{ $ownerRmeLabPilot['scope_label'] ?? 'Semua cabang aktif' }}.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="mb-3 flex items-center justify-between">
+                                <h4 class="text-base font-semibold text-gray-900">KPI Pilot RME &amp; Lab</h4>
+                                <p class="text-xs text-gray-500">Read-only — tidak membuat atau mengubah transaksi</p>
+                            </div>
+                            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                                @foreach ($ownerRmeLabKpiCards as $kpi)
+                                    <x-owner-dashboard.owner-kpi-card
+                                        :label="data_get($kpi, 'label')"
+                                        :value="data_get($kpi, 'value', '0')"
+                                        :secondary="data_get($kpi, 'secondary')"
+                                        :severity="data_get($kpi, 'severity', 'neutral')"
+                                    />
+                                @endforeach
+                            </div>
+                        </div>
+
+                        <x-owner-dashboard.pipeline-card
+                            :stages="$ownerRmeLabFunnel"
+                            title="Funnel RME ke Lab"
+                            period-label="Kunjungan hari ini → kasir → pembayaran → kandidat → lab order"
+                        />
+
+                        <x-owner-dashboard.alert-panel
+                            :alerts="$ownerRmeLabAttention"
+                            title="Perlu Perhatian"
+                            empty-title="Tidak ada cabang yang perlu perhatian"
+                            empty-body="Kunjungan menunggu kasir, invoice tertunda, kandidat lab pending, dan RM draft akan tampil per cabang saat ada data."
+                        />
+                    </section>
+                @endif
 
                 <section aria-labelledby="executive-kpis">
                     <div class="mb-3 flex items-center justify-between">

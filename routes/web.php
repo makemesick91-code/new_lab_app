@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
@@ -64,9 +65,8 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
-Route::get('/dashboard', function () {
-    return view('dashboard');
-})->middleware(['auth', 'verified', 'permission:view dashboard|view_owner_dashboard'])
+Route::get('/dashboard', [HomeDashboardController::class, 'index'])
+    ->middleware(['auth', 'verified', 'permission:view dashboard|view_owner_dashboard'])
     ->name('dashboard');
 
 Route::middleware('auth')->group(function () {

@@ -4604,3 +4604,67 @@ Heavy: `php artisan test --filter=RME` and full suite in Ubuntu Terminal only.
 3. Handwriting RM still manual before finalize in smoke data.
 4. Treatment → `lab_service_id` mapping still explicit at conversion.
 5. Owner dashboard / RME→lab funnel metrics deferred.
+
+---
+
+## Sprint 22 Phase 22.5 — Owner Dashboard RME/Lab Pilot KPI Wiring
+
+**Branch:** `feature/sprint-22-owner-dashboard-rme-lab-kpi`  
+**Tag:** `sprint-22-phase-22-5-owner-dashboard-rme-lab-kpi`  
+**Type:** Read-only implementation — no schema changes, no payment/generation/conversion logic changes
+
+### Objective
+
+Wire real, read-only RME/Lab pilot KPIs into the Owner Dashboard so the owner can monitor clinic pilot progress across visit → RM → cashier → lab candidate → lab order without mutating operational data.
+
+### KPI section added
+
+**Monitoring Pilot RME & Lab** on `Dasbor Owner` (`/dashboard`), including:
+
+- KPI cards (Indonesian labels)
+- **Funnel RME ke Lab** pipeline card
+- **Perlu Perhatian** branch attention panel
+- Operational note: data is pilot monitoring from current RME/Lab transactions
+
+### Files changed
+
+- `app/Modules/Reporting/Services/OwnerDashboardRmeLabKpiService.php` (new)
+- `app/Http/Controllers/HomeDashboardController.php` (new)
+- `routes/web.php` — `/dashboard` now uses controller (loads KPIs only for Owner shell users)
+- `resources/views/dashboard.blade.php` — RME/Lab pilot section
+- `tests/Feature/Dashboard/OwnerDashboardRmeLabKpiTest.php` (new)
+- `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md` (new)
+- `docs/sprint_history.md`
+
+### KPI definitions implemented
+
+Visits today, waiting/in-progress/cashier-pending/completed-today, RM draft/final today, unpaid RME invoices, paid invoices and revenue today, pending lab candidates, converted candidates today, lab orders from RME today, conversion-rate display, funnel stages, and per-branch attention items. See `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md`.
+
+### Branch / Owner aggregation rule
+
+Owner dashboard uses **global aggregate across all active branches**. Service supports optional single-branch scope via `metrics($branchId)` for future Phase 22.6 filters. Branch admin dashboard behavior unchanged.
+
+### Tests added/updated
+
+- `tests/Feature/Dashboard/OwnerDashboardRmeLabKpiTest.php` — 9 tests: labels, empty state, KPI correctness, funnel, cross-branch aggregate, attention items, authorization boundaries, no side effects
+- Existing `OwnerDashboardUiTest`, `BranchAdminDashboardUiTest`, `PilotRouteAuthorizationTest` — unchanged, still pass
+
+### Commands run
+
+```bash
+php artisan test --filter=OwnerDashboardRmeLabKpi   # 9 passed
+php artisan test --filter=OwnerDashboardUi        # 3 passed
+php artisan test --filter=Dashboard               # 78 passed
+php artisan test --filter=Pilot                   # 56 passed
+./vendor/bin/pint --dirty                         # PASS
+```
+
+Heavy: `php artisan test --filter=RME` and full suite — run in Ubuntu Terminal before VPS deploy.
+
+### Risks / follow-up for Phase 22.6
+
+1. Date-range and branch-comparison filters not yet in UI.
+2. Executive KPI cards (lab pipeline, inventory) remain placeholder.
+3. Attention-item loop is per-branch; review if branch count grows.
+4. Owner has read-only clinic visit permission but no deep links from KPI cards (by design).
+5. Phase 22.7 VPS checklist should mention new Owner dashboard smoke check after deploy.
