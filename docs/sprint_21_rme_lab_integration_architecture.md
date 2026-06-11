@@ -631,7 +631,22 @@ Branch isolation enforced: `candidate->branch_id` must equal `BranchContext::for
 - Show: full candidate detail with patient, visit, invoice, treatment, and estimated price
 - Sidebar: "Kandidat Lab RME" item visible to `view_lab_orders | manage_lab_orders`
 
-### Phase 21.4 Boundary
+### Phase 21.4 — Conversion Implemented (2026-06-11)
 
-Phase 21.4 will add the convert-to-LabOrder action and service.
-No convert button or POST endpoint exists in Phase 21.3.
+**Branch:** `feature/sprint-21-candidate-to-laborder`
+**Tag:** `sprint-21-phase-21-4-candidate-to-laborder`
+
+Conversion is explicit/manual via `LabCaseCandidateConversionService::convertToLabOrder()`.
+
+| Rule | Implementation |
+|---|---|
+| Trigger | Admin Lab POST `lab-case-candidates.convert` from candidate show page |
+| `lab_service_id` | Required in payload — never inferred from `treatment_id` |
+| Idempotency | Row lock + return existing `LabOrder` if `converted_lab_order_id` set |
+| Branch | `BranchContext::requireId()` must match `candidate.branch_id` |
+| Payment | No `trx_payments` / `trx_invoices` created |
+| RME state | Invoice, payment, visit status unchanged by conversion |
+| Authorization | `create_lab_orders` or `manage_lab_orders` + `LabCaseCandidatePolicy::convert` |
+
+Candidate show page displays conversion form only for `@can('convert', $candidate)` (pending status).
+Converted candidates link to `lab-orders.show`.

@@ -60,7 +60,4 @@ Rules:
 - Views: `resources/views/lab/case-candidates/index.blade.php` and `show.blade.php`
 - Sidebar: "Kandidat Lab RME" item, gated by `view_lab_orders | manage_lab_orders`
 
-### Phase 21.4 TODO
-
-- Conversion-to-LabOrder action and service
-- No convert button exists yet — Phase 21.3 is strictly read-only
+**Sprint 21 Phase 21.4 — Convert LabCaseCandidate to LabOrder (2026-06-11):** Branch `feature/sprint-21-candidate-to-laborder`. Tag `sprint-21-phase-21-4-candidate-to-laborder`. `LabCaseCandidateConversionService` converts pending candidates to `LabOrder` with explicit `lab_service_id` (no treatment mapping). Route `lab-case-candidates.convert`. Idempotent via row lock + `converted_lab_order_id`. Reuses `create_lab_orders`/`manage_lab_orders`. No lab payment/invoice records. RME payment still does not auto-create LabOrder. 16 tests in `LabCaseCandidateConversionTest.php`.

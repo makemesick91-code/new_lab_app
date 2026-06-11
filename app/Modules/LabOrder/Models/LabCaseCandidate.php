@@ -130,6 +130,26 @@ class LabCaseCandidate extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function convertedLabOrder(): BelongsTo
+    {
+        return $this->belongsTo(LabOrder::class, 'converted_lab_order_id');
+    }
+
+    public function isPendingReview(): bool
+    {
+        return $this->status === self::STATUS_PENDING_REVIEW;
+    }
+
+    public function isConverted(): bool
+    {
+        return $this->status === self::STATUS_CONVERTED_TO_LAB_ORDER;
+    }
+
+    public function canConvert(): bool
+    {
+        return $this->isPendingReview();
+    }
+
     protected static function newFactory(): LabCaseCandidateFactory
     {
         return LabCaseCandidateFactory::new();

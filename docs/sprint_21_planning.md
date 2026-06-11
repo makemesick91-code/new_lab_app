@@ -575,4 +575,68 @@ from paid RME invoices. Phase 21.4 will add conversion to `LabOrder`.
 | `php artisan test --filter=LabIntegration` | 11 passed |
 | `php artisan test --filter=RmePayment` | 16 passed |
 | `php artisan test --filter=RME` | 306 passed |
+
+---
+
+## 16. Phase 21.4 — Convert LabCaseCandidate to LabOrder
+
+**Status:** COMPLETE (2026-06-11)
+**Branch:** `feature/sprint-21-candidate-to-laborder`
+**Tag:** `sprint-21-phase-21-4-candidate-to-laborder`
+
+### Goal
+
+Explicit manual conversion from one `pending_review` `LabCaseCandidate` into a real `LabOrder`.
+RME payment still creates candidates only — never `LabOrder`.
+
+### Files Added
+
+| File | Purpose |
+|---|---|
+| `tests/Feature/RME/LabCaseCandidateConversionTest.php` | 16 TDD tests for conversion, idempotency, branch isolation, RME preservation |
+| `app/Modules/LabOrder/Services/LabCaseCandidateConversionService.php` | Conversion business rules + transaction |
+| `app/Modules/LabOrder/Requests/ConvertLabCaseCandidateRequest.php` | Validates `lab_service_id`, `due_date`, optional notes/qty |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `app/Modules/LabOrder/Models/LabCaseCandidate.php` | Helpers + `convertedLabOrder()` relation |
+| `app/Modules/LabOrder/Policies/LabCaseCandidatePolicy.php` | Added `convert` ability |
+| `app/Modules/LabOrder/Controllers/LabCaseCandidateController.php` | `convert` action + lab services for show form |
+| `resources/views/lab/case-candidates/show.blade.php` | Conversion form + converted order link |
+| `routes/web.php` | `POST lab-case-candidates.convert` |
+| `tests/Feature/RME/LabCaseCandidateQueueTest.php` | Updated phase 21.3 read-only guard test |
+
+### Routes
+
+| Name | URL | Permission |
+|---|---|---|
+| `lab-case-candidates.convert` | `POST /lab/case-candidates/{candidate}/convert` | `create_lab_orders\|manage_lab_orders` |
+
+### Conversion Rules
+
+- `lab_service_id` required explicitly — no inference from `treatment_id`.
+- Inactive lab services rejected.
+- Idempotent: already-converted candidate returns existing `LabOrder`.
+- Branch isolation via `BranchContext::requireId()`.
+- No `trx_invoices`, `trx_payments`, or lab billing records created.
+- RME invoice/payment/visit status unchanged by conversion.
+
+### Authorization
+
+- Reuses `create_lab_orders` / `manage_lab_orders` — no new permissions.
+- Show form gated by `@can('convert', $candidate)` (pending + branch + create permission).
+
+### Test Results
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabCaseCandidateConversion` | 16 passed |
+| `php artisan test --filter=LabCaseCandidateQueue` | 12 passed |
+| `php artisan test --filter=LabIntegration` | 11 passed |
+| `php artisan test --filter=RME` | All passed |
+| `php artisan test` | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |
 | `php artisan test` (full suite) | All passed |

@@ -274,8 +274,8 @@ Route::middleware('auth')->group(function () {
 |--------------------------------------------------------------------------
 | Sprint 21 Phase 21.3 — Lab Case Candidate Queue (read-only)
 |--------------------------------------------------------------------------
-| Admin Lab read-only queue of LabCaseCandidate records generated from paid
-| RME invoices. Phase 21.4 will add the conversion-to-LabOrder action.
+| Admin Lab queue of LabCaseCandidate records generated from paid RME invoices.
+| Phase 21.4 adds explicit conversion to LabOrder.
 */
 Route::middleware('auth')->prefix('lab')->name('lab-')->group(function () {
     Route::get('case-candidates', [LabCaseCandidateController::class, 'index'])
@@ -284,6 +284,9 @@ Route::middleware('auth')->prefix('lab')->name('lab-')->group(function () {
     Route::get('case-candidates/{candidate}', [LabCaseCandidateController::class, 'show'])
         ->name('case-candidates.show')
         ->middleware('permission:view_lab_orders|manage_lab_orders');
+    Route::post('case-candidates/{candidate}/convert', [LabCaseCandidateController::class, 'convert'])
+        ->name('case-candidates.convert')
+        ->middleware('permission:create_lab_orders|manage_lab_orders');
 });
 
 /*

@@ -5,13 +5,16 @@ namespace App\Modules\LabOrder\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
+use App\Modules\LabOrder\Requests\ConvertLabCaseCandidateRequest;
+use App\Modules\LabOrder\Services\LabCaseCandidateConversionService;
+use App\Modules\LabService\Services\LabServiceService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * Sprint 21 Phase 21.3 — Read-only queue of LabCaseCandidate records for Admin Lab.
- * Phase 21.4 will add the conversion-to-LabOrder action.
+ * Sprint 21 Phase 21.3+21.4 — LabCaseCandidate queue and conversion to LabOrder.
  */
 class LabCaseCandidateController extends Controller
 {
@@ -19,6 +22,8 @@ class LabCaseCandidateController extends Controller
 
     public function __construct(
         private readonly BranchContext $branchContext,
+        private readonly LabCaseCandidateConversionService $conversionService,
+        private readonly LabServiceService $labServiceService,
     ) {}
 
     public function index(Request $request): View
@@ -67,6 +72,22 @@ class LabCaseCandidateController extends Controller
 
         return view('lab.case-candidates.show', [
             'candidate' => $candidate,
+            'labServices' => $this->labServiceService->listAll(),
         ]);
+    }
+
+    public function convert(ConvertLabCaseCandidateRequest $request, LabCaseCandidate $candidate): RedirectResponse
+    {
+        $this->authorize('convert', $candidate);
+
+        $order = $this->conversionService->convertToLabOrder(
+            $candidate,
+            $request->validated(),
+            $request->user(),
+        );
+
+        return redirect()
+            ->route('lab-orders.show', $order)
+            ->with('status', 'Kandidat berhasil dikonversi ke Lab Order.');
     }
 }

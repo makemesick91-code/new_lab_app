@@ -4020,3 +4020,97 @@ Read-only Admin Lab queue UI for `LabCaseCandidate` records generated from paid 
 | `php artisan test` (full suite) | All passed |
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
+
+---
+
+## Sprint 21 Phase 21.4 — Convert LabCaseCandidate to LabOrder
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-candidate-to-laborder`
+**Tag:** `sprint-21-phase-21-4-candidate-to-laborder`
+**Base:** `0eed855` (Sprint 21.3)
+
+### Goal
+
+Explicit manual conversion from `LabCaseCandidate` to `LabOrder` after Admin Lab review.
+RME payment continues to generate candidates only.
+
+### What changed
+
+- Added `LabCaseCandidateConversionService` — idempotent, branch-scoped, transaction-safe
+- Added `ConvertLabCaseCandidateRequest` — requires explicit `lab_service_id` and `due_date`
+- Extended `LabCaseCandidate` model with `isPendingReview()`, `isConverted()`, `canConvert()`, `convertedLabOrder()`
+- Extended `LabCaseCandidatePolicy` with `convert` (reuses `create_lab_orders` / `manage_lab_orders`)
+- Added `POST /lab/case-candidates/{candidate}/convert` route
+- Show page: conversion form for authorized pending candidates; link to converted Lab Order
+
+### Lab service mapping rule
+
+- `lab_service_id` must be selected explicitly by Admin Lab.
+- No automatic mapping from RME `treatment_id` to `lab_service_id`.
+
+### Phase boundaries preserved
+
+- RME payment does not create `LabOrder`.
+- No lab invoice/payment records created during conversion.
+- Full-payment-only RME rule unchanged.
+- SOAP doctor UI unchanged.
+
+**Test results:**
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabCaseCandidateConversion` | **16 passed, 39 assertions** |
+| `php artisan test --filter=LabCaseCandidateQueue` | **12 passed** |
+| `php artisan test --filter=LabIntegration` | **11 passed** |
+| `php artisan test --filter=RME` | All passed |
+| `php artisan test` (full suite) | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |
+
+---
+
+## Sprint 21 Phase 21.4 — Convert LabCaseCandidate to LabOrder
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-candidate-to-laborder`
+**Tag:** `sprint-21-phase-21-4-candidate-to-laborder`
+**Base:** `0eed855` (Sprint 21.3)
+
+### Goal
+
+Explicit manual conversion from `LabCaseCandidate` to `LabOrder` after Admin Lab review.
+RME payment continues to generate candidates only.
+
+### What changed
+
+- Added `LabCaseCandidateConversionService` — idempotent, branch-scoped, transaction-safe
+- Added `ConvertLabCaseCandidateRequest` — requires explicit `lab_service_id` and `due_date`
+- Extended `LabCaseCandidate` model with `isPendingReview()`, `isConverted()`, `canConvert()`, `convertedLabOrder()`
+- Extended `LabCaseCandidatePolicy` with `convert` (reuses `create_lab_orders` / `manage_lab_orders`)
+- Added `POST /lab/case-candidates/{candidate}/convert` route
+- Show page: conversion form for authorized pending candidates; link to converted Lab Order
+
+### Lab service mapping rule
+
+- `lab_service_id` must be selected explicitly by Admin Lab.
+- No automatic mapping from RME `treatment_id` to `lab_service_id`.
+
+### Phase boundaries preserved
+
+- RME payment does not create `LabOrder`.
+- No lab invoice/payment records created during conversion.
+- Full-payment-only RME rule unchanged.
+- SOAP doctor UI unchanged.
+
+**Test results:**
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=LabCaseCandidateConversion` | **16 passed, 39 assertions** |
+| `php artisan test --filter=LabCaseCandidateQueue` | **12 passed** |
+| `php artisan test --filter=LabIntegration` | **11 passed** |
+| `php artisan test --filter=RME` | All passed |
+| `php artisan test` (full suite) | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |

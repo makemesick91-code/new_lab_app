@@ -117,10 +117,55 @@
             <x-ui.card title="Lab Order Terkait">
                 <p class="text-sm text-gray-600">
                     Kandidat ini telah dikonversi ke Lab Order
-                    <span class="font-mono font-medium text-gray-900">#{{ $candidate->converted_lab_order_id }}</span>.
+                    <a href="{{ route('lab-orders.show', $candidate->converted_lab_order_id) }}"
+                       class="font-mono font-medium text-teal-700 hover:text-teal-900">
+                        #{{ $candidate->converted_lab_order_id }}
+                    </a>.
                 </p>
             </x-ui.card>
         @endif
+
+        {{-- Conversion form (Phase 21.4) --}}
+        @can('convert', $candidate)
+            <x-ui.card title="Konversi ke Lab Order">
+                <p class="mb-4 text-sm text-gray-600">
+                    Pilih layanan lab secara eksplisit. Tindakan RME tidak dipetakan otomatis ke layanan lab.
+                </p>
+                <form method="POST" action="{{ route('lab-case-candidates.convert', $candidate) }}" class="space-y-4">
+                    @csrf
+                    <div>
+                        <label for="lab_service_id" class="block text-sm font-medium text-gray-700">Layanan Lab</label>
+                        <select id="lab_service_id" name="lab_service_id" required
+                                class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">— Pilih layanan —</option>
+                            @foreach ($labServices as $service)
+                                <option value="{{ $service->id }}" @selected(old('lab_service_id') == $service->id)>
+                                    {{ $service->name }} (Rp {{ number_format((float) $service->price, 0, ',', '.') }})
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('lab_service_id')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label for="due_date" class="block text-sm font-medium text-gray-700">Tenggat</label>
+                        <input type="date" id="due_date" name="due_date" required
+                               value="{{ old('due_date', now()->addDays(7)->toDateString()) }}"
+                               min="{{ now()->toDateString() }}"
+                               class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
+                        @error('due_date')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-700">Catatan (opsional)</label>
+                        <textarea id="notes" name="notes" rows="3"
+                                  class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes') }}</textarea>
+                        @error('notes')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div class="flex justify-end">
+                        <x-ui.button type="submit" variant="primary">Konversi ke Lab Order</x-ui.button>
+                    </div>
+                </form>
+            </x-ui.card>
+        @endcan
 
         {{-- Notes --}}
         @if ($candidate->notes)

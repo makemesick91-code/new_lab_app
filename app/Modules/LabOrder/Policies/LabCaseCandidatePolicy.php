@@ -29,4 +29,16 @@ class LabCaseCandidatePolicy
         // null means no branch resolved (shouldn't happen with BranchSeeder, but safe fallback)
         return $branchId === null || $candidate->branch_id === $branchId;
     }
+
+    public function convert(User $user, LabCaseCandidate $candidate): bool
+    {
+        if (! $user->canAny(['manage_lab_orders', 'create_lab_orders'])) {
+            return false;
+        }
+
+        $branchId = app(BranchContext::class)->forUser($user);
+
+        return ($branchId === null || $candidate->branch_id === $branchId)
+            && $candidate->canConvert();
+    }
 }

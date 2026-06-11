@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabService\Models\LabService;
 use Database\Seeders\BranchSeeder;
 
 beforeEach(function () {
@@ -181,19 +182,22 @@ it('sidebar hides Kandidat Lab RME for unauthorized user', function () {
         ->assertDontSee('Kandidat Lab RME');
 });
 
-// ─── Test 12: No conversion action creates LabOrder in this phase ─────────────
+// ─── Test 12: Viewer without create permission cannot convert ─────────────────
 
-it('no POST conversion route exists in phase 21.3', function () {
+it('viewer without create permission cannot convert candidate', function () {
     $candidate = LabCaseCandidate::factory()->create([
         'branch_id' => $this->branch->id,
+        'status' => LabCaseCandidate::STATUS_PENDING_REVIEW,
     ]);
 
-    // Only GET routes exist; any mutation attempt returns 404 or 405
     $beforeCount = LabOrder::count();
 
     $this->actingAs($this->viewer)
-        ->post(route('lab-case-candidates.index'))
-        ->assertMethodNotAllowed();
+        ->post(route('lab-case-candidates.convert', $candidate), [
+            'lab_service_id' => LabService::factory()->create()->id,
+            'due_date' => now()->addDays(5)->toDateString(),
+        ])
+        ->assertForbidden();
 
     expect(LabOrder::count())->toBe($beforeCount);
 });
