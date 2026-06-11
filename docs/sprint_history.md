@@ -4227,3 +4227,67 @@ Close Sprint 21 and document the release candidate merge/deployment plan — del
 ### VPS deployment reference
 
 Follow `docs/sprint_21_vps_pilot_deployment_checklist.md` with updated baseline `18d2eec`. Never `migrate:fresh` or `db:wipe` on VPS.
+
+---
+
+## Sprint 22 Phase 22.0 — Planning & Baseline
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-22-planning`
+**Tag:** `sprint-22-planning`
+**Base:** `3ef3fd6` (Sprint 21.9 Kasir RME sidebar menu hotfix)
+**Document:** `docs/sprint_22_planning.md`
+
+### Goal
+
+Plan Sprint 22 as the pilot stabilization sprint after the Sprint 21 RME Advanced Workflow release was deployed to the Hostinger VPS pilot.
+
+### Baseline
+
+| Item | Value |
+|---|---|
+| Release branch | `release/sprint-21-rme-advanced-workflow` |
+| Latest hotfix commit | `3ef3fd6` - Add Kasir RME sidebar menu hotfix |
+| Sprint 21 RC tag | `sprint-21-release-candidate` |
+| Sprint 21.9 hotfix tag | `sprint-21-phase-21-9-cashier-rme-sidebar-hotfix` |
+| VPS pilot status | Deployed and live |
+
+### What changed
+
+- Added Sprint 22 planning document: `docs/sprint_22_planning.md`
+- Updated `CLAUDE.md` with Sprint 22 current focus memory
+- Updated `docs/sprint_history.md` with this Phase 22.0 entry
+
+### Sprint 22 planned focus
+
+- Pilot role, permission, and sidebar hardening for RME, cashier, lab candidates, owner, and admin users
+- Safe RME end-to-end smoke-test data and workflow checks
+- RME cashier, payment, receipt, and PDF/print stabilization
+- RME paid invoice to `LabCaseCandidate` validation and manual candidate conversion checks
+- Read-only Owner Dashboard foundation and KPI detail
+- VPS pilot hardening and Sprint 22 release candidate preparation
+
+### Phase boundaries preserved
+
+- **Type:** documentation / planning only
+- **No application behavior changes**
+- **No routes, controllers, services, models, migrations, policies, Blade UI, seeders, tests, or dependency files changed**
+- RME payment behavior unchanged: full payment only
+- RME payment does not create `LabOrder`
+- `LabCaseCandidate` remains the staging layer
+- RME payment does not create lab payment records
+- Doctor SOAP UI remains hidden; handwriting RM remains primary
+- Owner Dashboard planned as read-only for Sprint 22
+- VPS rule reinforced: never `migrate:fresh` or `db:wipe` on VPS
+
+### Verification
+
+Docs-only lightweight verification planned:
+
+| Command | Purpose |
+|---|---|
+| `git status --short` | Confirm changed files |
+| `git diff --stat` | Confirm docs-only scope |
+| `git diff -- docs/sprint_22_planning.md docs/sprint_history.md CLAUDE.md` | Review Sprint 22 documentation diff |
+
+Heavy test suites were intentionally not planned for Phase 22.0 because no application code changes are included.
