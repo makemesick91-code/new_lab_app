@@ -3,26 +3,45 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Modules\Reporting\Services\OwnerDashboardRmeLabDrilldownService;
 use App\Modules\Reporting\Services\OwnerDashboardRmeLabKpiService;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class HomeDashboardController extends Controller
 {
     public function __construct(
         private readonly OwnerDashboardRmeLabKpiService $ownerRmeLabKpis,
+        private readonly OwnerDashboardRmeLabDrilldownService $ownerRmeLabDrilldowns,
     ) {}
 
-    public function index(): View
+    public function index(Request $request): View
     {
         $user = auth()->user();
         $ownerRmeLabPilot = null;
+        $ownerRmeLabBranchSummary = [];
+        $ownerRmeLabActiveBranches = collect();
+        $ownerRmeLabSelectedBranchId = null;
+        $ownerRmeLabDrilldowns = [];
 
         if ($user instanceof User && $this->shouldLoadOwnerRmeLabPilot($user)) {
-            $ownerRmeLabPilot = $this->ownerRmeLabKpis->metrics();
+            $requestedBranchId = $request->filled('branch_id')
+                ? (int) $request->input('branch_id')
+                : null;
+
+            $ownerRmeLabSelectedBranchId = $this->ownerRmeLabKpis->resolveSelectedBranchId($requestedBranchId);
+            $ownerRmeLabActiveBranches = $this->ownerRmeLabKpis->activeBranches();
+            $ownerRmeLabPilot = $this->ownerRmeLabKpis->metrics($ownerRmeLabSelectedBranchId);
+            $ownerRmeLabBranchSummary = $this->ownerRmeLabKpis->branchSummary($ownerRmeLabSelectedBranchId);
+            $ownerRmeLabDrilldowns = $this->ownerRmeLabDrilldowns->linksFor($user);
         }
 
         return view('dashboard', [
             'ownerRmeLabPilot' => $ownerRmeLabPilot,
+            'ownerRmeLabBranchSummary' => $ownerRmeLabBranchSummary,
+            'ownerRmeLabActiveBranches' => $ownerRmeLabActiveBranches,
+            'ownerRmeLabSelectedBranchId' => $ownerRmeLabSelectedBranchId,
+            'ownerRmeLabDrilldowns' => $ownerRmeLabDrilldowns,
         ]);
     }
 

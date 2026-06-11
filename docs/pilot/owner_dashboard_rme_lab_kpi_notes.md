@@ -31,9 +31,54 @@ Funnel stages reuse the same counts for a compact RME → kasir → bayar → ka
 
 ## Branch / Owner aggregation
 
-- **Owner dashboard (global):** `metrics(null)` scopes to **all active branches** (`mst_branches.is_active = true`).
-- **Per-branch drill-down (service API):** `metrics($branchId)` scopes all queries to one branch — reserved for Phase 22.6 filters/comparisons; not exposed in UI yet.
-- **Branch admin dashboard:** unchanged; RME/Lab pilot section is **not** rendered for operational branch users.
+- **Owner dashboard (global default):** no `branch_id` query param → `metrics(null)` scopes to **all active branches** (`mst_branches.is_active = true`). Filter UI shows **Semua Cabang**.
+- **Owner dashboard (selected branch):** `?branch_id=<id>` when id is an **active** branch → `metrics($branchId)` scopes KPI cards, funnel, attention panel, and branch summary row set to that branch.
+- **Invalid `branch_id`:** ignored silently; dashboard falls back to all active branches (no error, no inactive/deleted branch data).
+- **Branch admin dashboard:** unchanged; RME/Lab pilot section, branch filter, and **Ringkasan Per Cabang** are **not** rendered for operational branch users.
+
+## Branch summary (Ringkasan Per Cabang)
+
+`OwnerDashboardRmeLabKpiService::branchSummary()` returns one row per active branch (or single row when branch filter applied) with:
+
+| Column | Metric |
+|--------|--------|
+| Kunjungan Hari Ini | visits today (non-cancelled) |
+| Menunggu Kasir | `cashier_pending` snapshot |
+| Invoice Belum Dibayar | DRAFT/UNPAID invoices |
+| Kandidat Lab Pending | `pending_review` candidates |
+| Dikonversi Hari Ini | converted today (`reviewed_at`) |
+| Status Perhatian | `Perlu cek kasir` → `Perlu cek kandidat lab` → `Banyak RM draft` → `Belum ada data hari ini` → `Aman` |
+
+Pilot scale: all active branches render in one table (no pagination). Review if branch count grows beyond pilot.
+
+## Drilldown links
+
+`OwnerDashboardRmeLabDrilldownService::linksFor($user)` builds **read-only index** URLs only when the user has permission:
+
+| KPI key | Route (when permitted) | Permission |
+|---------|------------------------|------------|
+| `visits_today` | `rme.visits.index?visit_date=today` | `view_clinic_visits` / `manage_clinic_visits` |
+| `visits_cashier_pending` | `rme.visits.index?status=cashier_pending` | same |
+| `medical_records_draft` | `rme.medical-records.index?status=draft` | same |
+| `medical_records_final_today` | `rme.medical-records.index` + date/status filters | same |
+| `rme_invoices_unpaid` | `rme.cashier.index` | `manage_rme_billing` |
+| `rme_invoices_paid_today` | `rme.cashier.index` | `manage_rme_billing` |
+| `lab_candidates_pending` | `lab-case-candidates.index?status=pending_review` | `view_lab_orders` / `manage_lab_orders` |
+| `lab_candidates_converted_today` | `lab-case-candidates.index?status=converted_to_lab_order` | same |
+| `lab_orders_from_rme_today` | `lab-orders.index` | same |
+
+Rules:
+
+- No create/edit/action links from dashboard KPI cards.
+- If permission or route is unavailable, KPI renders **without** link (no error).
+- Owner role (pilot) typically sees clinic-visit drilldowns only; lab/cashier links appear for roles with those permissions.
+- Destination index pages remain branch-scoped via `BranchContext` on operational modules.
+
+## UI copy (Owner section)
+
+- Filter label: **Filter Cabang** / option **Semua Cabang**
+- Scope: **Menampilkan semua cabang aktif** or **Menampilkan cabang: {name}**
+- Disclaimer: **Dashboard ini hanya monitoring; tidak membuat atau mengubah data RME/Lab.**
 
 ## Known limitations
 
@@ -41,11 +86,14 @@ Funnel stages reuse the same counts for a compact RME → kasir → bayar → ka
 - Revenue uses paid RME payments only (`trx_rme_payments`), not lab billing.
 - Handwriting RM and RM finalization remain manual workflow steps.
 - Candidate → lab order conversion still requires explicit Admin Lab action with `lab_service_id`.
-- Attention items iterate per active branch (small N); acceptable for pilot branch count.
+- Attention items and branch summary iterate per active branch (small N); acceptable for pilot branch count.
+- KPI drilldowns are read-only index links where available; some cards may not link if permission/route is unavailable.
+- Drilldown destination lists use active `BranchContext`, not dashboard `branch_id` filter.
 
-## Follow-up (Phase 22.6)
+## Follow-up (Phase 22.7)
 
 - Date range filters (`date_from` / `date_to`).
-- Branch comparison cards for authorized owner users.
+- Pass dashboard branch filter into drilldown query params where index pages support it.
 - Deeper visit-status breakdown and candidate status mix.
 - Optional query-count/performance regression guard if branch count grows.
+- VPS pilot smoke check for Owner branch filter after deploy.

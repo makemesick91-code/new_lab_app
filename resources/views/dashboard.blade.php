@@ -213,6 +213,10 @@
     $inventoryAlerts = $inventoryAlerts ?? [];
     $financeAlerts = $financeAlerts ?? [];
     $ownerRmeLabPilot = $ownerRmeLabPilot ?? null;
+    $ownerRmeLabBranchSummary = $ownerRmeLabBranchSummary ?? [];
+    $ownerRmeLabActiveBranches = $ownerRmeLabActiveBranches ?? collect();
+    $ownerRmeLabSelectedBranchId = $ownerRmeLabSelectedBranchId ?? null;
+    $ownerRmeLabDrilldowns = $ownerRmeLabDrilldowns ?? [];
     $ownerRmeLabKpiCards = [];
     $ownerRmeLabFunnel = [];
     $ownerRmeLabAttention = [];
@@ -224,54 +228,63 @@
                 'value' => format_number_id($ownerRmeLabPilot['visits_today'] ?? 0),
                 'secondary' => 'Kunjungan terdaftar hari ini (tidak termasuk dibatalkan).',
                 'severity' => ($ownerRmeLabPilot['visits_today'] ?? 0) > 0 ? 'info' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['visits_today'] ?? null,
             ],
             [
                 'label' => 'RM Draft',
                 'value' => format_number_id($ownerRmeLabPilot['medical_records_draft'] ?? 0),
                 'secondary' => 'Rekam medis belum difinalisasi.',
                 'severity' => ($ownerRmeLabPilot['medical_records_draft'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['medical_records_draft'] ?? null,
             ],
             [
                 'label' => 'RM Final Hari Ini',
                 'value' => format_number_id($ownerRmeLabPilot['medical_records_final_today'] ?? 0),
                 'secondary' => 'RM difinalisasi hari ini.',
                 'severity' => ($ownerRmeLabPilot['medical_records_final_today'] ?? 0) > 0 ? 'success' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['medical_records_final_today'] ?? null,
             ],
             [
                 'label' => 'Menunggu Kasir',
                 'value' => format_number_id($ownerRmeLabPilot['visits_cashier_pending'] ?? 0),
                 'secondary' => 'Kunjungan status cashier_pending.',
                 'severity' => ($ownerRmeLabPilot['visits_cashier_pending'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['visits_cashier_pending'] ?? null,
             ],
             [
                 'label' => 'Invoice RME Belum Dibayar',
                 'value' => format_number_id($ownerRmeLabPilot['rme_invoices_unpaid'] ?? 0),
                 'secondary' => 'Invoice DRAFT/UNPAID saat ini.',
                 'severity' => ($ownerRmeLabPilot['rme_invoices_unpaid'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_invoices_unpaid'] ?? null,
             ],
             [
                 'label' => 'Pembayaran RME Hari Ini',
                 'value' => format_number_id($ownerRmeLabPilot['rme_invoices_paid_today'] ?? 0),
                 'secondary' => format_currency_id($ownerRmeLabPilot['rme_revenue_paid_today'] ?? 0).' pendapatan dibayar hari ini.',
                 'severity' => ($ownerRmeLabPilot['rme_invoices_paid_today'] ?? 0) > 0 ? 'success' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['rme_invoices_paid_today'] ?? null,
             ],
             [
                 'label' => 'Kandidat Lab RME Pending',
                 'value' => format_number_id($ownerRmeLabPilot['lab_candidates_pending'] ?? 0),
                 'secondary' => 'Menunggu review Admin Lab.',
                 'severity' => ($ownerRmeLabPilot['lab_candidates_pending'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['lab_candidates_pending'] ?? null,
             ],
             [
                 'label' => 'Kandidat Lab Dikonversi',
                 'value' => format_number_id($ownerRmeLabPilot['lab_candidates_converted_today'] ?? 0),
                 'secondary' => $ownerRmeLabPilot['conversion_rate_display'] ?? 'Belum ada konversi hari ini.',
                 'severity' => ($ownerRmeLabPilot['lab_candidates_converted_today'] ?? 0) > 0 ? 'success' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['lab_candidates_converted_today'] ?? null,
             ],
             [
                 'label' => 'Lab Order dari RME Hari Ini',
                 'value' => format_number_id($ownerRmeLabPilot['lab_orders_from_rme_today'] ?? 0),
                 'secondary' => 'Lab order hasil konversi kandidat RME hari ini.',
                 'severity' => ($ownerRmeLabPilot['lab_orders_from_rme_today'] ?? 0) > 0 ? 'success' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['lab_orders_from_rme_today'] ?? null,
             ],
         ];
 
@@ -369,19 +382,45 @@
                     <section aria-labelledby="rme-lab-pilot-monitoring" class="space-y-6">
                         <div class="rounded-lg border border-teal-100 bg-teal-50/40 p-5 shadow-sm">
                             <div class="flex flex-wrap items-start justify-between gap-4">
-                                <div>
+                                <div class="min-w-0 flex-1">
                                     <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Monitoring Pilot RME &amp; Lab</p>
                                     <h3 id="rme-lab-pilot-monitoring" class="mt-1 text-lg font-semibold text-gray-900">Ringkasan operasional klinik pilot</h3>
                                     <p class="mt-2 max-w-3xl text-sm text-gray-600">
                                         Data bersifat monitoring pilot dan dihitung dari transaksi RME/Lab saat ini.
-                                        Cakupan: {{ $ownerRmeLabPilot['scope_label'] ?? 'Semua cabang aktif' }}.
+                                        @if ($ownerRmeLabSelectedBranchId)
+                                            Menampilkan cabang: {{ $ownerRmeLabPilot['scope_label'] ?? 'Cabang aktif' }}.
+                                        @else
+                                            Menampilkan semua cabang aktif.
+                                        @endif
+                                    </p>
+                                    <p class="mt-2 text-xs text-gray-500">
+                                        Dashboard ini hanya monitoring; tidak membuat atau mengubah data RME/Lab.
                                     </p>
                                 </div>
+
+                                <form method="GET" action="{{ route('dashboard') }}" class="w-full max-w-xs shrink-0">
+                                    <label for="owner-rme-lab-branch-filter" class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                        Filter Cabang
+                                    </label>
+                                    <select
+                                        id="owner-rme-lab-branch-filter"
+                                        name="branch_id"
+                                        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                                        onchange="this.form.submit()"
+                                    >
+                                        <option value="" @selected($ownerRmeLabSelectedBranchId === null)>Semua Cabang</option>
+                                        @foreach ($ownerRmeLabActiveBranches as $branch)
+                                            <option value="{{ $branch->id }}" @selected($ownerRmeLabSelectedBranchId === $branch->id)>
+                                                {{ $branch->name }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </form>
                             </div>
                         </div>
 
                         <div>
-                            <div class="mb-3 flex items-center justify-between">
+                            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <h4 class="text-base font-semibold text-gray-900">KPI Pilot RME &amp; Lab</h4>
                                 <p class="text-xs text-gray-500">Read-only — tidak membuat atau mengubah transaksi</p>
                             </div>
@@ -392,9 +431,53 @@
                                         :value="data_get($kpi, 'value', '0')"
                                         :secondary="data_get($kpi, 'secondary')"
                                         :severity="data_get($kpi, 'severity', 'neutral')"
+                                        :href="data_get($kpi, 'href')"
                                     />
                                 @endforeach
                             </div>
+                        </div>
+
+                        <div>
+                            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <h4 class="text-base font-semibold text-gray-900">Ringkasan Per Cabang</h4>
+                                <p class="text-xs text-gray-500">Perbandingan ringan antar cabang aktif</p>
+                            </div>
+
+                            @if (collect($ownerRmeLabBranchSummary)->isEmpty())
+                                <div class="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center">
+                                    <p class="text-sm font-medium text-gray-900">Belum ada cabang aktif</p>
+                                    <p class="mt-1 text-sm text-gray-500">Ringkasan per cabang akan tampil setelah ada cabang aktif dengan data pilot.</p>
+                                </div>
+                            @else
+                                <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Kunjungan Hari Ini</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Menunggu Kasir</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Belum Dibayar</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Kandidat Lab Pending</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Dikonversi Hari Ini</th>
+                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status Perhatian</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-100">
+                                            @foreach ($ownerRmeLabBranchSummary as $row)
+                                                <tr class="hover:bg-gray-50">
+                                                    <td class="px-4 py-3 font-medium text-gray-900">{{ $row['branch_name'] }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['visits_today'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['cashier_pending'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['unpaid_invoices'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['pending_candidates'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['converted_today'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-gray-700">{{ $row['attention_status'] ?? 'Aman' }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @endif
                         </div>
 
                         <x-owner-dashboard.pipeline-card

@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Read-only RME/Lab pilot KPIs for the Owner Dashboard.
@@ -20,6 +21,88 @@ class OwnerDashboardRmeLabKpiService
     /**
      * @return array<string, mixed>
      */
+    public function resolveSelectedBranchId(?int $requestedBranchId): ?int
+    {
+        if ($requestedBranchId === null || $requestedBranchId <= 0) {
+            return null;
+        }
+
+        return Branch::query()
+            ->where('id', $requestedBranchId)
+            ->where('is_active', true)
+            ->value('id');
+    }
+
+    /**
+     * @return Collection<int, Branch>
+     */
+    public function activeBranches(): Collection
+    {
+        return Branch::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function branchSummary(?int $branchId = null, ?Carbon $asOf = null): array
+    {
+        $today = ($asOf ?? now())->toDateString();
+        $branchIds = $this->resolveBranchIds($branchId);
+
+        $branches = Branch::query()
+            ->when($branchIds !== null, fn (Builder $query) => $query->whereIn('id', $branchIds))
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+
+        return $branches->map(function (Branch $branch) use ($today): array {
+            $visitsToday = $this->visitQuery([$branch->id])
+                ->whereDate('visit_date', $today)
+                ->where('status', '!=', ClinicVisit::STATUS_CANCELLED)
+                ->count();
+
+            $cashierPending = $this->visitQuery([$branch->id])
+                ->where('status', ClinicVisit::STATUS_CASHIER_PENDING)
+                ->count();
+
+            $unpaidInvoices = $this->rmeInvoiceQuery([$branch->id])
+                ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID])
+                ->count();
+
+            $pendingCandidates = $this->labCandidateQuery([$branch->id])
+                ->where('status', LabCaseCandidate::STATUS_PENDING_REVIEW)
+                ->count();
+
+            $convertedToday = $this->labCandidateQuery([$branch->id])
+                ->where('status', LabCaseCandidate::STATUS_CONVERTED_TO_LAB_ORDER)
+                ->whereDate('reviewed_at', $today)
+                ->count();
+
+            $draftRecords = $this->medicalRecordQuery([$branch->id])
+                ->where('status', MedicalRecord::STATUS_DRAFT)
+                ->count();
+
+            return [
+                'branch_id' => $branch->id,
+                'branch_name' => $branch->name,
+                'visits_today' => $visitsToday,
+                'cashier_pending' => $cashierPending,
+                'unpaid_invoices' => $unpaidInvoices,
+                'pending_candidates' => $pendingCandidates,
+                'converted_today' => $convertedToday,
+                'attention_status' => $this->branchAttentionStatus(
+                    $visitsToday,
+                    $cashierPending,
+                    $pendingCandidates,
+                    $draftRecords,
+                ),
+            ];
+        })->all();
+    }
+
     public function metrics(?int $branchId = null, ?Carbon $asOf = null): array
     {
         $today = ($asOf ?? now())->toDateString();
@@ -132,13 +215,51 @@ class OwnerDashboardRmeLabKpiService
     private function resolveBranchIds(?int $branchId): ?array
     {
         if ($branchId !== null) {
-            return [$branchId];
+            $isActive = Branch::query()
+                ->where('id', $branchId)
+                ->where('is_active', true)
+                ->exists();
+
+            return $isActive ? [$branchId] : $this->activeBranchIds();
         }
 
+        return $this->activeBranchIds();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function activeBranchIds(): array
+    {
         return Branch::query()
             ->where('is_active', true)
             ->pluck('id')
             ->all();
+    }
+
+    private function branchAttentionStatus(
+        int $visitsToday,
+        int $cashierPending,
+        int $pendingCandidates,
+        int $draftRecords,
+    ): string {
+        if ($cashierPending > 0) {
+            return 'Perlu cek kasir';
+        }
+
+        if ($pendingCandidates > 0) {
+            return 'Perlu cek kandidat lab';
+        }
+
+        if ($draftRecords > 0) {
+            return 'Banyak RM draft';
+        }
+
+        if ($visitsToday === 0) {
+            return 'Belum ada data hari ini';
+        }
+
+        return 'Aman';
     }
 
     /**

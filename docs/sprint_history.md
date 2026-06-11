@@ -4668,3 +4668,66 @@ Heavy: `php artisan test --filter=RME` and full suite — run in Ubuntu Terminal
 3. Attention-item loop is per-branch; review if branch count grows.
 4. Owner has read-only clinic visit permission but no deep links from KPI cards (by design).
 5. Phase 22.7 VPS checklist should mention new Owner dashboard smoke check after deploy.
+
+---
+
+## Sprint 22 Phase 22.6 — Owner Dashboard Branch Filter & KPI Drilldown Polish
+
+**Branch:** `feature/sprint-22-owner-dashboard-branch-filter-drilldown`  
+**Tag:** `sprint-22-phase-22-6-owner-dashboard-branch-filter-drilldown`  
+**Type:** Read-only UI/service polish — no schema changes, no payment/generation/conversion logic changes
+
+### Objective
+
+Let Owner monitor all branches or one selected branch on the RME/Lab pilot dashboard, compare per-branch attention at a glance, and jump to existing read-only index pages when permitted.
+
+### Branch filter behavior
+
+- Default: **Semua Cabang** — global aggregate across active branches (`?branch_id` omitted).
+- Selected: `?branch_id=<active_id>` — KPI cards, funnel, attention panel, and branch summary scoped to that branch.
+- Invalid/inactive id: ignored; falls back to all active branches without error.
+- Branch admin dashboard unchanged (no filter, no Owner RME/Lab section).
+
+### Branch summary behavior
+
+**Ringkasan Per Cabang** table: Cabang, Kunjungan Hari Ini, Menunggu Kasir, Invoice Belum Dibayar, Kandidat Lab Pending, Dikonversi Hari Ini, Status Perhatian. Inactive branches excluded. Pilot-scale: all active branches in one table (no pagination).
+
+### Drilldown rules
+
+`OwnerDashboardRmeLabDrilldownService` — permission-aware read-only links on KPI cards to existing index routes (`rme.visits.index`, `rme.medical-records.index`, `rme.cashier.index`, `lab-case-candidates.index`, `lab-orders.index`). No link when permission missing. Owner pilot role typically gets clinic-visit links only.
+
+### Files changed
+
+- `app/Modules/Reporting/Services/OwnerDashboardRmeLabKpiService.php` — `resolveSelectedBranchId()`, `activeBranches()`, `branchSummary()`, attention status per branch
+- `app/Modules/Reporting/Services/OwnerDashboardRmeLabDrilldownService.php` (new)
+- `app/Http/Controllers/HomeDashboardController.php` — branch filter + drilldown wiring
+- `resources/views/dashboard.blade.php` — filter UI, branch summary table, drilldown hrefs, monitoring disclaimer
+- `resources/views/components/owner-dashboard/owner-kpi-card.blade.php` — optional no-access hint
+- `tests/Feature/Dashboard/OwnerDashboardBranchFilterDrilldownTest.php` (new, 11 tests)
+- `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md`
+- `docs/sprint_history.md`
+
+### Tests added/updated
+
+- `OwnerDashboardBranchFilterDrilldownTest.php` — filter, aggregate, selected branch, invalid id, branch summary, inactive exclusion, branch admin unchanged, permission-aware drilldowns, no side effects, empty state
+- Existing `OwnerDashboardRmeLabKpiTest`, `OwnerDashboardUiTest`, `BranchAdminDashboardUiTest` — still pass
+
+### Commands run
+
+```bash
+php artisan test --filter=OwnerDashboardBranchFilterDrilldown  # 11 passed
+php artisan test --filter=OwnerDashboardRmeLabKpi               # 9 passed
+php artisan test --filter=OwnerDashboardUi                    # 3 passed
+php artisan test --filter=BranchAdminDashboardUi                # pass
+./vendor/bin/pint --dirty                                       # PASS
+```
+
+Heavy: `php artisan test --filter=RME`, `php artisan test --filter=Dashboard`, full suite — Ubuntu Terminal only.
+
+### Risks / follow-up for Phase 22.7
+
+1. Date-range filters not yet in UI.
+2. Drilldown index pages use `BranchContext`, not dashboard `branch_id` — operator may need to switch branch on destination.
+3. Branch summary table may need pagination if branch count grows.
+4. Executive KPI cards remain placeholder.
+5. VPS pilot checklist: add Owner branch-filter smoke step after deploy.

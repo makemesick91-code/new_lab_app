@@ -5,6 +5,7 @@
     'trend' => null,
     'severity' => 'neutral',
     'href' => null,
+    'showNoAccessHint' => false,
 ])
 
 @php
@@ -40,7 +41,7 @@
             <a href="{{ $href }}" class="text-xs font-semibold text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                 Lihat detail
             </a>
-        @else
+        @elseif ($showNoAccessHint)
             <span class="text-xs text-gray-400">Tidak ada akses detail</span>
         @endif
     </div>
