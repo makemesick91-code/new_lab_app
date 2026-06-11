@@ -3703,6 +3703,51 @@ present (legacy import/history). Finalization still requires handwriting only; c
 
 ---
 
+### Sprint 20 Phase 2 — RME UI Modernization (TailAdmin Integration)
+
+**Status:** COMPLETE. Branch `feature/ui-tailadmin-integration`.
+**Tag:** `sprint-20-rme-ui-modernization-complete`
+**Date:** 2026-06-11
+
+All RME views modernized from raw Tailwind/Bootstrap-era HTML to TailAdmin-style components
+(`x-ui.card`, `x-ui.table`, `x-ui.badge`, `x-ui.button`, `x-settings-shell`).
+
+#### Phases Completed
+
+| Phase | Focus | Commit | Tag |
+|---|---|---|---|
+| 2B | Visit/doctor views (index, show, medical-record index/show, odontogram show) | `a542ad2` | `sprint-20-rme-ui-modernization-phase-2b` |
+| 2C.1 | Cashier queue/index | `f6c022f` | `sprint-20-rme-ui-modernization-phase-2c-1-cashier-index` |
+| 2C.2 | Cashier billing detail/show | `0b0bef4` | `sprint-20-rme-ui-modernization-phase-2c-2-cashier-show` |
+| 2C.3 | Cashier billing create | `23b2f46` | `sprint-20-rme-ui-modernization-phase-2c-3-cashier-create` |
+| 2C.4 | Cashier payment create | `ad7c1f4` | `sprint-20-rme-ui-modernization-phase-2c-4-payment-create` |
+| 2C.5 | Cashier receipt | `1d8da61` | `sprint-20-rme-ui-modernization-phase-2c-5-receipt` |
+| 2C.6 | Final audit & documentation | — | `sprint-20-rme-ui-modernization-complete` |
+
+#### Audit Findings (Phase 2C.6)
+
+- No legacy `bg-indigo`, `text-indigo`, `ring-indigo`, `sm:rounded-lg` in RME views after audit.
+- One missed `text-indigo-700` on Grand Total cell in `cashier/show.blade.php` corrected to `text-blue-700`.
+- Raw `<table>` in `cashier/receipt/show.blade.php` receipt body: intentional — print-friendly layout.
+- Raw `<button>` in `visits/show.blade.php` workflow transitions: intentional — dynamic PHP class interpolation required.
+
+#### Preservation Notes
+
+- Business logic, controllers, services, models, routes, policies unchanged.
+- Form field names, route names, permission gates unchanged.
+- Handwriting preview present on show and print pages.
+- SOAP hidden from doctor UI (legacy data shown read-only only when present).
+- Odontogram Alpine component intact.
+- Print/receipt pages remain print-friendly (`@media print` isolation, `#receipt-body`).
+
+#### Quality Gates
+
+- `php artisan test`: **1842 passed, 6290 assertions**
+- `./vendor/bin/pint --dirty`: passed (no changes)
+- `npm run build`: success
+
+---
+
 *Historical record only — this document changes no application code. It reflects decisions as of
-Sprint 20 Phase 1.12 + pilot backup import tooling + hide SOAP doctor UI (2026-06-10) and must be
+Sprint 20 Phase 2C.6 (RME UI modernization complete, 2026-06-11) and must be
 updated as each new sprint completes.*

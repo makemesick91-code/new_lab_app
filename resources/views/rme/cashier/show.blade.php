@@ -116,7 +116,7 @@
                     </tr>
                     <tr class="border-t-2 border-gray-300">
                         <td colspan="5" class="px-4 py-3 text-right text-base font-semibold text-gray-900">Grand Total</td>
-                        <td class="px-4 py-3 text-right text-base font-bold text-indigo-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
+                        <td class="px-4 py-3 text-right text-base font-bold text-blue-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
                     </tr>
                 </tfoot>
             </x-ui.table>
