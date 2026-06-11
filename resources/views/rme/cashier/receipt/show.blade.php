@@ -129,7 +129,7 @@
                 :invoice="$invoice"
                 :candidates="$labCaseCandidates"
                 compact
-                class="print:hidden"
+                class="print-lab-workflow"
             />
 
             {{-- Payment Summary --}}

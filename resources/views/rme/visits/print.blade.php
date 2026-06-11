@@ -16,14 +16,14 @@
         }
 
         .header {
-            border-bottom: 2px solid #4f46e5;
+            border-bottom: 2px solid #0f766e;
             padding-bottom: 10px;
             margin-bottom: 14px;
         }
         .header h1 {
             font-size: 18px;
             font-weight: 700;
-            color: #4f46e5;
+            color: #0f766e;
         }
         .header .app-name {
             font-size: 11px;
@@ -68,34 +68,10 @@
             margin-bottom: 14px;
         }
 
-        .field-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px 24px;
-            padding: 8px 12px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-        }
-        .field-item dt {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
+        .meta-line {
+            font-size: 11px;
             color: #6b7280;
-        }
-        .field-item dd {
-            font-size: 12px;
-            color: #111827;
-            margin-top: 2px;
-            white-space: pre-wrap;
-        }
-        .field-item.full-width {
-            grid-column: 1 / -1;
-        }
-        .field-empty {
-            color: #9ca3af;
-            font-style: italic;
+            margin-bottom: 8px;
         }
 
         .status-badge {
@@ -177,25 +153,33 @@
             color: #6b7280;
             margin-bottom: 6px;
         }
+        .field-empty {
+            color: #9ca3af;
+            font-style: italic;
+        }
 
         .print-actions {
             margin-bottom: 16px;
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
-        .btn-print {
+        .btn-print, .btn-pdf {
             display: inline-flex;
             align-items: center;
             padding: 6px 14px;
-            background: #4f46e5;
             color: #fff;
             border: none;
             border-radius: 6px;
             font-size: 12px;
             font-weight: 600;
             cursor: pointer;
+            text-decoration: none;
         }
-        .btn-print:hover { background: #4338ca; }
+        .btn-print { background: #0f766e; }
+        .btn-print:hover { background: #0d9488; }
+        .btn-pdf { background: #374151; }
+        .btn-pdf:hover { background: #1f2937; }
         .btn-close {
             display: inline-flex;
             align-items: center;
@@ -224,214 +208,31 @@
             body { padding: 10px 14px; }
             .print-actions { display: none; }
             .footer { page-break-inside: avoid; }
+            .section-block { page-break-inside: avoid; }
             @page { margin: 1cm; }
         }
     </style>
 </head>
 <body>
 
-    {{-- Print / Close actions (hidden on print) --}}
     <div class="print-actions">
-        <button class="btn-print" onclick="window.print()">&#128438; Cetak / Simpan PDF</button>
+        <button class="btn-print" type="button" onclick="window.print()">&#128438; Cetak / Simpan PDF</button>
+        <a href="{{ route('rme.visits.pdf', $visit) }}" class="btn-pdf">Unduh PDF</a>
         <a href="{{ route('rme.visits.show', $visit) }}" class="btn-close">&larr; Kembali</a>
     </div>
 
-    {{-- Document header --}}
     <div class="header">
         <div class="app-name">{{ config('app.name') }}</div>
         <h1>Rekam Medis Elektronik</h1>
     </div>
 
-    {{-- Patient & Visit Info --}}
-    <div class="section-block">
-        <div class="section-title">Data Pasien &amp; Kunjungan</div>
-        <div class="info-grid">
-            <div class="info-row">
-                <dt>Nama Pasien</dt>
-                <dd>{{ $visit->patient?->name ?? '—' }}</dd>
-            </div>
-            <div class="info-row">
-                <dt>No. Rekam Medis</dt>
-                <dd>{{ $visit->patient?->medical_record_number ?? '—' }}</dd>
-            </div>
-            <div class="info-row">
-                <dt>No. Kunjungan</dt>
-                <dd>{{ $visit->visit_number ?? '—' }}</dd>
-            </div>
-            <div class="info-row">
-                <dt>Tanggal Kunjungan</dt>
-                <dd>{{ $visit->visit_date?->format('d/m/Y') ?? '—' }}</dd>
-            </div>
-            <div class="info-row">
-                <dt>Antrian</dt>
-                <dd>#{{ $visit->queue_number ?? '—' }}</dd>
-            </div>
-            <div class="info-row">
-                <dt>Dokter</dt>
-                <dd>{{ $visit->doctor?->name ?? '—' }}</dd>
-            </div>
-            <div class="info-row" style="grid-column: 1 / -1;">
-                <dt>Keluhan Utama</dt>
-                <dd>{{ $visit->chief_complaint ?? '—' }}</dd>
-            </div>
-        </div>
-    </div>
+    @include('rme.visits.partials.print-body', [
+        'visit' => $visit,
+        'paidInvoice' => $paidInvoice,
+        'payment' => $payment,
+        'labCaseCandidates' => $labCaseCandidates,
+    ])
 
-    {{-- Medical Record --}}
-    @php $medicalRecord = $visit->medicalRecord; @endphp
-    <div class="section-block">
-        <div class="section-title">Rekam Medis
-            @if ($medicalRecord)
-                &nbsp;
-                @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
-                    <span class="status-badge status-final">Final</span>
-                @else
-                    <span class="status-badge status-draft">Draft</span>
-                @endif
-            @endif
-        </div>
-        @if ($medicalRecord)
-            @php
-                $savedHandwriting = $medicalRecord->latestHandwriting();
-                $hasLegacySoap = filled($medicalRecord->subjective)
-                    || filled($medicalRecord->objective)
-                    || filled($medicalRecord->assessment)
-                    || filled($medicalRecord->plan)
-                    || filled($medicalRecord->notes);
-            @endphp
-
-            @if ($hasLegacySoap)
-                <div class="field-grid" style="margin-bottom: 10px;">
-                    @if (filled($medicalRecord->subjective))
-                        <div class="field-item">
-                            <dt>Subjektif (Anamnesis)</dt>
-                            <dd>{{ $medicalRecord->subjective }}</dd>
-                        </div>
-                    @endif
-                    @if (filled($medicalRecord->objective))
-                        <div class="field-item">
-                            <dt>Objektif (Pemeriksaan)</dt>
-                            <dd>{{ $medicalRecord->objective }}</dd>
-                        </div>
-                    @endif
-                    @if (filled($medicalRecord->assessment))
-                        <div class="field-item">
-                            <dt>Assessment (Diagnosis)</dt>
-                            <dd>{{ $medicalRecord->assessment }}</dd>
-                        </div>
-                    @endif
-                    @if (filled($medicalRecord->plan))
-                        <div class="field-item">
-                            <dt>Plan (Rencana Perawatan)</dt>
-                            <dd>{{ $medicalRecord->plan }}</dd>
-                        </div>
-                    @endif
-                    @if (filled($medicalRecord->notes))
-                        <div class="field-item full-width">
-                            <dt>Catatan Tambahan</dt>
-                            <dd>{{ $medicalRecord->notes }}</dd>
-                        </div>
-                    @endif
-                </div>
-            @endif
-
-            <div class="handwriting-preview">
-                <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>
-                @if ($savedHandwriting && $savedHandwriting->previewUrl())
-                    <p class="handwriting-saved-at">
-                        Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
-                    </p>
-                    <img src="{{ $savedHandwriting->previewUrl() }}"
-                         alt="RME Tulisan Tangan">
-                @else
-                    <p class="field-empty">Belum ada handwriting RM.</p>
-                @endif
-            </div>
-        @else
-            <div class="not-available">Rekam medis belum tersedia.</div>
-        @endif
-    </div>
-
-    {{-- Odontogram Summary --}}
-    @php
-        $odontogram = $visit->odontogram;
-        $statusLabels = [
-            'caries'       => 'Karies',
-            'missing'      => 'Cabut/Missing',
-            'crown'        => 'Mahkota',
-            'root_treated' => 'Perawatan Saluran Akar',
-            'mobility'     => 'Goyang',
-            'impaction'    => 'Impaksi',
-            'filling'      => 'Tambalan',
-            'normal'       => 'Normal',
-        ];
-        $conditionLabels = $statusLabels;
-    @endphp
-    <div class="section-block">
-        <div class="section-title">Odontogram
-            @if ($odontogram)
-                &nbsp;
-                @if ($odontogram->isFinalized())
-                    <span class="status-badge status-finalized">Final</span>
-                @else
-                    <span class="status-badge status-draft">Draft</span>
-                @endif
-            @endif
-        </div>
-        @if ($odontogram)
-            <div class="odonto-summary">
-                @if ($odontogram->summary_notes)
-                    <div class="field-item">
-                        <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Catatan Ringkas</dt>
-                        <div class="odonto-notes">{{ $odontogram->summary_notes }}</div>
-                    </div>
-                @endif
-
-                @php
-                    $teethData = $odontogram->tooth_map_payload['teeth'] ?? [];
-                    $markedTeeth = array_filter($teethData, fn ($td) =>
-                        ! empty($td['status']) || ! empty($td['conditions']) || (isset($td['note']) && $td['note'] !== '')
-                    );
-                    ksort($markedTeeth);
-                @endphp
-
-                @if (count($markedTeeth) > 0)
-                    <table class="odonto-table" style="margin-top: {{ $odontogram->summary_notes ? '10px' : '0' }}">
-                        <thead>
-                            <tr>
-                                <th style="width:55px">Gigi</th>
-                                <th style="width:120px">Status</th>
-                                <th>Kondisi Tambahan</th>
-                                <th>Catatan</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($markedTeeth as $toothNum => $td)
-                                <tr>
-                                    <td><strong>{{ $toothNum }}</strong></td>
-                                    <td>{{ $statusLabels[$td['status'] ?? ''] ?? ($td['status'] ? ucfirst($td['status']) : '—') }}</td>
-                                    <td>
-                                        @if (! empty($td['conditions']) && is_array($td['conditions']))
-                                            {{ implode(', ', array_map(fn ($c) => $conditionLabels[$c] ?? $c, $td['conditions'])) }}
-                                        @else
-                                            <span style="color:#9ca3af">—</span>
-                                        @endif
-                                    </td>
-                                    <td>{{ (isset($td['note']) && $td['note'] !== '') ? $td['note'] : '—' }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @else
-                    <p style="margin-top:6px;color:#9ca3af;font-style:italic;font-size:11px;">Belum ada gigi yang ditandai.</p>
-                @endif
-            </div>
-        @else
-            <div class="not-available">Odontogram belum tersedia.</div>
-        @endif
-    </div>
-
-    {{-- Footer --}}
     <div class="footer">
         <span>{{ config('app.name') }} — Dicetak {{ now()->format('d/m/Y H:i') }}</span>
         <span>Kunjungan {{ $visit->visit_number ?? '—' }}</span>

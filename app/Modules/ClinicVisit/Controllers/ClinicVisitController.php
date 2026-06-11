@@ -13,10 +13,14 @@ use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class ClinicVisitController extends Controller
@@ -114,8 +118,54 @@ class ClinicVisitController extends Controller
     public function print(ClinicVisit $clinicVisit): View
     {
         $this->authorize('print', $clinicVisit);
-        $clinicVisit->load(['patient', 'doctor', 'medicalRecord.handwriting', 'odontogram']);
 
-        return view('rme.visits.print', ['visit' => $clinicVisit]);
+        return view('rme.visits.print', $this->resolvePrintViewData($clinicVisit));
+    }
+
+    public function pdf(ClinicVisit $clinicVisit): Response
+    {
+        $this->authorize('print', $clinicVisit);
+
+        $data = $this->resolvePrintViewData($clinicVisit);
+        $filename = 'rme-visit-'.($clinicVisit->visit_number ?? $clinicVisit->id).'.pdf';
+
+        return Pdf::loadView('rme.visits.print-pdf', $data)->download($filename);
+    }
+
+    /**
+     * @return array{visit: ClinicVisit, paidInvoice: ?RmeInvoice, payment: mixed, labCaseCandidates: Collection}
+     */
+    private function resolvePrintViewData(ClinicVisit $clinicVisit): array
+    {
+        $clinicVisit->load([
+            'patient',
+            'doctor',
+            'branch',
+            'clinic',
+            'initialTreatment',
+            'medicalRecord.handwriting',
+            'medicalRecord.finalizedBy',
+            'odontogram',
+        ]);
+
+        $paidInvoice = RmeInvoice::query()
+            ->where('clinic_visit_id', $clinicVisit->id)
+            ->where('status', RmeInvoice::STATUS_PAID)
+            ->with([
+                'items',
+                'payments.paymentMethod',
+                'labCaseCandidates.convertedLabOrder',
+                'labCaseCandidates.treatment',
+            ])
+            ->first();
+
+        $payment = $paidInvoice?->payments->first();
+
+        return [
+            'visit' => $clinicVisit,
+            'paidInvoice' => $paidInvoice,
+            'payment' => $payment,
+            'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
+        ];
     }
 }

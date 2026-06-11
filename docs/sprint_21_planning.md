@@ -696,3 +696,68 @@ Polish UI/visibility only — help clinic and lab staff trace RME invoice → la
 | `php artisan test` | All passed |
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
+
+---
+
+## 18. Phase 21.6 — RME PDF Export / Print Hardening
+
+**Status:** COMPLETE (2026-06-11)
+**Branch:** `feature/sprint-21-rme-pdf-print-hardening`
+**Tag:** `sprint-21-phase-21-6-rme-pdf-print-hardening`
+
+### Goal
+
+Harden RME visit print and receipt print outputs for pilot use. Add optional PDF download using existing `barryvdh/laravel-dompdf` infrastructure.
+
+### Files Added
+
+| File | Purpose |
+|---|---|
+| `tests/Feature/RME/RmePdfPrintHardeningTest.php` | 21 tests — print/PDF auth, content, branch isolation, no side effects |
+| `resources/views/rme/visits/partials/print-body.blade.php` | Shared print-safe RME bundle content |
+| `resources/views/rme/visits/print-pdf.blade.php` | DomPDF view for visit PDF export |
+
+### Files Modified
+
+| File | Change |
+|---|---|
+| `app/Modules/ClinicVisit/Controllers/ClinicVisitController.php` | Eager-load print relations; `pdf()` export; shared `resolvePrintViewData()` |
+| `resources/views/rme/visits/print.blade.php` | Print hardening — branch, initial treatment, invoice/payment, lab workflow; SOAP hidden |
+| `resources/views/rme/cashier/receipt/show.blade.php` | Lab workflow visible on print (`print-lab-workflow`) |
+| `resources/views/components/rme/lab-workflow-panel.blade.php` | Print break-inside-avoid |
+| `routes/web.php` | `rme.visits.pdf` route |
+| `tests/Feature/RME/ClinicVisitTest.php` | Print test expects Final status, not legacy SOAP |
+
+### Print bundle now includes
+
+- Patient / visit identity, branch, clinic, doctor
+- Initial treatment (when set)
+- Medical record finalization metadata + handwriting preview (SOAP fields hidden)
+- Odontogram summary
+- Paid RME invoice / payment summary (when available)
+- Lab case candidate status + converted LabOrder reference (when available)
+
+### PDF export
+
+- Route: `GET /rme/visits/{clinicVisit}/pdf` (`rme.visits.pdf`)
+- Package: existing `barryvdh/laravel-dompdf` (same pattern as stock transfer checklist)
+- Authorization: same as `rme.visits.print` (`ClinicVisitPolicy::print`)
+- No record mutations on download
+
+### Phase boundaries preserved
+
+- No RME payment / candidate generation / conversion logic changes
+- No auto LabOrder from RME payment
+- No lab invoice/payment records
+- No cicilan, WhatsApp, SOAP doctor UI, or migrations
+
+### Test Results
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=RmePdfPrintHardening` | 21 passed |
+| `php artisan test --filter=RmeLabWorkflowPolish` | 16 passed |
+| `php artisan test --filter=RME` | All passed |
+| `php artisan test` | All passed |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |

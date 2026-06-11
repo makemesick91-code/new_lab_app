@@ -220,6 +220,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('visits/{clinicVisit}/print', [ClinicVisitController::class, 'print'])
             ->name('visits.print');
 
+        // Sprint 21 Phase 21.6 — RME Visit PDF Export
+        Route::get('visits/{clinicVisit}/pdf', [ClinicVisitController::class, 'pdf'])
+            ->name('visits.pdf');
+
         Route::middleware('permission:manage_clinic_visits')->group(function () {
             Route::patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
                 ->name('odontograms.update');

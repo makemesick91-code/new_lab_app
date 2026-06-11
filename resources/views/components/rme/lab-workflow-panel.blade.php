@@ -11,7 +11,7 @@
 @endphp
 
 @if ($invoice->isPaid() || $totalCount > 0)
-    <x-ui.card :title="$compact ? null : 'Status Pekerjaan Lab RME'" {{ $attributes }}>
+    <x-ui.card :title="$compact ? null : 'Status Pekerjaan Lab RME'" {{ $attributes->merge(['class' => trim(($attributes->get('class') ?? '').' print:break-inside-avoid')]) }}>
         @if ($compact)
             <h3 class="mb-3 text-sm font-semibold text-gray-900">Kandidat Lab RME</h3>
         @endif

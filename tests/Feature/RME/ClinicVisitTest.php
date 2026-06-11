@@ -857,14 +857,16 @@ it('print view displays medical record info if available', function () {
         'assessment' => 'Karies profunda',
         'plan' => 'Cabut gigi 36',
         'status' => MedicalRecord::STATUS_FINAL,
+        'finalized_at' => now(),
     ]);
 
     $this->actingAs($this->manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Keluhan sakit gigi kiri')
-        ->assertSee('Karies profunda')
-        ->assertSee('Cabut gigi 36');
+        ->assertSee('Final')
+        ->assertSee('Difinalisasi')
+        ->assertDontSee('Subjektif (Anamnesis)')
+        ->assertDontSee('Keluhan sakit gigi kiri');
 });
 
 it('print view displays odontogram info if available', function () {

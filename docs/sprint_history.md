@@ -4111,3 +4111,39 @@ Improve workflow visibility across the full RME → Lab Candidate → LabOrder p
 | `php artisan test` (full suite) | All passed |
 | `./vendor/bin/pint --dirty` | Passed |
 | `npm run build` | Success |
+
+---
+
+## Sprint 21 Phase 21.6 — RME PDF Export / Print Hardening
+
+**Date:** 2026-06-11
+**Branch:** `feature/sprint-21-rme-pdf-print-hardening`
+**Tag:** `sprint-21-phase-21-6-rme-pdf-print-hardening`
+**Base:** `243eb78` (Sprint 21.5)
+
+### Goal
+
+Harden RME visit print and receipt print for pilot deployment. Add PDF download via existing DomPDF package.
+
+### What changed
+
+- RME visit print: branch, clinic, initial treatment, finalized RM metadata, handwriting, odontogram, paid invoice/payment, lab workflow summary; legacy SOAP hidden
+- RME visit PDF: `rme.visits.pdf` route using `barryvdh/laravel-dompdf`
+- RME receipt print: lab workflow panel no longer `print:hidden`
+- Shared partial `rme/visits/partials/print-body.blade.php`
+
+### Phase boundaries preserved
+
+- No RME payment, candidate generation, or conversion changes
+- No auto LabOrder, lab billing, cicilan, WhatsApp, or SOAP doctor UI
+- No migrations
+
+**Test results:**
+
+| Suite | Result |
+|---|---|
+| `php artisan test --filter=RmePdfPrintHardening` | **21 passed, 71 assertions** |
+| `php artisan test --filter=RmeLabWorkflowPolish` | **16 passed** |
+| `php artisan test` (full suite) | **1918 passed** |
+| `./vendor/bin/pint --dirty` | Passed |
+| `npm run build` | Success |

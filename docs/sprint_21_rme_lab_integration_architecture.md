@@ -661,9 +661,16 @@ Read-only UI polish across the integration path. No changes to payment, candidat
 | Surface | Visibility added |
 |---|---|
 | RME invoice show | Status Pekerjaan Lab RME — counts, per-item status, authorized candidate/LabOrder links |
-| RME receipt | Compact Kandidat Lab RME section (hidden on print) |
+| RME receipt | Compact Kandidat Lab RME section (visible on print as of Phase 21.6) |
 | Candidate index | Lab Order number column when converted |
 | Candidate show | Linked RME invoice, visit number, conversion metadata, Belum dikonversi state |
 | Lab order show | Sumber RME block when `LabOrder::rmeLabCaseCandidate()` exists |
 
 Relations used (no new migrations): `RmeInvoice::labCaseCandidates()`, `LabCaseCandidate::convertedLabOrder()`, `LabOrder::rmeLabCaseCandidate()`.
+
+### Phase 21.6 — Print / PDF Hardening (2026-06-11)
+
+**Branch:** `feature/sprint-21-rme-pdf-print-hardening`
+**Tag:** `sprint-21-phase-21-6-rme-pdf-print-hardening`
+
+RME visit print bundle (`rme.visits.print`) and PDF export (`rme.visits.pdf`) now surface the full pilot workflow readout: patient/visit/branch, initial treatment, finalized RM + handwriting, odontogram, paid invoice/payment summary, and lab candidate/LabOrder references. Legacy SOAP fields are omitted from print output. Receipt print includes the compact lab workflow panel. PDF uses existing `barryvdh/laravel-dompdf` — no new Composer packages. No payment, generation, or conversion logic changed.
