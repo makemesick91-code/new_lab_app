@@ -1,9 +1,9 @@
 # Sprint 20 — RME Limited Pilot Summary
 
-**Status:** Ready for single-branch pilot  
-**Branch:** `feature/sprint-20-rme-core`  
-**Tag:** `sprint-20-rme-limited-pilot-complete`  
-**Date:** 2026-06-10
+**Status:** Ready for single-branch pilot — UI modernization complete  
+**Branch:** `feature/sprint-20-rme-core` → UI: `feature/ui-tailadmin-integration`  
+**Tag:** `sprint-20-rme-limited-pilot-complete` · UI: `sprint-20-rme-ui-modernization-complete`  
+**Date:** 2026-06-10 (core) · 2026-06-11 (UI modernization)
 
 ---
 
@@ -223,3 +223,48 @@ Users with `view_clinic_visits` only:
 4. Optional DomPDF export for RME bundle and receipt.
 5. RME operational dashboard (queue, unpaid, daily revenue).
 6. Owner read-only RME reports without manage permissions.
+
+---
+
+## UI Modernization (Sprint 20 Phase 2 — Post-Core)
+
+**Branch:** `feature/ui-tailadmin-integration`  
+**Tag:** `sprint-20-rme-ui-modernization-complete`  
+**Date:** 2026-06-11
+
+All RME views have been modernized to TailAdmin-style UI components. No business logic,
+routes, permissions, field names, or workflow was changed.
+
+### Views Modernized
+
+| View | File |
+|---|---|
+| Kunjungan — daftar | `rme/visits/index.blade.php` |
+| Kunjungan — detail | `rme/visits/show.blade.php` |
+| Rekam Medis — daftar | `rme/visits/medical-record/index.blade.php` |
+| Rekam Medis — detail | `rme/visits/medical-record/show.blade.php` |
+| Odontogram — detail | `rme/visits/odontogram/show.blade.php` |
+| Kasir — antrian | `rme/cashier/index.blade.php` |
+| Kasir — buat tagihan | `rme/cashier/create.blade.php` |
+| Kasir — detail tagihan | `rme/cashier/show.blade.php` |
+| Kasir — bayar | `rme/cashier/payment/create.blade.php` |
+| Kasir — kwitansi | `rme/cashier/receipt/show.blade.php` |
+
+### Components Used
+
+- `x-settings-shell` — page shell/layout
+- `x-ui.card` — content panels
+- `x-ui.table` — data tables
+- `x-ui.badge` — status labels
+- `x-ui.button` — actions
+
+### Intentional Raw HTML Exceptions
+
+- **Receipt body table** (`cashier/receipt/show.blade.php`): raw `<table>` inside `#receipt-body` for print-friendly layout.
+- **Workflow transition buttons** (`visits/show.blade.php`): raw `<button>` required for dynamic PHP `$transitionStyle` class interpolation per status.
+
+### Quality Gates Passed
+
+- `php artisan test`: 1842 passed, 6290 assertions
+- `./vendor/bin/pint --dirty`: no changes
+- `npm run build`: success

@@ -1,6 +1,6 @@
 <x-settings-shell title="Dasbor Persediaan">
     <div class="space-y-6">
-        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+        <x-ui.card padding="p-5">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan Inti</p>
@@ -10,20 +10,14 @@
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    <a href="{{ route('inventory.stock.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                        Buka Stok
-                    </a>
-                    <a href="{{ route('inventory.products.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Produk
-                    </a>
+                    <x-ui.button variant="neutral" :href="route('inventory.stock.index')">Buka Stok</x-ui.button>
+                    <x-ui.button variant="secondary" :href="route('inventory.products.index')">Produk</x-ui.button>
                     @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
-                        <a href="{{ route('inventory.analytics.index') }}" class="rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Analitik Persediaan
-                        </a>
+                        <x-ui.button variant="primary" :href="route('inventory.analytics.index')">Analitik Persediaan</x-ui.button>
                     @endcan
                 </div>
             </div>
-        </section>
+        </x-ui.card>
 
         <section aria-labelledby="inventory-kpis">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">

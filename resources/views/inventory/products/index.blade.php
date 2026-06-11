@@ -8,54 +8,46 @@
             </div>
             <div class="flex flex-wrap gap-2">
                 @can('create', \App\Modules\Inventory\Models\Product::class)
-                    <a href="{{ route('inventory.products.import.template') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Unduh Template CSV
-                    </a>
-                    <a href="{{ route('inventory.products.import') }}" class="inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-semibold text-teal-700 shadow-sm hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Impor CSV
-                    </a>
+                    <x-ui.button variant="secondary" :href="route('inventory.products.import.template')">Unduh Template CSV</x-ui.button>
+                    <x-ui.button variant="primary" :href="route('inventory.products.import')">Impor CSV</x-ui.button>
                 @endcan
-                <a href="{{ route('inventory.products.create') }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Tambah Produk
-                </a>
+                <x-ui.button variant="primary" :href="route('inventory.products.create')">Tambah Produk</x-ui.button>
             </div>
         </div>
 
-        <form method="GET" action="{{ route('inventory.products.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto] md:items-end">
-                <div>
-                    <label for="product-search" class="text-sm font-medium text-gray-700">Cari produk</label>
-                    <input id="product-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Kode, nama, atau kategori"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+        <x-ui.card padding="p-4">
+            <form method="GET" action="{{ route('inventory.products.index') }}">
+                <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_12rem_auto_auto] md:items-end">
+                    <div>
+                        <label for="product-search" class="text-sm font-medium text-gray-700">Cari produk</label>
+                        <input id="product-search" type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Kode, nama, atau kategori"
+                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    </div>
+                    <div>
+                        <label for="product-status" class="text-sm font-medium text-gray-700">Status aktif</label>
+                        <select id="product-status" name="is_active" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua produk</option>
+                            <option value="1" @selected(($filters['is_active'] ?? '') === true || ($filters['is_active'] ?? '') === '1')>Hanya aktif</option>
+                            <option value="0" @selected(($filters['is_active'] ?? '') === false || ($filters['is_active'] ?? '') === '0')>Hanya nonaktif</option>
+                        </select>
+                    </div>
+                    <x-ui.button type="submit" variant="neutral">Terapkan</x-ui.button>
+                    <x-ui.button variant="secondary" :href="route('inventory.products.index')">Atur Ulang</x-ui.button>
                 </div>
-                <div>
-                    <label for="product-status" class="text-sm font-medium text-gray-700">Status aktif</label>
-                    <select id="product-status" name="is_active" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua produk</option>
-                        <option value="1" @selected(($filters['is_active'] ?? '') === true || ($filters['is_active'] ?? '') === '1')>Hanya aktif</option>
-                        <option value="0" @selected(($filters['is_active'] ?? '') === false || ($filters['is_active'] ?? '') === '0')>Hanya nonaktif</option>
-                    </select>
-                </div>
-                <button class="inline-flex justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                    Terapkan
-                </button>
-                <a href="{{ route('inventory.products.index') }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Atur Ulang
-                </a>
-            </div>
-        </form>
+            </form>
+        </x-ui.card>
 
-        <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+        <x-ui.card padding="">
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
                 <div>
                     <h3 class="text-base font-semibold text-gray-900">Produk</h3>
                     <p class="text-sm text-gray-500">{{ format_number_id($products->total()) }} produk dalam lingkup cabang aktif.</p>
                 </div>
-                <span class="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">Total Stok Cabang</span>
+                <x-ui.badge tone="info">Total Stok Cabang</x-ui.badge>
             </div>
 
-            <div class="hidden overflow-x-auto md:block">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <div class="hidden md:block">
+                <x-ui.table class="!border-0 !shadow-none !rounded-none">
                     <thead class="bg-gray-50">
                         <tr class="text-left text-gray-500">
                             <th scope="col" class="px-4 py-3 font-medium">Produk</th>
@@ -115,12 +107,12 @@
                                 <td class="px-3 py-3">@include('inventory._status-badge', ['active' => $product->is_active])</td>
                                 <td class="px-4 py-3">
                                     <div class="flex flex-wrap items-center justify-end gap-2">
-                                        <a href="{{ route('inventory.products.show', $product) }}" class="font-medium text-gray-700 hover:text-gray-950">Lihat</a>
-                                        <a href="{{ route('inventory.products.stock-card', $product) }}" class="font-medium text-teal-700 hover:text-teal-600">Kartu Stok</a>
+                                        <x-ui.button variant="secondary" :href="route('inventory.products.show', $product)" class="!px-3 !py-1.5 !text-xs">Lihat</x-ui.button>
+                                        <x-ui.button variant="primary" :href="route('inventory.products.stock-card', $product)" class="!px-3 !py-1.5 !text-xs">Kartu Stok</x-ui.button>
                                         @if ($product->is_active)
-                                            <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="font-medium text-emerald-700 hover:text-emerald-600">Terima</a>
+                                            <x-ui.button variant="secondary" :href="route('inventory.products.receive-stock.create', $product)" class="!px-3 !py-1.5 !text-xs !border-emerald-200 !text-emerald-700 hover:!bg-emerald-50">Terima</x-ui.button>
                                         @endif
-                                        <a href="{{ route('inventory.products.edit', $product) }}" class="font-medium text-gray-500 hover:text-gray-900">Ubah</a>
+                                        <x-ui.button variant="secondary" :href="route('inventory.products.edit', $product)" class="!px-3 !py-1.5 !text-xs">Ubah</x-ui.button>
                                     </div>
                                 </td>
                             </tr>
@@ -138,7 +130,7 @@
                             </tr>
                         @endforelse
                     </tbody>
-                </table>
+                </x-ui.table>
             </div>
 
             <div class="divide-y divide-gray-100 md:hidden">
@@ -180,10 +172,10 @@
                             @endif
                         </div>
                         <div class="mt-4 flex flex-wrap gap-2">
-                            <a href="{{ route('inventory.products.show', $product) }}" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700">Lihat</a>
-                            <a href="{{ route('inventory.products.stock-card', $product) }}" class="rounded-lg border border-teal-200 px-3 py-2 text-sm font-medium text-teal-700">Kartu Stok</a>
+                            <x-ui.button variant="secondary" :href="route('inventory.products.show', $product)" class="!px-3 !py-2 !text-sm">Lihat</x-ui.button>
+                            <x-ui.button variant="primary" :href="route('inventory.products.stock-card', $product)" class="!px-3 !py-2 !text-sm">Kartu Stok</x-ui.button>
                             @if ($product->is_active)
-                                <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="rounded-lg border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-700">Terima</a>
+                                <x-ui.button variant="secondary" :href="route('inventory.products.receive-stock.create', $product)" class="!px-3 !py-2 !text-sm !border-emerald-200 !text-emerald-700 hover:!bg-emerald-50">Terima</x-ui.button>
                             @endif
                         </div>
                     </article>
@@ -196,6 +188,6 @@
             </div>
 
             <div class="border-t border-gray-200 px-4 py-3">{{ $products->links() }}</div>
-        </section>
+        </x-ui.card>
     </div>
 </x-settings-shell>

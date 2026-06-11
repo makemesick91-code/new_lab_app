@@ -25,6 +25,8 @@
 
 **Pilot master data import:** use `php artisan rme:import-pilot-backup` (see `docs/rme_pilot_backup_import_guide.md`). Never restore backup SQL directly over the Sprint 20 database.
 
+**UI:** All RME views use TailAdmin components (`x-ui.card`, `x-ui.table`, `x-ui.badge`, `x-ui.button`, `x-settings-shell`). UI modernization complete — branch `feature/ui-tailadmin-integration`, tag `sprint-20-rme-ui-modernization-complete` (2026-06-11).
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

@@ -1,36 +1,47 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="h-full">
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        <title>{{ config('app.name', 'Daengtisia Management System') }}</title>
 
-        <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=figtree:400,500,600&display=swap" rel="stylesheet" />
 
-        <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans antialiased">
-        <div class="min-h-screen bg-gray-100">
-            @include('layouts.navigation')
+    <body
+        class="h-full font-sans antialiased bg-gray-100 text-gray-900"
+        x-data
+        x-init="
+            $store.sidebar.isExpanded = window.innerWidth >= 1280;
+            const onResize = () => {
+                if (window.innerWidth < 1280) {
+                    $store.sidebar.setMobileOpen(false);
+                    $store.sidebar.isExpanded = false;
+                } else {
+                    $store.sidebar.setMobileOpen(false);
+                    $store.sidebar.isExpanded = true;
+                }
+            };
+            window.addEventListener('resize', onResize);
+        "
+    >
+        <div class="min-h-screen xl:flex">
+            @include('layouts.partials.backdrop')
+            @include('layouts.sidebar')
 
-            <!-- Page Heading -->
-            @isset($header)
-                <header class="bg-white shadow">
-                    <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-                        {{ $header }}
-                    </div>
-                </header>
-            @endisset
+            <div class="flex min-h-screen min-w-0 flex-1 flex-col xl:ml-[290px]">
+                @include('layouts.partials.topbar')
 
-            <!-- Page Content -->
-            <main>
-                {{ $slot }}
-            </main>
+                <main class="flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+                    {{ $slot }}
+                </main>
+            </div>
         </div>
+
+        @stack('scripts')
     </body>
 </html>

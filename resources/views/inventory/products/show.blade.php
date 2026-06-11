@@ -15,9 +15,7 @@
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $product->name }}</h2>
                 <p class="mt-1 text-sm text-gray-500">Kode {{ $product->code }} · stok ditampilkan sebagai total cabang aktif dari pergerakan ledger.</p>
             </div>
-            <a href="{{ route('inventory.products.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                Kembali ke Produk
-            </a>
+            <x-ui.button variant="secondary" :href="route('inventory.products.index')">Kembali ke Produk</x-ui.button>
         </div>
 
         @if (! $product->is_active)
@@ -37,7 +35,7 @@
             </div>
         @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <x-ui.card>
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
@@ -72,9 +70,9 @@
                     <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_currency_id($averageCost) }}</dd>
                 </div>
             </dl>
-        </section>
+        </x-ui.card>
 
-        <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <x-ui.card>
             <h3 class="text-base font-semibold text-gray-900">Pengaturan Pesanan Ulang</h3>
             <p class="mt-1 text-sm text-gray-500">Konfigurasi peringatan stok untuk produk ini. Stok tetap dihitung dari ledger.</p>
             <dl class="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
@@ -95,18 +93,16 @@
                     <dd class="mt-1 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($minimumStock) }}</dd>
                 </div>
             </dl>
-        </section>
+        </x-ui.card>
 
         <div class="grid gap-6 lg:grid-cols-3">
-            <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm lg:col-span-2">
+            <x-ui.card class="lg:col-span-2">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h3 class="text-base font-semibold text-gray-900">Kejelasan Stok Cabang / Lokasi</h3>
                         <p class="mt-1 text-sm text-gray-500">Halaman ini menampilkan total stok cabang. Gunakan kartu stok untuk melihat riwayat pergerakan dan filter berdasarkan Lokasi Persediaan.</p>
                     </div>
-                    <a href="{{ route('inventory.products.stock-card', $product) }}" class="text-sm font-semibold text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Buka Kartu Stok
-                    </a>
+                    <x-ui.button variant="primary" :href="route('inventory.products.stock-card', $product)" class="!px-3 !py-1.5 !text-xs">Buka Kartu Stok</x-ui.button>
                 </div>
 
                 <div class="mt-4 grid gap-3 sm:grid-cols-3">
@@ -126,26 +122,26 @@
                         <p class="mt-1 text-xs text-gray-500">Saldo per lokasi tetap berbasis ledger.</p>
                     </div>
                 </div>
-            </section>
+            </x-ui.card>
 
-            <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+            <x-ui.card>
                 <h3 class="text-base font-semibold text-gray-900">Aksi Stok</h3>
                 <p class="mt-1 text-sm text-gray-500">Setiap operasi stok wajib memilih Lokasi Persediaan.</p>
                 <div class="mt-4 grid gap-2">
-                    <a href="{{ route('inventory.products.stock-card', $product) }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Kartu Stok</a>
+                    <x-ui.button variant="secondary" :href="route('inventory.products.stock-card', $product)" class="w-full">Kartu Stok</x-ui.button>
                     @if ($product->is_active)
-                        <a href="{{ route('inventory.products.receive-stock.create', $product) }}" class="inline-flex justify-center rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-600">Terima Stok</a>
-                        <a href="{{ route('inventory.products.opening-stock.create', $product) }}" class="inline-flex justify-center rounded-lg border border-green-200 px-3 py-2 text-sm font-semibold text-green-700 hover:bg-green-50">Stok Awal</a>
-                        <a href="{{ route('inventory.products.adjust-in.create', $product) }}" class="inline-flex justify-center rounded-lg border border-teal-200 px-3 py-2 text-sm font-semibold text-teal-700 hover:bg-teal-50">Penyesuaian Masuk</a>
-                        <a href="{{ route('inventory.products.adjust-out.create', $product) }}" class="inline-flex justify-center rounded-lg border border-amber-200 px-3 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-50">Penyesuaian Keluar</a>
+                        <x-ui.button variant="primary" :href="route('inventory.products.receive-stock.create', $product)" class="w-full !bg-emerald-700 hover:!bg-emerald-600">Terima Stok</x-ui.button>
+                        <x-ui.button variant="secondary" :href="route('inventory.products.opening-stock.create', $product)" class="w-full !border-green-200 !text-green-700 hover:!bg-green-50">Stok Awal</x-ui.button>
+                        <x-ui.button variant="secondary" :href="route('inventory.products.adjust-in.create', $product)" class="w-full">Penyesuaian Masuk</x-ui.button>
+                        <x-ui.button variant="secondary" :href="route('inventory.products.adjust-out.create', $product)" class="w-full !border-amber-200 !text-amber-700 hover:!bg-amber-50">Penyesuaian Keluar</x-ui.button>
                     @else
                         <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
                             Operasi stok dinonaktifkan untuk produk nonaktif.
                         </div>
                     @endif
-                    <a href="{{ route('inventory.products.edit', $product) }}" class="inline-flex justify-center rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800">Ubah Produk</a>
+                    <x-ui.button variant="neutral" :href="route('inventory.products.edit', $product)" class="w-full">Ubah Produk</x-ui.button>
                 </div>
-            </section>
+            </x-ui.card>
         </div>
     </div>
 </x-settings-shell>

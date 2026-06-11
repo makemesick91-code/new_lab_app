@@ -256,11 +256,7 @@
         </div>
     </x-slot>
 
-    <div class="flex">
-        @include('layouts.sidebar')
-
-        <main class="min-w-0 flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
-            <div class="mx-auto max-w-7xl space-y-6">
+    <div class="mx-auto max-w-7xl space-y-6">
                 @if ($showBranchAdminDashboard)
                     @include('dashboards.branch-admin')
                 @else
@@ -365,7 +361,5 @@
                     </div>
                 </x-owner-dashboard.dashboard-section>
                 @endif
-            </div>
-        </main>
     </div>
 </x-app-layout>

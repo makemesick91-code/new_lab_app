@@ -4,6 +4,26 @@ import Alpine from 'alpinejs';
 
 window.Alpine = Alpine;
 
+document.addEventListener('alpine:init', () => {
+    Alpine.store('sidebar', {
+        isExpanded: window.innerWidth >= 1280,
+        isMobileOpen: false,
+
+        toggleExpanded() {
+            this.isExpanded = ! this.isExpanded;
+            this.isMobileOpen = false;
+        },
+
+        toggleMobileOpen() {
+            this.isMobileOpen = ! this.isMobileOpen;
+        },
+
+        setMobileOpen(value) {
+            this.isMobileOpen = value;
+        },
+    });
+});
+
 Alpine.data('odontogramEditor', (config = {}) => ({
     activeStatus: 'caries',
     canEdit: config.canEdit ?? false,
@@ -104,9 +124,12 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
     init() {
         const storageKey = 'adlms-sidebar-groups';
         const defaults = {
+            rme: false,
+            lab: false,
+            production: false,
+            qc: false,
             settings: false,
             'master-data': false,
-            operational: false,
             'my-work': false,
             delivery: false,
             inventory: false,

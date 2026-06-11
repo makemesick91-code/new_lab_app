@@ -1,24 +1,78 @@
 <x-settings-shell title="Bayar Tagihan RME">
+    @php
+        $invoiceStatusLabels = [
+            'DRAFT'  => 'Draft',
+            'UNPAID' => 'Belum Dibayar',
+            'PAID'   => 'Lunas',
+            'VOID'   => 'Dibatalkan',
+        ];
+        $invoiceStatusTone = [
+            'DRAFT'  => 'info',
+            'UNPAID' => 'warning',
+            'PAID'   => 'success',
+            'VOID'   => 'danger',
+        ];
+    @endphp
+
     <div class="space-y-6">
 
-        {{-- Invoice Summary --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
-            <div class="flex items-start justify-between">
-                <div>
-                    <h3 class="text-lg font-semibold text-gray-900 font-mono">{{ $invoice->invoice_number }}</h3>
-                    <p class="text-sm text-gray-500 mt-1">
-                        {{ $visit->patient?->name }} &mdash; No. Kunjungan: {{ $visit->visit_number }}
-                    </p>
-                </div>
-                <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold bg-amber-50 text-amber-700">
-                    UNPAID
-                </span>
+        {{-- Page Header --}}
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
+                <h2 class="mt-1 text-xl font-semibold text-gray-900">Pembayaran Tagihan RME</h2>
+                <p class="mt-1 text-sm text-gray-500">Input pembayaran penuh untuk tagihan RME yang sudah dibuat kasir.</p>
+            </div>
+            <div class="flex flex-shrink-0 items-center gap-3">
+                <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">&larr; Kembali</x-ui.button>
             </div>
         </div>
 
+        {{-- Invoice Header --}}
+        <x-ui.card>
+            <div class="flex items-start justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900 font-mono">{{ $invoice->invoice_number }}</h3>
+                    <p class="text-sm text-gray-500 mt-1">Dibuat oleh {{ $invoice->cashier?->name }} &mdash; {{ $invoice->created_at?->format('d/m/Y H:i') }}</p>
+                </div>
+                <x-ui.badge :tone="$invoiceStatusTone[$invoice->status] ?? 'neutral'">
+                    {{ $invoiceStatusLabels[$invoice->status] ?? $invoice->status }}
+                </x-ui.badge>
+            </div>
+        </x-ui.card>
+
+        {{-- Patient & Visit Context --}}
+        <x-ui.card title="Informasi Kunjungan">
+            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <div>
+                    <dt class="text-gray-500">No. Kunjungan</dt>
+                    <dd class="font-mono font-medium text-gray-900">{{ $visit->visit_number }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">Tanggal Kunjungan</dt>
+                    <dd class="text-gray-900">{{ $visit->visit_date?->format('d/m/Y') }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">Pasien</dt>
+                    <dd class="font-medium text-gray-900">{{ $visit->patient?->name }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">No. Rekam Medis</dt>
+                    <dd class="font-mono text-gray-900">{{ $visit->patient?->medical_record_number ?? '-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">Dokter</dt>
+                    <dd class="text-gray-900">{{ $visit->doctor?->name ?? '-' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">Grand Total</dt>
+                    <dd class="text-base font-bold text-teal-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</dd>
+                </div>
+            </dl>
+        </x-ui.card>
+
         {{-- Items Summary --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
-            <h4 class="text-sm font-semibold text-gray-700 mb-3">Ringkasan Tagihan</h4>
+        <x-ui.card title="Ringkasan Tagihan">
             <div class="overflow-x-auto">
                 <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead class="bg-gray-50">
@@ -48,16 +102,18 @@
                         @endif
                         <tr class="border-t-2 border-gray-300">
                             <td colspan="3" class="px-4 py-3 text-right text-base font-semibold text-gray-900">Grand Total</td>
-                            <td class="px-4 py-3 text-right text-base font-bold text-indigo-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
+                            <td class="px-4 py-3 text-right text-base font-bold text-teal-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
-        </div>
+        </x-ui.card>
 
         {{-- Payment Form --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
-            <h4 class="text-sm font-semibold text-gray-700 mb-4">Form Pembayaran</h4>
+        <x-ui.card title="Form Pembayaran">
+            <p class="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Pilot Sprint 20 hanya menerima pembayaran penuh sesuai grand total tagihan.
+            </p>
 
             <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5">
                 @csrf
@@ -68,7 +124,7 @@
                         Metode Pembayaran
                     </label>
                     <select name="payment_method_id" id="payment_method_id"
-                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500 @error('payment_method_id') border-red-500 @enderror">
+                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('payment_method_id') border-red-500 @enderror">
                         <option value="">— Pilih Metode —</option>
                         @foreach ($paymentMethods as $method)
                             <option value="{{ $method->id }}" {{ old('payment_method_id') == $method->id ? 'selected' : '' }}>
@@ -89,7 +145,7 @@
                     <input type="number" name="amount" id="amount"
                         value="{{ old('amount', $invoice->grand_total) }}"
                         step="0.01" min="0.01"
-                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500 @error('amount') border-red-500 @enderror">
+                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('amount') border-red-500 @enderror">
                     <p class="mt-1 text-xs text-gray-500">Harus sama dengan grand total (pembayaran penuh).</p>
                     @error('amount')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
@@ -103,7 +159,7 @@
                     </label>
                     <input type="datetime-local" name="paid_at" id="paid_at"
                         value="{{ old('paid_at', now()->format('Y-m-d\TH:i')) }}"
-                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500 @error('paid_at') border-red-500 @enderror">
+                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('paid_at') border-red-500 @enderror">
                     @error('paid_at')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                     @enderror
@@ -117,7 +173,7 @@
                     <input type="text" name="reference_number" id="reference_number"
                         value="{{ old('reference_number') }}"
                         placeholder="Nomor transaksi / approval"
-                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500 @error('reference_number') border-red-500 @enderror">
+                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('reference_number') border-red-500 @enderror">
                     @error('reference_number')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                     @enderror
@@ -129,7 +185,7 @@
                         Catatan <span class="text-gray-400 text-xs">(opsional)</span>
                     </label>
                     <textarea name="notes" id="notes" rows="2"
-                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-indigo-500 focus:border-indigo-500 @error('notes') border-red-500 @enderror"
+                        class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('notes') border-red-500 @enderror"
                         >{{ old('notes') }}</textarea>
                     @error('notes')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
@@ -138,16 +194,11 @@
 
                 {{-- Actions --}}
                 <div class="flex items-center gap-3 pt-2">
-                    <a href="{{ route('rme.cashier.show', [$visit, $invoice]) }}"
-                        class="inline-flex items-center px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200">
-                        Batal
-                    </a>
-                    <button type="submit"
-                        class="inline-flex items-center px-6 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700">
-                        Konfirmasi Pembayaran
-                    </button>
+                    <x-ui.button type="submit" variant="primary">Konfirmasi Pembayaran</x-ui.button>
+                    <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">Batal</x-ui.button>
                 </div>
             </form>
-        </div>
+        </x-ui.card>
+
     </div>
 </x-settings-shell>

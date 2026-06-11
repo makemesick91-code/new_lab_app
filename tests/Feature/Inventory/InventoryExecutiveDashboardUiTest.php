@@ -219,6 +219,6 @@ it('marks Dasbor Eksekutif sidebar link active on executive dashboard route', fu
     $this->actingAs($user)
         ->get(route('inventory.executive-dashboard'))
         ->assertOk()
-        ->assertSee('bg-gray-100 text-gray-900 font-medium', false)
+        ->assertSee('menu-subitem-active', false)
         ->assertSee('Dasbor Eksekutif');
 });
