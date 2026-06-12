@@ -165,3 +165,22 @@ php artisan db:seed                    # tanpa --class= — menjalankan Database
 ```
 
 Sebelum menjalankan perintah artisan lain yang menyentuh database, konfirmasi dengan checklist deploy: `docs/pilot/vps_pilot_deployment_checklist.md`.
+
+---
+
+## 12. Dasbor Owner — Filter Cabang & Drilldown KPI (Sprint 22.5–22.6)
+
+Fitur **filter cabang Owner**, **Ringkasan Per Cabang**, dan **drilldown KPI read-only** **tidak memerlukan seeder baru**.
+
+| Kebutuhan | Seeder |
+|-----------|--------|
+| Permission `view_owner_dashboard`, `view_branch_dashboard`, dll. | `PermissionSeeder` |
+| Role Owner, Kasir, Perawat, hardening Doctor/Admin | `RoleSeeder` |
+| Data/akun smoke test RME opsional | `RmeSmokeTestSeeder` (opt-in) |
+
+- Jalankan `PermissionSeeder` + `RoleSeeder` setelah deploy Phase 22.5–22.6 — cukup untuk permission dashboard Owner.
+- `RmeSmokeTestSeeder` tetap **opsional** — hanya jika tim butuh akun `owner.smoke@pilot-test.local` dan data kunjungan smoke untuk uji manual.
+- Jika akun Owner pilot asli sudah ada, assign `view_owner_dashboard` via role/permission sesuai konvensi `RoleSeeder` (role **Owner**).
+- Tidak perlu migrasi atau reset data untuk mengaktifkan filter cabang/drilldown.
+
+Smoke test manual setelah deploy: `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md`.

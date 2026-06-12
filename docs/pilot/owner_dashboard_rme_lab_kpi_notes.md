@@ -90,10 +90,17 @@ Rules:
 - KPI drilldowns are read-only index links where available; some cards may not link if permission/route is unavailable.
 - Drilldown destination lists use active `BranchContext`, not dashboard `branch_id` filter.
 
-## Follow-up (Phase 22.7)
+## Manual smoke-test checklist
+
+Operator/deploy validation after Sprint 22.5–22.6:
+
+- `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md`
+
+Referenced from `docs/pilot/vps_pilot_deployment_checklist.md` (section Owner Dashboard Smoke Test).
+
+## Follow-up (Phase 22.8+)
 
 - Date range filters (`date_from` / `date_to`).
 - Pass dashboard branch filter into drilldown query params where index pages support it.
 - Deeper visit-status breakdown and candidate status mix.
 - Optional query-count/performance regression guard if branch count grows.
-- VPS pilot smoke check for Owner branch filter after deploy.

@@ -4731,3 +4731,60 @@ Heavy: `php artisan test --filter=RME`, `php artisan test --filter=Dashboard`, f
 3. Branch summary table may need pagination if branch count grows.
 4. Executive KPI cards remain placeholder.
 5. VPS pilot checklist: add Owner branch-filter smoke step after deploy.
+
+---
+
+## Sprint 22 Phase 22.7 — VPS Pilot Checklist Update & Owner Dashboard Manual Smoke Test
+
+**Branch:** `feature/sprint-22-vps-owner-dashboard-smoke-checklist`  
+**Tag:** `sprint-22-phase-22-7-owner-dashboard-smoke-checklist`  
+**Type:** Documentation, checklist, test-backed content assertions — no application logic or schema changes
+
+### Objective
+
+Make it safe for operators to deploy/pull Sprint 22.5–22.6 Owner Dashboard work to VPS and manually validate KPI monitoring, branch filter, branch summary, permission-aware drilldowns, role boundaries, and read-only (no mutation) behavior.
+
+### Checklist added
+
+- `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md` — Indonesian operator manual smoke test (35-step table, screenshot evidence, bug report format, known limitations)
+
+### VPS checklist update
+
+- `docs/pilot/vps_pilot_deployment_checklist.md` — section **8.1 Owner Dashboard Smoke Test — Sprint 22.5–22.6**; Phase 22.6 deploy targets; explicit note that Phase 22.5–22.6 do not require destructive data reset; safe seeder reminder
+
+### Safe seeder note
+
+- `docs/pilot/safe_seeder_rollout.md` — section 12: Owner branch filter/KPI drilldown does not require new seeder; `PermissionSeeder` + `RoleSeeder` sufficient; `RmeSmokeTestSeeder` optional
+
+### Preflight script update
+
+- `scripts/vps_pilot_preflight.sh` — read-only reminders: Owner dashboard manual smoke checklist path, validate `/dashboard` as Owner after deploy, avoid destructive commands and unqualified `db:seed`
+
+### Tests added/updated
+
+- `tests/Feature/Pilot/OwnerDashboardManualSmokeChecklistTest.php` (new, 12 tests) — checklist content, VPS doc cross-reference, safe seeder note, preflight safety
+
+### Other docs
+
+- `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md` — link to manual smoke checklist
+
+### Commands run
+
+```bash
+php artisan test --filter=OwnerDashboardManualSmokeChecklist
+php artisan test --filter=VpsPilotDeploymentChecklist
+php artisan test --filter=Dashboard
+php artisan test --filter=Pilot
+./vendor/bin/pint --dirty
+```
+
+Heavy (Ubuntu Terminal only): `php artisan test --filter=RME`, full `php artisan test`.
+
+### Risks / follow-up for Phase 22.8
+
+1. Date-range filters still deferred.
+2. Drilldown destinations use `BranchContext`, not dashboard `branch_id`.
+3. Branch summary may need pagination as branch count grows.
+4. Executive KPI cards remain placeholder.
+5. Operator must run manual Owner smoke checklist on VPS after each deploy touching dashboard reporting.
+6. Real Owner pilot account may lack lab drilldown links — document as expected when permissions are read-only.

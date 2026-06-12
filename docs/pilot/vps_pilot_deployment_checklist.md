@@ -1,4 +1,4 @@
-# Checklist Deploy VPS Pilot — Sprint 22 Phase 22.1 & 22.2
+# Checklist Deploy VPS Pilot — Sprint 22 (Phase 22.1–22.7)
 
 > **Jenis fase:** Dokumentasi / runbook saja  
 > **Deploy dilakukan:** Tidak — dokumen ini disusun lokal; perintah VPS tidak dijalankan saat penulisan.  
@@ -8,7 +8,7 @@
 
 ## 1. Tujuan
 
-Dokumen ini adalah checklist deploy **aman** untuk memindahkan perubahan **Sprint 22 Phase 22.1** (hardening role/permission/menu pilot) dan **Sprint 22 Phase 22.2** (data smoke test RME + checklist operator) ke lingkungan VPS/pilot ADLMS.
+Dokumen ini adalah checklist deploy **aman** untuk memindahkan perubahan **Sprint 22** (Phase 22.1 role/permission/menu, Phase 22.2 smoke test RME, Phase 22.5–22.6 Dasbor Owner KPI/filter/drilldown, dan fase checklist terkait) ke lingkungan VPS/pilot ADLMS.
 
 **Prioritas utama:** mempertahankan data pilot yang sudah ada. Deploy ini **tidak** boleh mereset database, menghapus data pasien nyata, atau menjalankan seeder destruktif.
 
@@ -18,6 +18,11 @@ Dokumen ini adalah checklist deploy **aman** untuk memindahkan perubahan **Sprin
 | Tag deploy (Phase 22.2) | `sprint-22-phase-22-2-rme-smoke-test-checklist` |
 | Branch checklist (Phase 22.3) | `feature/sprint-22-vps-pilot-deployment-checklist` |
 | Tag checklist (Phase 22.3) | `sprint-22-phase-22-3-vps-pilot-deployment-checklist` |
+| Branch deploy (Phase 22.6) | `feature/sprint-22-owner-dashboard-branch-filter-drilldown` |
+| Tag deploy (Phase 22.6) | `sprint-22-phase-22-6-owner-dashboard-branch-filter-drilldown` |
+| Commit baseline Phase 22.6 | `8dc1d58` |
+| Branch checklist (Phase 22.7) | `feature/sprint-22-vps-owner-dashboard-smoke-checklist` |
+| Tag checklist (Phase 22.7) | `sprint-22-phase-22-7-owner-dashboard-smoke-checklist` |
 | Commit baseline Phase 22.2 | `5d491f3e3bc95dbc0f434af0e9450b5b3279671d` |
 | Path aplikasi VPS (contoh) | `APP_DIR` — ganti dengan path proyek di VPS |
 | Path proyek lokal (contoh) | `~/Projects/new_lab_app` atau `/mnt/DATA/new_lab_app` |
@@ -147,9 +152,12 @@ cd "$APP_DIR"
 git status --short
 git fetch --all --tags
 
-# Pilih salah satu target yang disetujui:
-git checkout feature/sprint-22-rme-smoke-test-checklist
+# Pilih salah satu target yang disetujui (terbaru: Phase 22.6+):
+git checkout feature/sprint-22-owner-dashboard-branch-filter-drilldown
 # atau:
+# git checkout sprint-22-phase-22-6-owner-dashboard-branch-filter-drilldown
+# historis:
+# git checkout feature/sprint-22-rme-smoke-test-checklist
 # git checkout sprint-22-phase-22-2-rme-smoke-test-checklist
 
 composer install --no-dev --optimize-autoloader
@@ -159,7 +167,7 @@ composer install --no-dev --optimize-autoloader
 
 php artisan optimize:clear
 
-# Hanya jika ada migrasi baru yang sudah direview — Sprint 22.1/22.2 tidak menambah migrasi schema:
+# Hanya jika ada migrasi baru yang sudah direview — Sprint 22.1–22.6 tidak menambah migrasi schema:
 # php artisan migrate --force
 
 php artisan db:seed --class=PermissionSeeder
@@ -180,9 +188,11 @@ php artisan view:cache
 - **`DatabaseSeeder` tidak berubah** dan **tidak boleh** dipakai sebagai mekanisme reset produksi/pilot di VPS.
 - **`php artisan migrate:fresh` dan `php artisan db:wipe` dilarang** di VPS (lihat bagian 11).
 
-### Migrasi
+### Migrasi dan data
 
-Sprint 22 Phase 22.1 dan 22.2 **tidak** menambah migrasi schema baru. Jalankan `php artisan migrate --force` **hanya** jika fase berikutnya menambahkan migrasi yang sudah direview.
+Sprint 22 Phase 22.1–22.6 **tidak** menambah migrasi schema baru dan **tidak** memerlukan reset data destruktif. Jalankan `php artisan migrate --force` **hanya** jika fase berikutnya menambahkan migrasi yang sudah direview.
+
+**Jangan** jalankan `migrate:fresh`, `migrate:fresh --seed`, atau `db:wipe` di VPS. Seeder aman tetap: `PermissionSeeder`, `RoleSeeder`, dan opsional `RmeSmokeTestSeeder` (lihat `docs/pilot/safe_seeder_rollout.md`).
 
 ---
 
@@ -229,6 +239,30 @@ Checklist manual setelah deploy dan seeder (jika dijalankan):
 - [ ] Tidak ada error 500 baru di log Laravel
 
 Panduan operator lengkap: `docs/pilot/rme_smoke_test_operator_checklist.md`.
+
+---
+
+## 8.1 Owner Dashboard Smoke Test — Sprint 22.5–22.6
+
+Jalankan **setelah** deploy dan seeder aman (jika dijalankan). Panduan lengkap:
+
+**`docs/pilot/owner_dashboard_manual_smoke_test_checklist.md`**
+
+### Validasi minimum (Owner)
+
+1. Login sebagai Owner (`owner.smoke@pilot-test.local` atau akun Owner pilot dengan `view_owner_dashboard`).
+2. Buka `/dashboard`.
+3. Konfirmasi bagian **Monitoring Pilot RME & Lab** tampil.
+4. Uji filter **Semua Cabang** — teks **Menampilkan semua cabang aktif**.
+5. Uji filter satu cabang aktif — teks **Menampilkan cabang: {nama}**.
+6. Uji tabel **Ringkasan Per Cabang** (cabang aktif saja).
+7. Uji satu link **Lihat detail** yang diizinkan permission (jika ada).
+8. Konfirmasi dashboard **Branch Admin** dan **Kasir** tidak menampilkan filter/ringkasan global Owner.
+
+### Bukti
+
+- Screenshot sesuai daftar di checklist manual Owner.
+- Gunakan format laporan bug di `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md` jika ada temuan.
 
 ---
 
@@ -319,7 +353,9 @@ Jika deploy atau seeder gagal, catat:
 ## 13. Referensi Terkait
 
 - `docs/pilot/safe_seeder_rollout.md` — detail rollout seeder aman
-- `docs/pilot/rme_smoke_test_operator_checklist.md` — uji manual operator
+- `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md` — smoke test manual Dasbor Owner (Phase 22.5–22.6)
+- `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md` — definisi KPI developer
+- `docs/pilot/rme_smoke_test_operator_checklist.md` — uji manual operator RME
 - `docs/pilot/rme_smoke_test_developer_notes.md` — desain seeder developer
 - `docs/sprint_21_vps_pilot_deployment_checklist.md` — runbook Sprint 21 (referensi historis)
 - `scripts/vps_pilot_preflight.sh` — preflight read-only (opsional, lokal/VPS)
