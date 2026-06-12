@@ -4921,3 +4921,33 @@ PASS — local only, no VPS deploy, additive migration only, no destructive DB c
 
 ### Next phase
 Sprint 23 Phase 23.6 — VPS Deploy + Branch Scope/Dashboard/RME Report Smoke (backup DB first, run Permission/Role seeders, smoke separated dashboards, Lab global KPI, RME branch filter, split RME report roles).
+
+## Sprint 23 Phase 23.7 — Master Data Cabang CRUD UI for RME + Inventory
+- Branch: `feature/sprint-23-phase-23-7-branch-master-crud`. Tag `sprint-23-phase-23-7-branch-master-crud`. Local only — no VPS deploy, no push.
+
+### Business rule
+- Master Data Cabang serves the multi-branch modules (RME + Inventory) only. **Lab stays single-branch / global** — no Lab checkbox, no Lab branch filter, legacy Lab `branch_id` columns not dropped. Branch code + name are entered manually; the code is reserved as a future patient-ID component (format NOT finalized this phase).
+
+### Data model
+- Reused existing `mst_branches` columns (`code`, `name`, `is_active`, `is_rme_enabled`, `is_inventory_enabled`). **No new migration** — all required fields already existed (created Sprint 9 + Phase 23.5 module-flags migration). Branch code: manual, trimmed + uppercased, `regex:[A-Z0-9-]`, `max:20`, unique.
+
+### Permissions / roles
+- New permissions `view_branch_master_data`, `manage_branch_master_data` (PermissionSeeder). Assigned to `Owner` (view+manage) and `Super Admin` (via `*`). Doctor/Kasir/Perawat/Courier: no access.
+
+### CRUD
+- Wired the pre-existing Branch module skeleton (Controller→Request→Service→Repository→Policy, Sprint 9) to live routes. `BranchPolicy` updated from `manage branches` to the new permissions (view→canView, write→canManage). Store/Update requests normalize code + coerce checkbox booleans + validate module flags. Destroy is a soft delete; the default `MAIN` branch is protected from deletion (controller guard + hidden delete button).
+
+### Routes
+- `Route::resource('branches')->except(['show'])` inside the `settings` group, gated `permission:view_branch_master_data|manage_branch_master_data`: `settings.branches.index|create|store|edit|update|destroy`.
+
+### UI
+- Views `resources/views/settings/branches/{index,create,edit,_form}.blade.php` (TailAdmin `x-settings-shell` style). Index columns: Kode Cabang, Nama Cabang, Status, RME, Inventory, Aksi. Form: Kode Cabang (with hint "Kode cabang diisi manual dan akan digunakan sebagai komponen format ID pasien."), Nama Cabang, Aktif, Digunakan untuk RME, Digunakan untuk Inventory. No Lab option. Sidebar item "Master Data Cabang" added to the master-data group, gated by the two new permissions.
+
+### Tests run
+- New `tests/Feature/Branch/BranchMasterDataTest.php` (11), `tests/Feature/BranchScope/BranchModuleScopeTest.php` (3), +1 sidebar test. Focused suites all passed: Branch (293), Permission (155), Dashboard (120), Sidebar (42), Lab (195), Inventory+Rme (1056). `pint --dirty` OK; `npm run build` OK. Full end-to-end suite not run (runtime budget) — documented honestly.
+
+### Final status
+PASS — local only, no VPS deploy, no new migration, no destructive DB commands, Lab remains global, no Lab `branch_id` columns dropped, patient ID format NOT finalized.
+
+### Next phase
+Sprint 23 Phase 23.8 — Patient ID Format Finalization + New Patient Registration Flow (owner to approve `{BRANCH_CODE}` token format; review existing branch data on VPS before enabling final patient code).

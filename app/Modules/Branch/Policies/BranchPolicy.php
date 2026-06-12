@@ -6,41 +6,52 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 
 /**
- * Sprint 9 — Multi Branch Foundation (SKELETON).
+ * Authorization surface for Master Data Cabang (Sprint 23 Phase 23.7).
  *
- * Authorization surface for branch administration. Abilities gate on a
- * `manage branches` permission (to be added in a future sprint's PermissionSeeder).
- * Super Admin bypasses every ability via Gate::before in RepositoryServiceProvider.
+ * Read abilities gate on `view_branch_master_data`; write abilities require
+ * `manage_branch_master_data`. Super Admin bypasses every ability via
+ * Gate::before in RepositoryServiceProvider.
  *
- * NOTE: This is foundation only. No route currently authorizes against it, so
- * registering it changes no runtime behavior. Branch-scoped data visibility
- * (a user only seeing their branch's records) is a SEPARATE future concern —
- * see the branch-scoping TODOs in the transaction repositories.
+ * Master Data Cabang serves the multi-branch modules (RME + Inventory) only.
+ * Laboratory is single / global and is not represented here.
  */
 class BranchPolicy
 {
     public function viewAny(User $user): bool
     {
-        return $user->can('manage branches');
+        return $this->canView($user);
     }
 
     public function view(User $user, Branch $branch): bool
     {
-        return $user->can('manage branches');
+        return $this->canView($user);
     }
 
     public function create(User $user): bool
     {
-        return $user->can('manage branches');
+        return $this->canManage($user);
     }
 
     public function update(User $user, Branch $branch): bool
     {
-        return $user->can('manage branches');
+        return $this->canManage($user);
     }
 
     public function delete(User $user, Branch $branch): bool
     {
-        return $user->can('manage branches');
+        return $this->canManage($user);
+    }
+
+    private function canView(User $user): bool
+    {
+        return $user->canAny([
+            'view_branch_master_data',
+            'manage_branch_master_data',
+        ]);
+    }
+
+    private function canManage(User $user): bool
+    {
+        return $user->can('manage_branch_master_data');
     }
 }

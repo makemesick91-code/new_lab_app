@@ -4,6 +4,7 @@ use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
+use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
@@ -174,6 +175,19 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('wa-reminder-templates', WaReminderTemplateController::class)
             ->except(['show'])
             ->parameters(['wa-reminder-templates' => 'waReminderTemplate']);
+    });
+
+    /*
+    |----------------------------------------------------------------------
+    | Sprint 23 Phase 23.7 — Master Data Cabang (RME + Inventory branches)
+    |----------------------------------------------------------------------
+    | Read access via view_branch_master_data; write actions are further
+    | restricted to manage_branch_master_data via BranchPolicy. Lab is global
+    | and is intentionally not represented in branch master data.
+    */
+    Route::middleware('permission:view_branch_master_data|manage_branch_master_data')->group(function () {
+        Route::resource('branches', BranchController::class)
+            ->except(['show']);
     });
 });
 

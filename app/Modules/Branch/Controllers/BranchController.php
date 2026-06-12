@@ -13,14 +13,14 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 /**
- * Sprint 9 — Multi Branch Foundation (SKELETON).
+ * Master Data Cabang CRUD (Sprint 23 Phase 23.7).
  *
- * Provides the standard Controller → Request → Service → Repository wiring for
- * branch administration so a later sprint can expose it with minimal effort.
+ * Standard Controller → Request → Service → Repository wiring for branch
+ * administration. Branches drive the multi-branch modules (RME + Inventory)
+ * only; Laboratory is single / global and is not represented here.
  *
- * IMPORTANT: No routes point to this controller yet (Sprint 9 makes no route or
- * UI changes). The referenced `settings.branches.*` routes/views are created
- * when branch management is wired up in a future sprint.
+ * Destroy is a soft delete (reversible) and the default head-office branch
+ * (code MAIN) is protected from deletion so legacy/unscoped rows keep an anchor.
  */
 class BranchController extends Controller
 {
@@ -78,6 +78,12 @@ class BranchController extends Controller
     public function destroy(Branch $branch): RedirectResponse
     {
         $this->authorize('delete', $branch);
+
+        // The default head-office branch anchors legacy/unscoped rows — never delete it.
+        if ($branch->code === Branch::MAIN_CODE) {
+            return redirect()->route('settings.branches.index')
+                ->with('error', 'Cabang utama tidak dapat dihapus.');
+        }
 
         $this->branchService->delete($branch);
 

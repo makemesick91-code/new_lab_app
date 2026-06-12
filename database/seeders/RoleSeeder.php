@@ -208,6 +208,9 @@ class RoleSeeder extends Seeder
             // Sprint 23 Phase 23.5 — Owner sees both RME report families
             'view_rme_patient_reports',
             'view_rme_payment_reports',
+            // Sprint 23 Phase 23.7 — Owner manages Master Data Cabang
+            'view_branch_master_data',
+            'manage_branch_master_data',
         ],
         'Kasir' => [
             'view dashboard',

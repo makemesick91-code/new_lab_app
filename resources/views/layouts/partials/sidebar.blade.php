@@ -56,7 +56,8 @@
             'settings.treatments.*',
             'settings.tariffs.*',
             'settings.payment-methods.*',
-            'settings.wa-reminder-templates.*'
+            'settings.wa-reminder-templates.*',
+            'settings.branches.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
     ];
@@ -400,7 +401,7 @@
                 </div>
             @endcanany
 
-            @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data'])
+            @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
                         <span class="flex items-center gap-3">
@@ -447,6 +448,10 @@
                                class="menu-subitem {{ request()->routeIs('settings.payment-methods.*') ? $linkActive : $linkIdle }}">Master Metode Pembayaran</a>
                             <a href="{{ route('settings.wa-reminder-templates.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.wa-reminder-templates.*') ? $linkActive : $linkIdle }}">Template Reminder WA</a>
+                        @endcanany
+                        @canany(['view_branch_master_data', 'manage_branch_master_data'])
+                            <a href="{{ route('settings.branches.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.branches.*') ? $linkActive : $linkIdle }}">Master Data Cabang</a>
                         @endcanany
                     </div>
                 </div>

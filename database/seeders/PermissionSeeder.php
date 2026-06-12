@@ -121,6 +121,9 @@ class PermissionSeeder extends Seeder
         // Sprint 23 Phase 23.5 — Separated RME report access
         'view_rme_patient_reports',
         'view_rme_payment_reports',
+        // Sprint 23 Phase 23.7 — Master Data Cabang (RME + Inventory branches)
+        'view_branch_master_data',
+        'manage_branch_master_data',
         'manage lab orders',
         'manage assignments',
         'manage qc',
