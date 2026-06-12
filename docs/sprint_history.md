@@ -4795,7 +4795,7 @@ Heavy (Ubuntu Terminal only): `php artisan test --filter=RME`, full `php artisan
 
 **Branch:** `feature/sprint-22-closure-rc-go-no-go`  
 **Tag:** `sprint-22-phase-22-8-closure-rc-go-no-go`  
-**Commit:** `a115e39`  
+**Commit:** `dc1060b`  
 **Type:** Documentation, release candidate notes, go/no-go checklist, test-backed content assertions — no application logic, schema, or seeder behavior changes
 
 ### Objective
