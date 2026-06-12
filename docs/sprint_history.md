@@ -4788,3 +4788,68 @@ Heavy (Ubuntu Terminal only): `php artisan test --filter=RME`, full `php artisan
 4. Executive KPI cards remain placeholder.
 5. Operator must run manual Owner smoke checklist on VPS after each deploy touching dashboard reporting.
 6. Real Owner pilot account may lack lab drilldown links — document as expected when permissions are read-only.
+
+---
+
+## Sprint 22 Phase 22.8 — Sprint 22 Closure, Release Candidate Notes & VPS Pilot Go/No-Go Checklist
+
+**Branch:** `feature/sprint-22-closure-rc-go-no-go`  
+**Tag:** `sprint-22-phase-22-8-closure-rc-go-no-go`  
+**Commit:** `a115e39`  
+**Type:** Documentation, release candidate notes, go/no-go checklist, test-backed content assertions — no application logic, schema, or seeder behavior changes
+
+### Objective
+
+Close Sprint 22 with a clear release candidate package and VPS pilot go/no-go checklist answering: what changed, deploy target, safe/forbidden VPS commands, verification requirements, GO/NO-GO criteria, rollback, known limitations, and Sprint 23 backlog.
+
+### Docs created
+
+- `docs/pilot/sprint_22_release_candidate_notes.md` — Indonesian RC notes (phases 22.1–22.8 table, deploy sequence, GO/NO-GO, rollback, limitations, Sprint 23 backlog)
+- `docs/pilot/vps_pilot_go_no_go_checklist.md` — Indonesian operational GO/GO dengan catatan/NO-GO checklist with sign-off table
+
+### Docs updated
+
+- `docs/pilot/vps_pilot_deployment_checklist.md` — section **14. Sprint 22 Release Candidate & Go/No-Go**; references to RC and go/no-go docs
+- `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md` — reference to go/no-go checklist
+- `docs/pilot/safe_seeder_rollout.md` — section **13. Sprint 22 Release Candidate & Go/No-Go**
+- `scripts/vps_pilot_preflight.sh` — read-only reminders for RC/go-no-go doc paths and backup/screenshot evidence
+
+### Tests added
+
+- `tests/Feature/Pilot/Sprint22ReleaseCandidateChecklistTest.php` (17 tests) — RC notes content, go/no-go checklist, cross-references, preflight safety
+
+### Deploy target recommendation
+
+| Item | Value |
+|------|-------|
+| Functional baseline (Phase 22.7) | `feature/sprint-22-vps-owner-dashboard-smoke-checklist` @ `1c5c198` / tag `sprint-22-phase-22-7-owner-dashboard-smoke-checklist` |
+| Documentation-inclusive RC (Phase 22.8) | `feature/sprint-22-closure-rc-go-no-go` / tag `sprint-22-phase-22-8-closure-rc-go-no-go` |
+| Optional stakeholder RC tag | `sprint-22-release-candidate` (only after approval and full verification) |
+
+### Commands run
+
+```bash
+php artisan test --filter=Sprint22ReleaseCandidateChecklist
+php artisan test --filter=OwnerDashboardManualSmokeChecklist
+php artisan test --filter=VpsPilotDeploymentChecklist
+php artisan test --filter=Pilot
+php artisan test --filter=Dashboard
+./vendor/bin/pint --dirty
+```
+
+Heavy (Ubuntu Terminal only): `php artisan test --filter=RME`, full `php artisan test`.
+
+### Sprint 22 closure summary
+
+Sprint 22 delivered pilot stabilization after Sprint 21 VPS deploy: role/permission/menu hardening (22.1), RME smoke-test data and operator checklist (22.2), VPS deploy runbook and safe seeder rollout (22.3), RME → Lab candidate E2E validation (22.4), Owner Dashboard RME/Lab KPI wiring (22.5), branch filter and drilldown polish (22.6), Owner manual smoke checklist and VPS checklist update (22.7), and closure RC/go-no-go documentation (22.8). No HR, no global UI redesign, no schema changes in Phase 22.8. Owner Dashboard remains read-only.
+
+### Follow-up Sprint 23 backlog
+
+1. Owner dashboard date range filter.
+2. Branch comparison polish / pagination for Ringkasan Per Cabang.
+3. Drilldown branch context alignment with dashboard filter.
+4. Pilot bug triage from manual smoke results.
+5. VPS deploy execution and evidence capture.
+6. Optional production-grade backup verification checklist.
+7. UI/UX polish after pilot safety is stable.
+8. Inventory/RME executive dashboard consolidation.

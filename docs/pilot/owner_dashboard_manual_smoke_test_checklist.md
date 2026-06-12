@@ -198,3 +198,5 @@ Gunakan format berikut saat melaporkan ke developer/IT:
 - `docs/pilot/vps_pilot_deployment_checklist.md` — deploy VPS aman
 - `docs/pilot/safe_seeder_rollout.md` — rollout seeder idempotent
 - `docs/pilot/rme_smoke_test_operator_checklist.md` — smoke test alur RME
+- `docs/pilot/sprint_22_release_candidate_notes.md` — release candidate notes Sprint 22
+- `docs/pilot/vps_pilot_go_no_go_checklist.md` — keputusan GO / NO-GO setelah smoke test ini

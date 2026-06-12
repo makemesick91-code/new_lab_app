@@ -20,6 +20,11 @@ echo "After deploy, validate Owner Dashboard manually:"
 echo "  docs/pilot/owner_dashboard_manual_smoke_test_checklist.md"
 echo "  Login as Owner -> open /dashboard -> confirm Monitoring Pilot RME & Lab"
 echo ""
+echo "Sprint 22 RC & go/no-go docs (read before deploy decision):"
+echo "  docs/pilot/sprint_22_release_candidate_notes.md"
+echo "  docs/pilot/vps_pilot_go_no_go_checklist.md"
+echo "Capture backup path evidence and manual smoke screenshots for sign-off."
+echo ""
 
 echo "--- CURRENT DIRECTORY ---"
 pwd

@@ -357,5 +357,31 @@ Jika deploy atau seeder gagal, catat:
 - `docs/pilot/owner_dashboard_rme_lab_kpi_notes.md` — definisi KPI developer
 - `docs/pilot/rme_smoke_test_operator_checklist.md` — uji manual operator RME
 - `docs/pilot/rme_smoke_test_developer_notes.md` — desain seeder developer
+- `docs/pilot/sprint_22_release_candidate_notes.md` — release candidate notes Sprint 22
+- `docs/pilot/vps_pilot_go_no_go_checklist.md` — keputusan GO / NO-GO deploy pilot
 - `docs/sprint_21_vps_pilot_deployment_checklist.md` — runbook Sprint 21 (referensi historis)
 - `scripts/vps_pilot_preflight.sh` — preflight read-only (opsional, lokal/VPS)
+
+---
+
+## 14. Sprint 22 Release Candidate & Go/No-Go
+
+Setelah Phase 22.8, gunakan dokumen closure Sprint 22 sebelum menyetujui deploy RC ke VPS:
+
+| Dokumen | Isi |
+|---------|-----|
+| `docs/pilot/sprint_22_release_candidate_notes.md` | Ringkasan fase 22.1–22.8, target branch/tag deploy, urutan deploy aman, kriteria GO/NO-GO, rollback, keterbatasan, backlog Sprint 23 |
+| `docs/pilot/vps_pilot_go_no_go_checklist.md` | Checklist operasional GO / GO dengan catatan / NO-GO + tabel sign-off (Developer, Operator Klinik, Owner, Admin Lab, Kasir) |
+
+**Rekomendasi deploy RC Sprint 22:**
+
+- Branch: `feature/sprint-22-closure-rc-go-no-go` (setelah Phase 22.8 di-push) atau `feature/sprint-22-vps-owner-dashboard-smoke-checklist` (baseline fungsional Phase 22.7)
+- Tag: `sprint-22-phase-22-8-closure-rc-go-no-go` atau `sprint-22-phase-22-7-owner-dashboard-smoke-checklist`
+- Tag RC opsional setelah persetujuan stakeholder: `sprint-22-release-candidate`
+
+**Alur disarankan:**
+
+1. Baca release candidate notes.
+2. Jalankan deploy sesuai bagian 6–9 dokumen ini.
+3. Isi go/no-go checklist (smoke test Owner, RME, lab candidate).
+4. Kumpulkan sign-off sebelum membuka akses penuh ke operator pilot.

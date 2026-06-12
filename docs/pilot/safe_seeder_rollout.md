@@ -184,3 +184,16 @@ Fitur **filter cabang Owner**, **Ringkasan Per Cabang**, dan **drilldown KPI rea
 - Tidak perlu migrasi atau reset data untuk mengaktifkan filter cabang/drilldown.
 
 Smoke test manual setelah deploy: `docs/pilot/owner_dashboard_manual_smoke_test_checklist.md`.
+
+---
+
+## 13. Sprint 22 Release Candidate & Go/No-Go
+
+Sebelum dan sesudah menjalankan seeder di VPS pilot, baca:
+
+| Dokumen | Tujuan |
+|---------|--------|
+| `docs/pilot/sprint_22_release_candidate_notes.md` | Target deploy RC, urutan perintah aman, perintah terlarang, kriteria GO/NO-GO, rollback |
+| `docs/pilot/vps_pilot_go_no_go_checklist.md` | Checklist keputusan GO / GO dengan catatan / NO-GO + sign-off operator |
+
+**Ingat:** `PermissionSeeder` + `RoleSeeder` wajib setelah deploy Sprint 22; `RmeSmokeTestSeeder` tetap opt-in. Jangan jalankan `php artisan db:seed` tanpa `--class=`.
