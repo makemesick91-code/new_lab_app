@@ -34,6 +34,14 @@ class BranchRepository implements BranchRepositoryInterface
         return Branch::where('is_active', true)->orderBy('name')->get();
     }
 
+    public function listRmeEnabled(): Collection
+    {
+        return Branch::where('is_active', true)
+            ->where('is_rme_enabled', true)
+            ->orderBy('name')
+            ->get();
+    }
+
     public function findById(int $id): ?Branch
     {
         return Branch::find($id);

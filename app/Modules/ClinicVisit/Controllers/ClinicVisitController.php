@@ -3,6 +3,7 @@
 namespace App\Modules\ClinicVisit\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
@@ -30,6 +31,7 @@ class ClinicVisitController extends Controller
     public function __construct(
         private readonly ClinicVisitService $visits,
         private readonly MedicalRecordService $medicalRecords,
+        private readonly BranchService $branchService,
     ) {}
 
     public function index(Request $request): View
@@ -68,13 +70,23 @@ class ClinicVisitController extends Controller
             'doctors' => Doctor::orderBy('name')->get(),
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 
     public function store(StoreClinicVisitRequest $request): RedirectResponse
     {
         $this->authorize('create', ClinicVisit::class);
-        $visit = $this->visits->create($request->validated());
+
+        $data = $request->validated();
+
+        // Creating a brand-new patient inside the visit flow requires patient
+        // management rights in addition to visit management.
+        if (($data['patient_mode'] ?? 'existing') === 'new') {
+            $this->authorize('create', Patient::class);
+        }
+
+        $visit = $this->visits->create($data);
 
         return redirect()->route('rme.visits.show', $visit)->with('status', 'Kunjungan berhasil didaftarkan.');
     }

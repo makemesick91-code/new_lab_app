@@ -28,6 +28,15 @@ class BranchService
         return $this->branches->listActive();
     }
 
+    /**
+     * Active branches enabled for RME — the only branches eligible for patient
+     * registration / final RM number composition.
+     */
+    public function listRmeEnabled(): Collection
+    {
+        return $this->branches->listRmeEnabled();
+    }
+
     public function find(int $id): ?Branch
     {
         return $this->branches->findById($id);

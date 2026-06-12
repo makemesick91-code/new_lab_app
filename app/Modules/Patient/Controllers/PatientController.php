@@ -3,6 +3,7 @@
 namespace App\Modules\Patient\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\Clinic\Services\ClinicService;
 use App\Modules\Doctor\Services\DoctorService;
 use App\Modules\Patient\Models\Patient;
@@ -22,6 +23,7 @@ class PatientController extends Controller
         private readonly PatientService $patientService,
         private readonly ClinicService $clinicService,
         private readonly DoctorService $doctorService,
+        private readonly BranchService $branchService,
     ) {}
 
     public function index(Request $request): View
@@ -49,6 +51,7 @@ class PatientController extends Controller
         return view('settings.patients.create', [
             'clinics' => $this->clinicService->listAll(),
             'doctors' => $this->doctorService->listAll(),
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 
@@ -69,6 +72,7 @@ class PatientController extends Controller
             'patient' => $patient,
             'clinics' => $this->clinicService->listAll(),
             'doctors' => $this->doctorService->listAll(),
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 

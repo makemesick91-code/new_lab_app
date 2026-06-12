@@ -15,6 +15,12 @@ interface BranchRepositoryInterface
 
     public function listActive(): Collection;
 
+    /**
+     * Active branches that participate in the RME (multi-branch) module.
+     * Used for patient registration branch selection (Sprint 23 Phase 23.8).
+     */
+    public function listRmeEnabled(): Collection;
+
     public function findById(int $id): ?Branch;
 
     public function findByCode(string $code): ?Branch;

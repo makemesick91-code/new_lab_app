@@ -4951,3 +4951,30 @@ PASS — local only, no VPS deploy, no new migration, no destructive DB commands
 
 ### Next phase
 Sprint 23 Phase 23.8 — Patient ID Format Finalization + New Patient Registration Flow (owner to approve `{BRANCH_CODE}` token format; review existing branch data on VPS before enabling final patient code).
+
+## Sprint 23 Phase 23.8 — Patient ID Format Finalization + New Patient Registration Flow
+- Branch: `feature/sprint-23-phase-23-8-patient-id-registration` (from `sprint-23-phase-23-7-branch-master-crud` / `ed73294`). Tag `sprint-23-phase-23-8-patient-id-registration-flow`. Local only — no VPS deploy, no push. Full doc: `docs/sprint_23_phase_23_8_patient_id_registration_flow.md`.
+
+### Business rule
+- Final patient RM format locked to `RM DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}` (e.g. `RM DG-TKM1-2026-0001`). Prefix fixed `RM DG`; branch code from Master Data Cabang (uppercased/trimmed); year from registration date; manual RM number entered by admin — **no auto-sequence**, leading zeros preserved, numeric only. Final value globally unique. Same manual number allowed across branches because the composed value differs. Existing patients never rewritten.
+
+### Data model
+- Additive migration `2026_06_16_100001_add_registration_fields_to_mst_patients_table` — nullable `branch_id` (FK→mst_branches, nullOnDelete), `registered_at` (date), `manual_rm_number` (string 50). All guarded by `hasColumn`, no backfill, no rewrites. `medical_record_number` keeps the final composed value.
+
+### Services / requests
+- New `PatientMedicalRecordNumberService` (`compose`, `composeForRegistration`, `exists`). `PatientService::create/update` compose the final RM when branch+manual present and no explicit code; explicit code always wins; legacy `PatientCodeGenerator` auto-sequence kept only as backward-compatible fallback. `Store/UpdatePatientRequest`: nullable branch_id (active + is_rme_enabled), registered_at, manual_rm_number (regex `^[0-9]+$`), `required_with` pairing, composed-final uniqueness check. New branch repo/service method `listRmeEnabled()`.
+
+### RME visit new-patient flow
+- `StoreClinicVisitRequest` adds `patient_mode` (existing|new); existing requires `patient_id`, new requires `new_patient.{name,branch_id,manual_rm_number}` (+ optional demographics). `ClinicVisitService::create` creates the patient first (final RM composed) then attaches the visit in the same transaction. New-patient creation additionally authorizes `create` on Patient (`manage patients`). Visit `branch_id` still from `BranchContext` (unchanged). Patient select shows `MRN — name` / `Belum ada RM — name`.
+
+### BranchContext hotfix
+- Does not depend on `users.branch_id` (guarded by `Schema::hasColumn`, cannot 500). Generic fallback: active MAIN else first active branch. New `rmeBranchId()`/`requireRmeBranchId()` (MAIN if active+rme-enabled, else first active rme-enabled, clear exception when none) and `inventoryBranchId()`. Lab not branch-enforced. Patient-ID branch comes from the form, not the fallback.
+
+### Tests run
+- New: `PatientMedicalRecordNumberTest`, `PatientRegistrationTest`, `ClinicVisitNewPatientFlowTest`, `BranchContextFallbackTest` (28 passed). Focused suites: Patient (49), ClinicVisit (65), Branch (305) + Rme/Dashboard/Permission/Sidebar/MasterData — all passed. `pint --dirty` OK; `npm run build` OK. Full end-to-end suite not run (runtime budget) — documented honestly.
+
+### Final status
+PASS — local only, no VPS deploy, additive migration only, no destructive DB commands, no existing patients rewritten, Lab remains global.
+
+### Next phase
+Sprint 23 Phase 23.9 — VPS Deploy + Patient Registration / RME Visit Smoke (backup DB first, `migrate --force` only, confirm Master Data Cabang codes, smoke new-patient registration + RME visit new-patient flow; plan optional legacy RM backfill separately).
