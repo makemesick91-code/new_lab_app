@@ -221,7 +221,7 @@ it('does not show owner RME lab section for branch admin dashboard users', funct
     ]))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Dasbor Admin Cabang')
+        ->assertSee('Dashboard Admin Cabang')
         ->assertDontSee('Monitoring Pilot RME & Lab');
 });
 
@@ -230,7 +230,7 @@ it('does not show owner RME lab section for Kasir role dashboard', function () {
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Monitoring Pilot RME & Lab')
-        ->assertDontSee('Dasbor Owner');
+        ->assertDontSee('Dashboard Owner');
 });
 
 it('does not create operational records when owner dashboard is loaded', function () {

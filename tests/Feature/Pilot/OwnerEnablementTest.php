@@ -35,7 +35,7 @@ it('lets an Owner reach the Owner Dashboard KPI content', function () {
     $this->actingAs(userInRole('Owner'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Dasbor Owner');
+        ->assertSee('Dashboard Owner');
 });
 
 it('lets a Super Admin reach the dashboard route', function () {
@@ -48,7 +48,7 @@ it('does not show Owner Dashboard KPI content to operational roles', function ()
     $this->actingAs(userInRole('Courier'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertDontSee('Dasbor Owner');
+        ->assertDontSee('Dashboard Owner');
 });
 
 it('redirects unauthenticated users away from the dashboard', function () {

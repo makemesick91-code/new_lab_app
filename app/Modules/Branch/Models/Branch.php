@@ -30,11 +30,31 @@ class Branch extends Model
         'address',
         'phone',
         'is_active',
+        'is_rme_enabled',
+        'is_inventory_enabled',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'is_rme_enabled' => 'boolean',
+        'is_inventory_enabled' => 'boolean',
     ];
+
+    /**
+     * Scope to branches that participate in RME (multi-branch module).
+     */
+    public function scopeRmeEnabled($query)
+    {
+        return $query->where('is_rme_enabled', true);
+    }
+
+    /**
+     * Scope to branches that participate in Inventory (multi-branch module).
+     */
+    public function scopeInventoryEnabled($query)
+    {
+        return $query->where('is_inventory_enabled', true);
+    }
 
     public function labOrders(): HasMany
     {

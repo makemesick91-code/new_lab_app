@@ -118,6 +118,9 @@ class PermissionSeeder extends Seeder
         // Sprint 22 Phase 22.1 — Pilot dashboard hardening
         'view_owner_dashboard',
         'view_branch_dashboard',
+        // Sprint 23 Phase 23.5 — Separated RME report access
+        'view_rme_patient_reports',
+        'view_rme_payment_reports',
         'manage lab orders',
         'manage assignments',
         'manage qc',

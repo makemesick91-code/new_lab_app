@@ -36,7 +36,7 @@
     ];
 @endphp
 
-<x-settings-shell title="Dasbor Laporan">
+<x-settings-shell title="Dashboard Lab">
     <div class="space-y-6">
         {{-- Filter --}}
         <div class="bg-white shadow-sm sm:rounded-lg p-6">

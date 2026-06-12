@@ -8,7 +8,7 @@ it('shows RME visit links but hides Kasir RME for Doctor', function () {
     $this->actingAs(userInRole('Doctor'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Klinik / RME')
+        ->assertSee('Dashboard RME')
         ->assertSee('Kunjungan')
         ->assertSee('Rekam Medis')
         ->assertDontSee('Kasir RME');
@@ -61,7 +61,7 @@ it('shows clinic visit menu for Perawat without cashier or settings', function (
     $this->actingAs(userInRole('Perawat'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Klinik / RME')
+        ->assertSee('Dashboard RME')
         ->assertSee('Kunjungan')
         ->assertDontSee('Kasir RME')
         ->assertDontSee('Pengaturan');
@@ -72,5 +72,5 @@ it('shows production menu for Technician but not RME group', function () {
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Produksi')
-        ->assertDontSee('Klinik / RME');
+        ->assertDontSee('Dashboard RME');
 });

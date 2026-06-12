@@ -326,11 +326,11 @@
             <div>
                 <h2 class="text-xl font-semibold leading-tight text-gray-800">
                     @if ($showBranchAdminDashboard)
-                        Dasbor Admin Cabang
+                        Dashboard Admin Cabang
                     @elseif ($showOwnerDashboard)
-                        Dasbor Owner
+                        Dashboard Owner
                     @else
-                        Dasbor
+                        Dashboard
                     @endif
                 </h2>
                 <p class="mt-1 text-sm text-gray-500">

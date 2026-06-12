@@ -20,7 +20,7 @@ it('opens the inventory dashboard for an authenticated user', function () {
     $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Dasbor Persediaan')
+        ->assertSee('Dashboard Inventory')
         ->assertDontSee('>Inventory<', false)
         ->assertDontSee('>Dashboard<', false)
         ->assertSee('Kartu KPI Persediaan')

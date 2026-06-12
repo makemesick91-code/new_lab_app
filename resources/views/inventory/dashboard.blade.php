@@ -1,4 +1,4 @@
-<x-settings-shell title="Dasbor Persediaan">
+<x-settings-shell title="Dashboard Inventory">
     <div class="space-y-6">
         <x-ui.card padding="p-5">
             <div class="flex flex-wrap items-start justify-between gap-4">

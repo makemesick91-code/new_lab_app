@@ -88,7 +88,7 @@
                     <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12l9-7 9 7M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />
                     </svg>
-                    <span>Dasbor</span>
+                    <span>{{ $user?->can('view_owner_dashboard') ? 'Dashboard Owner' : 'Dashboard' }}</span>
                 </a>
             @endcanany
 
@@ -99,7 +99,7 @@
                             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                             </svg>
-                            <span>Klinik / RME</span>
+                            <span>Dashboard RME</span>
                         </span>
                         <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('rme') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
@@ -114,9 +114,38 @@
                             <a href="{{ route('rme.cashier.index') }}"
                                class="menu-subitem {{ request()->routeIs('rme.cashier.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
                         @endcan
+                        @can('view_rme_patient_reports')
+                            <a href="{{ route('rme.reports.patients') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.reports.patients') ? $linkActive : $linkIdle }}">Laporan Pasien RME</a>
+                        @endcan
+                        @can('view_rme_payment_reports')
+                            <a href="{{ route('rme.reports.payments') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.reports.payments') ? $linkActive : $linkIdle }}">Laporan Pembayaran RME</a>
+                        @endcan
                     </div>
                 </div>
             @endcanany
+
+            {{-- Sprint 23 Phase 23.5 — RME report viewers without clinical access still get their report links --}}
+            @if ($user && $user->cannot('view_clinic_visits') && $user->cannot('manage_clinic_visits'))
+                @canany(['view_rme_patient_reports', 'view_rme_payment_reports'])
+                    <div class="pt-2">
+                        <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Laporan RME</p>
+                        @can('view_rme_patient_reports')
+                            <a href="{{ route('rme.reports.patients') }}"
+                               class="menu-item {{ request()->routeIs('rme.reports.patients') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                                <span>Laporan Pasien RME</span>
+                            </a>
+                        @endcan
+                        @can('view_rme_payment_reports')
+                            <a href="{{ route('rme.reports.payments') }}"
+                               class="menu-item {{ request()->routeIs('rme.reports.payments') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                                <span>Laporan Pembayaran RME</span>
+                            </a>
+                        @endcan
+                    </div>
+                @endcanany
+            @endif
 
             @canany(['view_lab_orders', 'manage_lab_orders'])
                 <a href="{{ route('lab-orders.index') }}"
@@ -213,7 +242,7 @@
                     <div data-sidebar-panel="inventory" x-show="isOpen('inventory')" class="mt-1 space-y-0.5 pl-8">
                         @can('viewAny', \App\Modules\Inventory\Models\Product::class)
                             <a href="{{ route('inventory.dashboard') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dasbor</a>
+                               class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dashboard Inventory</a>
                             <a href="{{ route('inventory.products.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
                             @can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
@@ -343,7 +372,7 @@
                     <div data-sidebar-panel="reporting" x-show="isOpen('reporting')" class="mt-1 space-y-0.5 pl-8">
                         @php($reportActive = fn ($name) => request()->routeIs($name) ? $linkActive : $linkIdle)
                         @can('reporting.dashboard')
-                            <a href="{{ route('reports.dashboard') }}" class="menu-subitem {{ $reportActive('reports.dashboard') }}">Dasbor</a>
+                            <a href="{{ route('reports.dashboard') }}" class="menu-subitem {{ $reportActive('reports.dashboard') }}">Dashboard Lab</a>
                         @endcan
                         @can('reporting.orders')
                             <a href="{{ route('reports.orders') }}" class="menu-subitem {{ $reportActive('reports.orders') }}">Order</a>

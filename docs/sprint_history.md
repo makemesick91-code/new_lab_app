@@ -4886,3 +4886,38 @@ PASS — local only, no VPS deploy, no schema/data migration, no destructive DB 
 
 ### Next phase
 Sprint 23 Phase 23.4 — VPS Deploy + Owner Dashboard/RME Identity Smoke (re-seed roles, run `pilot:assign-owner`, smoke Owner KPI + new-patient code; confirm final patient code format with owner; plan optional backfill).
+
+## Sprint 23 Phase 23.5 — Branch Scope Correction + Dashboard Renaming + RME Report Roles
+
+Branch `feature/sprint-23-phase-23-5-branch-scope-dashboard-rename` (from tag `sprint-23-phase-23-3-owner-dashboard-rme-identity`). Tag `sprint-23-phase-23-5-branch-scope-dashboard-rename`. Local only — no VPS work, additive migration only. Full doc: `docs/sprint_23_phase_23_5_branch_scope_dashboard_rename.md`.
+
+### Business rule update
+- RME multi-branch, Inventory multi-branch, **Lab single-branch/global**. RME and Lab KPI separated. Module dashboard labels renamed to English "Dashboard …". RME report access split into patient vs payment roles.
+
+### Branch scope
+- `config/module_branch_scope.php` + `App\Modules\Branch\Support\ModuleBranchScope` centralize the rule (`rme`/`inventory` = multi_branch, `lab` = single_branch).
+
+### Master Data Cabang
+- Additive migration `2026_06_15_100001` adds `is_rme_enabled` / `is_inventory_enabled` to `mst_branches` (default true). `Branch` model: fillable + casts + `scopeRmeEnabled()`/`scopeInventoryEnabled()`. No duplicate table. Branch master CRUD UI remains unrouted (deferred since Sprint 9).
+
+### Lab multi-branch removal
+- Owner dashboard Lab metrics made global (branch filter removed from lab queries). Lab order list already global (opt-in filter, no caller). Legacy `branch_id` columns kept — **not dropped**. `LabCaseCandidate` RME→Lab isolation retained.
+
+### KPI separation
+- New `RmeDashboardKpiService` (branch-aware) and `LabDashboardKpiService` (global, no branch param, `scope_label = "Laboratorium global"`).
+
+### Dashboard renaming
+- "Dashboard Owner" (sidebar conditional on `view_owner_dashboard`, else "Dashboard"), "Dashboard RME" (Klinik/RME group header), "Dashboard Inventory" (inventory dashboard), "Dashboard Lab" (reporting dashboard). Route names unchanged.
+
+### RME report roles
+- New permissions `view_rme_patient_reports`, `view_rme_payment_reports`. New roles `Laporan Pasien RME`, `Laporan Pembayaran RME`. Owner gets both; Kasir gets payment only; Super Admin both; Doctor neither. Routes `rme.reports.patients` / `rme.reports.payments` (branch-aware), gated per permission; views under `resources/views/rme/reports/`.
+
+### Tests run
+- New `tests/Feature/BranchScope/BranchScopeDashboardRenameTest.php` (14 passed). Updated 8 dashboard/nav/pilot/inventory/reporting tests to the new "Dashboard" labels.
+- Focused suites: Dashboard+RME+Reporting+Auth (487), LabOrder+Lab integration+Navigation+Pilot+drilldown (157), BranchScope (14) — all passed. `pint --dirty` passed; `npm run build` OK. Full suite not run end-to-end (runtime budget) — documented honestly.
+
+### Final status
+PASS — local only, no VPS deploy, additive migration only, no destructive DB commands, no Lab `branch_id` columns dropped.
+
+### Next phase
+Sprint 23 Phase 23.6 — VPS Deploy + Branch Scope/Dashboard/RME Report Smoke (backup DB first, run Permission/Role seeders, smoke separated dashboards, Lab global KPI, RME branch filter, split RME report roles).

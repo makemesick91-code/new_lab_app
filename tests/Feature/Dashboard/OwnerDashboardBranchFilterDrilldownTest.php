@@ -156,7 +156,7 @@ it('does not show owner branch filter or branch summary for branch admin dashboa
     ]))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Dasbor Admin Cabang')
+        ->assertSee('Dashboard Admin Cabang')
         ->assertDontSee('Filter Cabang')
         ->assertDontSee('Ringkasan Per Cabang')
         ->assertDontSee('Monitoring Pilot RME & Lab');

@@ -53,6 +53,7 @@ use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
+use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -245,6 +246,12 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/payment', [RmePaymentController::class, 'store'])->name('cashier.payment.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt', [RmePaymentController::class, 'receipt'])->name('cashier.receipt.show');
     });
+
+    // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)
+    Route::get('reports/patients', [RmeReportController::class, 'patients'])
+        ->name('reports.patients')->middleware('permission:view_rme_patient_reports');
+    Route::get('reports/payments', [RmeReportController::class, 'payments'])
+        ->name('reports.payments')->middleware('permission:view_rme_payment_reports');
 });
 
 /*

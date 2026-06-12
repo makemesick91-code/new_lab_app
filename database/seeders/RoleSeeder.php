@@ -205,17 +205,31 @@ class RoleSeeder extends Seeder
             'view_inventory_executive_dashboard',
             'view_inventory_cross_branch_analytics',
             'view_clinic_visits',
+            // Sprint 23 Phase 23.5 — Owner sees both RME report families
+            'view_rme_patient_reports',
+            'view_rme_payment_reports',
         ],
         'Kasir' => [
             'view dashboard',
             'view_clinic_visits',
             'manage_rme_billing',
+            // Sprint 23 Phase 23.5 — Kasir may view RME payment reports only
+            'view_rme_payment_reports',
         ],
         'Perawat' => [
             'view dashboard',
             'manage patients',
             'view_clinic_visits',
             'manage_clinic_visits',
+        ],
+        // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
+        'Laporan Pasien RME' => [
+            'view dashboard',
+            'view_rme_patient_reports',
+        ],
+        'Laporan Pembayaran RME' => [
+            'view dashboard',
+            'view_rme_payment_reports',
         ],
     ];
 

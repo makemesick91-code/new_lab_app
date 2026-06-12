@@ -158,17 +158,18 @@ class OwnerDashboardRmeLabKpiService
             ->whereDate('paid_at', $today)
             ->sum('amount');
 
-        $labCandidatesPending = $this->labCandidateQuery($branchIds)
+        // Sprint 23 Phase 23.5: Lab is a single / global laboratory. Lab KPIs are
+        // NOT grouped by branch and the Owner branch filter must not touch them.
+        $labCandidatesPending = $this->labCandidateQuery(null)
             ->where('status', LabCaseCandidate::STATUS_PENDING_REVIEW)
             ->count();
 
-        $labCandidatesConvertedToday = $this->labCandidateQuery($branchIds)
+        $labCandidatesConvertedToday = $this->labCandidateQuery(null)
             ->where('status', LabCaseCandidate::STATUS_CONVERTED_TO_LAB_ORDER)
             ->whereDate('reviewed_at', $today)
             ->count();
 
         $labOrdersFromRmeToday = LabOrder::query()
-            ->when($branchIds !== null, fn (Builder $query) => $query->whereIn('branch_id', $branchIds))
             ->whereDate('created_at', $today)
             ->whereHas('rmeLabCaseCandidate')
             ->count();
