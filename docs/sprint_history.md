@@ -4853,3 +4853,36 @@ Sprint 22 delivered pilot stabilization after Sprint 21 VPS deploy: role/permiss
 6. Optional production-grade backup verification checklist.
 7. UI/UX polish after pilot safety is stable.
 8. Inventory/RME executive dashboard consolidation.
+
+## Sprint 23 Phase 23.3 — Owner Dashboard Access/Menu/Role Enablement + RME Patient Identity Hardening
+
+**Branch:** `feature/sprint-23-phase-23-3-owner-dashboard-rme-identity` (from `sprint-22-release-candidate`).
+**Tag:** `sprint-23-phase-23-3-owner-dashboard-rme-identity`.
+**Status:** PASS. Phase doc: `docs/sprint_23_phase_23_3_owner_dashboard_rme_identity.md`.
+
+### Owner Dashboard role/menu enablement
+- Owner Dashboard route (`dashboard`), `view_owner_dashboard` permission, `Owner` role, and "Dasbor" sidebar entry were already wired in Sprint 22 Phase 22.1. Phase 23.2's "not available" was a deployment/data condition (seed + role assignment not applied on the pilot), not missing code.
+- Added safe Owner pilot enablement command `php artisan pilot:assign-owner {email}` — assigns existing `Owner` role to an existing user; no user creation, no passwords/secrets, idempotent, fails safely.
+- Test-locked access rules (Owner sees KPI, Super Admin reaches route, operational roles do not see `Dasbor Owner`, guests redirect to login).
+
+### RME role/menu hardening
+- Kept existing clinical permission naming (`view_clinic_visits`, `manage_clinic_visits`, `manage_rme_billing`) — no new `view_rme/manage_rme` names introduced. Menu visibility per role already covered by `SidebarPermissionVisibilityTest` (Doctor/Kasir/Perawat/Owner/Admin Klinik/Technician).
+
+### Patient identity foundation
+- `mst_patients.medical_record_number` already existed (nullable, unique, indexed) — no migration needed.
+- New: `config/patient.php` (configurable code format), `PatientCodeGenerator` service, and `PatientService::create()` auto-generates a code when blank. New patient → generated code; returning patient → existing code preserved.
+- Temporary format `RM-{YYYYMM}-{SEQ6}` (e.g. `RM-202606-000001`), PENDING owner approval; configurable via config/env. No backfill performed.
+
+### UI polish
+- Added sidebar group icons for `Pengadaan` and `Master Data Klinik`. Batch entry already exists under Inventory ("Batch & Lot") — not rebuilt; clinical batch module deferred.
+
+### Tests run
+- `PatientCodeGenerationTest` (6) + `OwnerEnablementTest` (7) — 13 passed.
+- `--filter='Owner|Dashboard|Patient|Sidebar|ClinicVisit|RolePermission|PilotRoute'` — 233 passed (932 assertions).
+- `./vendor/bin/pint --dirty` passed; `npm run build` OK.
+
+### Final status
+PASS — local only, no VPS deploy, no schema/data migration, no destructive DB commands.
+
+### Next phase
+Sprint 23 Phase 23.4 — VPS Deploy + Owner Dashboard/RME Identity Smoke (re-seed roles, run `pilot:assign-owner`, smoke Owner KPI + new-patient code; confirm final patient code format with owner; plan optional backfill).

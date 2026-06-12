@@ -21,7 +21,10 @@
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">Nomor Rekam Medis</label>
-        <input type="text" name="medical_record_number" value="{{ old('medical_record_number', $patient?->medical_record_number) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        <input type="text" name="medical_record_number" value="{{ old('medical_record_number', $patient?->medical_record_number) }}" placeholder="Kosongkan untuk dibuat otomatis" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        @unless ($patient)
+            <p class="mt-1 text-xs text-gray-500">Pasien baru: kosongkan untuk kode otomatis (mis. RM-{{ now()->format('Ym') }}-000001). Isi manual untuk pasien lama.</p>
+        @endunless
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">Nama</label>

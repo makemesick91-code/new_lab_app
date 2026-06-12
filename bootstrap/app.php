@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\AssignOwnerRoleCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
 use Illuminate\Foundation\Application;
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withCommands([
+        AssignOwnerRoleCommand::class,
         PruneInventoryAnalyticsSummaryCommand::class,
         RefreshInventoryAnalyticsSummaryCommand::class,
     ])

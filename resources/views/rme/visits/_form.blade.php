@@ -16,9 +16,9 @@
     <div>
         <label class="block text-sm font-medium text-gray-700">Pasien</label>
         <select name="patient_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-            <option value="">- Pilih pasien -</option>
+            <option value="">- Pilih pasien terdaftar -</option>
             @foreach ($patients as $patient)
-                <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->name }}</option>
+                <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->medical_record_number ? $patient->medical_record_number.' — '.$patient->name : $patient->name }}</option>
             @endforeach
         </select>
     </div>

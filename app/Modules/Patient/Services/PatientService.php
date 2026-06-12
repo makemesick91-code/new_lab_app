@@ -12,6 +12,7 @@ class PatientService
 {
     public function __construct(
         private readonly PatientRepositoryInterface $patients,
+        private readonly PatientCodeGenerator $codeGenerator,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -31,7 +32,15 @@ class PatientService
 
     public function create(array $data): Patient
     {
-        return DB::transaction(fn () => $this->patients->create($data));
+        return DB::transaction(function () use ($data) {
+            $code = trim((string) ($data['medical_record_number'] ?? ''));
+
+            if ($code === '' && config('patient.code.auto_generate', true)) {
+                $data['medical_record_number'] = $this->codeGenerator->generate();
+            }
+
+            return $this->patients->create($data);
+        });
     }
 
     public function update(Patient $patient, array $data): Patient
