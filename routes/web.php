@@ -253,6 +253,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // Sprint 20 Phase 1.10 — Cashier RME Billing
     Route::middleware('permission:manage_rme_billing')->group(function () {
         Route::get('cashier', [RmeInvoiceController::class, 'index'])->name('cashier.index');
+        Route::get('cashier/receivables', [RmeInvoiceController::class, 'receivables'])->name('cashier.receivables');
         Route::get('cashier/{clinicVisit}/billing/create', [RmeInvoiceController::class, 'create'])->name('cashier.create');
         Route::post('cashier/{clinicVisit}/billing', [RmeInvoiceController::class, 'store'])->name('cashier.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');

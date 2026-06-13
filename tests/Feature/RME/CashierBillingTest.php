@@ -11,6 +11,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
@@ -442,4 +443,86 @@ it('cashier create page displays odontogram and RME clinical summary', function 
         ->assertSee('Karies')
         ->assertSee('Tanda Klinis')
         ->assertSee('Karies mesial');
+});
+
+it('cashier can view rme receivables page with unpaid and partial balances', function () {
+    $this->actingAs($this->cashier);
+
+    [$partialVisit] = makeFinalizedVisit($this->branch);
+    $partialInvoice = app(RmeInvoiceService::class)->create(
+        $partialVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Tambal Cicilan', 'unit_price' => 500000])]]
+    );
+
+    RmePayment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'rme_invoice_id' => $partialInvoice->id,
+        'clinic_visit_id' => $partialVisit->id,
+        'patient_id' => $partialVisit->patient_id,
+        'cashier_id' => $this->cashier->id,
+        'amount' => 200000,
+        'paid_at' => now(),
+    ]);
+
+    $partialInvoice->update(['status' => RmeInvoice::STATUS_PARTIAL]);
+
+    [$unpaidVisit] = makeFinalizedVisit($this->branch);
+    $unpaidInvoice = app(RmeInvoiceService::class)->create(
+        $unpaidVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Tagihan Belum Bayar', 'unit_price' => 300000])]]
+    );
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee('Piutang RME')
+        ->assertSee($partialInvoice->invoice_number)
+        ->assertSee($unpaidInvoice->invoice_number)
+        ->assertSee('Cicilan / Sebagian')
+        ->assertSee('Belum Dibayar')
+        ->assertSee('Sisa Tagihan')
+        ->assertSee('Bayar Cicilan');
+});
+
+it('rme receivables page filters by partial status', function () {
+    $this->actingAs($this->cashier);
+
+    [$partialVisit] = makeFinalizedVisit($this->branch);
+    $partialInvoice = app(RmeInvoiceService::class)->create(
+        $partialVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Piutang Partial', 'unit_price' => 400000])]]
+    );
+
+    RmePayment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'rme_invoice_id' => $partialInvoice->id,
+        'clinic_visit_id' => $partialVisit->id,
+        'patient_id' => $partialVisit->patient_id,
+        'cashier_id' => $this->cashier->id,
+        'amount' => 100000,
+        'paid_at' => now(),
+    ]);
+
+    $partialInvoice->update(['status' => RmeInvoice::STATUS_PARTIAL]);
+
+    [$unpaidVisit] = makeFinalizedVisit($this->branch);
+    $unpaidInvoice = app(RmeInvoiceService::class)->create(
+        $unpaidVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Piutang Unpaid', 'unit_price' => 250000])]]
+    );
+
+    $this->get(route('rme.cashier.receivables', ['status' => RmeInvoice::STATUS_PARTIAL]))
+        ->assertOk()
+        ->assertSee($partialInvoice->invoice_number)
+        ->assertDontSee($unpaidInvoice->invoice_number);
+});
+
+it('unauthorized user cannot view rme receivables page', function () {
+    $this->actingAs($this->unauthorized);
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertForbidden();
 });

@@ -113,7 +113,9 @@
                            class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
                         @can('manage_rme_billing')
                             <a href="{{ route('rme.cashier.index') }}"
-                               class="menu-subitem {{ request()->routeIs('rme.cashier.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
+                               class="menu-subitem {{ request()->routeIs('rme.cashier.index', 'rme.cashier.create', 'rme.cashier.store', 'rme.cashier.show', 'rme.cashier.payment.*', 'rme.cashier.receipt.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
+                            <a href="{{ route('rme.cashier.receivables') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.cashier.receivables') ? $linkActive : $linkIdle }}">Piutang RME</a>
                         @endcan
                         @can('view_rme_patient_reports')
                             <a href="{{ route('rme.reports.patients') }}"
