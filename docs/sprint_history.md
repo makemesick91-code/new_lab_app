@@ -5141,3 +5141,26 @@ PASS — local only; no new migration; no column removal; separate odontogram pr
 
 ### Next phase
 Sprint 23 Phase 23.10.7 — VPS deploy + browser smoke of the combined Cetak Rekam Medis (backup DB first, `migrate --force` only; confirm odontogram selected-results table renders in the medical record print without opening Cetak Odontogram).
+
+---
+
+## Sprint 24 — RME Receivable / Payment Hardening Track
+
+Sprint 24 delivered RME receivable/payment hardening: partial-payment (cicilan) foundation, Piutang RME dashboard, Owner Dashboard receivable + follow-up KPIs, receivable aging buckets with CSV export, and a receivable follow-up/reminder foundation. Each foundation phase was followed by a VPS browser smoke validation.
+
+Phase tags (`creatordate` order): 24.1 `sprint-24-phase-24-1-rme-partial-payment-foundation` (`ed36d6a`) · 24.2.1 hotfix `sprint-24-phase-24-2-1-rme-new-patient-branch-consistency` (`bc5e480`) · 24.2 `sprint-24-phase-24-2-vps-rme-partial-payment-smoke` (`a09f0a5`) · 24.3 `sprint-24-phase-24-3-rme-receivable-dashboard-foundation` (`7dcacd4`) · 24.3 VPS `sprint-24-phase-24-3-vps-piutang-rme-smoke` (`9aff71c`) · Graphify `sprint-24-graphify-sprint-22-to-24-update` (`a167791`) · 24.4 `sprint-24-phase-24-4-owner-dashboard-rme-receivable-kpi` (`afbc3e3`) · 24.5 `sprint-24-phase-24-5-vps-owner-dashboard-receivable-kpi-smoke` (`7ceb0c0`) · Graphify `sprint-24-graphify-sprint-24-4-to-24-5-update` (`ae5fb4a`) · 24.6 `sprint-24-phase-24-6-rme-receivable-aging-export-foundation` (`28c9361`) · 24.7 `sprint-24-phase-24-7-vps-rme-receivable-aging-export-smoke` (`fd27c43`) · 24.8 `sprint-24-phase-24-8-rme-receivable-follow-up-reminder-foundation` (`f0a4a61`) · 24.9 `sprint-24-phase-24-9-vps-rme-receivable-follow-up-smoke` (`43cfcd5`) · 24.10 `sprint-24-phase-24-10-owner-dashboard-receivable-follow-up-kpi` (`ea17ce4`) · 24.11 `sprint-24-phase-24-11-vps-owner-dashboard-follow-up-kpi-smoke` (`b15b936`).
+
+### Sprint 24 Phase 24.12 — Closure RC / Go-No-Go
+
+Branch `feature/sprint-24-phase-24-12-closure-rc-go-no-go` (from `b15b936`). Closure/documentation only — no new product features, no payment/follow-up/dashboard logic changes. Full doc: `docs/sprint_24_phase_24_12_closure_rc_go_no_go.md`.
+
+- **Sprint 24 status:** Closure RC / Go-No-Go.
+- **Final sprint status:** GO release candidate.
+- **Key phase range:** 24.1–24.12 (all 15 Sprint 24 tags present and coherent; none MISSING).
+- **Final tag recommendation:** `sprint-24-phase-24-12-closure-rc-go-no-go`.
+- **No payment logic regression.** Full-payment-only constraint intentionally superseded by the 24.1 partial-payment foundation; follow-up/dashboard logic unchanged in closure.
+- **VPS smoke coverage:** through Phase 24.11 (Owner Dashboard follow-up KPI cards, branch filter, billing-shortcut permission, `follow_up_filter` URLs, CSV export — all PASS; Laravel log CLEAN).
+
+Quality gates were limited to targeted Sprint 24 regression coverage under Limit Saver 1 mode (CashierBillingTest 28, RmeReceivableFollowUpTest 9, OwnerDashboardReceivableFollowUpKpiTest 8, OwnerDashboardRmeLabKpiTest 11, OwnerDashboardBranchFilterDrilldownTest 13 — 69 passed / 256 assertions). Routes verified, `view:cache` OK, `pint --dirty` passed, `git diff --check` clean. No full suite was run for the closure step.
+
+Decision: **GO**.
