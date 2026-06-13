@@ -27,6 +27,7 @@ class OdontogramRepository implements OdontogramRepositoryInterface
             'medical_record_id' => $clinicVisit->medicalRecord?->id,
             'status' => Odontogram::STATUS_DRAFT,
             'summary_notes' => null,
+            'additional_conditions' => null,
             'tooth_map_payload' => null,
         ], $data));
     }

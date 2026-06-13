@@ -354,13 +354,23 @@
         };
     @endphp
 
-    {{-- Summary notes --}}
-    <div class="section-title">Catatan Ringkasan</div>
+    {{-- Kondisi tambahan (general) --}}
+    <div class="section-title">Kondisi Tambahan</div>
+    <div class="summary-box">
+        @if ($odontogram->additional_conditions)
+            {{ $odontogram->additional_conditions }}
+        @else
+            <span class="summary-empty">Tidak ada kondisi tambahan.</span>
+        @endif
+    </div>
+
+    {{-- Catatan odontogram --}}
+    <div class="section-title">Catatan Odontogram</div>
     <div class="summary-box">
         @if ($odontogram->summary_notes)
             {{ $odontogram->summary_notes }}
         @else
-            <span class="summary-empty">Tidak ada catatan ringkasan.</span>
+            <span class="summary-empty">Tidak ada catatan odontogram.</span>
         @endif
     </div>
 

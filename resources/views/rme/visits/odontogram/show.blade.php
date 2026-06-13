@@ -345,9 +345,9 @@
             </div>
         </x-ui.card>
 
-        {{-- Save form (manager + draft only) --}}
+        {{-- Kondisi Tambahan & Catatan Odontogram (general, odontogram-level) --}}
         @if ($canUpdate)
-            <x-ui.card title="Simpan Odontogram">
+            <x-ui.card title="Kondisi Tambahan & Catatan Odontogram">
                 <form method="POST" action="{{ route('rme.odontograms.update', $odontogram) }}">
                     @csrf
                     @method('PATCH')
@@ -361,16 +361,36 @@
                         </div>
                     @enderror
 
+                    <p class="mb-4 text-xs text-gray-500">
+                        Lengkapi kondisi tambahan dan catatan odontogram sebelum melakukan finalisasi.
+                    </p>
+
+                    <div class="mb-4">
+                        <label for="additional_conditions" class="block text-sm font-medium text-gray-700">
+                            Kondisi Tambahan
+                        </label>
+                        <textarea
+                            id="additional_conditions"
+                            name="additional_conditions"
+                            rows="3"
+                            maxlength="5000"
+                            placeholder="Contoh: impaksi, mobilitas gigi, karies luas, sisa akar, kondisi jaringan lunak, atau kondisi klinis lain."
+                            class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('additional_conditions') border-rose-300 @enderror">{{ old('additional_conditions', $odontogram->additional_conditions) }}</textarea>
+                        @error('additional_conditions')
+                            <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     <div class="mb-4">
                         <label for="summary_notes" class="block text-sm font-medium text-gray-700">
-                            Catatan Ringkasan
+                            Catatan Odontogram
                         </label>
                         <textarea
                             id="summary_notes"
                             name="summary_notes"
                             rows="4"
                             maxlength="5000"
-                            placeholder="Catatan kondisi gigi…"
+                            placeholder="Tambahkan catatan khusus dokter/perawat terkait odontogram pasien."
                             class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('summary_notes') border-rose-300 @enderror">{{ old('summary_notes', $odontogram->summary_notes) }}</textarea>
                         @error('summary_notes')
                             <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
@@ -383,12 +403,19 @@
                 </form>
             </x-ui.card>
         @else
-            {{-- Read-only notes --}}
-            @if ($odontogram->summary_notes)
-                <x-ui.card title="Catatan Ringkasan">
-                    <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ $odontogram->summary_notes }}</p>
-                </x-ui.card>
-            @endif
+            {{-- Read-only display (viewer or finalized) --}}
+            <x-ui.card title="Kondisi Tambahan & Catatan Odontogram">
+                <dl class="space-y-4">
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kondisi Tambahan</dt>
+                        <dd class="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{{ $odontogram->additional_conditions ?: '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Odontogram</dt>
+                        <dd class="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{{ $odontogram->summary_notes ?: '—' }}</dd>
+                    </div>
+                </dl>
+            </x-ui.card>
         @endif
 
     </div>

@@ -28,6 +28,7 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
     {
         return [
             'summary_notes' => ['nullable', 'string', 'max:5000'],
+            'additional_conditions' => ['nullable', 'string', 'max:5000'],
             'tooth_map_payload' => ['nullable', 'array'],
             'tooth_map_payload.teeth' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*' => ['nullable', 'array'],

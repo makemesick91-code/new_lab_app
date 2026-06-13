@@ -5076,3 +5076,23 @@ PASS — local only; no automatic legacy backfill; `mst_clinics`/`clinic_id` pre
 
 ### Next phase
 Sprint 23 Phase 23.10.1 — VPS Deploy + RME Pilot Data Entry Smoke (backup DB first, `migrate --force` only; browser-smoke new/existing patient → odontogram → medical record → cashier billing → payment → lab candidate across TKM1/LDK2/ATG3).
+
+## Sprint 23 Phase 23.10.2 — Odontogram Additional Conditions and Notes Input Fix
+
+- Branch: `feature/sprint-23-phase-23-10-2-odontogram-additional-fields` (from `sprint-23-phase-23-10-rme-pilot-data-entry-hardening` / `bf3a43a`). Tag `sprint-23-phase-23-10-2-odontogram-additional-fields`. Local only — no VPS deploy, no push, no destructive DB commands. Full doc: `docs/sprint_23_phase_23_10_2_odontogram_additional_fields.md`.
+
+### Smoke bug (from 23.10.1)
+- VPS browser smoke found that while filling the odontogram, the general **"kondisi tambahan"** and **"catatan odontogram"** inputs did not appear — only per-tooth conditions (hidden until a tooth is selected) and a single generic "Catatan Ringkasan" field existed.
+
+### Fix
+- Added a **"Kondisi Tambahan & Catatan Odontogram"** section on the odontogram fill/edit page, **visible and editable before finalization** (draft + `manage_clinic_visits`), with `old()` + saved values. "Kondisi Tambahan" → new additive `additional_conditions` column; "Catatan Odontogram" → existing `summary_notes` (relabelled). Additive migration `2026_06_18_100001` adds only `additional_conditions` (text nullable); no backfill, no `notes` column.
+- Save: request validation `additional_conditions nullable|string|max:5000`; whitelisted in `OdontogramService::updatePlaceholder`; model/factory/repo updated. Show/print: both fields shown on show (read-only when finalized/viewer), odontogram print, and the visit print bundle; escaped, null-safe. Finalization preserves both fields and renders them read-only via existing rules.
+
+### Tests / build
+- New `OdontogramAdditionalFieldsTest` (15 passed). Focused suites: Odontogram 103 (252), RmePilotDataEntryHardeningTest 26 (67), RmeVisitListBranchFilterTest 16 (45), RmeClinicSourceFromBranchTest 15 (32), Rme 511 (1438) — all passed. `pint --dirty` OK; `npm run build` OK.
+
+### Final status
+PASS — local only; tooth-grid UI unchanged; no old-data rewrite; finalized behavior preserved.
+
+### Next phase
+Sprint 23 Phase 23.10.3 — VPS Deploy + Odontogram Additional Fields Smoke (backup DB first, `migrate --force` only; browser-smoke fields visible/editable before finalization and preserved after finalization).

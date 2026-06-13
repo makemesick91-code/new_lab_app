@@ -58,7 +58,7 @@ class OdontogramService
                 ]);
             }
 
-            $safe = array_intersect_key($payload, array_flip(['summary_notes', 'tooth_map_payload']));
+            $safe = array_intersect_key($payload, array_flip(['summary_notes', 'additional_conditions', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;
 
             if (isset($safe['tooth_map_payload']['teeth']) && is_array($safe['tooth_map_payload']['teeth'])) {

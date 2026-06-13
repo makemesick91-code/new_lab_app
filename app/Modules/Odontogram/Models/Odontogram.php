@@ -28,6 +28,7 @@ class Odontogram extends Model
         'medical_record_id',
         'status',
         'summary_notes',
+        'additional_conditions',
         'tooth_map_payload',
         'finalized_at',
         'finalized_by',

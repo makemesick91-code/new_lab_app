@@ -112,9 +112,16 @@
     </div>
     @if ($odontogram)
         <div class="odonto-summary">
+            @if ($odontogram->additional_conditions)
+                <div class="field-item">
+                    <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Kondisi Tambahan</dt>
+                    <div class="odonto-notes">{{ $odontogram->additional_conditions }}</div>
+                </div>
+            @endif
+
             @if ($odontogram->summary_notes)
                 <div class="field-item">
-                    <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Catatan Ringkas</dt>
+                    <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Catatan Odontogram</dt>
                     <div class="odonto-notes">{{ $odontogram->summary_notes }}</div>
                 </div>
             @endif

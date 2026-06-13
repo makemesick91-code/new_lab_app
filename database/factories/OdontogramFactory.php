@@ -21,6 +21,7 @@ class OdontogramFactory extends Factory
             'medical_record_id' => null,
             'status' => Odontogram::STATUS_DRAFT,
             'summary_notes' => null,
+            'additional_conditions' => null,
             'tooth_map_payload' => null,
             'created_by' => null,
             'updated_by' => null,
