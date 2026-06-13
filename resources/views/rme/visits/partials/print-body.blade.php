@@ -126,51 +126,10 @@
                 </div>
             @endif
 
-            @php
-                $teethData = $odontogram->tooth_map_payload['teeth'] ?? [];
-                $markedTeeth = array_filter($teethData, fn ($td) =>
-                    ! empty($td['status']) || ! empty($td['conditions']) || (isset($td['note']) && $td['note'] !== '')
-                );
-                ksort($markedTeeth);
-            @endphp
-
-            @if (count($markedTeeth) > 0)
-                <table class="odonto-table" style="margin-top: {{ $odontogram->summary_notes ? '10px' : '0' }}">
-                    <thead>
-                        <tr>
-                            <th style="width:45px">Gigi</th>
-                            <th style="width:95px">Kondisi Odontogram</th>
-                            <th>Tanda Klinis</th>
-                            <th>Catatan Gigi</th>
-                            <th>Kondisi Tambahan</th>
-                            <th>Catatan Tambahan</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($markedTeeth as $toothNum => $td)
-                            <tr>
-                                <td><strong>{{ $toothNum }}</strong></td>
-                                <td>{{ $statusLabels[$td['status'] ?? ''] ?? ($td['status'] ? ucfirst($td['status']) : '—') }}</td>
-                                <td>
-                                    @if (! empty($td['conditions']) && is_array($td['conditions']))
-                                        {{ implode(', ', array_map(fn ($c) => $conditionLabels[$c] ?? $c, $td['conditions'])) }}
-                                    @else
-                                        <span style="color:#9ca3af">—</span>
-                                    @endif
-                                </td>
-                                <td>{{ (isset($td['note']) && $td['note'] !== '') ? $td['note'] : '—' }}</td>
-                                <td>{{ (isset($td['additional_condition']) && $td['additional_condition'] !== '') ? $td['additional_condition'] : '—' }}</td>
-                                <td>{{ (isset($td['additional_note']) && $td['additional_note'] !== '') ? $td['additional_note'] : '—' }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            @else
-                <p style="margin-top:6px;color:#9ca3af;font-style:italic;font-size:11px;">Belum ada gigi yang ditandai.</p>
-            @endif
+            @include('rme.visits.partials.odontogram-selected-results', ['odontogram' => $odontogram])
         </div>
     @else
-        <div class="not-available">Odontogram belum tersedia.</div>
+        <div class="not-available">Belum ada data odontogram. Odontogram belum tersedia.</div>
     @endif
 </div>
 

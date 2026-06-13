@@ -5116,3 +5116,28 @@ PASS — local only; no new migration; no column removal; no data rewrite; tooth
 
 ### Next phase
 Sprint 23 Phase 23.10.5 — VPS Deploy + Odontogram Selected Results Table Smoke (backup DB first, `migrate --force` only; browser-smoke the selected results table appears, updates live, and saves per-row Kondisi Tambahan / Catatan Tambahan, preserved after finalization).
+
+---
+
+## Sprint 23 Phase 23.10.6 — Merge Odontogram Selected Results into Medical Record Print
+
+- Branch: `feature/sprint-23-phase-23-10-6-medical-record-print-odontogram-merge` (from `sprint-23-phase-23-10-5-rme-cashier-branch-clinical-summary` / `e48c645`). Tag `sprint-23-phase-23-10-6-medical-record-print-odontogram-merge`. Local only — no VPS deploy, no push, no destructive DB commands, **no migration**. Full doc: `docs/sprint_23_phase_23_10_6_medical_record_print_odontogram_merge.md`.
+
+### Goal
+- Cetak Rekam Medis (combined visit print bundle, `rme.visits.print` → `print.blade.php` / `print-pdf.blade.php` via `partials/print-body.blade.php`) is the **main combined print output** and now embeds the **"Hasil Odontogram yang Dipilih"** selected-results table. The user no longer needs to open the separate Cetak Odontogram to see odontogram results.
+
+### Change
+- Extracted shared partial `resources/views/rme/visits/partials/odontogram-selected-results.blade.php` (subsection title + merged table + safe empty states) and included it from `print-body.blade.php`, replacing the inline odontogram table to avoid duplicate logic.
+- Merged, user-friendly columns: **No**, **Gigi / Area**, **Kondisi Odontogram**, **Tanda Klinis / Kondisi Tambahan** (`conditions` + `additional_condition`), **Catatan Gigi / Catatan Tambahan** (`note` + `additional_note`).
+- Empty states: no odontogram → `Belum ada data odontogram.` (kept legacy `Odontogram belum tersedia.` for existing ClinicVisitTest); odontogram with no selected rows → `Belum ada kondisi odontogram yang dipilih.`; empty cell → `—`. All output Blade-escaped; no raw `tooth_map_payload` JSON.
+- Data source: odontogram linked to the visit — `tooth_map_payload.teeth.<num>.status` / `.additional_condition` / `.additional_note`. Old payloads without the keys render `—` safely.
+- Separate Cetak Odontogram (`rme.odontograms.print` / `odontogram/print.blade.php`) left untouched and still works. Phase 23.10.5 cashier branch scoping + clinical summary (e48c645) and 23.10.4 selected-results behavior (d461ad8) preserved.
+
+### Tests / build
+- New `MedicalRecordPrintOdontogramMergeTest` (11 passed, 32 assertions). Regression: `OdontogramSelectedResultsTableTest | RmePdfPrintHardeningTest | Odontogram | RmePilotDataEntryHardeningTest | RmeVisitListBranchFilterTest | RmeClinicSourceFromBranchTest | ClinicVisit` 278 passed (762 assertions). Broader `Rme | Patient | Permission | Sidebar | Branch` 953 passed (2843 assertions). `pint --dirty` OK; `npm run build` OK.
+
+### Final status
+PASS — local only; no new migration; no column removal; separate odontogram print preserved; cashier branch scoping + clinical summary (e48c645) intact.
+
+### Next phase
+Sprint 23 Phase 23.10.7 — VPS deploy + browser smoke of the combined Cetak Rekam Medis (backup DB first, `migrate --force` only; confirm odontogram selected-results table renders in the medical record print without opening Cetak Odontogram).
