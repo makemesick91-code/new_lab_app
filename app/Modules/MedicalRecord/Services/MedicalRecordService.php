@@ -2,7 +2,7 @@
 
 namespace App\Modules\MedicalRecord\Services;
 
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -16,15 +16,25 @@ class MedicalRecordService
 {
     public function __construct(
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
-        private readonly BranchContext $branchContext,
+        private readonly BranchService $branches,
         private readonly ClinicVisitService $visitService,
     ) {}
+
+    /**
+     * Whether a branch belongs to the operational "Cabang RME" set (active
+     * RME-enabled branches). Replaces the single BranchContext/MAIN fallback so
+     * the doctor RME workflow works for any RME-branch visit (Sprint 23 Phase 23.10).
+     */
+    private function isActiveRmeBranch(?int $branchId): bool
+    {
+        return $branchId !== null && in_array($branchId, $this->branches->rmeEnabledIds(), true);
+    }
 
     /** @param array<string, mixed> $filters */
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        return $this->medicalRecords->paginateForBranch(
-            $this->branchContext->requireId(),
+        return $this->medicalRecords->paginateForBranches(
+            $this->branches->rmeEnabledIds(),
             $filters,
             $perPage,
         );
@@ -32,16 +42,16 @@ class MedicalRecordService
 
     public function draftCount(): int
     {
-        return $this->medicalRecords->countByBranchStatus(
-            $this->branchContext->requireId(),
+        return $this->medicalRecords->countByBranchesStatus(
+            $this->branches->rmeEnabledIds(),
             MedicalRecord::STATUS_DRAFT,
         );
     }
 
     public function finalizedTodayCount(): int
     {
-        return $this->medicalRecords->countFinalizedTodayByBranch(
-            $this->branchContext->requireId(),
+        return $this->medicalRecords->countFinalizedTodayByBranches(
+            $this->branches->rmeEnabledIds(),
             now()->toDateString(),
         );
     }
@@ -49,11 +59,9 @@ class MedicalRecordService
     public function createDraft(ClinicVisit $clinicVisit, ?int $recordedBy = null, array $data = []): MedicalRecord
     {
         return DB::transaction(function () use ($clinicVisit, $recordedBy, $data) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($clinicVisit->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($clinicVisit->branch_id)) {
                 throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Kunjungan tidak ditemukan di cabang aktif.',
+                    'clinic_visit_id' => 'Kunjungan tidak berada di cabang RME aktif.',
                 ]);
             }
 
@@ -81,11 +89,9 @@ class MedicalRecordService
     public function finalize(MedicalRecord $medicalRecord): MedicalRecord
     {
         return DB::transaction(function () use ($medicalRecord) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($medicalRecord->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
-                    'medical_record_id' => 'Rekam medis tidak ditemukan di cabang aktif.',
+                    'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
                 ]);
             }
 
@@ -117,11 +123,9 @@ class MedicalRecordService
     public function updateDraft(MedicalRecord $medicalRecord, array $data): MedicalRecord
     {
         return DB::transaction(function () use ($medicalRecord, $data) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($medicalRecord->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
-                    'medical_record_id' => 'Rekam medis tidak ditemukan di cabang aktif.',
+                    'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
                 ]);
             }
 

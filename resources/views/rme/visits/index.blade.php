@@ -137,7 +137,12 @@
                         <tr class="hover:bg-gray-50 {{ $isTerminal ? 'opacity-60' : '' }}">
                             <td class="px-4 py-3 font-mono text-gray-700">{{ $visit->visit_number }}</td>
                             <td class="px-3 py-3 text-center font-semibold text-gray-900">{{ $visit->queue_number }}</td>
-                            <td class="px-3 py-3 font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 font-medium text-gray-900">
+                                {{ $visit->patient?->name ?? '—' }}
+                                @if ($visit->patient?->medical_record_number)
+                                    <span class="block font-mono text-xs font-normal text-gray-400">{{ $visit->patient->medical_record_number }}</span>
+                                @endif
+                            </td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->visit_date?->format('d/m/Y') }}</td>

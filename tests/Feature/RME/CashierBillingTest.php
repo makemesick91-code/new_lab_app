@@ -335,10 +335,13 @@ it('invoice show page displays patient visit treatment items and total', functio
 
 // ─── Branch isolation ─────────────────────────────────────────────────────────
 
-it('cashier cannot access invoice from a different branch', function () {
+it('cashier cannot access invoice from a non-RME branch', function () {
     $this->actingAs($this->cashier);
 
-    $otherBranch = Branch::factory()->create(['is_active' => true]);
+    // Sprint 23 Phase 23.10: RME billing is scoped to the active RME-enabled set,
+    // so isolation now means "not an RME branch" (MAIN/non-RME), not a single
+    // BranchContext branch. A non-RME-enabled branch must stay forbidden.
+    $otherBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => false]);
     $visit = makeCashierPendingVisit($otherBranch);
 
     $invoice = RmeInvoice::factory()->create([

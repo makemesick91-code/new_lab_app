@@ -39,7 +39,7 @@
                 <select name="patient_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                     <option value="">- Pilih pasien terdaftar -</option>
                     @foreach ($patients as $patient)
-                        <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->medical_record_number ? $patient->medical_record_number.' — '.$patient->name : 'Belum ada RM — '.$patient->name }}</option>
+                        <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->selectorLabel() }} ({{ $patient->branchLabel() }}){{ $patient->phone ? ' · '.$patient->phone : '' }}</option>
                     @endforeach
                 </select>
                 @error('patient_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
@@ -103,7 +103,7 @@
             <select name="patient_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 <option value="">- Pilih pasien terdaftar -</option>
                 @foreach ($patients as $patient)
-                    <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->medical_record_number ? $patient->medical_record_number.' — '.$patient->name : 'Belum ada RM — '.$patient->name }}</option>
+                    <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->selectorLabel() }} ({{ $patient->branchLabel() }}){{ $patient->phone ? ' · '.$patient->phone : '' }}</option>
                 @endforeach
             </select>
         </div>

@@ -80,6 +80,9 @@
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Pasien</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->name ?? '—' }}</dd>
+                    @if ($visit->patient?->medical_record_number)
+                        <dd class="mt-0.5 font-mono text-xs text-gray-500">{{ $visit->patient->medical_record_number }}</dd>
+                    @endif
                 </div>
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>

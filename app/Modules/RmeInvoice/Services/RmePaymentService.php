@@ -3,7 +3,7 @@
 namespace App\Modules\RmeInvoice\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
@@ -22,7 +22,7 @@ class RmePaymentService
         private readonly RmeInvoiceRepositoryInterface $invoices,
         private readonly RmePaymentNumberGeneratorService $numberGenerator,
         private readonly ClinicVisitService $visitService,
-        private readonly BranchContext $branchContext,
+        private readonly BranchService $branches,
     ) {}
 
     /**
@@ -33,9 +33,11 @@ class RmePaymentService
         $payment = DB::transaction(function () use ($invoice, $cashier, $data) {
             $invoice = RmeInvoice::query()->lockForUpdate()->findOrFail($invoice->id);
 
-            if ($invoice->branch_id !== $this->branchContext->requireId()) {
+            // Payment stays within the invoice's own "Cabang RME" branch set,
+            // never a single BranchContext/MAIN fallback (Sprint 23 Phase 23.10).
+            if (! in_array((int) $invoice->branch_id, $this->branches->rmeEnabledIds(), true)) {
                 throw ValidationException::withMessages([
-                    'rme_invoice_id' => 'Invoice tidak ditemukan di cabang aktif.',
+                    'rme_invoice_id' => 'Invoice tidak berada di cabang RME aktif.',
                 ]);
             }
 

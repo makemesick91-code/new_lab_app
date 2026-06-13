@@ -5051,3 +5051,28 @@ GO WITH WATCH — bug resolved; ATG3 visit no longer hidden by BranchContext fal
 
 ### Next phase
 Sprint 23 Phase 23.10 — RME Pilot Data Entry Hardening (verify create-visit flow registration→cashier, harden existing patient branch behavior, safe old-patient RM/backfill preview report, confirm treatment/tariff/payment flow after branch-source changes, prepare pilot checklist for clinic users).
+
+## Sprint 23 Phase 23.10 — RME Pilot Data Entry Hardening
+
+- Branch: `feature/sprint-23-phase-23-10-rme-pilot-data-entry-hardening` (from `sprint-23-phase-23-9-5-vps-smoke-closure-documentation` / `4034078`). Tag `sprint-23-phase-23-10-rme-pilot-data-entry-hardening`. Local only — no VPS deploy, no push, no schema/migration change, no destructive DB commands. Full doc: `docs/sprint_23_phase_23_10_rme_pilot_data_entry_hardening.md`.
+
+### Scope
+- Extended the Phase 23.9.3 multi-branch correction (visit list) into the **rest of the pilot data-entry flow**. The doctor odontogram/medical-record stack and the cashier billing/payment/lab-candidate stack were still scoped to a single `BranchContext::requireId()` / `id()`, which resolves to MAIN in the pilot (not RME-enabled) — so those flows would have been empty or forbidden for every real RME-branch visit. All now scope to the active **Cabang RME** set (`is_active = true AND is_rme_enabled = true`).
+
+### Existing patient behavior
+- Selected Cabang RME becomes `visit.branch_id`. `patient.branch_id` is **never** rewritten automatically. Legacy patients (`branch_id` null) may still create visits under a selected branch. Legacy `clinic_id` preserved, never used for RME scoping.
+
+### Null clinic_id hardening
+- RME views use `visit.branch` as the primary location label; `clinic_id` null does not break visit list/detail, odontogram, medical record, or cashier create.
+
+### Changes
+- Cashier: `RmeInvoiceService` (queue + invoice create use visit branch), `RmePaymentService`, `RmeLabIntegrationService`, `RmeInvoicePolicy`, repo `paginateCashierPendingForBranches`. Doctor: `OdontogramService`/`OdontogramPolicy`, `MedicalRecordService`/`MedicalRecordPolicy` + multi-branch repo paginate/counts. Patient: `branchLabel()`/`selectorLabel()`/`isLegacyWithoutBranch()` + read-only `legacyWithoutBranch()` preview (no backfill). Views: patient selector/list/detail show RM + branch/legacy indicator; cashier queue gains a Cabang column.
+
+### Tests / build
+- New `RmePilotDataEntryHardeningTest` (26 passed). Updated isolation tests (isolation = non-RME branch) in `CashierBillingTest`, `RmePaymentTest`, `LabIntegrationTest`, `RmeLabWorkflowPolishTest`, `OdontogramTest` (×10), `MedicalRecordTest` (×3), `MedicalRecordFinalizationTest`. Focused suites: RME 434 (1112 assertions), Permission|Sidebar|Branch 526 (1605 assertions) — all passed. `pint --dirty` OK; `npm run build` OK. Full end-to-end suite not run (runtime budget).
+
+### Final status
+PASS — local only; no automatic legacy backfill; `mst_clinics`/`clinic_id` preserved; Lab remains global; full-payment-only rule unchanged.
+
+### Next phase
+Sprint 23 Phase 23.10.1 — VPS Deploy + RME Pilot Data Entry Smoke (backup DB first, `migrate --force` only; browser-smoke new/existing patient → odontogram → medical record → cashier billing → payment → lab candidate across TKM1/LDK2/ATG3).

@@ -3,7 +3,7 @@
 namespace App\Modules\RmeInvoice\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
@@ -13,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 class RmeLabIntegrationService
 {
     public function __construct(
-        private readonly BranchContext $branchContext,
+        private readonly BranchService $branches,
     ) {}
 
     /**
@@ -30,11 +30,13 @@ class RmeLabIntegrationService
             return collect();
         }
 
-        // Branch isolation: reject if a branch context is active and mismatches.
-        $activeBranchId = $this->branchContext->id();
-        if ($activeBranchId !== null && $invoice->branch_id !== $activeBranchId) {
+        // Branch isolation: the invoice must belong to the operational "Cabang RME"
+        // set (active RME-enabled branches). Scoping by a single BranchContext/MAIN
+        // fallback would skip candidate generation for every RME-branch payment in
+        // the pilot (Sprint 23 Phase 23.10).
+        if (! in_array((int) $invoice->branch_id, $this->branches->rmeEnabledIds(), true)) {
             throw ValidationException::withMessages([
-                'rme_invoice_id' => 'Invoice tidak ditemukan di cabang aktif.',
+                'rme_invoice_id' => 'Invoice tidak berada di cabang RME aktif.',
             ]);
         }
 

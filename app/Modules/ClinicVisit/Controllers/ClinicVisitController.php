@@ -68,7 +68,7 @@ class ClinicVisitController extends Controller
         $this->authorize('create', ClinicVisit::class);
 
         return view('rme.visits.create', [
-            'patients' => Patient::orderBy('name')->get(),
+            'patients' => Patient::with('branch')->orderBy('name')->get(),
             'doctors' => Doctor::orderBy('name')->get(),
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),

@@ -10,11 +10,26 @@ interface MedicalRecordRepositoryInterface
     /** @param array<string, mixed> $filters */
     public function paginateForBranch(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
 
+    /**
+     * Multi-branch RME variant — lists records across the active "Cabang RME" set
+     * (Sprint 23 Phase 23.10).
+     *
+     * @param  array<int, int>  $branchIds
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
     public function findByVisitId(int $clinicVisitId): ?MedicalRecord;
 
     public function countByBranchStatus(int $branchId, string $status): int;
 
+    /** @param array<int, int> $branchIds */
+    public function countByBranchesStatus(array $branchIds, string $status): int;
+
     public function countFinalizedTodayByBranch(int $branchId, string $date): int;
+
+    /** @param array<int, int> $branchIds */
+    public function countFinalizedTodayByBranches(array $branchIds, string $date): int;
 
     /** @param array<string, mixed> $data */
     public function create(array $data): MedicalRecord;

@@ -323,10 +323,12 @@ it('initial treatment on visit is unchanged after rme payment', function () {
 
 // ─── Test 16: Branch isolation is respected ───────────────────────────────────
 
-it('cashier cannot pay invoice from a different branch', function () {
+it('cashier cannot pay invoice from a non-RME branch', function () {
     $this->actingAs($this->cashier);
 
-    $otherBranch = Branch::factory()->create(['is_active' => true]);
+    // Sprint 23 Phase 23.10: payment is scoped to the active RME-enabled set, so
+    // a non-RME-enabled branch is rejected (MAIN fallback is gone).
+    $otherBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => false]);
     [$visit] = pmtFinalizedVisit($otherBranch);
 
     $invoice = RmeInvoice::factory()->unpaid()->create([

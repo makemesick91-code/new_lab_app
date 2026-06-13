@@ -35,6 +35,18 @@ class PatientService
         return $this->patients->findById($id);
     }
 
+    /**
+     * Read-only preview of legacy patients without a Cabang RME (branch_id null).
+     * Never mutates data — Sprint 23 Phase 23.10 explicitly defers any RM/branch
+     * backfill to a future controlled migration phase.
+     *
+     * @return Collection<int, Patient>
+     */
+    public function legacyWithoutBranch(): Collection
+    {
+        return $this->patients->legacyWithoutBranch();
+    }
+
     public function create(array $data): Patient
     {
         return DB::transaction(function () use ($data) {

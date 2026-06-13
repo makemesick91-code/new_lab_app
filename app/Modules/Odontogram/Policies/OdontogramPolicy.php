@@ -3,7 +3,7 @@
 namespace App\Modules\Odontogram\Policies;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
 
@@ -46,10 +46,18 @@ class OdontogramPolicy
         return $user->can('manage_clinic_visits');
     }
 
+    /**
+     * RME odontograms are scoped to the operational "Cabang RME" set (active
+     * RME-enabled branches), mirroring ClinicVisitPolicy. A single BranchContext
+     * fallback (MAIN, not RME-enabled) would otherwise forbid every RME-branch
+     * visit for doctors in the pilot. Sprint 23 Phase 23.10.
+     */
     private function belongsToActiveBranch(?int $branchId): bool
     {
-        $activeBranchId = app(BranchContext::class)->id();
+        if ($branchId === null) {
+            return false;
+        }
 
-        return $activeBranchId !== null && $branchId === $activeBranchId;
+        return in_array($branchId, app(BranchService::class)->rmeEnabledIds(), true);
     }
 }

@@ -27,6 +27,24 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
             ->withQueryString();
     }
 
+    public function paginateCashierPendingForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        return ClinicVisit::query()
+            ->with(['patient', 'doctor', 'initialTreatment', 'branch', 'rmeInvoice'])
+            ->whereIn('branch_id', $branchIds)
+            ->where('status', ClinicVisit::STATUS_CASHIER_PENDING)
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(visit_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', [$term]));
+                });
+            })
+            ->orderByDesc('updated_at')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
     public function findForVisit(int $clinicVisitId): ?RmeInvoice
     {
         return RmeInvoice::query()

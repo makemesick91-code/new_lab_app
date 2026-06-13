@@ -10,6 +10,17 @@ interface RmeInvoiceRepositoryInterface
     /** @param array<string, mixed> $filters */
     public function paginateCashierPending(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator;
 
+    /**
+     * Cashier pending visits across the operational "Cabang RME" set (active
+     * RME-enabled branches), mirroring the multi-branch visit list. Used so the
+     * cashier queue never falls back to a single MAIN BranchContext branch
+     * (Sprint 23 Phase 23.10).
+     *
+     * @param  array<int, int>  $branchIds
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateCashierPendingForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
     public function findForVisit(int $clinicVisitId): ?RmeInvoice;
 
     public function hasActiveInvoiceForVisit(int $clinicVisitId): bool;

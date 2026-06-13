@@ -50,6 +50,7 @@
                     <tr class="text-left text-gray-500">
                         <th scope="col" class="px-4 py-3 font-medium">No. Kunjungan</th>
                         <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
+                        <th scope="col" class="px-3 py-3 font-medium">Klinik/Cabang</th>
                         <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
                         <th scope="col" class="px-3 py-3 font-medium">Layanan Awal</th>
                         <th scope="col" class="px-3 py-3 font-medium">Status Tagihan</th>
@@ -64,7 +65,13 @@
                         @endphp
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3 font-mono text-xs text-gray-700">{{ $visit->visit_number }}</td>
-                            <td class="px-3 py-3 font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 font-medium text-gray-900">
+                                {{ $visit->patient?->name ?? '—' }}
+                                @if ($visit->patient?->medical_record_number)
+                                    <span class="block font-mono text-xs font-normal text-gray-400">{{ $visit->patient->medical_record_number }}</span>
+                                @endif
+                            </td>
+                            <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->initialTreatment?->name ?? '—' }}</td>
                             <td class="px-3 py-3">
@@ -88,7 +95,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-4 py-12 text-center">
+                            <td colspan="7" class="px-4 py-12 text-center">
                                 <p class="text-sm font-medium text-gray-900">Belum ada kunjungan menunggu billing.</p>
                                 <p class="mt-1 text-sm text-gray-500">Finalisasi RME dokter terlebih dahulu agar kunjungan masuk ke antrean kasir.</p>
                             </td>

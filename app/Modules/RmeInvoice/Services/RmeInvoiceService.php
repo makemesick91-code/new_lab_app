@@ -4,6 +4,7 @@ namespace App\Modules\RmeInvoice\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
@@ -19,13 +20,21 @@ class RmeInvoiceService
         private readonly RmeInvoiceRepositoryInterface $invoices,
         private readonly BranchContext $branchContext,
         private readonly RmeInvoiceNumberGeneratorService $numberGenerator,
+        private readonly BranchService $branches,
     ) {}
 
-    /** @param array<string, mixed> $filters */
+    /**
+     * Cashier pending queue is scoped to the operational "Cabang RME" set (active
+     * RME-enabled branches), NOT a single BranchContext fallback. In the pilot the
+     * fallback resolves to MAIN, which is not RME-enabled, so scoping by it left the
+     * queue permanently empty. MAIN is excluded by definition (Sprint 23 Phase 23.10).
+     *
+     * @param  array<string, mixed>  $filters
+     */
     public function paginatePendingVisits(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        return $this->invoices->paginateCashierPending(
-            $this->branchContext->requireId(),
+        return $this->invoices->paginateCashierPendingForBranches(
+            $this->branches->rmeEnabledIds(),
             $filters,
             $perPage,
         );
@@ -47,11 +56,14 @@ class RmeInvoiceService
     public function create(ClinicVisit $visit, User $cashier, array $data): RmeInvoice
     {
         return DB::transaction(function () use ($visit, $cashier, $data) {
-            $branchId = $this->branchContext->requireId();
+            // The invoice branch always follows the visit's own "Cabang RME"
+            // branch — never a BranchContext/MAIN fallback. The visit must belong
+            // to an active RME-enabled branch (Sprint 23 Phase 23.10).
+            $branchId = (int) $visit->branch_id;
 
-            if ($visit->branch_id !== $branchId) {
+            if (! in_array($branchId, $this->branches->rmeEnabledIds(), true)) {
                 throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Kunjungan tidak ditemukan di cabang aktif.',
+                    'clinic_visit_id' => 'Kunjungan tidak berada di cabang RME aktif.',
                 ]);
             }
 

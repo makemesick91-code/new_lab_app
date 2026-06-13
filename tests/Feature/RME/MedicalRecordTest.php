@@ -202,7 +202,7 @@ it('finalize rejects record from another branch', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $record = MedicalRecord::factory()->create(['branch_id' => $otherBranch->id]);
 
     expect(fn () => app(MedicalRecordService::class)->finalize($record))
@@ -314,7 +314,7 @@ it('viewer cannot store medical record', function () {
 
 it('user from another branch cannot store medical record', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
 
     $this->actingAs($manager)
@@ -717,7 +717,7 @@ it('user without permission cannot view medical record index', function () {
 it('index only shows records from active branch', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
 
     $patient = Patient::factory()->create(['name' => 'Pasien Aktif']);
     $otherPatient = Patient::factory()->create(['name' => 'Pasien Lain']);

@@ -18,6 +18,15 @@ interface PatientRepositoryInterface
     public function findById(int $id): ?Patient;
 
     /**
+     * Read-only preview of "legacy" patients that have no Cabang RME assigned yet
+     * (branch_id is null). Sprint 23 Phase 23.10 does NOT backfill these — this is
+     * a non-mutating reporting helper for a future controlled migration phase.
+     *
+     * @return Collection<int, Patient>
+     */
+    public function legacyWithoutBranch(): Collection;
+
+    /**
      * @param  array<string, mixed>  $data
      */
     public function create(array $data): Patient;

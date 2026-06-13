@@ -214,10 +214,12 @@ it('generated candidates carry the source invoice branch_id', function () {
 
 // ─── Test 8: Cross-branch invoice is rejected by the service ─────────────────
 
-it('service rejects candidate generation for an invoice from a different branch', function () {
-    $this->actingAs($this->cashier); // MAIN branch context
+it('service rejects candidate generation for an invoice from a non-RME branch', function () {
+    $this->actingAs($this->cashier);
 
-    $otherBranch = Branch::factory()->create(['is_active' => true]);
+    // Sprint 23 Phase 23.10: candidate generation is scoped to the active RME set,
+    // so a non-RME-enabled branch is rejected (no single BranchContext fallback).
+    $otherBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => false]);
     $treatment = Treatment::factory()->requiresLab()->create();
 
     // Build a PAID invoice directly in the other branch (bypass payment service)

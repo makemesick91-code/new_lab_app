@@ -3,7 +3,7 @@
 namespace App\Modules\Odontogram\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
@@ -14,17 +14,26 @@ class OdontogramService
 {
     public function __construct(
         private readonly OdontogramRepositoryInterface $odontograms,
-        private readonly BranchContext $branchContext,
+        private readonly BranchService $branches,
     ) {}
+
+    /**
+     * Whether a branch belongs to the operational "Cabang RME" set (active
+     * RME-enabled branches). Replaces the single BranchContext/MAIN fallback so
+     * the doctor odontogram workflow works for any RME-branch visit in the pilot
+     * (Sprint 23 Phase 23.10).
+     */
+    private function isActiveRmeBranch(?int $branchId): bool
+    {
+        return $branchId !== null && in_array($branchId, $this->branches->rmeEnabledIds(), true);
+    }
 
     public function getOrCreateForVisit(ClinicVisit $clinicVisit, User $user): Odontogram
     {
         return DB::transaction(function () use ($clinicVisit, $user) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($clinicVisit->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($clinicVisit->branch_id)) {
                 throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Kunjungan tidak ditemukan di cabang aktif.',
+                    'clinic_visit_id' => 'Kunjungan tidak berada di cabang RME aktif.',
                 ]);
             }
 
@@ -37,11 +46,9 @@ class OdontogramService
     public function updatePlaceholder(Odontogram $odontogram, array $payload, User $user): Odontogram
     {
         return DB::transaction(function () use ($odontogram, $payload, $user) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($odontogram->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($odontogram->branch_id)) {
                 throw ValidationException::withMessages([
-                    'odontogram_id' => 'Odontogram tidak ditemukan di cabang aktif.',
+                    'odontogram_id' => 'Odontogram tidak berada di cabang RME aktif.',
                 ]);
             }
 
@@ -71,11 +78,9 @@ class OdontogramService
     public function finalize(Odontogram $odontogram, User $user): Odontogram
     {
         return DB::transaction(function () use ($odontogram, $user) {
-            $branchId = $this->branchContext->requireId();
-
-            if ($odontogram->branch_id !== $branchId) {
+            if (! $this->isActiveRmeBranch($odontogram->branch_id)) {
                 throw ValidationException::withMessages([
-                    'odontogram_id' => 'Odontogram tidak ditemukan di cabang aktif.',
+                    'odontogram_id' => 'Odontogram tidak berada di cabang RME aktif.',
                 ]);
             }
 

@@ -109,7 +109,7 @@ it('getOrCreateForVisit rejects visit from another branch', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
 
     expect(fn () => app(OdontogramService::class)->getOrCreateForVisit($visit, $user))
@@ -141,7 +141,7 @@ it('updatePlaceholder rejects odontogram from another branch', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $odontogram = Odontogram::factory()->create(['branch_id' => $otherBranch->id]);
 
     expect(fn () => app(OdontogramService::class)->updatePlaceholder(
@@ -209,7 +209,7 @@ it('unauthenticated user cannot open odontogram placeholder', function () {
 
 it('user from another branch cannot open odontogram placeholder', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
 
     $this->actingAs($manager)
@@ -266,7 +266,7 @@ it('unauthorized user cannot update odontogram', function () {
 
 it('cross-branch user cannot update odontogram', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -466,7 +466,7 @@ it('viewer cannot update tooth_map_payload', function () {
 
 it('cross-branch user cannot update tooth_map_payload', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -578,7 +578,7 @@ it('finalize service rejects odontogram from another branch', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $odontogram = Odontogram::factory()->create(['branch_id' => $otherBranch->id]);
 
     expect(fn () => app(OdontogramService::class)->finalize($odontogram, $user))
@@ -652,7 +652,7 @@ it('user without permission cannot finalize odontogram', function () {
 
 it('cross-branch user cannot finalize odontogram', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -885,7 +885,7 @@ it('viewer cannot update per-tooth note', function () {
 
 it('cross-branch user cannot update per-tooth note', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -1086,7 +1086,7 @@ it('viewer cannot update conditions', function () {
 
 it('cross-branch cannot update conditions', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -1254,7 +1254,7 @@ it('user without permission cannot open print view', function () {
 
 it('cross-branch user cannot open print view', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,

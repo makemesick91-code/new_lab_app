@@ -41,6 +41,22 @@ class PatientRepository implements PatientRepositoryInterface
         return Patient::with(['clinic', 'doctor'])->find($id);
     }
 
+    /**
+     * Read-only legacy preview: patients without a Cabang RME (branch_id null).
+     * Non-mutating — no automatic backfill is performed (Sprint 23 Phase 23.10).
+     * Legacy clinic_id (if any) is eager-loaded for context only.
+     *
+     * @return Collection<int, Patient>
+     */
+    public function legacyWithoutBranch(): Collection
+    {
+        return Patient::query()
+            ->with('clinic')
+            ->whereNull('branch_id')
+            ->orderBy('name')
+            ->get();
+    }
+
     public function create(array $data): Patient
     {
         return Patient::create($data);

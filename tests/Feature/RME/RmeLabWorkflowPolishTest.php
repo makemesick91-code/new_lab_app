@@ -306,7 +306,9 @@ it('lab order show page does not display rme source section for normal lab order
 // ─── Test 11: Branch isolation ───────────────────────────────────────────────
 
 it('rme invoice receipt and lab order pages do not leak candidates from another branch', function () {
-    $otherBranch = Branch::factory()->create(['is_active' => true]);
+    // Sprint 23 Phase 23.10: RME billing pages are scoped to the active RME set,
+    // so isolation now means "non-RME branch" (no single BranchContext fallback).
+    $otherBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => false]);
     $otherVisit = ClinicVisit::factory()->cashierPending()->create(['branch_id' => $otherBranch->id]);
     $otherInvoice = RmeInvoice::factory()->paid()->create([
         'branch_id' => $otherBranch->id,

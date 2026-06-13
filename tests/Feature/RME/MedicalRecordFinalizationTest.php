@@ -244,7 +244,7 @@ it('initial service data is unchanged after finalization', function () {
 it('cannot finalize medical record from another branch', function () {
     $this->actingAs($this->manager);
 
-    $otherBranch = Branch::factory()->create();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $record = MedicalRecord::factory()->create(['branch_id' => $otherBranch->id]);
 
     expect(fn () => app(MedicalRecordService::class)->finalize($record))
