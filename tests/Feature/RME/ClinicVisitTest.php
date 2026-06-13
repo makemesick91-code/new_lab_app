@@ -12,6 +12,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -148,7 +149,7 @@ it('auto-generates queue_number per branch per visit_date', function () {
         ->and($second->queue_number)->toBe(2);
 });
 
-it('auto-generates visit_number in VIS-YYYYMMDD-NNN format', function () {
+it('auto-generates visit_number in VIS-BRANCHCODE-YYYYMMDD-NNN format', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
             'branch_id' => $this->rmeBranch->id,
@@ -161,8 +162,7 @@ it('auto-generates visit_number in VIS-YYYYMMDD-NNN format', function () {
     $visit = ClinicVisit::where('branch_id', $this->rmeBranch->id)->first();
 
     expect($visit->visit_number)
-        ->toMatch('/^VIS-\d{8}-\d{3}$/')
-        ->toStartWith('VIS-'.now()->format('Ymd').'-');
+        ->toMatch('/^VIS-[A-Z0-9]{1,8}-\d{8}-\d{3}$/');
 });
 
 it('rejects invalid patient, doctor, or room', function () {
@@ -1073,4 +1073,54 @@ it('Cetak RME button appears on visit show for authorized user', function () {
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
         ->assertSee('Cetak RME');
+});
+
+it('generates next unique branch-coded visit number when suffix already exists', function () {
+    $today = today();
+
+    $rawBranchCode = $this->rmeBranch->code
+        ?? $this->rmeBranch->branch_code
+        ?? $this->rmeBranch->slug
+        ?? $this->rmeBranch->name
+        ?? 'BR'.$this->rmeBranch->id;
+
+    $branchCode = Str::limit(
+        preg_replace('/[^A-Z0-9]/', '', Str::upper((string) $rawBranchCode)),
+        8,
+        ''
+    );
+
+    ClinicVisit::factory()->create([
+        'branch_id' => $this->rmeBranch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'visit_date' => $today->toDateString(),
+        'queue_number' => 1,
+        'visit_number' => 'VIS-'.$branchCode.'-'.$today->format('Ymd').'-001',
+    ]);
+
+    $patient2 = Patient::factory()->create([
+        'branch_id' => $this->rmeBranch->id,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
+            'clinic_id' => $this->clinic->id,
+            'patient_mode' => 'existing',
+            'patient_id' => $patient2->id,
+            'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
+        ])
+        ->assertRedirect();
+
+    $created = ClinicVisit::query()
+        ->where('patient_id', $patient2->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($created->queue_number)->toBe(2)
+        ->and($created->visit_number)->toMatch('/^VIS-[A-Z0-9]{1,8}-'.$today->format('Ymd').'-002$/');
 });

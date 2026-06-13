@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClinicVisit\Services;
 
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
@@ -11,6 +12,7 @@ use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ClinicVisitService
@@ -78,7 +80,7 @@ class ClinicVisitService
             $visitDate = Carbon::today();
 
             $queueNumber = $this->visits->nextQueueNumber($branchId, $visitDate);
-            $visitNumber = 'VIS-'.$visitDate->format('Ymd').'-'.str_pad((string) $queueNumber, 3, '0', STR_PAD_LEFT);
+            $visitNumber = $this->generateUniqueVisitNumber($branchId, $visitDate);
 
             return $this->visits->create(array_merge($data, [
                 'branch_id' => $branchId,
@@ -89,6 +91,67 @@ class ClinicVisitService
                 'created_by' => Auth::id(),
             ]));
         });
+    }
+
+    /**
+     * Generate a globally unique visit number for the visit date and branch.
+     *
+     * Format:
+     *   VIS-{BRANCHCODE}-{YYYYMMDD}-{NNN}
+     *
+     * Queue numbers remain branch/date scoped, while visit_number has a global
+     * unique constraint. Including the branch code prevents cross-branch
+     * collisions such as multiple branches generating VIS-YYYYMMDD-001.
+     */
+    private function generateUniqueVisitNumber(int $branchId, Carbon $visitDate): string
+    {
+        $branchCode = $this->resolveVisitBranchCode($branchId);
+        $prefix = 'VIS-'.$branchCode.'-'.$visitDate->format('Ymd').'-';
+
+        $maxSequence = ClinicVisit::query()
+            ->where('visit_number', 'like', $prefix.'%')
+            ->lockForUpdate()
+            ->pluck('visit_number')
+            ->map(function (string $visitNumber) use ($prefix): int {
+                $suffix = str_replace($prefix, '', $visitNumber);
+
+                return ctype_digit($suffix) ? (int) $suffix : 0;
+            })
+            ->max() ?? 0;
+
+        $sequence = $maxSequence + 1;
+
+        do {
+            $candidate = $prefix.str_pad((string) $sequence, 3, '0', STR_PAD_LEFT);
+            $sequence++;
+        } while (ClinicVisit::query()->where('visit_number', $candidate)->exists());
+
+        return $candidate;
+    }
+
+    /**
+     * Resolve a safe branch code for visit_number.
+     *
+     * Prefer explicit code fields when available. If the branch table does not
+     * have a code column yet, fall back to the branch name, then BR{id}.
+     */
+    private function resolveVisitBranchCode(int $branchId): string
+    {
+        $branch = Branch::query()->find($branchId);
+
+        $rawCode = $branch?->code
+            ?? $branch?->branch_code
+            ?? $branch?->slug
+            ?? $branch?->name
+            ?? 'BR'.$branchId;
+
+        $code = preg_replace('/[^A-Z0-9]/', '', Str::upper((string) $rawCode));
+
+        if ($code === null || $code === '') {
+            $code = 'BR'.$branchId;
+        }
+
+        return Str::limit($code, 8, '');
     }
 
     /**
