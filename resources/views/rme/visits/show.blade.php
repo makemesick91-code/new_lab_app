@@ -86,8 +86,14 @@
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->doctor?->name ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Klinik</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->clinic?->name ?? '—' }}</dd>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Klinik/Cabang</dt>
+                    <dd class="mt-1 text-sm text-gray-900">
+                        @if ($visit->branch)
+                            {{ $visit->branch->code }} — {{ $visit->branch->name }}
+                        @else
+                            {{ $visit->clinic?->name ?? '—' }}
+                        @endif
+                    </dd>
                 </div>
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Ruangan</dt>

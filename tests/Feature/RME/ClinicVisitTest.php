@@ -170,24 +170,38 @@ it('rejects invalid patient, doctor, or room', function () {
         ->assertSessionHasErrors(['clinic_id', 'patient_id', 'doctor_id', 'clinic_room_id']);
 });
 
-it('ignores branch_id supplied in request', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'OTH2']);
+it('uses the selected RME branch as the visit branch (Klinik = Cabang RME)', function () {
+    // Sprint 23 Phase 23.9.1 — visit branch follows the chosen RME-enabled branch.
+    $rmeBranch = Branch::factory()->create(['code' => 'RME9', 'is_rme_enabled' => true]);
 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
-            'branch_id' => $otherBranch->id,
+            'branch_id' => $rmeBranch->id,
+            'patient_id' => $this->patient->id,
+            'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('trx_clinic_visits', [
+        'branch_id' => $rmeBranch->id,
+        'patient_id' => $this->patient->id,
+    ]);
+});
+
+it('falls back to active branch context when no branch is supplied', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.store'), [
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
-        ]);
+        ])
+        ->assertRedirect();
 
     $this->assertDatabaseHas('trx_clinic_visits', [
         'branch_id' => $this->branch->id,
         'patient_id' => $this->patient->id,
-    ]);
-    $this->assertDatabaseMissing('trx_clinic_visits', [
-        'branch_id' => $otherBranch->id,
     ]);
 });
 

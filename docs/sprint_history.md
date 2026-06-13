@@ -4978,3 +4978,31 @@ PASS — local only, no VPS deploy, additive migration only, no destructive DB c
 
 ### Next phase
 Sprint 23 Phase 23.9 — VPS Deploy + Patient Registration / RME Visit Smoke (backup DB first, `migrate --force` only, confirm Master Data Cabang codes, smoke new-patient registration + RME visit new-patient flow; plan optional legacy RM backfill separately).
+
+## Sprint 23 Phase 23.9.1 — RME Clinic Source from Branch Master
+
+- Branch: `feature/sprint-23-phase-23-9-1-rme-clinic-branch-source` (from `sprint-23-phase-23-8-patient-id-registration-flow` / `6277bbb`). Tag `sprint-23-phase-23-9-1-rme-clinic-branch-source`. Local only — no VPS deploy, no push. Full doc: `docs/sprint_23_phase_23_9_1_rme_clinic_source_from_branch.md`.
+
+### Business rule
+- **Klinik = Cabang RME.** RME patient registration and RME visit creation source the Klinik/Cabang choice from `mst_branches where is_active = true and is_rme_enabled = true` (ordered by name). The legacy `mst_clinics` master is no longer the source for new RME Klinik choices. MAIN (`is_rme_enabled = false`) is the technical fallback only and is hidden from operational RME dropdowns. Operational branches: TKM1 — Cabang Telkomas, LDK2 — Cabang Landak, ATG3 — Cabang Antang.
+
+### RME visit impact
+- Visit form "Klinik" dropdown replaced by **Klinik/Cabang (Cabang RME)** sourced from `BranchService::listRmeEnabled()` (field `branch_id`). `ClinicVisitService::resolveBranchId()` sets visit `branch_id` from: new-patient mode → the new patient's selected Cabang RME (patient + visit share one branch); existing mode → submitted `branch_id`; else `BranchContext::requireId()` fallback (legacy/programmatic callers). New RME visits store `clinic_id = null`. Visit show displays Klinik/Cabang as `{code} — {name}` (legacy clinic name fallback). `StoreClinicVisitRequest`: `clinic_id` now nullable; new `branch_id` rule (active + is_rme_enabled).
+
+### Patient impact
+- Patient create/edit already used RME branches (Phase 23.8); kept authoritative. `branch_id` → `mst_patients.branch_id`; RM composed from `branch.code`.
+
+### Data model
+- Additive migration `2026_06_17_100001_make_clinic_id_nullable_for_rme_branch_source` — makes `trx_clinic_visits.clinic_id` and `mst_patients.clinic_id` nullable. `mst_clinics` and the `clinic_id` columns/FKs are NOT dropped; existing rows keep their `clinic_id`.
+
+### Legacy compatibility
+- `mst_clinics` master + `settings.clinics.*` routes still work. Lab remains global / not branch-enforced. Inventory remains inventory-enabled-branch aware.
+
+### Tests run
+- New `RmeClinicSourceFromBranchTest` (15 passed / 32 assertions). `ClinicVisitTest` "ignores branch_id" replaced by selected-RME-branch + fallback tests. Focused suites: ClinicVisit/Patient/Rme/RME — 469 passed (1319 assertions); Branch/Dashboard/Permission/Sidebar — passed. `pint --dirty` OK; `npm run build` OK. Full end-to-end suite not run (runtime budget) — documented honestly.
+
+### Final status
+PASS — local only, no VPS deploy, additive migration only, no destructive DB commands, no `mst_clinics`/`clinic_id` dropped, no existing rows rewritten, Lab remains global.
+
+### Next phase
+Sprint 23 Phase 23.9.2 — VPS Deploy + RME Clinic Source Smoke (backup DB first, `migrate --force` only; smoke patient create, RME visit existing patient, RME visit new patient; confirm MAIN hidden from Klinik/Cabang dropdown).

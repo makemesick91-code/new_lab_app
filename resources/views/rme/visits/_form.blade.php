@@ -7,13 +7,15 @@
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
-        <label class="block text-sm font-medium text-gray-700">Klinik</label>
-        <select name="clinic_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-            <option value="">- Pilih klinik -</option>
-            @foreach ($clinics as $clinic)
-                <option value="{{ $clinic->id }}" @selected(old('clinic_id', $visit?->clinic_id) == $clinic->id)>{{ $clinic->name }}</option>
+        <label class="block text-sm font-medium text-gray-700">Klinik/Cabang <span class="text-gray-400">(Cabang RME)</span></label>
+        <select name="branch_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+            <option value="">- Pilih cabang RME -</option>
+            @foreach ($rmeBranches as $branch)
+                <option value="{{ $branch->id }}" @selected((int) old('branch_id', $visit?->branch_id) === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
             @endforeach
         </select>
+        @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        <p class="mt-1 text-xs text-gray-400">Untuk pasien baru, cabang diambil dari pilihan Cabang RME di bawah.</p>
     </div>
     @if (! $visit)
         {{-- Pilih pasien terdaftar ATAU daftarkan pasien baru (Sprint 23 Phase 23.8) --}}

@@ -3,7 +3,7 @@
         <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
             <h2 class="mt-1 text-xl font-semibold text-gray-900">Daftar Kunjungan Baru</h2>
-            <p class="mt-1 text-sm text-gray-500">Registrasi pasien ke antrian klinik cabang aktif.</p>
+            <p class="mt-1 text-sm text-gray-500">Registrasi pasien ke antrian cabang RME aktif.</p>
         </div>
 
         <x-ui.card>
@@ -11,7 +11,6 @@
                 @csrf
                 @include('rme.visits._form', [
                     'visit'       => null,
-                    'clinics'     => $clinics,
                     'patients'    => $patients,
                     'doctors'     => $doctors,
                     'clinicRooms' => $clinicRooms,

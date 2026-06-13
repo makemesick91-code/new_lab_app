@@ -32,7 +32,18 @@ class StoreClinicVisitRequest extends FormRequest
         return [
             'patient_mode' => ['required', 'in:existing,new'],
 
-            'clinic_id' => ['required', 'integer', Rule::exists('mst_clinics', 'id')],
+            // RME "Klinik" = "Cabang RME": the visit branch is chosen from active
+            // RME-enabled branches (Sprint 23 Phase 23.9.1). Optional so legacy
+            // callers without an explicit branch fall back to the active context.
+            'branch_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
+            ],
+
+            // Legacy clinic master reference — no longer the RME "Klinik" source.
+            // Kept nullable for backward compatibility; new RME visits omit it.
+            'clinic_id' => ['nullable', 'integer', Rule::exists('mst_clinics', 'id')],
             'doctor_id' => ['required', 'integer', Rule::exists('mst_doctors', 'id')],
             'clinic_room_id' => ['nullable', 'integer', Rule::exists('mst_clinic_rooms', 'id')],
             'chief_complaint' => ['nullable', 'string', 'max:5000'],
@@ -66,6 +77,7 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
             'new_patient.name.required' => 'Nama pasien baru wajib diisi.',
             'new_patient.branch_id.required' => 'Cabang RME pasien baru wajib dipilih.',
+            'branch_id.exists' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
             'new_patient.manual_rm_number.required' => 'Nomor RM manual pasien baru wajib diisi.',
             'patient_id.required' => 'Pilih pasien terdaftar.',
         ];

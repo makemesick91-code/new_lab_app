@@ -33,9 +33,17 @@ class ClinicVisitService
     public function create(array $data): ClinicVisit
     {
         return DB::transaction(function () use ($data) {
+            // RME "Klinik" = "Cabang RME". The visit branch follows the selected
+            // RME-enabled branch (Sprint 23 Phase 23.9.1). For new patients the
+            // patient and the visit share the same branch. The BranchContext
+            // fallback only applies to legacy callers that submit no branch.
+            $branchId = $this->resolveBranchId($data);
+            $data['branch_id'] = $branchId;
+
             $data = $this->resolvePatient($data);
 
-            $branchId = $this->branchContext->requireId();
+            unset($data['branch_id']);
+
             $visitDate = Carbon::today();
 
             $queueNumber = $this->visits->nextQueueNumber($branchId, $visitDate);
@@ -50,6 +58,34 @@ class ClinicVisitService
                 'created_by' => Auth::id(),
             ]));
         });
+    }
+
+    /**
+     * Resolve the branch the visit belongs to ("Klinik" = "Cabang RME").
+     *
+     * Precedence:
+     *   1. New-patient mode: the branch chosen for the new patient, so the
+     *      patient and the visit always share one RME branch.
+     *   2. Existing-patient mode: an explicitly selected RME branch.
+     *   3. Otherwise the active branch context (legacy / programmatic callers).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function resolveBranchId(array $data): int
+    {
+        if (($data['patient_mode'] ?? 'existing') === 'new') {
+            $newBranch = $data['new_patient']['branch_id'] ?? null;
+
+            if ($newBranch) {
+                return (int) $newBranch;
+            }
+        }
+
+        if (! empty($data['branch_id'])) {
+            return (int) $data['branch_id'];
+        }
+
+        return $this->branchContext->requireId();
     }
 
     /**
@@ -70,9 +106,11 @@ class ClinicVisitService
 
         if ($mode === 'new' && is_array($newPatient)) {
             $patient = $this->patients->create([
-                'clinic_id' => $data['clinic_id'],
+                // RME patients are branch-scoped, not clinic-scoped. clinic_id is
+                // intentionally left null (legacy column, now nullable).
+                'clinic_id' => $data['clinic_id'] ?? null,
                 'doctor_id' => $data['doctor_id'],
-                'branch_id' => $newPatient['branch_id'] ?? null,
+                'branch_id' => $newPatient['branch_id'] ?? $data['branch_id'] ?? null,
                 'registered_at' => $newPatient['registered_at'] ?? null,
                 'manual_rm_number' => $newPatient['manual_rm_number'] ?? null,
                 'name' => $newPatient['name'] ?? null,

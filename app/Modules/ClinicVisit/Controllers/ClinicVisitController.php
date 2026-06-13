@@ -4,7 +4,6 @@ namespace App\Modules\ClinicVisit\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
-use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\StoreClinicVisitRequest;
@@ -65,7 +64,6 @@ class ClinicVisitController extends Controller
         $this->authorize('create', ClinicVisit::class);
 
         return view('rme.visits.create', [
-            'clinics' => Clinic::orderBy('name')->get(),
             'patients' => Patient::orderBy('name')->get(),
             'doctors' => Doctor::orderBy('name')->get(),
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
