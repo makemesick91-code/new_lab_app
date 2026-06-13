@@ -5096,3 +5096,23 @@ PASS — local only; tooth-grid UI unchanged; no old-data rewrite; finalized beh
 
 ### Next phase
 Sprint 23 Phase 23.10.3 — VPS Deploy + Odontogram Additional Fields Smoke (backup DB first, `migrate --force` only; browser-smoke fields visible/editable before finalization and preserved after finalization).
+
+## Sprint 23 Phase 23.10.4 — Odontogram Selected Results Table Notes Fix
+
+- Branch: `feature/sprint-23-phase-23-10-4-odontogram-selected-results-table` (from `sprint-23-phase-23-10-2-odontogram-additional-fields` / `3378500`). Tag `sprint-23-phase-23-10-4-odontogram-selected-results-table`. Local only — no VPS deploy, no push, no destructive DB commands. Full doc: `docs/sprint_23_phase_23_10_4_odontogram_selected_results_table.md`.
+
+### Correction (from 23.10.2)
+- The 23.10.2 **global** "Kondisi Tambahan" / "Catatan Odontogram" textareas were wrong for the clinic workflow. Corrected to a **per-selected-row** model: each tooth marked on the FDI grid renders as a row in a new **"Hasil Odontogram yang Dipilih"** table with per-row **Kondisi Tambahan** (`additional_condition`) and **Catatan Tambahan** (`additional_note`).
+
+### Fix
+- Storage: per-row data lives in `tooth_map_payload.teeth.<num>` (new optional `additional_condition` / `additional_note` keys) — **no new migration**. Old payloads without the keys render `—` safely. Validation `tooth_map_payload.teeth.*.additional_condition|additional_note nullable|string|max:1000`; service whitelist/normalization preserve the keys.
+- UI: `show.blade.php` table (live Alpine edit while draft; server-rendered read-only when finalized/viewer) + empty state `Belum ada kondisi odontogram yang dipilih.`; `app.js` `odontogramEditor` gains `selectedRows`/`statusLabel`/`setAdditional` and preserves per-row fields on status re-apply. Odontogram print and visit print bundle gain the per-row columns. Previous global fields retained but de-emphasized as optional general "Catatan Umum Odontogram" (legacy); `additional_conditions`/`summary_notes` columns kept, finalized behavior and tooth-grid unchanged.
+
+### Tests / build
+- New `OdontogramSelectedResultsTableTest` (23 passed, 64 assertions). Focused: Odontogram + RmePilotDataEntryHardeningTest + RmeVisitListBranchFilterTest + RmeClinicSourceFromBranchTest + RmePdfPrintHardeningTest 202 (527) — all passed. Broader Rme|ClinicVisit|Patient|Permission|Sidebar|Branch — all passed (exit 0). `pint --dirty` OK; `npm run build` OK.
+
+### Final status
+PASS — local only; no new migration; no column removal; no data rewrite; tooth-grid and finalized behavior preserved.
+
+### Next phase
+Sprint 23 Phase 23.10.5 — VPS Deploy + Odontogram Selected Results Table Smoke (backup DB first, `migrate --force` only; browser-smoke the selected results table appears, updates live, and saves per-row Kondisi Tambahan / Catatan Tambahan, preserved after finalization).

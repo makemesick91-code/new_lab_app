@@ -138,10 +138,12 @@
                 <table class="odonto-table" style="margin-top: {{ $odontogram->summary_notes ? '10px' : '0' }}">
                     <thead>
                         <tr>
-                            <th style="width:55px">Gigi</th>
-                            <th style="width:120px">Status</th>
+                            <th style="width:45px">Gigi</th>
+                            <th style="width:95px">Kondisi Odontogram</th>
+                            <th>Tanda Klinis</th>
+                            <th>Catatan Gigi</th>
                             <th>Kondisi Tambahan</th>
-                            <th>Catatan</th>
+                            <th>Catatan Tambahan</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -157,6 +159,8 @@
                                     @endif
                                 </td>
                                 <td>{{ (isset($td['note']) && $td['note'] !== '') ? $td['note'] : '—' }}</td>
+                                <td>{{ (isset($td['additional_condition']) && $td['additional_condition'] !== '') ? $td['additional_condition'] : '—' }}</td>
+                                <td>{{ (isset($td['additional_note']) && $td['additional_note'] !== '') ? $td['additional_note'] : '—' }}</td>
                             </tr>
                         @endforeach
                     </tbody>

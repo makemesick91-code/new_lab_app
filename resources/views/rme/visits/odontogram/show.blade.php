@@ -12,9 +12,30 @@
         $lowerRight = [48, 47, 46, 45, 44, 43, 42, 41]; // Q4 right-to-center
         $lowerLeft  = [31, 32, 33, 34, 35, 36, 37, 38]; // Q3 center-to-left
 
+        // Odontogram status → human label (Kondisi Odontogram column).
+        $statusLabels = [
+            'normal'       => 'Normal',
+            'caries'       => 'Karies',
+            'missing'      => 'Hilang',
+            'crown'        => 'Crown',
+            'root_treated' => 'PSA',
+        ];
+
+        // Selected odontogram results = teeth that carry a status. Used for the
+        // server-rendered (read-only) selected-results table.
+        $selectedTeeth = [];
+        foreach ((array) $teethData as $toothNum => $toothEntry) {
+            $toothEntry = (array) $toothEntry;
+            if (! empty($toothEntry['status'])) {
+                $selectedTeeth[(string) $toothNum] = $toothEntry;
+            }
+        }
+        ksort($selectedTeeth, SORT_NATURAL);
+
         $odontogramEditorConfig = [
             'canEdit' => $canUpdate,
             'teeth' => (array) $teethData,
+            'statusLabels' => $statusLabels,
         ];
     @endphp
 
@@ -345,36 +366,96 @@
             </div>
         </x-ui.card>
 
-        {{-- Kondisi Tambahan & Catatan Odontogram (general, odontogram-level) --}}
+        {{-- Hasil Odontogram yang Dipilih — per-selected-row Kondisi Tambahan & Catatan Tambahan --}}
         @if ($canUpdate)
-            <x-ui.card title="Kondisi Tambahan & Catatan Odontogram">
-                <form method="POST" action="{{ route('rme.odontograms.update', $odontogram) }}">
-                    @csrf
-                    @method('PATCH')
+            <form method="POST" action="{{ route('rme.odontograms.update', $odontogram) }}" class="space-y-6">
+                @csrf
+                @method('PATCH')
 
-                    {{-- Hidden reactive payload — Alpine.js keeps this current --}}
-                    <input type="hidden" name="tooth_map_payload" :value="getPayload()" />
+                {{-- Hidden reactive payload — Alpine.js keeps this current --}}
+                <input type="hidden" name="tooth_map_payload" :value="getPayload()" />
 
-                    @error('tooth_map_payload.teeth')
-                        <div class="mb-3 rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
-                            {{ $message }}
-                        </div>
-                    @enderror
+                @error('tooth_map_payload.teeth')
+                    <div class="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                        {{ $message }}
+                    </div>
+                @enderror
 
+                <x-ui.card title="Hasil Odontogram yang Dipilih">
                     <p class="mb-4 text-xs text-gray-500">
-                        Lengkapi kondisi tambahan dan catatan odontogram sebelum melakukan finalisasi.
+                        Setiap gigi/area yang ditandai pada peta gigi muncul di tabel berikut. Lengkapi
+                        <span class="font-medium text-gray-700">Kondisi Tambahan</span> dan
+                        <span class="font-medium text-gray-700">Catatan Tambahan</span> per baris sebelum finalisasi.
+                    </p>
+
+                    {{-- Empty state --}}
+                    <p x-show="selectedRows.length === 0" class="text-sm text-gray-500 italic">
+                        Belum ada kondisi odontogram yang dipilih.
+                    </p>
+
+                    {{-- Selected results table --}}
+                    <div x-show="selectedRows.length > 0" class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead>
+                                <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                                    <th class="px-3 py-2 w-12">No</th>
+                                    <th class="px-3 py-2 w-24">Gigi / Area</th>
+                                    <th class="px-3 py-2 w-32">Kondisi Odontogram</th>
+                                    <th class="px-3 py-2">Kondisi Tambahan</th>
+                                    <th class="px-3 py-2">Catatan Tambahan</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <template x-for="(row, idx) in selectedRows" :key="row.tooth">
+                                    <tr class="align-top">
+                                        <td class="px-3 py-2 text-gray-500" x-text="idx + 1"></td>
+                                        <td class="px-3 py-2 font-semibold text-gray-900" x-text="row.tooth"></td>
+                                        <td class="px-3 py-2">
+                                            <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200"
+                                                  x-text="statusLabel(row.status)"></span>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <input
+                                                type="text"
+                                                maxlength="1000"
+                                                placeholder="Kondisi tambahan…"
+                                                :value="row.additional_condition"
+                                                @input="setAdditional(row.tooth, 'additional_condition', $event.target.value)"
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <textarea
+                                                rows="2"
+                                                maxlength="1000"
+                                                placeholder="Catatan tambahan…"
+                                                :value="row.additional_note"
+                                                @input="setAdditional(row.tooth, 'additional_note', $event.target.value)"
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </x-ui.card>
+
+                {{-- Catatan umum odontogram (opsional, tingkat odontogram) --}}
+                <x-ui.card title="Catatan Umum Odontogram (Opsional)">
+                    <p class="mb-4 text-xs text-gray-500">
+                        Bagian umum opsional untuk catatan tingkat odontogram. Untuk kondisi spesifik per gigi,
+                        gunakan tabel <span class="font-medium text-gray-700">Hasil Odontogram yang Dipilih</span> di atas.
                     </p>
 
                     <div class="mb-4">
                         <label for="additional_conditions" class="block text-sm font-medium text-gray-700">
-                            Kondisi Tambahan
+                            Kondisi Tambahan <span class="font-normal text-gray-400">(umum, opsional)</span>
                         </label>
                         <textarea
                             id="additional_conditions"
                             name="additional_conditions"
                             rows="3"
                             maxlength="5000"
-                            placeholder="Contoh: impaksi, mobilitas gigi, karies luas, sisa akar, kondisi jaringan lunak, atau kondisi klinis lain."
+                            placeholder="Catatan kondisi umum tingkat odontogram (opsional)."
                             class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('additional_conditions') border-rose-300 @enderror">{{ old('additional_conditions', $odontogram->additional_conditions) }}</textarea>
                         @error('additional_conditions')
                             <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
@@ -383,28 +464,62 @@
 
                     <div class="mb-4">
                         <label for="summary_notes" class="block text-sm font-medium text-gray-700">
-                            Catatan Odontogram
+                            Catatan Odontogram <span class="font-normal text-gray-400">(umum, opsional)</span>
                         </label>
                         <textarea
                             id="summary_notes"
                             name="summary_notes"
                             rows="4"
                             maxlength="5000"
-                            placeholder="Tambahkan catatan khusus dokter/perawat terkait odontogram pasien."
+                            placeholder="Tambahkan catatan umum dokter/perawat terkait odontogram pasien."
                             class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('summary_notes') border-rose-300 @enderror">{{ old('summary_notes', $odontogram->summary_notes) }}</textarea>
                         @error('summary_notes')
                             <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
                         @enderror
                     </div>
+                </x-ui.card>
 
-                    <div class="flex justify-end">
-                        <x-ui.button type="submit" variant="primary">Simpan Odontogram</x-ui.button>
-                    </div>
-                </form>
-            </x-ui.card>
+                <div class="flex justify-end">
+                    <x-ui.button type="submit" variant="primary">Simpan Odontogram</x-ui.button>
+                </div>
+            </form>
         @else
             {{-- Read-only display (viewer or finalized) --}}
-            <x-ui.card title="Kondisi Tambahan & Catatan Odontogram">
+            <x-ui.card title="Hasil Odontogram yang Dipilih">
+                @if (count($selectedTeeth) > 0)
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead>
+                                <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
+                                    <th class="px-3 py-2 w-12">No</th>
+                                    <th class="px-3 py-2 w-24">Gigi / Area</th>
+                                    <th class="px-3 py-2 w-32">Kondisi Odontogram</th>
+                                    <th class="px-3 py-2">Kondisi Tambahan</th>
+                                    <th class="px-3 py-2">Catatan Tambahan</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 text-gray-700">
+                                @foreach ($selectedTeeth as $toothNum => $toothEntry)
+                                    <tr class="align-top">
+                                        <td class="px-3 py-2 text-gray-500">{{ $loop->iteration }}</td>
+                                        <td class="px-3 py-2 font-semibold text-gray-900">{{ $toothNum }}</td>
+                                        <td class="px-3 py-2">
+                                            {{ $statusLabels[$toothEntry['status'] ?? ''] ?? ucfirst($toothEntry['status'] ?? '—') }}
+                                        </td>
+                                        <td class="px-3 py-2 whitespace-pre-wrap">{{ ($toothEntry['additional_condition'] ?? '') !== '' ? $toothEntry['additional_condition'] : '—' }}</td>
+                                        <td class="px-3 py-2 whitespace-pre-wrap">{{ ($toothEntry['additional_note'] ?? '') !== '' ? $toothEntry['additional_note'] : '—' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <p class="text-sm text-gray-500 italic">Belum ada kondisi odontogram yang dipilih.</p>
+                @endif
+            </x-ui.card>
+
+            {{-- Read-only general odontogram notes --}}
+            <x-ui.card title="Catatan Umum Odontogram">
                 <dl class="space-y-4">
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kondisi Tambahan</dt>

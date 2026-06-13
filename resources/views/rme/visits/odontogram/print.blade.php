@@ -444,8 +444,8 @@
         </div>
     </div>
 
-    {{-- Per-tooth detail --}}
-    <div class="section-title">Kondisi Per Gigi</div>
+    {{-- Selected odontogram results — per-row Kondisi Tambahan & Catatan Tambahan --}}
+    <div class="section-title">Hasil Odontogram yang Dipilih</div>
     @php
         $markedTeeth = array_filter($teethData, fn ($td) =>
             ! empty($td['status']) || ! empty($td['conditions']) || (isset($td['note']) && $td['note'] !== '' && $td['note'] !== null)
@@ -457,15 +457,19 @@
         <table class="detail-table">
             <thead>
                 <tr>
-                    <th style="width:60px">Gigi</th>
-                    <th style="width:90px">Status</th>
+                    <th style="width:34px">No</th>
+                    <th style="width:50px">Gigi / Area</th>
+                    <th style="width:80px">Kondisi Odontogram</th>
+                    <th style="width:90px">Tanda Klinis</th>
+                    <th>Catatan Gigi</th>
                     <th>Kondisi Tambahan</th>
-                    <th>Catatan</th>
+                    <th>Catatan Tambahan</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach ($markedTeeth as $toothNum => $td)
                     <tr>
+                        <td>{{ $loop->iteration }}</td>
                         <td><strong>{{ $toothNum }}</strong></td>
                         <td>{{ $statusLabels[$td['status'] ?? ''] ?? ($td['status'] ? ucfirst($td['status']) : '—') }}</td>
                         <td>
@@ -478,13 +482,15 @@
                             @endif
                         </td>
                         <td>{{ (isset($td['note']) && $td['note'] !== '') ? $td['note'] : '—' }}</td>
+                        <td>{{ (isset($td['additional_condition']) && $td['additional_condition'] !== '') ? $td['additional_condition'] : '—' }}</td>
+                        <td>{{ (isset($td['additional_note']) && $td['additional_note'] !== '') ? $td['additional_note'] : '—' }}</td>
                     </tr>
                 @endforeach
             </tbody>
         </table>
     @else
         <p style="color:#9ca3af; font-style:italic; margin-bottom:14px; font-size:11px;">
-            Belum ada gigi yang ditandai.
+            Belum ada kondisi odontogram yang dipilih.
         </p>
     @endif
 

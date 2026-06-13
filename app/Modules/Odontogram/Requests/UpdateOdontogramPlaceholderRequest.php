@@ -36,6 +36,9 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
             'tooth_map_payload.teeth.*.note' => ['nullable', 'string', 'max:1000'],
             'tooth_map_payload.teeth.*.conditions' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*.conditions.*' => ['nullable', 'string', 'in:caries,missing,crown,root_treated,mobility,impaction,filling'],
+            // Per-selected-row additional fields (Sprint 23 Phase 23.10.4).
+            'tooth_map_payload.teeth.*.additional_condition' => ['nullable', 'string', 'max:1000'],
+            'tooth_map_payload.teeth.*.additional_note' => ['nullable', 'string', 'max:1000'],
         ];
     }
 

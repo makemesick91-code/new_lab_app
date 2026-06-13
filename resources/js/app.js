@@ -28,6 +28,7 @@ Alpine.data('odontogramEditor', (config = {}) => ({
     activeStatus: 'caries',
     canEdit: config.canEdit ?? false,
     teeth: config.teeth ?? {},
+    statusLabels: config.statusLabels ?? {},
     selectedTooth: null,
     toothNote: '',
 
@@ -43,6 +44,9 @@ Alpine.data('odontogramEditor', (config = {}) => ({
         const current = this.teeth[key] ? this.teeth[key].status : null;
         const existingNote = this.teeth[key] ? (this.teeth[key].note || '') : '';
         const existingConditions = (this.teeth[key] && Array.isArray(this.teeth[key].conditions)) ? this.teeth[key].conditions : [];
+        // Preserve per-row additional fields when status is re-applied (Sprint 23 Phase 23.10.4).
+        const existingAddCondition = this.teeth[key] ? (this.teeth[key].additional_condition || '') : '';
+        const existingAddNote = this.teeth[key] ? (this.teeth[key].additional_note || '') : '';
         if (current === this.activeStatus) {
             const copy = Object.assign({}, this.teeth);
             delete copy[key];
@@ -50,9 +54,46 @@ Alpine.data('odontogramEditor', (config = {}) => ({
             this.toothNote = '';
         } else {
             this.teeth = Object.assign({}, this.teeth, {
-                [key]: { status: this.activeStatus, note: existingNote, conditions: existingConditions },
+                [key]: {
+                    status: this.activeStatus,
+                    note: existingNote,
+                    conditions: existingConditions,
+                    additional_condition: existingAddCondition,
+                    additional_note: existingAddNote,
+                },
             });
         }
+    },
+
+    /**
+     * Selected odontogram results = teeth that have a status set. Each entry
+     * carries its per-row additional condition/note so the results table can
+     * render and edit them (Sprint 23 Phase 23.10.4).
+     */
+    get selectedRows() {
+        return Object.keys(this.teeth)
+            .filter((k) => this.teeth[k] && this.teeth[k].status)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((k) => ({
+                tooth: k,
+                status: this.teeth[k].status,
+                additional_condition: this.teeth[k].additional_condition || '',
+                additional_note: this.teeth[k].additional_note || '',
+            }));
+    },
+
+    statusLabel(status) {
+        return this.statusLabels[status] || status || '—';
+    },
+
+    setAdditional(toothKey, field, value) {
+        const key = String(toothKey);
+        if (! this.canEdit || ! this.teeth[key]) {
+            return;
+        }
+        this.teeth = Object.assign({}, this.teeth, {
+            [key]: Object.assign({}, this.teeth[key], { [field]: value }),
+        });
     },
 
     syncNote() {
