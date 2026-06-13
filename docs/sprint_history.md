@@ -5028,3 +5028,26 @@ PASS — local only, no VPS deploy, no schema/migration change, no destructive D
 
 ### Next phase
 Sprint 23 Phase 23.9.4 — VPS Deploy + Visit List Branch Filter Smoke (backup DB first, `migrate --force` only; confirm Megasanti / VIS-20260613-001 appears in Daftar Kunjungan, Cabang RME filter works, existing + new patient visits both appear, no 500).
+
+## Sprint 23 Phase 23.9.5 — VPS Smoke Closure Documentation
+
+- Branch: `feature/sprint-23-phase-23-9-5-vps-smoke-closure-docs` (from `sprint-23-phase-23-9-3-rme-visit-list-branch-filter` / `c9a5ebb`). Tag `sprint-23-phase-23-9-5-vps-smoke-closure-documentation`. **Docs-only closure** — no app/code/migration/seeder/test changes, no VPS deploy, no push. Full doc: `docs/sprint_23_phase_23_9_5_vps_smoke_closure_documentation.md`.
+
+### Scope
+- Documents the completed VPS deployment and browser smoke from Sprint 23 Phase 23.9.4. Deployed commit `c9a5ebb`, tag `sprint-23-phase-23-9-3-rme-visit-list-branch-filter`, pilot environment, maintenance mode OFF after deploy. Pre-deploy backup `sprint-23-phase-23-9-4-vps-visit-list-branch-filter-20260613-015453.sql` (374K) captured before pull/migrate.
+
+### VPS smoke result
+- VPS smoke PASS. Deployment evidence (checkout, composer install, npm ci/build, `migrate --force` nothing to migrate, Permission/Role seeders, Owner role ensured, MAIN hidden from RME/Inventory dropdowns, cache rebuild, storage perms, app live) all PASS. HTTP: `/login` 200, `/rme/visits` 302 to `/login` pre-auth (not 500).
+- **Daftar Kunjungan branch filter PASS:** Megasanti / VIS-20260613-001 (branch ATG3, `branch_id=3`, `clinic_id=null`, status `waiting`) appears under Semua Cabang RME and ATG3 filter, and is correctly absent under TKM1. Regression (create visit, existing + new patient visit, Master Data Cabang) all PASS. Operational RME branches: ATG3 — Cabang Antang, LDK2 — Cabang Landak, TKM1 — Cabang Telkomas. MAIN flags active=1, rme=0, inventory=0.
+
+### Final status
+GO WITH WATCH — bug resolved; ATG3 visit no longer hidden by BranchContext fallback.
+
+### Watch items
+- Node VPS still v18 while `@tailwindcss/oxide` requires Node >=20.
+- npm audit still reports 5 vulnerabilities.
+- Legacy `mst_clinics` intentionally preserved for compatibility.
+- Backfill old patients to new RM format not done yet.
+
+### Next phase
+Sprint 23 Phase 23.10 — RME Pilot Data Entry Hardening (verify create-visit flow registration→cashier, harden existing patient branch behavior, safe old-patient RM/backfill preview report, confirm treatment/tariff/payment flow after branch-source changes, prepare pilot checklist for clinic users).
