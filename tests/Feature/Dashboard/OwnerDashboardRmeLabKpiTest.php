@@ -255,6 +255,89 @@ it('does not create operational records when owner dashboard is loaded', functio
         ->and(LabOrder::count())->toBe($before['orders']);
 });
 
+it('computes RME receivable KPIs from UNPAID and PARTIAL invoices only', function () {
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 400000,
+    ]);
+
+    $partialInvoice = RmeInvoice::factory()->partial()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 1000000,
+    ]);
+
+    // Create the payment via the invoice relation to avoid the payment
+    // factory spawning a phantom UNPAID invoice that would skew counts.
+    $partialInvoice->payments()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_visit_id' => $partialInvoice->clinic_visit_id,
+        'patient_id' => $partialInvoice->patient_id,
+        'cashier_id' => $partialInvoice->cashier_id,
+        'payment_number' => 'RCV-TEST-PARTIAL',
+        'amount' => 300000,
+        'paid_at' => now(),
+    ]);
+
+    // PAID invoice with full payment — must be excluded from receivables.
+    $paidInvoice = RmeInvoice::factory()->paid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 500000,
+    ]);
+
+    $paidInvoice->payments()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_visit_id' => $paidInvoice->clinic_visit_id,
+        'patient_id' => $paidInvoice->patient_id,
+        'cashier_id' => $paidInvoice->cashier_id,
+        'payment_number' => 'RCV-TEST-PAID',
+        'amount' => 500000,
+        'paid_at' => now(),
+    ]);
+
+    $metrics = $this->service->metrics();
+
+    // 400000 (unpaid) + (1000000 - 300000) partial = 1100000; PAID excluded.
+    expect((float) $metrics['rme_receivable_total_remaining'])->toBe(1100000.0)
+        ->and($metrics['rme_receivable_partial_count'])->toBe(1)
+        ->and($metrics['rme_receivable_unpaid_count'])->toBe(1);
+
+    $this->actingAs(userInRole('Owner'))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Sisa Piutang RME')
+        ->assertSee('Invoice Cicilan')
+        ->assertSee('Invoice Belum Dibayar')
+        ->assertSee(format_currency_id(1100000));
+});
+
+it('limits RME receivable KPIs to the selected branch', function () {
+    $otherBranch = Branch::factory()->create([
+        'code' => 'OWN-RCV-B',
+        'name' => 'Cabang Piutang B',
+        'is_active' => true,
+    ]);
+
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 200000,
+    ]);
+
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $otherBranch->id,
+        'grand_total' => 500000,
+    ]);
+
+    $global = $this->service->metrics();
+    $mainOnly = $this->service->metrics($this->branch->id);
+    $otherOnly = $this->service->metrics($otherBranch->id);
+
+    expect((float) $global['rme_receivable_total_remaining'])->toBe(700000.0)
+        ->and((float) $mainOnly['rme_receivable_total_remaining'])->toBe(200000.0)
+        ->and((float) $otherOnly['rme_receivable_total_remaining'])->toBe(500000.0)
+        ->and($global['rme_receivable_unpaid_count'])->toBe(2)
+        ->and($mainOnly['rme_receivable_unpaid_count'])->toBe(1);
+});
+
 it('builds RME to lab funnel stages from paid invoice and converted candidate metrics', function () {
     seedOwnerDashboardPilotMetrics($this->branch);
 

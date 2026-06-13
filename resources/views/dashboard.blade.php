@@ -286,6 +286,27 @@
                 'severity' => ($ownerRmeLabPilot['lab_orders_from_rme_today'] ?? 0) > 0 ? 'success' : 'neutral',
                 'href' => $ownerRmeLabDrilldowns['lab_orders_from_rme_today'] ?? null,
             ],
+            [
+                'label' => 'Sisa Piutang RME',
+                'value' => format_currency_id($ownerRmeLabPilot['rme_receivable_total_remaining'] ?? 0),
+                'secondary' => 'Sisa tagihan invoice UNPAID + PARTIAL.',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_total_remaining'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_receivables'] ?? null,
+            ],
+            [
+                'label' => 'Invoice Cicilan',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_partial_count'] ?? 0),
+                'secondary' => 'Invoice status PARTIAL (dibayar sebagian).',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_partial_count'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_receivables'] ?? null,
+            ],
+            [
+                'label' => 'Invoice Belum Dibayar',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_unpaid_count'] ?? 0),
+                'secondary' => 'Invoice status UNPAID (belum ada pembayaran).',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_unpaid_count'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_receivables'] ?? null,
+            ],
         ];
 
         $ownerRmeLabFunnel = $ownerRmeLabPilot['funnel_stages'] ?? [];
@@ -435,6 +456,14 @@
                                     />
                                 @endforeach
                             </div>
+                            @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
+                                <div class="mt-4">
+                                    <a href="{{ $ownerRmeLabDrilldowns['rme_receivables'] }}"
+                                       class="inline-flex items-center rounded-md border border-teal-300 bg-white px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                        Piutang RME
+                                    </a>
+                                </div>
+                            @endif
                         </div>
 
                         <div>

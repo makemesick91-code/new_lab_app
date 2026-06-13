@@ -184,6 +184,32 @@ it('shows permission-aware drilldown links for Owner with clinic visit access on
         ]), false);
 });
 
+it('shows RME receivables drilldown link for user with manage_rme_billing', function () {
+    $user = userWith([
+        'view dashboard',
+        'view_owner_dashboard',
+        'manage_rme_billing',
+    ]);
+
+    $links = $this->drilldowns->linksFor($user);
+
+    expect($links)->toHaveKey('rme_receivables')
+        ->and($links['rme_receivables'])->toBe(route('rme.cashier.receivables'));
+});
+
+it('does not show RME receivables drilldown link without manage_rme_billing', function () {
+    $owner = userInRole('Owner');
+
+    $links = $this->drilldowns->linksFor($owner);
+
+    expect($links)->not->toHaveKey('rme_receivables');
+
+    $this->actingAs($owner)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertDontSee(route('rme.cashier.receivables'), false);
+});
+
 it('shows lab candidate drilldown links when user has lab order permission', function () {
     $user = userWith([
         'view dashboard',

@@ -158,6 +158,30 @@ class OwnerDashboardRmeLabKpiService
             ->whereDate('paid_at', $today)
             ->sum('amount');
 
+        // Sprint 24 Phase 24.4: RME receivable KPIs. Active receivables are
+        // UNPAID + PARTIAL invoices only (DRAFT/PAID/VOID excluded). Remaining
+        // balance = grand_total - sum(payments.amount), computed via a single
+        // aggregate query (withSum) to avoid per-invoice N+1.
+        $receivableInvoices = $this->rmeInvoiceQuery($branchIds)
+            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
+            ->withSum('payments', 'amount')
+            ->get(['id', 'status', 'grand_total']);
+
+        $rmeReceivableTotalRemaining = (float) $receivableInvoices->sum(
+            fn (RmeInvoice $invoice): float => max(
+                0,
+                round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2),
+            ),
+        );
+
+        $rmeReceivablePartialCount = $receivableInvoices
+            ->where('status', RmeInvoice::STATUS_PARTIAL)
+            ->count();
+
+        $rmeReceivableUnpaidCount = $receivableInvoices
+            ->where('status', RmeInvoice::STATUS_UNPAID)
+            ->count();
+
         // Sprint 23 Phase 23.5: Lab is a single / global laboratory. Lab KPIs are
         // NOT grouped by branch and the Owner branch filter must not touch them.
         $labCandidatesPending = $this->labCandidateQuery(null)
@@ -192,6 +216,9 @@ class OwnerDashboardRmeLabKpiService
             'rme_invoices_unpaid' => $rmeInvoicesUnpaid,
             'rme_invoices_paid_today' => $rmeInvoicesPaidToday,
             'rme_revenue_paid_today' => $rmeRevenuePaidToday,
+            'rme_receivable_total_remaining' => $rmeReceivableTotalRemaining,
+            'rme_receivable_partial_count' => $rmeReceivablePartialCount,
+            'rme_receivable_unpaid_count' => $rmeReceivableUnpaidCount,
             'lab_candidates_pending' => $labCandidatesPending,
             'lab_candidates_converted_today' => $labCandidatesConvertedToday,
             'lab_orders_from_rme_today' => $labOrdersFromRmeToday,

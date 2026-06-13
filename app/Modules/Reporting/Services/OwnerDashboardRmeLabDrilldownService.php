@@ -39,6 +39,7 @@ class OwnerDashboardRmeLabDrilldownService
         if ($user->can('manage_rme_billing')) {
             $links['rme_invoices_unpaid'] = route('rme.cashier.index');
             $links['rme_invoices_paid_today'] = route('rme.cashier.index');
+            $links['rme_receivables'] = route('rme.cashier.receivables');
         }
 
         if ($user->canAny(['view_lab_orders', 'manage_lab_orders'])) {
