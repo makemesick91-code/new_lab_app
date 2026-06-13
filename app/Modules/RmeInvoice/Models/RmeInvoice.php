@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class RmeInvoice extends Model
@@ -105,6 +106,17 @@ class RmeInvoice extends Model
     public function labCaseCandidates(): HasMany
     {
         return $this->hasMany(LabCaseCandidate::class, 'rme_invoice_id');
+    }
+
+    // Sprint 24 Phase 24.8 — RME Receivable Follow-up / Reminder Foundation.
+    public function followUps(): HasMany
+    {
+        return $this->hasMany(RmeReceivableFollowUp::class, 'rme_invoice_id');
+    }
+
+    public function latestFollowUp(): HasOne
+    {
+        return $this->hasOne(RmeReceivableFollowUp::class, 'rme_invoice_id')->latestOfMany();
     }
 
     public function recalculateTotals(): void

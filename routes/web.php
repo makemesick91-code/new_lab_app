@@ -54,6 +54,7 @@ use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
+use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
@@ -255,6 +256,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier', [RmeInvoiceController::class, 'index'])->name('cashier.index');
         Route::get('cashier/receivables', [RmeInvoiceController::class, 'receivables'])->name('cashier.receivables');
         Route::get('cashier/receivables/export', [RmeInvoiceController::class, 'exportReceivables'])->name('cashier.receivables.export');
+        // Sprint 24 Phase 24.8 — RME receivable follow-up / reminder foundation
+        Route::get('cashier/receivables/{rmeInvoice}/follow-ups/create', [RmeReceivableFollowUpController::class, 'create'])->name('cashier.receivables.follow-ups.create');
+        Route::post('cashier/receivables/{rmeInvoice}/follow-ups', [RmeReceivableFollowUpController::class, 'store'])->name('cashier.receivables.follow-ups.store');
         Route::get('cashier/{clinicVisit}/billing/create', [RmeInvoiceController::class, 'create'])->name('cashier.create');
         Route::post('cashier/{clinicVisit}/billing', [RmeInvoiceController::class, 'store'])->name('cashier.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');

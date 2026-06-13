@@ -39,6 +39,14 @@
                 '15-30' => '15–30 Hari',
                 '>30' => '>30 Hari',
             ];
+            $followUpStatusLabels = [
+                'NEW' => 'Baru',
+                'CONTACTED' => 'Sudah Dihubungi',
+                'PROMISED' => 'Janji Bayar',
+                'FOLLOW_UP_LATER' => 'Follow-up Lagi',
+                'ESCALATED' => 'Eskalasi',
+                'CLOSED' => 'Selesai',
+            ];
         @endphp
         <div class="grid gap-4 md:grid-cols-4">
             @foreach ($agingBuckets as $bucket)
@@ -120,6 +128,8 @@
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Pasien / Kunjungan</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Follow-up Terakhir</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Reminder Berikutnya</th>
                         <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Umur / Bucket</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Grand Total</th>
                         <th class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Sudah Dibayar</th>
@@ -144,6 +154,22 @@
                                 $ageDays <= 30 => '15-30',
                                 default => '>30',
                             };
+
+                            $followUp = $invoice->latestFollowUp;
+                            $nextDate = $followUp?->next_follow_up_date;
+                            [$dueLabel, $dueTone] = (function () use ($nextDate) {
+                                if (! $nextDate) {
+                                    return ['Belum Ada', 'bg-gray-100 text-gray-600'];
+                                }
+                                $today = \Carbon\Carbon::today();
+                                if ($nextDate->lt($today)) {
+                                    return ['Jatuh Tempo', 'bg-red-100 text-red-700'];
+                                }
+                                if ($nextDate->isSameDay($today)) {
+                                    return ['Hari Ini', 'bg-amber-100 text-amber-700'];
+                                }
+                                return ['Terjadwal', 'bg-blue-100 text-blue-700'];
+                            })();
                         @endphp
                         <tr>
                             <td class="px-4 py-3">
@@ -157,6 +183,20 @@
                             <td class="px-4 py-3 text-sm text-gray-700">{{ $invoice->branch?->code }} — {{ $invoice->branch?->name }}</td>
                             <td class="px-4 py-3">
                                 <span class="inline-flex rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-700">{{ $statusLabel }}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                @if ($followUp)
+                                    <p class="text-sm font-medium text-gray-900">{{ $followUpStatusLabels[$followUp->status] ?? $followUp->status }}</p>
+                                    <p class="text-xs text-gray-500">{{ $followUp->created_at?->format('d/m/Y H:i') }}</p>
+                                @else
+                                    <span class="text-xs text-gray-400">Belum ada follow-up</span>
+                                @endif
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="inline-flex rounded-full px-2 py-1 text-xs font-medium {{ $dueTone }}">{{ $dueLabel }}</span>
+                                @if ($nextDate)
+                                    <p class="mt-1 text-xs text-gray-500">{{ $nextDate->format('d/m/Y') }}</p>
+                                @endif
                             </td>
                             <td class="px-4 py-3">
                                 <p class="text-sm text-gray-700">{{ $ageDays }} hari</p>
@@ -177,12 +217,15 @@
                                     @else
                                         <span class="text-xs text-gray-400">Kunjungan tidak tersedia</span>
                                     @endif
+                                    @if ($invoice->isPayable())
+                                        <a href="{{ route('rme.cashier.receivables.follow-ups.create', $invoice) }}" class="text-sm font-medium text-purple-700 hover:text-purple-900">Tambah Follow-up</a>
+                                    @endif
                                 </div>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500">
+                            <td colspan="11" class="px-4 py-8 text-center text-sm text-gray-500">
                                 Belum ada piutang RME aktif sesuai filter.
                             </td>
                         </tr>

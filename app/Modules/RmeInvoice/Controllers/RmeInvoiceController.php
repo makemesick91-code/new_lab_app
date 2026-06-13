@@ -199,7 +199,7 @@ class RmeInvoiceController extends Controller
     private function receivableQuery(array $activeBranchIds, array $filters): Builder
     {
         return RmeInvoice::query()
-            ->with(['branch', 'patient', 'clinicVisit', 'payments'])
+            ->with(['branch', 'patient', 'clinicVisit', 'payments', 'latestFollowUp.user'])
             ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->whereIn('branch_id', $activeBranchIds)
             ->when($filters['branch_id'], fn ($query, $branchId) => $query->where('branch_id', $branchId))
