@@ -9,6 +9,7 @@ use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -182,6 +183,30 @@ class OwnerDashboardRmeLabKpiService
             ->where('status', RmeInvoice::STATUS_UNPAID)
             ->count();
 
+        // Sprint 24 Phase 24.10: RME receivable follow-up KPIs. Counted over
+        // active receivables (UNPAID + PARTIAL) only, branch-aware via $branchIds.
+        // Due calculations use the latest follow-up per invoice (latestOfMany);
+        // counts are of invoices, not follow-up rows.
+        $rmeReceivableFollowUpOverdueCount = $this->rmeReceivableQuery($branchIds)
+            ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '<', $today))
+            ->count();
+
+        $rmeReceivableFollowUpTodayCount = $this->rmeReceivableQuery($branchIds)
+            ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '=', $today))
+            ->count();
+
+        $rmeReceivableFollowUpScheduledCount = $this->rmeReceivableQuery($branchIds)
+            ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '>', $today))
+            ->count();
+
+        $rmeReceivableNeverFollowedUpCount = $this->rmeReceivableQuery($branchIds)
+            ->whereDoesntHave('followUps')
+            ->count();
+
+        $rmeReceivableFollowUpEscalatedCount = $this->rmeReceivableQuery($branchIds)
+            ->whereHas('latestFollowUp', fn (Builder $query) => $query->where('status', RmeReceivableFollowUp::STATUS_ESCALATED))
+            ->count();
+
         // Sprint 23 Phase 23.5: Lab is a single / global laboratory. Lab KPIs are
         // NOT grouped by branch and the Owner branch filter must not touch them.
         $labCandidatesPending = $this->labCandidateQuery(null)
@@ -219,6 +244,11 @@ class OwnerDashboardRmeLabKpiService
             'rme_receivable_total_remaining' => $rmeReceivableTotalRemaining,
             'rme_receivable_partial_count' => $rmeReceivablePartialCount,
             'rme_receivable_unpaid_count' => $rmeReceivableUnpaidCount,
+            'rme_receivable_follow_up_overdue_count' => $rmeReceivableFollowUpOverdueCount,
+            'rme_receivable_follow_up_today_count' => $rmeReceivableFollowUpTodayCount,
+            'rme_receivable_never_followed_up_count' => $rmeReceivableNeverFollowedUpCount,
+            'rme_receivable_follow_up_scheduled_count' => $rmeReceivableFollowUpScheduledCount,
+            'rme_receivable_follow_up_escalated_count' => $rmeReceivableFollowUpEscalatedCount,
             'lab_candidates_pending' => $labCandidatesPending,
             'lab_candidates_converted_today' => $labCandidatesConvertedToday,
             'lab_orders_from_rme_today' => $labOrdersFromRmeToday,
@@ -315,6 +345,17 @@ class OwnerDashboardRmeLabKpiService
     {
         return RmeInvoice::query()
             ->when($branchIds !== null, fn (Builder $query) => $query->whereIn('branch_id', $branchIds));
+    }
+
+    /**
+     * Active RME receivable invoices (UNPAID + PARTIAL), branch-aware.
+     *
+     * @param  array<int, int>|null  $branchIds
+     */
+    private function rmeReceivableQuery(?array $branchIds): Builder
+    {
+        return $this->rmeInvoiceQuery($branchIds)
+            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL]);
     }
 
     /**

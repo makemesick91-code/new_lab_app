@@ -7,6 +7,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Services\TreatmentService;
@@ -62,6 +63,9 @@ class RmeInvoiceController extends Controller
      * @var array<int, string>
      */
     public const AGING_BUCKETS = ['0-7', '8-14', '15-30', '>30'];
+
+    // Sprint 24 Phase 24.10: Owner Dashboard follow-up KPI drilldown filters.
+    public const FOLLOW_UP_FILTERS = ['overdue', 'today', 'never', 'scheduled', 'escalated'];
 
     public function receivables(Request $request): View
     {
@@ -179,6 +183,9 @@ class RmeInvoiceController extends Controller
         $requestedBucket = $request->string('aging_bucket')->toString();
         $selectedBucket = in_array($requestedBucket, self::AGING_BUCKETS, true) ? $requestedBucket : null;
 
+        $requestedFollowUp = $request->string('follow_up_filter')->toString();
+        $selectedFollowUp = in_array($requestedFollowUp, self::FOLLOW_UP_FILTERS, true) ? $requestedFollowUp : null;
+
         $dateFrom = (string) $request->input('date_from', '');
         $dateTo = (string) $request->input('date_to', '');
 
@@ -187,6 +194,7 @@ class RmeInvoiceController extends Controller
             'branch_id' => $selectedBranchId,
             'status' => $selectedStatus,
             'aging_bucket' => $selectedBucket,
+            'follow_up_filter' => $selectedFollowUp,
             'date_from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) ? $dateFrom : null,
             'date_to' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo) ? $dateTo : null,
         ];
@@ -207,6 +215,7 @@ class RmeInvoiceController extends Controller
             ->when($filters['date_from'], fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
             ->when($filters['date_to'], fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
             ->when($filters['aging_bucket'], fn ($query, $bucket) => $this->applyAgingBucket($query, $bucket))
+            ->when($filters['follow_up_filter'], fn ($query, $filter) => $this->applyFollowUpFilter($query, $filter))
             ->when($filters['search'], function ($query, string $search): void {
                 $term = '%'.mb_strtolower($search).'%';
 
@@ -249,6 +258,24 @@ class RmeInvoiceController extends Controller
             '15-30' => $query->whereDate('created_at', '<=', $today->copy()->subDays(15))
                 ->whereDate('created_at', '>=', $today->copy()->subDays(30)),
             '>30' => $query->whereDate('created_at', '<', $today->copy()->subDays(30)),
+            default => $query,
+        };
+    }
+
+    /**
+     * Sprint 24 Phase 24.10: filter active receivables by latest follow-up state.
+     * Counts/filters invoices, using the latest follow-up (latestOfMany) only.
+     */
+    private function applyFollowUpFilter(Builder $query, string $filter): Builder
+    {
+        $today = Carbon::today()->toDateString();
+
+        return match ($filter) {
+            'overdue' => $query->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '<', $today)),
+            'today' => $query->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '=', $today)),
+            'never' => $query->whereDoesntHave('followUps'),
+            'scheduled' => $query->whereHas('latestFollowUp', fn (Builder $q) => $q->whereDate('next_follow_up_date', '>', $today)),
+            'escalated' => $query->whereHas('latestFollowUp', fn (Builder $q) => $q->where('status', RmeReceivableFollowUp::STATUS_ESCALATED)),
             default => $query,
         };
     }

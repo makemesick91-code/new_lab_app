@@ -40,6 +40,13 @@ class OwnerDashboardRmeLabDrilldownService
             $links['rme_invoices_unpaid'] = route('rme.cashier.index');
             $links['rme_invoices_paid_today'] = route('rme.cashier.index');
             $links['rme_receivables'] = route('rme.cashier.receivables');
+
+            // Sprint 24 Phase 24.10: follow-up drilldowns to Piutang RME, filtered.
+            $links['rme_receivable_follow_up_overdue'] = route('rme.cashier.receivables', ['follow_up_filter' => 'overdue']);
+            $links['rme_receivable_follow_up_today'] = route('rme.cashier.receivables', ['follow_up_filter' => 'today']);
+            $links['rme_receivable_never_followed_up'] = route('rme.cashier.receivables', ['follow_up_filter' => 'never']);
+            $links['rme_receivable_follow_up_scheduled'] = route('rme.cashier.receivables', ['follow_up_filter' => 'scheduled']);
+            $links['rme_receivable_follow_up_escalated'] = route('rme.cashier.receivables', ['follow_up_filter' => 'escalated']);
         }
 
         if ($user->canAny(['view_lab_orders', 'manage_lab_orders'])) {

@@ -307,6 +307,34 @@
                 'severity' => ($ownerRmeLabPilot['rme_receivable_unpaid_count'] ?? 0) > 0 ? 'warning' : 'success',
                 'href' => $ownerRmeLabDrilldowns['rme_receivables'] ?? null,
             ],
+            [
+                'label' => 'Follow-up Jatuh Tempo',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_follow_up_overdue_count'] ?? 0),
+                'secondary' => 'Piutang aktif dengan reminder follow-up lewat tanggal.',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_follow_up_overdue_count'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_receivable_follow_up_overdue'] ?? null,
+            ],
+            [
+                'label' => 'Follow-up Hari Ini',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_follow_up_today_count'] ?? 0),
+                'secondary' => 'Piutang aktif dengan reminder follow-up hari ini.',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_follow_up_today_count'] ?? 0) > 0 ? 'warning' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['rme_receivable_follow_up_today'] ?? null,
+            ],
+            [
+                'label' => 'Belum Pernah Follow-up',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_never_followed_up_count'] ?? 0),
+                'secondary' => 'Piutang aktif tanpa riwayat follow-up.',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_never_followed_up_count'] ?? 0) > 0 ? 'warning' : 'success',
+                'href' => $ownerRmeLabDrilldowns['rme_receivable_never_followed_up'] ?? null,
+            ],
+            [
+                'label' => 'Follow-up Terjadwal',
+                'value' => format_number_id($ownerRmeLabPilot['rme_receivable_follow_up_scheduled_count'] ?? 0),
+                'secondary' => 'Piutang aktif dengan reminder follow-up mendatang.',
+                'severity' => ($ownerRmeLabPilot['rme_receivable_follow_up_scheduled_count'] ?? 0) > 0 ? 'info' : 'neutral',
+                'href' => $ownerRmeLabDrilldowns['rme_receivable_follow_up_scheduled'] ?? null,
+            ],
         ];
 
         $ownerRmeLabFunnel = $ownerRmeLabPilot['funnel_stages'] ?? [];

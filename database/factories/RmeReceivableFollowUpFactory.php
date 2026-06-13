@@ -16,11 +16,11 @@ class RmeReceivableFollowUpFactory extends Factory
 
     public function definition(): array
     {
-        $invoice = RmeInvoice::factory()->unpaid()->create();
-
+        // Lazy defaults: when rme_invoice_id is overridden, no stray invoice is
+        // created and branch_id is derived from the provided invoice.
         return [
-            'rme_invoice_id' => $invoice->id,
-            'branch_id' => $invoice->branch_id,
+            'rme_invoice_id' => RmeInvoice::factory()->unpaid(),
+            'branch_id' => fn (array $attributes) => RmeInvoice::find($attributes['rme_invoice_id'])?->branch_id,
             'user_id' => User::factory(),
             'status' => RmeReceivableFollowUp::STATUS_NEW,
             'channel' => RmeReceivableFollowUp::CHANNEL_WHATSAPP,
