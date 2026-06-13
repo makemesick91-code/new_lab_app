@@ -249,3 +249,35 @@ it('does not enforce an RME branch on the global lab order list', function () {
         ->get(route('lab-orders.index'))
         ->assertOk();
 });
+
+it('rejects new patient visit when visit branch differs from new patient branch', function () {
+    $this->actingAs($this->admin);
+
+    $otherRmeBranch = Branch::factory()->create([
+        'code' => 'BD99',
+        'name' => 'Cabang Beda Valid',
+        'is_active' => true,
+        'is_rme_enabled' => true,
+        'is_inventory_enabled' => true,
+    ]);
+
+    $treatment = Treatment::factory()->create([
+        'is_active' => true,
+    ]);
+
+    $this->post(route('rme.visits.store'), [
+        'patient_mode' => 'new',
+        'branch_id' => $this->rmeBranch->id,
+        'doctor_id' => $this->doctor->id,
+        'initial_treatment_id' => $treatment->id,
+        'visit_date' => now()->toDateString(),
+        'new_patient' => [
+            'name' => 'Pasien Beda Cabang',
+            'branch_id' => $otherRmeBranch->id,
+            'registered_at' => now()->toDateString(),
+            'manual_rm_number' => '0099',
+        ],
+    ])->assertSessionHasErrors('new_patient.branch_id');
+
+    expect(Patient::where('name', 'Pasien Beda Cabang')->exists())->toBeFalse();
+});

@@ -77,6 +77,7 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
             'new_patient.name.required' => 'Nama pasien baru wajib diisi.',
             'new_patient.branch_id.required' => 'Cabang RME pasien baru wajib dipilih.',
+            'new_patient.branch_id.same' => 'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.',
             'branch_id.required' => 'Cabang RME wajib dipilih untuk kunjungan pasien terdaftar.',
             'branch_id.exists' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
             'new_patient.manual_rm_number.required' => 'Nomor RM manual pasien baru wajib diisi.',
@@ -88,6 +89,18 @@ class StoreClinicVisitRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             if ($this->input('patient_mode') !== 'new' || $validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $visitBranchId = $this->input('branch_id');
+            $newPatientBranchId = $this->input('new_patient.branch_id');
+
+            if ($visitBranchId && $newPatientBranchId && (int) $visitBranchId !== (int) $newPatientBranchId) {
+                $validator->errors()->add(
+                    'new_patient.branch_id',
+                    'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.'
+                );
+
                 return;
             }
 
