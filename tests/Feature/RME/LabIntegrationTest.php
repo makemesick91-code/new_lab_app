@@ -267,7 +267,7 @@ it('rme payment with lab items still does not create lab-order payment records',
 
 // ─── Test 10: RME partial payment is still rejected ──────────────────────────
 
-it('rme partial payment is still rejected (sprint 20 rule preserved)', function () {
+it('rme partial payment marks invoice partial and does not generate lab candidates', function () {
     $this->actingAs($this->cashier);
 
     $treatment = Treatment::factory()->requiresLab()->create();
@@ -277,11 +277,14 @@ it('rme partial payment is still rejected (sprint 20 rule preserved)', function 
 
     $partial = round((float) $invoice->grand_total / 2, 2);
 
-    expect(fn () => app(RmePaymentService::class)->pay(
+    app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
         labPaymentPayload($invoice, ['amount' => $partial]),
-    ))->toThrow(ValidationException::class);
+    );
+
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(0);
 });
 
 // ─── Test 11: No real LabOrder is created in Phase 21.2 ──────────────────────

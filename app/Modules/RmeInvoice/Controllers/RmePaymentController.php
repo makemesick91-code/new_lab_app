@@ -26,7 +26,7 @@ class RmePaymentController extends Controller
     {
         $this->authorize('pay', $rmeInvoice);
 
-        if ($rmeInvoice->status !== RmeInvoice::STATUS_UNPAID) {
+        if (! $rmeInvoice->isPayable()) {
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $rmeInvoice])
                 ->with('error', 'Invoice ini tidak dapat dibayar (status: '.$rmeInvoice->status.').');
@@ -34,7 +34,7 @@ class RmePaymentController extends Controller
 
         return view('rme.cashier.payment.create', [
             'visit' => $clinicVisit->load(['patient', 'doctor']),
-            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier']),
+            'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
             'paymentMethods' => $this->paymentMethods->listActive(),
         ]);
     }
@@ -44,20 +44,27 @@ class RmePaymentController extends Controller
         $this->authorize('pay', $rmeInvoice);
 
         $payment = $this->service->pay($rmeInvoice, $request->user(), $request->validated());
+        $freshInvoice = $rmeInvoice->fresh();
+
+        if ($freshInvoice?->isPaid()) {
+            return redirect()
+                ->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
+                ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
+        }
 
         return redirect()
-            ->route('rme.cashier.receipt.show', [$clinicVisit, $rmeInvoice])
-            ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
+            ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
+            ->with('status', 'Pembayaran cicilan berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
     }
 
     public function receipt(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
     {
         $this->authorize('viewReceipt', $rmeInvoice);
 
-        if ($rmeInvoice->status !== RmeInvoice::STATUS_PAID) {
+        if (! $rmeInvoice->isPaid()) {
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $rmeInvoice])
-                ->with('error', 'Kwitansi hanya tersedia untuk invoice yang sudah PAID.');
+                ->with('error', 'Kwitansi pelunasan hanya tersedia untuk invoice yang sudah PAID.');
         }
 
         $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();

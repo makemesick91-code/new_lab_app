@@ -23,6 +23,8 @@ class RmeInvoice extends Model
 
     public const STATUS_UNPAID = 'UNPAID';
 
+    public const STATUS_PARTIAL = 'PARTIAL';
+
     public const STATUS_PAID = 'PAID';
 
     public const STATUS_VOID = 'VOID';
@@ -30,6 +32,7 @@ class RmeInvoice extends Model
     public const STATUSES = [
         self::STATUS_DRAFT,
         self::STATUS_UNPAID,
+        self::STATUS_PARTIAL,
         self::STATUS_PAID,
         self::STATUS_VOID,
     ];
@@ -128,9 +131,19 @@ class RmeInvoice extends Model
         return $this->status === self::STATUS_PAID;
     }
 
+    public function isPartial(): bool
+    {
+        return $this->status === self::STATUS_PARTIAL;
+    }
+
+    public function isPayable(): bool
+    {
+        return in_array($this->status, [self::STATUS_UNPAID, self::STATUS_PARTIAL], true);
+    }
+
     public function isActive(): bool
     {
-        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_UNPAID]);
+        return in_array($this->status, [self::STATUS_DRAFT, self::STATUS_UNPAID, self::STATUS_PARTIAL], true);
     }
 
     protected static function newFactory(): RmeInvoiceFactory

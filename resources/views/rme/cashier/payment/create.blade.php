@@ -2,16 +2,21 @@
     @php
         $invoiceStatusLabels = [
             'DRAFT'  => 'Draft',
-            'UNPAID' => 'Belum Dibayar',
-            'PAID'   => 'Lunas',
-            'VOID'   => 'Dibatalkan',
+            'UNPAID'  => 'Belum Dibayar',
+            'PARTIAL' => 'Cicilan / Sebagian',
+            'PAID'    => 'Lunas',
+            'VOID'    => 'Dibatalkan',
         ];
         $invoiceStatusTone = [
             'DRAFT'  => 'info',
-            'UNPAID' => 'warning',
-            'PAID'   => 'success',
-            'VOID'   => 'danger',
+            'UNPAID'  => 'warning',
+            'PARTIAL' => 'warning',
+            'PAID'    => 'success',
+            'VOID'    => 'danger',
         ];
+
+        $paidAmount = $invoice->paidAmount();
+        $remainingAmount = $invoice->remainingAmount();
     @endphp
 
     <div class="space-y-6">
@@ -21,7 +26,7 @@
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">Pembayaran Tagihan RME</h2>
-                <p class="mt-1 text-sm text-gray-500">Input pembayaran penuh untuk tagihan RME yang sudah dibuat kasir.</p>
+                <p class="mt-1 text-sm text-gray-500">Input pembayaran penuh atau cicilan untuk tagihan RME yang sudah dibuat kasir.</p>
             </div>
             <div class="flex flex-shrink-0 items-center gap-3">
                 <x-ui.button variant="neutral" :href="route('rme.cashier.show', [$visit, $invoice])">&larr; Kembali</x-ui.button>
@@ -68,6 +73,14 @@
                     <dt class="text-gray-500">Grand Total</dt>
                     <dd class="text-base font-bold text-teal-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</dd>
                 </div>
+                <div>
+                    <dt class="text-gray-500">Sudah Dibayar</dt>
+                    <dd class="text-base font-semibold text-emerald-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</dd>
+                </div>
+                <div>
+                    <dt class="text-gray-500">Sisa Tagihan</dt>
+                    <dd class="text-base font-bold text-amber-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                </div>
             </dl>
         </x-ui.card>
 
@@ -104,6 +117,14 @@
                             <td colspan="3" class="px-4 py-3 text-right text-base font-semibold text-gray-900">Grand Total</td>
                             <td class="px-4 py-3 text-right text-base font-bold text-teal-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
                         </tr>
+                        <tr>
+                            <td colspan="3" class="px-4 py-2 text-right text-sm text-emerald-700">Sudah Dibayar</td>
+                            <td class="px-4 py-2 text-right font-medium text-emerald-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="3" class="px-4 py-2 text-right text-sm text-amber-700">Sisa Tagihan</td>
+                            <td class="px-4 py-2 text-right font-bold text-amber-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</td>
+                        </tr>
                     </tfoot>
                 </table>
             </div>
@@ -111,8 +132,8 @@
 
         {{-- Payment Form --}}
         <x-ui.card title="Form Pembayaran">
-            <p class="mb-5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                Pilot Sprint 20 hanya menerima pembayaran penuh sesuai grand total tagihan.
+            <p class="mb-5 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
+                Pembayaran dapat dicatat sebagai cicilan atau pelunasan. Jumlah bayar tidak boleh melebihi sisa tagihan.
             </p>
 
             <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5">
@@ -143,10 +164,10 @@
                         Jumlah Dibayar <span class="text-red-500">*</span>
                     </label>
                     <input type="number" name="amount" id="amount"
-                        value="{{ old('amount', $invoice->grand_total) }}"
-                        step="0.01" min="0.01"
+                        value="{{ old('amount', $remainingAmount) }}"
+                        step="0.01" min="0.01" max="{{ $remainingAmount }}"
                         class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('amount') border-red-500 @enderror">
-                    <p class="mt-1 text-xs text-gray-500">Harus sama dengan grand total (pembayaran penuh).</p>
+                    <p class="mt-1 text-xs text-gray-500">Maksimal sisa tagihan: Rp {{ number_format($remainingAmount, 0, ',', '.') }}.</p>
                     @error('amount')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                     @enderror

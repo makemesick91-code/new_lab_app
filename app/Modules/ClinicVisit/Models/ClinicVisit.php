@@ -129,7 +129,7 @@ class ClinicVisit extends Model
     public function rmeInvoice(): HasOne
     {
         return $this->hasOne(RmeInvoice::class, 'clinic_visit_id')
-            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID]);
+            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL]);
     }
 
     protected static function newFactory(): ClinicVisitFactory

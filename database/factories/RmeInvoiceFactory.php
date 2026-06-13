@@ -42,6 +42,13 @@ class RmeInvoiceFactory extends Factory
         ]);
     }
 
+    public function partial(): static
+    {
+        return $this->state(fn () => [
+            'status' => RmeInvoice::STATUS_PARTIAL,
+        ]);
+    }
+
     public function paid(): static
     {
         return $this->state(fn () => [

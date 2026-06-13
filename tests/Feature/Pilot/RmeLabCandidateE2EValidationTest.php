@@ -23,7 +23,6 @@ use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -251,7 +250,7 @@ it('paid rme invoice without lab-required treatment does not create lab case can
 
 // ─── Scenario 4: Partial payment guard ─────────────────────────────────────────
 
-it('partial rme payment is rejected and does not create lab case candidate', function () {
+it('partial rme payment marks invoice partial and does not create lab case candidate', function () {
     [$visit, $record] = e2eVisitReadyForFinalize($this->branch);
     app(MedicalRecordService::class)->finalize($record->fresh());
 
@@ -264,14 +263,14 @@ it('partial rme payment is rejected and does not create lab case candidate', fun
 
     $partial = round((float) $invoice->grand_total / 2, 2);
 
-    expect(fn () => app(RmePaymentService::class)->pay(
+    app(RmePaymentService::class)->pay(
         $invoice->fresh(),
         $this->kasir,
         e2ePaymentPayload($invoice->fresh(), ['amount' => $partial]),
-    ))->toThrow(ValidationException::class);
+    );
 
     expect(LabCaseCandidate::where('rme_invoice_id', $invoice->id)->count())->toBe(0)
-        ->and($invoice->fresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL);
 });
 
 // ─── Scenario 5: Role boundaries ─────────────────────────────────────────────

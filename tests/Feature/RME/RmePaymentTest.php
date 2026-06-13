@@ -162,20 +162,25 @@ it('service rejects payment with negative amount', function () {
     ))->toThrow(ValidationException::class);
 });
 
-// ─── Test 7: Partial payment is rejected for Sprint 20 pilot ─────────────────
+// ─── Test 7: Partial payment is accepted as cicilan ─────────────────────────
 
-it('service rejects partial payment (sprint 20 pilot allows full payment only)', function () {
+it('partial payment marks invoice partial and keeps visit cashier pending', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = pmtUnpaidInvoice($this->branch, $this->cashier);
 
     $partial = round((float) $invoice->grand_total / 2, 2);
 
-    expect(fn () => app(RmePaymentService::class)->pay(
+    app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
         pmtPaymentPayload($invoice, ['amount' => $partial]),
-    ))->toThrow(ValidationException::class);
+    );
+
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($invoice->fresh()->paidAmount())->toBe($partial)
+        ->and($invoice->fresh()->remainingAmount())->toBe(round((float) $invoice->grand_total - $partial, 2))
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
 // ─── Test 8: Full payment creates RME payment record ─────────────────────────
@@ -344,4 +349,71 @@ it('cashier cannot pay invoice from a non-RME branch', function () {
         $this->cashier,
         pmtPaymentPayload($invoice),
     ))->toThrow(ValidationException::class);
+});
+
+it('second payment can fully pay a partial rme invoice', function () {
+    $this->actingAs($this->cashier);
+
+    [$visit, $invoice] = pmtUnpaidInvoice($this->branch, $this->cashier);
+
+    app(RmePaymentService::class)->pay(
+        $invoice,
+        $this->cashier,
+        pmtPaymentPayload($invoice, ['amount' => 200000]),
+    );
+
+    $partialInvoice = $invoice->fresh();
+
+    expect($partialInvoice->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+
+    app(RmePaymentService::class)->pay(
+        $partialInvoice,
+        $this->cashier,
+        pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount()]),
+    );
+
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($invoice->fresh()->remainingAmount())->toBe(0.0)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+        ->and(RmePayment::where('rme_invoice_id', $invoice->id)->count())->toBe(2);
+});
+
+it('service rejects payment greater than remaining rme invoice balance', function () {
+    $this->actingAs($this->cashier);
+
+    [$visit, $invoice] = pmtUnpaidInvoice($this->branch, $this->cashier);
+
+    app(RmePaymentService::class)->pay(
+        $invoice,
+        $this->cashier,
+        pmtPaymentPayload($invoice, ['amount' => 200000]),
+    );
+
+    $partialInvoice = $invoice->fresh();
+
+    expect(fn () => app(RmePaymentService::class)->pay(
+        $partialInvoice,
+        $this->cashier,
+        pmtPaymentPayload($partialInvoice, ['amount' => $partialInvoice->remainingAmount() + 1]),
+    ))->toThrow(ValidationException::class);
+});
+
+it('authorized cashier can open payment form for partial rme invoice', function () {
+    $this->actingAs($this->cashier);
+
+    [$visit, $invoice] = pmtUnpaidInvoice($this->branch, $this->cashier);
+
+    app(RmePaymentService::class)->pay(
+        $invoice,
+        $this->cashier,
+        pmtPaymentPayload($invoice, ['amount' => 200000]),
+    );
+
+    $partialInvoice = $invoice->fresh();
+
+    $this->get(route('rme.cashier.payment.create', [$visit, $partialInvoice]))
+        ->assertOk()
+        ->assertSee('Sisa Tagihan')
+        ->assertSee('Cicilan');
 });

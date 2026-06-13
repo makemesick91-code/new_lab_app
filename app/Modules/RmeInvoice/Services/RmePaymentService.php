@@ -41,9 +41,9 @@ class RmePaymentService
                 ]);
             }
 
-            if ($invoice->status !== RmeInvoice::STATUS_UNPAID) {
+            if (! $invoice->isPayable()) {
                 throw ValidationException::withMessages([
-                    'rme_invoice_id' => 'Pembayaran hanya dapat dicatat untuk invoice berstatus UNPAID.',
+                    'rme_invoice_id' => 'Pembayaran hanya dapat dicatat untuk invoice berstatus UNPAID atau PARTIAL.',
                 ]);
             }
 
@@ -63,10 +63,18 @@ class RmePaymentService
             }
 
             $grandTotal = round((float) $invoice->grand_total, 2);
+            $paidBefore = round((float) $invoice->paidAmount(), 2);
+            $remainingBefore = max(0, round($grandTotal - $paidBefore, 2));
 
-            if ($amount !== $grandTotal) {
+            if ($remainingBefore <= 0) {
                 throw ValidationException::withMessages([
-                    'amount' => 'Jumlah pembayaran harus sama dengan total tagihan (pembayaran penuh).',
+                    'amount' => 'Invoice ini tidak memiliki sisa tagihan.',
+                ]);
+            }
+
+            if ($amount > $remainingBefore) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Pembayaran tidak boleh melebihi sisa tagihan.',
                 ]);
             }
 
@@ -84,10 +92,14 @@ class RmePaymentService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $this->invoices->update($invoice, ['status' => RmeInvoice::STATUS_PAID]);
+            $paidAfter = round($paidBefore + $amount, 2);
+            $remainingAfter = max(0, round($grandTotal - $paidAfter, 2));
+            $newStatus = $remainingAfter <= 0 ? RmeInvoice::STATUS_PAID : RmeInvoice::STATUS_PARTIAL;
+
+            $this->invoices->update($invoice, ['status' => $newStatus]);
 
             $visit = $invoice->clinicVisit;
-            if ($visit && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
+            if ($newStatus === RmeInvoice::STATUS_PAID && $visit && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
                 $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
             }
 
@@ -98,10 +110,14 @@ class RmePaymentService
         // Runs after the payment transaction commits so a generation failure never
         // rolls back a successful RME payment. Errors are logged, not re-thrown.
         try {
-            app(RmeLabIntegrationService::class)->generateForPaidInvoice(
-                RmeInvoice::findOrFail($payment->rme_invoice_id),
-                $cashier,
-            );
+            $invoice = RmeInvoice::findOrFail($payment->rme_invoice_id);
+
+            if ($invoice->isPaid()) {
+                app(RmeLabIntegrationService::class)->generateForPaidInvoice(
+                    $invoice,
+                    $cashier,
+                );
+            }
         } catch (\Throwable $e) {
             Log::warning('Lab case candidate generation failed after RME payment', [
                 'rme_invoice_id' => $payment->rme_invoice_id,

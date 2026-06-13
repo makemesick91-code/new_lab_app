@@ -58,7 +58,7 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
         return RmeInvoice::query()
             ->with(['items.treatment', 'patient', 'clinicVisit', 'cashier', 'medicalRecord'])
             ->where('clinic_visit_id', $clinicVisitId)
-            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID])
+            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->first();
     }
 
@@ -66,7 +66,7 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
     {
         return RmeInvoice::query()
             ->where('clinic_visit_id', $clinicVisitId)
-            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID])
+            ->whereIn('status', [RmeInvoice::STATUS_DRAFT, RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
             ->exists();
     }
 

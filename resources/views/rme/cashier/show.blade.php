@@ -2,16 +2,21 @@
     @php
         $invoiceStatusLabels = [
             'DRAFT'  => 'Draft',
-            'UNPAID' => 'Belum Dibayar',
-            'PAID'   => 'Lunas',
-            'VOID'   => 'Dibatalkan',
+            'UNPAID'  => 'Belum Dibayar',
+            'PARTIAL' => 'Cicilan / Sebagian',
+            'PAID'    => 'Lunas',
+            'VOID'    => 'Dibatalkan',
         ];
         $invoiceStatusTone = [
             'DRAFT'  => 'info',
-            'UNPAID' => 'warning',
-            'PAID'   => 'success',
-            'VOID'   => 'danger',
+            'UNPAID'  => 'warning',
+            'PARTIAL' => 'warning',
+            'PAID'    => 'success',
+            'VOID'    => 'danger',
         ];
+
+        $paidAmount = $invoice->paidAmount();
+        $remainingAmount = $invoice->remainingAmount();
     @endphp
 
     <div class="space-y-6">
@@ -25,8 +30,10 @@
             </div>
             <div class="flex flex-shrink-0 items-center gap-3">
                 <x-ui.button variant="neutral" :href="route('rme.cashier.index')">&larr; Kembali ke Daftar</x-ui.button>
-                @if ($invoice->status === 'UNPAID')
-                    <x-ui.button variant="primary" :href="route('rme.cashier.payment.create', [$visit, $invoice])">Bayar Sekarang</x-ui.button>
+                @if ($invoice->isPayable())
+                    <x-ui.button variant="primary" :href="route('rme.cashier.payment.create', [$visit, $invoice])">
+                        {{ $invoice->isPartial() ? 'Bayar Cicilan' : 'Bayar Sekarang' }}
+                    </x-ui.button>
                 @endif
                 @if ($invoice->status === 'PAID')
                     <x-ui.button variant="secondary" :href="route('rme.cashier.receipt.show', [$visit, $invoice])">Lihat Kwitansi</x-ui.button>
@@ -91,6 +98,14 @@
                         <td colspan="5" class="px-4 py-3 text-right text-base font-semibold text-gray-900">Grand Total</td>
                         <td class="px-4 py-3 text-right text-base font-bold text-blue-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
                     </tr>
+                    <tr>
+                        <td colspan="5" class="px-4 py-2 text-right text-sm text-emerald-700">Sudah Dibayar</td>
+                        <td class="px-4 py-2 text-right font-medium text-emerald-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="5" class="px-4 py-2 text-right text-sm text-amber-700">Sisa Tagihan</td>
+                        <td class="px-4 py-2 text-right font-bold text-amber-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</td>
+                    </tr>
                 </tfoot>
             </x-ui.table>
 
@@ -100,6 +115,34 @@
                 </div>
             @endif
         </x-ui.card>
+
+
+        @if ($invoice->payments->isNotEmpty())
+            <x-ui.card title="Riwayat Pembayaran">
+                <x-ui.table>
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-gray-500">No. Kwitansi</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-500">Tanggal</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-500">Metode</th>
+                            <th class="px-4 py-3 text-right font-medium text-gray-500">Jumlah</th>
+                            <th class="px-4 py-3 text-left font-medium text-gray-500">Catatan</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach ($invoice->payments as $payment)
+                            <tr>
+                                <td class="px-4 py-3 font-mono text-gray-900">{{ $payment->payment_number }}</td>
+                                <td class="px-4 py-3 text-gray-700">{{ $payment->paid_at?->format('d/m/Y H:i') }}</td>
+                                <td class="px-4 py-3 text-gray-700">{{ $payment->paymentMethod?->name ?? 'Tunai' }}</td>
+                                <td class="px-4 py-3 text-right font-semibold text-gray-900">Rp {{ number_format($payment->amount, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-gray-500">{{ $payment->notes ?? '-' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </x-ui.table>
+            </x-ui.card>
+        @endif
 
         <x-rme.lab-workflow-panel :invoice="$invoice" :candidates="$labCaseCandidates" />
 

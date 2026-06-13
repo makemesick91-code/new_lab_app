@@ -87,6 +87,8 @@ class RmeInvoiceController extends Controller
             'items.treatment',
             'cashier',
             'medicalRecord',
+            'payments.paymentMethod',
+            'payments.cashier',
             'labCaseCandidates.convertedLabOrder',
             'labCaseCandidates.treatment',
         ]);
