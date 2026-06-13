@@ -10,10 +10,14 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Services\TreatmentService;
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class RmeInvoiceController extends Controller
 {
@@ -52,56 +56,21 @@ class RmeInvoiceController extends Controller
         ]);
     }
 
+    /**
+     * Aging buckets for active RME receivables (days since invoice date).
+     *
+     * @var array<int, string>
+     */
+    public const AGING_BUCKETS = ['0-7', '8-14', '15-30', '>30'];
+
     public function receivables(Request $request): View
     {
         $this->authorize('viewAny', RmeInvoice::class);
 
-        $branches = Branch::query()
-            ->where('is_active', true)
-            ->where('is_rme_enabled', true)
-            ->orderBy('name')
-            ->get(['id', 'code', 'name']);
-
+        $branches = $this->rmeBranches();
         $activeBranchIds = $branches->pluck('id')->all();
-
-        $requestedBranchId = $request->integer('branch_id') ?: null;
-        $selectedBranchId = $requestedBranchId && in_array($requestedBranchId, $activeBranchIds, true)
-            ? $requestedBranchId
-            : null;
-
-        $requestedStatus = $request->string('status')->toString();
-        $selectedStatus = in_array($requestedStatus, [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL], true)
-            ? $requestedStatus
-            : null;
-
-        $dateFrom = (string) $request->input('date_from', '');
-        $dateTo = (string) $request->input('date_to', '');
-
-        $filters = [
-            'search' => $request->string('search')->toString() ?: null,
-            'branch_id' => $selectedBranchId,
-            'status' => $selectedStatus,
-            'date_from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) ? $dateFrom : null,
-            'date_to' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo) ? $dateTo : null,
-        ];
-
-        $query = RmeInvoice::query()
-            ->with(['branch', 'patient', 'clinicVisit', 'payments'])
-            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
-            ->whereIn('branch_id', $activeBranchIds)
-            ->when($filters['branch_id'], fn ($query, $branchId) => $query->where('branch_id', $branchId))
-            ->when($filters['status'], fn ($query, $status) => $query->where('status', $status))
-            ->when($filters['date_from'], fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
-            ->when($filters['date_to'], fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
-            ->when($filters['search'], function ($query, string $search): void {
-                $term = '%'.mb_strtolower($search).'%';
-
-                $query->where(function ($query) use ($term): void {
-                    $query->whereRaw('LOWER(invoice_number) LIKE ?', [$term])
-                        ->orWhereHas('patient', fn ($query) => $query->whereRaw('LOWER(name) LIKE ?', [$term]))
-                        ->orWhereHas('clinicVisit', fn ($query) => $query->whereRaw('LOWER(visit_number) LIKE ?', [$term]));
-                });
-            });
+        $filters = $this->receivableFilters($request, $activeBranchIds);
+        $query = $this->receivableQuery($activeBranchIds, $filters);
 
         $summaryInvoices = (clone $query)->get();
 
@@ -109,12 +78,10 @@ class RmeInvoiceController extends Controller
             'invoice_count' => $summaryInvoices->count(),
             'grand_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => (float) $invoice->grand_total),
             'paid_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => (float) $invoice->payments->sum('amount')),
-            'remaining_total' => $summaryInvoices->sum(function (RmeInvoice $invoice): float {
-                $paidAmount = (float) $invoice->payments->sum('amount');
-
-                return max(0, round((float) $invoice->grand_total - $paidAmount, 2));
-            }),
+            'remaining_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => $this->receivableRemaining($invoice)),
         ];
+
+        $aging = $this->agingSummary($summaryInvoices);
 
         $invoices = $query
             ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [RmeInvoice::STATUS_PARTIAL])
@@ -127,7 +94,190 @@ class RmeInvoiceController extends Controller
             'filters' => $filters,
             'invoices' => $invoices,
             'summary' => $summary,
+            'aging' => $aging,
+            'agingBuckets' => self::AGING_BUCKETS,
         ]);
+    }
+
+    public function exportReceivables(Request $request): StreamedResponse
+    {
+        $this->authorize('viewAny', RmeInvoice::class);
+
+        $branches = $this->rmeBranches();
+        $activeBranchIds = $branches->pluck('id')->all();
+        $filters = $this->receivableFilters($request, $activeBranchIds);
+
+        $invoices = $this->receivableQuery($activeBranchIds, $filters)
+            ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [RmeInvoice::STATUS_PARTIAL])
+            ->latest()
+            ->get();
+
+        $filename = 'piutang-rme-'.now()->format('Ymd-His').'.csv';
+
+        $headers = [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ];
+
+        $columns = [
+            'No Invoice', 'Pasien', 'No Kunjungan', 'Cabang', 'Status',
+            'Tanggal Invoice', 'Umur Hari', 'Bucket Aging', 'Grand Total', 'Sudah Dibayar', 'Sisa Piutang',
+        ];
+
+        return response()->stream(function () use ($invoices, $columns): void {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, $columns);
+
+            foreach ($invoices as $invoice) {
+                $paidAmount = (float) $invoice->payments->sum('amount');
+                $days = $this->invoiceAgeDays($invoice);
+
+                fputcsv($handle, [
+                    $invoice->invoice_number,
+                    $invoice->patient?->name ?? '-',
+                    $invoice->clinicVisit?->visit_number ?? '-',
+                    trim(($invoice->branch?->code ?? '').' '.($invoice->branch?->name ?? '')),
+                    $invoice->status,
+                    $invoice->created_at?->format('Y-m-d H:i') ?? '-',
+                    $days,
+                    $this->agingBucketForDays($days),
+                    number_format((float) $invoice->grand_total, 2, '.', ''),
+                    number_format($paidAmount, 2, '.', ''),
+                    number_format($this->receivableRemaining($invoice), 2, '.', ''),
+                ]);
+            }
+
+            fclose($handle);
+        }, 200, $headers);
+    }
+
+    private function rmeBranches()
+    {
+        return Branch::query()
+            ->where('is_active', true)
+            ->where('is_rme_enabled', true)
+            ->orderBy('name')
+            ->get(['id', 'code', 'name']);
+    }
+
+    /**
+     * @param  array<int, int>  $activeBranchIds
+     * @return array<string, mixed>
+     */
+    private function receivableFilters(Request $request, array $activeBranchIds): array
+    {
+        $requestedBranchId = $request->integer('branch_id') ?: null;
+        $selectedBranchId = $requestedBranchId && in_array($requestedBranchId, $activeBranchIds, true)
+            ? $requestedBranchId
+            : null;
+
+        $requestedStatus = $request->string('status')->toString();
+        $selectedStatus = in_array($requestedStatus, [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL], true)
+            ? $requestedStatus
+            : null;
+
+        $requestedBucket = $request->string('aging_bucket')->toString();
+        $selectedBucket = in_array($requestedBucket, self::AGING_BUCKETS, true) ? $requestedBucket : null;
+
+        $dateFrom = (string) $request->input('date_from', '');
+        $dateTo = (string) $request->input('date_to', '');
+
+        return [
+            'search' => $request->string('search')->toString() ?: null,
+            'branch_id' => $selectedBranchId,
+            'status' => $selectedStatus,
+            'aging_bucket' => $selectedBucket,
+            'date_from' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) ? $dateFrom : null,
+            'date_to' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo) ? $dateTo : null,
+        ];
+    }
+
+    /**
+     * @param  array<int, int>  $activeBranchIds
+     * @param  array<string, mixed>  $filters
+     */
+    private function receivableQuery(array $activeBranchIds, array $filters): Builder
+    {
+        return RmeInvoice::query()
+            ->with(['branch', 'patient', 'clinicVisit', 'payments'])
+            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
+            ->whereIn('branch_id', $activeBranchIds)
+            ->when($filters['branch_id'], fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($filters['status'], fn ($query, $status) => $query->where('status', $status))
+            ->when($filters['date_from'], fn ($query, $date) => $query->whereDate('created_at', '>=', $date))
+            ->when($filters['date_to'], fn ($query, $date) => $query->whereDate('created_at', '<=', $date))
+            ->when($filters['aging_bucket'], fn ($query, $bucket) => $this->applyAgingBucket($query, $bucket))
+            ->when($filters['search'], function ($query, string $search): void {
+                $term = '%'.mb_strtolower($search).'%';
+
+                $query->where(function ($query) use ($term): void {
+                    $query->whereRaw('LOWER(invoice_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', fn ($query) => $query->whereRaw('LOWER(name) LIKE ?', [$term]))
+                        ->orWhereHas('clinicVisit', fn ($query) => $query->whereRaw('LOWER(visit_number) LIKE ?', [$term]));
+                });
+            });
+    }
+
+    /** Days from the invoice date (created_at) to today. */
+    private function invoiceAgeDays(RmeInvoice $invoice): int
+    {
+        if (! $invoice->created_at) {
+            return 0;
+        }
+
+        return (int) $invoice->created_at->copy()->startOfDay()->diffInDays(Carbon::today());
+    }
+
+    private function agingBucketForDays(int $days): string
+    {
+        return match (true) {
+            $days <= 7 => '0-7',
+            $days <= 14 => '8-14',
+            $days <= 30 => '15-30',
+            default => '>30',
+        };
+    }
+
+    private function applyAgingBucket(Builder $query, string $bucket): Builder
+    {
+        $today = Carbon::today();
+
+        return match ($bucket) {
+            '0-7' => $query->whereDate('created_at', '>=', $today->copy()->subDays(7)),
+            '8-14' => $query->whereDate('created_at', '<=', $today->copy()->subDays(8))
+                ->whereDate('created_at', '>=', $today->copy()->subDays(14)),
+            '15-30' => $query->whereDate('created_at', '<=', $today->copy()->subDays(15))
+                ->whereDate('created_at', '>=', $today->copy()->subDays(30)),
+            '>30' => $query->whereDate('created_at', '<', $today->copy()->subDays(30)),
+            default => $query,
+        };
+    }
+
+    private function receivableRemaining(RmeInvoice $invoice): float
+    {
+        $paidAmount = (float) $invoice->payments->sum('amount');
+
+        return max(0, round((float) $invoice->grand_total - $paidAmount, 2));
+    }
+
+    /**
+     * @param  Collection<int, RmeInvoice>  $invoices
+     * @return array<string, array{count: int, remaining: float}>
+     */
+    private function agingSummary($invoices): array
+    {
+        $summary = [];
+        foreach (self::AGING_BUCKETS as $bucket) {
+            $summary[$bucket] = ['count' => 0, 'remaining' => 0.0];
+        }
+
+        foreach ($invoices as $invoice) {
+            $bucket = $this->agingBucketForDays($this->invoiceAgeDays($invoice));
+            $summary[$bucket]['count']++;
+            $summary[$bucket]['remaining'] += $this->receivableRemaining($invoice);
+        }
+
+        return $summary;
     }
 
     public function create(Request $request, ClinicVisit $clinicVisit): View

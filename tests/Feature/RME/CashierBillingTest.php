@@ -526,3 +526,90 @@ it('unauthorized user cannot view rme receivables page', function () {
     $this->get(route('rme.cashier.receivables'))
         ->assertForbidden();
 });
+
+// ─── Sprint 24.6 — Aging + CSV export ───────────────────────────────────────
+
+function makeReceivableInvoice(Branch $branch, User $cashier, int $ageDays, float $unitPrice = 300000): RmeInvoice
+{
+    [$visit] = makeFinalizedVisit($branch);
+    $invoice = app(RmeInvoiceService::class)->create(
+        $visit,
+        $cashier,
+        ['items' => [makeItemPayload(['description' => 'Tagihan Aging', 'unit_price' => $unitPrice])]]
+    );
+
+    RmeInvoice::query()->whereKey($invoice->id)->update(['created_at' => now()->subDays($ageDays)]);
+
+    return $invoice->fresh();
+}
+
+it('cashier can view receivable aging summary', function () {
+    $this->actingAs($this->cashier);
+
+    makeReceivableInvoice($this->branch, $this->cashier, 2);   // 0-7
+    makeReceivableInvoice($this->branch, $this->cashier, 10);  // 8-14
+    makeReceivableInvoice($this->branch, $this->cashier, 20);  // 15-30
+    makeReceivableInvoice($this->branch, $this->cashier, 45);  // >30
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee('0–7 Hari')
+        ->assertSee('8–14 Hari')
+        ->assertSee('15–30 Hari')
+        ->assertSee('>30 Hari');
+});
+
+it('cashier can filter receivables by aging bucket', function () {
+    $this->actingAs($this->cashier);
+
+    $inBucket = makeReceivableInvoice($this->branch, $this->cashier, 10);  // 8-14
+    $otherBucket = makeReceivableInvoice($this->branch, $this->cashier, 2); // 0-7
+
+    $this->get(route('rme.cashier.receivables', ['aging_bucket' => '8-14']))
+        ->assertOk()
+        ->assertSee($inBucket->invoice_number)
+        ->assertDontSee($otherBucket->invoice_number);
+});
+
+it('cashier can export filtered receivables as csv', function () {
+    $this->actingAs($this->cashier);
+
+    $inBucket = makeReceivableInvoice($this->branch, $this->cashier, 10);  // 8-14
+    $otherBucket = makeReceivableInvoice($this->branch, $this->cashier, 2); // 0-7
+
+    $response = $this->get(route('rme.cashier.receivables.export', ['aging_bucket' => '8-14']));
+
+    $response->assertOk();
+    expect($response->headers->get('content-type'))->toContain('text/csv');
+    expect($response->headers->get('content-disposition'))->toContain('attachment');
+
+    $csv = $response->streamedContent();
+
+    expect($csv)->toContain('No Invoice');
+    expect($csv)->toContain('Bucket Aging');
+    expect($csv)->toContain($inBucket->invoice_number);
+    expect($csv)->not->toContain($otherBucket->invoice_number);
+});
+
+it('paid invoices are excluded from aging and export', function () {
+    $this->actingAs($this->cashier);
+
+    $active = makeReceivableInvoice($this->branch, $this->cashier, 10);
+
+    [$paidVisit] = makeFinalizedVisit($this->branch);
+    $paidInvoice = app(RmeInvoiceService::class)->create(
+        $paidVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Lunas', 'unit_price' => 300000])]]
+    );
+    $paidInvoice->update(['status' => RmeInvoice::STATUS_PAID]);
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($active->invoice_number)
+        ->assertDontSee($paidInvoice->invoice_number);
+
+    $csv = $this->get(route('rme.cashier.receivables.export'))->streamedContent();
+    expect($csv)->toContain($active->invoice_number);
+    expect($csv)->not->toContain($paidInvoice->invoice_number);
+});

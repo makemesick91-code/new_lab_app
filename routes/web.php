@@ -254,6 +254,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware('permission:manage_rme_billing')->group(function () {
         Route::get('cashier', [RmeInvoiceController::class, 'index'])->name('cashier.index');
         Route::get('cashier/receivables', [RmeInvoiceController::class, 'receivables'])->name('cashier.receivables');
+        Route::get('cashier/receivables/export', [RmeInvoiceController::class, 'exportReceivables'])->name('cashier.receivables.export');
         Route::get('cashier/{clinicVisit}/billing/create', [RmeInvoiceController::class, 'create'])->name('cashier.create');
         Route::post('cashier/{clinicVisit}/billing', [RmeInvoiceController::class, 'store'])->name('cashier.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}', [RmeInvoiceController::class, 'show'])->name('cashier.show');
