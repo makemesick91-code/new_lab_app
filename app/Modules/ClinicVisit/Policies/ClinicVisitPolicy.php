@@ -3,7 +3,7 @@
 namespace App\Modules\ClinicVisit\Policies;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 
 class ClinicVisitPolicy
@@ -15,7 +15,7 @@ class ClinicVisitPolicy
 
     public function view(User $user, ClinicVisit $visit): bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($visit->branch_id);
+        return $this->canView($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
     }
 
     public function create(User $user): bool
@@ -25,17 +25,17 @@ class ClinicVisitPolicy
 
     public function update(User $user, ClinicVisit $visit): bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($visit->branch_id);
+        return $this->canManage($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
     }
 
     public function transition(User $user, ClinicVisit $visit): bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($visit->branch_id);
+        return $this->canManage($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
     }
 
     public function print(User $user, ClinicVisit $visit): bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($visit->branch_id);
+        return $this->canView($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
     }
 
     private function canView(User $user): bool
@@ -48,10 +48,18 @@ class ClinicVisitPolicy
         return $user->can('manage_clinic_visits');
     }
 
-    private function belongsToActiveBranch(?int $branchId): bool
+    /**
+     * RME visits are scoped to the operational "Cabang RME" set, not a single
+     * BranchContext fallback branch. A visit is viewable when its branch is one
+     * of the active RME-enabled branches (MAIN is excluded — not RME-enabled).
+     * This intentionally does NOT rely on users.branch_id (Sprint 23 Phase 23.9.3).
+     */
+    private function belongsToActiveRmeBranch(?int $branchId): bool
     {
-        $activeBranchId = app(BranchContext::class)->id();
+        if ($branchId === null) {
+            return false;
+        }
 
-        return $activeBranchId !== null && $branchId === $activeBranchId;
+        return in_array($branchId, app(BranchService::class)->rmeEnabledIds(), true);
     }
 }

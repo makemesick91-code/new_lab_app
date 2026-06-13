@@ -29,6 +29,26 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->withQueryString();
     }
 
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        return ClinicVisit::query()
+            ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
+            ->whereIn('branch_id', $branchIds)
+            ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($filters['visit_date'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', $v))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(visit_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', fn ($q) => $q->whereRaw('LOWER(name) LIKE ?', [$term]));
+                });
+            })
+            ->orderByDesc('visit_date')
+            ->orderBy('queue_number')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
     public function findInBranch(int $branchId, int $id): ?ClinicVisit
     {
         return ClinicVisit::query()->where('branch_id', $branchId)->find($id);
@@ -58,6 +78,22 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
     {
         return ClinicVisit::query()
             ->where('branch_id', $branchId)
+            ->where('status', $status)
+            ->count();
+    }
+
+    public function countTodayByBranches(array $branchIds, string $date): int
+    {
+        return ClinicVisit::query()
+            ->whereIn('branch_id', $branchIds)
+            ->whereDate('visit_date', $date)
+            ->count();
+    }
+
+    public function countByBranchesStatus(array $branchIds, string $status): int
+    {
+        return ClinicVisit::query()
+            ->whereIn('branch_id', $branchIds)
             ->where('status', $status)
             ->count();
     }

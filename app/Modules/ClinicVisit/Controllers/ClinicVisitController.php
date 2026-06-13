@@ -37,16 +37,19 @@ class ClinicVisitController extends Controller
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
+        $branchId = $request->integer('branch_id') ?: null;
+
         $filters = [
             'search' => $request->string('search')->toString() ?: null,
             'status' => $request->string('status')->toString() ?: null,
             'visit_date' => $request->string('visit_date')->toString() ?: null,
+            'branch_id' => $branchId,
         ];
 
         $rmeWidgets = [
-            'visits_today' => $this->visits->visitsTodayCount(),
-            'waiting' => $this->visits->waitingCount(),
-            'in_progress' => $this->visits->inProgressCount(),
+            'visits_today' => $this->visits->visitsTodayCount($branchId),
+            'waiting' => $this->visits->waitingCount($branchId),
+            'in_progress' => $this->visits->inProgressCount($branchId),
             'draft_medical_records' => $this->medicalRecords->draftCount(),
             'finalized_today' => $this->medicalRecords->finalizedTodayCount(),
         ];
@@ -56,6 +59,7 @@ class ClinicVisitController extends Controller
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rmeWidgets' => $rmeWidgets,
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 

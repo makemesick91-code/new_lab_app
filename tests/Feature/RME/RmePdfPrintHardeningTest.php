@@ -109,7 +109,9 @@ it('unauthorized user cannot open rme visit print page', function () {
 });
 
 it('cross branch user cannot open rme visit print page', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'HARDEN-XBR']);
+    // Sprint 23 Phase 23.9.3: scope is the active RME-enabled branch set, so a
+    // non-RME branch visit stays out of scope and forbidden.
+    $otherBranch = Branch::factory()->create(['code' => 'HARDEN-XBR', 'is_rme_enabled' => false]);
     $visit = hardenVisit($otherBranch);
 
     $this->actingAs($this->viewer)
@@ -407,7 +409,7 @@ it('authorized user can download rme visit pdf', function () {
 });
 
 it('rme visit pdf route enforces branch isolation', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'HARDEN-PDF-X']);
+    $otherBranch = Branch::factory()->create(['code' => 'HARDEN-PDF-X', 'is_rme_enabled' => false]);
     $visit = hardenVisit($otherBranch);
 
     $this->actingAs($this->viewer)

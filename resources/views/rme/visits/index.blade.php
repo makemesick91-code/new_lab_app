@@ -21,7 +21,7 @@
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">Kunjungan Pasien</h2>
-                <p class="mt-1 text-sm text-gray-500">Antrian dan riwayat kunjungan klinik cabang aktif.</p>
+                <p class="mt-1 text-sm text-gray-500">Antrian dan riwayat kunjungan seluruh Cabang RME aktif.</p>
             </div>
             @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
                 <x-ui.button variant="primary" :href="route('rme.visits.create')">+ Daftar Kunjungan</x-ui.button>
@@ -30,21 +30,22 @@
 
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             @php
+                $branchQuery = $filters['branch_id'] ? ['branch_id' => $filters['branch_id']] : [];
                 $rmeWidgetDefs = [
                     [
                         'label' => 'Kunjungan Hari Ini',
                         'value' => $rmeWidgets['visits_today'] ?? 0,
-                        'href'  => route('rme.visits.index'),
+                        'href'  => route('rme.visits.index', $branchQuery),
                     ],
                     [
                         'label' => 'Menunggu',
                         'value' => $rmeWidgets['waiting'] ?? 0,
-                        'href'  => route('rme.visits.index', ['status' => 'waiting']),
+                        'href'  => route('rme.visits.index', $branchQuery + ['status' => 'waiting']),
                     ],
                     [
                         'label' => 'Sedang Dilayani',
                         'value' => $rmeWidgets['in_progress'] ?? 0,
-                        'href'  => route('rme.visits.index', ['status' => 'in_progress']),
+                        'href'  => route('rme.visits.index', $branchQuery + ['status' => 'in_progress']),
                     ],
                     [
                         'label' => 'RM Draft',
@@ -89,8 +90,17 @@
                             @endforeach
                         </select>
                     </div>
+                    <div>
+                        <label for="visit-branch" class="text-sm font-medium text-gray-700">Cabang RME</label>
+                        <select id="visit-branch" name="branch_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua Cabang RME</option>
+                            @foreach ($rmeBranches as $branch)
+                                <option value="{{ $branch->id }}" @selected((int) $filters['branch_id'] === (int) $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
                     <x-ui.button type="submit" variant="neutral">Terapkan</x-ui.button>
-                    @if ($filters['search'] || $filters['status'] || $filters['visit_date'])
+                    @if ($filters['search'] || $filters['status'] || $filters['visit_date'] || $filters['branch_id'])
                         <x-ui.button variant="secondary" :href="route('rme.visits.index')">Atur Ulang</x-ui.button>
                     @endif
                 </div>
@@ -109,6 +119,7 @@
                         <th scope="col" class="px-4 py-3 font-medium">No. Kunjungan</th>
                         <th scope="col" class="px-3 py-3 font-medium">Antrian</th>
                         <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
+                        <th scope="col" class="px-3 py-3 font-medium">Klinik/Cabang</th>
                         <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
                         <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
                         <th scope="col" class="px-3 py-3 font-medium">Status</th>
@@ -127,6 +138,7 @@
                             <td class="px-4 py-3 font-mono text-gray-700">{{ $visit->visit_number }}</td>
                             <td class="px-3 py-3 text-center font-semibold text-gray-900">{{ $visit->queue_number }}</td>
                             <td class="px-3 py-3 font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->visit_date?->format('d/m/Y') }}</td>
                             <td class="px-3 py-3">
@@ -147,7 +159,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-12 text-center">
+                            <td colspan="8" class="px-4 py-12 text-center">
                                 <p class="text-sm font-medium text-gray-900">Belum ada kunjungan.</p>
                                 <p class="mt-1 text-sm text-gray-500">Daftarkan kunjungan baru untuk memulai antrian hari ini.</p>
                             </td>

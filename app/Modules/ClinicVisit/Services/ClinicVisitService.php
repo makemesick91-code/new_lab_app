@@ -3,6 +3,7 @@
 namespace App\Modules\ClinicVisit\Services;
 
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
@@ -18,11 +19,41 @@ class ClinicVisitService
         private readonly ClinicVisitRepositoryInterface $visits,
         private readonly BranchContext $branchContext,
         private readonly PatientService $patients,
+        private readonly BranchService $branches,
     ) {}
 
+    /**
+     * Daftar Kunjungan RME lists visits across the operational "Cabang RME" set
+     * (active RME-enabled branches), NOT a single BranchContext fallback branch.
+     * MAIN is excluded because it is not RME-enabled. An optional `branch_id`
+     * filter narrows the scope to a single RME branch; any value outside the
+     * RME set is ignored and the full RME scope is used (Sprint 23 Phase 23.9.3).
+     */
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
-        return $this->visits->paginate($this->branchContext->requireId(), $filters, $perPage);
+        return $this->visits->paginateForBranches(
+            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $filters,
+            $perPage,
+        );
+    }
+
+    /**
+     * Resolve the branch IDs a visit list / count should be scoped to.
+     * Returns the single requested branch when it is a valid RME branch,
+     * otherwise the full active RME-enabled set.
+     *
+     * @return array<int, int>
+     */
+    private function scopeBranchIds(?int $branchFilter): array
+    {
+        $allowed = $this->branches->rmeEnabledIds();
+
+        if ($branchFilter !== null && in_array($branchFilter, $allowed, true)) {
+            return [$branchFilter];
+        }
+
+        return $allowed;
     }
 
     public function find(int $id): ?ClinicVisit
@@ -134,26 +165,26 @@ class ClinicVisitService
         return DB::transaction(fn () => $this->visits->update($visit, $data));
     }
 
-    public function visitsTodayCount(): int
+    public function visitsTodayCount(?int $branchId = null): int
     {
-        return $this->visits->countTodayByBranch(
-            $this->branchContext->requireId(),
+        return $this->visits->countTodayByBranches(
+            $this->scopeBranchIds($branchId),
             Carbon::today()->toDateString(),
         );
     }
 
-    public function waitingCount(): int
+    public function waitingCount(?int $branchId = null): int
     {
-        return $this->visits->countByBranchStatus(
-            $this->branchContext->requireId(),
+        return $this->visits->countByBranchesStatus(
+            $this->scopeBranchIds($branchId),
             ClinicVisit::STATUS_WAITING,
         );
     }
 
-    public function inProgressCount(): int
+    public function inProgressCount(?int $branchId = null): int
     {
-        return $this->visits->countByBranchStatus(
-            $this->branchContext->requireId(),
+        return $this->visits->countByBranchesStatus(
+            $this->scopeBranchIds($branchId),
             ClinicVisit::STATUS_IN_PROGRESS,
         );
     }

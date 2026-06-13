@@ -37,6 +37,21 @@ class BranchService
         return $this->branches->listRmeEnabled();
     }
 
+    /**
+     * IDs of the active RME-enabled branches. Used to scope RME visit listing
+     * and dashboard counts to the operational "Cabang RME" set (MAIN, which is
+     * not RME-enabled, is excluded by definition).
+     *
+     * @return array<int, int>
+     */
+    public function rmeEnabledIds(): array
+    {
+        return $this->branches->listRmeEnabled()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
     public function find(int $id): ?Branch
     {
         return $this->branches->findById($id);

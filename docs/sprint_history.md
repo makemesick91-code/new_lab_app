@@ -5006,3 +5006,25 @@ PASS — local only, no VPS deploy, additive migration only, no destructive DB c
 
 ### Next phase
 Sprint 23 Phase 23.9.2 — VPS Deploy + RME Clinic Source Smoke (backup DB first, `migrate --force` only; smoke patient create, RME visit existing patient, RME visit new patient; confirm MAIN hidden from Klinik/Cabang dropdown).
+
+## Sprint 23 Phase 23.9.3 — RME Visit List Branch Filter Fix
+
+- Branch: `feature/sprint-23-phase-23-9-3-rme-visit-list-branch-filter` (from `sprint-23-phase-23-9-1-rme-clinic-branch-source` / `cf1f591`). Tag `sprint-23-phase-23-9-3-rme-visit-list-branch-filter`. Local only — no VPS deploy, no push. Full doc: `docs/sprint_23_phase_23_9_3_rme_visit_list_branch_filter.md`.
+
+### Bug
+- A new patient (Megasanti) + visit (VIS-20260613-001) saved correctly at branch ATG3 (`branch_id=3`, `clinic_id=null`), but Daftar Kunjungan did not show the visit. The index query was forced to the single `BranchContext` fallback branch; when the fallback was not ATG3, ATG3 visits were silently hidden. An all-branch DB query found the visit.
+
+### Root cause
+- `ClinicVisitService::paginate()` used `BranchContext::requireId()` and `ClinicVisitRepository::paginate()` filtered `where('branch_id', $branchId)`, scoping the list to the fallback branch. `ClinicVisitPolicy::belongsToActiveBranch()` had the same single-branch assumption.
+
+### Fix
+- Daftar Kunjungan default scope = **active RME-enabled branch set** (`BranchService::rmeEnabledIds()`) via new repo method `paginateForBranches()`. Optional **Cabang RME** filter (`branch_id`): valid RME branch narrows the list, any other value is ignored (full RME scope). No `clinic_id` filter, no `users.branch_id`, MAIN excluded. Branch column shows `{code} — {name}`. Counts (`visitsTodayCount/waitingCount/inProgressCount`) accept `?int $branchId` and align with list scope. Policy `belongsToActiveRmeBranch()` allows view/print/update/transition for any active RME-enabled branch; non-RME branch visits remain forbidden.
+
+### Tests run
+- New `RmeVisitListBranchFilterTest` (16 passed). Updated 4 `ClinicVisitTest` + 2 `RmePdfPrintHardeningTest` isolation tests to use a non-RME "other branch". Focused suites: ClinicVisit 66, Rme 470, Permission 156, Sidebar 42, Dashboard|Patient|Branch 455 — all passed. `pint --dirty` OK; `npm run build` OK. Full end-to-end suite not run (runtime budget).
+
+### Final status
+PASS — local only, no VPS deploy, no schema/migration change, no destructive DB commands, no patient/visit data rewritten, Lab remains global.
+
+### Next phase
+Sprint 23 Phase 23.9.4 — VPS Deploy + Visit List Branch Filter Smoke (backup DB first, `migrate --force` only; confirm Megasanti / VIS-20260613-001 appears in Daftar Kunjungan, Cabang RME filter works, existing + new patient visits both appear, no 500).

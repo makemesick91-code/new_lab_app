@@ -51,7 +51,10 @@ it('lists visits for a viewer', function () {
         ->assertSee('VIS-20260609-001');
 });
 
-it('only lists visits from active branch', function () {
+it('lists visits across RME branches but excludes non-RME branches', function () {
+    // Sprint 23 Phase 23.9.3: Daftar Kunjungan scopes to the active RME-enabled
+    // branch set ("Cabang RME"), not a single BranchContext fallback branch.
+    // A visit on a branch that is not RME-enabled stays out of the list.
     ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'visit_number' => 'VIS-ACTIVE-001',
@@ -62,7 +65,7 @@ it('only lists visits from active branch', function () {
         'queue_number' => 1,
     ]);
 
-    $otherBranch = Branch::factory()->create(['code' => 'OTH1']);
+    $otherBranch = Branch::factory()->create(['code' => 'OTH1', 'is_rme_enabled' => false]);
     ClinicVisit::factory()->create([
         'branch_id' => $otherBranch->id,
         'visit_number' => 'VIS-OTHER-001',
@@ -275,8 +278,8 @@ it('denies viewer from creating or updating', function () {
         ->assertForbidden();
 });
 
-it('prevents updating visits from another branch', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'OTH3']);
+it('prevents updating visits from a non-RME branch', function () {
+    $otherBranch = Branch::factory()->create(['code' => 'OTH3', 'is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $otherBranch->id,
         'clinic_id' => $this->clinic->id,
@@ -471,8 +474,8 @@ it('viewer cannot transition status', function () {
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_REGISTERED);
 });
 
-it('user from another branch cannot transition visit status', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'OTH4']);
+it('user cannot transition a visit from a non-RME branch', function () {
+    $otherBranch = Branch::factory()->create(['code' => 'OTH4', 'is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $otherBranch->id,
         'clinic_id' => $this->clinic->id,
@@ -822,8 +825,8 @@ it('user without permission cannot open visit print view', function () {
         ->assertForbidden();
 });
 
-it('cross-branch user cannot open visit print view', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'XBRP1']);
+it('user cannot open the print view of a non-RME branch visit', function () {
+    $otherBranch = Branch::factory()->create(['code' => 'XBRP1', 'is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $otherBranch->id,
         'clinic_id' => $this->clinic->id,
