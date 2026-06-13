@@ -6,6 +6,9 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
@@ -18,7 +21,9 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
 
-    $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
+    $this->main = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
     $this->cashier = userWith(['manage_rme_billing']);
     $this->unauthorized = userWith(['view_clinic_visits']);
 });
@@ -353,4 +358,88 @@ it('cashier cannot access invoice from a non-RME branch', function () {
 
     $this->get(route('rme.cashier.show', [$visit, $invoice]))
         ->assertForbidden();
+});
+
+// ─── RME branch queue + clinical display (Sprint 23 hardening) ───────────────
+
+it('lists an RME-branch visit in cashier queue after medical record finalization', function () {
+    $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $this->branch->id]);
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    app(MedicalRecordService::class)->finalize($record);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.index'))
+        ->assertOk()
+        ->assertSee($visit->fresh()->visit_number);
+});
+
+it('does not list a MAIN branch visit in the cashier queue', function () {
+    $mainVisit = ClinicVisit::factory()->cashierPending()->create(['branch_id' => $this->main->id]);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.index'))
+        ->assertOk()
+        ->assertDontSee($mainVisit->visit_number);
+});
+
+it('does not list a completed visit without invoice in the cashier queue', function () {
+    $completed = ClinicVisit::factory()->completed()->create(['branch_id' => $this->branch->id]);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.index'))
+        ->assertOk()
+        ->assertDontSee($completed->visit_number);
+});
+
+it('cashier create page displays odontogram and RME clinical summary', function () {
+    [$visit, $record] = makeFinalizedVisit($this->branch);
+
+    Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'medical_record_id' => $record->id,
+        'status' => Odontogram::STATUS_FINALIZED,
+        'summary_notes' => 'Catatan odontogram kasir',
+        'additional_conditions' => 'Kondisi tambahan umum',
+        'tooth_map_payload' => [
+            'teeth' => [
+                '16' => [
+                    'status' => 'caries',
+                    'conditions' => ['filling'],
+                    'note' => 'Karies mesial',
+                ],
+            ],
+        ],
+    ]);
+
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $record->id,
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'doctor_id' => $visit->doctor_id,
+        'handwriting_path' => 'data:image/png;base64,'.base64_encode('fake-png'),
+    ]);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.create', $visit))
+        ->assertOk()
+        ->assertSee('Ringkasan Klinis')
+        ->assertSee('RME Tulisan Tangan')
+        ->assertSee('Odontogram')
+        ->assertSee('Catatan odontogram kasir')
+        ->assertSee('Karies')
+        ->assertSee('Tanda Klinis')
+        ->assertSee('Karies mesial');
 });

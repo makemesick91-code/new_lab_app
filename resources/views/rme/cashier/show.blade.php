@@ -48,34 +48,7 @@
         </x-ui.card>
 
         {{-- Patient & Visit --}}
-        <x-ui.card title="Informasi Kunjungan">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                <div>
-                    <dt class="text-gray-500">No. Kunjungan</dt>
-                    <dd class="font-mono font-medium text-gray-900">{{ $visit->visit_number }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Tanggal</dt>
-                    <dd class="text-gray-900">{{ $visit->visit_date?->format('d/m/Y') }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Pasien</dt>
-                    <dd class="text-gray-900 font-medium">{{ $visit->patient?->name }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Dokter</dt>
-                    <dd class="text-gray-900">{{ $visit->doctor?->name }}</dd>
-                </div>
-                @if ($invoice->medicalRecord)
-                    <div>
-                        <dt class="text-gray-500">Status RME</dt>
-                        <dd>
-                            <x-ui.badge tone="success">{{ strtoupper($invoice->medicalRecord->status) }}</x-ui.badge>
-                        </dd>
-                    </div>
-                @endif
-            </dl>
-        </x-ui.card>
+        @include('rme.cashier.partials.clinical-summary', ['visit' => $visit])
 
         {{-- Invoice Items --}}
         <x-ui.card padding="">

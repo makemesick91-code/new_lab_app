@@ -18,6 +18,7 @@ beforeEach(function () {
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->rmeBranch = Branch::factory()->create(['code' => 'RME1', 'is_rme_enabled' => true]);
     // Give the actor both visit and patient management rights.
     $this->actor = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
 });
@@ -29,6 +30,7 @@ it('registers a visit for an existing patient (default mode)', function () {
 
     $this->actingAs($this->actor)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $patient->id,
             'doctor_id' => $this->doctor->id,

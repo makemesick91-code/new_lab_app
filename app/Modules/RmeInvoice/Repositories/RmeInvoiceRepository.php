@@ -30,7 +30,15 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
     public function paginateCashierPendingForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return ClinicVisit::query()
-            ->with(['patient', 'doctor', 'initialTreatment', 'branch', 'rmeInvoice'])
+            ->with([
+                'patient',
+                'doctor',
+                'initialTreatment',
+                'branch',
+                'medicalRecord.handwriting',
+                'odontogram',
+                'rmeInvoice',
+            ])
             ->whereIn('branch_id', $branchIds)
             ->where('status', ClinicVisit::STATUS_CASHIER_PENDING)
             ->when($filters['search'] ?? null, function ($query, $search) {

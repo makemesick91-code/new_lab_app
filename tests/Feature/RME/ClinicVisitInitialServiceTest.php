@@ -15,6 +15,7 @@ beforeEach(function () {
     seedAccessControl();
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->rmeBranch = Branch::factory()->create(['code' => 'RME1', 'is_rme_enabled' => true]);
     $this->manager = userWith(['manage_clinic_visits']);
     $this->viewer = userWith(['view_clinic_visits']);
 
@@ -29,6 +30,7 @@ beforeEach(function () {
 it('admin can create clinic visit with initial_treatment_id', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -44,6 +46,7 @@ it('admin can create clinic visit with initial_treatment_id', function () {
 it('initial_treatment_id is required on create', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -54,6 +57,7 @@ it('initial_treatment_id is required on create', function () {
 it('initial service note can be saved', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -113,6 +117,7 @@ it('doctor can see initial service on RME page', function () {
 it('initial service does not create invoice or payment record', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -128,6 +133,7 @@ it('inactive treatment is rejected as initial treatment', function () {
 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -139,6 +145,7 @@ it('inactive treatment is rejected as initial treatment', function () {
 it('unauthorized user cannot create visit with initial treatment', function () {
     $this->actingAs($this->viewer)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,

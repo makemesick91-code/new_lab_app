@@ -22,50 +22,8 @@
             </div>
         </div>
 
-        {{-- Visit & Patient Summary --}}
-        <x-ui.card title="Informasi Kunjungan">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                <div>
-                    <dt class="text-gray-500">No. Kunjungan</dt>
-                    <dd class="font-mono font-medium text-gray-900">{{ $visit->visit_number }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Tanggal</dt>
-                    <dd class="text-gray-900">{{ $visit->visit_date?->format('d/m/Y') }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Pasien</dt>
-                    <dd class="text-gray-900 font-medium">{{ $visit->patient?->name }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Dokter</dt>
-                    <dd class="text-gray-900">{{ $visit->doctor?->name }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Layanan Awal (Admin)</dt>
-                    <dd class="text-gray-600">{{ $visit->initialTreatment?->name ?? '-' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-gray-500">Catatan Layanan</dt>
-                    <dd class="text-gray-600">{{ $visit->initial_service_note ?? '-' }}</dd>
-                </div>
-                @if ($visit->medicalRecord)
-                    <div>
-                        <dt class="text-gray-500">Status RME</dt>
-                        <dd class="mt-0.5">
-                            @php $mrStatus = strtoupper($visit->medicalRecord->status); @endphp
-                            <x-ui.badge :tone="$mrStatusTone[$mrStatus] ?? 'neutral'">{{ $mrStatus }}</x-ui.badge>
-                        </dd>
-                    </div>
-                    @if ($visit->medicalRecord->handwriting)
-                        <div>
-                            <dt class="text-gray-500">Catatan Klinis Dokter</dt>
-                            <dd class="text-gray-600 text-xs italic">{{ Str::limit($visit->medicalRecord->handwriting->content ?? '', 120) }}</dd>
-                        </div>
-                    @endif
-                @endif
-            </dl>
-        </x-ui.card>
+        {{-- Visit & clinical summary for cashier billing --}}
+        @include('rme.cashier.partials.clinical-summary', ['visit' => $visit])
 
         {{-- Billing Form --}}
         <form method="POST" action="{{ route('rme.cashier.store', $visit) }}" id="billing-form">

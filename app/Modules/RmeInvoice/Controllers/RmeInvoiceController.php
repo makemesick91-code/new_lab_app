@@ -24,6 +24,19 @@ class RmeInvoiceController extends Controller
         private readonly ClinicVisitService $visits,
     ) {}
 
+    /** @return array<int, string> */
+    private function cashierVisitRelations(): array
+    {
+        return [
+            'patient',
+            'doctor',
+            'branch',
+            'initialTreatment',
+            'medicalRecord.handwriting',
+            'odontogram',
+        ];
+    }
+
     public function index(Request $request): View
     {
         $this->authorize('viewAny', RmeInvoice::class);
@@ -50,7 +63,7 @@ class RmeInvoiceController extends Controller
         }
 
         return view('rme.cashier.create', [
-            'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment', 'medicalRecord.handwriting']),
+            'visit' => $clinicVisit->load($this->cashierVisitRelations()),
             'treatments' => $this->treatments->listActive(),
         ]);
     }
@@ -79,7 +92,7 @@ class RmeInvoiceController extends Controller
         ]);
 
         return view('rme.cashier.show', [
-            'visit' => $clinicVisit->load(['patient', 'doctor']),
+            'visit' => $clinicVisit->load($this->cashierVisitRelations()),
             'invoice' => $invoice,
             'labCaseCandidates' => $invoice->labCaseCandidates,
         ]);

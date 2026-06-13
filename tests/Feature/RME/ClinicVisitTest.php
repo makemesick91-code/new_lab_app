@@ -18,6 +18,7 @@ beforeEach(function () {
     seedAccessControl();
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->rmeBranch = Branch::factory()->create(['code' => 'RME1', 'is_rme_enabled' => true]);
     $this->manager = userWith(['manage_clinic_visits']);
     $this->viewer = userWith(['view_clinic_visits']);
 
@@ -93,6 +94,7 @@ it('lets manager open create page', function () {
 it('stores valid clinic visit in active branch', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
@@ -102,7 +104,7 @@ it('stores valid clinic visit in active branch', function () {
         ->assertRedirect();
 
     $this->assertDatabaseHas('trx_clinic_visits', [
-        'branch_id' => $this->branch->id,
+        'branch_id' => $this->rmeBranch->id,
         'clinic_id' => $this->clinic->id,
         'patient_id' => $this->patient->id,
         'doctor_id' => $this->doctor->id,
@@ -117,7 +119,7 @@ it('auto-generates queue_number per branch per visit_date', function () {
     // Seed first visit directly (avoids SQLite savepoint visibility issue in tests).
     // Production uses lockForUpdate() inside DB::transaction() for concurrency safety.
     ClinicVisit::factory()->create([
-        'branch_id' => $this->branch->id,
+        'branch_id' => $this->rmeBranch->id,
         'clinic_id' => $this->clinic->id,
         'patient_id' => $this->patient->id,
         'doctor_id' => $this->doctor->id,
@@ -130,6 +132,7 @@ it('auto-generates queue_number per branch per visit_date', function () {
     // Second visit via HTTP — must get queue_number = 2 since 1 is taken.
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $patient2->id,
             'doctor_id' => $this->doctor->id,
@@ -137,7 +140,7 @@ it('auto-generates queue_number per branch per visit_date', function () {
         ])
         ->assertRedirect();
 
-    $second = ClinicVisit::where('branch_id', $this->branch->id)
+    $second = ClinicVisit::where('branch_id', $this->rmeBranch->id)
         ->where('patient_id', $patient2->id)
         ->first();
 
@@ -148,13 +151,14 @@ it('auto-generates queue_number per branch per visit_date', function () {
 it('auto-generates visit_number in VIS-YYYYMMDD-NNN format', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
         ]);
 
-    $visit = ClinicVisit::where('branch_id', $this->branch->id)->first();
+    $visit = ClinicVisit::where('branch_id', $this->rmeBranch->id)->first();
 
     expect($visit->visit_number)
         ->toMatch('/^VIS-\d{8}-\d{3}$/')
@@ -192,18 +196,18 @@ it('uses the selected RME branch as the visit branch (Klinik = Cabang RME)', fun
     ]);
 });
 
-it('falls back to active branch context when no branch is supplied', function () {
+it('rejects visit creation without an explicit RME branch for existing patient', function () {
     $this->actingAs($this->manager)
+        ->from(route('rme.visits.create'))
         ->post(route('rme.visits.store'), [
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,
             'initial_treatment_id' => $this->treatment->id,
         ])
-        ->assertRedirect();
+        ->assertSessionHasErrors('branch_id');
 
-    $this->assertDatabaseHas('trx_clinic_visits', [
-        'branch_id' => $this->branch->id,
+    $this->assertDatabaseMissing('trx_clinic_visits', [
         'patient_id' => $this->patient->id,
     ]);
 });
@@ -266,6 +270,7 @@ it('denies viewer from creating or updating', function () {
 
     $this->actingAs($this->viewer)
         ->post(route('rme.visits.store'), [
+            'branch_id' => $this->rmeBranch->id,
             'clinic_id' => $this->clinic->id,
             'patient_id' => $this->patient->id,
             'doctor_id' => $this->doctor->id,

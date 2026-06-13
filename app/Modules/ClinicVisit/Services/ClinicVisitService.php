@@ -98,25 +98,37 @@ class ClinicVisitService
      *   1. New-patient mode: the branch chosen for the new patient, so the
      *      patient and the visit always share one RME branch.
      *   2. Existing-patient mode: an explicitly selected RME branch.
-     *   3. Otherwise the active branch context (legacy / programmatic callers).
+     *
+     * Never falls back to BranchContext/MAIN — RME visits must belong to an
+     * active RME-enabled branch (Sprint 23 Phase 23.10 hardening).
      *
      * @param  array<string, mixed>  $data
      */
     private function resolveBranchId(array $data): int
     {
+        $branchId = null;
+
         if (($data['patient_mode'] ?? 'existing') === 'new') {
-            $newBranch = $data['new_patient']['branch_id'] ?? null;
-
-            if ($newBranch) {
-                return (int) $newBranch;
-            }
+            $branchId = $data['new_patient']['branch_id'] ?? null;
+        } else {
+            $branchId = $data['branch_id'] ?? null;
         }
 
-        if (! empty($data['branch_id'])) {
-            return (int) $data['branch_id'];
+        if (! $branchId) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Cabang RME wajib dipilih untuk kunjungan RME.',
+            ]);
         }
 
-        return $this->branchContext->requireId();
+        $branchId = (int) $branchId;
+
+        if (! in_array($branchId, $this->branches->rmeEnabledIds(), true)) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
+            ]);
+        }
+
+        return $branchId;
     }
 
     /**
