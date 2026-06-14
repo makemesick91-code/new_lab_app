@@ -16,6 +16,14 @@
                     </select>
                 </div>
                 <div>
+                    <label for="date_from" class="block text-xs text-gray-500">Tanggal Kunjungan Dari</label>
+                    <input id="date_from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-md border-gray-300 text-sm" />
+                </div>
+                <div>
+                    <label for="date_to" class="block text-xs text-gray-500">Tanggal Kunjungan Sampai</label>
+                    <input id="date_to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-md border-gray-300 text-sm" />
+                </div>
+                <div>
                     <label for="payment_method_id" class="block text-xs text-gray-500">Metode Pembayaran</label>
                     <select id="payment_method_id" name="payment_method_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
                         <option value="">Semua metode</option>

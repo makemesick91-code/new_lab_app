@@ -54,8 +54,9 @@ function rptPayment(
     Treatment $treatment,
     Doctor $doctor,
     array $overrides = [],
+    array $visitOverrides = [],
 ): RmePayment {
-    $visit = rptVisit($patient, ['doctor_id' => $doctor->id]);
+    $visit = rptVisit($patient, array_merge(['doctor_id' => $doctor->id], $visitOverrides));
 
     $invoice = RmeInvoice::factory()->paid()->create([
         'branch_id' => test()->branch->id,
@@ -156,6 +157,28 @@ it('does not expose ktp on patient report', function () {
         ->assertDontSee('Nomor KTP');
 });
 
+it('filters payment report by visit date range', function () {
+    $patient = rptPatient();
+    $paymentMethod = PaymentMethod::factory()->create(['is_active' => true]);
+    $treatment = Treatment::factory()->create(['is_active' => true]);
+    $doctor = Doctor::factory()->create(['is_active' => true]);
+
+    $included = rptPayment($patient, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-06-10']);
+    $excluded = rptPayment($patient, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-06-01']);
+
+    $response = $this->actingAs($this->paymentViewer)->get(route('rme.reports.payments', [
+        'date_from' => '2026-06-09',
+        'date_to' => '2026-06-11',
+    ]));
+
+    $response->assertOk()
+        ->assertSee($included->rmeInvoice->invoice_number)
+        ->assertDontSee($excluded->rmeInvoice->invoice_number)
+        ->assertDontSee('3374019900123456')
+        ->assertDontSee('ktp_number')
+        ->assertDontSee('Nomor KTP');
+});
+
 it('filters payment report by payment method', function () {
     $patient = rptPatient();
     $cash = PaymentMethod::factory()->create(['name' => 'Tunai RME Report', 'is_active' => true]);
@@ -247,6 +270,8 @@ it('shows payment method treatment and doctor on payment report', function () {
     $this->actingAs($this->paymentViewer)
         ->get(route('rme.reports.payments'))
         ->assertOk()
+        ->assertSee('Tanggal Kunjungan Dari')
+        ->assertSee('Tanggal Kunjungan Sampai')
         ->assertSee('QRIS RME Report')
         ->assertSee('Bleaching RME')
         ->assertSee('Dr. Visible RME');

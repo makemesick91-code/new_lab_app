@@ -87,6 +87,14 @@ class RmeReportController extends Controller
                     ->whereHas('clinicVisit', fn (Builder $visit) => $visit->where('doctor_id', $doctorId))
                     ->orWhereHas('rmeInvoice.items', fn (Builder $items) => $items->where('doctor_id', $doctorId));
             }))
+            ->when($request->filled('date_from'), fn (Builder $q) => $q->whereHas(
+                'clinicVisit',
+                fn (Builder $visit) => $visit->whereDate('visit_date', '>=', $request->input('date_from')),
+            ))
+            ->when($request->filled('date_to'), fn (Builder $q) => $q->whereHas(
+                'clinicVisit',
+                fn (Builder $visit) => $visit->whereDate('visit_date', '<=', $request->input('date_to')),
+            ))
             ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')))
             ->latest('paid_at')
             ->limit(100)
@@ -96,6 +104,8 @@ class RmeReportController extends Controller
             'branches' => $this->rmeBranches(),
             'selectedBranchId' => $branchId,
             'filters' => [
+                'date_from' => $request->input('date_from'),
+                'date_to' => $request->input('date_to'),
                 'payment_method_id' => $paymentMethodId,
                 'treatment_id' => $treatmentId,
                 'doctor_id' => $doctorId,
