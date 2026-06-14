@@ -214,6 +214,7 @@
     $financeAlerts = $financeAlerts ?? [];
     $ownerRmeLabPilot = $ownerRmeLabPilot ?? null;
     $ownerRmeLabBranchSummary = $ownerRmeLabBranchSummary ?? [];
+    $ownerRmeLabBranchReceivableSummary = $ownerRmeLabBranchReceivableSummary ?? [];
     $ownerRmeLabActiveBranches = $ownerRmeLabActiveBranches ?? collect();
     $ownerRmeLabSelectedBranchId = $ownerRmeLabSelectedBranchId ?? null;
     $ownerRmeLabDrilldowns = $ownerRmeLabDrilldowns ?? [];
@@ -529,6 +530,61 @@
                                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['pending_candidates'] ?? 0) }}</td>
                                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['converted_today'] ?? 0) }}</td>
                                                     <td class="px-4 py-3 text-gray-700">{{ $row['attention_status'] ?? 'Aman' }}</td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            @endif
+                        </div>
+
+                        <div>
+                            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                <h4 class="text-base font-semibold text-gray-900">Ringkasan Piutang per Cabang</h4>
+                                <p class="text-xs text-gray-500">Sisa piutang invoice RME aktif (UNPAID + PARTIAL) per cabang</p>
+                            </div>
+
+                            @if (collect($ownerRmeLabBranchReceivableSummary)->isEmpty())
+                                <div class="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center">
+                                    <p class="text-sm font-medium text-gray-900">Belum ada cabang aktif</p>
+                                    <p class="mt-1 text-sm text-gray-500">Ringkasan piutang per cabang akan tampil setelah ada cabang aktif dengan data pilot.</p>
+                                </div>
+                            @else
+                                <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead class="bg-gray-50">
+                                            <tr>
+                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Sisa Piutang</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Cicilan</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Belum Dibayar</th>
+                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tindak Lanjut</th>
+                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Aksi</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-100">
+                                            @foreach ($ownerRmeLabBranchReceivableSummary as $row)
+                                                <tr class="hover:bg-gray-50">
+                                                    <td class="px-4 py-3 font-medium text-gray-900">{{ $row['branch_name'] }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_currency_id($row['receivable_total_remaining'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['partial_count'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['unpaid_count'] ?? 0) }}</td>
+                                                    <td class="px-4 py-3 text-xs text-gray-600">
+                                                        <span class="font-medium text-amber-700">{{ format_number_id($row['follow_up_overdue_count'] ?? 0) }}</span> jatuh tempo;
+                                                        {{ format_number_id($row['follow_up_today_count'] ?? 0) }} hari ini;
+                                                        {{ format_number_id($row['follow_up_scheduled_count'] ?? 0) }} terjadwal;
+                                                        {{ format_number_id($row['never_followed_up_count'] ?? 0) }} belum pernah
+                                                    </td>
+                                                    <td class="px-4 py-3 text-right">
+                                                        @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
+                                                            <a href="{{ route('rme.cashier.receivables', ['branch_id' => $row['branch_id']]) }}"
+                                                               class="inline-flex items-center rounded-md border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                                                Lihat Piutang
+                                                            </a>
+                                                        @else
+                                                            <span class="text-xs text-gray-400">—</span>
+                                                        @endif
+                                                    </td>
                                                 </tr>
                                             @endforeach
                                         </tbody>

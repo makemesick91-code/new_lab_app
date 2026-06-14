@@ -20,6 +20,7 @@ class HomeDashboardController extends Controller
         $user = auth()->user();
         $ownerRmeLabPilot = null;
         $ownerRmeLabBranchSummary = [];
+        $ownerRmeLabBranchReceivableSummary = [];
         $ownerRmeLabActiveBranches = collect();
         $ownerRmeLabSelectedBranchId = null;
         $ownerRmeLabDrilldowns = [];
@@ -33,12 +34,14 @@ class HomeDashboardController extends Controller
             $ownerRmeLabActiveBranches = $this->ownerRmeLabKpis->activeBranches();
             $ownerRmeLabPilot = $this->ownerRmeLabKpis->metrics($ownerRmeLabSelectedBranchId);
             $ownerRmeLabBranchSummary = $this->ownerRmeLabKpis->branchSummary($ownerRmeLabSelectedBranchId);
+            $ownerRmeLabBranchReceivableSummary = $this->ownerRmeLabKpis->branchReceivableSummary($ownerRmeLabSelectedBranchId);
             $ownerRmeLabDrilldowns = $this->ownerRmeLabDrilldowns->linksFor($user);
         }
 
         return view('dashboard', [
             'ownerRmeLabPilot' => $ownerRmeLabPilot,
             'ownerRmeLabBranchSummary' => $ownerRmeLabBranchSummary,
+            'ownerRmeLabBranchReceivableSummary' => $ownerRmeLabBranchReceivableSummary,
             'ownerRmeLabActiveBranches' => $ownerRmeLabActiveBranches,
             'ownerRmeLabSelectedBranchId' => $ownerRmeLabSelectedBranchId,
             'ownerRmeLabDrilldowns' => $ownerRmeLabDrilldowns,

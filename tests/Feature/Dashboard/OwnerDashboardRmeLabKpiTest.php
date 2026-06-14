@@ -338,6 +338,159 @@ it('limits RME receivable KPIs to the selected branch', function () {
         ->and($mainOnly['rme_receivable_unpaid_count'])->toBe(1);
 });
 
+it('shows owner dashboard branch receivable summary table with Indonesian labels', function () {
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 400000,
+    ]);
+
+    $this->actingAs(userInRole('Owner'))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Ringkasan Piutang per Cabang')
+        ->assertSee('Sisa Piutang')
+        ->assertSee('Invoice Cicilan')
+        ->assertSee('Invoice Belum Dibayar')
+        ->assertSee('Tindak Lanjut')
+        ->assertSee($this->branch->name)
+        ->assertSee(format_currency_id(400000));
+});
+
+it('shows Lihat Piutang branch action only when user can manage RME billing', function () {
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 400000,
+    ]);
+
+    // Owner sees the summary table but not the gated receivables action.
+    $this->actingAs(userInRole('Owner'))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Ringkasan Piutang per Cabang')
+        ->assertDontSee('Lihat Piutang');
+
+    // Owner-dashboard user that also manages RME billing sees the branch-filtered action.
+    $this->actingAs(userWith([
+        'view dashboard',
+        'view_owner_dashboard',
+        'manage_rme_billing',
+    ]))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Lihat Piutang')
+        ->assertSee(route('rme.cashier.receivables', ['branch_id' => $this->branch->id]), false);
+});
+
+it('aggregates branch receivable remaining from UNPAID and PARTIAL invoices and excludes PAID', function () {
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 400000,
+    ]);
+
+    $partialInvoice = RmeInvoice::factory()->partial()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 1000000,
+    ]);
+
+    $partialInvoice->payments()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_visit_id' => $partialInvoice->clinic_visit_id,
+        'patient_id' => $partialInvoice->patient_id,
+        'cashier_id' => $partialInvoice->cashier_id,
+        'payment_number' => 'RCV-BRANCH-PARTIAL',
+        'amount' => 300000,
+        'paid_at' => now(),
+    ]);
+
+    // PAID invoice must be excluded from the receivable summary.
+    $paidInvoice = RmeInvoice::factory()->paid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 500000,
+    ]);
+
+    $paidInvoice->payments()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_visit_id' => $paidInvoice->clinic_visit_id,
+        'patient_id' => $paidInvoice->patient_id,
+        'cashier_id' => $paidInvoice->cashier_id,
+        'payment_number' => 'RCV-BRANCH-PAID',
+        'amount' => 500000,
+        'paid_at' => now(),
+    ]);
+
+    $summary = $this->service->branchReceivableSummary();
+    $mainRow = collect($summary)->firstWhere('branch_id', $this->branch->id);
+
+    // 400000 (unpaid) + (1000000 - 300000) partial = 1100000; PAID excluded.
+    expect((float) $mainRow['receivable_total_remaining'])->toBe(1100000.0)
+        ->and($mainRow['partial_count'])->toBe(1)
+        ->and($mainRow['unpaid_count'])->toBe(1);
+});
+
+it('limits branch receivable summary to the selected branch', function () {
+    $otherBranch = Branch::factory()->create([
+        'code' => 'OWN-RCV-SUM-B',
+        'name' => 'Cabang Piutang Sum B',
+        'is_active' => true,
+    ]);
+
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 200000,
+    ]);
+
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $otherBranch->id,
+        'grand_total' => 500000,
+    ]);
+
+    $global = $this->service->branchReceivableSummary();
+    $mainOnly = $this->service->branchReceivableSummary($this->branch->id);
+    $otherOnly = $this->service->branchReceivableSummary($otherBranch->id);
+
+    // No filter returns every active branch; a selected branch returns only it.
+    expect($mainOnly)->toHaveCount(1)
+        ->and($otherOnly)->toHaveCount(1)
+        ->and(collect($global)->pluck('branch_id'))->toContain($this->branch->id, $otherBranch->id)
+        ->and((float) collect($mainOnly)->firstWhere('branch_id', $this->branch->id)['receivable_total_remaining'])->toBe(200000.0)
+        ->and((float) collect($otherOnly)->firstWhere('branch_id', $otherBranch->id)['receivable_total_remaining'])->toBe(500000.0)
+        ->and((float) collect($global)->firstWhere('branch_id', $this->branch->id)['receivable_total_remaining'])->toBe(200000.0)
+        ->and((float) collect($global)->firstWhere('branch_id', $otherBranch->id)['receivable_total_remaining'])->toBe(500000.0);
+});
+
+it('does not show branch receivable summary table for non-owner dashboard users', function () {
+    $this->actingAs(userWith([
+        'view dashboard',
+        'view_lab_orders',
+        'view_production',
+    ]))
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Dashboard Admin Cabang')
+        ->assertDontSee('Ringkasan Piutang per Cabang');
+});
+
+it('does not create operational records when branch receivable summary is computed', function () {
+    RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $this->branch->id,
+        'grand_total' => 400000,
+    ]);
+
+    $before = [
+        'invoices' => RmeInvoice::count(),
+        'payments' => RmePayment::count(),
+    ];
+
+    $this->service->branchReceivableSummary();
+
+    $this->actingAs(userInRole('Owner'))
+        ->get(route('dashboard'))
+        ->assertOk();
+
+    expect(RmeInvoice::count())->toBe($before['invoices'])
+        ->and(RmePayment::count())->toBe($before['payments']);
+});
+
 it('builds RME to lab funnel stages from paid invoice and converted candidate metrics', function () {
     seedOwnerDashboardPilotMetrics($this->branch);
 

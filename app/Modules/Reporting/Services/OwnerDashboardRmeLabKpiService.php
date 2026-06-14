@@ -104,6 +104,77 @@ class OwnerDashboardRmeLabKpiService
         })->all();
     }
 
+    /**
+     * Sprint 25 Phase 25.5: Read-only per-branch RME receivable summary for the
+     * Owner Dashboard. Active receivables are UNPAID + PARTIAL invoices only
+     * (DRAFT/PAID/VOID excluded). Remaining balance = grand_total -
+     * sum(payments.amount), floored at 0. Follow-up counts use the latest
+     * follow-up per invoice and never create records. Respects the selected
+     * Owner branch filter via resolveBranchIds().
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function branchReceivableSummary(?int $branchId = null, ?Carbon $asOf = null): array
+    {
+        $today = ($asOf ?? now())->toDateString();
+        $branchIds = $this->resolveBranchIds($branchId);
+
+        $branches = Branch::query()
+            ->when($branchIds !== null, fn (Builder $query) => $query->whereIn('id', $branchIds))
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'code']);
+
+        return $branches->map(function (Branch $branch) use ($today): array {
+            $receivableInvoices = $this->rmeReceivableQuery([$branch->id])
+                ->withSum('payments', 'amount')
+                ->get(['id', 'status', 'grand_total']);
+
+            $remaining = (float) $receivableInvoices->sum(
+                fn (RmeInvoice $invoice): float => max(
+                    0,
+                    round((float) $invoice->grand_total - (float) ($invoice->payments_sum_amount ?? 0), 2),
+                ),
+            );
+
+            $partialCount = $receivableInvoices
+                ->where('status', RmeInvoice::STATUS_PARTIAL)
+                ->count();
+
+            $unpaidCount = $receivableInvoices
+                ->where('status', RmeInvoice::STATUS_UNPAID)
+                ->count();
+
+            $followUpOverdueCount = $this->rmeReceivableQuery([$branch->id])
+                ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '<', $today))
+                ->count();
+
+            $followUpTodayCount = $this->rmeReceivableQuery([$branch->id])
+                ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '=', $today))
+                ->count();
+
+            $followUpScheduledCount = $this->rmeReceivableQuery([$branch->id])
+                ->whereHas('latestFollowUp', fn (Builder $query) => $query->whereDate('next_follow_up_date', '>', $today))
+                ->count();
+
+            $neverFollowedUpCount = $this->rmeReceivableQuery([$branch->id])
+                ->whereDoesntHave('followUps')
+                ->count();
+
+            return [
+                'branch_id' => $branch->id,
+                'branch_name' => $branch->name,
+                'receivable_total_remaining' => $remaining,
+                'partial_count' => $partialCount,
+                'unpaid_count' => $unpaidCount,
+                'follow_up_overdue_count' => $followUpOverdueCount,
+                'follow_up_today_count' => $followUpTodayCount,
+                'follow_up_scheduled_count' => $followUpScheduledCount,
+                'never_followed_up_count' => $neverFollowedUpCount,
+            ];
+        })->all();
+    }
+
     public function metrics(?int $branchId = null, ?Carbon $asOf = null): array
     {
         $today = ($asOf ?? now())->toDateString();
