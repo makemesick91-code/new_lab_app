@@ -1,2 +1,3 @@
 ID | Date | Source | Role | Branch | Module | Page/URL | Feedback | Type | Priority | Status | Target Phase | Notes
 | S25-FB-006 | 2026-06-14 | Kasir | Kasir | Cabang Landak | Piutang RME | `/rme/cashier/receivables` | Filter status PARTIAL kadang tidak menampilkan data sesuai cabang | DATA | P2 | TRIAGED | Sprint 25.3 | VPS data shows the only PARTIAL invoice is in Cabang Antang branch_id=3, while Cabang Landak is branch_id=2; no code fix required |
+| S25-FB-005 | TBD | Owner | Owner | All | Reporting | `/dashboard` | Confirm dashboard KPIs needed for business review | REPORTING | P2 | TRIAGED | Sprint 25.4 | Owner review questions and dashboard enhancement candidates documented; waiting for owner approval before implementation |
