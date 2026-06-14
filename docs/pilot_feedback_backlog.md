@@ -1,2 +1,2 @@
 ID | Date | Source | Role | Branch | Module | Page/URL | Feedback | Type | Priority | Status | Target Phase | Notes
-| S25-FB-006 | 2026-06-14 | Kasir | Kasir | Cabang Landak | Piutang RME | `/rme/cashier/receivables` | Filter status PARTIAL kadang tidak menampilkan data sesuai cabang | BUG | P1 | OPEN | Sprint 25.3 | Perlu dicek dengan akun kasir dan data real |
+| S25-FB-006 | 2026-06-14 | Kasir | Kasir | Cabang Landak | Piutang RME | `/rme/cashier/receivables` | Filter status PARTIAL kadang tidak menampilkan data sesuai cabang | DATA | P2 | TRIAGED | Sprint 25.3 | VPS data shows the only PARTIAL invoice is in Cabang Antang branch_id=3, while Cabang Landak is branch_id=2; no code fix required |
