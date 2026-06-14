@@ -66,16 +66,7 @@ class RmeReportController extends Controller
         $treatmentId = $this->resolveMasterId($request, 'treatment_id');
         $doctorId = $this->resolveMasterId($request, 'doctor_id');
 
-        $payments = RmePayment::query()
-            ->with([
-                'patient:id,name,medical_record_number',
-                'branch:id,name',
-                'rmeInvoice:id,invoice_number,status',
-                'rmeInvoice.items.treatment:id,name',
-                'rmeInvoice.items.doctor:id,name',
-                'paymentMethod:id,name',
-                'clinicVisit.doctor:id,name',
-            ])
+        $paymentsQuery = RmePayment::query()
             ->when($branchId !== null, fn (Builder $q) => $q->where('branch_id', $branchId))
             ->when($paymentMethodId !== null, fn (Builder $q) => $q->where('payment_method_id', $paymentMethodId))
             ->when($treatmentId !== null, fn (Builder $q) => $q->whereHas(
@@ -95,7 +86,20 @@ class RmeReportController extends Controller
                 'clinicVisit',
                 fn (Builder $visit) => $visit->whereDate('visit_date', '<=', $request->input('date_to')),
             ))
-            ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')))
+            ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')));
+
+        $totalFilteredPatients = (clone $paymentsQuery)->distinct()->count('patient_id');
+
+        $payments = (clone $paymentsQuery)
+            ->with([
+                'patient:id,name,medical_record_number',
+                'branch:id,name',
+                'rmeInvoice:id,invoice_number,status',
+                'rmeInvoice.items.treatment:id,name',
+                'rmeInvoice.items.doctor:id,name',
+                'paymentMethod:id,name',
+                'clinicVisit.doctor:id,name',
+            ])
             ->latest('paid_at')
             ->limit(100)
             ->get();
@@ -116,6 +120,7 @@ class RmeReportController extends Controller
             'doctors' => Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'payments' => $payments,
             'totalAmount' => (float) $payments->sum('amount'),
+            'totalFilteredPatients' => $totalFilteredPatients,
         ]);
     }
 

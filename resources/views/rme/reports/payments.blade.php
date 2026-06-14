@@ -62,12 +62,15 @@
         </form>
 
         <div class="flex flex-wrap gap-3 text-sm">
+            <span class="rounded-md bg-blue-50 px-3 py-1 text-blue-700">Total Pasien Hasil Filter: <strong>{{ number_format($totalFilteredPatients ?? 0) }} pasien</strong></span>
+            <span class="rounded-md bg-gray-50 px-3 py-1 text-gray-700">Total Baris Transaksi Ditampilkan: <strong>{{ number_format($payments->count()) }} transaksi</strong></span>
             <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Diterima: <strong>{{ format_currency_id($totalAmount) }}</strong></span>
         </div>
 
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead><tr class="text-left text-gray-500">
+                    <th class="px-3 py-2 font-medium">No</th>
                     <th class="px-3 py-2 font-medium">No. Invoice</th>
                     <th class="px-3 py-2 font-medium">ID / RM Pasien</th>
                     <th class="px-3 py-2 font-medium">Nama Pasien</th>
@@ -94,6 +97,7 @@
                                 ->values();
                         @endphp
                         <tr>
+                            <td class="px-3 py-2 text-gray-600">{{ $loop->iteration }}</td>
                             <td class="px-3 py-2 font-medium text-gray-900">{{ $p->rmeInvoice?->invoice_number ?? '—' }}</td>
                             <td class="px-3 py-2 font-mono text-xs text-gray-600">{{ $p->patient?->medical_record_number ?? ('#'.$p->patient_id) }}</td>
                             <td class="px-3 py-2 text-gray-600">{{ $p->patient?->name ?? '—' }}</td>
@@ -106,7 +110,7 @@
                             <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($p->amount) }}</td>
                         </tr>
                     @empty
-                        <tr><td colspan="10" class="px-3 py-6 text-center text-gray-400">Belum ada pembayaran RME.</td></tr>
+                        <tr><td colspan="11" class="px-3 py-6 text-center text-gray-400">Belum ada pembayaran RME.</td></tr>
                     @endforelse
                 </tbody>
             </table>

@@ -277,6 +277,53 @@ it('shows payment method treatment and doctor on payment report', function () {
         ->assertSee('Dr. Visible RME');
 });
 
+it('shows row number and unique filtered patient count on payment report', function () {
+    $paymentMethod = PaymentMethod::factory()->create(['is_active' => true]);
+    $treatment = Treatment::factory()->create(['is_active' => true]);
+    $doctor = Doctor::factory()->create(['is_active' => true]);
+
+    $patientA = rptPatient([
+        'name' => 'Andi Dua Invoice RME',
+        'medical_record_number' => 'RM-PAY-COUNT-A',
+        'ktp_number' => '5555666677778888',
+    ]);
+    $patientB = rptPatient([
+        'name' => 'Budi Satu Invoice RME',
+        'medical_record_number' => 'RM-PAY-COUNT-B',
+        'ktp_number' => '6666777788889999',
+    ]);
+    $patientC = rptPatient([
+        'name' => 'Citra Luar Filter RME',
+        'medical_record_number' => 'RM-PAY-COUNT-C',
+        'ktp_number' => '7777888899990000',
+    ]);
+
+    $paymentA1 = rptPayment($patientA, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-06-10']);
+    rptPayment($patientA, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-06-11']);
+    $paymentB = rptPayment($patientB, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-06-10']);
+    $excludedPayment = rptPayment($patientC, $paymentMethod, $treatment, $doctor, [], ['visit_date' => '2026-05-01']);
+
+    $response = $this->actingAs($this->paymentViewer)->get(route('rme.reports.payments', [
+        'date_from' => '2026-06-09',
+        'date_to' => '2026-06-11',
+    ]));
+
+    $response->assertOk()
+        ->assertSee('Total Pasien Hasil Filter')
+        ->assertSee('2 pasien')
+        ->assertSee('Total Baris Transaksi Ditampilkan')
+        ->assertSee('3 transaksi')
+        ->assertSee('>No</th>', false)
+        ->assertSee('Andi Dua Invoice RME')
+        ->assertSee('Budi Satu Invoice RME')
+        ->assertSee($paymentA1->rmeInvoice->invoice_number)
+        ->assertSee($paymentB->rmeInvoice->invoice_number)
+        ->assertDontSee($excludedPayment->rmeInvoice->invoice_number)
+        ->assertDontSee('Citra Luar Filter RME')
+        ->assertDontSee('5555666677778888')
+        ->assertDontSee('Nomor KTP');
+});
+
 it('does not expose ktp on payment report', function () {
     $patient = rptPatient(['ktp_number' => '1111222233334444']);
     $paymentMethod = PaymentMethod::factory()->create(['is_active' => true]);
