@@ -62,6 +62,10 @@
                     <dd class="font-medium text-gray-900">{{ $visit->patient?->name }}</dd>
                 </div>
                 <div>
+                    <dt class="text-gray-500">Nomor WA</dt>
+                    <dd class="text-gray-900">{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
+                </div>
+                <div>
                     <dt class="text-gray-500">No. Rekam Medis</dt>
                     <dd class="font-mono text-gray-900">{{ $visit->patient?->medical_record_number ?? '-' }}</dd>
                 </div>
@@ -197,6 +201,30 @@
                         class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('reference_number') border-red-500 @enderror">
                     @error('reference_number')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                {{-- Consent verification checklist --}}
+                <div class="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3">
+                    <p class="text-sm font-medium text-amber-900">Verifikasi Surat Persetujuan Tindakan (fisik)</p>
+                    <p class="text-xs text-amber-800">Konfirmasi bahwa formulir persetujuan tindakan sudah ditandatangani pasien dan dokter sebelum pembayaran diproses.</p>
+                    <label class="flex items-start gap-2 text-sm text-gray-800">
+                        <input type="checkbox" name="consent_signed_by_patient" value="1"
+                            @checked(old('consent_signed_by_patient', $visit->consent_signed_by_patient))
+                            class="mt-0.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                        <span>Surat Persetujuan Tindakan sudah ditandatangani pasien</span>
+                    </label>
+                    @error('consent_signed_by_patient')
+                        <p class="text-xs text-red-600">{{ $message }}</p>
+                    @enderror
+                    <label class="flex items-start gap-2 text-sm text-gray-800">
+                        <input type="checkbox" name="consent_signed_by_doctor" value="1"
+                            @checked(old('consent_signed_by_doctor', $visit->consent_signed_by_doctor))
+                            class="mt-0.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                        <span>Surat Persetujuan Tindakan sudah ditandatangani dokter</span>
+                    </label>
+                    @error('consent_signed_by_doctor')
+                        <p class="text-xs text-red-600">{{ $message }}</p>
                     @enderror
                 </div>
 

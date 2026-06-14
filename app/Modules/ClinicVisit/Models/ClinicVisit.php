@@ -59,6 +59,8 @@ class ClinicVisit extends Model
         'visit_number', 'branch_id', 'clinic_id', 'patient_id', 'doctor_id',
         'clinic_room_id', 'visit_date', 'queue_number', 'status',
         'chief_complaint', 'initial_treatment_id', 'initial_service_note',
+        'consent_signed_by_patient', 'consent_signed_by_doctor',
+        'consent_verified_at', 'consent_verified_by',
         'check_in_at', 'started_at', 'completed_at', 'cancelled_at', 'created_by',
     ];
 
@@ -78,7 +80,22 @@ class ClinicVisit extends Model
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'initial_treatment_id' => 'integer',
+            'consent_signed_by_patient' => 'boolean',
+            'consent_signed_by_doctor' => 'boolean',
+            'consent_verified_at' => 'datetime',
+            'consent_verified_by' => 'integer',
         ];
+    }
+
+    public function consentVerifier(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'consent_verified_by');
+    }
+
+    public function hasVerifiedConsent(): bool
+    {
+        return $this->consent_signed_by_patient === true
+            && $this->consent_signed_by_doctor === true;
     }
 
     public function branch(): BelongsTo

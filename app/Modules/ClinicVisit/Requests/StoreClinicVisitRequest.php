@@ -23,6 +23,16 @@ class StoreClinicVisitRequest extends FormRequest
         if (! $this->filled('patient_mode')) {
             $this->merge(['patient_mode' => 'existing']);
         }
+
+        if ($this->has('new_patient.ktp_number')) {
+            $ktp = trim((string) $this->input('new_patient.ktp_number'));
+
+            $this->merge([
+                'new_patient' => array_merge($this->input('new_patient', []), [
+                    'ktp_number' => $ktp === '' ? null : $ktp,
+                ]),
+            ]);
+        }
     }
 
     public function rules(): array
@@ -67,6 +77,8 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'new_patient.date_of_birth' => ['nullable', 'date'],
             'new_patient.phone' => ['nullable', 'string', 'max:50'],
+            'new_patient.whatsapp_number' => ['nullable', 'string', 'max:50'],
+            'new_patient.ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
             'new_patient.address' => ['nullable', 'string', 'max:1000'],
         ];
     }
@@ -81,6 +93,7 @@ class StoreClinicVisitRequest extends FormRequest
             'branch_id.required' => 'Cabang RME wajib dipilih untuk kunjungan pasien terdaftar.',
             'branch_id.exists' => 'Klinik/Cabang yang dipilih harus cabang RME aktif.',
             'new_patient.manual_rm_number.required' => 'Nomor RM manual pasien baru wajib diisi.',
+            'new_patient.ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
             'patient_id.required' => 'Pilih pasien terdaftar.',
         ];
     }

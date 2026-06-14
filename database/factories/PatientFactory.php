@@ -25,7 +25,10 @@ class PatientFactory extends Factory
             'gender' => fake()->randomElement(['Male', 'Female']),
             'date_of_birth' => fake()->dateTimeBetween('-80 years', '-5 years')->format('Y-m-d'),
             'phone' => fake()->numerify('08##########'),
+            'whatsapp_number' => fake()->optional()->numerify('08##########'),
+            'email' => fake()->optional()->safeEmail(),
             'address' => fake()->address(),
+            'occupation' => fake()->optional()->jobTitle(),
             'is_active' => true,
         ];
     }

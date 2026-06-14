@@ -35,13 +35,25 @@ class UpdatePatientRequest extends FormRequest
             'registered_at' => ['nullable', 'date'],
             'manual_rm_number' => ['nullable', 'required_with:branch_id', 'string', 'max:50', 'regex:/^[0-9]+$/'],
             'medical_record_number' => ['nullable', 'string', 'max:50', Rule::unique('mst_patients', 'medical_record_number')->ignore($patientId)],
+            'ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')->ignore($patientId)],
             'name' => ['required', 'string', 'max:150'],
             'gender' => ['nullable', 'string', 'in:Male,Female,Other'],
             'date_of_birth' => ['nullable', 'date'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'whatsapp_number' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:150'],
             'address' => ['nullable', 'string', 'max:1000'],
+            'occupation' => ['nullable', 'string', 'max:150'],
             'is_active' => ['sometimes', 'boolean'],
         ];
+    }
+
+    protected function prepareForValidation(): void
+    {
+        $this->merge([
+            'ktp_number' => $this->normalizeKtpNumber($this->input('ktp_number')),
+            'whatsapp_number' => $this->normalizeOptionalString($this->input('whatsapp_number')),
+        ]);
     }
 
     public function messages(): array
@@ -50,6 +62,7 @@ class UpdatePatientRequest extends FormRequest
             'manual_rm_number.regex' => 'Nomor RM manual hanya boleh berisi angka.',
             'branch_id.required_with' => 'Cabang RME wajib dipilih saat mengisi Nomor RM manual.',
             'manual_rm_number.required_with' => 'Nomor RM manual wajib diisi saat memilih Cabang RME.',
+            'ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ];
     }
 
@@ -86,5 +99,19 @@ class UpdatePatientRequest extends FormRequest
                 $validator->errors()->add('manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
             }
         });
+    }
+
+    private function normalizeKtpNumber(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized === '' ? null : $normalized;
+    }
+
+    private function normalizeOptionalString(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized === '' ? null : $normalized;
     }
 }

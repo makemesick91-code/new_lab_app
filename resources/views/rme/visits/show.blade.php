@@ -85,6 +85,20 @@
                     @endif
                 </div>
                 <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Ponsel</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->phone ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Nomor WA</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
+                </div>
+                @if ($visit->patient?->date_of_birth)
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Umur</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient->age() ?? '—' }} tahun</dd>
+                    </div>
+                @endif
+                <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->doctor?->name ?? '—' }}</dd>
                 </div>
