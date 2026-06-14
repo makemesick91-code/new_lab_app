@@ -10,6 +10,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\Treatment\Models\Treatment;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Validation\ValidationException;
@@ -21,6 +22,8 @@ beforeEach(function () {
     $this->clinic = Clinic::factory()->create();
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->branch = Branch::factory()->create(['code' => 'FMT1', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    $this->visitAdmin = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
     $this->cashier = userWith(['manage_rme_billing']);
 });
 
@@ -247,6 +250,76 @@ it('shows ktp duplicate validation message exactly', function () {
         ->assertSessionHasErrors([
             'ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.',
         ]);
+});
+
+it('shows new patient format fields on rme visit create form', function () {
+    $this->actingAs($this->visitAdmin)
+        ->get(route('rme.visits.create'))
+        ->assertOk()
+        ->assertSee('Nomor KTP')
+        ->assertSee('Nomor WA')
+        ->assertSee('E-Mail')
+        ->assertSee('Pekerjaan')
+        ->assertSee('Alamat Lengkap')
+        ->assertSee('Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.');
+});
+
+it('persists new patient format fields when registering visit in new patient mode', function () {
+    $this->actingAs($this->visitAdmin)
+        ->post(route('rme.visits.store'), [
+            'patient_mode' => 'new',
+            'branch_id' => $this->branch->id,
+            'clinic_id' => $this->clinic->id,
+            'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
+            'new_patient' => [
+                'name' => 'Pasien Format Kunjungan',
+                'branch_id' => $this->branch->id,
+                'registered_at' => '2026-06-14',
+                'manual_rm_number' => '0201',
+                'ktp_number' => '3201010101010201',
+                'whatsapp_number' => '081298760201',
+                'email' => 'pasien.format@example.test',
+                'occupation' => 'Guru',
+                'address' => 'Jl. Contoh No. 20, Jakarta',
+            ],
+        ])
+        ->assertRedirect();
+
+    $patient = Patient::firstWhere('name', 'Pasien Format Kunjungan');
+
+    expect($patient)->not->toBeNull()
+        ->and($patient->ktp_number)->toBe('3201010101010201')
+        ->and($patient->whatsapp_number)->toBe('081298760201')
+        ->and($patient->email)->toBe('pasien.format@example.test')
+        ->and($patient->occupation)->toBe('Guru')
+        ->and($patient->address)->toBe('Jl. Contoh No. 20, Jakarta')
+        ->and(ClinicVisit::where('patient_id', $patient->id)->exists())->toBeTrue();
+});
+
+it('rejects duplicate ktp through rme visit new patient flow with exact message', function () {
+    Patient::factory()->create(['ktp_number' => '3201010101010202']);
+
+    $this->actingAs($this->visitAdmin)
+        ->post(route('rme.visits.store'), [
+            'patient_mode' => 'new',
+            'branch_id' => $this->branch->id,
+            'clinic_id' => $this->clinic->id,
+            'doctor_id' => $this->doctor->id,
+            'initial_treatment_id' => $this->treatment->id,
+            'new_patient' => [
+                'name' => 'Pasien Duplikat KTP',
+                'branch_id' => $this->branch->id,
+                'registered_at' => '2026-06-14',
+                'manual_rm_number' => '0202',
+                'ktp_number' => '3201010101010202',
+            ],
+        ])
+        ->assertSessionHasErrors([
+            'new_patient.ktp_number' => 'Nomor KTP sudah terdaftar pada pasien lain.',
+        ]);
+
+    expect(Patient::where('name', 'Pasien Duplikat KTP')->exists())->toBeFalse();
 });
 
 it('computes patient age from date of birth on rme detail', function () {

@@ -225,6 +225,8 @@ class ClinicVisitService
                 'phone' => $newPatient['phone'] ?? null,
                 'whatsapp_number' => $newPatient['whatsapp_number'] ?? null,
                 'ktp_number' => $newPatient['ktp_number'] ?? null,
+                'email' => $newPatient['email'] ?? null,
+                'occupation' => $newPatient['occupation'] ?? null,
                 'address' => $newPatient['address'] ?? null,
                 'is_active' => true,
             ]);

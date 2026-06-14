@@ -79,6 +79,8 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.phone' => ['nullable', 'string', 'max:50'],
             'new_patient.whatsapp_number' => ['nullable', 'string', 'max:50'],
             'new_patient.ktp_number' => ['nullable', 'string', 'max:16', Rule::unique('mst_patients', 'ktp_number')],
+            'new_patient.email' => ['nullable', 'email', 'max:150'],
+            'new_patient.occupation' => ['nullable', 'string', 'max:150'],
             'new_patient.address' => ['nullable', 'string', 'max:1000'],
         ];
     }
