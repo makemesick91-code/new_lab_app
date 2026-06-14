@@ -90,6 +90,40 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Telepon <span class="text-gray-400">(opsional)</span></label>
                         <input type="text" name="new_patient[phone]" value="{{ old('new_patient.phone') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        @error('new_patient.phone')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nomor WA <span class="text-gray-400">(opsional)</span></label>
+                        <input type="text" name="new_patient[whatsapp_number]" value="{{ old('new_patient.whatsapp_number') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        @error('new_patient.whatsapp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nomor KTP <span class="text-gray-400">(opsional)</span></label>
+                        <input
+                            type="text"
+                            name="new_patient[ktp_number]"
+                            inputmode="numeric"
+                            maxlength="16"
+                            value="{{ old('new_patient.ktp_number') }}"
+                            class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                        />
+                        <p class="mt-1 text-xs text-gray-500">Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
+                        @error('new_patient.ktp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">E-Mail <span class="text-gray-400">(opsional)</span></label>
+                        <input type="email" name="new_patient[email]" value="{{ old('new_patient.email') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        @error('new_patient.email')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Pekerjaan <span class="text-gray-400">(opsional)</span></label>
+                        <input type="text" name="new_patient[occupation]" value="{{ old('new_patient.occupation') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        @error('new_patient.occupation')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                    </div>
+                    <div class="sm:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700">Alamat Lengkap <span class="text-gray-400">(opsional)</span></label>
+                        <textarea name="new_patient[address]" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('new_patient.address') }}</textarea>
+                        @error('new_patient.address')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                     </div>
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Nomor RM Final (Preview)</label>

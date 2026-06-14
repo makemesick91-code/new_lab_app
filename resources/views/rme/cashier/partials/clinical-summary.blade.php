@@ -39,6 +39,10 @@
             <dd class="font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</dd>
         </div>
         <div>
+            <dt class="text-gray-500">Nomor WA</dt>
+            <dd class="text-gray-900">{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
+        </div>
+        <div>
             <dt class="text-gray-500">Dokter</dt>
             <dd class="text-gray-900">{{ $visit->doctor?->name ?? '—' }}</dd>
         </div>

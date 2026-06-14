@@ -75,6 +75,8 @@ function hardenPaidInvoiceWithLabItems(Branch $branch, User $cashier, array $ite
     app(RmePaymentService::class)->pay($invoice->refresh(), $cashier, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
+        'consent_signed_by_patient' => true,
+        'consent_signed_by_doctor' => true,
     ]);
 
     return [$visit, $invoice->fresh()];

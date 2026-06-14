@@ -24,11 +24,15 @@ class Patient extends Model
         'medical_record_number',
         'registered_at',
         'manual_rm_number',
+        'ktp_number',
         'name',
         'gender',
         'date_of_birth',
         'phone',
+        'whatsapp_number',
+        'email',
         'address',
+        'occupation',
         'is_active',
     ];
 
@@ -84,6 +88,11 @@ class Patient extends Model
         $rm = $this->medical_record_number ?: 'Belum ada RM';
 
         return $rm.' — '.$this->name;
+    }
+
+    public function age(): ?int
+    {
+        return $this->date_of_birth?->age;
     }
 
     public function clinic(): BelongsTo

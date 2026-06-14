@@ -28,6 +28,14 @@
             <dd>{{ $visit->patient?->medical_record_number ?? '—' }}</dd>
         </div>
         <div class="info-row">
+            <dt>Ponsel</dt>
+            <dd>{{ $visit->patient?->phone ?? '—' }}</dd>
+        </div>
+        <div class="info-row">
+            <dt>Nomor WA</dt>
+            <dd>{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
+        </div>
+        <div class="info-row">
             <dt>No. Kunjungan</dt>
             <dd>{{ $visit->visit_number ?? '—' }}</dd>
         </div>

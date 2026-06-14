@@ -78,6 +78,16 @@ class RmePaymentService
                 ]);
             }
 
+            $visit = $invoice->clinicVisit;
+            if (! $visit) {
+                throw ValidationException::withMessages([
+                    'rme_invoice_id' => 'Kunjungan klinik tidak ditemukan untuk invoice ini.',
+                ]);
+            }
+
+            $this->applyConsentVerification($visit, $cashier, $data);
+            $this->assertConsentVerified($visit);
+
             $payment = $this->payments->create([
                 'branch_id' => $invoice->branch_id,
                 'rme_invoice_id' => $invoice->id,
@@ -98,8 +108,7 @@ class RmePaymentService
 
             $this->invoices->update($invoice, ['status' => $newStatus]);
 
-            $visit = $invoice->clinicVisit;
-            if ($newStatus === RmeInvoice::STATUS_PAID && $visit && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
+            if ($newStatus === RmeInvoice::STATUS_PAID && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
                 $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
             }
 
@@ -131,5 +140,39 @@ class RmePaymentService
     public function paymentsForInvoice(RmeInvoice $invoice): Collection
     {
         return $this->payments->forInvoice($invoice);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function applyConsentVerification(ClinicVisit $visit, User $cashier, array $data): void
+    {
+        if (! array_key_exists('consent_signed_by_patient', $data)
+            && ! array_key_exists('consent_signed_by_doctor', $data)) {
+            return;
+        }
+
+        $patientSigned = filter_var($data['consent_signed_by_patient'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $doctorSigned = filter_var($data['consent_signed_by_doctor'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+        $visit->update([
+            'consent_signed_by_patient' => $patientSigned,
+            'consent_signed_by_doctor' => $doctorSigned,
+            'consent_verified_at' => ($patientSigned && $doctorSigned) ? now() : null,
+            'consent_verified_by' => ($patientSigned && $doctorSigned) ? $cashier->id : null,
+        ]);
+
+        $visit->refresh();
+    }
+
+    private function assertConsentVerified(ClinicVisit $visit): void
+    {
+        if ($visit->hasVerifiedConsent()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'consent_signed_by_patient' => 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan belum dikonfirmasi ditandatangani oleh pasien dan dokter.',
+        ]);
     }
 }

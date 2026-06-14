@@ -85,8 +85,28 @@
         <input type="date" name="date_of_birth" value="{{ old('date_of_birth', optional($patient?->date_of_birth)->format('Y-m-d')) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
     </div>
     <div>
-        <label class="block text-sm font-medium text-gray-700">Telepon</label>
+        <label class="block text-sm font-medium text-gray-700">Nomor KTP</label>
+        <input type="text" name="ktp_number" inputmode="numeric" maxlength="16" value="{{ old('ktp_number', $patient?->ktp_number) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        @error('ktp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        <p class="mt-1 text-xs text-gray-500">Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
+    </div>
+    <div>
+        <label class="block text-sm font-medium text-gray-700">Ponsel</label>
         <input type="text" name="phone" value="{{ old('phone', $patient?->phone) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+    </div>
+    <div>
+        <label class="block text-sm font-medium text-gray-700">Nomor WA</label>
+        <input type="text" name="whatsapp_number" value="{{ old('whatsapp_number', $patient?->whatsapp_number) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        @error('whatsapp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+    </div>
+    <div>
+        <label class="block text-sm font-medium text-gray-700">E-Mail</label>
+        <input type="email" name="email" value="{{ old('email', $patient?->email) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
+        @error('email')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+    </div>
+    <div>
+        <label class="block text-sm font-medium text-gray-700">Pekerjaan</label>
+        <input type="text" name="occupation" value="{{ old('occupation', $patient?->occupation) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
     </div>
     <div class="sm:col-span-2">
         <label class="block text-sm font-medium text-gray-700">Alamat</label>
