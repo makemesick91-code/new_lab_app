@@ -270,8 +270,16 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)
     Route::get('reports/patients', [RmeReportController::class, 'patients'])
         ->name('reports.patients')->middleware('permission:view_rme_patient_reports');
+    Route::get('reports/patients/export', [RmeReportController::class, 'patientsExport'])
+        ->name('reports.patients.export')->middleware('permission:view_rme_patient_reports');
+    Route::get('reports/patients/print', [RmeReportController::class, 'patientsPrint'])
+        ->name('reports.patients.print')->middleware('permission:view_rme_patient_reports');
     Route::get('reports/payments', [RmeReportController::class, 'payments'])
         ->name('reports.payments')->middleware('permission:view_rme_payment_reports');
+    Route::get('reports/payments/export', [RmeReportController::class, 'paymentsExport'])
+        ->name('reports.payments.export')->middleware('permission:view_rme_payment_reports');
+    Route::get('reports/payments/print', [RmeReportController::class, 'paymentsPrint'])
+        ->name('reports.payments.print')->middleware('permission:view_rme_payment_reports');
 });
 
 /*

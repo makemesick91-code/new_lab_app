@@ -12,6 +12,7 @@ use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Sprint 23 Phase 23.5 — Separated RME report pages.
@@ -27,10 +28,193 @@ class RmeReportController extends Controller
 {
     public function patients(Request $request): View
     {
+        $query = $this->patientReportQuery($request);
+        $totalFilteredPatients = (clone $query)->distinct()->count('patient_id');
+
+        $visits = (clone $query)
+            ->latest('visit_date')
+            ->limit(100)
+            ->get();
+
+        return view('rme.reports.patients', [
+            'branches' => $this->rmeBranches(),
+            'selectedBranchId' => $this->resolveBranchId($request),
+            'filters' => $this->patientFilters($request),
+            'statusOptions' => $this->reportableVisitStatuses(),
+            'visits' => $visits,
+            'totalFilteredPatients' => $totalFilteredPatients,
+            'totalVisits' => $visits->count(),
+        ]);
+    }
+
+    public function patientsExport(Request $request): StreamedResponse
+    {
+        $query = $this->patientReportQuery($request);
+        $visits = (clone $query)->latest('visit_date')->get();
+        $statusOptions = $this->reportableVisitStatuses();
+        $filename = 'laporan-pasien-rme-'.now()->format('Ymd-Hi').'.csv';
+
+        return $this->streamCsv($filename, [
+            'No',
+            'ID/RM Pasien',
+            'Nama Pasien',
+            'Tanggal Kunjungan',
+            'Status',
+            'Dokter',
+            'Cabang',
+            'Keluhan Utama',
+        ], $visits->map(function (ClinicVisit $visit, int $index) use ($statusOptions) {
+            return [
+                $index + 1,
+                $visit->patient?->medical_record_number ?? ('#'.$visit->patient_id),
+                $visit->patient?->name ?? '',
+                $visit->visit_date?->format('d/m/Y') ?? '',
+                $statusOptions[$visit->status] ?? $visit->status,
+                $visit->doctor?->name ?? '',
+                $visit->branch?->name ?? '',
+                $visit->chief_complaint ?? '',
+            ];
+        }));
+    }
+
+    public function patientsPrint(Request $request): View
+    {
+        $query = $this->patientReportQuery($request);
+        $totalFilteredPatients = (clone $query)->distinct()->count('patient_id');
+        $visits = (clone $query)->latest('visit_date')->get();
+
+        return view('rme.reports.print.patients', [
+            'filters' => $this->patientFilters($request),
+            'filterSummary' => $this->buildPatientFilterSummary($request),
+            'statusOptions' => $this->reportableVisitStatuses(),
+            'visits' => $visits,
+            'totalFilteredPatients' => $totalFilteredPatients,
+            'printedAt' => now(),
+        ]);
+    }
+
+    public function payments(Request $request): View
+    {
+        $paymentsQuery = $this->paymentReportQuery($request);
+        $totalFilteredPatients = (clone $paymentsQuery)->distinct()->count('patient_id');
+        $totalPaymentAmount = (float) (clone $paymentsQuery)->sum('amount');
+        $totalFilteredTransactions = (clone $paymentsQuery)->count();
+
+        $payments = (clone $paymentsQuery)
+            ->with([
+                'patient:id,name,medical_record_number',
+                'branch:id,name',
+                'rmeInvoice:id,invoice_number,status,grand_total',
+                'rmeInvoice.items.treatment:id,name',
+                'rmeInvoice.items.doctor:id,name',
+                'paymentMethod:id,name',
+                'clinicVisit:id,visit_date,doctor_id',
+                'clinicVisit.doctor:id,name',
+            ])
+            ->latest('paid_at')
+            ->limit(100)
+            ->get();
+
+        return view('rme.reports.payments', [
+            'branches' => $this->rmeBranches(),
+            'selectedBranchId' => $this->resolveBranchId($request),
+            'filters' => $this->paymentFilters($request),
+            'paymentMethods' => PaymentMethod::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'treatments' => Treatment::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'doctors' => Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'payments' => $payments,
+            'totalAmount' => (float) $payments->sum('amount'),
+            'totalPaymentAmount' => $totalPaymentAmount,
+            'totalFilteredPatients' => $totalFilteredPatients,
+            'totalFilteredTransactions' => $totalFilteredTransactions,
+        ]);
+    }
+
+    public function paymentsExport(Request $request): StreamedResponse
+    {
+        $payments = (clone $this->paymentReportQuery($request))
+            ->with([
+                'patient:id,name,medical_record_number',
+                'branch:id,name',
+                'rmeInvoice:id,invoice_number,status,grand_total',
+                'rmeInvoice.items.treatment:id,name',
+                'rmeInvoice.items.doctor:id,name',
+                'paymentMethod:id,name',
+                'clinicVisit:id,visit_date,doctor_id',
+                'clinicVisit.doctor:id,name',
+            ])
+            ->latest('paid_at')
+            ->get();
+
+        $filename = 'laporan-pembayaran-rme-'.now()->format('Ymd-Hi').'.csv';
+
+        return $this->streamCsv($filename, [
+            'No',
+            'ID/RM Pasien',
+            'Nama Pasien',
+            'Tanggal Kunjungan',
+            'Metode Pembayaran',
+            'Treatment',
+            'Dokter',
+            'Status Invoice',
+            'Total Tagihan',
+            'Nominal Pembayaran',
+            'Tanggal Pembayaran',
+        ], $payments->map(function (RmePayment $payment, int $index) {
+            return [
+                $index + 1,
+                $payment->patient?->medical_record_number ?? ('#'.$payment->patient_id),
+                $payment->patient?->name ?? '',
+                $payment->clinicVisit?->visit_date?->format('d/m/Y') ?? '',
+                $payment->paymentMethod?->name ?? '',
+                $this->paymentTreatmentNames($payment),
+                $this->paymentDoctorNames($payment),
+                $payment->rmeInvoice?->status ?? '',
+                $payment->rmeInvoice?->grand_total ?? '',
+                $payment->amount,
+                $payment->paid_at?->format('d/m/Y H:i') ?? '',
+            ];
+        }));
+    }
+
+    public function paymentsPrint(Request $request): View
+    {
+        $paymentsQuery = $this->paymentReportQuery($request);
+        $totalFilteredPatients = (clone $paymentsQuery)->distinct()->count('patient_id');
+        $totalPaymentAmount = (float) (clone $paymentsQuery)->sum('amount');
+        $totalFilteredTransactions = (clone $paymentsQuery)->count();
+
+        $payments = (clone $paymentsQuery)
+            ->with([
+                'patient:id,name,medical_record_number',
+                'branch:id,name',
+                'rmeInvoice:id,invoice_number,status,grand_total',
+                'rmeInvoice.items.treatment:id,name',
+                'rmeInvoice.items.doctor:id,name',
+                'paymentMethod:id,name',
+                'clinicVisit:id,visit_date,doctor_id',
+                'clinicVisit.doctor:id,name',
+            ])
+            ->latest('paid_at')
+            ->get();
+
+        return view('rme.reports.print.payments', [
+            'filters' => $this->paymentFilters($request),
+            'filterSummary' => $this->buildPaymentFilterSummary($request),
+            'payments' => $payments,
+            'totalFilteredPatients' => $totalFilteredPatients,
+            'totalFilteredTransactions' => $totalFilteredTransactions,
+            'totalPaymentAmount' => $totalPaymentAmount,
+            'printedAt' => now(),
+        ]);
+    }
+
+    private function patientReportQuery(Request $request): Builder
+    {
         $branchId = $this->resolveBranchId($request);
 
-        $visits = ClinicVisit::query()
-            ->with(['patient:id,name,medical_record_number', 'branch:id,name'])
+        return ClinicVisit::query()
+            ->with(['patient:id,name,medical_record_number', 'branch:id,name', 'doctor:id,name'])
             ->when($branchId !== null, fn (Builder $q) => $q->where('branch_id', $branchId))
             ->when(
                 $request->filled('status'),
@@ -39,34 +223,17 @@ class RmeReportController extends Controller
             )
             ->when($request->filled('date_from'), fn (Builder $q) => $q->whereDate('visit_date', '>=', $request->input('date_from')))
             ->when($request->filled('date_to'), fn (Builder $q) => $q->whereDate('visit_date', '<=', $request->input('date_to')))
-            ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')))
-            ->latest('visit_date')
-            ->limit(100)
-            ->get();
-
-        return view('rme.reports.patients', [
-            'branches' => $this->rmeBranches(),
-            'selectedBranchId' => $branchId,
-            'filters' => [
-                'date_from' => $request->input('date_from'),
-                'date_to' => $request->input('date_to'),
-                'status' => $request->input('status'),
-                'q' => $request->input('q'),
-            ],
-            'statusOptions' => $this->reportableVisitStatuses(),
-            'visits' => $visits,
-            'totalVisits' => $visits->count(),
-        ]);
+            ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')));
     }
 
-    public function payments(Request $request): View
+    private function paymentReportQuery(Request $request): Builder
     {
         $branchId = $this->resolveBranchId($request);
         $paymentMethodId = $this->resolveMasterId($request, 'payment_method_id');
         $treatmentId = $this->resolveMasterId($request, 'treatment_id');
         $doctorId = $this->resolveMasterId($request, 'doctor_id');
 
-        $paymentsQuery = RmePayment::query()
+        return RmePayment::query()
             ->when($branchId !== null, fn (Builder $q) => $q->where('branch_id', $branchId))
             ->when($paymentMethodId !== null, fn (Builder $q) => $q->where('payment_method_id', $paymentMethodId))
             ->when($treatmentId !== null, fn (Builder $q) => $q->whereHas(
@@ -87,41 +254,138 @@ class RmeReportController extends Controller
                 fn (Builder $visit) => $visit->whereDate('visit_date', '<=', $request->input('date_to')),
             ))
             ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')));
+    }
 
-        $totalFilteredPatients = (clone $paymentsQuery)->distinct()->count('patient_id');
+    /**
+     * @param  array<int, string>  $header
+     * @param  iterable<int, array<int, mixed>>  $rows
+     */
+    private function streamCsv(string $filename, array $header, iterable $rows): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($header, $rows) {
+            echo "\xEF\xBB\xBF";
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, $header);
 
-        $payments = (clone $paymentsQuery)
-            ->with([
-                'patient:id,name,medical_record_number',
-                'branch:id,name',
-                'rmeInvoice:id,invoice_number,status',
-                'rmeInvoice.items.treatment:id,name',
-                'rmeInvoice.items.doctor:id,name',
-                'paymentMethod:id,name',
-                'clinicVisit.doctor:id,name',
-            ])
-            ->latest('paid_at')
-            ->limit(100)
-            ->get();
+            foreach ($rows as $row) {
+                fputcsv($handle, array_map(static fn ($v) => $v ?? '', (array) $row));
+            }
 
-        return view('rme.reports.payments', [
-            'branches' => $this->rmeBranches(),
-            'selectedBranchId' => $branchId,
-            'filters' => [
-                'date_from' => $request->input('date_from'),
-                'date_to' => $request->input('date_to'),
-                'payment_method_id' => $paymentMethodId,
-                'treatment_id' => $treatmentId,
-                'doctor_id' => $doctorId,
-                'q' => $request->input('q'),
-            ],
-            'paymentMethods' => PaymentMethod::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            'treatments' => Treatment::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            'doctors' => Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
-            'payments' => $payments,
-            'totalAmount' => (float) $payments->sum('amount'),
-            'totalFilteredPatients' => $totalFilteredPatients,
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    private function paymentTreatmentNames(RmePayment $payment): string
+    {
+        return $payment->rmeInvoice?->items
+            ?->pluck('treatment.name')
+            ->filter()
+            ->unique()
+            ->values()
+            ->join(', ') ?? '';
+    }
+
+    private function paymentDoctorNames(RmePayment $payment): string
+    {
+        return collect([$payment->clinicVisit?->doctor?->name])
+            ->merge($payment->rmeInvoice?->items?->pluck('doctor.name') ?? [])
+            ->filter()
+            ->unique()
+            ->values()
+            ->join(', ');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function patientFilters(Request $request): array
+    {
+        return [
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+            'status' => $request->input('status'),
+            'q' => $request->input('q'),
+            'branch_id' => $this->resolveBranchId($request),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function paymentFilters(Request $request): array
+    {
+        return [
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+            'payment_method_id' => $this->resolveMasterId($request, 'payment_method_id'),
+            'treatment_id' => $this->resolveMasterId($request, 'treatment_id'),
+            'doctor_id' => $this->resolveMasterId($request, 'doctor_id'),
+            'q' => $request->input('q'),
+            'branch_id' => $this->resolveBranchId($request),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildPatientFilterSummary(Request $request): array
+    {
+        $summary = [];
+        $branchId = $this->resolveBranchId($request);
+
+        if ($branchId !== null) {
+            $branchName = Branch::query()->where('id', $branchId)->value('name');
+            $summary[] = 'Cabang: '.($branchName ?? $branchId);
+        }
+
+        if ($request->filled('date_from')) {
+            $summary[] = 'Tanggal dari: '.$request->input('date_from');
+        }
+
+        if ($request->filled('date_to')) {
+            $summary[] = 'Tanggal sampai: '.$request->input('date_to');
+        }
+
+        if ($request->filled('status')) {
+            $statusOptions = $this->reportableVisitStatuses();
+            $summary[] = 'Status: '.($statusOptions[$request->input('status')] ?? $request->input('status'));
+        }
+
+        if ($request->filled('q')) {
+            $summary[] = 'Pencarian: '.$request->input('q');
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function buildPaymentFilterSummary(Request $request): array
+    {
+        $summary = $this->buildPatientFilterSummary($request);
+        $paymentMethodId = $this->resolveMasterId($request, 'payment_method_id');
+        $treatmentId = $this->resolveMasterId($request, 'treatment_id');
+        $doctorId = $this->resolveMasterId($request, 'doctor_id');
+
+        if ($paymentMethodId !== null) {
+            $name = PaymentMethod::query()->where('id', $paymentMethodId)->value('name');
+            $summary[] = 'Metode pembayaran: '.($name ?? $paymentMethodId);
+        }
+
+        if ($treatmentId !== null) {
+            $name = Treatment::query()->where('id', $treatmentId)->value('name');
+            $summary[] = 'Treatment: '.($name ?? $treatmentId);
+        }
+
+        if ($doctorId !== null) {
+            $name = Doctor::query()->where('id', $doctorId)->value('name');
+            $summary[] = 'Dokter: '.($name ?? $doctorId);
+        }
+
+        return $summary;
     }
 
     private function applyPatientSearch(Builder $query, string $rawTerm): void
