@@ -2,6 +2,13 @@
     <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <h2 class="text-lg font-semibold text-gray-900">Laporan Pembayaran RME</h2>
+            <div class="flex flex-wrap items-center gap-2">
+                <a href="{{ route('rme.reports.payments.export', request()->query()) }}"
+                   class="rounded-md border border-teal-700 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50">Export Excel</a>
+                <a href="{{ route('rme.reports.payments.print', request()->query()) }}"
+                   target="_blank"
+                   class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cetak/PDF</a>
+            </div>
         </div>
 
         <form method="GET" action="{{ route('rme.reports.payments') }}" class="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -64,7 +71,7 @@
         <div class="flex flex-wrap gap-3 text-sm">
             <span class="rounded-md bg-blue-50 px-3 py-1 text-blue-700">Total Pasien Hasil Filter: <strong>{{ number_format($totalFilteredPatients ?? 0) }} pasien</strong></span>
             <span class="rounded-md bg-gray-50 px-3 py-1 text-gray-700">Total Baris Transaksi Ditampilkan: <strong>{{ number_format($payments->count()) }} transaksi</strong></span>
-            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Diterima: <strong>{{ format_currency_id($totalAmount) }}</strong></span>
+            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Pembayaran Hasil Filter: <strong>{{ format_currency_id($totalPaymentAmount ?? 0) }}</strong></span>
         </div>
 
         <div class="overflow-x-auto">
