@@ -1,3 +1,4 @@
+.gitignore text eol=lf diff
 * text=auto eol=lf
 
 *.blade.php diff=html
