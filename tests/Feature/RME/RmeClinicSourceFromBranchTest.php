@@ -124,7 +124,7 @@ it('composes the RM number using the selected RME branch code on patient store',
     $this->assertDatabaseHas('mst_patients', [
         'name' => 'Pasien RME Telkomas',
         'branch_id' => $this->rmeBranch->id,
-        'medical_record_number' => 'RM DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TKM1-2026-0001',
     ]);
 });
 
@@ -170,7 +170,7 @@ it('stores patient branch_id from the selected RME branch in new-patient mode', 
 
     expect($patient)->not->toBeNull()
         ->and($patient->branch_id)->toBe($this->rmeBranch->id)
-        ->and($patient->medical_record_number)->toBe('RM DG-TKM1-2026-0009');
+        ->and($patient->medical_record_number)->toBe('DG-TKM1-2026-0009');
 });
 
 it('stores visit branch_id from the selected RME branch in new-patient mode', function () {
@@ -198,7 +198,7 @@ it('stores visit branch_id from the selected RME branch in new-patient mode', fu
 it('uses the selected RME branch for an existing-patient visit', function () {
     $patient = Patient::factory()->create([
         'branch_id' => $this->rmeBranch->id,
-        'medical_record_number' => 'RM DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TKM1-2026-0001',
     ]);
 
     $this->actingAs($this->admin)

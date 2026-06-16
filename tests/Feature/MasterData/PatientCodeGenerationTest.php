@@ -28,7 +28,7 @@ function newPatientData(array $overrides = []): array
 it('generates a configurable patient code for a new patient with no code', function () {
     $patient = app(PatientService::class)->create(newPatientData());
 
-    expect($patient->medical_record_number)->toBe('RM-202606-000001');
+    expect($patient->medical_record_number)->toBe('DG-202606-000001');
 });
 
 it('keeps an explicitly supplied code for an existing/returning patient', function () {
@@ -45,17 +45,17 @@ it('increments the sequence so generated codes stay unique', function () {
     $first = $service->create(newPatientData());
     $second = $service->create(newPatientData());
 
-    expect($first->medical_record_number)->toBe('RM-202606-000001')
-        ->and($second->medical_record_number)->toBe('RM-202606-000002')
+    expect($first->medical_record_number)->toBe('DG-202606-000001')
+        ->and($second->medical_record_number)->toBe('DG-202606-000002')
         ->and(Patient::query()->distinct()->count('medical_record_number'))->toBe(2);
 });
 
 it('skips a code that already exists to avoid collisions', function () {
-    Patient::factory()->create(['medical_record_number' => 'RM-202606-000001']);
+    Patient::factory()->create(['medical_record_number' => 'DG-202606-000001']);
 
     $generated = app(PatientCodeGenerator::class)->generate();
 
-    expect($generated)->toBe('RM-202606-000002');
+    expect($generated)->toBe('DG-202606-000002');
 });
 
 it('respects a configured prefix and sequence length', function () {
@@ -65,6 +65,14 @@ it('respects a configured prefix and sequence length', function () {
     $generated = app(PatientCodeGenerator::class)->generate();
 
     expect($generated)->toBe('MRN-202606-0001');
+});
+
+it('uses DG as the default auto-generated prefix', function () {
+    expect(config('patient.code.prefix'))->toBe('DG');
+
+    $generated = app(PatientCodeGenerator::class)->generate();
+
+    expect($generated)->toStartWith('DG-');
 });
 
 it('does not auto-generate when disabled by config', function () {

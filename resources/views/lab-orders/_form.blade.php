@@ -34,12 +34,14 @@
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700">Pasien</label>
-            <select name="patient_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm">
-                <option value="">-- Pilih pasien --</option>
-                @foreach ($patients as $patient)
-                    <option value="{{ $patient->id }}" @selected((int) old('patient_id', $order?->patient_id) === $patient->id)>{{ $patient->name }}</option>
-                @endforeach
-            </select>
+            <x-patient-search-select
+                :patients="$patients"
+                :selected="old('patient_id', $order?->patient_id)"
+                :show-search="true"
+                placeholder="-- Pilih pasien --"
+                search-placeholder="Cari nama atau nomor RM…"
+                select-class="mt-1 block w-full rounded-md border-gray-300 text-sm"
+            />
         </div>
         <div>
             <label class="block text-sm font-medium text-gray-700">Nomor RM</label>

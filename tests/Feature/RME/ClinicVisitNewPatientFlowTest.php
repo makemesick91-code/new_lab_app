@@ -26,7 +26,7 @@ beforeEach(function () {
 afterEach(fn () => Carbon::setTestNow());
 
 it('registers a visit for an existing patient (default mode)', function () {
-    $patient = Patient::factory()->create(['medical_record_number' => 'RM DG-MAIN-2026-0001']);
+    $patient = Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0001']);
 
     $this->actingAs($this->actor)
         ->post(route('rme.visits.store'), [
@@ -61,7 +61,7 @@ it('creates a new patient then the visit in new-patient mode', function () {
     $patient = Patient::firstWhere('name', 'Pasien Baru RME');
 
     expect($patient)->not->toBeNull()
-        ->and($patient->medical_record_number)->toBe('RM DG-MAIN-2026-0007')
+        ->and($patient->medical_record_number)->toBe('DG-MAIN-2026-0007')
         ->and(ClinicVisit::where('patient_id', $patient->id)->exists())->toBeTrue();
 });
 
@@ -91,7 +91,7 @@ it('requires patient_id in existing mode', function () {
 });
 
 it('rejects a duplicate final RM number in new mode', function () {
-    Patient::factory()->create(['medical_record_number' => 'RM DG-MAIN-2026-0007']);
+    Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0007']);
 
     $this->actingAs($this->actor)
         ->post(route('rme.visits.store'), [
@@ -110,10 +110,10 @@ it('rejects a duplicate final RM number in new mode', function () {
 });
 
 it('shows registered patients as medical_record_number — name in the create form', function () {
-    Patient::factory()->create(['medical_record_number' => 'RM DG-MAIN-2026-0001', 'name' => 'Nur Aisyah']);
+    Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0001', 'name' => 'Nur Aisyah']);
 
     $this->actingAs($this->actor)
         ->get(route('rme.visits.create'))
         ->assertOk()
-        ->assertSee('RM DG-MAIN-2026-0001 — Nur Aisyah');
+        ->assertSee('DG-MAIN-2026-0001 — Nur Aisyah');
 });

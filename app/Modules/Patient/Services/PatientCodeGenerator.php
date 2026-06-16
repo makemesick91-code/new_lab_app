@@ -23,7 +23,7 @@ class PatientCodeGenerator
         $config = config('patient.code');
         $period = $period ?? Carbon::now();
 
-        $prefix = (string) ($config['prefix'] ?? 'RM');
+        $prefix = (string) ($config['prefix'] ?? 'DG');
         $separator = (string) ($config['separator'] ?? '-');
         $periodFormat = (string) ($config['period_format'] ?? 'Ym');
         $seqLength = max(1, (int) ($config['seq_length'] ?? 6));
