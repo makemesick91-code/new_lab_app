@@ -17,6 +17,7 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -63,9 +64,16 @@ class ClinicVisitController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
         $this->authorize('create', ClinicVisit::class);
+
+        $prefill = [
+            'patient_id' => $request->integer('patient_id') ?: null,
+            'visit_type' => $request->string('visit_type')->toString() ?: ClinicVisit::VISIT_TYPE_NEW,
+            'follow_up_of_visit_id' => $request->integer('follow_up_of_visit_id') ?: null,
+            'branch_id' => $request->integer('branch_id') ?: null,
+        ];
 
         return view('rme.visits.create', [
             'patients' => Patient::with('branch')->orderBy('name')->get(),
@@ -73,6 +81,19 @@ class ClinicVisitController extends Controller
             'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'rmeBranches' => $this->branchService->listRmeEnabled(),
+            'prefill' => $prefill,
+        ]);
+    }
+
+    public function patientVisitOptions(Request $request): JsonResponse
+    {
+        $this->authorize('viewAny', ClinicVisit::class);
+
+        $patientId = $request->integer('patient_id');
+        abort_if($patientId <= 0, 422, 'patient_id wajib diisi.');
+
+        return response()->json([
+            'visits' => $this->visits->patientVisitOptions($patientId),
         ]);
     }
 
@@ -96,9 +117,25 @@ class ClinicVisitController extends Controller
     public function show(ClinicVisit $clinicVisit): View
     {
         $this->authorize('view', $clinicVisit);
-        $clinicVisit->load(['patient', 'doctor', 'clinic', 'clinicRoom', 'branch', 'initialTreatment']);
+        $clinicVisit->load([
+            'patient',
+            'doctor',
+            'clinic',
+            'clinicRoom',
+            'branch',
+            'initialTreatment',
+            'followUpOf',
+            'followUpVisits.doctor',
+        ]);
 
-        return view('rme.visits.show', ['visit' => $clinicVisit]);
+        $patientVisitHistory = $this->visits->patientVisitHistory(
+            (int) $clinicVisit->patient_id,
+        );
+
+        return view('rme.visits.show', [
+            'visit' => $clinicVisit,
+            'patientVisitHistory' => $patientVisitHistory,
+        ]);
     }
 
     public function edit(ClinicVisit $clinicVisit): View

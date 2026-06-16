@@ -62,6 +62,14 @@
                 @can('print', $visit)
                     <x-ui.button variant="neutral" :href="route('rme.visits.print', $visit)" target="_blank">Cetak RME</x-ui.button>
                 @endcan
+                @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
+                    <x-ui.button variant="primary" :href="route('rme.visits.create', [
+                        'patient_id' => $visit->patient_id,
+                        'visit_type' => \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTROL,
+                        'follow_up_of_visit_id' => $visit->id,
+                        'branch_id' => $visit->branch_id,
+                    ])">Buat Kontrol</x-ui.button>
+                @endcan
             </div>
         </div>
 
@@ -116,6 +124,34 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Ruangan</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->clinicRoom?->name ?? '—' }}</dd>
                 </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Jenis Kunjungan</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $visit->visitTypeLabel() }}</dd>
+                </div>
+                @if ($visit->followUpOf)
+                    <div class="sm:col-span-2">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kontrol dari</dt>
+                        <dd class="mt-1 text-sm">
+                            <a href="{{ route('rme.visits.show', $visit->followUpOf) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $visit->followUpOf->visit_number }}</a>
+                            <span class="text-gray-500"> — {{ $visit->followUpOf->visit_date?->format('d/m/Y') }}</span>
+                        </dd>
+                    </div>
+                @endif
+                @if ($visit->followUpVisits->isNotEmpty())
+                    <div class="sm:col-span-2">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kontrol lanjutan</dt>
+                        <dd class="mt-1 text-sm text-gray-900">
+                            <ul class="list-disc pl-5 space-y-1">
+                                @foreach ($visit->followUpVisits as $followUpVisit)
+                                    <li>
+                                        <a href="{{ route('rme.visits.show', $followUpVisit) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $followUpVisit->visit_number }}</a>
+                                        <span class="text-gray-500"> — {{ $followUpVisit->visitTypeLabel() }} ({{ $followUpVisit->visit_date?->format('d/m/Y') }})</span>
+                                    </li>
+                                @endforeach
+                            </ul>
+                        </dd>
+                    </div>
+                @endif
                 <div class="sm:col-span-2">
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Keluhan Utama</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->chief_complaint ?? '—' }}</dd>
@@ -190,6 +226,12 @@
                 <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
             </x-ui.card>
         @endcan
+
+        @include('rme.visits.partials.patient-visit-history', [
+            'patientVisitHistory' => $patientVisitHistory,
+            'currentVisitId' => $visit->id,
+            'statusLabels' => $statusLabels,
+        ])
 
         <div>
             <a href="{{ route('rme.visits.index') }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke daftar</a>

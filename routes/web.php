@@ -202,6 +202,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('medical-records', [MedicalRecordController::class, 'index'])
             ->name('medical-records.index');
 
+        Route::get('visits/patient-options', [ClinicVisitController::class, 'patientVisitOptions'])
+            ->name('visits.patient-options');
+
         Route::resource('visits', ClinicVisitController::class)
             ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->parameters(['visits' => 'clinicVisit']);

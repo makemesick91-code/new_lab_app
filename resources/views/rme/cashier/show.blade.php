@@ -57,6 +57,30 @@
         {{-- Patient & Visit --}}
         @include('rme.cashier.partials.clinical-summary', ['visit' => $visit])
 
+        @if ($visit->isFollowUpVisit() && ($parentReceivableInvoices ?? collect())->isNotEmpty())
+            <x-ui.card title="Piutang / Cicilan Kunjungan Sebelumnya">
+                <p class="text-sm text-gray-600 mb-3">
+                    Kunjungan kontrol terkait kunjungan sebelumnya. Tagihan lama tidak dibayar otomatis — proses pembayaran tetap melalui flow kasir yang benar.
+                </p>
+                <ul class="space-y-2 text-sm">
+                    @foreach ($parentReceivableInvoices as $parentInvoice)
+                        <li class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2">
+                            <div>
+                                <span class="font-mono font-medium text-gray-900">{{ $parentInvoice->invoice_number }}</span>
+                                <span class="text-gray-500"> — {{ $parentInvoice->clinicVisit?->visit_number }}</span>
+                                <span class="ml-2 text-amber-800">{{ $invoiceStatusLabels[$parentInvoice->status] ?? $parentInvoice->status }}</span>
+                            </div>
+                            @if ($parentInvoice->clinicVisit)
+                                <x-ui.button variant="secondary" :href="route('rme.cashier.show', [$parentInvoice->clinicVisit, $parentInvoice])">
+                                    Lihat Tagihan Lama
+                                </x-ui.button>
+                            @endif
+                        </li>
+                    @endforeach
+                </ul>
+            </x-ui.card>
+        @endif
+
         {{-- Invoice Items --}}
         <x-ui.card padding="">
             <div class="border-b border-gray-200 px-4 py-3">

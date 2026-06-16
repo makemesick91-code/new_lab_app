@@ -14,6 +14,15 @@
                     </x-ui.badge>
                 </div>
                 <p class="mt-1 text-sm text-gray-500">{{ $clinicVisit->visit_number }} &mdash; {{ $clinicVisit->visit_date?->format('d/m/Y') }}</p>
+                @if ($clinicVisit->isFollowUpVisit())
+                    <p class="mt-2 text-sm text-teal-800">
+                        <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
+                        @if ($clinicVisit->followUpOf)
+                            &mdash; <span class="font-medium">Kontrol dari:</span>
+                            <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono underline">{{ $clinicVisit->followUpOf->visit_number }}</a>
+                        @endif
+                    </p>
+                @endif
             </div>
         </div>
 
@@ -39,6 +48,61 @@
                 @endif
             </dl>
         </x-ui.card>
+
+        @if ($clinicVisit->isFollowUpVisit() || ($patientVisitHistory ?? collect())->isNotEmpty())
+            <x-ui.card title="Riwayat Kunjungan Pasien">
+                @if (($patientVisitHistory ?? collect())->isEmpty())
+                    <p class="text-sm text-gray-500">Tidak ada riwayat kunjungan sebelumnya.</p>
+                @else
+                    <div class="space-y-4">
+                        @foreach ($patientVisitHistory as $historyVisit)
+                            @php
+                                $historyMr = $historyVisit->medicalRecord;
+                                $historyOdontogram = $historyVisit->odontogram;
+                            @endphp
+                            <div class="rounded-lg border border-gray-200 p-4">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <p class="font-mono text-sm font-semibold text-gray-900">{{ $historyVisit->visit_number }}</p>
+                                        <p class="text-xs text-gray-500">{{ $historyVisit->visit_date?->format('d/m/Y') }} — {{ $historyVisit->visitTypeLabel() }} — {{ $historyVisit->doctor?->name ?? '—' }}</p>
+                                    </div>
+                                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $historyVisit)">Buka Kunjungan</x-ui.button>
+                                </div>
+                                <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                                    <div>
+                                        <dt class="text-gray-500">Tindakan Awal</dt>
+                                        <dd class="text-gray-900">{{ $historyVisit->initialTreatment?->name ?? '—' }}</dd>
+                                    </div>
+                                    <div>
+                                        <dt class="text-gray-500">Status RME</dt>
+                                        <dd class="text-gray-900">{{ $historyMr ? strtoupper($historyMr->status) : 'Belum ada' }}</dd>
+                                    </div>
+                                    @if ($historyMr?->notes)
+                                        <div class="sm:col-span-2">
+                                            <dt class="text-gray-500">Catatan RME</dt>
+                                            <dd class="text-gray-700 whitespace-pre-wrap">{{ \Illuminate\Support\Str::limit($historyMr->notes, 200) }}</dd>
+                                        </div>
+                                    @endif
+                                    <div>
+                                        <dt class="text-gray-500">Odontogram</dt>
+                                        <dd class="text-gray-900">
+                                            @if ($historyOdontogram)
+                                                {{ $historyOdontogram->isFinalized() ? 'Final' : 'Draft' }}
+                                                @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $historyVisit])
+                                                    — <a href="{{ route('rme.visits.odontogram.show', $historyVisit) }}" class="text-teal-700 hover:text-teal-900">Lihat (read-only jika final)</a>
+                                                @endcan
+                                            @else
+                                                Belum ada
+                                            @endif
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </x-ui.card>
+        @endif
 
         <x-ui.card title="Riwayat Pencatatan">
             <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">

@@ -30,6 +30,12 @@
             <dt class="text-gray-500">No. Kunjungan</dt>
             <dd class="font-mono font-medium text-gray-900">{{ $visit->visit_number }}</dd>
         </div>
+        @if (! $visit->isNewVisit())
+            <div>
+                <dt class="text-gray-500">Jenis Kunjungan</dt>
+                <dd class="text-gray-900">{{ $visit->visitTypeLabel() }}</dd>
+            </div>
+        @endif
         <div>
             <dt class="text-gray-500">Tanggal</dt>
             <dd class="text-gray-900">{{ $visit->visit_date?->format('d/m/Y') }}</dd>

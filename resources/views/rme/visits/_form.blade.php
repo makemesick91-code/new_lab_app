@@ -3,6 +3,11 @@
     $treatments = $treatments ?? collect();
     $rmeBranches = $rmeBranches ?? collect();
     $patientMode = old('patient_mode', 'existing');
+    $prefill = $prefill ?? [];
+    $visitType = old('visit_type', $prefill['visit_type'] ?? \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_NEW);
+    $prefillFollowUpId = old('follow_up_of_visit_id', $prefill['follow_up_of_visit_id'] ?? null);
+    $prefillPatientId = old('patient_id', $prefill['patient_id'] ?? $visit?->patient_id);
+    $prefillBranchId = old('branch_id', $prefill['branch_id'] ?? $visit?->branch_id);
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -11,12 +16,39 @@
         <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
             <option value="">- Pilih cabang RME -</option>
             @foreach ($rmeBranches as $branch)
-                <option value="{{ $branch->id }}" @selected((int) old('branch_id', $visit?->branch_id) === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                <option value="{{ $branch->id }}" @selected((int) $prefillBranchId === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
             @endforeach
         </select>
         @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
         <p class="mt-1 text-xs text-gray-400">Untuk pasien baru, Cabang RME pasien otomatis mengikuti Klinik/Cabang kunjungan.</p>
     </div>
+
+    @if (! $visit)
+        <div class="sm:col-span-2">
+            <label class="block text-sm font-medium text-gray-700">Jenis Kunjungan <span class="text-rose-500">*</span></label>
+            <select name="visit_type" required data-visit-type class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                @foreach ([
+                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_NEW => 'Baru',
+                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTROL => 'Kontrol',
+                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTINUED_TREATMENT => 'Lanjutan Tindakan',
+                    \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_EMERGENCY => 'Emergency',
+                ] as $typeValue => $typeLabel)
+                    <option value="{{ $typeValue }}" @selected($visitType === $typeValue)>{{ $typeLabel }}</option>
+                @endforeach
+            </select>
+            @error('visit_type')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="sm:col-span-2 hidden" data-follow-up-panel>
+            <label class="block text-sm font-medium text-gray-700">Kunjungan Sebelumnya <span class="text-rose-500">*</span></label>
+            <select name="follow_up_of_visit_id" data-follow-up-select class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <option value="">- Pilih kunjungan sebelumnya -</option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500" data-follow-up-hint>Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.</p>
+            @error('follow_up_of_visit_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        </div>
+    @endif
+
     @if (! $visit)
         {{-- Pilih pasien terdaftar ATAU daftarkan pasien baru (Sprint 23 Phase 23.8) --}}
         <div class="sm:col-span-2 rounded-lg border border-teal-100 bg-teal-50/40 p-4" data-patient-block>
@@ -37,7 +69,7 @@
             <div class="mt-3" data-mode-panel="existing">
                 <x-patient-search-select
                     :patients="$patients"
-                    :selected="old('patient_id', $visit?->patient_id)"
+                    :selected="$prefillPatientId"
                     label="Pasien Terdaftar"
                 />
                 @error('patient_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
@@ -210,14 +242,103 @@
         const dateEl = block.querySelector('[data-rm-date]');
         const manual = block.querySelector('[data-rm-manual]');
         const preview = block.querySelector('[data-rm-preview]');
+        const visitTypeSelect = document.querySelector('[data-visit-type]');
+        const followUpPanel = document.querySelector('[data-follow-up-panel]');
+        const followUpSelect = document.querySelector('[data-follow-up-select]');
+        const followUpHint = document.querySelector('[data-follow-up-hint]');
+        const patientSelect = document.querySelector('[data-patient-select]');
+        const prefillFollowUpId = @json($prefillFollowUpId);
+        const patientOptionsUrl = @json(route('rme.visits.patient-options'));
+
+        const followUpTypes = ['control', 'continued_treatment'];
 
         const applyMode = function (mode) {
             modeInput.value = mode;
             panels.existing?.classList.toggle('hidden', mode !== 'existing');
             panels.new?.classList.toggle('hidden', mode !== 'new');
+            syncVisitTypeOptions();
+            syncFollowUpPanel();
+        };
+
+        const syncVisitTypeOptions = function () {
+            if (!visitTypeSelect) return;
+            const isNewPatient = modeInput.value === 'new';
+            Array.from(visitTypeSelect.options).forEach((option) => {
+                if (followUpTypes.includes(option.value)) {
+                    option.disabled = isNewPatient;
+                }
+            });
+            if (isNewPatient && followUpTypes.includes(visitTypeSelect.value)) {
+                visitTypeSelect.value = 'new';
+            }
+        };
+
+        const renderFollowUpOptions = function (visits) {
+            if (!followUpSelect) return;
+            const current = followUpSelect.value || String(prefillFollowUpId || '');
+            followUpSelect.innerHTML = '<option value="">- Pilih kunjungan sebelumnya -</option>';
+            visits.forEach((visit) => {
+                const option = document.createElement('option');
+                option.value = String(visit.id);
+                const treatment = visit.initial_treatment ? ` — ${visit.initial_treatment}` : '';
+                option.textContent = `${visit.visit_number} (${visit.visit_date}) — ${visit.doctor_name || '—'}${treatment} — ${visit.status}`;
+                if (String(visit.id) === current) {
+                    option.selected = true;
+                }
+                followUpSelect.appendChild(option);
+            });
+        };
+
+        const loadFollowUpOptions = async function () {
+            if (!followUpSelect || !patientSelect) return;
+            const patientId = patientSelect.value;
+            if (!patientId) {
+                followUpSelect.innerHTML = '<option value="">- Pilih kunjungan sebelumnya -</option>';
+                if (followUpHint) {
+                    followUpHint.textContent = 'Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.';
+                }
+                return;
+            }
+
+            if (followUpHint) {
+                followUpHint.textContent = 'Memuat riwayat kunjungan...';
+            }
+
+            try {
+                const response = await fetch(`${patientOptionsUrl}?patient_id=${encodeURIComponent(patientId)}`, {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!response.ok) throw new Error('fetch failed');
+                const data = await response.json();
+                renderFollowUpOptions(data.visits || []);
+                if (followUpHint) {
+                    followUpHint.textContent = (data.visits || []).length
+                        ? 'Pilih kunjungan sebelumnya yang akan dijadikan acuan kontrol.'
+                        : 'Tidak ada riwayat kunjungan sebelumnya.';
+                }
+            } catch (e) {
+                if (followUpHint) {
+                    followUpHint.textContent = 'Gagal memuat riwayat kunjungan.';
+                }
+            }
+        };
+
+        const syncFollowUpPanel = function () {
+            if (!visitTypeSelect || !followUpPanel) return;
+            const show = followUpTypes.includes(visitTypeSelect.value) && modeInput.value === 'existing';
+            followUpPanel.classList.toggle('hidden', !show);
+            if (show) {
+                loadFollowUpOptions();
+            }
         };
 
         radios.forEach(r => r.addEventListener('change', () => applyMode(r.value)));
+        visitTypeSelect?.addEventListener('change', syncFollowUpPanel);
+        patientSelect?.addEventListener('change', () => {
+            if (followUpTypes.includes(visitTypeSelect?.value || '')) {
+                loadFollowUpOptions();
+            }
+        });
 
         const recompute = function () {
             if (!preview) return;
@@ -232,7 +353,10 @@
 
         applyMode(modeInput.value || 'existing');
         recompute();
-    })();
+        syncFollowUpPanel();
+        if (prefillFollowUpId && followUpTypes.includes(visitTypeSelect?.value || '')) {
+            loadFollowUpOptions();
+        }
 
         const visitBranchSelect = document.querySelector('[data-visit-branch]');
         const newPatientBranchSelect = document.querySelector('[data-rm-branch]');
@@ -242,7 +366,7 @@
                 return;
             }
 
-            if (patientModeInput?.value === 'new' && visitBranchSelect.value) {
+            if (modeInput?.value === 'new' && visitBranchSelect.value) {
                 newPatientBranchSelect.value = visitBranchSelect.value;
                 newPatientBranchSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
@@ -254,6 +378,6 @@
         });
 
         syncNewPatientBranchWithVisitBranch();
-
-    </script>
+    })();
+</script>
 @endif

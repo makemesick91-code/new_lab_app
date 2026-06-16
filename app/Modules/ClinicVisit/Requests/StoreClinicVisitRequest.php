@@ -3,6 +3,8 @@
 namespace App\Modules\ClinicVisit\Requests;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
+use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
@@ -22,6 +24,10 @@ class StoreClinicVisitRequest extends FormRequest
         // that only send patient_id keep working unchanged.
         if (! $this->filled('patient_mode')) {
             $this->merge(['patient_mode' => 'existing']);
+        }
+
+        if (! $this->filled('visit_type')) {
+            $this->merge(['visit_type' => ClinicVisit::VISIT_TYPE_NEW]);
         }
 
         if ($this->has('new_patient.ktp_number')) {
@@ -60,6 +66,9 @@ class StoreClinicVisitRequest extends FormRequest
             'initial_treatment_id' => ['required', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
             'initial_service_note' => ['nullable', 'string', 'max:2000'],
 
+            'visit_type' => ['required', 'string', Rule::in(ClinicVisit::VISIT_TYPES)],
+            'follow_up_of_visit_id' => ['nullable', 'integer', Rule::exists('trx_clinic_visits', 'id')],
+
             // Existing patient mode.
             'patient_id' => [Rule::requiredIf(! $isNew), 'nullable', 'integer', Rule::exists('mst_patients', 'id')],
 
@@ -97,51 +106,128 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.manual_rm_number.required' => 'Nomor RM manual pasien baru wajib diisi.',
             'new_patient.ktp_number.unique' => 'Nomor KTP sudah terdaftar pada pasien lain.',
             'patient_id.required' => 'Pilih pasien terdaftar.',
+            'visit_type.in' => 'Jenis kunjungan tidak valid.',
+            'follow_up_of_visit_id.required' => 'Kunjungan sebelumnya wajib dipilih untuk kunjungan kontrol atau lanjutan tindakan.',
+            'follow_up_of_visit_id.exists' => 'Kunjungan sebelumnya tidak ditemukan.',
         ];
     }
 
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator) {
-            if ($this->input('patient_mode') !== 'new' || $validator->errors()->isNotEmpty()) {
-                return;
-            }
+            $this->validateNewPatientRm($validator);
+            $this->validateFollowUpVisit($validator);
+        });
+    }
 
-            $visitBranchId = $this->input('branch_id');
-            $newPatientBranchId = $this->input('new_patient.branch_id');
+    private function validateNewPatientRm(Validator $validator): void
+    {
+        if ($this->input('patient_mode') !== 'new' || $validator->errors()->isNotEmpty()) {
+            return;
+        }
 
-            if ($visitBranchId && $newPatientBranchId && (int) $visitBranchId !== (int) $newPatientBranchId) {
+        $visitType = $this->input('visit_type', ClinicVisit::VISIT_TYPE_NEW);
+        if (in_array($visitType, ClinicVisit::FOLLOW_UP_VISIT_TYPES, true)) {
+            $validator->errors()->add(
+                'visit_type',
+                'Kunjungan kontrol hanya dapat dibuat untuk pasien terdaftar.'
+            );
+
+            return;
+        }
+
+        $visitBranchId = $this->input('branch_id');
+        $newPatientBranchId = $this->input('new_patient.branch_id');
+
+        if ($visitBranchId && $newPatientBranchId && (int) $visitBranchId !== (int) $newPatientBranchId) {
+            $validator->errors()->add(
+                'new_patient.branch_id',
+                'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.'
+            );
+
+            return;
+        }
+
+        $branchId = $this->input('new_patient.branch_id');
+        $manual = trim((string) $this->input('new_patient.manual_rm_number', ''));
+
+        if (! $branchId || $manual === '') {
+            return;
+        }
+
+        $branch = app(BranchRepositoryInterface::class)->findById((int) $branchId);
+
+        if (! $branch) {
+            return;
+        }
+
+        $rmNumbers = app(PatientMedicalRecordNumberService::class);
+        $registeredAt = $this->input('new_patient.registered_at')
+            ? Carbon::parse($this->input('new_patient.registered_at'))
+            : Carbon::today();
+
+        $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
+
+        if ($rmNumbers->exists($composed)) {
+            $validator->errors()->add('new_patient.manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
+        }
+    }
+
+    private function validateFollowUpVisit(Validator $validator): void
+    {
+        if ($validator->errors()->isNotEmpty()) {
+            return;
+        }
+
+        $visitType = $this->input('visit_type', ClinicVisit::VISIT_TYPE_NEW);
+        $followUpId = $this->input('follow_up_of_visit_id');
+        $patientId = $this->input('patient_id');
+        $isNewPatient = $this->input('patient_mode') === 'new';
+
+        if (in_array($visitType, ClinicVisit::FOLLOW_UP_VISIT_TYPES, true)) {
+            if ($isNewPatient) {
                 $validator->errors()->add(
-                    'new_patient.branch_id',
-                    'Cabang RME pasien baru harus sama dengan Klinik/Cabang kunjungan.'
+                    'visit_type',
+                    'Kunjungan kontrol hanya dapat dibuat untuk pasien terdaftar.'
                 );
 
                 return;
             }
 
-            $branchId = $this->input('new_patient.branch_id');
-            $manual = trim((string) $this->input('new_patient.manual_rm_number', ''));
+            if (! $followUpId) {
+                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya wajib dipilih untuk kunjungan kontrol atau lanjutan tindakan.');
 
-            if (! $branchId || $manual === '') {
                 return;
             }
 
-            $branch = app(BranchRepositoryInterface::class)->findById((int) $branchId);
+            if (! $patientId) {
+                $validator->errors()->add('patient_id', 'Pilih pasien terdaftar.');
 
-            if (! $branch) {
                 return;
             }
 
-            $rmNumbers = app(PatientMedicalRecordNumberService::class);
-            $registeredAt = $this->input('new_patient.registered_at')
-                ? Carbon::parse($this->input('new_patient.registered_at'))
-                : Carbon::today();
+            $rmeBranchIds = app(BranchService::class)->rmeEnabledIds();
+            $parentVisit = ClinicVisit::query()
+                ->whereIn('branch_id', $rmeBranchIds)
+                ->find((int) $followUpId);
 
-            $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
+            if ($parentVisit === null) {
+                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya harus berasal dari cabang RME yang valid.');
 
-            if ($rmNumbers->exists($composed)) {
-                $validator->errors()->add('new_patient.manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
+                return;
             }
-        });
+
+            if ((int) $parentVisit->patient_id !== (int) $patientId) {
+                $validator->errors()->add('follow_up_of_visit_id', 'Kunjungan sebelumnya harus milik pasien yang sama.');
+
+                return;
+            }
+
+            return;
+        }
+
+        if ($followUpId && in_array($visitType, [ClinicVisit::VISIT_TYPE_NEW, ClinicVisit::VISIT_TYPE_EMERGENCY], true)) {
+            // follow_up_of_visit_id is optional and ignored for new/emergency — no error.
+        }
     }
 }

@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Interfaces;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface ClinicVisitRepositoryInterface
 {
@@ -39,4 +40,18 @@ interface ClinicVisitRepositoryInterface
 
     /** @param array<string, mixed> $data */
     public function update(ClinicVisit $visit, array $data): ClinicVisit;
+
+    /**
+     * List visits for a patient scoped to RME-enabled branches.
+     *
+     * @param  array<int, int>  $branchIds
+     */
+    public function listForPatient(array $branchIds, int $patientId, ?int $excludeVisitId = null): Collection;
+
+    /**
+     * Find a visit by ID when it belongs to one of the given RME branches.
+     *
+     * @param  array<int, int>  $branchIds
+     */
+    public function findByIdInBranches(array $branchIds, int $id): ?ClinicVisit;
 }

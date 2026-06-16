@@ -20,7 +20,10 @@ class RmeCreateSmokeTest extends DuskTestCase
                 ->assertInputPresent('branch_id')
                 ->assertPresent('select[name="branch_id"]')
                 ->assertPresent('@patient-search')
-                ->assertPresent('@patient-select');
+                ->assertPresent('@patient-select')
+                ->assertPresent('select[name="visit_type"]')
+                ->assertSee('Jenis Kunjungan')
+                ->assertSee('Kontrol');
 
             $this->assertRmePageHealthy($browser);
 

@@ -15,6 +15,7 @@
                     'doctors'     => $doctors,
                     'clinicRooms' => $clinicRooms,
                     'rmeBranches' => $rmeBranches,
+                    'prefill'     => $prefill ?? [],
                 ])
                 <div class="flex items-center justify-end gap-2 border-t border-gray-100 pt-5">
                     <x-ui.button variant="secondary" :href="route('rme.visits.index')">Batal</x-ui.button>

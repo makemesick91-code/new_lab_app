@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
@@ -50,9 +51,13 @@ class MedicalRecordController extends Controller
 
         $this->authorize('view', $medicalRecord);
 
-        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment']);
+        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf.medicalRecord', 'followUpOf.odontogram']);
 
-        return view('rme.visits.medical-record.show', compact('clinicVisit', 'medicalRecord'));
+        $patientVisitHistory = app(ClinicVisitService::class)
+            ->patientVisitHistory((int) $clinicVisit->patient_id, $clinicVisit->id)
+            ->load(['medicalRecord', 'odontogram', 'doctor', 'initialTreatment']);
+
+        return view('rme.visits.medical-record.show', compact('clinicVisit', 'medicalRecord', 'patientVisitHistory'));
     }
 
     public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit): RedirectResponse
