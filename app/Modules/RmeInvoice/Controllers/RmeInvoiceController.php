@@ -350,9 +350,28 @@ class RmeInvoiceController extends Controller
         ]);
 
         return view('rme.cashier.show', [
-            'visit' => $clinicVisit->load($this->cashierVisitRelations()),
+            'visit' => $clinicVisit->load(array_merge($this->cashierVisitRelations(), ['followUpOf'])),
             'invoice' => $invoice,
             'labCaseCandidates' => $invoice->labCaseCandidates,
+            'parentReceivableInvoices' => $this->parentReceivableInvoices($clinicVisit),
         ]);
+    }
+
+    /**
+     * @return Collection<int, RmeInvoice>
+     */
+    private function parentReceivableInvoices(ClinicVisit $visit): Collection
+    {
+        $parentVisitId = $visit->follow_up_of_visit_id;
+
+        if ($parentVisitId === null) {
+            return collect();
+        }
+
+        return RmeInvoice::query()
+            ->where('clinic_visit_id', $parentVisitId)
+            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
+            ->with('clinicVisit')
+            ->get();
     }
 }

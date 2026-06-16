@@ -3843,11 +3843,11 @@ Sprint 21 planning branch created from `feature/sprint-20-rme-core` at tag
 
 ### Sprint 21 Phase 21.1 — RME → Lab Integration Architecture
 
-**Status:** COMPLETE  
-**Branch:** `feature/sprint-21-rme-lab-architecture`  
-**Tag:** `sprint-21-phase-21-1-rme-lab-architecture`  
-**Document:** `docs/sprint_21_rme_lab_integration_architecture.md`  
-**Date:** 2026-06-11  
+**Status:** COMPLETE
+**Branch:** `feature/sprint-21-rme-lab-architecture`
+**Tag:** `sprint-21-phase-21-1-rme-lab-architecture`
+**Document:** `docs/sprint_21_rme_lab_integration_architecture.md`
+**Date:** 2026-06-11
 **Type:** Design / Documentation only — no behavior changes
 
 **Purpose:** Produce a written integration architecture before any code is written, covering
@@ -4296,8 +4296,8 @@ Heavy test suites were intentionally not planned for Phase 22.0 because no appli
 
 ## Sprint 22 Phase 22.1 — Pilot Role/Permission/Menu Hardening
 
-**Branch:** `feature/sprint-22-role-permission-menu-hardening`  
-**Tag:** `sprint-22-phase-22-1-pilot-role-permission-menu-hardening`  
+**Branch:** `feature/sprint-22-role-permission-menu-hardening`
+**Tag:** `sprint-22-phase-22-1-pilot-role-permission-menu-hardening`
 **Type:** Implementation — pilot access hardening only
 
 ### Objective
@@ -4388,8 +4388,8 @@ php artisan test                                       # 1940 passed
 
 ## Sprint 22 Phase 22.2 — RME End-to-End Smoke-Test Data & Operator Checklist
 
-**Branch:** `feature/sprint-22-rme-smoke-test-checklist`  
-**Tag:** `sprint-22-phase-22-2-rme-smoke-test-checklist`  
+**Branch:** `feature/sprint-22-rme-smoke-test-checklist`
+**Tag:** `sprint-22-phase-22-2-rme-smoke-test-checklist`
 **Type:** Implementation — smoke-test seed data, operator checklist, developer notes, tests
 
 ### Objective
@@ -4478,8 +4478,8 @@ php artisan test --filter=Pilot                # 34 passed (Cursor terminal)
 
 ## Sprint 22 Phase 22.3 — VPS Pilot Deployment Checklist & Safe Seeder Rollout
 
-**Branch:** `feature/sprint-22-vps-pilot-deployment-checklist`  
-**Tag:** `sprint-22-phase-22-3-vps-pilot-deployment-checklist`  
+**Branch:** `feature/sprint-22-vps-pilot-deployment-checklist`
+**Tag:** `sprint-22-phase-22-3-vps-pilot-deployment-checklist`
 **Type:** Documentation / runbook — no VPS deployment performed
 
 ### Objective
@@ -4543,8 +4543,8 @@ Heavy suites (RME + full) run separately in Ubuntu Terminal per project terminal
 
 ## Sprint 22 Phase 22.4 — RME → Lab Candidate End-to-End Validation
 
-**Branch:** `feature/sprint-22-rme-lab-candidate-e2e-validation`  
-**Tag:** `sprint-22-phase-22-4-rme-lab-candidate-e2e-validation`  
+**Branch:** `feature/sprint-22-rme-lab-candidate-e2e-validation`
+**Tag:** `sprint-22-phase-22-4-rme-lab-candidate-e2e-validation`
 **Type:** Validation / documentation / tests — no schema changes, no payment/generation/conversion logic changes
 
 ### Objective
@@ -4609,8 +4609,8 @@ Heavy: `php artisan test --filter=RME` and full suite in Ubuntu Terminal only.
 
 ## Sprint 22 Phase 22.5 — Owner Dashboard RME/Lab Pilot KPI Wiring
 
-**Branch:** `feature/sprint-22-owner-dashboard-rme-lab-kpi`  
-**Tag:** `sprint-22-phase-22-5-owner-dashboard-rme-lab-kpi`  
+**Branch:** `feature/sprint-22-owner-dashboard-rme-lab-kpi`
+**Tag:** `sprint-22-phase-22-5-owner-dashboard-rme-lab-kpi`
 **Type:** Read-only implementation — no schema changes, no payment/generation/conversion logic changes
 
 ### Objective
@@ -4673,8 +4673,8 @@ Heavy: `php artisan test --filter=RME` and full suite — run in Ubuntu Terminal
 
 ## Sprint 22 Phase 22.6 — Owner Dashboard Branch Filter & KPI Drilldown Polish
 
-**Branch:** `feature/sprint-22-owner-dashboard-branch-filter-drilldown`  
-**Tag:** `sprint-22-phase-22-6-owner-dashboard-branch-filter-drilldown`  
+**Branch:** `feature/sprint-22-owner-dashboard-branch-filter-drilldown`
+**Tag:** `sprint-22-phase-22-6-owner-dashboard-branch-filter-drilldown`
 **Type:** Read-only UI/service polish — no schema changes, no payment/generation/conversion logic changes
 
 ### Objective
@@ -4736,8 +4736,8 @@ Heavy: `php artisan test --filter=RME`, `php artisan test --filter=Dashboard`, f
 
 ## Sprint 22 Phase 22.7 — VPS Pilot Checklist Update & Owner Dashboard Manual Smoke Test
 
-**Branch:** `feature/sprint-22-vps-owner-dashboard-smoke-checklist`  
-**Tag:** `sprint-22-phase-22-7-owner-dashboard-smoke-checklist`  
+**Branch:** `feature/sprint-22-vps-owner-dashboard-smoke-checklist`
+**Tag:** `sprint-22-phase-22-7-owner-dashboard-smoke-checklist`
 **Type:** Documentation, checklist, test-backed content assertions — no application logic or schema changes
 
 ### Objective
@@ -4793,9 +4793,9 @@ Heavy (Ubuntu Terminal only): `php artisan test --filter=RME`, full `php artisan
 
 ## Sprint 22 Phase 22.8 — Sprint 22 Closure, Release Candidate Notes & VPS Pilot Go/No-Go Checklist
 
-**Branch:** `feature/sprint-22-closure-rc-go-no-go`  
-**Tag:** `sprint-22-phase-22-8-closure-rc-go-no-go`  
-**Commit:** `dc1060b`  
+**Branch:** `feature/sprint-22-closure-rc-go-no-go`
+**Tag:** `sprint-22-phase-22-8-closure-rc-go-no-go`
+**Commit:** `dc1060b`
 **Type:** Documentation, release candidate notes, go/no-go checklist, test-backed content assertions — no application logic, schema, or seeder behavior changes
 
 ### Objective
@@ -5164,3 +5164,15 @@ Branch `feature/sprint-24-phase-24-12-closure-rc-go-no-go` (from `b15b936`). Clo
 Quality gates were limited to targeted Sprint 24 regression coverage under Limit Saver 1 mode (CashierBillingTest 28, RmeReceivableFollowUpTest 9, OwnerDashboardReceivableFollowUpKpiTest 8, OwnerDashboardRmeLabKpiTest 11, OwnerDashboardBranchFilterDrilldownTest 13 — 69 passed / 256 assertions). Routes verified, `view:cache` OK, `pint --dirty` passed, `git diff --check` clean. No full suite was run for the closure step.
 
 Decision: **GO**.
+
+---
+
+## Sprint 27 Phase 27.3 — RME Follow-up / Control Visit Workflow
+
+**Branch:** `feature/sprint-27-phase-27-3-rme-control-visit-workflow`
+**Doc:** `docs/sprint_27_phase_27_3_rme_control_visit_workflow.md`
+
+- Control visits reuse existing patient RM; no duplicate patient on follow-up.
+- New visits link to prior visit via `follow_up_of_visit_id`; `visit_type` distinguishes baru/kontrol/lanjutan/emergency.
+- RME, odontogram, and parent invoices are not auto-mutated.
+- UI: visit type on create form, **Buat Kontrol**, patient visit history panel, doctor/cashier/odontogram context for control visits.

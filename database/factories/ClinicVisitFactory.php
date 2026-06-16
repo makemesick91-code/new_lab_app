@@ -33,6 +33,8 @@ class ClinicVisitFactory extends Factory
             'visit_date' => $visitDate->toDateString(),
             'queue_number' => $queueNumber,
             'status' => ClinicVisit::STATUS_REGISTERED,
+            'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+            'follow_up_of_visit_id' => null,
             'chief_complaint' => fake()->optional()->sentence(),
             'initial_treatment_id' => null,
             'initial_service_note' => null,

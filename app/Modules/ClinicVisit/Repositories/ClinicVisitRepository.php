@@ -6,6 +6,7 @@ use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 {
@@ -108,5 +109,24 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
         $visit->update($data);
 
         return $visit->refresh();
+    }
+
+    public function listForPatient(array $branchIds, int $patientId, ?int $excludeVisitId = null): Collection
+    {
+        return ClinicVisit::query()
+            ->with(['doctor', 'initialTreatment'])
+            ->whereIn('branch_id', $branchIds)
+            ->where('patient_id', $patientId)
+            ->when($excludeVisitId !== null, fn ($query) => $query->where('id', '!=', $excludeVisitId))
+            ->orderByDesc('visit_date')
+            ->orderByDesc('id')
+            ->get();
+    }
+
+    public function findByIdInBranches(array $branchIds, int $id): ?ClinicVisit
+    {
+        return ClinicVisit::query()
+            ->whereIn('branch_id', $branchIds)
+            ->find($id);
     }
 }

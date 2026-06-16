@@ -16,6 +16,7 @@ use Database\Factories\ClinicVisitFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -53,11 +54,32 @@ class ClinicVisit extends Model
         self::STATUS_CANCELLED => [],
     ];
 
+    public const VISIT_TYPE_NEW = 'new';
+
+    public const VISIT_TYPE_CONTROL = 'control';
+
+    public const VISIT_TYPE_CONTINUED_TREATMENT = 'continued_treatment';
+
+    public const VISIT_TYPE_EMERGENCY = 'emergency';
+
+    public const VISIT_TYPES = [
+        self::VISIT_TYPE_NEW,
+        self::VISIT_TYPE_CONTROL,
+        self::VISIT_TYPE_CONTINUED_TREATMENT,
+        self::VISIT_TYPE_EMERGENCY,
+    ];
+
+    public const FOLLOW_UP_VISIT_TYPES = [
+        self::VISIT_TYPE_CONTROL,
+        self::VISIT_TYPE_CONTINUED_TREATMENT,
+    ];
+
     protected $table = 'trx_clinic_visits';
 
     protected $fillable = [
         'visit_number', 'branch_id', 'clinic_id', 'patient_id', 'doctor_id',
         'clinic_room_id', 'visit_date', 'queue_number', 'status',
+        'visit_type', 'follow_up_of_visit_id',
         'chief_complaint', 'initial_treatment_id', 'initial_service_note',
         'consent_signed_by_patient', 'consent_signed_by_doctor',
         'consent_verified_at', 'consent_verified_by',
@@ -80,6 +102,7 @@ class ClinicVisit extends Model
             'completed_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'initial_treatment_id' => 'integer',
+            'follow_up_of_visit_id' => 'integer',
             'consent_signed_by_patient' => 'boolean',
             'consent_signed_by_doctor' => 'boolean',
             'consent_verified_at' => 'datetime',
@@ -131,6 +154,51 @@ class ClinicVisit extends Model
     public function initialTreatment(): BelongsTo
     {
         return $this->belongsTo(Treatment::class, 'initial_treatment_id');
+    }
+
+    public function followUpOf(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'follow_up_of_visit_id');
+    }
+
+    public function parentVisit(): BelongsTo
+    {
+        return $this->followUpOf();
+    }
+
+    public function followUpVisits(): HasMany
+    {
+        return $this->hasMany(self::class, 'follow_up_of_visit_id');
+    }
+
+    public function controlVisits(): HasMany
+    {
+        return $this->followUpVisits()->where('visit_type', self::VISIT_TYPE_CONTROL);
+    }
+
+    public function isControlVisit(): bool
+    {
+        return $this->visit_type === self::VISIT_TYPE_CONTROL;
+    }
+
+    public function isNewVisit(): bool
+    {
+        return ($this->visit_type ?? self::VISIT_TYPE_NEW) === self::VISIT_TYPE_NEW;
+    }
+
+    public function isFollowUpVisit(): bool
+    {
+        return in_array($this->visit_type, self::FOLLOW_UP_VISIT_TYPES, true);
+    }
+
+    public function visitTypeLabel(): string
+    {
+        return match ($this->visit_type ?? self::VISIT_TYPE_NEW) {
+            self::VISIT_TYPE_CONTROL => 'Kontrol',
+            self::VISIT_TYPE_CONTINUED_TREATMENT => 'Lanjutan Tindakan',
+            self::VISIT_TYPE_EMERGENCY => 'Emergency',
+            default => 'Baru',
+        };
     }
 
     public function medicalRecord(): HasOne

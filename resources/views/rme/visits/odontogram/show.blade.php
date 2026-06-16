@@ -116,6 +116,26 @@
             </dl>
         </x-ui.card>
 
+        @if (! empty($parentOdontogram))
+            <x-ui.card title="Odontogram Kunjungan Sebelumnya">
+                <p class="text-sm text-gray-600 mb-3">
+                    Referensi dari kunjungan
+                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $clinicVisit->followUpOf?->visit_number }}</a>.
+                    Odontogram kunjungan kontrol tetap terpisah dan tidak menimpa data lama.
+                </p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <x-ui.badge :tone="$parentOdontogram->isFinalized() ? 'success' : 'warning'">
+                        {{ $parentOdontogram->isFinalized() ? 'Final' : 'Draft' }}
+                    </x-ui.badge>
+                    @if ($clinicVisit->followUpOf)
+                        <x-ui.button variant="secondary" :href="route('rme.visits.odontogram.show', $clinicVisit->followUpOf)">
+                            Lihat Odontogram Sebelumnya
+                        </x-ui.button>
+                    @endif
+                </div>
+            </x-ui.card>
+        @endif
+
         {{-- Legend --}}
         <x-ui.card padding="p-4">
             <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Keterangan Status</p>

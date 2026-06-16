@@ -25,7 +25,11 @@ class OdontogramController extends Controller
 
         $odontogram = $this->service->getOrCreateForVisit($clinicVisit, auth()->user());
 
-        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram'));
+        $clinicVisit->loadMissing(['followUpOf.odontogram', 'patient', 'doctor']);
+
+        $parentOdontogram = $clinicVisit->followUpOf?->odontogram;
+
+        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram'));
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse

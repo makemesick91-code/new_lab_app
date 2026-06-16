@@ -10,6 +10,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -88,9 +89,43 @@ class ClinicVisitService
                 'queue_number' => $queueNumber,
                 'visit_number' => $visitNumber,
                 'status' => ClinicVisit::STATUS_REGISTERED,
+                'visit_type' => $data['visit_type'] ?? ClinicVisit::VISIT_TYPE_NEW,
+                'follow_up_of_visit_id' => $data['follow_up_of_visit_id'] ?? null,
                 'created_by' => Auth::id(),
             ]));
         });
+    }
+
+    /**
+     * Patient visit history scoped to active RME-enabled branches.
+     */
+    public function patientVisitHistory(int $patientId, ?int $excludeVisitId = null): Collection
+    {
+        return $this->visits->listForPatient(
+            $this->branches->rmeEnabledIds(),
+            $patientId,
+            $excludeVisitId,
+        );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function patientVisitOptions(int $patientId, ?int $excludeVisitId = null): array
+    {
+        return $this->patientVisitHistory($patientId, $excludeVisitId)
+            ->map(fn (ClinicVisit $visit) => [
+                'id' => $visit->id,
+                'visit_number' => $visit->visit_number,
+                'visit_date' => $visit->visit_date?->format('d/m/Y'),
+                'visit_type' => $visit->visit_type,
+                'visit_type_label' => $visit->visitTypeLabel(),
+                'doctor_name' => $visit->doctor?->name,
+                'initial_treatment' => $visit->initialTreatment?->name,
+                'status' => $visit->status,
+            ])
+            ->values()
+            ->all();
     }
 
     /**
