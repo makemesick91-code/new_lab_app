@@ -72,7 +72,7 @@ class PatientService
      *   1. An explicit, non-empty medical_record_number is always respected
      *      (legacy patients and manual overrides keep working unchanged).
      *   2. When a branch + manual RM number are supplied, compose the finalized
-     *      format RM DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}. The
+     *      format DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}. The
      *      registration year comes from registered_at (defaulting to today).
      *   3. Otherwise fall back to the legacy auto-sequence generator (config).
      *

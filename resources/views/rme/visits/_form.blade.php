@@ -35,19 +35,17 @@
 
             {{-- Mode: pasien terdaftar --}}
             <div class="mt-3" data-mode-panel="existing">
-                <label class="block text-sm font-medium text-gray-700">Pasien Terdaftar</label>
-                <select name="patient_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                    <option value="">- Pilih pasien terdaftar -</option>
-                    @foreach ($patients as $patient)
-                        <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->selectorLabel() }} ({{ $patient->branchLabel() }}){{ $patient->phone ? ' · '.$patient->phone : '' }}</option>
-                    @endforeach
-                </select>
+                <x-patient-search-select
+                    :patients="$patients"
+                    :selected="old('patient_id', $visit?->patient_id)"
+                    label="Pasien Terdaftar"
+                />
                 @error('patient_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
             </div>
 
             {{-- Mode: pasien baru --}}
             <div class="mt-3 hidden" data-mode-panel="new">
-                <p class="mb-2 text-xs text-gray-500">Nomor RM final dibentuk otomatis: <span class="font-mono">RM DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
+                <p class="mb-2 text-xs text-gray-500">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nama Pasien</label>
@@ -127,20 +125,18 @@
                     </div>
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Nomor RM Final (Preview)</label>
-                        <input type="text" data-rm-preview readonly placeholder="RM DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
+                        <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
                     </div>
                 </div>
             </div>
         </div>
     @else
         <div>
-            <label class="block text-sm font-medium text-gray-700">Pasien</label>
-            <select name="patient_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                <option value="">- Pilih pasien terdaftar -</option>
-                @foreach ($patients as $patient)
-                    <option value="{{ $patient->id }}" @selected(old('patient_id', $visit?->patient_id) == $patient->id)>{{ $patient->selectorLabel() }} ({{ $patient->branchLabel() }}){{ $patient->phone ? ' · '.$patient->phone : '' }}</option>
-                @endforeach
-            </select>
+            <x-patient-search-select
+                :patients="$patients"
+                :selected="old('patient_id', $visit?->patient_id)"
+                label="Pasien"
+            />
         </div>
     @endif
     <div>
@@ -228,7 +224,7 @@
             const code = (branch?.selectedOptions[0]?.dataset.code || '').trim().toUpperCase();
             const year = (dateEl?.value || '').slice(0, 4);
             const num = (manual?.value || '').trim();
-            preview.value = (code && year && num) ? `RM DG-${code}-${year}-${num}` : '';
+            preview.value = (code && year && num) ? `DG-${code}-${year}-${num}` : '';
         };
 
         [branch, dateEl, manual].forEach(el => el && el.addEventListener('input', recompute));

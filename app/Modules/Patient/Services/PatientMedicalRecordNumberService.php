@@ -12,14 +12,14 @@ use InvalidArgumentException;
  *
  * The clinic owner locked the final format to:
  *
- *     RM DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}
+ *     DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}
  *
  * Examples:
- *   - RM DG-TKM1-2026-0001
- *   - RM DG-LDK2-2026-25
+ *   - DG-TKM1-2026-0001
+ *   - DG-LDK2-2026-25
  *
  * Rules enforced here:
- *   - Prefix is exactly "RM DG".
+ *   - Prefix is exactly "DG".
  *   - Branch code is uppercased and trimmed.
  *   - Year must be four digits.
  *   - Manual RM number is trimmed but NOT auto-generated and NOT auto-padded.
@@ -32,7 +32,7 @@ use InvalidArgumentException;
  */
 class PatientMedicalRecordNumberService
 {
-    public const PREFIX = 'RM DG';
+    public const PREFIX = 'DG';
 
     /**
      * Compose the final medical record number from its components.

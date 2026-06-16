@@ -12,7 +12,7 @@ return [
     | without an explicit code.
     |
     | Default format: {prefix}-{YYYYMM}-{sequence padded to `seq_length`}
-    | Example:        RM-202606-000001
+    | Example:        DG-202606-000001
     |
     | Do NOT treat this as the locked business format. It is collision-safe
     | and configurable so the owner can confirm a final scheme later without
@@ -25,7 +25,7 @@ return [
         'auto_generate' => env('PATIENT_CODE_AUTO_GENERATE', true),
 
         // Static prefix segment.
-        'prefix' => env('PATIENT_CODE_PREFIX', 'RM'),
+        'prefix' => env('PATIENT_CODE_PREFIX', 'DG'),
 
         // Period segment date format (PHP date format). Empty string disables it.
         'period_format' => env('PATIENT_CODE_PERIOD_FORMAT', 'Ym'),

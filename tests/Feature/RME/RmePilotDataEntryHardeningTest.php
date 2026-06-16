@@ -110,7 +110,7 @@ it('creates a new patient visit at an active RME branch', function () {
         ->and($visit->branch_id)->toBe($this->atg3->id);
 });
 
-it('composes the new patient RM as RM DG-{branch_code}-{year}-{manual}', function () {
+it('composes the new patient RM as DG-{branch_code}-{year}-{manual}', function () {
     $this->actingAs($this->admin)
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
@@ -126,7 +126,7 @@ it('composes the new patient RM as RM DG-{branch_code}-{year}-{manual}', functio
         ->assertRedirect();
 
     expect(Patient::firstWhere('name', 'Megasanti')->medical_record_number)
-        ->toBe('RM DG-ATG3-2026-14023');
+        ->toBe('DG-ATG3-2026-14023');
 });
 
 it('preserves leading zeros in the manual RM number', function () {
@@ -145,7 +145,7 @@ it('preserves leading zeros in the manual RM number', function () {
         ->assertRedirect();
 
     expect(Patient::firstWhere('name', 'Pasien Nol')->medical_record_number)
-        ->toBe('RM DG-TKM1-2026-0007');
+        ->toBe('DG-TKM1-2026-0007');
 });
 
 it('rejects MAIN as a new patient branch (not RME-enabled)', function () {
@@ -183,13 +183,13 @@ it('shows a new patient visit in the all-RME visit list', function () {
         ->get(route('rme.visits.index'))
         ->assertOk()
         ->assertSee('Megasanti')
-        ->assertSee('RM DG-ATG3-2026-14023');
+        ->assertSee('DG-ATG3-2026-14023');
 });
 
 // ─── B. Existing patient ─────────────────────────────────────────────────────
 
 it('uses the selected Cabang RME as the visit branch for an existing patient', function () {
-    $patient = Patient::factory()->create(['branch_id' => $this->tkm1->id, 'medical_record_number' => 'RM DG-TKM1-2026-0001']);
+    $patient = Patient::factory()->create(['branch_id' => $this->tkm1->id, 'medical_record_number' => 'DG-TKM1-2026-0001']);
 
     $this->actingAs($this->admin)
         ->post(route('rme.visits.store'), [
