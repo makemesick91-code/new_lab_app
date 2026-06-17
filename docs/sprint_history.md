@@ -5881,3 +5881,70 @@ target. Production/VPS pilot action remains gated on explicit owner approval.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 31 — Backup Restore Rehearsal Execution & Recovery Readiness
+
+**Branch:** `feature/sprint-31-backup-restore-rehearsal-execution-recovery-readiness`
+**Doc:** `docs/sprint_31_backup_restore_rehearsal_execution_recovery_readiness.md`
+**Mode:** docs / non-production rehearsal execution checklist / recovery readiness test only
+**Baseline:** Sprint 30 GO at `53c3442`
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+- Converts Sprint 29.4 and Sprint 29.5 backup/restore readiness planning into a controlled,
+  auditable **non-production backup/restore rehearsal execution checklist** plus recovery
+  readiness closure.
+- Defines backup inventory, restore rehearsal steps, recovery readiness gates, post-restore
+  smoke, an evidence template, and an incident/escalation matrix.
+- **Non-production target only** — isolated DB and isolated runtime file target; no production
+  overwrite; commands are checklist examples and are not executed in this pass.
+
+### Recovery readiness gates
+
+Backup inventory complete, checksum recorded, non-production target verified, restore target
+empty/approved, rollback path documented, operator/reviewer/escalation contact assigned, privacy
+review complete, and a GO / WATCH / NO-GO decision recorded.
+
+### Evidence template
+
+Tabular evidence template covering date/time, environment, operator, reviewer, backup identifier,
+restore target, scenario, expected/actual result, evidence path, issue severity, decision, and
+follow-up owner.
+
+### Go / Watch / No-Go criteria
+
+- **GO** — safe to proceed to controlled non-production rehearsal execution in a separate
+  supervised run.
+- **WATCH** — proceed only with documented mitigations.
+- **NO-GO** — stop due to safety, privacy, data integrity, or recovery risk.
+
+### Tests / docs summary
+
+- **Tests:** added `tests/Feature/Sprint31/Sprint31BackupRestoreRehearsalExecutionRecoveryReadinessTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added `docs/sprint_31_backup_restore_rehearsal_execution_recovery_readiness.md`;
+  updated this history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No real backup/restore execution.
+- No production/VPS access. No deployment. No migration.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change. No runtime behavior change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 32 — Go-Live Readiness, Training, Handover & SLA.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
