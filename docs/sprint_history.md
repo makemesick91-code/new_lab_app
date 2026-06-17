@@ -6259,3 +6259,70 @@ acceptance, unresolved issue severity, and roadmap lock status).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 36 — Operational Governance, Maintenance Cadence & Expansion Readiness
+
+**Branch:** `feature/sprint-36-operational-governance-maintenance-cadence-expansion-readiness`
+**Doc:** `docs/sprint_36_operational_governance_maintenance_cadence_expansion_readiness.md`
+**Mode:** docs / operational governance / maintenance cadence / expansion readiness checklist-test only
+**Baseline:** Sprint 35 GO at `c4293ec`
+**Real maintenance execution:** no real maintenance executed
+**Real branch expansion:** no real branch expansion executed
+**Real go-live execution:** no real go-live/post-go-live operation executed
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Production/VPS access:** no production/VPS access
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+Sprint 36 converts the Sprint 35 production operations baseline and roadmap lock into an auditable
+**operational governance, maintenance cadence, and expansion readiness** package. It defines an
+**operational governance cadence**, a **maintenance cadence and maintenance calendar**, a **support
+review cadence**, an **expansion readiness framework**, a **controlled roadmap execution policy**, and
+an **ownership discipline model**. It also documents a **governance risk and decision matrix**, a
+**long-term monitoring evidence policy**, a **maintenance readiness checklist**, an **expansion
+readiness checklist**, **operations governance acceptance gates**, and **evidence templates**, with
+**GO / WATCH / EXTEND SUPPORT / NO-GO** criteria. No real maintenance, branch expansion,
+go-live/post-go-live operation, or backup/restore is executed.
+
+### Go / Watch / Extend Support / No-Go criteria
+
+- **GO** — governance baseline accepted and operation can continue under controlled cadence.
+- **WATCH** — governance continues with active mitigations and support monitoring.
+- **EXTEND SUPPORT** — support/hypercare-like watch continues due to unresolved operational risk, expansion risk, or support volume.
+- **NO-GO** — stop governance closure or expansion/maintenance approval due to safety, privacy, data integrity, recovery, unresolved R0/R1, support, or acceptance risk.
+
+### Tests / docs summary
+
+- **Tests:** added
+  `tests/Feature/Sprint36/Sprint36OperationalGovernanceMaintenanceCadenceExpansionReadinessTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added
+  `docs/sprint_36_operational_governance_maintenance_cadence_expansion_readiness.md`; updated this
+  history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No production code/migration/deployment/runtime changes.
+- No real maintenance/branch expansion execution.
+- No real go-live/post-go-live operation execution.
+- No real backup/restore execution.
+- No production/VPS access.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 37 — Controlled Roadmap Execution Batch 1 & Governance Review (gated by Sprint 36 governance
+acceptance and unresolved risk severity).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
