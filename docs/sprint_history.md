@@ -5650,3 +5650,45 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 29 Phase 29.2 — Cashier Payment Receivable High-Risk Stabilization Planning
+
+**Branch:** `feature/sprint-29-phase-29-2-cashier-payment-receivable-high-risk-stabilization-planning`
+**Doc:** `docs/sprint_29_phase_29_2_cashier_payment_receivable_high_risk_stabilization_planning.md`
+**Mode:** cashier/payment/receivable high-risk stabilization planning only
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**Bug fix execution:** no bug fix implemented
+**Stabilization execution:** no stabilization implemented
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.1 GO at `39b4fd9`
+
+### Scope
+
+- Defines P0/P1 cashier/payment/receivable high-risk issues.
+- Defines evidence requirements before implementation.
+- Documents cashier/payment/receivable invariants.
+- Documents RME control visit connected guardrails.
+- Adds P0/P1 triage matrix.
+- Adds stabilization planning checklist.
+- Adds future regression test planning.
+- Adds future implementation sequencing.
+- Defines GO/NO-GO decision.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No bug fix implementation.
+- No stabilization implementation.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
