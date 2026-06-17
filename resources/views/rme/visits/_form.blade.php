@@ -125,6 +125,7 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Nomor WA <span class="text-gray-400">(opsional)</span></label>
                         <input type="text" name="new_patient[whatsapp_number]" value="{{ old('new_patient.whatsapp_number') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        <p class="mt-1 text-xs text-gray-500">Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.</p>
                         @error('new_patient.whatsapp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                     </div>
                     <div>

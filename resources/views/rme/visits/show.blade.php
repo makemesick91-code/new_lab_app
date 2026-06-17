@@ -99,6 +99,18 @@
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Nomor WA</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
+                    <dd class="mt-0.5 text-xs text-gray-500">Konfirmasi kehadiran &amp; tindak lanjut piutang. Tidak ada kiriman WhatsApp otomatis.</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Persetujuan Tindakan</dt>
+                    <dd class="mt-1 text-sm">
+                        @if ($visit->hasVerifiedConsent())
+                            <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">TTD Surat Persetujuan Tindakan terverifikasi</span>
+                        @else
+                            <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">TTD Surat Persetujuan Tindakan belum diverifikasi kasir</span>
+                        @endif
+                    </dd>
+                    <dd class="mt-1 text-xs text-gray-500">Checklist verifikasi fisik dikonfirmasi kasir saat pembayaran. Tidak ada tanda tangan digital.</dd>
                 </div>
                 @if ($visit->patient?->date_of_birth)
                     <div>
