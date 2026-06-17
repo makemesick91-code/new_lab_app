@@ -5833,3 +5833,51 @@ Sprint 30 — Pilot Execution Bugfix & Operational Smoke.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 30 — Pilot Execution Bugfix & Operational Smoke
+
+**Branch:** `feature/sprint-30-pilot-execution-bugfix-operational-smoke`
+**Doc:** `docs/sprint_30_pilot_execution_bugfix_operational_smoke.md`
+**Mode:** local pilot execution simulation + operational smoke + safe bugfix (local-only)
+**Production server:** not touched
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change (no bug required a fix)
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.5 GO at `721bb55`
+
+### Scope
+
+- Executes the Sprint 29.5 pilot operational smoke checklist locally (defined in 29.5, executed here).
+- Validates core clinic/lab paths: patient identity, RME visit, odontogram/treatment note,
+  invoice, payment, receivable/piutang, receipt/print/export, cashier, RME control,
+  WhatsApp manual reminder evidence, reporting/export, and pilot role/menu/permission access.
+- References Sprint 29.4 / 29.5 monitoring + backup/restore evidence readiness (not executed).
+
+### Bugfixes / tests / docs summary
+
+- **Bugfixes:** none — no production code bugfix required in this local pass.
+- **Tests:** added `tests/Feature/Sprint30/Sprint30PilotExecutionBugfixOperationalSmokeTest.php`
+  (checklist/documentation completeness). Operational smoke evidence: 303 targeted tests
+  passed (202 core + 101 secondary) with no regressions.
+- **Docs:** added `docs/sprint_30_pilot_execution_bugfix_operational_smoke.md`; updated this history.
+
+### Safety
+
+- Local-only validation.
+- No deployment / no VPS / no production action.
+- No real backup/restore.
+- No automation/runtime behavior change outside approved bugfixes (none needed).
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended phase
+
+Supervised local-then-pilot operational smoke execution session with operator evidence capture,
+followed by the Sprint 29.4/29.5 monitoring + backup/restore rehearsal against a non-production
+target. Production/VPS pilot action remains gated on explicit owner approval.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
