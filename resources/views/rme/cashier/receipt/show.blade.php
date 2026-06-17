@@ -135,6 +135,19 @@
             {{-- Payment Summary --}}
             <x-ui.card>
                 <div class="space-y-3 text-sm">
+                    @if ($hasPaymentAllocation ?? false)
+                        <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 space-y-2">
+                            <p class="text-sm font-semibold text-amber-900">Alokasi Pembayaran</p>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Dibayarkan ke tagihan sebelumnya</span>
+                                <span class="font-semibold text-amber-800">Rp {{ number_format($allocatedToParent, 0, ',', '.') }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Dibayarkan ke tagihan kontrol</span>
+                                <span class="font-semibold text-teal-800">Rp {{ number_format($allocatedToControl, 0, ',', '.') }}</span>
+                            </div>
+                        </div>
+                    @endif
                     <div class="flex justify-between">
                         <span class="text-gray-600">Metode Pembayaran</span>
                         <span class="font-medium text-gray-900">{{ $payment?->paymentMethod?->name ?? 'Tunai' }}</span>
@@ -147,7 +160,7 @@
                     @endif
                     <div class="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
                         <span class="text-base font-semibold text-emerald-800">Jumlah Dibayar</span>
-                        <span class="text-xl font-bold text-emerald-700">Rp {{ number_format($payment?->amount ?? $invoice->grand_total, 0, ',', '.') }}</span>
+                        <span class="text-xl font-bold text-emerald-700">Rp {{ number_format(($allocatedToParent ?? 0) + ($allocatedToControl ?? 0) > 0 ? (($allocatedToParent ?? 0) + ($allocatedToControl ?? 0)) : ($payment?->amount ?? $invoice->grand_total), 0, ',', '.') }}</span>
                     </div>
                 </div>
             </x-ui.card>

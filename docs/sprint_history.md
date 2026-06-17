@@ -5176,3 +5176,16 @@ Decision: **GO**.
 - New visits link to prior visit via `follow_up_of_visit_id`; `visit_type` distinguishes baru/kontrol/lanjutan/emergency.
 - RME, odontogram, and parent invoices are not auto-mutated.
 - UI: visit type on create form, **Buat Kontrol**, patient visit history panel, doctor/cashier/odontogram context for control visits.
+
+---
+
+## Sprint 27 Phase 27.4 — RME Control Visit Receivable Carry-Over Payment Allocation
+
+**Branch:** `feature/sprint-27-phase-27-4-rme-control-receivable-carry-over-payment-allocation`
+**Doc:** `docs/sprint_27_phase_27_4_rme_control_receivable_carry_over_payment_allocation.md`
+
+- FIFO carry-over: parent receivables paid first from control cashier payment; remainder applies to control invoice.
+- Separate invoices preserved — no item merge/move between parent and control invoices.
+- Cashier UI shows **Piutang Kunjungan Sebelumnya**, **Tagihan Kontrol Hari Ini**, **Total Harus Dibayar**, and receipt **Alokasi Pembayaran**.
+- Additive migration: nullable `payment_batch_uuid` on `trx_rme_payments` for grouped split payments.
+- Service: `RmeControlReceivableService` + `RmePaymentService::allocateControlPayment()`.

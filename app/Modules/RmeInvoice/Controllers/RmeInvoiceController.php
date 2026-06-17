@@ -9,6 +9,7 @@ use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
+use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Services\TreatmentService;
 use Carbon\Carbon;
@@ -28,6 +29,7 @@ class RmeInvoiceController extends Controller
         private readonly RmeInvoiceService $service,
         private readonly TreatmentService $treatments,
         private readonly ClinicVisitService $visits,
+        private readonly RmeControlReceivableService $carryOver,
     ) {}
 
     /** @return array<int, string> */
@@ -353,25 +355,7 @@ class RmeInvoiceController extends Controller
             'visit' => $clinicVisit->load(array_merge($this->cashierVisitRelations(), ['followUpOf'])),
             'invoice' => $invoice,
             'labCaseCandidates' => $invoice->labCaseCandidates,
-            'parentReceivableInvoices' => $this->parentReceivableInvoices($clinicVisit),
+            'payableSummary' => $this->carryOver->getControlPayableSummary($rmeInvoice),
         ]);
-    }
-
-    /**
-     * @return Collection<int, RmeInvoice>
-     */
-    private function parentReceivableInvoices(ClinicVisit $visit): Collection
-    {
-        $parentVisitId = $visit->follow_up_of_visit_id;
-
-        if ($parentVisitId === null) {
-            return collect();
-        }
-
-        return RmeInvoice::query()
-            ->where('clinic_visit_id', $parentVisitId)
-            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
-            ->with('clinicVisit')
-            ->get();
     }
 }

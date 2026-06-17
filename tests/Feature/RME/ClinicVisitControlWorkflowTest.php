@@ -359,7 +359,7 @@ it('allows control visit cashier flow and does not auto-mutate parent invoice', 
     $this->actingAs($cashier)
         ->get(route('rme.cashier.show', [$control, $controlInvoice]))
         ->assertOk()
-        ->assertSee('Piutang / Cicilan Kunjungan Sebelumnya')
+        ->assertSee('Piutang Kunjungan Sebelumnya')
         ->assertSee($parentInvoice->invoice_number);
 
     expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)

@@ -17,6 +17,11 @@
 
         $paidAmount = $invoice->paidAmount();
         $remainingAmount = $invoice->remainingAmount();
+        $carryOverInvoices = $payableSummary['carry_over_invoices'] ?? collect();
+        $carryOverRemaining = $payableSummary['carry_over_remaining'] ?? 0;
+        $totalPayable = $payableSummary['total_payable'] ?? $remainingAmount;
+        $hasCarryOver = ($payableSummary['has_carry_over'] ?? false) && $carryOverInvoices->isNotEmpty();
+        $paymentAllocation = session('payment_allocation');
     @endphp
 
     <div class="space-y-6">
@@ -57,27 +62,98 @@
         {{-- Patient & Visit --}}
         @include('rme.cashier.partials.clinical-summary', ['visit' => $visit])
 
-        @if ($visit->isFollowUpVisit() && ($parentReceivableInvoices ?? collect())->isNotEmpty())
-            <x-ui.card title="Piutang / Cicilan Kunjungan Sebelumnya">
-                <p class="text-sm text-gray-600 mb-3">
-                    Kunjungan kontrol terkait kunjungan sebelumnya. Tagihan lama tidak dibayar otomatis — proses pembayaran tetap melalui flow kasir yang benar.
+        @if ($hasCarryOver)
+            <x-ui.card title="Piutang Kunjungan Sebelumnya">
+                <p class="text-sm text-gray-600 mb-4">
+                    Pembayaran dari kasir kontrol akan mengurangi piutang kunjungan sebelumnya terlebih dahulu (FIFO).
                 </p>
-                <ul class="space-y-2 text-sm">
-                    @foreach ($parentReceivableInvoices as $parentInvoice)
-                        <li class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2">
-                            <div>
-                                <span class="font-mono font-medium text-gray-900">{{ $parentInvoice->invoice_number }}</span>
-                                <span class="text-gray-500"> — {{ $parentInvoice->clinicVisit?->visit_number }}</span>
-                                <span class="ml-2 text-amber-800">{{ $invoiceStatusLabels[$parentInvoice->status] ?? $parentInvoice->status }}</span>
-                            </div>
-                            @if ($parentInvoice->clinicVisit)
-                                <x-ui.button variant="secondary" :href="route('rme.cashier.show', [$parentInvoice->clinicVisit, $parentInvoice])">
-                                    Lihat Tagihan Lama
-                                </x-ui.button>
-                            @endif
-                        </li>
-                    @endforeach
-                </ul>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">No. Kunjungan</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">Tanggal</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">No. Invoice</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500">Total Invoice</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500">Sudah Dibayar</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500">Sisa Piutang</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($carryOverInvoices as $parentInvoice)
+                                @php
+                                    $parentPaid = $parentInvoice->paidAmount();
+                                    $parentRemaining = $parentInvoice->remainingAmount();
+                                @endphp
+                                <tr>
+                                    <td class="px-4 py-3 font-mono text-gray-900">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
+                                    <td class="px-4 py-3 text-gray-700">{{ $parentInvoice->clinicVisit?->visit_date?->format('d/m/Y') ?? '-' }}</td>
+                                    <td class="px-4 py-3 font-mono text-gray-900">{{ $parentInvoice->invoice_number }}</td>
+                                    <td class="px-4 py-3 text-right text-gray-700">Rp {{ number_format($parentInvoice->grand_total, 0, ',', '.') }}</td>
+                                    <td class="px-4 py-3 text-right text-emerald-700">Rp {{ number_format($parentPaid, 0, ',', '.') }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-amber-700">Rp {{ number_format($parentRemaining, 0, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </x-ui.card>
+
+            <x-ui.card title="Tagihan Kontrol Hari Ini">
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                    <div>
+                        <dt class="text-gray-500">No. Invoice Kontrol</dt>
+                        <dd class="font-mono font-medium text-gray-900">{{ $invoice->invoice_number }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Total Invoice Kontrol</dt>
+                        <dd class="font-semibold text-gray-900">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Sudah Dibayar</dt>
+                        <dd class="font-semibold text-emerald-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Sisa Tagihan Kontrol</dt>
+                        <dd class="font-bold text-amber-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                    </div>
+                </dl>
+            </x-ui.card>
+
+            <x-ui.card title="Total Harus Dibayar">
+                <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <div class="rounded-lg border border-amber-100 bg-amber-50/60 px-4 py-3">
+                        <dt class="text-gray-600">Sisa piutang sebelumnya</dt>
+                        <dd class="mt-1 text-lg font-bold text-amber-800">Rp {{ number_format($carryOverRemaining, 0, ',', '.') }}</dd>
+                    </div>
+                    <div class="rounded-lg border border-teal-100 bg-teal-50/60 px-4 py-3">
+                        <dt class="text-gray-600">Sisa tagihan kontrol</dt>
+                        <dd class="mt-1 text-lg font-bold text-teal-800">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                    </div>
+                    <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+                        <dt class="text-gray-600">Total Harus Dibayar</dt>
+                        <dd class="mt-1 text-xl font-bold text-gray-900">Rp {{ number_format($totalPayable, 0, ',', '.') }}</dd>
+                    </div>
+                </dl>
+            </x-ui.card>
+        @elseif ($visit->isFollowUpVisit())
+            <x-ui.card>
+                <p class="text-sm text-gray-600">Tidak ada piutang kunjungan sebelumnya.</p>
+            </x-ui.card>
+        @endif
+
+        @if (is_array($paymentAllocation) && (($paymentAllocation['allocated_to_parent'] ?? 0) > 0 || ($paymentAllocation['allocated_to_control'] ?? 0) > 0))
+            <x-ui.card title="Alokasi Pembayaran">
+                <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                    <div>
+                        <dt class="text-gray-500">Dibayarkan ke tagihan sebelumnya</dt>
+                        <dd class="font-semibold text-amber-800">Rp {{ number_format($paymentAllocation['allocated_to_parent'] ?? 0, 0, ',', '.') }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Dibayarkan ke tagihan kontrol</dt>
+                        <dd class="font-semibold text-teal-800">Rp {{ number_format($paymentAllocation['allocated_to_control'] ?? 0, 0, ',', '.') }}</dd>
+                    </div>
+                </dl>
             </x-ui.card>
         @endif
 

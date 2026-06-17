@@ -17,6 +17,12 @@
 
         $paidAmount = $invoice->paidAmount();
         $remainingAmount = $invoice->remainingAmount();
+        $carryOverInvoices = $payableSummary['carry_over_invoices'] ?? collect();
+        $carryOverRemaining = $payableSummary['carry_over_remaining'] ?? 0;
+        $totalPayable = $payableSummary['total_payable'] ?? $remainingAmount;
+        $hasCarryOver = ($payableSummary['has_carry_over'] ?? false) && $carryOverInvoices->isNotEmpty();
+        $maxAmount = $hasCarryOver ? $totalPayable : $remainingAmount;
+        $defaultAmount = old('amount', $maxAmount);
     @endphp
 
     <div class="space-y-6">
@@ -88,6 +94,48 @@
             </dl>
         </x-ui.card>
 
+        @if ($hasCarryOver)
+            <x-ui.card title="Piutang Kunjungan Sebelumnya">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">No. Kunjungan</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">No. Invoice</th>
+                                <th class="px-4 py-3 text-right font-medium text-gray-500">Sisa Piutang</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($carryOverInvoices as $parentInvoice)
+                                <tr>
+                                    <td class="px-4 py-3 font-mono text-gray-900">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
+                                    <td class="px-4 py-3 font-mono text-gray-900">{{ $parentInvoice->invoice_number }}</td>
+                                    <td class="px-4 py-3 text-right font-semibold text-amber-700">Rp {{ number_format($parentInvoice->remainingAmount(), 0, ',', '.') }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </x-ui.card>
+
+            <x-ui.card title="Total Harus Dibayar">
+                <dl class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <div>
+                        <dt class="text-gray-500">Sisa piutang sebelumnya</dt>
+                        <dd class="font-semibold text-amber-800">Rp {{ number_format($carryOverRemaining, 0, ',', '.') }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Sisa tagihan kontrol</dt>
+                        <dd class="font-semibold text-teal-800">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-gray-500">Total Harus Dibayar</dt>
+                        <dd class="text-lg font-bold text-gray-900">Rp {{ number_format($totalPayable, 0, ',', '.') }}</dd>
+                    </div>
+                </dl>
+            </x-ui.card>
+        @endif
+
         {{-- Items Summary --}}
         <x-ui.card title="Ringkasan Tagihan">
             <div class="overflow-x-auto">
@@ -137,7 +185,12 @@
         {{-- Payment Form --}}
         <x-ui.card title="Form Pembayaran">
             <p class="mb-5 rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-700">
-                Pembayaran dapat dicatat sebagai cicilan atau pelunasan. Jumlah bayar tidak boleh melebihi sisa tagihan.
+                @if ($hasCarryOver)
+                    Pembayaran kontrol dialokasikan ke piutang kunjungan sebelumnya terlebih dahulu, lalu sisa masuk ke tagihan kontrol hari ini.
+                    Jumlah bayar tidak boleh melebihi total yang harus dibayar.
+                @else
+                    Pembayaran dapat dicatat sebagai cicilan atau pelunasan. Jumlah bayar tidak boleh melebihi sisa tagihan.
+                @endif
             </p>
 
             <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5">
@@ -168,10 +221,16 @@
                         Jumlah Dibayar <span class="text-red-500">*</span>
                     </label>
                     <input type="number" name="amount" id="amount"
-                        value="{{ old('amount', $remainingAmount) }}"
-                        step="0.01" min="0.01" max="{{ $remainingAmount }}"
+                        value="{{ $defaultAmount }}"
+                        step="0.01" min="0.01" max="{{ $maxAmount }}"
                         class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('amount') border-red-500 @enderror">
-                    <p class="mt-1 text-xs text-gray-500">Maksimal sisa tagihan: Rp {{ number_format($remainingAmount, 0, ',', '.') }}.</p>
+                    <p class="mt-1 text-xs text-gray-500">
+                        @if ($hasCarryOver)
+                            Maksimal total yang harus dibayar: Rp {{ number_format($maxAmount, 0, ',', '.') }}.
+                        @else
+                            Maksimal sisa tagihan: Rp {{ number_format($maxAmount, 0, ',', '.') }}.
+                        @endif
+                    </p>
                     @error('amount')
                         <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                     @enderror
