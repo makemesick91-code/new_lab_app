@@ -5369,3 +5369,34 @@ Sprint 28 Phase 28.2 — one of: Pilot daily operation runbook, WhatsApp Reminde
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 28 Phase 28.2 — Pilot Daily Operation Runbook
+
+**Branch:** `feature/sprint-28-phase-28-2-pilot-daily-operation-runbook`
+**Doc:** `docs/sprint_28_phase_28_2_pilot_daily_operation_runbook.md`
+**Mode:** Pilot daily operation runbook only
+**Deployment:** No deployment
+**Migration:** No migration
+**Production code change:** No production code change
+**Baseline:** Sprint 28.1 GO at `fa9842f`
+
+### Scope
+
+- Docs/runbook/test only — turns the Sprint 28.1 pilot readiness and operator smoke checklist into a practical daily operation runbook for pilot use.
+- Daily runbook with pilot roles/responsibilities and how-to-use guidance.
+- Pre-opening checklist: app reachable, operator account ready, menu visibility, printer/browser print, backup presence, Laravel log baseline, disk usage, feedback log ready.
+- Daily operator flow: login, patient search, new patient registration, visit creation, RME visit input, odontogram input, odontogram/RME print, logout/session check.
+- RME control visit daily guardrail protecting Sprint 27 GO behavior: same patient/RM, new visit created, old data protected, parent receivable visible, FIFO allocation protected, completion not blocked by parent receivable, Rp0 invoice excluded from active receivables.
+- Cashier/receivable flow: open cashier billing, check invoice amount, check previous receivable, process payment, verify FIFO behavior, print receipt, active receivable check.
+- Support/admin monitoring flow: Laravel log check, backup presence, disk usage, route/menu quick check, user/role quick check, feedback collection check.
+- Operator feedback log format with privacy note, end-of-day closing checklist, escalation rules, GO/NO-GO criteria, and recommended Sprint 28 Phase 28.3 options.
+
+### Safety
+
+No deployment, no migration, no destructive operation, no production code change, and no RME/payment/receivable/cashier business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
