@@ -5948,3 +5948,76 @@ Sprint 32 — Go-Live Readiness, Training, Handover & SLA.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 32 — Go-Live Readiness, Training, Handover & SLA
+
+**Branch:** `feature/sprint-32-go-live-readiness-training-handover-sla`
+**Doc:** `docs/sprint_32_go_live_readiness_training_handover_sla.md`
+**Mode:** docs / go-live readiness / training / handover / SLA checklist-test only
+**Baseline:** Sprint 31 GO at `0ad4a45`
+**Real go-live execution:** no real go-live executed
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+- Converts the Sprint 30 pilot operational smoke and Sprint 31 recovery readiness artifacts into a
+  single, auditable **go-live readiness package**.
+- Defines a go-live readiness scope, an operational readiness checklist, a training plan, a
+  handover package checklist, an SLA/support model, go-live decision gates, Go/Watch/No-Go
+  criteria, a go-live runbook placeholder, and evidence/training-acceptance/handover sign-off
+  templates.
+- Baseline lineage: Sprint 30 GO `sprint-30-pilot-execution-bugfix-operational-smoke-go` at
+  `53c3442` → Sprint 31 GO `sprint-31-backup-restore-rehearsal-execution-recovery-readiness-go` at
+  `0ad4a45` (Sprint 31 feature commit `de85daf`).
+
+### Training plan
+
+Training checklist for Owner/management, Admin cabang, Cashier, Doctor/clinic operator (RME),
+Lab/admin operator, and Support/technical maintainer — each with objective, material, demo
+scenario, acceptance evidence, and follow-up owner.
+
+### Handover package & SLA/support model
+
+Handover package checklist (scope, branch/GO tag, SOPs, backup/restore reference, incident
+reporting, escalation matrix, known limitations, open risks, acceptance sign-off) and an
+SLA/support model with severity levels P0/P1/P2/P3, triage workflow, and daily/weekly routines.
+
+### Go-live decision gates & Go / Watch / No-Go criteria
+
+- Gates: Sprint 30 smoke accepted, Sprint 31 recovery readiness accepted, training complete,
+  handover complete, support + escalation owner assigned, privacy review complete, known
+  limitations accepted, rollback path documented, owner/admin sign-off, decision recorded.
+- **GO** — ready for a separate supervised go-live execution workflow.
+- **WATCH** — proceed only with documented mitigations and active support monitoring.
+- **NO-GO** — stop due to safety, privacy, data integrity, recovery, training, support, or
+  acceptance risk.
+
+### Tests / docs summary
+
+- **Tests:** added `tests/Feature/Sprint32/Sprint32GoLiveReadinessTrainingHandoverSlaTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added `docs/sprint_32_go_live_readiness_training_handover_sla.md`; updated this history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No real go-live execution.
+- No real backup/restore execution.
+- No production/VPS access. No deployment. No migration.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change. No runtime behavior change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 33 — Controlled Go-Live Execution & Hypercare Watch.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
