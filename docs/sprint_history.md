@@ -5485,3 +5485,48 @@ Sprint 28 Phase 28.5 — one of: Pilot issue triage and stabilization backlog, W
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 28 Phase 28.5 — Pilot Issue Triage & Stabilization Backlog
+
+**Branch:** `feature/sprint-28-phase-28-5-pilot-issue-triage-stabilization-backlog`
+**Doc:** `docs/sprint_28_phase_28_5_pilot_issue_triage_stabilization_backlog.md`
+**Mode:** Pilot issue triage / stabilization backlog planning only
+**Deployment:** No deployment
+**Migration:** No migration
+**Production code change:** No production code change
+**Bug fix execution:** No bug fix implemented
+**Baseline:** Sprint 28.4 GO at `1086d0f`
+
+### Scope
+
+- Issue intake sources.
+- Issue intake form.
+- Severity classification.
+- Stabilization lane categories.
+- RME control workflow triage guardrails.
+- Cashier/receivable triage guardrails.
+- Pilot backlog template.
+- GO/NO-GO decision matrix.
+- Support/admin daily triage checklist.
+- Privacy/evidence rules.
+- Future stabilization candidate backlog.
+- Risk/mitigation and GO/NO-GO.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No bug fix implementation.
+- No RME/payment/receivable/cashier business rule change.
+
+### Recommended Next Phase
+
+Sprint 28 Phase 28.6 — one of: Pilot stabilization backlog prioritization, WhatsApp reminder manual pilot SOP, Monitoring/backup/restore rehearsal execution on a non-production target, RME/cashier high-risk regression stabilization planning, or Sprint 28 closure GO/NO-GO report.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
