@@ -5608,3 +5608,45 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 29 Phase 29.1 — P0/P1 RME Control Workflow Regression Stabilization Planning
+
+**Branch:** `feature/sprint-29-phase-29-1-p0-p1-rme-control-workflow-regression-stabilization-planning`
+**Doc:** `docs/sprint_29_phase_29_1_p0_p1_rme_control_workflow_regression_stabilization_planning.md`
+**Mode:** P0/P1 RME control workflow regression stabilization planning only
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**Bug fix execution:** no bug fix implemented
+**Stabilization execution:** no stabilization implemented
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.0 GO at `21ff95a`
+
+### Scope
+
+- Defines P0/P1 RME Control Workflow regression risk.
+- Defines evidence requirements before implementation.
+- Documents RME Control Workflow invariants.
+- Documents cashier/payment/receivable connected guardrails.
+- Adds P0/P1 triage matrix.
+- Adds stabilization planning checklist.
+- Adds future regression test planning.
+- Adds future implementation sequencing.
+- Defines GO/NO-GO decision.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No bug fix implementation.
+- No stabilization implementation.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
