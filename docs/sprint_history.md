@@ -5304,3 +5304,36 @@ No deployment, no migration, no destructive data operation, and no production co
 GO CANDIDATE FOR PR REVIEW.
 
 Final Sprint 27 GO tag is allowed only after focused validation passes, PR is reviewed, PR is merged into the base branch, and the final GO tag is created on the merge commit.
+
+---
+
+## Sprint 28 Phase 28.0 — Post Sprint 27 Baseline, Pilot Readiness & Next Backlog Planning
+
+**Branch:** `feature/sprint-28-phase-28-0-post-sprint-27-baseline-pilot-readiness-backlog-planning`
+**Doc:** `docs/sprint_28_phase_28_0_post_sprint_27_baseline_pilot_readiness_backlog_planning.md`
+**Mode:** Planning / baseline / backlog alignment only
+**Deployment:** Not deployed in this phase
+**Migration:** No migration
+**Baseline:** Sprint 27 RME Control Workflow GO at `c9e378a`
+
+### Scope
+
+- Planning baseline after Sprint 27 RME Control Workflow GO.
+- Confirms Sprint 27 final GO tag `sprint-27-rme-control-workflow-go`.
+- Defines pilot readiness posture after RME control workflow closure.
+- Defines candidate Sprint 28 backlog lanes:
+  - Pilot readiness and operator smoke checklist.
+  - WhatsApp appointment reminder and receivable follow-up planning.
+  - RME cashier/reporting polish.
+  - Monitoring, backup, and restore rehearsal.
+  - Branch rollout readiness.
+- Recommends Sprint 28 Phase 28.1 as a low-risk pilot readiness/operator smoke checklist phase.
+- Keeps Sprint 28.0 planning-only and non-destructive.
+
+### Safety
+
+No deployment, no migration, no destructive data operation, no production code change, and no RME/payment/receivable business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
