@@ -624,3 +624,44 @@ it('does not let an unpaid parent receivable block control visit completion', fu
         ->and($parentInvoice->fresh()->isPaid())->toBeFalse()
         ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
+
+// ─── Sprint 27 Phase 27.4.2 — Zero-remaining invoices not listed as receivables ─
+
+it('does not list a completed free control zero invoice as an active receivable', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 0);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(50000),
+    );
+
+    // Free control invoice is Rp0 with a still-UNPAID status, but it is not a receivable.
+    expect((float) $controlInvoice->fresh()->grand_total)->toBe(0.0)
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($parentInvoice->invoice_number)
+        ->assertDontSee($controlInvoice->fresh()->invoice_number);
+});
+
+it('keeps a parent invoice with positive remaining visible in receivables', function () {
+    ['parentInvoice' => $parentInvoice, 'controlInvoice' => $controlInvoice] = covScenario(300000, 0);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(120000),
+    );
+
+    // Parent still owes 180k → stays listed; control Rp0 invoice stays hidden.
+    expect($parentInvoice->fresh()->remainingAmount())->toBe(180000.0);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($parentInvoice->invoice_number)
+        ->assertDontSee($controlInvoice->fresh()->invoice_number);
+});
