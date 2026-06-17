@@ -5400,3 +5400,44 @@ No deployment, no migration, no destructive operation, no production code change
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 28 Phase 28.3 — WhatsApp Reminder & Receivable Follow-up Workflow Planning
+
+**Branch:** `feature/sprint-28-phase-28-3-whatsapp-reminder-receivable-follow-up-workflow-planning`
+**Doc:** `docs/sprint_28_phase_28_3_whatsapp_reminder_receivable_follow_up_workflow_planning.md`
+**Mode:** WhatsApp reminder / receivable follow-up workflow planning only
+**Deployment:** No deployment
+**Migration:** No migration
+**Production code change:** No production code change
+**Integration change:** No WhatsApp/API integration implemented
+**Baseline:** Sprint 28.2 GO at `05539ef`
+
+### Scope
+
+- Appointment reminder workflow planning.
+- Receivable/piutang follow-up workflow planning.
+- Manual operator/cashier handling checklist.
+- Privacy-safe message template drafts.
+- RME control workflow safety notes.
+- Manual log format.
+- Future automation candidate design.
+- Risk/mitigation and GO/NO-GO.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No WhatsApp/API integration.
+- No RME/payment/receivable/cashier business rule change.
+
+### Recommended Next Phase
+
+Sprint 28 Phase 28.4 — one of: Monitoring/backup/restore rehearsal, WhatsApp reminder manual pilot SOP, Pilot issue triage and stabilization backlog, or WhatsApp reminder technical design (planning-only).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
