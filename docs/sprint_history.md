@@ -6021,3 +6021,85 @@ Sprint 33 — Controlled Go-Live Execution & Hypercare Watch.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 33 — Controlled Go-Live Execution & Hypercare Watch
+
+**Branch:** `feature/sprint-33-controlled-go-live-execution-hypercare-watch`
+**Doc:** `docs/sprint_33_controlled_go_live_execution_hypercare_watch.md`
+**Mode:** docs / controlled go-live execution plan / hypercare watch checklist-test only
+**Baseline:** Sprint 32 GO at `54ed93a`
+**Real go-live execution:** no real go-live executed
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Production/VPS access:** no production/VPS access
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+- Converts the accepted Sprint 32 go-live readiness, training, handover, and SLA package into an
+  auditable **controlled go-live execution plan** and a **hypercare watch checklist**.
+- Defines pre-go-live approval gates, a controlled go-live execution runbook placeholder, a
+  post-go-live smoke verification checklist, a hypercare watch checklist, an incident triage and
+  escalation matrix, a rollback/recovery decision checklist, a communication plan, evidence and
+  issue-log and acceptance templates, hypercare closure criteria, and Go/Watch/No-Go/Rollback
+  criteria.
+- Baseline lineage: Sprint 31 GO
+  `sprint-31-backup-restore-rehearsal-execution-recovery-readiness-go` at `0ad4a45` → Sprint 32 GO
+  `sprint-32-go-live-readiness-training-handover-sla-go` at `54ed93a` (Sprint 32 feature commit
+  `1b53cd2`).
+
+### Pre-go-live approval gates & smoke verification
+
+Approval gates cover Sprint 32 readiness/training/handover acceptance, owner/admin sign-off,
+support and escalation owner assignment, rollback/escalation path, privacy review, Sprint 31
+backup/restore readiness reference, known limitations, communication channel, support coverage, and
+a recorded GO/WATCH/NO-GO decision. A post-go-live smoke verification checklist covers app boot,
+login, role menus, RME/odontogram/cashier/receivable/print/reporting smoke, WhatsApp manual SOP
+evidence, monitoring evidence, and owner/admin acceptance.
+
+### Incident triage, escalation, rollback/recovery & communication
+
+Incident triage and escalation matrix with severity levels P0/P1/P2/P3 (owner, action, escalation
+rule, communication rule, decision outcome per level); a rollback/recovery decision checklist
+(decision only — no execution); and a communication plan for announcements, support channel,
+escalation, issue reporting, daily summaries, and closure.
+
+### Go / Watch / No-Go / Rollback criteria
+
+- **GO** — proceed to a separate supervised go-live execution, or continue after smoke acceptance.
+- **WATCH** — continue with active mitigations and daily hypercare monitoring.
+- **NO-GO** — stop before go-live due to safety, privacy, data integrity, recovery, training,
+  support, or acceptance risk.
+- **ROLLBACK** — trigger recovery/escalation due to severe production impact, data integrity risk,
+  or unacceptable workflow failure (executed only in the separate supervised workflow).
+
+### Tests / docs summary
+
+- **Tests:** added
+  `tests/Feature/Sprint33/Sprint33ControlledGoLiveExecutionHypercareWatchTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added `docs/sprint_33_controlled_go_live_execution_hypercare_watch.md`; updated this
+  history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No real go-live execution.
+- No real backup/restore execution.
+- No production/VPS access. No deployment. No migration.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change. No runtime behavior change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 34 — Post Go-Live Stabilization, Issue Burn-down & Operational Closure (gated by owner/admin
+acceptance and unresolved issue severity).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
