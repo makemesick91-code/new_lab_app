@@ -5263,3 +5263,44 @@ Decision: **GO**.
 - `tests/Feature/RME/RmeControlVisitReceivableCarryOverPaymentTest.php`
 - `tests/Feature/RME/CashierBillingTest.php`
 - `tests/Feature/RME/ClinicVisitControlWorkflowTest.php`
+
+---
+
+## Sprint 27 Phase 27.7 — RME Control Workflow Final Closure & Sprint 27 GO/NO-GO Report
+
+**Branch:** `feature/sprint-27-phase-27-7-rme-control-workflow-final-closure-go-no-go-report`
+**Doc:** `docs/sprint_27_phase_27_7_rme_control_workflow_final_closure_go_no_go_report.md`
+**Mode:** Final closure / GO-NO-GO report-only
+**Deployment:** Not deployed in this phase
+**Migration:** No migration
+
+### Scope
+
+- Final closure report for Sprint 27 RME Control Workflow.
+- Consolidates Phase 27.3, 27.4, 27.4.1, 27.4.2, 27.5, and skipped/already-done 27.6 posture.
+- Confirms Phase 27.5 merge anchor `f74ad78` and feature anchor `e8cbb8a`.
+- Confirms Phase 27.4.2 anchors `82155c8` and `b908722`.
+- Documents final Sprint 27 GO/NO-GO posture.
+- Keeps the closure report-only and safety-first.
+
+### Final RME control workflow posture
+
+- Control visits reuse the same patient/RM but always create a new visit.
+- Old visit, RME, odontogram, invoice, and invoice items are not overwritten.
+- Carry-over payment allocation remains FIFO: previous receivable first, then current control invoice.
+- Parent receivable does not block control visit completion.
+- Free control may complete after payment batch to old receivable while parent invoice remains `UNPAID` or `PARTIAL`.
+- Paid control completes only when the current control invoice is fully paid.
+- Rp0 control invoice remains billing/history but is excluded from active receivables, aging, and export.
+- Active receivables only include invoices with remaining balance > 0.
+- Receipt must show allocation when payment batch is split between parent and control invoices.
+
+### Safety
+
+No deployment, no migration, no destructive data operation, and no production code change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
+
+Final Sprint 27 GO tag is allowed only after focused validation passes, PR is reviewed, PR is merged into the base branch, and the final GO tag is created on the merge commit.
