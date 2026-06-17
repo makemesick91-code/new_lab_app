@@ -5692,3 +5692,51 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 29 Phase 29.3 — WhatsApp Reminder Manual Pilot SOP
+
+**Branch:** `feature/sprint-29-phase-29-3-whatsapp-reminder-manual-pilot-sop`
+**Doc:** `docs/sprint_29_phase_29_3_whatsapp_reminder_manual_pilot_sop.md`
+**Mode:** WhatsApp reminder manual pilot SOP only
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**WhatsApp API integration:** no WhatsApp API integration
+**WhatsApp automation:** no WhatsApp automation
+**Queue/job/notification change:** no queue/job/notification change
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.2 GO at `266a0d2`
+
+### Scope
+
+- Defines manual appointment reminder SOP.
+- Defines manual receivable/piutang follow-up SOP.
+- Defines cashier/payment/receivable guardrails.
+- Defines RME control visit connected guardrails.
+- Defines privacy and consent rules.
+- Adds approved manual message templates.
+- Adds manual log template.
+- Adds escalation rules.
+- Adds manual pilot daily checklist.
+- Adds future automation readiness criteria.
+- Defines GO/NO-GO decision.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No WhatsApp API integration.
+- No WhatsApp automation.
+- No queue/job/notification change.
+- No bug fix implementation.
+- No stabilization implementation.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
