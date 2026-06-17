@@ -5189,3 +5189,22 @@ Decision: **GO**.
 - Cashier UI shows **Piutang Kunjungan Sebelumnya**, **Tagihan Kontrol Hari Ini**, **Total Harus Dibayar**, and receipt **Alokasi Pembayaran**.
 - Additive migration: nullable `payment_batch_uuid` on `trx_rme_payments` for grouped split payments.
 - Service: `RmeControlReceivableService` + `RmePaymentService::allocateControlPayment()`.
+
+---
+
+## Sprint 27 Phase 27.4.1 — Control Visit Free Follow-up Completion Rule (Hotfix)
+
+**Branch:** `feature/sprint-27-phase-27-4-1-control-visit-free-follow-up-completion-rule`
+**Doc:** `docs/sprint_27_phase_27_4_1_control_visit_free_follow_up_completion_rule.md`
+
+- Hotfix to Phase 27.4 completion rule: a **free follow-up** control visit no longer gets stuck at
+  `cashier_pending` after paying an installment toward a previous-visit receivable.
+- Control visit completion now depends only on the **control invoice's own remaining balance**, never on
+  the combined parent + current total. Parent receivables are payable from the control screen but never
+  block control-visit status.
+- Free control (control invoice remaining 0): `completed` once any payment is recorded in the batch.
+  Control with additional cost: `completed` only when its own invoice is fully paid. No payment → not
+  auto-completed. Normal non-control `pay()` flow unchanged.
+- Change isolated to `RmePaymentService` (`completeControlVisitIfSettled()` helper). No migration, no new
+  route/service/test file. 7 cases added to existing `RmeControlVisitReceivableCarryOverPaymentTest`
+  (33 passed / 103 assertions).
