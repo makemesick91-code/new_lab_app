@@ -613,3 +613,120 @@ it('paid invoices are excluded from aging and export', function () {
     expect($csv)->toContain($active->invoice_number);
     expect($csv)->not->toContain($paidInvoice->invoice_number);
 });
+
+// ─── Sprint 27 Phase 27.4.2 — Exclude zero-remaining invoices from receivables ──
+
+function makeZeroGrandTotalUnpaidInvoice(Branch $branch): RmeInvoice
+{
+    [$visit] = makeFinalizedVisit($branch);
+
+    return RmeInvoice::factory()->unpaid()->create([
+        'branch_id' => $branch->id,
+        'clinic_visit_id' => $visit->id,
+        'patient_id' => $visit->patient_id,
+        'subtotal' => 0,
+        'discount_total' => 0,
+        'grand_total' => 0,
+    ]);
+}
+
+it('excludes zero-grand-total unpaid invoices from active receivables', function () {
+    $this->actingAs($this->cashier);
+
+    $active = makeReceivableInvoice($this->branch, $this->cashier, 5);
+    $zeroInvoice = makeZeroGrandTotalUnpaidInvoice($this->branch);
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($active->invoice_number)
+        ->assertDontSee($zeroInvoice->invoice_number);
+});
+
+it('excludes zero-remaining settled invoices from active receivables', function () {
+    $this->actingAs($this->cashier);
+
+    [$settledVisit] = makeFinalizedVisit($this->branch);
+    $settledInvoice = app(RmeInvoiceService::class)->create(
+        $settledVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Lunas Sebagian', 'unit_price' => 100000])]]
+    );
+
+    RmePayment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'rme_invoice_id' => $settledInvoice->id,
+        'clinic_visit_id' => $settledVisit->id,
+        'patient_id' => $settledVisit->patient_id,
+        'cashier_id' => $this->cashier->id,
+        'amount' => 100000,
+        'paid_at' => now(),
+    ]);
+
+    // Stale status: still PARTIAL even though fully covered by payments.
+    $settledInvoice->update(['status' => RmeInvoice::STATUS_PARTIAL]);
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertDontSee($settledInvoice->invoice_number);
+});
+
+it('still shows unpaid invoice with positive remaining balance', function () {
+    $this->actingAs($this->cashier);
+
+    [$partialVisit] = makeFinalizedVisit($this->branch);
+    $partialInvoice = app(RmeInvoiceService::class)->create(
+        $partialVisit,
+        $this->cashier,
+        ['items' => [makeItemPayload(['description' => 'Cicilan Besar', 'unit_price' => 1500000])]]
+    );
+
+    RmePayment::factory()->create([
+        'branch_id' => $this->branch->id,
+        'rme_invoice_id' => $partialInvoice->id,
+        'clinic_visit_id' => $partialVisit->id,
+        'patient_id' => $partialVisit->patient_id,
+        'cashier_id' => $this->cashier->id,
+        'amount' => 900000,
+        'paid_at' => now(),
+    ]);
+
+    $partialInvoice->update(['status' => RmeInvoice::STATUS_PARTIAL]);
+
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($partialInvoice->invoice_number);
+
+    // Remaining 600000 surfaces in the stable CSV export representation.
+    $csv = $this->get(route('rme.cashier.receivables.export'))->streamedContent();
+    expect($csv)->toContain($partialInvoice->invoice_number);
+    expect($csv)->toContain('600000.00');
+});
+
+it('excludes zero-grand-total invoice from receivable aging summary', function () {
+    $this->actingAs($this->cashier);
+
+    $active = makeReceivableInvoice($this->branch, $this->cashier, 5, 300000);
+    makeZeroGrandTotalUnpaidInvoice($this->branch);
+
+    $response = $this->get(route('rme.cashier.receivables'))->assertOk();
+
+    // Only the single real receivable is counted; the Rp0 invoice does not inflate totals.
+    $summary = $response->viewData('summary');
+    expect($summary['invoice_count'])->toBe(1);
+    expect($summary['grand_total'])->toBe(300000.0);
+    expect($summary['remaining_total'])->toBe(300000.0);
+
+    $response->assertSee($active->invoice_number);
+});
+
+it('excludes zero-grand-total invoice from receivable export', function () {
+    $this->actingAs($this->cashier);
+
+    $active = makeReceivableInvoice($this->branch, $this->cashier, 5);
+    $zeroInvoice = makeZeroGrandTotalUnpaidInvoice($this->branch);
+
+    $csv = $this->get(route('rme.cashier.receivables.export'))->streamedContent();
+
+    expect($csv)->toContain($active->invoice_number);
+    expect($csv)->not->toContain($zeroInvoice->invoice_number);
+});

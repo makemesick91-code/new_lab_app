@@ -203,14 +203,30 @@ class RmeInvoiceController extends Controller
     }
 
     /**
+     * Sprint 27 Phase 27.4.2 — only invoices with an actual outstanding balance
+     * count as active receivables. Excludes zero-grand-total invoices (e.g. free
+     * control visits) and any invoice already settled by payments, regardless of
+     * a stale UNPAID status. Applied at query level so listing, count, pagination,
+     * aging summary, and export all share the same rule.
+     */
+    private function applyActiveReceivableConstraint(Builder $query): Builder
+    {
+        return $query
+            ->where('grand_total', '>', 0)
+            ->whereRaw('trx_rme_invoices.grand_total > (SELECT COALESCE(SUM(amount), 0) FROM trx_rme_payments WHERE trx_rme_payments.rme_invoice_id = trx_rme_invoices.id)');
+    }
+
+    /**
      * @param  array<int, int>  $activeBranchIds
      * @param  array<string, mixed>  $filters
      */
     private function receivableQuery(array $activeBranchIds, array $filters): Builder
     {
-        return RmeInvoice::query()
-            ->with(['branch', 'patient', 'clinicVisit', 'payments', 'latestFollowUp.user'])
-            ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
+        return $this->applyActiveReceivableConstraint(
+            RmeInvoice::query()
+                ->with(['branch', 'patient', 'clinicVisit', 'payments', 'latestFollowUp.user'])
+                ->whereIn('status', [RmeInvoice::STATUS_UNPAID, RmeInvoice::STATUS_PARTIAL])
+        )
             ->whereIn('branch_id', $activeBranchIds)
             ->when($filters['branch_id'], fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->when($filters['status'], fn ($query, $status) => $query->where('status', $status))

@@ -5208,3 +5208,25 @@ Decision: **GO**.
 - Change isolated to `RmePaymentService` (`completeControlVisitIfSettled()` helper). No migration, no new
   route/service/test file. 7 cases added to existing `RmeControlVisitReceivableCarryOverPaymentTest`
   (33 passed / 103 assertions).
+
+---
+
+## Sprint 27 Phase 27.4.2 — Exclude Zero-Remaining Invoices from Active Receivables (Hotfix)
+
+**Branch:** `feature/sprint-27-phase-27-4-2-exclude-zero-remaining-rme-receivables`
+**Doc:** `docs/sprint_27_phase_27_4_2_exclude_zero_remaining_rme_receivables.md`
+
+- Bug (VPS): after Phase 27.4.1, free control invoices (`grand_total` 0, `paid_amount` 0,
+  `status` UNPAID) still appeared on `/rme/cashier/receivables` even though there was nothing to
+  collect. Other already-settled invoices with a stale UNPAID/PARTIAL status could leak in too.
+- Final business rule: an **active receivable** is one with a real outstanding balance —
+  `grand_total > 0` **and** `grand_total > SUM(payments.amount)` (i.e. `remaining > 0`). Invoices with
+  `grand_total = 0`, `remaining = 0`, or `paid_amount >= grand_total` are not receivables.
+- Zero-value invoices (e.g. free control visits) remain in the system as billing/history records; they
+  are simply excluded from the **active receivables** list, aging summary, counts, pagination, follow-up
+  offers, and CSV export.
+- Fix is query-level only: new `applyActiveReceivableConstraint()` helper applied inside the shared
+  `RmeInvoiceController::receivableQuery()`, so listing / aging / export stay consistent and pre-existing
+  Rp0 UNPAID rows auto-drop without any data mutation.
+- No migration. No data edits. Payment allocation (27.4) and completion rule (27.4.1) unchanged. 5 cases
+  added to `CashierBillingTest` + 2 regression cases in `RmeControlVisitReceivableCarryOverPaymentTest`.
