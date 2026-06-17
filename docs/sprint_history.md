@@ -5230,3 +5230,36 @@ Decision: **GO**.
   Rp0 UNPAID rows auto-drop without any data mutation.
 - No migration. No data edits. Payment allocation (27.4) and completion rule (27.4.1) unchanged. 5 cases
   added to `CashierBillingTest` + 2 regression cases in `RmeControlVisitReceivableCarryOverPaymentTest`.
+
+---
+
+## Sprint 27 Phase 27.5 — RME Control Workflow Stabilization & Regression Closure
+
+**Branch:** `feature/sprint-27-phase-27-5-rme-control-workflow-stabilization-regression-closure`
+**Doc:** `docs/sprint_27_phase_27_5_rme_control_workflow_stabilization_regression_closure.md`
+
+### Scope
+
+- Stabilization and regression closure for RME control visit workflow.
+- Documents final business rules from Phase 27.4, 27.4.1, and 27.4.2.
+- Adds operator checklist for control registration, free control billing, parent receivable installment, visit completion check, active receivables check, receipt check, and receivable export check.
+- Adds developer regression checklist for focused test commands and manual smoke.
+- No migration expected.
+- No destructive data operation.
+
+### Closure posture
+
+- Control visit keeps the same patient/RM but creates a new visit.
+- Previous visit, RME, odontogram, invoice, and invoice items are not overwritten.
+- Carry-over payment allocation remains FIFO: parent/previous invoice first, then current control invoice.
+- Parent receivable does not block control visit completion.
+- Free control can complete after a payment batch even if parent receivable remains partial.
+- Paid control completes only when the current control invoice is fully paid.
+- Rp0 control invoice remains billing/history but is excluded from active receivables, aging, and export.
+
+### Regression anchor
+
+- `tests/Feature/RME/RmeControlWorkflowStabilizationClosureTest.php`
+- `tests/Feature/RME/RmeControlVisitReceivableCarryOverPaymentTest.php`
+- `tests/Feature/RME/CashierBillingTest.php`
+- `tests/Feature/RME/ClinicVisitControlWorkflowTest.php`
