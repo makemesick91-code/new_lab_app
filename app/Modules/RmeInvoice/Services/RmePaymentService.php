@@ -163,10 +163,22 @@ class RmePaymentService
                     );
 
                     $this->refreshInvoiceStatus($controlInvoice);
-                    $this->completeVisitIfPaid($controlInvoice, $controlVisit);
                     $allocatedToControl = $allocateAmount;
                 }
             }
+
+            // Phase 27.4.1 completion rule: a control (follow-up) visit completes
+            // once its OWN invoice has no remaining balance — including a free
+            // follow-up with no additional cost. Previous-visit receivables are
+            // payable from the control screen but must never block control-visit
+            // completion, so the parent balance is deliberately ignored here. A
+            // successful payment in this batch is still required: a free control
+            // visit is never auto-completed without a cashier payment action.
+            $this->completeControlVisitIfSettled(
+                $controlInvoice,
+                $controlVisit,
+                paymentMade: $allocatedToParent > 0 || $allocatedToControl > 0,
+            );
 
             return new RmeControlPaymentResult(
                 parentPayments: $parentPayments,
@@ -311,6 +323,29 @@ class RmePaymentService
     {
         if ($invoice->isPaid() && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
             $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
+        }
+    }
+
+    /**
+     * Complete a control visit when its own invoice has no remaining balance.
+     *
+     * Unlike {@see completeVisitIfPaid()}, this does not require the control
+     * invoice to be PAID — a free follow-up (grand_total 0, still UNPAID) settles
+     * once a payment has been recorded in the batch. Parent receivables never
+     * gate this transition.
+     */
+    private function completeControlVisitIfSettled(RmeInvoice $controlInvoice, ClinicVisit $controlVisit, bool $paymentMade): void
+    {
+        if (! $paymentMade) {
+            return;
+        }
+
+        if ($controlInvoice->refresh()->remainingAmount() > 0) {
+            return;
+        }
+
+        if ($controlVisit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
+            $this->visitService->transitionStatus($controlVisit, ClinicVisit::STATUS_COMPLETED);
         }
     }
 

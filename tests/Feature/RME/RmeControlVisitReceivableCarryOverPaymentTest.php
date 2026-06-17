@@ -519,3 +519,108 @@ it('control invoice items remain unchanged after carry-over payment', function (
     expect($controlInvoice->fresh()->items()->get(['description', 'qty', 'unit_price', 'subtotal'])->toArray())
         ->toBe($itemsBefore);
 });
+
+// ─── Phase 27.4.1: free follow-up completion rule ────────────────────────────
+// A free control visit (control invoice grand_total 0) is modelled with a single
+// zero-priced item — the cashier service accepts unit_price 0, so the invoice is
+// UNPAID with remaining 0 and reaches the carry-over allocation flow normally.
+
+it('completes a free control visit after a partial parent receivable payment', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 0);
+
+    $beforePayments = RmePayment::count();
+
+    $result = app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(50000),
+    );
+
+    expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($parentInvoice->fresh()->remainingAmount())->toBe(250000.0)
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+        ->and($result->allocatedToParent)->toBe(50000.0)
+        ->and($result->allocatedToControl)->toBe(0.0)
+        // Only the parent allocation produced a payment row — no zero-amount control payment.
+        ->and(RmePayment::count())->toBe($beforePayments + 1)
+        ->and(RmePayment::where('rme_invoice_id', $controlInvoice->id)->count())->toBe(0)
+        // Invoice items untouched on both sides.
+        ->and($parentInvoice->fresh()->items()->count())->toBe(1)
+        ->and($controlInvoice->fresh()->items()->count())->toBe(1);
+});
+
+it('completes a free control visit even though the parent invoice stays PARTIAL', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 0);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(50000),
+    );
+
+    expect($parentInvoice->fresh()->isPaid())->toBeFalse()
+        ->and($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('keeps a control visit cashier_pending when additional treatment is not fully paid', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 100000);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(350000),
+    );
+
+    expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($controlInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($controlInvoice->fresh()->remainingAmount())->toBe(50000.0)
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+});
+
+it('completes a control visit with additional treatment once its invoice is paid', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 100000);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(400000),
+    );
+
+    expect($parentInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($controlInvoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('does not auto-complete a free control visit when no payment is made', function () {
+    ['control' => $control] = covScenario(300000, 0);
+
+    // No allocateControlPayment / store action is invoked at all.
+    expect($control->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
+        ->and(RmePayment::where('clinic_visit_id', $control->id)->count())->toBe(0);
+});
+
+it('leaves a normal non-control visit cashier_pending on partial payment', function () {
+    $visit = covParentVisit($this->patient, $this->rmeBranch, $this->doctor);
+    $invoice = covCreateInvoice($visit, $this->cashier, 200000);
+
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, covPaymentPayload(120000));
+
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+});
+
+it('does not let an unpaid parent receivable block control visit completion', function () {
+    ['parentInvoice' => $parentInvoice, 'control' => $control, 'controlInvoice' => $controlInvoice] = covScenario(300000, 0);
+
+    app(RmePaymentService::class)->allocateControlPayment(
+        $controlInvoice,
+        $this->cashier,
+        covPaymentPayload(50000),
+    );
+
+    // Parent still owes 250k, yet the control visit is done.
+    expect($parentInvoice->fresh()->remainingAmount())->toBe(250000.0)
+        ->and($parentInvoice->fresh()->isPaid())->toBeFalse()
+        ->and($control->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
