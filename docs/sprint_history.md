@@ -6326,3 +6326,75 @@ acceptance and unresolved risk severity).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 37 — Controlled Roadmap Execution Batch 1 & Governance Review
+
+**Branch:** `feature/sprint-37-controlled-roadmap-execution-batch-1-governance-review`
+**Doc:** `docs/sprint_37_controlled_roadmap_execution_batch_1_governance_review.md`
+**Mode:** docs / controlled roadmap execution Batch 1 / governance review checklist-test only
+**Baseline:** Sprint 36 GO at `7a1f959`
+**Real roadmap/RME/cashier/reporting/WhatsApp implementation:** none
+**Real maintenance execution:** no real maintenance executed
+**Real branch expansion:** no real branch expansion executed
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Production/VPS access:** no production/VPS access
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+Sprint 37 converts the Sprint 35–36 governance and roadmap lock into an auditable **controlled
+roadmap Batch 1 execution plan and governance review package**. It performs a **Batch 1 roadmap
+candidate review** across RME workflow, cashier/payment/receivable, reporting/export, WhatsApp
+manual reminder, monitoring/backup/recovery governance, branch expansion, UX/UI, training/docs, and
+technical debt; defines **Batch 1 selection criteria**; and locks a **recommended Batch 1 scope —
+RME Workflow Improvement Batch 1** (with cashier/reporting/training discovery as supporting
+candidates). It adds an **implementation-readiness outline for Sprint 38**, a **risk and decision
+matrix** (R0/P0, R1/P1, R2/P2, R3/P3), a **controlled implementation gate for future Sprint 38**, a
+**test strategy for future implementation**, and **roadmap batch / acceptance criteria / future
+implementation checklist evidence templates**, with **GO / WATCH / DEFER / NO-GO** criteria.
+
+Sprint 37 is **docs/checklist-test only**: no production code/migration/deployment/runtime changes,
+and no actual roadmap/RME/cashier/reporting/WhatsApp implementation. It explicitly does **not**
+implement RME changes — RME Workflow Improvement Batch 1 is a future recommendation only.
+
+### Go / Watch / Defer / No-Go criteria
+
+- **GO** — Batch 1 roadmap scope accepted for a future implementation sprint.
+- **WATCH** — Batch 1 scope needs active monitoring, more review, or tighter constraints before implementation.
+- **DEFER** — Batch 1 item is valuable but postponed due to risk, dependency, or unclear acceptance criteria.
+- **NO-GO** — stop future implementation due to safety, privacy, data integrity, recovery, unresolved R0/R1, support, or acceptance risk.
+
+### Tests / docs summary
+
+- **Tests:** added
+  `tests/Feature/Sprint37/Sprint37ControlledRoadmapExecutionBatch1GovernanceReviewTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added
+  `docs/sprint_37_controlled_roadmap_execution_batch_1_governance_review.md`; updated this history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No production code/migration/deployment/runtime changes.
+- No actual roadmap/RME/cashier/reporting/WhatsApp implementation.
+- No real maintenance/branch expansion execution.
+- No real backup/restore execution.
+- No production/VPS access.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 38 — RME Workflow Improvement Batch 1 (implement the approved, controlled RME Workflow
+Improvement Batch 1 under Sprint 36–37 governance gates, with targeted tests, explicit approval, and
+no production deployment until reviewed).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
