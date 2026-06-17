@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\PaymentMethod\Services\PaymentMethodService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
+use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +21,7 @@ class RmePaymentController extends Controller
     public function __construct(
         private readonly RmePaymentService $service,
         private readonly PaymentMethodService $paymentMethods,
+        private readonly RmeControlReceivableService $carryOver,
     ) {}
 
     public function create(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
@@ -32,10 +34,13 @@ class RmePaymentController extends Controller
                 ->with('error', 'Invoice ini tidak dapat dibayar (status: '.$rmeInvoice->status.').');
         }
 
+        $payableSummary = $this->carryOver->getControlPayableSummary($rmeInvoice);
+
         return view('rme.cashier.payment.create', [
-            'visit' => $clinicVisit->load(['patient', 'doctor']),
+            'visit' => $clinicVisit->load(['patient', 'doctor', 'followUpOf']),
             'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
             'paymentMethods' => $this->paymentMethods->listActive(),
+            'payableSummary' => $payableSummary,
         ]);
     }
 
@@ -43,7 +48,34 @@ class RmePaymentController extends Controller
     {
         $this->authorize('pay', $rmeInvoice);
 
-        $payment = $this->service->pay($rmeInvoice, $request->user(), $request->validated());
+        $validated = $request->validated();
+        $payableSummary = $this->carryOver->getControlPayableSummary($rmeInvoice);
+
+        if ($payableSummary['has_carry_over']) {
+            $result = $this->service->allocateControlPayment($rmeInvoice, $request->user(), $validated);
+            $freshInvoice = $rmeInvoice->fresh();
+            $allocation = [
+                'allocated_to_parent' => $result->allocatedToParent,
+                'allocated_to_control' => $result->allocatedToControl,
+                'payment_batch_uuid' => $result->paymentBatchUuid,
+            ];
+
+            if ($freshInvoice?->isPaid()) {
+                return redirect()
+                    ->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
+                    ->with('status', 'Pembayaran berhasil dicatat.')
+                    ->with('payment_allocation', $allocation);
+            }
+
+            $receiptNumber = $result->primaryPayment()?->payment_number ?? '-';
+
+            return redirect()
+                ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
+                ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$receiptNumber)
+                ->with('payment_allocation', $allocation);
+        }
+
+        $payment = $this->service->pay($rmeInvoice, $request->user(), $validated);
         $freshInvoice = $rmeInvoice->fresh();
 
         if ($freshInvoice?->isPaid()) {
@@ -68,6 +100,32 @@ class RmePaymentController extends Controller
         }
 
         $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();
+        $allocation = session('payment_allocation');
+        $batchPayments = collect();
+
+        if (is_array($allocation) && ! empty($allocation['payment_batch_uuid'])) {
+            $batchPayments = $this->service->paymentsForBatch($allocation['payment_batch_uuid']);
+        } elseif ($payment?->payment_batch_uuid) {
+            $batchPayments = $this->service->paymentsForBatch($payment->payment_batch_uuid);
+        }
+
+        $allocatedToParent = 0.0;
+        $allocatedToControl = 0.0;
+
+        if ($batchPayments->isNotEmpty()) {
+            $allocatedToParent = round(
+                (float) $batchPayments
+                    ->filter(fn ($batchPayment) => (int) $batchPayment->rme_invoice_id !== (int) $rmeInvoice->id)
+                    ->sum('amount'),
+                2,
+            );
+            $allocatedToControl = round(
+                (float) $batchPayments
+                    ->filter(fn ($batchPayment) => (int) $batchPayment->rme_invoice_id === (int) $rmeInvoice->id)
+                    ->sum('amount'),
+                2,
+            );
+        }
 
         $invoice = $rmeInvoice->load([
             'items.treatment',
@@ -82,6 +140,9 @@ class RmePaymentController extends Controller
             'invoice' => $invoice,
             'payment' => $payment,
             'labCaseCandidates' => $invoice->labCaseCandidates,
+            'allocatedToParent' => $allocatedToParent,
+            'allocatedToControl' => $allocatedToControl,
+            'hasPaymentAllocation' => $allocatedToParent > 0 || $allocatedToControl > 0,
         ]);
     }
 }

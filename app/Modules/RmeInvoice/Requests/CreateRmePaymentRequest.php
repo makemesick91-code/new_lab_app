@@ -2,8 +2,11 @@
 
 namespace App\Modules\RmeInvoice\Requests;
 
+use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class CreateRmePaymentRequest extends FormRequest
 {
@@ -27,6 +30,39 @@ class CreateRmePaymentRequest extends FormRequest
             'consent_signed_by_patient' => ['required', 'accepted'],
             'consent_signed_by_doctor' => ['required', 'accepted'],
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $invoice = $this->route('rmeInvoice');
+
+            if (! $invoice instanceof RmeInvoice) {
+                return;
+            }
+
+            $carryOver = app(RmeControlReceivableService::class);
+
+            if (! $carryOver->hasCarryOver($invoice)) {
+                $remaining = $invoice->remainingAmount();
+
+                if ((float) $this->input('amount') > $remaining) {
+                    $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi sisa tagihan.');
+                }
+
+                return;
+            }
+
+            $summary = $carryOver->getControlPayableSummary($invoice);
+
+            if ((float) $this->input('amount') > $summary['total_payable']) {
+                $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi total yang harus dibayar.');
+            }
+        });
     }
 
     public function messages(): array

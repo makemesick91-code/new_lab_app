@@ -31,6 +31,7 @@ class RmePayment extends Model
         'paid_at',
         'reference_number',
         'notes',
+        'payment_batch_uuid',
     ];
 
     protected function casts(): array
