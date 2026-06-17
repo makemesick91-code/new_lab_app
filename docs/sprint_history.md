@@ -5337,3 +5337,35 @@ No deployment, no migration, no destructive data operation, no production code c
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 28 Phase 28.1 — Pilot Readiness & Operator Smoke Checklist
+
+**Branch:** `feature/sprint-28-phase-28-1-pilot-readiness-operator-smoke-checklist`
+**Doc:** `docs/sprint_28_phase_28_1_pilot_readiness_operator_smoke_checklist.md`
+**Mode:** Pilot readiness / operator smoke checklist only
+**Deployment:** No deployment
+**Migration:** No migration
+**Production code change:** No production code change
+**Baseline:** Sprint 28.0 GO at `c36b852`
+
+### Scope
+
+- Docs/checklist only — turns Sprint 28.0 Lane A into an actionable operator-facing checklist.
+- Operator smoke checklist: login/role, patient search, registration, visit creation, RME input, odontogram print, cashier billing, payment receipt, receivable check, report export/print, logout.
+- RME control workflow smoke checklist protecting Sprint 27 GO behavior: same patient/RM, new visit created, old visit/RME/odontogram/invoice not overwritten, parent receivable visible in cashier control, FIFO previous-receivable-first allocation, parent receivable does not block completion, Rp0 invoice excluded from active receivables.
+- Support/admin checklist: Laravel log check, backup presence, disk usage, route/menu quick check, user/role quick check, operator feedback collection notes.
+- GO/NO-GO criteria and recommended Sprint 28 Phase 28.2 options.
+
+### Safety
+
+No deployment, no migration, no destructive data operation, no production code change, and no RME/payment/receivable business rule change.
+
+### Recommended Next Phase
+
+Sprint 28 Phase 28.2 — one of: Pilot daily operation runbook, WhatsApp Reminder & Receivable Follow-up Workflow Planning, or Monitoring/backup/restore rehearsal.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
