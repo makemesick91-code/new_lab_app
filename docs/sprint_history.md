@@ -5790,3 +5790,46 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 29 Phase 29.5 — Pilot Safety Review & Final Stabilization Checklist
+
+**Branch:** `feature/sprint-29-phase-29-5-pilot-safety-review-final-stabilization-checklist`
+**Doc:** `docs/sprint_29_phase_29_5_pilot_safety_review_final_stabilization_checklist.md`
+**Mode:** pilot safety review / final stabilization checklist-test only
+**Production server:** not touched
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.4 GO at `b6334fc`
+
+### Scope
+
+- Consolidates Sprint 29.0–29.4 into a final pilot safety review.
+- Defines the P0/P1 final stabilization checklist.
+- Defines safety gates before Sprint 30.
+- Defines the pilot operational smoke checklist (defined, not executed).
+- Adds a pilot evidence template.
+- Defines Go / Watch / No-Go criteria and a decision matrix.
+
+### Safety
+
+- No production code change.
+- No migration.
+- No deployment.
+- No production/VPS access.
+- No real backup/restore execution.
+- No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier/WhatsApp business rule change.
+
+### Next recommended sprint
+
+Sprint 30 — Pilot Execution Bugfix & Operational Smoke.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
