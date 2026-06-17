@@ -5441,3 +5441,47 @@ Sprint 28 Phase 28.4 — one of: Monitoring/backup/restore rehearsal, WhatsApp r
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 28 Phase 28.4 — Monitoring, Backup & Restore Rehearsal Planning
+
+**Branch:** `feature/sprint-28-phase-28-4-monitoring-backup-restore-rehearsal-planning`
+**Doc:** `docs/sprint_28_phase_28_4_monitoring_backup_restore_rehearsal_planning.md`
+**Mode:** Monitoring / backup / restore rehearsal planning only
+**Deployment:** No deployment
+**Migration:** No migration
+**Production code change:** No production code change
+**Backup execution:** No real backup executed
+**Restore execution:** No real restore executed
+**Baseline:** Sprint 28.3 GO at `7f54016`
+
+### Scope
+
+- Monitoring planning checklist.
+- Backup readiness checklist.
+- Restore rehearsal planning.
+- Restore verification checklist.
+- RME/payment/receivable safety notes.
+- Support/admin daily evidence format.
+- Incident escalation rules.
+- Future implementation candidate backlog.
+- Risk/mitigation and GO/NO-GO.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No real backup execution.
+- No real restore execution.
+- No RME/payment/receivable/cashier business rule change.
+
+### Recommended Next Phase
+
+Sprint 28 Phase 28.5 — one of: Pilot issue triage and stabilization backlog, WhatsApp reminder manual pilot SOP, Monitoring/backup/restore rehearsal execution on a non-production target, or WhatsApp reminder technical design (planning-only).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
