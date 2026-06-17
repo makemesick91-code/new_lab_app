@@ -5566,3 +5566,45 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 29 Phase 29.0 — Pilot Stabilization Backlog Prioritization
+
+**Branch:** `feature/sprint-29-phase-29-0-pilot-stabilization-backlog-prioritization`
+**Doc:** `docs/sprint_29_phase_29_0_pilot_stabilization_backlog_prioritization.md`
+**Mode:** pilot stabilization backlog prioritization only
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**Bug fix execution:** no bug fix implemented
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 28 closure GO at `b55d485`
+
+### Scope
+
+- Uses Sprint 28.0–28.6 outputs as input.
+- Defines prioritization principles.
+- Defines P0/P1/P2/P3/P4/NEEDS CONFIRMATION levels.
+- Defines scoring model.
+- Defines stabilization lanes.
+- Protects RME Control Workflow guardrails.
+- Protects cashier/payment/receivable guardrails.
+- Adds prioritized backlog template.
+- Recommends Sprint 29 candidate phases.
+- Defines GO/NO-GO decision.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production code change.
+- No bug fix implementation.
+- No stabilization implementation.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
