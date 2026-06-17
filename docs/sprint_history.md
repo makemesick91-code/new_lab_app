@@ -6197,3 +6197,65 @@ owner/admin acceptance and unresolved issue severity).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 35 — Production Operations Baseline, Continuous Improvement & Roadmap Lock
+
+**Branch:** `feature/sprint-35-production-operations-baseline-continuous-improvement-roadmap-lock`
+**Doc:** `docs/sprint_35_production_operations_baseline_continuous_improvement_roadmap_lock.md`
+**Mode:** docs / production operations baseline / continuous improvement / roadmap lock checklist-test only
+**Baseline:** Sprint 34 GO at `2b594a3`
+**Real go-live execution:** no real go-live executed
+**Real post-go-live operation:** no real post-go-live operation executed
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Production code change:** no production code change
+**Migration:** no migration
+**Deployment:** no deployment
+**Production/VPS access:** no production/VPS access
+**Runtime behavior change:** no runtime behavior change
+
+### Scope
+
+Sprint 35 converts the Sprint 34 operational closure into an auditable normal operations baseline and
+continuous improvement roadmap lock package. It defines a **production operations baseline**, a
+**support metrics baseline**, a **continuous improvement backlog review**, a **roadmap lock
+framework**, an **ownership and governance model**, and a **long-term operational monitoring policy**.
+It also documents **change control and release governance**, an **incident/support governance
+review**, **operations acceptance gates**, and **evidence templates**, with
+**GO / WATCH / EXTEND SUPPORT / NO-GO** criteria. No real operational execution is performed.
+
+### Go / Watch / Extend Support / No-Go criteria
+
+- **GO** — normal operations baseline accepted; project can transition to governed continuous improvement.
+- **WATCH** — operations continue with active support monitoring and tracked mitigations.
+- **EXTEND SUPPORT** — support/hypercare-like watch continues due to unresolved operational risk or support volume.
+- **NO-GO** — stop baseline closure due to safety, privacy, data integrity, recovery, unresolved P0/P1, support, or acceptance risk.
+
+### Tests / docs summary
+
+- **Tests:** added
+  `tests/Feature/Sprint35/Sprint35ProductionOperationsBaselineContinuousImprovementRoadmapLockTest.php`
+  (checklist/documentation completeness only).
+- **Docs:** added
+  `docs/sprint_35_production_operations_baseline_continuous_improvement_roadmap_lock.md`; updated this
+  history.
+
+### Safety
+
+- Docs/checklist-test only.
+- No real go-live/post-go-live operation execution.
+- No real backup/restore execution.
+- No production/VPS access. No deployment. No migration.
+- No destructive operation. No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change. No runtime behavior change.
+- No route/controller/service/model/view/config/seeder change. No WhatsApp send.
+- No dependency install. No `.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 36 — Operational Governance, Maintenance Cadence & Expansion Readiness (gated by owner/admin
+acceptance, unresolved issue severity, and roadmap lock status).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
