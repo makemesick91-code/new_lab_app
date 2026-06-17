@@ -5740,3 +5740,53 @@ GO CANDIDATE FOR PR REVIEW.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 29 Phase 29.4 — Monitoring Backup Restore Rehearsal on Non-Production Target
+
+**Branch:** `feature/sprint-29-phase-29-4-monitoring-backup-restore-rehearsal-non-production-target`
+**Doc:** `docs/sprint_29_phase_29_4_monitoring_backup_restore_rehearsal_non_production_target.md`
+**Mode:** monitoring backup restore rehearsal planning/SOP only
+**Target:** non-production target only
+**Production server:** not touched
+**Deployment:** no deployment
+**Migration:** no migration
+**Production code change:** no production code change
+**Real backup execution:** no real backup executed
+**Real restore execution:** no real restore executed
+**Backup automation:** no backup automation implemented
+**Monitoring automation:** no monitoring automation implemented
+**Runtime behavior change:** no runtime behavior change
+**Baseline:** Sprint 29.3 GO at `06c5d81`
+
+### Scope
+
+- Defines non-production target rules.
+- Defines monitoring readiness SOP.
+- Defines backup inventory SOP.
+- Defines restore rehearsal SOP on non-production target.
+- Defines data privacy and safety rules.
+- Adds rehearsal evidence template.
+- Adds P0/P1 escalation matrix.
+- Adds pilot daily monitoring checklist.
+- Adds future implementation/rehearsal sequencing.
+- Defines GO/NO-GO decision.
+
+### Safety
+
+- No deployment.
+- No migration.
+- No destructive data operation.
+- No production/VPS access.
+- No real backup execution.
+- No real restore execution.
+- No production code change.
+- No monitoring/backup/restore automation.
+- No cron/scheduler/job/queue/notification change.
+- No runtime behavior change.
+- No RME/payment/receivable/cashier/WhatsApp business rule change.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
