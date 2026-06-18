@@ -6991,3 +6991,68 @@ from active receivables. Overpayment guard preserved. No GO tag.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 48 — Inventory Workflow Audit, Empty-Database Setup & Smoke Test Readiness
+
+**Status:** Local Inventory audit implementation / pending PR.
+**Scope:** Local controlled audit + documentation + checklist regression test only.
+
+**Baseline:** Sprint 47 GO / `cd16bf5`
+(`sprint-47-pilot-health-check-supervised-execution-approval-gate-operator-checklist-go`). Inventory
+audit doc: `docs/sprint_48_inventory_workflow_audit_empty_database_setup_smoke_test_readiness.md`.
+
+Inventory-focused, local-only **Inventory Workflow Audit, Empty-Database Setup & Smoke Test Readiness**.
+RME is considered complete/closed for current planning, and the Pilot Health Check governance loop is
+stopped. Documentation + checklist regression only — no Inventory runtime logic rewritten.
+
+- **Inventory module map reviewed** — models, repositories, services, controllers, requests, policies,
+  routes, views, tests, and permissions under `app/Modules/Inventory/` confirmed at baseline. Core
+  ledger service is `InventoryStockService`; movement types are `OPENING`, `PURCHASE`, `ADJUSTMENT_IN`,
+  `ADJUSTMENT_OUT`, `TRANSFER_IN`, `TRANSFER_OUT`; permissions `view_inventory` / `manage_inventory`
+  plus granular analytics/batch/cross-branch/executive grants.
+- **Empty-database setup workflow + master data input order documented** — branches, users/roles,
+  `view_inventory`/`manage_inventory`, inventory locations, product units, product categories, suppliers,
+  products, then opening stock and stock movements. Migrations/seeders restricted to a safe local/test
+  environment.
+- **Opening stock and ledger stock movement workflow documented** — current stock is ledger-derived
+  (`current stock = stock in - stock out`); no direct stock mutation; opening stock is the first
+  `OPENING` movement after physical count.
+- **Stock receive, stock out, adjustment in/out, stock card, current stock, low stock, and stock opname
+  workflows documented** — including positive-quantity guard, insufficient-stock guard, inactive
+  product/location/supplier guards, expired/insufficient batch guards, and branch isolation as confirmed
+  in `InventoryStockService`.
+- **Smoke-test readiness checklist + empty-database seed/input templates added** — 24-point checklist
+  and illustrative CSV templates (units, categories, locations, suppliers, products, opening stock) for a
+  safe local/test environment, with no real production data, secrets, KTP, or WhatsApp numbers.
+- **Defect/risk register candidates + follow-up recommendation added** — watch-list for negative stock,
+  zero/negative quantity, inactive product/location use, cross-branch leakage, stock-card vs current-stock
+  mismatch, dashboard reconciliation, and opening-stock duplication; recommended follow-up
+  `Sprint 49 — Inventory Bugfix Batch 1 & Workflow Stabilization` only if confirmed bugs are found.
+- **Targeted regression test** —
+  `Sprint48InventoryWorkflowAuditEmptyDatabaseSetupSmokeTestReadinessTest` (doc/history checklist
+  assertions over the Sprint 48 doc + baseline references + module map + empty-database setup principle +
+  master data order + opening stock + stock movement/ledger workflows + smoke-test checklist + seed
+  templates + defect register + safety boundaries + privacy/financial constraints + validation commands).
+
+**Validation:**
+`php artisan test --filter=Sprint48InventoryWorkflowAuditEmptyDatabaseSetupSmokeTestReadiness`,
+optionally `php artisan test tests/Feature/Inventory`, `vendor/bin/pint --test`, `git diff --check`,
+`git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-48-inventory-workflow-audit-empty-database-setup-smoke-test-readiness` /
+`sprint-48-inventory-workflow-audit-empty-database-setup-smoke-test-readiness` (future GO tag
+`sprint-48-inventory-workflow-audit-empty-database-setup-smoke-test-readiness-go` after PR merge only).
+
+**Safety:** Documentation/checklist regression only. No real Inventory data mutation. No direct stock
+mutation — Inventory stock is changed through stock movements / ledger entries only. No deployment. No
+VPS/production/server access. No production database/log/file access. No production command execution.
+No production backup/restore/rollback. No `.env` change. No dependency/package install. No
+migration/schema change. No runtime behavior change. No real production evidence collected. RME
+considered complete/closed for current planning; Pilot Health Check governance loop stopped. KTP remains
+hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded from active receivables.
+Overpayment guard preserved. Financial rules not rewritten. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
