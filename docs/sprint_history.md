@@ -6445,3 +6445,55 @@ workflow improvement based on Sprint 37 roadmap governance and the Sprint 38 RME
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 39 — Cashier, Payment & Receivable Improvement Batch 1
+
+**Baseline:** Sprint 38 GO at `253f025`
+**Doc:** [sprint_39_cashier_payment_receivable_improvement_batch_1.md](sprint_39_cashier_payment_receivable_improvement_batch_1.md)
+**Theme:** First controlled Cashier, Payment & Receivable Improvement Batch 1 — local implementation, targeted regression only.
+
+Sprint 39 follows Sprint 38 RME Workflow Improvement Batch 1 (`253f025`). Discovery confirmed the
+financial baseline already enforces the business rules: `RmeInvoice::remainingAmount()` /
+`refreshInvoiceStatus()` drive PAID/PARTIAL status, overpayment is guarded in both
+`RmePaymentService::pay()` and `CreateRmePaymentRequest`, the receivable queue already excludes
+zero-remaining (fully paid) invoices (status UNPAID/PARTIAL with remaining > 0), and
+`ClinicVisit::hasVerifiedConsent()` already models the cashier consent verification. Sprint 39
+therefore layers **cashier/payment/receivable clarity + regression coverage** on top of that baseline
+rather than rewriting any financial calculation.
+
+**Implemented (local only):**
+- **Cashier verification clarity** — surfaced a read-only `Status Persetujuan Tindakan (TTD)`
+  verification badge (Terverifikasi / Belum Diverifikasi) in the cashier clinical summary, reusing
+  `hasVerifiedConsent()`. Verification status / checklist only — no digital signature, no upload.
+- **Payment/remaining-balance clarity** — confirmed and regression-covered Grand Total, Dibayar,
+  Sisa Tagihan and payment status already shown on the cashier payment screen; preserved overpayment
+  guard messaging.
+- **Receivable/piutang follow-up context** — surfaced patient WA number in the receivable list and
+  follow-up form for manual follow-up context.
+- **WA manual follow-up** — added explicit copy that WhatsApp follow-up is performed manually by the
+  cashier and the system sends no automated WhatsApp message and runs no follow-up automation.
+- **Treatment consent checklist/status visibility** — cashier-facing read-only consent verification
+  status, preserved as checklist verification only.
+- **Zero-remaining receivable exclusion** — preserved and regression-asserted: fully paid /
+  zero-remaining invoices do not appear as active receivables; partially paid ones do.
+- **Overpayment/validation review** — preserved and regression-asserted that a payment exceeding the
+  remaining balance is rejected.
+- **KTP / privacy protection** — confirmed and regression-asserted No. KTP is never rendered in
+  cashier/payment/receivable/receipt views.
+- **Targeted regression tests** — `Sprint39CashierPaymentReceivableImprovementBatch1Test`
+  (doc/history checklist + functional cashier/payment/receivable clarity and privacy assertions).
+
+**Safety:** Local implementation only. No production/VPS access. No deployment. No production
+migration execution. No external WhatsApp send/automation. No signature upload/capture integration.
+No risky financial calculation rewrite. No backup/restore/rollback execution. No destructive
+operation. No `.env` change. No dependency/package install. No GO tag.
+
+### Next recommended sprint
+
+Sprint 40 — Reporting, Export & Owner Dashboard Improvement (controlled reporting/export and
+owner/admin dashboard improvement based on Sprint 37 roadmap governance and the Sprint 39
+cashier/payment/receivable results).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
