@@ -6837,3 +6837,79 @@ Overpayment guard preserved. No GO tag.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 46 — Pilot Health Check Supervised Execution Plan & Evidence Review Pack
+
+**Status:** Local governance implementation / pending PR.
+**Scope:** Documentation + checklist regression test only.
+
+**Baseline:** Sprint 45 GO at `9aa3c11`
+(`sprint-45-pilot-health-check-supervised-readiness-runbook-go-no-go-control-go`). Builds on the
+Sprint 45 pilot health-check supervised readiness runbook and Go/No-Go control baseline
+(`docs/sprint_45_pilot_health_check_supervised_readiness_runbook_go_no_go_control.md`).
+
+Governance-only, local-only **Pilot Health Check Supervised Execution Plan & Evidence Review Pack**.
+Documentation and checklist regression only — no runtime application behavior change, **no real
+pilot health-check execution**. The supervised execution plan is **documentation only, not execution
+approval**, and the evidence review pack is **template only, not real evidence collection**.
+
+- **Supervised execution plan definition + prerequisites** — the plan means a reviewed,
+  owner/admin-approved future workflow describing who may perform checks, what may be observed, what
+  evidence may be recorded, when activity must stop, how incidents escalate, and how Go/No-Go
+  decisions carry forward; it does not authorize execution. Prerequisites confirm base
+  branch/baseline, latest GO tag, Sprint 45 readiness runbook review, reviewer/owner/evidence-reviewer
+  identification, intended-but-not-executed environment/window, forbidden actions, privacy/financial
+  checklists, Go/No-Go carry-forward criteria, abort criteria, escalation path, rollback decision tree
+  (documentation-only), evidence storage/naming, and exit criteria.
+- **Observation-only supervised execution phases** — fourteen review-only phases (pre-execution
+  readiness, scope/environment authorization, privacy/financial briefing, evidence pack preparation,
+  read-only and functional smoke observation, RME/cashier/receivable/reporting observation, manual
+  WhatsApp follow-up observation, incident/escalation review, Go/No-Go carry-forward decision, abort
+  handling, evidence review and acceptance, post-execution review draft, closure/next workflow).
+  Phases are prepared for a future supervised workflow and **not executed in Sprint 46**.
+- **Evidence review pack + acceptance/rejection rules** — governance-only evidence review pack
+  template (Pack ID, prepared by/owner/reviewer/approver, baseline, scope, evidence index, KTP and
+  patient-identifier exposure checks, WA/manual follow-up check, receivable/overpayment checks,
+  incident/escalation review, Go/No-Go carry-forward decision, abort trigger review, risks, sign-off)
+  is template only; no real production screenshots, logs, dumps, secrets, tokens, credentials,
+  patient identifiers, WA numbers, or KTP data collected. Acceptance/rejection rules forbid KTP,
+  unnecessary patient identifiers, secrets/tokens/credentials/`.env`, out-of-scope or
+  production-mutating evidence, and any deployment/backup/restore/rollback/automation or WhatsApp
+  API/send activity.
+- **Go/No-Go carry-forward, sign-off workflow + approval gates** — Sprint 45 Go/No-Go result must be
+  reviewed before any future execution; Conditional Go needs named conditions/owner/deadline/re-review;
+  No-Go needs documented blockers; abort criteria override any Go. Operational sign-off workflow
+  (prepare plan → confirm baseline/GO tag → review Sprint 45 runbook → review scope/forbidden actions
+  → review privacy/financial constraints → review Go/No-Go and abort criteria → review
+  acceptance/rejection rules → review escalation → record risks → owner/admin decision → document next
+  workflow → close) does not authorize deployment/VPS/production/backup/restore/rollback/automation or
+  real execution. Incident escalation and rollback decision gates are review-only; a post-execution
+  review template is provided for a future approved workflow and is not filled with production
+  evidence.
+- **Targeted regression tests** —
+  `Sprint46PilotHealthCheckSupervisedExecutionPlanEvidenceReviewPackTest` (doc/history checklist
+  assertions over the Sprint 46 doc + baseline references + supervised execution plan / evidence
+  review pack structure + Go/No-Go carry-forward + safety boundaries + privacy/financial constraints
+  + validation commands).
+
+**Validation:**
+`php artisan test --filter=Sprint46PilotHealthCheckSupervisedExecutionPlanEvidenceReviewPack`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-46-pilot-health-check-supervised-execution-plan-evidence-review-pack` /
+`sprint-46-pilot-health-check-supervised-execution-plan-evidence-review-pack` (future GO tag
+`sprint-46-pilot-health-check-supervised-execution-plan-evidence-review-pack-go` after PR merge only).
+
+**Safety:** Documentation/checklist regression only. Supervised execution plan is documentation only
+(not execution approval); evidence review pack is template only (not real evidence collection). No
+real pilot health-check execution. No production/VPS/server access. No database/log/file access. No
+deployment. No production command execution. No production backup execution. No production restore
+execution. No rollback execution. No external monitoring integration. No scheduler/queue/cron
+automation. No `.env` change. No dependency/package install. No migration/schema change. No runtime
+behavior change. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded
+from active receivables. Overpayment guard preserved. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
