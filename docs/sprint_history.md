@@ -6913,3 +6913,81 @@ from active receivables. Overpayment guard preserved. No GO tag.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 47 — Pilot Health Check Supervised Execution Approval Gate & Operator Checklist
+
+**Status:** Local governance implementation / pending PR.
+**Scope:** Documentation + checklist regression test only.
+
+**Baseline:** Sprint 46 GO at `8130050`
+(`sprint-46-pilot-health-check-supervised-execution-plan-evidence-review-pack-go`). Builds on the
+Sprint 46 pilot health-check supervised execution plan and evidence review pack baseline
+(`docs/sprint_46_pilot_health_check_supervised_execution_plan_evidence_review_pack.md`).
+
+Governance-only, local-only **Pilot Health Check Supervised Execution Approval Gate & Operator
+Checklist**. Documentation and checklist regression only — no runtime application behavior change,
+**no real pilot health-check execution**. The supervised execution approval gate is **documentation
+only, not execution authorization**, and the operator checklist is **template only, not a command to
+perform real execution**.
+
+- **Supervised execution approval gate + prerequisites** — the approval gate means the team has
+  reviewed and signed off the future supervised health-check scope, operator responsibilities,
+  evidence handling rules, stop/abort triggers, escalation path, and Go/No-Go carry-forward before any
+  future real activity may occur; it does not authorize execution. Prerequisites confirm base
+  branch/baseline, latest GO tag, Sprint 46 execution-plan and evidence-review-pack review,
+  approver/owner/operator/evidence-reviewer/communication-channel identification, intended-but-not-executed
+  future environment/window, forbidden actions, privacy/financial checklists, Go/No-Go carry-forward,
+  abort criteria, escalation path, rollback decision tree (documentation-only), evidence storage/naming,
+  and exit criteria.
+- **Approval matrix + operator role boundaries** — role responsibilities (owner/admin approver,
+  execution owner, operator, evidence reviewer, observer/recorder) defined for a future workflow only;
+  in Sprint 47 no operator performs real production checks and no operator accesses VPS/production/server/
+  database/logs/files/backups/live services or executes deployment/backup/restore/rollback/queue/cron/
+  scheduler/production commands.
+- **Operator readiness checklist + checklist phases** — readiness items (Sprint 45 runbook + Sprint 46
+  plan read, approval-gate boundaries, no execution in Sprint 47, privacy/KTP-hidden, WA manual-only,
+  receivable/overpayment rules, no financial rewrite, evidence accept/reject, stop/abort, escalation,
+  handoff) and seventeen operator checklist phases prepared for a future supervised workflow and **not
+  executed in Sprint 47**.
+- **Evidence handling + acceptance/rejection reminders** — operator records only approved observations;
+  no KTP, unnecessary patient identifiers, secrets/tokens/credentials/`.env`, database dumps, raw logs,
+  or WA numbers recorded; evidence labeled with scope/reviewer/date/source and distinguishes observation
+  from execution; rejection reminders forbid out-of-scope/production-mutating evidence and any
+  deployment/backup/restore/rollback/automation or WhatsApp API/send activity.
+- **Stop/abort gates, escalation, Go/No-Go carry-forward, sign-off + approval gates** — stop/abort on
+  any unauthorized production access, production mutation, secret/KTP/WA/patient-identifier exposure,
+  required backup/restore/rollback/deployment, automation introduction, WhatsApp API/send, financial
+  rule change, missing sign-off, unsafe evidence, unclear operator role, unavailable communication
+  channel, or failed safety gates. Communication/escalation, Go/No-Go carry-forward (Sprint 45 result +
+  Sprint 46 control reviewed before any future execution; abort overrides any Go), operational sign-off
+  workflow, approval gates, incident escalation/rollback decision gates (review-only), and a post-check
+  operator handoff template are provided for a future approved workflow and not filled with production
+  evidence.
+- **Targeted regression tests** —
+  `Sprint47PilotHealthCheckSupervisedExecutionApprovalGateOperatorChecklistTest` (doc/history checklist
+  assertions over the Sprint 47 doc + baseline references + approval gate / operator checklist / approval
+  matrix structure + Go/No-Go carry-forward + stop/abort gates + safety boundaries + privacy/financial
+  constraints + validation commands).
+
+**Validation:**
+`php artisan test --filter=Sprint47PilotHealthCheckSupervisedExecutionApprovalGateOperatorChecklist`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-47-pilot-health-check-supervised-execution-approval-gate-operator-checklist` /
+`sprint-47-pilot-health-check-supervised-execution-approval-gate-operator-checklist` (future GO tag
+`sprint-47-pilot-health-check-supervised-execution-approval-gate-operator-checklist-go` after PR merge
+only).
+
+**Safety:** Documentation/checklist regression only. Supervised execution approval gate is documentation
+only (not execution authorization); operator checklist is template only (not a command to perform real
+execution). No real pilot health-check execution. No production/VPS/server access. No database/log/file
+access. No deployment. No production command execution. No production backup execution. No production
+restore execution. No rollback execution. No external monitoring integration. No scheduler/queue/cron
+automation. No `.env` change. No dependency/package install. No migration/schema change. No runtime
+behavior change. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded
+from active receivables. Overpayment guard preserved. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
