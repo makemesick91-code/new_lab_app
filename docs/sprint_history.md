@@ -6770,3 +6770,70 @@ receivables remain excluded from active receivables. Overpayment guard preserved
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 45 — Pilot Health Check Supervised Readiness Runbook & Go/No-Go Control
+
+**Status:** Local governance implementation / pending PR.
+**Scope:** Documentation + checklist regression test only.
+
+**Baseline:** Sprint 44 GO at `f1debae`
+(`sprint-44-pilot-health-check-dry-run-evidence-package-operational-sign-off-go`). Builds on the
+Sprint 44 pilot health-check dry-run evidence package and operational sign-off baseline
+(`docs/sprint_44_pilot_health_check_dry_run_evidence_package_operational_sign_off.md`).
+
+Governance-only, local-only **Pilot Health Check Supervised Readiness Runbook & Go/No-Go Control**.
+Documentation and checklist regression only — no runtime application behavior change, **no real
+pilot health-check execution**. The supervised readiness runbook is **documentation only, not
+execution approval**, and the Go/No-Go control is **governance only, not deployment authorization**.
+
+- **Supervised readiness definition + prerequisites** — readiness means a reviewed runbook,
+  owner/admin approval gates, evidence checklist, Go/No-Go criteria, abort criteria, escalation path,
+  and post-review plan; it does not authorize execution. Prerequisites confirm base branch/baseline,
+  previous GO tag, Sprint 44 dry-run evidence review, reviewer/environment owner identification,
+  proposed-but-not-executed window, forbidden actions, privacy/financial checklists, escalation path,
+  rollback decision tree (documentation-only), and exit criteria.
+- **Supervised pilot health-check runbook phases** — twelve review-only phases (pre-check readiness,
+  scope/environment confirmation, privacy/safety briefing, evidence preparation, read-only and
+  functional smoke checklist reviews, incident/escalation scenario review, Go/No-Go decision,
+  conditional Go follow-up, No-Go/abort handling, post-review documentation, closure/next workflow).
+  Phases are prepared for a future supervised workflow and **not executed in Sprint 45**.
+- **Go/No-Go control framework** — governance-only Go, Conditional Go, No-Go, and Abort criteria with
+  owner/admin sign-off, gated behind a separate explicitly approved supervised workflow before any
+  execution. Evidence checklist (Package ID, reviewer/approver, baseline, scope, read-only/functional
+  smoke checks, KTP exposure check, WA/manual follow-up check, receivable/overpayment checks,
+  escalation review, Go/No-Go decision, conditions, abort triggers, risks, final sign-off) is template
+  only; no real production screenshots, logs, dumps, secrets, tokens, credentials, patient
+  identifiers, or KTP data collected.
+- **Operational sign-off workflow + approval gates** — prepare runbook → confirm baseline/GO tag →
+  review Sprint 44 evidence template → review scope/forbidden actions → review privacy/financial
+  constraints → review Go/No-Go and abort criteria → review escalation → record risks → owner/admin
+  decision (Go/Conditional Go/No-Go) → document next supervised workflow → close. Production/VPS/
+  server/backup/restore/rollback/deployment/automation gated behind separate supervised, approved
+  workflows. Incident escalation and rollback decision gates are review-only: observe → classify →
+  escalate → decide → rollback-tree-review-only → execute-only-if-approved → document → post-review.
+- **Targeted regression tests** —
+  `Sprint45PilotHealthCheckSupervisedReadinessRunbookGoNoGoControlTest` (doc/history checklist
+  assertions over the Sprint 45 doc + baseline references + supervised readiness/runbook/Go-No-Go
+  structure + safety boundaries + privacy/financial constraints + validation commands).
+
+**Validation:**
+`php artisan test --filter=Sprint45PilotHealthCheckSupervisedReadinessRunbookGoNoGoControl`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-45-pilot-health-check-supervised-readiness-runbook-go-no-go-control` /
+`sprint-45-pilot-health-check-supervised-readiness-runbook-go-no-go-control` (future GO tag
+`sprint-45-pilot-health-check-supervised-readiness-runbook-go-no-go-control-go` after PR merge only).
+
+**Safety:** Documentation/checklist regression only. Supervised readiness runbook is documentation
+only (not execution approval); Go/No-Go control is governance only (not deployment authorization). No
+real pilot health-check execution. No production/VPS/server access. No deployment. No production
+command execution. No production backup execution. No production restore execution. No rollback
+execution. No external monitoring integration. No scheduler/queue/cron automation. No `.env` change.
+No dependency/package install. No migration/schema change. No runtime behavior change. KTP remains
+hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded from active receivables.
+Overpayment guard preserved. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
