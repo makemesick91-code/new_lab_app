@@ -6602,3 +6602,53 @@ safety gates — without executing real production backup/restore unless separat
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 42 — Monitoring, Backup & Recovery Governance Hardening
+
+**Baseline:** Sprint 41 GO at `19e5f74` (`sprint-41-whatsapp-manual-reminder-operationalization-follow-up-workflow-go`).
+Builds on Sprint 40 GO at `8647b0f` and the existing monitoring/backup/restore governance docs
+(`backup_restore_rehearsal_plan.md`, `non_production_restore_runbook.md`, Sprint 25/28/29/31/36
+operational baselines).
+
+Governance-only, local-only **Monitoring, Backup & Recovery Governance Hardening**. Documentation and
+checklist regression only — no runtime application behavior change, no real operation executed.
+
+- **Monitoring governance hardening** — defined daily/weekly monitoring evidence review covering
+  Laravel log review, queue/scheduler review (review-only), application health, database health, disk/
+  storage headroom, and owner/admin dashboard/reporting continuity; no external monitoring integration.
+- **Backup governance hardening** — defined database and runtime-file backup evidence expectations,
+  backup inventory checklist, retention review, integrity-check expectation, and secure location note;
+  no real backup executed.
+- **Recovery readiness governance** — documented recovery objective notes, restore rehearsal
+  prerequisites, non-production restore target requirement, data-loss/partial-restore risk review, and
+  stakeholder approval requirement; no real restore executed.
+- **Restore rehearsal approval gates** — approval required first, non-production target, identified
+  backup source, isolated environment, documented rollback path, prepared validation checklist, and
+  recorded success/failure evidence.
+- **Incident escalation and rollback decision gates** — severity levels, owner/operator
+  responsibility, communication path, rollback/no-rollback criteria, evidence capture, and
+  post-incident review.
+- **Evidence checklist** — Area / Evidence / Cadence / Owner / Status matrix across application health,
+  Laravel logs, database health, disk/storage, backup inventory, backup integrity, recovery readiness,
+  restore rehearsal readiness, incident escalation, and rollback decision gate.
+- **Review cadence** — daily, weekly, per-backup-cycle, pre-rehearsal, per-incident, and per-sprint
+  governance review.
+- **Targeted regression tests** — `Sprint42MonitoringBackupRecoveryGovernanceHardeningTest`
+  (doc/history checklist assertions over the Sprint 42 doc + baseline references + safety boundaries +
+  PR marker + Sprint 43 recommendation).
+
+**Safety:** Documentation/checklist regression only. No production/VPS access. No deployment. No
+production migration. No production backup execution. No production restore execution. No rollback
+execution. No external monitoring integration. No scheduler/queue/cron automation. No `.env` change.
+No dependency/package install. No GO tag.
+
+### Next recommended sprint
+
+Sprint 43 — Operational Monitoring Evidence Review & Pilot Health Check (controlled local
+documentation/evidence review or supervised pilot health-check preparation, exercising the Sprint 42
+cadence and evidence checklist — without production access or real backup/restore/rollback unless
+separately approved).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
