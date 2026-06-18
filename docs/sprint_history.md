@@ -6398,3 +6398,50 @@ no production deployment until reviewed).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 38 — RME Workflow Improvement Batch 1
+
+**Baseline:** Sprint 37 GO at `078be4e`
+**Doc:** [sprint_38_rme_workflow_improvement_batch_1.md](sprint_38_rme_workflow_improvement_batch_1.md)
+**Theme:** First controlled RME Workflow Improvement Batch 1 — local implementation, targeted regression only.
+
+Sprint 38 executes the RME Workflow Improvement Batch 1 selected by Sprint 37 controlled roadmap
+governance. Discovery confirmed the functional baseline already exists from earlier RME format work:
+`mst_patients.ktp_number` (nullable, unique) and `whatsapp_number`, duplicate-KTP blocking in
+`StorePatientRequest`/`UpdatePatientRequest` (and the RME new-patient visit flow), KTP hidden from
+RME visit detail/print, and the cashier Surat Persetujuan Tindakan consent checklist enforced in
+`RmePaymentService`. Sprint 38 therefore layers **workflow clarity** on top of that baseline rather
+than reworking it.
+
+**Implemented (local only):**
+- **KTP / identity handling** — confirmed `ktp_number` binds patient identity; reused existing field;
+  no schema change required.
+- **Duplicate identity validation** — confirmed and regression-covered for patient create, patient
+  update (including keeping the patient's own KTP), and the RME new-patient visit flow.
+- **WA workflow clarity** — added operational help text on the patient form and RME new-patient
+  visit form explaining WhatsApp number is used for visit attendance confirmation and
+  receivable/piutang follow-up, and that the system sends no automated WhatsApp message. WA usage
+  context also surfaced on the RME visit detail.
+- **Treatment consent checklist clarity** — surfaced a cashier-facing, read-only `TTD Surat
+  Persetujuan Tindakan` verification status on the RME visit detail (verified / not yet verified),
+  reusing the existing `hasVerifiedConsent()` helper. No digital signature, no upload.
+- **RME print / privacy protection** — confirmed and regression-asserted that No. KTP is never
+  rendered on RME visit detail or print output; only WA appears where operationally intended.
+- **Targeted regression tests** — `Sprint38RmeWorkflowImprovementBatch1Test` (doc/history checklist
+  + clarity-copy assertions) plus the existing `RmePatientFormatConsentTest` functional coverage.
+
+**Safety:** Local implementation only. No production/VPS access. No deployment. No production
+migration execution. No external WhatsApp send/automation. No signature upload/capture integration.
+No backup/restore/rollback execution. No destructive operation. No `.env` change. No
+dependency/package install. No GO tag.
+
+### Next recommended sprint
+
+Sprint 39 — Cashier, Payment & Receivable Improvement Batch 1 (controlled cashier/payment/receivable
+workflow improvement based on Sprint 37 roadmap governance and the Sprint 38 RME workflow results).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.

@@ -98,6 +98,7 @@
         <label class="block text-sm font-medium text-gray-700">Nomor WA</label>
         <input type="text" name="whatsapp_number" value="{{ old('whatsapp_number', $patient?->whatsapp_number) }}" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
         @error('whatsapp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        <p class="mt-1 text-xs text-gray-500">Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.</p>
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">E-Mail</label>
