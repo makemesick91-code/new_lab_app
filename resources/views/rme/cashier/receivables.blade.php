@@ -4,13 +4,17 @@
             <div>
                 <h1 class="text-xl font-semibold text-gray-900">Piutang RME</h1>
                 <p class="mt-1 text-sm text-gray-500">
-                    Monitoring tagihan RME aktif dengan status belum dibayar atau cicilan.
+                    Monitoring tagihan RME aktif dengan status belum dibayar atau cicilan. Tagihan lunas (sisa tagihan Rp 0) tidak ditampilkan sebagai piutang aktif.
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <x-ui.button variant="secondary" :href="route('rme.cashier.receivables.export', request()->query())">Export CSV</x-ui.button>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.index')">Kembali ke Kasir RME</x-ui.button>
             </div>
+        </div>
+
+        <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Follow-up WhatsApp dilakukan manual oleh kasir menggunakan Nomor WA pasien. Sistem tidak mengirim pesan WhatsApp otomatis dan tidak melakukan otomasi follow-up.
         </div>
 
         <div class="grid gap-4 md:grid-cols-4">
@@ -179,6 +183,7 @@
                             <td class="px-4 py-3">
                                 <p class="font-medium text-gray-900">{{ $invoice->patient?->name ?? '-' }}</p>
                                 <p class="text-xs text-gray-500">{{ $invoice->clinicVisit?->visit_number ?? '-' }}</p>
+                                <p class="text-xs text-gray-500">WA: {{ $invoice->patient?->whatsapp_number ?? '—' }}</p>
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-700">{{ $invoice->branch?->code }} — {{ $invoice->branch?->name }}</td>
                             <td class="px-4 py-3">

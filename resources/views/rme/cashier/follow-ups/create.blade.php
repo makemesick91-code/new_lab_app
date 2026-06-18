@@ -46,10 +46,17 @@
                     <dd class="text-gray-900">{{ $invoice->branch?->code }} — {{ $invoice->branch?->name }}</dd>
                 </div>
                 <div>
+                    <dt class="text-gray-500">Nomor WA</dt>
+                    <dd class="text-gray-900">{{ $invoice->patient?->whatsapp_number ?? '—' }}</dd>
+                </div>
+                <div>
                     <dt class="text-gray-500">Sisa Tagihan</dt>
                     <dd class="text-base font-bold text-amber-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
                 </div>
             </dl>
+            <p class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Follow-up WhatsApp dilakukan manual oleh kasir. Sistem tidak mengirim pesan WhatsApp otomatis dan tidak melakukan otomasi follow-up.
+            </p>
         </x-ui.card>
 
         <x-ui.card title="Form Follow-up">
