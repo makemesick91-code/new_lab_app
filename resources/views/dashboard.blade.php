@@ -541,8 +541,9 @@
                         <div>
                             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                                 <h4 class="text-base font-semibold text-gray-900">Ringkasan Piutang per Cabang</h4>
-                                <p class="text-xs text-gray-500">Sisa piutang invoice RME aktif (UNPAID + PARTIAL) per cabang</p>
+                                <p class="text-xs text-gray-500">Sisa piutang invoice RME aktif (UNPAID + PARTIAL) per cabang. Invoice lunas (sisa nol) tidak dihitung sebagai piutang aktif.</p>
                             </div>
+                            <p class="mb-3 text-xs text-gray-500">Tindak lanjut piutang dilakukan manual oleh operator (tanpa pengiriman WhatsApp otomatis).</p>
 
                             @if (collect($ownerRmeLabBranchReceivableSummary)->isEmpty())
                                 <div class="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center">

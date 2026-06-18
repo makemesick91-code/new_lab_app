@@ -6497,3 +6497,57 @@ cashier/payment/receivable results).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 40 — Reporting, Export & Owner Dashboard Improvement
+
+**Baseline:** Sprint 39 GO at `1097d98`
+**Doc:** [sprint_40_reporting_export_owner_dashboard_improvement.md](sprint_40_reporting_export_owner_dashboard_improvement.md)
+**Theme:** First controlled Reporting, Export & Owner Dashboard Improvement — local implementation, targeted regression only.
+
+Sprint 40 follows Sprint 39 Cashier, Payment & Receivable Improvement Batch 1 (`1097d98`). Discovery
+confirmed a mature reporting/dashboard baseline: the Owner Dashboard (`HomeDashboardController` +
+`OwnerDashboardRmeLabKpiService`) already separates visit/RME, cashier/payment, and receivable/piutang
+KPIs; RME and lab report/export/print routes already exist (`rme.reports.*`, `ExportReportController`,
+`rme.cashier.receivables.export`, `rme.visits.pdf` via existing `barryvdh/laravel-dompdf`); active
+receivables already exclude zero-remaining (fully paid) invoices; and KTP is not rendered in
+dashboard/report/export views. Sprint 40 therefore layers **reporting/dashboard clarity + regression
+coverage** on top of that baseline rather than introducing new export infrastructure or rewriting any
+financial calculation.
+
+**Implemented (local only):**
+- **Reporting overview clarity** — added a clarifying caption to the Owner Dashboard "Ringkasan Piutang
+  per Cabang" section stating that fully-paid (zero-remaining) invoices are not counted as active
+  receivables and that follow-up is performed manually.
+- **Export consistency** — reused and documented existing export/print routes; no new export/PDF package
+  installed, no new export infrastructure introduced.
+- **Owner/admin dashboard KPI visibility** — preserved and regression-covered the existing visit /
+  cashier-pending / unpaid-invoice / receivable-remaining / follow-up KPI cards, branch-aware via the
+  Owner branch filter.
+- **Receivable/payment reporting continuity** — Sprint 39 receivable/payment clarity flows into the
+  dashboard; active receivables remain `UNPAID + PARTIAL` only with remaining floored at 0.
+- **WA manual follow-up context** — dashboard explicitly states follow-up is manual with no automatic
+  WhatsApp send; no WhatsApp message sent, no automation added.
+- **KTP / privacy protection** — confirmed and regression-asserted No. KTP is never rendered on the
+  Owner Dashboard / reporting views.
+- **Zero-remaining receivable exclusion** — preserved and regression-asserted at the dashboard service
+  level: fully-paid invoices are excluded from active receivable counts/totals.
+- **Permission/authorization review** — Owner Dashboard access still requires
+  `view_owner_dashboard | manage_report`; regression test confirms unauthorized users do not see KPI
+  content.
+- **Targeted regression tests** — `Sprint40ReportingExportOwnerDashboardImprovementTest`
+  (doc/history checklist + functional dashboard KPI/privacy/zero-remaining assertions).
+
+**Safety:** Local implementation only. No production/VPS access. No deployment. No production migration
+execution. No external WhatsApp send/automation. No new export/PDF dependency. No risky financial
+calculation rewrite. No backup/restore/rollback execution. No destructive operation. No `.env` change.
+No dependency/package install. No GO tag.
+
+### Next recommended sprint
+
+Sprint 41 — WhatsApp Manual Reminder Operationalization & Follow-up Workflow (controlled manual reminder
+workflow, follow-up logging, reminder templates, operator SOP, with an explicit no-automation/no-send
+boundary unless separately approved later).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
