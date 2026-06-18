@@ -6710,3 +6710,63 @@ backup/restore/rollback unless separately approved).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 44 — Pilot Health Check Dry-Run Evidence Package & Operational Sign-off
+
+**Status:** Local governance implementation / pending PR.
+**Scope:** Documentation + checklist regression test only.
+
+**Baseline:** Sprint 43 GO at `5c2d8b5`
+(`sprint-43-operational-monitoring-evidence-review-pilot-health-check-go`). Builds on the Sprint 43
+operational monitoring evidence review and pilot health-check readiness baseline
+(`docs/sprint_43_operational_monitoring_evidence_review_pilot_health_check.md`).
+
+Governance-only, local-only **Pilot Health Check Dry-Run Evidence Package & Operational Sign-off**.
+Documentation and checklist regression only — no runtime application behavior change, **no real
+pilot health-check execution**. The evidence package is a **dry-run template only**, and operational
+sign-off is a **governance checklist only** (not permission to execute production actions).
+
+- **Pilot health-check dry-run checklist** — review-only items confirming approved dry-run scope, that
+  the target environment is not accessed, no production command execution, no deployment/maintenance,
+  no backup/restore/rollback execution, review-only route/login/role and RME/cashier/receivable/
+  reporting checks, no patient KTP exposure, manual WhatsApp follow-up, preserved zero-remaining
+  receivable and overpayment-guard rules, escalation reviewed only, owner/admin sign-off fields, and
+  next supervised workflow requirements.
+- **Dry-run evidence package template** — template fields (Evidence Package ID, prepared by/reviewer/
+  approver, scope, checklist version, evidence index, KTP exposure check, WA/manual follow-up check,
+  receivable/overpayment checks, escalation review, open risks, approval decision, sign-off
+  timestamp). Screenshots/log excerpts are placeholders only; no real production screenshots, logs,
+  dumps, secrets, or patient identifiers collected.
+- **Evidence package naming convention** — suggested
+  `docs/evidence/sprint-44/YYYY-MM-DD-pilot-health-check-dry-run/` convention only; not a command to
+  collect production data; no secrets/KTP.
+- **Operational sign-off workflow + approval gates** — prepare checklist → review scope/forbidden
+  actions → review template → review privacy/financial constraints → review escalation → record risks
+  → owner/admin review → approve/approve-with-conditions/reject → document next supervised workflow →
+  close. Production/VPS/backup/restore/rollback/deployment/automation gated behind separate supervised,
+  approved workflows. Incident escalation dry-run gates: observe → classify → escalate → decide →
+  execute-only-if-approved → document → post-review.
+- **Targeted regression tests** —
+  `Sprint44PilotHealthCheckDryRunEvidencePackageOperationalSignOffTest` (doc/history checklist
+  assertions over the Sprint 44 doc + baseline references + dry-run/sign-off structure + safety
+  boundaries + privacy/financial constraints + validation commands).
+
+**Validation:**
+`php artisan test --filter=Sprint44PilotHealthCheckDryRunEvidencePackageOperationalSignOff`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-44-pilot-health-check-dry-run-evidence-package-operational-sign-off` /
+`sprint-44-pilot-health-check-dry-run-evidence-package-operational-sign-off` (future GO tag
+`sprint-44-pilot-health-check-dry-run-evidence-package-operational-sign-off-go` after PR merge only).
+
+**Safety:** Documentation/checklist regression only. Dry-run evidence package template only. No real
+pilot health-check execution. No production/VPS access. No deployment. No production migration. No
+production backup execution. No production restore execution. No rollback execution. No external
+monitoring integration. No scheduler/queue/cron automation. No `.env` change. No dependency/package
+install. No runtime behavior change. KTP remains hidden. WhatsApp manual-only. Zero-remaining
+receivables remain excluded from active receivables. Overpayment guard preserved. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
