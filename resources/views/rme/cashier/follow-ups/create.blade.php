@@ -59,6 +59,41 @@
             </p>
         </x-ui.card>
 
+        @php
+            // Sprint 41 — manual WhatsApp helper (client-side only; server never sends/calls any API).
+            $waRaw = (string) ($invoice->patient?->whatsapp_number ?? '');
+            $waDigits = preg_replace('/\D+/', '', $waRaw);
+            if ($waDigits !== '' && str_starts_with($waDigits, '0')) {
+                $waDigits = '62' . substr($waDigits, 1);
+            }
+            // Privacy-safe draft — patient name, invoice, remaining, branch only. Never No. KTP / identity number.
+            $waDraft = 'Halo ' . ($invoice->patient?->name ?? 'Bapak/Ibu') . ', '
+                . 'kami dari ' . trim(($invoice->branch?->name ?? 'klinik')) . ' '
+                . 'ingin mengingatkan tagihan RME No. ' . $invoice->invoice_number . ' '
+                . 'dengan sisa Rp ' . number_format($remainingAmount, 0, ',', '.') . '. '
+                . 'Mohon konfirmasi jadwal pembayaran. Terima kasih.';
+            $waLink = $waDigits !== '' ? 'https://wa.me/' . $waDigits . '?text=' . rawurlencode($waDraft) : null;
+        @endphp
+
+        <x-ui.card title="Bantuan Pengingat WhatsApp (Manual)">
+            <p class="text-sm text-gray-500">
+                Teks di bawah hanya bantuan untuk disalin manual oleh kasir. Operator meninjau lalu mengirim sendiri lewat WhatsApp.
+                Sistem tidak mengirim pesan, tidak memanggil API WhatsApp, dan tidak menyimpan No. KTP / identitas pada pesan.
+            </p>
+            <textarea readonly rows="4"
+                class="mt-3 block w-full max-w-xl rounded-md border-gray-300 bg-gray-50 text-sm text-gray-800 shadow-sm">{{ $waDraft }}</textarea>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+                @if ($waLink)
+                    <a href="{{ $waLink }}" target="_blank" rel="noopener noreferrer"
+                        class="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-3 py-2 text-sm font-medium text-green-800 hover:bg-green-100">
+                        Buka Draf WhatsApp (tinjau &amp; kirim manual)
+                    </a>
+                @else
+                    <span class="text-xs text-gray-400">Nomor WA pasien belum tersedia — salin teks dan kirim manual.</span>
+                @endif
+            </div>
+        </x-ui.card>
+
         <x-ui.card title="Form Follow-up">
             <form method="POST" action="{{ route('rme.cashier.receivables.follow-ups.store', $invoice) }}" class="space-y-5">
                 @csrf

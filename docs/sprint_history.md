@@ -6551,3 +6551,54 @@ boundary unless separately approved later).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 41 — WhatsApp Manual Reminder Operationalization & Follow-up Workflow
+
+**Baseline:** Sprint 40 GO at `8647b0f` (`sprint-40-reporting-export-owner-dashboard-improvement-go`).
+Builds on Sprint 39 GO at `1097d98` and the existing RME receivable follow-up workflow (Sprint 24
+Phase 24.8) plus the existing `WaReminderTemplate` module (Sprint 19 Phase 5).
+
+Controlled, local-only **WhatsApp Manual Reminder Operationalization & Follow-up Workflow**. Small,
+additive, fully manual — no message is ever sent by the system.
+
+- **Manual WhatsApp reminder clarity** — added a dedicated manual WhatsApp helper card to the RME
+  receivable follow-up create view stating the text is copy-only and the operator reviews and sends
+  manually.
+- **Follow-up logging workflow** — reused the existing `RmeReceivableFollowUp` model/controller/
+  request/view; context (patient name, WA number, invoice/receivable, status, channel, note,
+  contacted date, next follow-up date) already supported, no schema change.
+- **Reminder template guidance** — reused the existing `WaReminderTemplate` module; sharpened the
+  template index safety notice to operator-facing copy-only / manual send / no WhatsApp API / no KTP.
+- **Receivable/piutang follow-up continuity** — receivables list keeps the manual WA disclaimer, WA
+  number, last/next follow-up context, and follow-up entry point; no receivable query/service changed.
+- **Dashboard/reporting continuity** — no dashboard/reporting code changed; Owner Dashboard receivable
+  follow-up KPI remains branch-aware and intact.
+- **WA manual follow-up context** — added a privacy-safe copyable draft (patient name, branch, invoice
+  number, remaining balance) and a clearly-labeled client-side `wa.me` manual link; server never sends
+  or calls any external API.
+- **KTP / privacy protection** — manual draft, helper card, and template guidance never include No.
+  KTP / identity number; regression-asserted.
+- **Zero-remaining receivable exclusion** — preserved; paid/zero-remaining invoices stay excluded from
+  active receivables, partial/unpaid stay visible; regression-asserted.
+- **Permission/authorization review** — reused `manage_rme_billing` and existing follow-up policy /
+  branch isolation; unauthorized users and non-RME-branch invoices remain forbidden; no permission
+  added or relaxed.
+- **Targeted regression tests** — `Sprint41WhatsAppManualReminderOperationalizationFollowUpWorkflowTest`
+  (doc/history checklist + functional manual-helper / `wa.me` / KTP-privacy / zero-remaining /
+  authorization assertions).
+
+**Safety:** Local implementation only. No production/VPS access. No deployment. No production migration
+execution. No external WhatsApp send/automation. No WhatsApp API integration. No queue/job/cron/
+scheduler automation. No new notification provider. No new dependency/package install. No risky
+financial calculation rewrite. No backup/restore/rollback execution. No destructive operation. No
+`.env` change. No GO tag.
+
+### Next recommended sprint
+
+Sprint 42 — Monitoring, Backup & Recovery Governance Hardening (controlled monitoring evidence review,
+backup/recovery governance hardening, restore readiness documentation, operational review cadence and
+safety gates — without executing real production backup/restore unless separately approved).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
