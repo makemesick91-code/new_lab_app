@@ -1,8 +1,10 @@
 <x-settings-shell title="Template Reminder WA">
     <div class="space-y-4">
-        {{-- Safety notice --}}
+        {{-- Safety notice (Sprint 41 — manual operationalization clarity) --}}
         <div class="rounded-md border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
-            <strong>Perhatian:</strong> Template ini hanya master data. Sistem belum mengirim WhatsApp otomatis pada fase ini.
+            <strong>Perhatian:</strong> Template ini hanya teks bantuan untuk operator. Operator menyalin teks secara manual ke WhatsApp,
+            lalu meninjau dan mengirim sendiri. Sistem belum mengirim WhatsApp otomatis dan tidak terhubung ke API WhatsApp.
+            Jangan memasukkan No. KTP / nomor identitas ke dalam isi template.
         </div>
 
         <div class="bg-white shadow-sm sm:rounded-lg">
