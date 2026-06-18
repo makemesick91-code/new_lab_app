@@ -6652,3 +6652,61 @@ separately approved).
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 43 — Operational Monitoring Evidence Review & Pilot Health Check
+
+**Status:** Local governance implementation / pending PR.
+**Scope:** Documentation + checklist regression test only.
+
+**Baseline:** Sprint 42 GO at `5876070`
+(`sprint-42-monitoring-backup-recovery-governance-hardening-go`). Builds on the Sprint 42
+monitoring/backup/recovery governance baseline
+(`docs/sprint_42_monitoring_backup_recovery_governance_hardening.md`).
+
+Governance-only, local-only **Operational Monitoring Evidence Review & Pilot Health Check**.
+Documentation and checklist regression only — no runtime application behavior change, no real
+operation executed.
+
+- **Operational monitoring evidence review checklist** — review-only evidence rows covering app
+  availability, Laravel log review, queue/scheduler status review (review-only), database
+  connectivity, storage permission, backup inventory observation, restore rehearsal readiness,
+  incident log summary, manual sign-off, and reviewer/date/time/environment fields. No secret and no
+  patient KTP exposure.
+- **Pilot health-check readiness checklist** — review-only readiness items for a future supervised
+  pilot health check: approved environment, deployment out of scope, no production mutation, read-only
+  checks only, route availability review, login/role smoke (review-only), cashier/RME/receivable/
+  reporting smoke scope as checklist only, manual WhatsApp follow-up, rollback decision tree
+  (review-only), escalation/owner sign-off, and evidence archive naming convention.
+- **Evidence package structure** — suggested `docs/evidence/sprint-43/YYYY-MM-DD-pilot-health-check-review/`
+  naming convention only; not a command to collect production data; no secrets/KTP.
+- **Approval gates + incident escalation review gates** — evidence review, pilot window, and any
+  production/VPS/backup/restore/rollback/deployment/automation gated behind separate supervised,
+  approved workflows; observe → classify → escalate → decide → execute-only-if-approved → document →
+  post-review.
+- **Targeted regression tests** — `Sprint43OperationalMonitoringEvidenceReviewPilotHealthCheckTest`
+  (doc/history checklist assertions over the Sprint 43 doc + baseline references + safety boundaries +
+  privacy/financial constraints + validation commands).
+
+**Validation:** `php artisan test --filter=Sprint43OperationalMonitoringEvidenceReviewPilotHealthCheck`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:** `feature/sprint-43-operational-monitoring-evidence-review-pilot-health-check` /
+`sprint-43-operational-monitoring-evidence-review-pilot-health-check` (future GO tag
+`sprint-43-operational-monitoring-evidence-review-pilot-health-check-go` after PR merge only).
+
+**Safety:** Documentation/checklist regression only. No production/VPS access. No deployment. No
+production migration. No production backup execution. No production restore execution. No rollback
+execution. No external monitoring integration. No scheduler/queue/cron automation. No `.env` change.
+No dependency/package install. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables
+remain excluded from active receivables. Overpayment guard preserved. No GO tag.
+
+### Next recommended sprint
+
+Sprint 44 — Supervised Pilot Health-Check Dry-Run (owner-approved, read-only execution of the Sprint
+43 monitoring evidence review and pilot health-check checklists in an approved environment, capturing
+evidence under the Sprint 43 package convention — still without production mutation or real
+backup/restore/rollback unless separately approved).
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
