@@ -7238,3 +7238,65 @@ Overpayment guard preserved. Financial rules not rewritten. No GO tag before PR 
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+---
+
+## Sprint 52 — Inventory Operator Pilot Input Template & Stock Opname Readiness
+
+**Status:** Local Inventory operator template implementation / pending PR.
+**Scope:** Local/test documentation + operator templates + stock opname readiness checklist regression only.
+
+**Baseline:** Sprint 51 GO / merge commit `ceb2bab`
+(`sprint-51-inventory-ui-operational-walkthrough-user-acceptance-checklist-go`). Operator template doc:
+`docs/sprint_52_inventory_operator_pilot_input_template_stock_opname_readiness.md`.
+
+Inventory-focused, local-only **Operator Pilot Input Template & Stock Opname Readiness**. Following the
+Sprint 48 audit, Sprint 49 smoke execution, Sprint 50 stabilization, and Sprint 51 UI walkthrough/user
+acceptance, Sprint 52 prepares practical operator-facing templates so real users can stage master data,
+opening stock, and physical stock count safely **before** operational pilot input. No Inventory business
+logic is rewritten. RME remains complete/closed for current planning; the Pilot Health Check governance
+loop remains stopped.
+
+- **Inventory operator pilot input templates added** — CSV-style templates for branch/inventory location,
+  product unit, product category, supplier, product/item, opening stock, stock opname count sheet, and
+  stock opname adjustment review. All example rows are dummy/example data only.
+- **Operator checklist added** — reviewed templates only, branch context first, master data before stock,
+  opening stock through movement/ledger, no direct current-stock edit, escalate on doubt.
+- **Reviewer checklist added** — code uniqueness, branch/location mapping, category/unit/supplier
+  references, physical-count and opname-difference verification, adjustment approval, stock-card check.
+- **Data validation checklist added** — required fields, uniqueness, reference existence, numeric/positive
+  quantities, and a sensitive-data guard (no KTP/patient/WA/credential/token/log/dump data).
+- **Stock opname readiness checklist added** — master-data confirmation, count team/reviewer assignment,
+  count sheet + system reference prep, difference/adjustment rules, negative-stock and inactive guards,
+  stock-card review, low-stock follow-up, and pilot handoff owner.
+- **Pilot handoff checklist added** — completion of master data/opening stock/opname templates, role
+  assignment, risk listing, data validation, acceptance criteria, and the ready-for-pilot decision.
+- **Stock opname execution boundary documented** — templates only; the real opname runs later through
+  existing `TYPE_ADJUSTMENT_IN` / `TYPE_ADJUSTMENT_OUT` ledger movements with the insufficient-stock guard.
+- **Follow-up recommended** — Sprint 53 — Inventory Pilot Data Entry Dry-Run & Template Validation.
+- **Targeted regression test** —
+  `Sprint52InventoryOperatorPilotInputTemplateStockOpnameReadinessTest` (doc/history checklist assertions
+  over the Sprint 52 doc + baseline references + template/checklist/section coverage).
+
+**Validation:**
+`php artisan test --filter=Sprint52InventoryOperatorPilotInputTemplateStockOpnameReadiness`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-52-inventory-operator-pilot-input-template-stock-opname-readiness` /
+`sprint-52-inventory-operator-pilot-input-template-stock-opname-readiness` (future GO tag
+`sprint-52-inventory-operator-pilot-input-template-stock-opname-readiness-go` after PR merge only).
+
+**Safety:** Local/test documentation + operator templates + checklist regression only. No real stock
+opname execution. No real data import. No direct stock mutation — Inventory stock is changed through
+stock movements / ledger entries only. No deployment. No VPS/production/server access. No production
+database/log/file access. No production command execution. No production backup/restore/rollback. No
+`.env` change. No dependency/package install. No migration/schema change. No runtime behavior change. No
+production data/evidence collected. RME considered complete/closed for current planning; Pilot Health
+Check governance loop stopped. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain
+excluded from active receivables. Overpayment guard preserved. Financial rules not rewritten. Dummy/example
+data only. No GO tag before PR merge.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
