@@ -46,6 +46,17 @@ class PermissionGroupingService
             ],
         ],
         [
+            'key' => 'rme',
+            'label' => 'RME / Rekam Medis',
+            'permissions' => [
+                'view_clinic_visits',
+                'manage_clinic_visits',
+                'manage_rme_billing',
+                'view_rme_patient_reports',
+                'view_rme_payment_reports',
+            ],
+        ],
+        [
             'key' => 'lab_order',
             'label' => 'Lab Order',
             'permissions' => [
@@ -185,6 +196,11 @@ class PermissionGroupingService
         'manage patients' => 'Kelola data pasien.',
         'manage lab services' => 'Kelola layanan laboratorium.',
         'manage technicians' => 'Kelola data teknisi.',
+        'view_clinic_visits' => 'Lihat antrian kunjungan klinik (RME).',
+        'manage_clinic_visits' => 'Kelola kunjungan klinik dan alur RME.',
+        'manage_rme_billing' => 'Kelola penagihan/kasir RME (full payment).',
+        'view_rme_patient_reports' => 'Lihat laporan pasien RME.',
+        'view_rme_payment_reports' => 'Lihat laporan pembayaran RME.',
         'manage_lab_orders' => 'Kelola order laboratorium (penuh).',
         'view_lab_orders' => 'Lihat order laboratorium.',
         'create_lab_orders' => 'Buat order laboratorium baru.',
