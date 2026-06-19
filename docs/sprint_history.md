@@ -7115,3 +7115,64 @@ active receivables. Overpayment guard preserved. Financial rules not rewritten. 
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 50 — Inventory Bugfix Batch 1 & Workflow Stabilization
+
+**Status:** Local Inventory stabilization implementation / pending PR.
+**Scope:** Local/test stabilization + targeted regression + bugfix/stabilization register only.
+
+**Baseline:** Sprint 49 GO / merge commit `fd9f8e5`
+(`sprint-49-inventory-workflow-smoke-test-execution-defect-register-go`). Stabilization doc:
+`docs/sprint_50_inventory_bugfix_batch_1_workflow_stabilization.md`.
+
+Inventory-focused, local-only **Inventory Bugfix Batch 1 & Workflow Stabilization**. Sprint 49 executed
+the Inventory workflow smoke suite and carried forward **0 defects and 0 blockers**; Sprint 50 therefore
+applies **no speculative bugfixes** and closes as regression hardening and workflow stabilization. RME
+remains complete/closed for current planning, and the Pilot Health Check governance loop remains stopped.
+
+- **No runtime bug reproduced — no runtime code changed.** Sprint 50 is documentation + targeted
+  regression only. A runtime fix would only have been applied for a reproduced, small, safe, Inventory-only
+  bug requiring no schema/dependency/`.env` change; none was found.
+- **Ledger-only stock invariants reviewed/stabilized** — current stock is ledger-derived
+  (`stock in - stock out`); no direct stock mutation; no mutable `current_stock` column.
+- **Current stock and stock card consistency validated** — `getCurrentStock()` equals the raw ledger sum
+  and `getStockCard()` returns the movement trail in workflow order.
+- **Branch isolation reviewed/stabilized** — cross-branch product/location/supplier rejected; Branch A
+  movement does not affect Branch B current stock (`BranchContext` / `branch_id`).
+- **Permission/access-control representative check validated** — unauthenticated Inventory route
+  (`inventory.stock.index`) redirects to login; permission-name gating remains covered by existing
+  `InventoryPermissionHardeningTest` / `InventoryRouteAuthorizationTest`.
+- **Inactive product/location/supplier guards, positive-quantity guard, and insufficient-stock guard
+  reviewed/validated** as supported by current `InventoryStockService` APIs.
+- **Concurrency watch item documented** — `INV-FU-001` negative-stock concurrency remains a non-blocking
+  deferred FOLLOW-UP; a true race requires a separate approved concurrency/locking sprint and was not
+  patched speculatively.
+- **Bugfix/stabilization register added** — 8 PASS/STABILIZED (`INV-STAB-001..008`), 0 DEFECT,
+  0 BLOCKER, 1 FOLLOW-UP/DEFERRED (`INV-FU-001`).
+- **Targeted regression test** —
+  `Sprint50InventoryBugfixBatch1WorkflowStabilizationTest` (Part A doc/history checklist assertions over
+  the Sprint 50 doc + baseline references + policy/invariant/guard/register sections; Part B local/test
+  Inventory stabilization through `InventoryStockService` + a representative access-control redirect).
+
+**Validation:**
+`php artisan test --filter=Sprint50InventoryBugfixBatch1WorkflowStabilization`,
+optionally `php artisan test tests/Feature/Inventory/InventoryStockServiceTest.php`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-50-inventory-bugfix-batch-1-workflow-stabilization` /
+`sprint-50-inventory-bugfix-batch-1-workflow-stabilization` (future GO tag
+`sprint-50-inventory-bugfix-batch-1-workflow-stabilization-go` after PR merge only).
+
+**Safety:** Local/test stabilization + documentation + regression only. No real Inventory data mutation.
+No direct stock mutation — Inventory stock is changed through stock movements / ledger entries only. No
+deployment. No VPS/production/server access. No production database/log/file access. No production command
+execution. No production backup/restore/rollback. No `.env` change. No dependency/package install. No
+migration/schema change. No broad runtime behavior change. No real production evidence collected. RME
+considered complete/closed for current planning; Pilot Health Check governance loop stopped. KTP remains
+hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded from active receivables.
+Overpayment guard preserved. Financial rules not rewritten. No GO tag before PR merge.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
