@@ -7056,3 +7056,62 @@ Overpayment guard preserved. Financial rules not rewritten. No GO tag.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 49 — Inventory Workflow Smoke Test Execution & Defect Register
+
+**Status:** Local Inventory smoke execution implementation / pending PR.
+**Scope:** Local/test smoke execution + documentation + defect register + checklist regression only.
+
+**Baseline:** Sprint 48 GO / merge commit `7e8fadb`
+(`sprint-48-inventory-workflow-audit-empty-database-setup-smoke-test-readiness-go`). Smoke execution doc:
+`docs/sprint_49_inventory_workflow_smoke_test_execution_defect_register.md`.
+
+Inventory-focused, local-only **Inventory Workflow Smoke Test Execution & Defect Register**. Sprint 48
+documented the Inventory workflow from empty-database setup to smoke-test readiness; Sprint 49 executes
+that smoke workflow safely in the local/test environment and records the result. RME remains
+complete/closed for current planning, and the Pilot Health Check governance loop remains stopped.
+Documentation + defect register + targeted regression only — no Inventory runtime logic rewritten.
+
+- **Inventory workflow smoke executed in local/test environment** — through `InventoryStockService`
+  against the `InventoryMovement` ledger, mirroring the existing `InventoryStockServiceTest` setup
+  (`BranchSeeder`, main-branch context, existing model factories). No production data or mutation.
+- **Master data setup flow validated** — branch/user/permission prerequisites, inventory location,
+  product unit, product category, supplier, and product established via factories before stock movements.
+- **Opening stock and ledger movement workflow validated** — opening stock creates a `TYPE_OPENING`
+  inbound movement; current stock is ledger-derived (`current stock = stock in - stock out`); no direct
+  stock mutation.
+- **Stock receive, adjustment in/out, current stock, stock card/movement trail, low stock, branch
+  isolation, and guard checks reviewed/validated** as supported by current APIs — positive-quantity
+  guard, insufficient-stock guard, inactive product/location guards, branch isolation, and ledger-only
+  (no mutable stock column) all confirmed PASS. Permission/access-control treated as already covered by
+  existing `InventoryPermissionHardeningTest` / `InventoryRouteAuthorizationTest`.
+- **Defect register added** — 13 PASS, 1 OBSERVATION (permission/access-control already covered), 0
+  DEFECT, 0 BLOCKER, 1 FOLLOW-UP (non-blocking negative-stock concurrency watch item). No bugfix sprint
+  is required by Sprint 49 findings.
+- **Targeted regression test** —
+  `Sprint49InventoryWorkflowSmokeTestExecutionDefectRegisterTest` (Part A doc/history checklist
+  assertions over the Sprint 49 doc + baseline references + setup sequence + movement sections + defect
+  register; Part B actual local/test Inventory smoke execution through `InventoryStockService`).
+
+**Validation:**
+`php artisan test --filter=Sprint49InventoryWorkflowSmokeTestExecutionDefectRegister`,
+optionally `php artisan test tests/Feature/Inventory`, `vendor/bin/pint --test`, `git diff --check`,
+`git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-49-inventory-workflow-smoke-test-execution-defect-register` /
+`sprint-49-inventory-workflow-smoke-test-execution-defect-register` (future GO tag
+`sprint-49-inventory-workflow-smoke-test-execution-defect-register-go` after PR merge only).
+
+**Safety:** Local/test smoke execution + documentation + defect register + regression only. No real
+Inventory data mutation. No direct stock mutation — Inventory stock is changed through stock movements /
+ledger entries only. No deployment. No VPS/production/server access. No production database/log/file
+access. No production command execution. No production backup/restore/rollback. No `.env` change. No
+dependency/package install. No migration/schema change. No runtime behavior change. No real production
+evidence collected. RME considered complete/closed for current planning; Pilot Health Check governance
+loop stopped. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded from
+active receivables. Overpayment guard preserved. Financial rules not rewritten. No GO tag.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
