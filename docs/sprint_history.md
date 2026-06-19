@@ -7176,3 +7176,65 @@ Overpayment guard preserved. Financial rules not rewritten. No GO tag before PR 
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 51 — Inventory UI Operational Walkthrough & User Acceptance Checklist
+
+**Status:** Local Inventory UI walkthrough implementation / pending PR.
+**Scope:** Local/test UI walkthrough + user acceptance checklist + targeted UI regression only.
+
+**Baseline:** Sprint 50 GO / merge commit `6b5028b`
+(`sprint-50-inventory-bugfix-batch-1-workflow-stabilization-go`). UI walkthrough doc:
+`docs/sprint_51_inventory_ui_operational_walkthrough_user_acceptance_checklist.md`.
+
+Inventory-focused, local-only **UI Operational Walkthrough & User Acceptance Checklist**. Following the
+Sprint 48 audit, Sprint 49 smoke execution (0 defects, 0 blockers), and Sprint 50 stabilization (no runtime
+changes), Sprint 51 verifies Inventory from the **user-facing UI and operational acceptance perspective**.
+No Inventory business logic is rewritten. RME remains complete/closed for current planning; the Pilot
+Health Check governance loop remains stopped.
+
+- **Inventory UI operational walkthrough documented** — Inventory menu, dashboard, master-data pages,
+  stock-movement entry points, stock card, current stock, low-stock display, branch-aware behavior,
+  permission/access behavior, inactive product/location behavior, and validation messages.
+- **Dashboard walkthrough documented** — `inventory.dashboard` renders KPI/summary; no patient/KTP data.
+- **Master data page walkthrough documented** — product units (`Satuan Produk`), categories
+  (`Kategori Produk`), suppliers (`Pemasok Persediaan`), locations (`Lokasi Persediaan`), products
+  (`Produk Persediaan`); all branch-scoped.
+- **Stock movement UI walkthrough documented** — opening stock, receive, adjustment in, adjustment out,
+  each writing a ledger movement (`TYPE_OPENING`/`TYPE_PURCHASE`/`TYPE_ADJUSTMENT_IN`/`TYPE_ADJUSTMENT_OUT`)
+  with positive-quantity, insufficient-stock, inactive-product/location/supplier and cross-branch guards.
+- **Current stock / stock card / low-stock UI walkthrough documented** — ledger-derived current stock,
+  `Kartu Stok` movement trail in workflow order, and `Peringatan Persediaan` low-stock page.
+- **Branch-aware and permission/access-control UI checks documented** — unauthenticated redirect to login,
+  authorized read/manage access, and forbidden cross-branch access.
+- **Inactive product/location UI checks and validation/error-message checks documented.**
+- **User acceptance checklist added** — 21 acceptance areas (operator + admin), all PASS.
+- **UI observation/follow-up register added** — 7 PASS (`INV-UI-001..007`), 0 FAIL, 0 BLOCKER, 2 FOLLOW-UP
+  (`INV-FU-001` carried forward/deferred, `INV-UI-FU-002` UX polish). **No runtime UI bug reproduced — no
+  runtime code changed.**
+- **Targeted regression test** —
+  `Sprint51InventoryUiOperationalWalkthroughUserAcceptanceChecklistTest` (Part A doc/history checklist
+  assertions over the Sprint 51 doc + baseline references + section/register coverage; Part B local/test
+  Inventory UI/HTTP walkthrough through existing `inventory.*` routes + `InventoryStockService` ledger APIs).
+
+**Validation:**
+`php artisan test --filter=Sprint51InventoryUiOperationalWalkthroughUserAcceptanceChecklist`,
+optionally `php artisan test tests/Feature/Inventory/InventoryUiTest.php`,
+`vendor/bin/pint --test`, `git diff --check`, `git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-51-inventory-ui-operational-walkthrough-user-acceptance-checklist` /
+`sprint-51-inventory-ui-operational-walkthrough-user-acceptance-checklist` (future GO tag
+`sprint-51-inventory-ui-operational-walkthrough-user-acceptance-checklist-go` after PR merge only).
+
+**Safety:** Local/test UI walkthrough + documentation + regression only. No real Inventory data mutation.
+No direct stock mutation — Inventory stock is changed through stock movements / ledger entries only. No
+deployment. No VPS/production/server access. No production database/log/file access. No production command
+execution. No production backup/restore/rollback. No `.env` change. No dependency/package install. No
+migration/schema change. No broad runtime behavior change. No production data/evidence collected. RME
+considered complete/closed for current planning; Pilot Health Check governance loop stopped. KTP remains
+hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded from active receivables.
+Overpayment guard preserved. Financial rules not rewritten. No GO tag before PR merge.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
