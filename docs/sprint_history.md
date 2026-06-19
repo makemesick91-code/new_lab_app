@@ -7411,3 +7411,58 @@ stopped. No GO tag before PR merge.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 55 — Permission Group Classification Cleanup
+
+**Status:** Local permission grouping cleanup / pending PR.
+**Scope:** `PermissionGroupingService` classification cleanup + docs + targeted regression only.
+
+**Baseline:** Sprint 54 GO / merge commit `0501e77`
+(`sprint-54-permission-ui-polish-role-assignment-usability-go`). Sprint doc:
+`docs/sprint_55_permission_group_classification_cleanup.md`.
+
+After a VPS role permission audit, actual role access was confirmed business-valid — the only outstanding
+issue was UI classification, where several operational permissions still surfaced under **Other /
+Uncategorized** or under labels that did not clearly describe their module. Sprint 55 cleans up the
+permission group classification only.
+
+- **Doctor/Kasir/Perawat flagged permissions business-approved and unchanged** — Doctor
+  `manage_clinic_visits`, Kasir `manage_rme_billing`, and Perawat `manage_clinic_visits` are
+  business-approved and unchanged.
+- **Delivery permissions moved out of Other** — `assign_courier`, `manage deliveries`, `mark_delivered`
+  now group under **Delivery / Pengiriman**.
+- **Technician/Assignment permissions moved out of Other** — `assign_technicians`,
+  `reassign_technicians`, `manage technicians`, `manage assignments` now group under
+  **Technician / Assignment**.
+- **Quality Control permissions moved out of Other** — `manage_quality_control`, `view_quality_control`,
+  `request_remake` now group under **Quality Control**.
+- **Purchase/Procurement permissions moved out of Other** — `view_purchase_request`,
+  `manage_purchase_request` now group under **Purchase / Procurement**.
+- **Branch Master Data permissions moved out of Other** — `view_branch_master_data`,
+  `manage_branch_master_data` now group under **Branch Master Data**.
+- **Master Data permission moved out of Other** — `manage master data` groups under **Master Data**.
+- **Other fallback preserved** — Other / Uncategorized still catches unknown/future slugs.
+- **Permission slugs preserved** — no rename, no deletion.
+- **Role assignments preserved** — no role → permission grant/revoke; `PermissionSeeder` unchanged.
+- **Authorization behavior preserved** — no policy/middleware rewrite, no gate change.
+- **Sprint 54 UI polish preserved** — group descriptions / helper copy / checked-state preservation intact.
+- **No deployment / VPS / production access during local sprint**; no `.env`/dependency/migration/schema change.
+
+**Validation:**
+`php artisan test --filter=Sprint55PermissionGroupClassificationCleanup`,
+`php artisan test --filter=Sprint54PermissionUiPolishRoleAssignmentUsability`,
+`php artisan test tests/Feature/AccessControl`, `vendor/bin/pint --test`, `git diff --check`,
+`git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-55-permission-group-classification-cleanup` /
+`sprint-55-permission-group-classification-cleanup` (future GO tag
+`sprint-55-permission-group-classification-cleanup-go` after PR merge only).
+
+**Safety:** Local grouping/classification + documentation + regression only. No deployment. No
+VPS/production/server access. No production database/log/file access. No `.env` change. No
+dependency/package install. No migration/schema change. No permission slug rename. No permission
+deletion. No role assignment change. No authorization logic rewrite. No policy/middleware rewrite. KTP
+remains hidden. WhatsApp manual-only. Zero-remaining receivable rule preserved. Overpayment guard
+preserved. RME remains complete/closed. Pilot Health Check governance loop remains stopped. Inventory
+stock remains ledger-based. No GO tag before PR merge.

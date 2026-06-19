@@ -219,11 +219,20 @@ it('groups inventory permissions under inventory module bucket', function () {
     expect($inventoryGroup['label'])->toBe('Inventory / Persediaan');
     expect(collect($inventoryGroup['permissions'])->pluck('name')->all())->toContain(
         'view_stock_transfer',
-        'view_purchase_request',
         'view_goods_receipt',
         'view_inventory_executive_dashboard',
     );
     expect(collect($groups)->contains('key', 'procurement'))->toBeFalse();
+
+    // Sprint 55: purchase request permissions are reclassified into a dedicated
+    // Purchase / Procurement group (out of Other and out of the Inventory bucket).
+    $purchaseGroup = collect($groups)->firstWhere('key', 'purchase');
+    expect($purchaseGroup)->not->toBeNull();
+    expect($purchaseGroup['label'])->toBe('Purchase / Procurement');
+    expect(collect($purchaseGroup['permissions'])->pluck('name')->all())->toContain(
+        'view_purchase_request',
+        'manage_purchase_request',
+    );
 });
 
 it('groups every seeded permission into a module bucket', function () {

@@ -38,14 +38,13 @@ class PermissionGroupingService
         [
             'key' => 'master_data',
             'label' => 'Master Data',
-            'description' => 'Akses data master klinik, dokter, pasien, layanan lab, dan teknisi.',
+            'description' => 'Akses pengelolaan master data umum.',
             'permissions' => [
                 'manage master data',
                 'manage clinics',
                 'manage doctors',
                 'manage patients',
                 'manage lab services',
-                'manage technicians',
             ],
         ],
         [
@@ -71,18 +70,26 @@ class PermissionGroupingService
                 'update_lab_orders',
                 'cancel_lab_orders',
                 'manage lab orders',
+            ],
+        ],
+        [
+            'key' => 'technician_assignment',
+            'label' => 'Technician / Assignment',
+            'description' => 'Akses penugasan teknisi, assignment pekerjaan, dan pengelolaan teknisi.',
+            'permissions' => [
+                'assign_technicians',
+                'reassign_technicians',
+                'manage technicians',
                 'manage assignments',
             ],
         ],
         [
             'key' => 'production',
             'label' => 'Production',
-            'description' => 'Akses penugasan teknisi dan eksekusi pekerjaan produksi.',
+            'description' => 'Akses eksekusi pekerjaan produksi.',
             'permissions' => [
                 'manage_production',
                 'view_production',
-                'assign_technicians',
-                'reassign_technicians',
                 'start_production_work',
                 'pause_production_work',
                 'resume_production_work',
@@ -92,8 +99,8 @@ class PermissionGroupingService
         ],
         [
             'key' => 'qc',
-            'label' => 'QC',
-            'description' => 'Akses review quality control, checklist, dan bukti QC.',
+            'label' => 'Quality Control',
+            'description' => 'Akses pemeriksaan kualitas, remake request, dan kontrol hasil produksi.',
             'permissions' => [
                 'manage_quality_control',
                 'view_quality_control',
@@ -108,8 +115,8 @@ class PermissionGroupingService
         ],
         [
             'key' => 'delivery',
-            'label' => 'Delivery',
-            'description' => 'Akses pengiriman, penugasan kurir, dan bukti serah terima (POD).',
+            'label' => 'Delivery / Pengiriman',
+            'description' => 'Akses pengaturan kurir, proses pengiriman, POD, dan status delivery.',
             'permissions' => [
                 'manage_delivery',
                 'view_delivery',
@@ -142,14 +149,30 @@ class PermissionGroupingService
                 'view_inventory_activity_log',
                 'view_stock_transfer',
                 'manage_stock_transfer',
-                'view_purchase_request',
-                'manage_purchase_request',
                 'approve_inventory_purchase_request',
                 'view_purchase_order',
                 'manage_purchase_order',
                 'approve_inventory_purchase_order',
                 'view_goods_receipt',
                 'manage_goods_receipt',
+            ],
+        ],
+        [
+            'key' => 'purchase',
+            'label' => 'Purchase / Procurement',
+            'description' => 'Akses permintaan pembelian, review procurement, dan alur pengadaan.',
+            'permissions' => [
+                'view_purchase_request',
+                'manage_purchase_request',
+            ],
+        ],
+        [
+            'key' => 'branch_master_data',
+            'label' => 'Branch Master Data',
+            'description' => 'Akses master data cabang dan konfigurasi operasional cabang.',
+            'permissions' => [
+                'view_branch_master_data',
+                'manage_branch_master_data',
             ],
         ],
         [
@@ -266,6 +289,8 @@ class PermissionGroupingService
         'manage_stock_transfer' => 'Kelola transfer stok antar lokasi.',
         'view_purchase_request' => 'Lihat permintaan pembelian.',
         'manage_purchase_request' => 'Kelola permintaan pembelian.',
+        'view_branch_master_data' => 'Lihat master data cabang.',
+        'manage_branch_master_data' => 'Kelola master data dan konfigurasi cabang.',
         'approve_inventory_purchase_request' => 'Setujui permintaan pembelian persediaan.',
         'view_purchase_order' => 'Lihat purchase order.',
         'manage_purchase_order' => 'Kelola purchase order.',
