@@ -50,9 +50,9 @@
         class="space-y-4"
     >
         <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <span class="block text-sm font-medium text-gray-700">Permission</span>
-                <p class="text-xs text-gray-500">Pilih permission yang diberikan ke role ini. Permission dikelompokkan per modul.</p>
+            <div class="min-w-0">
+                <span class="block text-base font-semibold text-gray-900">Permission Role</span>
+                <p class="text-xs text-gray-500">Kelompok permission berdasarkan modul agar admin lebih mudah memilih akses role.</p>
             </div>
             <div class="w-full max-w-sm">
                 <label for="permission-search" class="sr-only">Cari permission</label>
@@ -66,6 +66,14 @@
             </div>
         </div>
 
+        <div class="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-xs text-teal-800">
+            <ul class="list-disc space-y-1 pl-4">
+                <li>Centang permission yang ingin diberikan pada role ini.</li>
+                <li>Permission yang sudah aktif akan tetap tercentang saat edit role.</li>
+                <li>Other / Uncategorized berisi permission yang belum masuk klasifikasi modul utama.</li>
+            </ul>
+        </div>
+
         @error('permissions')
             <p class="text-sm text-red-600">{{ $message }}</p>
         @enderror
@@ -75,6 +83,8 @@
 
         <div class="space-y-3">
             @foreach ($permissionGroups as $group)
+                @php($groupPermissionNames = collect($group['permissions'])->pluck('name')->all())
+                @php($groupSelectedCount = count(array_intersect($groupPermissionNames, $selectedPermissions)))
                 <section
                     x-show="groupHasVisiblePermissions(@js($group['key']), @js($group['permissions']))"
                     x-cloak
@@ -92,7 +102,12 @@
                             </svg>
                             <div class="min-w-0">
                                 <h3 class="text-sm font-semibold text-gray-900">{{ $group['label'] }}</h3>
-                                <p class="text-xs text-gray-500">{{ count($group['permissions']) }} permission</p>
+                                @if (! empty($group['description']))
+                                    <p class="text-xs text-gray-500">{{ $group['description'] }}</p>
+                                @endif
+                                <p class="mt-0.5 text-xs font-medium text-gray-400">
+                                    <span data-group-selected-count="{{ $group['key'] }}">{{ $groupSelectedCount }}</span>/{{ count($group['permissions']) }} permission dipilih
+                                </p>
                             </div>
                         </button>
 
@@ -108,6 +123,11 @@
                     </div>
 
                     <div x-show="openGroups[@js($group['key'])]" class="divide-y divide-gray-100">
+                        @if ($group['key'] === 'other')
+                            <p class="bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                                Permission di sini belum masuk klasifikasi modul utama. Review sebelum diberikan ke role.
+                            </p>
+                        @endif
                         @foreach ($group['permissions'] as $permission)
                             <label
                                 data-permission-row

@@ -7354,3 +7354,60 @@ stopped. No GO tag before PR merge.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 54 — Permission UI Polish & Role Assignment Usability
+
+**Status:** Local permission UI polish implementation / pending PR.
+**Scope:** Permission grouped UI polish + role assignment usability + documentation + targeted regression only.
+
+**Baseline:** Sprint 53 GO / merge commit `6b7e977`
+(`sprint-53-permission-page-module-grouping-hotfix-go`). Sprint doc:
+`docs/sprint_54_permission_ui_polish_role_assignment_usability.md`.
+
+Focused, UI-usability polish on top of the Sprint 53 module grouping. The role create/edit permission
+assignment view already grouped permissions per module via
+`App\Modules\AccessControl\Services\PermissionGroupingService`; Sprint 54 makes the grouped UI easier to
+scan and assign without any authorization, slug, or schema change.
+
+- **Permission grouping from Sprint 53 preserved** — Inventory, Lab, and RME groups remain visible; the
+  Other / Uncategorized fallback remains available.
+- **Module descriptions / readability improved** — each module group now carries a short helper description
+  (added as an additive `description` field on the grouping service), rendered under the group heading.
+- **Role assignment helper text added** — a "Permission Role" heading plus guidance copy explains how to
+  assign role permissions, that active permissions stay checked on edit, and what Other / Uncategorized means.
+- **Selected permission state preserved** — checked permissions remain checked when editing a role; a
+  per-module "selected / total permission dipilih" count is shown for clarity.
+- **Permission slugs preserved** — no rename, no deletion; checkbox `name`/`value` inputs are unchanged.
+- **Authorization behavior preserved** — no policy/middleware/gate change; existing form submission unchanged.
+- **No policy/middleware rewrite**, no migration/schema/seeder rewrite (`PermissionSeeder` unchanged).
+- **No deployment / VPS / production / server / database / log / file access**, no `.env`/dependency change.
+- **No financial logic rewrite** — KTP remains hidden, WhatsApp manual-only, zero-remaining receivables
+  remain excluded, overpayment guard preserved. RME remains complete/closed for current planning; the Pilot
+  Health Check governance loop remains stopped; Inventory stock remains ledger-based and unrelated.
+- **VPS update deferred** — VPS update is a separate supervised post-merge workflow, not executed in this sprint.
+- **Targeted regression test** —
+  `Sprint54PermissionUiPolishRoleAssignmentUsabilityTest` (doc/history assertions + grouping-behavior and
+  rendered-UI assertions proving group descriptions/helper copy, preserved RME/Inventory/Lab/Other buckets,
+  slug preservation, and preserved checked state on edit).
+
+**Validation:**
+`php artisan test --filter=Sprint54PermissionUiPolishRoleAssignmentUsability`,
+`php artisan test tests/Feature/AccessControl`, `vendor/bin/pint --test`, `git diff --check`,
+`git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-54-permission-ui-polish-role-assignment-usability` /
+`sprint-54-permission-ui-polish-role-assignment-usability` (future GO tag
+`sprint-54-permission-ui-polish-role-assignment-usability-go` after PR merge only).
+
+**Safety:** Local UI/helper + documentation + regression only. No deployment. No VPS/production/server
+access. No production database/log/file access. No production command execution. No production
+backup/restore/rollback. No `.env` change. No dependency/package install. No migration/schema change. No
+permission slug rename. No permission deletion. No authorization logic rewrite. No policy/middleware
+rewrite. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded. Overpayment
+guard preserved. RME considered complete/closed for current planning; Pilot Health Check governance loop
+stopped. No GO tag before PR merge.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.

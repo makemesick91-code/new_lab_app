@@ -13,12 +13,13 @@ class PermissionGroupingService
     /**
      * Ordered module groups. Permissions not listed here fall into "other".
      *
-     * @var array<int, array{key: string, label: string, permissions: array<int, string>}>
+     * @var array<int, array{key: string, label: string, description: string, permissions: array<int, string>}>
      */
     private const GROUP_DEFINITIONS = [
         [
             'key' => 'dashboard',
             'label' => 'Dashboard',
+            'description' => 'Akses dashboard, ringkasan, dan tampilan utama operasional.',
             'permissions' => [
                 'view dashboard',
                 'view_dashboard',
@@ -27,6 +28,7 @@ class PermissionGroupingService
         [
             'key' => 'access_control',
             'label' => 'Access Control / Pengaturan',
+            'description' => 'Akses pengelolaan user, role, dan permission.',
             'permissions' => [
                 'manage users',
                 'manage roles',
@@ -36,6 +38,7 @@ class PermissionGroupingService
         [
             'key' => 'master_data',
             'label' => 'Master Data',
+            'description' => 'Akses data master klinik, dokter, pasien, layanan lab, dan teknisi.',
             'permissions' => [
                 'manage master data',
                 'manage clinics',
@@ -48,6 +51,7 @@ class PermissionGroupingService
         [
             'key' => 'rme',
             'label' => 'RME / Rekam Medis',
+            'description' => 'Akses workflow kunjungan klinik, rekam medis, billing RME, dan laporan RME.',
             'permissions' => [
                 'view_clinic_visits',
                 'manage_clinic_visits',
@@ -59,6 +63,7 @@ class PermissionGroupingService
         [
             'key' => 'lab_order',
             'label' => 'Lab Order',
+            'description' => 'Akses workflow order lab, produksi, QC, delivery, dan POD.',
             'permissions' => [
                 'manage_lab_orders',
                 'view_lab_orders',
@@ -72,6 +77,7 @@ class PermissionGroupingService
         [
             'key' => 'production',
             'label' => 'Production',
+            'description' => 'Akses penugasan teknisi dan eksekusi pekerjaan produksi.',
             'permissions' => [
                 'manage_production',
                 'view_production',
@@ -87,6 +93,7 @@ class PermissionGroupingService
         [
             'key' => 'qc',
             'label' => 'QC',
+            'description' => 'Akses review quality control, checklist, dan bukti QC.',
             'permissions' => [
                 'manage_quality_control',
                 'view_quality_control',
@@ -102,6 +109,7 @@ class PermissionGroupingService
         [
             'key' => 'delivery',
             'label' => 'Delivery',
+            'description' => 'Akses pengiriman, penugasan kurir, dan bukti serah terima (POD).',
             'permissions' => [
                 'manage_delivery',
                 'view_delivery',
@@ -117,6 +125,7 @@ class PermissionGroupingService
         [
             'key' => 'inventory',
             'label' => 'Inventory / Persediaan',
+            'description' => 'Akses pengelolaan produk, supplier, lokasi, stok, dan pergerakan persediaan.',
             'permissions' => [
                 'view_inventory',
                 'manage_inventory',
@@ -146,6 +155,7 @@ class PermissionGroupingService
         [
             'key' => 'finance',
             'label' => 'Finance',
+            'description' => 'Akses pembayaran, invoice, kasir, piutang, dan laporan keuangan.',
             'permissions' => [
                 'manage_invoice',
                 'view_invoice',
@@ -162,6 +172,7 @@ class PermissionGroupingService
         [
             'key' => 'reporting',
             'label' => 'Reporting',
+            'description' => 'Akses dashboard laporan, report, export, dan print.',
             'permissions' => [
                 'manage_report',
                 'view_order_report',
@@ -177,9 +188,12 @@ class PermissionGroupingService
         [
             'key' => 'hr',
             'label' => 'HR',
+            'description' => 'Akses pengelolaan data dan proses sumber daya manusia.',
             'permissions' => [],
         ],
     ];
+
+    private const OTHER_DESCRIPTION = 'Permission yang belum masuk klasifikasi modul utama. Review sebelum diberikan ke role.';
 
     /**
      * @var array<string, string>
@@ -280,7 +294,7 @@ class PermissionGroupingService
     ];
 
     /**
-     * @return array<int, array{key: string, label: string, permissions: array<int, array{name: string, description: string|null}>}>
+     * @return array<int, array{key: string, label: string, description: string, permissions: array<int, array{name: string, description: string|null}>}>
      */
     public function group(Collection $permissions): array
     {
@@ -300,6 +314,7 @@ class PermissionGroupingService
                 $groups[] = [
                     'key' => $definition['key'],
                     'label' => $definition['label'],
+                    'description' => $definition['description'],
                     'permissions' => $items,
                 ];
             }
@@ -311,6 +326,7 @@ class PermissionGroupingService
             $groups[] = [
                 'key' => 'other',
                 'label' => 'Other / Uncategorized',
+                'description' => self::OTHER_DESCRIPTION,
                 'permissions' => $other,
             ];
         }
