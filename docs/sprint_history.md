@@ -7300,3 +7300,57 @@ data only. No GO tag before PR merge.
 ### Decision
 
 GO CANDIDATE FOR PR REVIEW.
+
+## Sprint 53 — Permission Page Module Grouping Hotfix
+
+**Status:** Local permission UI hotfix implementation / pending PR.
+**Scope:** Permission page UI grouping + documentation + targeted regression only.
+
+**Baseline:** Sprint 52 GO / merge commit `cf29f45`
+(`sprint-52-inventory-operator-pilot-input-template-stock-opname-readiness-go`). Hotfix doc:
+`docs/sprint_53_permission_page_module_grouping_hotfix.md`.
+
+Focused, UI-only **Permission Page Module Grouping Hotfix**. The role permission assignment page already
+renders permissions per module via `App\Modules\AccessControl\Services\PermissionGroupingService`, but RME
+permissions (`view_clinic_visits`, `manage_clinic_visits`, `manage_rme_billing`, `view_rme_patient_reports`,
+`view_rme_payment_reports`) fell into the **Other / Uncategorized** bucket. Sprint 53 adds a dedicated
+**RME / Rekam Medis** group so Inventory, Lab, and RME are clearly separated for admin/owner classification.
+
+- **Permission page grouped by module** — generic Blade renders ordered module sections from the grouping
+  service; no view/controller change required.
+- **Inventory, Lab, and RME groups present** — Inventory (`Inventory / Persediaan`) and Lab (`Lab Order`)
+  already existed; the new RME group (`RME / Rekam Medis`) is added between Master Data and Lab Order.
+- **Other / Uncategorized fallback included** — unmatched permissions still render under Other.
+- **Permission slugs preserved** — no rename, no deletion; the new group references existing slugs only.
+- **Authorization behavior preserved** — no policy/middleware/gate change; form submission unchanged.
+- **Selected permission state preserved** — checked permissions remain checked when editing a role.
+- **No policy/middleware rewrite**, no migration/schema/seeder rewrite (`PermissionSeeder` unchanged).
+- **No deployment / VPS / production / server / database / log / file access**, no `.env`/dependency change.
+- **No financial logic rewrite** — KTP remains hidden, WhatsApp manual-only, zero-remaining receivables
+  remain excluded, overpayment guard preserved. RME remains complete/closed for current planning; the Pilot
+  Health Check governance loop remains stopped; Inventory stock remains ledger-based and unrelated.
+- **Targeted regression test** —
+  `Sprint53PermissionPageModuleGroupingHotfixTest` (doc/history assertions + grouping-behavior assertions
+  proving RME/Inventory/Lab/Other buckets, slug preservation, and full seeded-permission coverage).
+
+**Validation:**
+`php artisan test --filter=Sprint53PermissionPageModuleGroupingHotfix`,
+`php artisan test tests/Feature/AccessControl`, `vendor/bin/pint --test`, `git diff --check`,
+`git status --short`.
+
+**Feature branch/tag:**
+`feature/sprint-53-permission-page-module-grouping-hotfix` /
+`sprint-53-permission-page-module-grouping-hotfix` (future GO tag
+`sprint-53-permission-page-module-grouping-hotfix-go` after PR merge only).
+
+**Safety:** Local UI/helper + documentation + regression only. No deployment. No VPS/production/server
+access. No production database/log/file access. No production command execution. No production
+backup/restore/rollback. No `.env` change. No dependency/package install. No migration/schema change. No
+permission slug rename. No permission deletion. No authorization logic rewrite. No policy/middleware
+rewrite. KTP remains hidden. WhatsApp manual-only. Zero-remaining receivables remain excluded. Overpayment
+guard preserved. RME considered complete/closed for current planning; Pilot Health Check governance loop
+stopped. No GO tag before PR merge.
+
+### Decision
+
+GO CANDIDATE FOR PR REVIEW.
