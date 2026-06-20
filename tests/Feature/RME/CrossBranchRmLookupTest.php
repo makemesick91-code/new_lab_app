@@ -68,12 +68,100 @@ it('never returns sensitive fields in the lookup payload', function () {
     }
 });
 
-it('matches exactly and does not match a substring of the RM', function () {
+it('matches a suffix of the RM but never a prefix', function () {
+    // Sprint 57.1: "ends with" is intentional; "starts with" must still not match.
     $this->actingAs(userWith(['view_clinic_visits']));
     lookupPatient($this->otherBranch, ['medical_record_number' => 'RM-EXACT-001']);
 
-    expect($this->service->lookupByMedicalRecordNumberAcrossBranches('RM-EXACT')['results'])->toHaveCount(0)
-        ->and($this->service->lookupByMedicalRecordNumberAcrossBranches('EXACT-001')['results'])->toHaveCount(0);
+    // Prefix is not a suffix → no match.
+    expect($this->service->lookupByMedicalRecordNumberAcrossBranches('RM-EXACT')['results'])->toHaveCount(0);
+
+    // True suffix → matches.
+    $suffix = $this->service->lookupByMedicalRecordNumberAcrossBranches('EXACT-001');
+    expect($suffix['results'])->toHaveCount(1)
+        ->and($suffix['match_type'])->toBe('suffix');
+});
+
+// ─── Sprint 57.1: suffix usability ────────────────────────────────────────────
+
+it('finds a patient by the last 4 digits of the RM across all branches', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    lookupPatient($this->otherBranch, ['medical_record_number' => 'DG-BR2-2026-7421']);
+
+    $result = $this->service->lookupByMedicalRecordNumberAcrossBranches('7421');
+
+    expect($result['searched'])->toBeTrue()
+        ->and($result['match_type'])->toBe('suffix')
+        ->and($result['results'])->toHaveCount(1)
+        ->and($result['results'][0]['medical_record_number'])->toBe('DG-BR2-2026-7421')
+        ->and($result['results'][0]['is_current_branch'])->toBeFalse();
+});
+
+it('still resolves a full exact RM as an exact match', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    lookupPatient($this->mainBranch, ['medical_record_number' => 'DG-MAIN-2026-0009']);
+
+    $result = $this->service->lookupByMedicalRecordNumberAcrossBranches('DG-MAIN-2026-0009');
+
+    expect($result['match_type'])->toBe('exact')
+        ->and($result['results'])->toHaveCount(1)
+        ->and($result['too_short'])->toBeFalse();
+});
+
+it('returns multiple safe candidates when several RMs share a suffix', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    lookupPatient($this->mainBranch, ['medical_record_number' => 'DG-MAIN-2026-5050', 'name' => 'Pasien A', 'ktp_number' => '3201000000000001']);
+    lookupPatient($this->otherBranch, ['medical_record_number' => 'DG-BR2-2026-5050', 'name' => 'Pasien B', 'ktp_number' => '3201000000000002']);
+
+    $result = $this->service->lookupByMedicalRecordNumberAcrossBranches('5050');
+
+    expect($result['match_type'])->toBe('suffix')
+        ->and($result['results'])->toHaveCount(2)
+        ->and(collect($result['results'])->pluck('name')->all())->toContain('Pasien A', 'Pasien B');
+});
+
+it('rejects a too-short suffix without running a broad search', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    lookupPatient($this->otherBranch, ['medical_record_number' => 'DG-BR2-2026-0421']);
+
+    $result = $this->service->lookupByMedicalRecordNumberAcrossBranches('421');
+
+    expect($result['searched'])->toBeTrue()
+        ->and($result['too_short'])->toBeTrue()
+        ->and($result['results'])->toBeEmpty()
+        ->and($result['match_type'])->toBeNull();
+});
+
+it('asks for more digits when a suffix matches too many patients', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    for ($i = 1; $i <= CrossBranchPatientLookupService::DISPLAY_LIMIT + 2; $i++) {
+        lookupPatient($this->mainBranch, [
+            'medical_record_number' => 'DG-MAIN-2026-'.$i.'0099', // all share the 0099 suffix
+            'name' => 'Pasien '.$i,
+            'ktp_number' => '32010000000'.str_pad((string) $i, 5, '0', STR_PAD_LEFT),
+        ]);
+    }
+
+    $result = $this->service->lookupByMedicalRecordNumberAcrossBranches('0099');
+
+    expect($result['too_many'])->toBeTrue()
+        ->and($result['results'])->toBeEmpty();
+});
+
+it('never exposes clinical or contact data in a suffix match', function () {
+    $this->actingAs(userWith(['view_clinic_visits']));
+    lookupPatient($this->otherBranch, [
+        'medical_record_number' => 'DG-BR2-2026-3030',
+        'phone' => '0822', 'whatsapp_number' => '0822', 'address' => 'Jl Klinik',
+    ]);
+
+    $row = $this->service->lookupByMedicalRecordNumberAcrossBranches('3030')['results'][0];
+
+    expect($row)->toHaveKeys(['medical_record_number', 'name', 'branch_label', 'is_active', 'latest_visit_date', 'is_current_branch'])
+        ->and($row)->not->toHaveKeys(['ktp_number', 'whatsapp_number', 'phone', 'email', 'address', 'diagnosis', 'treatment', 'notes']);
+    foreach (['3201999988887777', '0822', 'Jl Klinik'] as $secret) {
+        expect(json_encode($row))->not->toContain($secret);
+    }
 });
 
 it('returns a safe empty payload for blank input', function () {
