@@ -18,6 +18,8 @@
             <p class="mt-1 text-sm text-gray-500">Rekam medis draft dan final pada cabang aktif.</p>
         </div>
 
+        @include('rme.partials.cross-branch-rm-lookup')
+
         <x-ui.card padding="p-4">
             <form method="GET" action="{{ route('rme.medical-records.index') }}">
                 <div class="flex flex-wrap items-end gap-2">

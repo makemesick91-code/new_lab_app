@@ -11,6 +11,7 @@ use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\StoreMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ class MedicalRecordController extends Controller
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
     {
         $this->authorize('viewAny', MedicalRecord::class);
 
@@ -40,6 +41,7 @@ class MedicalRecordController extends Controller
             'medicalRecords' => $this->service->paginate($filters),
             'filters' => $filters,
             'statuses' => MedicalRecord::STATUSES,
+            'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
     }
 

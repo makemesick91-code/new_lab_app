@@ -13,6 +13,7 @@ use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -34,7 +35,7 @@ class ClinicVisitController extends Controller
         private readonly BranchService $branchService,
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
     {
         $this->authorize('viewAny', ClinicVisit::class);
 
@@ -61,6 +62,7 @@ class ClinicVisitController extends Controller
             'statuses' => ClinicVisit::STATUSES,
             'rmeWidgets' => $rmeWidgets,
             'rmeBranches' => $this->branchService->listRmeEnabled(),
+            'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
     }
 

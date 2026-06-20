@@ -22,6 +22,8 @@
             <p class="mt-1 text-sm text-gray-500">Daftar kunjungan yang sudah selesai pemeriksaan dokter dan menunggu billing kasir.</p>
         </div>
 
+        @include('rme.partials.cross-branch-rm-lookup')
+
         <x-ui.card padding="p-4">
             <form method="GET" action="{{ route('rme.cashier.index') }}">
                 <div class="flex flex-wrap items-end gap-2">
