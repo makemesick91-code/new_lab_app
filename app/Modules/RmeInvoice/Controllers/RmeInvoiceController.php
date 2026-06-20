@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
@@ -45,7 +46,7 @@ class RmeInvoiceController extends Controller
         ];
     }
 
-    public function index(Request $request): View
+    public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
     {
         $this->authorize('viewAny', RmeInvoice::class);
 
@@ -56,6 +57,7 @@ class RmeInvoiceController extends Controller
         return view('rme.cashier.index', [
             'visits' => $this->service->paginatePendingVisits($filters),
             'filters' => $filters,
+            'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
     }
 

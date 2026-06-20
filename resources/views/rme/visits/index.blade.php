@@ -28,6 +28,8 @@
             @endcan
         </div>
 
+        @include('rme.partials.cross-branch-rm-lookup')
+
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             @php
                 $branchQuery = $filters['branch_id'] ? ['branch_id' => $filters['branch_id']] : [];
