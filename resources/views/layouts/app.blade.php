@@ -16,14 +16,9 @@
         class="h-full font-sans antialiased bg-gray-100 text-gray-900"
         x-data
         x-init="
-            $store.sidebar.isExpanded = window.innerWidth >= 1280;
             const onResize = () => {
                 if (window.innerWidth < 1280) {
                     $store.sidebar.setMobileOpen(false);
-                    $store.sidebar.isExpanded = false;
-                } else {
-                    $store.sidebar.setMobileOpen(false);
-                    $store.sidebar.isExpanded = true;
                 }
             };
             window.addEventListener('resize', onResize);
@@ -33,7 +28,10 @@
             @include('layouts.partials.backdrop')
             @include('layouts.sidebar')
 
-            <div class="flex min-h-screen min-w-0 flex-1 flex-col xl:ml-[290px]">
+            <div
+                class="flex min-h-screen min-w-0 flex-1 flex-col transition-[margin] duration-300 ease-in-out"
+                :class="$store.sidebar.isExpanded ? 'xl:ml-[290px]' : 'xl:ml-0'"
+            >
                 @include('layouts.partials.topbar')
 
                 <main class="flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">

@@ -19,6 +19,21 @@
                 </svg>
             </button>
 
+            <button
+                type="button"
+                data-testid="sidebar-collapse-toggle"
+                class="hidden h-10 w-10 items-center justify-center rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 xl:inline-flex"
+                @click="$store.sidebar.toggleExpanded()"
+                :aria-expanded="$store.sidebar.isExpanded"
+                :aria-label="$store.sidebar.isExpanded ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'"
+                :title="$store.sidebar.isExpanded ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'"
+            >
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" x-show="$store.sidebar.isExpanded" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" x-show="! $store.sidebar.isExpanded" />
+                </svg>
+            </button>
+
             <div class="min-w-0 xl:hidden">
                 <p class="truncate text-sm font-semibold text-gray-900">DaengtisiaMS</p>
                 <p class="truncate text-xs text-gray-500">Klinik Gigi Daengtisia</p>

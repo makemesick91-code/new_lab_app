@@ -6,12 +6,25 @@ window.Alpine = Alpine;
 
 document.addEventListener('alpine:init', () => {
     Alpine.store('sidebar', {
-        isExpanded: window.innerWidth >= 1280,
+        isExpanded: true,
         isMobileOpen: false,
+
+        // Alpine auto-calls store init(). Restore the desktop hide/show preference
+        // from localStorage (manual convention; no $persist plugin). Default expanded.
+        init() {
+            let stored = null;
+            try {
+                stored = localStorage.getItem('adlms-sidebar-expanded');
+            } catch {
+                stored = null;
+            }
+            this.isExpanded = stored === null ? true : stored === 'true';
+        },
 
         toggleExpanded() {
             this.isExpanded = ! this.isExpanded;
             this.isMobileOpen = false;
+            this.persistExpanded();
         },
 
         toggleMobileOpen() {
@@ -20,6 +33,14 @@ document.addEventListener('alpine:init', () => {
 
         setMobileOpen(value) {
             this.isMobileOpen = value;
+        },
+
+        persistExpanded() {
+            try {
+                localStorage.setItem('adlms-sidebar-expanded', this.isExpanded ? 'true' : 'false');
+            } catch {
+                // Storage unavailable (private mode); ignore — toggle still works in-session.
+            }
         },
     });
 });
