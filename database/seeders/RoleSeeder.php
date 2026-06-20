@@ -225,6 +225,19 @@ class RoleSeeder extends Seeder
             'view_clinic_visits',
             'manage_clinic_visits',
         ],
+        // Sprint 58.1 — Admin Warehouse: inventory-focused role that lands on
+        // the Inventory Executive Dashboard after login (least-privilege).
+        'Admin Warehouse' => [
+            'view dashboard',
+            'view_inventory_executive_dashboard',
+            'view_inventory_cross_branch_analytics',
+            'view_inventory_activity_log',
+            'manage_inventory',
+            'view_inventory',
+            'download_stock_transfer_checklist',
+            'approve_inventory_purchase_request',
+            'approve_inventory_purchase_order',
+        ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [
             'view dashboard',

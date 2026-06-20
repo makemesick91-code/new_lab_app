@@ -28,7 +28,22 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        return redirect()->intended($this->redirectPathFor($request));
+    }
+
+    /**
+     * Resolve the default post-login landing path for the authenticated user.
+     *
+     * Only controls the default landing page — an existing intended() URL still
+     * takes precedence and authorization is enforced by the target route itself.
+     */
+    private function redirectPathFor(Request $request): string
+    {
+        if ($request->user()?->hasRole('Admin Warehouse')) {
+            return route('inventory.executive-dashboard', absolute: false);
+        }
+
+        return route('dashboard', absolute: false);
     }
 
     /**
