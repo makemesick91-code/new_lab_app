@@ -6,6 +6,8 @@
 --}}
 @php
     $user = auth()->user();
+    // Sprint 58.2: Admin Warehouse main Dashboard points to inventory.dashboard (navigation only).
+    $isAdminWarehouse = $user?->hasRole('Admin Warehouse');
     $showInventoryGroup = $user && (
         $user->can('viewAny', \App\Modules\Inventory\Models\Product::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
@@ -77,7 +79,7 @@
     }"
 >
     <div class="flex items-center border-b border-gray-100 px-4 py-5">
-        <a href="{{ route('dashboard') }}" class="min-w-0">
+        <a href="{{ route($isAdminWarehouse ? 'inventory.dashboard' : 'dashboard') }}" class="min-w-0">
             <p class="text-sm font-bold text-gray-900">DaengtisiaMS</p>
             <p class="text-xs text-gray-500">Klinik Gigi Daengtisia</p>
         </a>
@@ -88,15 +90,25 @@
         x-data="adlmsSidebar(@js($sidebarRouteOpen))"
     >
         <div class="space-y-1">
-            @canany(['view dashboard', 'view_owner_dashboard'])
-                <a href="{{ route('dashboard') }}"
-                   class="menu-item {{ request()->routeIs('dashboard') ? 'menu-item-active' : 'menu-item-inactive' }}">
+            @if ($isAdminWarehouse)
+                <a href="{{ route('inventory.dashboard') }}"
+                   class="menu-item {{ request()->routeIs('inventory.dashboard') ? 'menu-item-active' : 'menu-item-inactive' }}">
                     <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12l9-7 9 7M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />
                     </svg>
-                    <span>{{ $user?->can('view_owner_dashboard') ? 'Dashboard Owner' : 'Dashboard' }}</span>
+                    <span>Dashboard</span>
                 </a>
-            @endcanany
+            @else
+                @canany(['view dashboard', 'view_owner_dashboard'])
+                    <a href="{{ route('dashboard') }}"
+                       class="menu-item {{ request()->routeIs('dashboard') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12l9-7 9 7M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />
+                        </svg>
+                        <span>{{ $user?->can('view_owner_dashboard') ? 'Dashboard Owner' : 'Dashboard' }}</span>
+                    </a>
+                @endcanany
+            @endif
 
             @canany(['view_clinic_visits', 'manage_clinic_visits'])
                 <div class="pt-2">
@@ -249,8 +261,11 @@
                     </button>
                     <div data-sidebar-panel="inventory" x-show="isOpen('inventory')" class="mt-1 space-y-0.5 pl-8">
                         @can('viewAny', \App\Modules\Inventory\Models\Product::class)
-                            <a href="{{ route('inventory.dashboard') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dashboard Inventory</a>
+                            @unless ($isAdminWarehouse)
+                                {{-- Sprint 58.2: hidden for Admin Warehouse to avoid a duplicate /inventory/dashboard entry (main Dashboard already targets it). --}}
+                                <a href="{{ route('inventory.dashboard') }}"
+                                   class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dashboard Inventory</a>
+                            @endunless
                             <a href="{{ route('inventory.products.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
                             @can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
