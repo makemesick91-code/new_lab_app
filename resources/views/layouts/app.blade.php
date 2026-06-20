@@ -34,7 +34,7 @@
             >
                 @include('layouts.partials.topbar')
 
-                <main class="flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8">
+                <main class="flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8 xl:px-[2cm]">
                     {{ $slot }}
                 </main>
             </div>
