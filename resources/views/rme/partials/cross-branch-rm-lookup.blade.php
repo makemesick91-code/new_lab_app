@@ -5,14 +5,18 @@
     Expects: $rmLookup (array from CrossBranchPatientLookupService).
 --}}
 @php
-    $rmLookup = $rmLookup ?? ['searched' => false, 'query' => '', 'results' => [], 'is_duplicate' => false];
+    $rmLookup = array_merge([
+        'searched' => false, 'query' => '', 'results' => [], 'is_duplicate' => false,
+        'match_type' => null, 'too_short' => false, 'too_many' => false,
+        'min_length' => 4,
+    ], $rmLookup ?? []);
 @endphp
 
 <x-ui.card padding="p-4">
     <div class="flex flex-wrap items-start justify-between gap-2">
         <div>
             <h3 class="text-base font-semibold text-gray-900">Cek Nomor RM Seluruh Cabang</h3>
-            <p class="mt-1 text-sm text-gray-500">Cek apakah Nomor RM sudah terdaftar di cabang mana pun (mencegah pendaftaran ganda).</p>
+            <p class="mt-1 text-sm text-gray-500">Cek apakah Nomor RM sudah terdaftar di cabang mana pun (mencegah pendaftaran ganda). Bisa pakai Nomor RM lengkap atau cukup digit akhirnya.</p>
         </div>
     </div>
 
@@ -21,7 +25,7 @@
             <div class="min-w-[14rem] flex-1">
                 <label for="rm-lookup-input" class="text-sm font-medium text-gray-700">Nomor RM</label>
                 <input id="rm-lookup-input" type="text" name="rm_lookup" value="{{ $rmLookup['query'] }}"
-                       placeholder="Masukkan Nomor RM (pencarian persis)"
+                       placeholder="Nomor RM lengkap atau {{ $rmLookup['min_length'] }} digit terakhir"
                        class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
             </div>
             <x-ui.button type="submit" variant="primary">Cek RM</x-ui.button>
@@ -32,8 +36,20 @@
     </form>
 
     @if ($rmLookup['searched'])
-        @if (count($rmLookup['results']) > 0)
-            @if ($rmLookup['is_duplicate'])
+        @if ($rmLookup['too_short'])
+            <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                Masukkan Nomor RM lengkap atau minimal {{ $rmLookup['min_length'] }} digit terakhir.
+            </p>
+        @elseif ($rmLookup['too_many'])
+            <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                Terlalu banyak hasil. Masukkan lebih banyak digit Nomor RM.
+            </p>
+        @elseif (count($rmLookup['results']) > 0)
+            @if ($rmLookup['match_type'] === 'suffix' && count($rmLookup['results']) > 1)
+                <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                    Ditemukan beberapa pasien dengan akhiran Nomor RM yang sama. Cocokkan nama dan cabang pasien sebelum melanjutkan.
+                </p>
+            @elseif ($rmLookup['is_duplicate'])
                 <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
                     Ditemukan lebih dari satu pasien dengan Nomor RM ini — kemungkinan duplikat. Mohon verifikasi.
                 </p>
