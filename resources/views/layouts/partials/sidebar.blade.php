@@ -69,7 +69,12 @@
 
 <aside
     class="fixed top-0 left-0 z-50 flex h-screen w-[290px] flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out"
-    :class="$store.sidebar.isMobileOpen ? 'translate-x-0' : '-translate-x-full xl:translate-x-0'"
+    :class="{
+        'translate-x-0': $store.sidebar.isMobileOpen,
+        '-translate-x-full': ! $store.sidebar.isMobileOpen,
+        'xl:translate-x-0': $store.sidebar.isExpanded,
+        'xl:-translate-x-full': ! $store.sidebar.isExpanded,
+    }"
 >
     <div class="flex items-center border-b border-gray-100 px-4 py-5">
         <a href="{{ route('dashboard') }}" class="min-w-0">
