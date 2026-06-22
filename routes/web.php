@@ -199,6 +199,11 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 */
 Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
+        // Sprint 58.3 — RME dashboard route availability hotfix.
+        // No dashboard UI; redirect safely to the existing RME visits index.
+        Route::get('dashboard', fn () => redirect()->route('rme.visits.index'))
+            ->name('dashboard');
+
         Route::get('medical-records', [MedicalRecordController::class, 'index'])
             ->name('medical-records.index');
 
