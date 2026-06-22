@@ -52,6 +52,7 @@ use App\Modules\QualityControl\Controllers\RemakeController as QcRemakeControlle
 use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardController;
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
+use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
@@ -199,9 +200,9 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 */
 Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
-        // Sprint 58.3 — RME dashboard route availability hotfix.
-        // No dashboard UI; redirect safely to the existing RME visits index.
-        Route::get('dashboard', fn () => redirect()->route('rme.visits.index'))
+        // Sprint 58.4 — Standalone RME dashboard (replaces the Sprint 58.3
+        // availability redirect). Aggregate KPI cards + RME shortcuts.
+        Route::get('dashboard', [RmeDashboardController::class, 'index'])
             ->name('dashboard');
 
         Route::get('medical-records', [MedicalRecordController::class, 'index'])
