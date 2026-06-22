@@ -124,6 +124,8 @@
                         </svg>
                     </button>
                     <div data-sidebar-panel="rme" x-show="isOpen('rme')" class="mt-1 space-y-0.5 pl-8">
+                        <a href="{{ route('rme.dashboard') }}"
+                           class="menu-subitem {{ request()->routeIs('rme.dashboard') ? $linkActive : $linkIdle }}">Dasbor RME</a>
                         <a href="{{ route('rme.visits.index') }}"
                            class="menu-subitem {{ (request()->routeIs('rme.visits.*') && ! request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
                         <a href="{{ route('rme.medical-records.index') }}"
