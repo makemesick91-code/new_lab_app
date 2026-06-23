@@ -53,7 +53,7 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
     public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
         return ClinicVisit::query()
-            ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
+            ->with(['patient', 'doctor', 'clinicRoom', 'branch', 'medicalRecord'])
             ->whereIn('branch_id', $branchIds)
             ->whereNotNull('clinic_room_id')
             ->whereNotIn('status', [
