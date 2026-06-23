@@ -66,6 +66,7 @@
                     <tr class="text-left text-gray-500">
                         <th scope="col" class="px-4 py-3 font-medium">Tanggal Kunjungan</th>
                         <th scope="col" class="px-3 py-3 font-medium">Nomor Kunjungan</th>
+                        <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
                         <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
                         <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
                         <th scope="col" class="px-3 py-3 font-medium">Status</th>
@@ -78,6 +79,7 @@
                         <tr class="hover:bg-gray-50">
                             <td class="px-4 py-3 text-gray-600">{{ $record->clinicVisit?->visit_date?->format('d/m/Y') ?? '—' }}</td>
                             <td class="px-3 py-3 font-mono text-gray-700">{{ $record->clinicVisit?->visit_number ?? '—' }}</td>
+                            <td class="px-3 py-3 text-gray-600">{{ $record->clinicVisit?->clinicRoom?->name ?? '—' }}</td>
                             <td class="px-3 py-3 font-medium text-gray-900">{{ $record->patient?->name ?? '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $record->doctor?->name ?? '—' }}</td>
                             <td class="px-3 py-3">
@@ -96,7 +98,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-12 text-center">
+                            <td colspan="8" class="px-4 py-12 text-center">
                                 <p class="text-sm font-medium text-gray-900">Belum ada rekam medis.</p>
                                 <p class="mt-1 text-sm text-gray-500">Rekam medis akan muncul setelah dibuat dari detail kunjungan.</p>
                             </td>

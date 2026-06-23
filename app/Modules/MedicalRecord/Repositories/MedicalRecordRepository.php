@@ -11,7 +11,7 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
     public function paginateForBranch(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return MedicalRecord::query()
-            ->with(['clinicVisit', 'patient', 'doctor', 'recordedBy'])
+            ->with(['clinicVisit', 'clinicVisit.clinicRoom', 'patient', 'doctor', 'recordedBy'])
             ->where('branch_id', $branchId)
             ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($filters['visit_date_from'] ?? null, fn ($q, $v) => $q->whereHas('clinicVisit', fn ($q) => $q->whereDate('visit_date', '>=', $v)))
@@ -32,7 +32,7 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
     public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return MedicalRecord::query()
-            ->with(['clinicVisit', 'patient', 'doctor', 'recordedBy'])
+            ->with(['clinicVisit', 'clinicVisit.clinicRoom', 'patient', 'doctor', 'recordedBy'])
             ->whereIn('branch_id', $branchIds)
             ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($filters['visit_date_from'] ?? null, fn ($q, $v) => $q->whereHas('clinicVisit', fn ($q) => $q->whereDate('visit_date', '>=', $v)))

@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -730,6 +731,71 @@ it('index only shows records from active branch', function () {
         ->assertOk()
         ->assertSee('Pasien Aktif')
         ->assertDontSee('Pasien Lain');
+});
+
+it('index shows room name for a record whose visit has a room', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $room = ClinicRoom::factory()->create(['branch_id' => $branch->id, 'name' => 'Ruang Periksa Gigi 1']);
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => $room->id]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee('Ruangan')
+        ->assertSee('Ruang Periksa Gigi 1');
+});
+
+it('index shows room fallback when visit has no room', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => null]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee('Ruangan')
+        ->assertSee('—');
+});
+
+it('index does not leak another branch room name', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
+
+    $otherRoom = ClinicRoom::factory()->create(['branch_id' => $otherBranch->id, 'name' => 'Ruang Cabang Lain']);
+    $otherVisit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id, 'clinic_room_id' => $otherRoom->id]);
+    MedicalRecord::factory()->create(['branch_id' => $otherBranch->id, 'clinic_visit_id' => $otherVisit->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertDontSee('Ruang Cabang Lain');
+});
+
+it('index does not expose sensitive patient fields', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+
+    $patient = Patient::factory()->create([
+        'name' => 'Pasien Ruangan',
+        'phone' => '081299998888',
+    ]);
+    $room = ClinicRoom::factory()->create(['branch_id' => $branch->id, 'name' => 'Ruang Periksa 2']);
+    $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => $room->id, 'patient_id' => $patient->id]);
+    MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id, 'patient_id' => $patient->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.medical-records.index'))
+        ->assertOk()
+        ->assertSee('Ruang Periksa 2')
+        ->assertDontSee('081299998888')
+        ->assertDontSee('remember_token')
+        ->assertDontSee('api_token');
 });
 
 it('index can filter by status draft', function () {
