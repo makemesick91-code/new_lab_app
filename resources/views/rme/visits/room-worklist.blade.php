@@ -96,16 +96,9 @@
                             </td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->visit_date?->format('d/m/Y') }}</td>
                             <td class="px-4 py-3 text-right">
-                                @if ($visit->medicalRecord)
-                                    <x-ui.button variant="primary" :href="route('rme.visits.medical-record.show', $visit)" class="!px-3 !py-1.5 !text-xs">Buka Rekam Medis</x-ui.button>
-                                @elseif (auth()->user()?->can('create', [\App\Modules\MedicalRecord\Models\MedicalRecord::class, $visit]))
-                                    <form method="POST" action="{{ route('rme.visits.medical-record.store', $visit) }}" class="inline">
-                                        @csrf
-                                        <x-ui.button type="submit" variant="primary" class="!px-3 !py-1.5 !text-xs">Mulai Rekam Medis</x-ui.button>
-                                    </form>
-                                @else
-                                    <span class="text-xs text-gray-400">—</span>
-                                @endif
+                                {{-- Sprint 58.6.2 — open the visit detail page first so Doctor/Perawat
+                                     can reach both Rekam Medis and Odontogram from there. --}}
+                                <x-ui.button variant="primary" :href="route('rme.visits.show', $visit)" class="!px-3 !py-1.5 !text-xs">Buka Detail Pasien</x-ui.button>
                             </td>
                         </tr>
                     @empty
