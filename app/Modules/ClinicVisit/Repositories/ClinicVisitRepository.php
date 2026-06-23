@@ -80,6 +80,36 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->withQueryString();
     }
 
+    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator
+    {
+        return ClinicVisit::query()
+            ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
+            ->whereIn('branch_id', $branchIds)
+            ->whereNotIn('status', [
+                ClinicVisit::STATUS_CASHIER_PENDING,
+                ClinicVisit::STATUS_COMPLETED,
+                ClinicVisit::STATUS_CANCELLED,
+            ])
+            ->when(($filters['room_status'] ?? null) === 'unassigned', fn ($q) => $q->whereNull('clinic_room_id'))
+            ->when(($filters['room_status'] ?? null) === 'assigned', fn ($q) => $q->whereNotNull('clinic_room_id'))
+            ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($filters['visit_date'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', $v))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(visit_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', function ($p) use ($term) {
+                            $p->whereRaw('LOWER(name) LIKE ?', [$term])
+                                ->orWhereRaw('LOWER(medical_record_number) LIKE ?', [$term]);
+                        });
+                });
+            })
+            ->orderByDesc('visit_date')
+            ->orderBy('queue_number')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
     public function findInBranch(int $branchId, int $id): ?ClinicVisit
     {
         return ClinicVisit::query()->where('branch_id', $branchId)->find($id);

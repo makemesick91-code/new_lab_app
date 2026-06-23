@@ -213,6 +213,10 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->get('treatment-room-worklist', [ClinicVisitController::class, 'roomWorklist'])
             ->name('treatment-room-worklist.index');
 
+        // Sprint 58.7 — Admin Klinik registered-patient queue (Antrian Pasien).
+        Route::get('patient-queue', [ClinicVisitController::class, 'patientQueue'])
+            ->name('patient-queue.index');
+
         Route::get('visits/patient-options', [ClinicVisitController::class, 'patientVisitOptions'])
             ->name('visits.patient-options');
 

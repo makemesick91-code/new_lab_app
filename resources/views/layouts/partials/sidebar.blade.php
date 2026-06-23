@@ -128,6 +128,8 @@
                            class="menu-subitem {{ request()->routeIs('rme.dashboard') ? $linkActive : $linkIdle }}">Dasbor RME</a>
                         <a href="{{ route('rme.visits.index') }}"
                            class="menu-subitem {{ (request()->routeIs('rme.visits.*') && ! request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
+                        <a href="{{ route('rme.patient-queue.index') }}"
+                           class="menu-subitem {{ request()->routeIs('rme.patient-queue.*') ? $linkActive : $linkIdle }}">Antrian Pasien</a>
                         <a href="{{ route('rme.medical-records.index') }}"
                            class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
                         @can('view_treatment_worklist')

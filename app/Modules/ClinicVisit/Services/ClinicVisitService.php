@@ -75,6 +75,21 @@ class ClinicVisitService
     }
 
     /**
+     * Sprint 58.7 — Antrian Pasien. Registered-patient queue: active (non-terminal)
+     * visits across the active RME-enabled branch set (optionally narrowed to one
+     * RME branch), including both room-assigned and not-yet-assigned visits. Never
+     * falls back to a single BranchContext branch.
+     */
+    public function registeredQueue(array $filters = [], int $perPage = 20): LengthAwarePaginator
+    {
+        return $this->visits->queueForBranches(
+            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $filters,
+            $perPage,
+        );
+    }
+
+    /**
      * Active treatment rooms for the active RME-enabled branch set, grouped by
      * branch_id, for the queue's per-row room assignment selector.
      *
