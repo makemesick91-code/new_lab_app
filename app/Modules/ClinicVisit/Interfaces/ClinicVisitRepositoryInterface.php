@@ -30,6 +30,16 @@ interface ClinicVisitRepositoryInterface
      */
     public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator;
 
+    /**
+     * Paginate active (non-terminal) registered-patient queue visits scoped to
+     * the active RME-enabled branch set. Includes visits with and without an
+     * assigned room. Sprint 58.7 — Antrian Pasien.
+     *
+     * @param  array<int, int>  $branchIds
+     * @param  array{search?: string|null, status?: string|null, room_status?: string|null, visit_date?: string|null}  $filters
+     */
+    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator;
+
     public function findInBranch(int $branchId, int $id): ?ClinicVisit;
 
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;

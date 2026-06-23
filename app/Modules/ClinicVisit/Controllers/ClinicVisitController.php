@@ -95,6 +95,32 @@ class ClinicVisitController extends Controller
         ]);
     }
 
+    /**
+     * Sprint 58.7 — Antrian Pasien. Dedicated post-registration queue for Admin
+     * Klinik: active (non-terminal) RME visits, scoped to the active RME-enabled
+     * branch set, including patients with and without an assigned treatment room.
+     * Reuses the Sprint 58.6 assign-room route for the per-row room selector.
+     */
+    public function patientQueue(Request $request): View
+    {
+        $this->authorize('viewAny', ClinicVisit::class);
+
+        $filters = [
+            'search' => $request->string('search')->toString() ?: null,
+            'status' => $request->string('status')->toString() ?: null,
+            'room_status' => $request->string('room_status')->toString() ?: null,
+            'visit_date' => $request->string('visit_date')->toString() ?: null,
+            'branch_id' => $request->integer('branch_id') ?: null,
+        ];
+
+        return view('rme.patient-queue.index', [
+            'visits' => $this->visits->registeredQueue($filters),
+            'filters' => $filters,
+            'statuses' => ClinicVisit::STATUSES,
+            'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
+        ]);
+    }
+
     public function assignRoom(AssignRoomRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {
         $this->authorize('update', $clinicVisit);
