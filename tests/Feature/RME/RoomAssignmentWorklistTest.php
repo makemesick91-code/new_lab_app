@@ -13,6 +13,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Treatment\Models\Treatment;
 use Carbon\Carbon;
@@ -211,6 +212,68 @@ it('does not expose sensitive patient fields on the worklist', function () {
         ->assertDontSee('7300001234560001')
         ->assertDontSee('081299990000')
         ->assertDontSee('Jalan Rahasia No. 99');
+});
+
+// --- F. Sprint 58.6.1 — "Buka Rekam Medis" link hotfix -------------------------
+
+it('opens an existing medical record from the worklist without a 404', function () {
+    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $patient = Patient::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Pasien Ada RM']);
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->atg->id,
+        'patient_id' => $patient->id,
+        'doctor_id' => $this->doctor->id,
+        'clinic_room_id' => $room->id,
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
+    ]);
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->atg->id,
+        'patient_id' => $patient->id,
+        'doctor_id' => $this->doctor->id,
+    ]);
+
+    $doctor = userInRole('Doctor');
+
+    // Worklist links to the show route for a visit that already has a record.
+    $this->actingAs($doctor)
+        ->get(route('rme.treatment-room-worklist.index'))
+        ->assertOk()
+        ->assertSee('Buka Rekam Medis')
+        ->assertSee(route('rme.visits.medical-record.show', $visit), false)
+        ->assertDontSee('Mulai Rekam Medis');
+
+    // Following that link does NOT 404.
+    $this->actingAs($doctor)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk();
+
+    expect(MedicalRecord::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+});
+
+it('offers a start action and creates exactly one record when none exists', function () {
+    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $visit = worklistVisit($this->atg, $room, 'Pasien Belum RM', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
+
+    $doctor = userInRole('Doctor');
+
+    // No record yet → worklist shows the start action (POST store), not the broken show link.
+    $this->actingAs($doctor)
+        ->get(route('rme.treatment-room-worklist.index'))
+        ->assertOk()
+        ->assertSee('Mulai Rekam Medis')
+        ->assertSee(route('rme.visits.medical-record.store', $visit), false);
+
+    // Starting the record creates exactly one draft, then the record opens (no 404).
+    $this->actingAs($doctor)
+        ->post(route('rme.visits.medical-record.store', $visit))
+        ->assertRedirect(route('rme.visits.medical-record.show', $visit));
+
+    expect(MedicalRecord::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+
+    $this->actingAs($doctor)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk();
 });
 
 // --- E. Regressions ------------------------------------------------------------
