@@ -7466,3 +7466,17 @@ deletion. No role assignment change. No authorization logic rewrite. No policy/m
 remains hidden. WhatsApp manual-only. Zero-remaining receivable rule preserved. Overpayment guard
 preserved. RME remains complete/closed. Pilot Health Check governance loop remains stopped. Inventory
 stock remains ledger-based. No GO tag before PR merge.
+
+---
+
+## Hotfix — Inventory Unified Branch Master Guardrail (June 2026)
+
+Inventory must use `mst_branches` as the unified branch source shared with RME and all modules
+(Lab, Cashier, Receivables, Owner Dashboard, Access Control). Audit confirmed the Inventory module
+already references `mst_branches` exclusively via `App\Modules\Branch\Models\Branch` and
+`BranchContext`; no redundant branch master (`inventory_branches`, `inv_branches`, `lab_branches`,
+`cashier_branches`, `rme_branches`) exists. This hotfix is a governance guardrail only: it adds
+`tests/Feature/Inventory/InventoryUnifiedBranchMasterHotfixTest.php` (DB foreign-key introspection,
+model-relation reflection, migration/seeder/source file scanning) to prevent any future redundant
+branch master, plus `docs/hotfix_inventory_unified_branch_master.md`. **Safety:** no migration, no
+schema change, no data change, no business-flow/stock-movement/RME change.
