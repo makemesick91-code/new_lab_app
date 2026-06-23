@@ -13,7 +13,6 @@
                     'visit'       => null,
                     'patients'    => $patients,
                     'doctors'     => $doctors,
-                    'clinicRooms' => $clinicRooms,
                     'rmeBranches' => $rmeBranches,
                     'prefill'     => $prefill ?? [],
                 ])

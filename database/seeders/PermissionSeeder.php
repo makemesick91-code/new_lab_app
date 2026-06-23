@@ -115,6 +115,8 @@ class PermissionSeeder extends Seeder
         'manage_clinic_visits',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
+        // Sprint 58.6 — Doctor/Perawat treatment room worklist
+        'view_treatment_worklist',
         // Sprint 22 Phase 22.1 — Pilot dashboard hardening
         'view_owner_dashboard',
         'view_branch_dashboard',

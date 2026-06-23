@@ -208,6 +208,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('medical-records', [MedicalRecordController::class, 'index'])
             ->name('medical-records.index');
 
+        // Sprint 58.6 — Doctor/Perawat treatment room worklist (room-assigned patients only).
+        Route::middleware('permission:view_treatment_worklist')
+            ->get('treatment-room-worklist', [ClinicVisitController::class, 'roomWorklist'])
+            ->name('treatment-room-worklist.index');
+
         Route::get('visits/patient-options', [ClinicVisitController::class, 'patientVisitOptions'])
             ->name('visits.patient-options');
 
@@ -218,6 +223,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::middleware('permission:manage_clinic_visits')
             ->post('visits/{clinicVisit}/transition', [ClinicVisitController::class, 'transitionStatus'])
             ->name('visits.transition');
+
+        // Sprint 58.6 — Admin Klinik assigns a treatment room to a queued visit.
+        Route::middleware('permission:manage_clinic_visits')
+            ->patch('visits/{clinicVisit}/room', [ClinicVisitController::class, 'assignRoom'])
+            ->name('visits.assign-room');
 
         Route::get('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'show'])
             ->name('visits.medical-record.show');

@@ -130,6 +130,10 @@
                            class="menu-subitem {{ (request()->routeIs('rme.visits.*') && ! request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
                         <a href="{{ route('rme.medical-records.index') }}"
                            class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
+                        @can('view_treatment_worklist')
+                            <a href="{{ route('rme.treatment-room-worklist.index') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.treatment-room-worklist.*') ? $linkActive : $linkIdle }}">Ruang Perawatan</a>
+                        @endcan
                         @can('manage_rme_billing')
                             <a href="{{ route('rme.cashier.index') }}"
                                class="menu-subitem {{ request()->routeIs('rme.cashier.index', 'rme.cashier.create', 'rme.cashier.store', 'rme.cashier.show', 'rme.cashier.payment.*', 'rme.cashier.receipt.*') ? $linkActive : $linkIdle }}">Kasir RME</a>

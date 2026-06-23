@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Requests\AssignRoomRequest;
 use App\Modules\ClinicVisit\Requests\StoreClinicVisitRequest;
 use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
@@ -62,8 +63,47 @@ class ClinicVisitController extends Controller
             'statuses' => ClinicVisit::STATUSES,
             'rmeWidgets' => $rmeWidgets,
             'rmeBranches' => $this->branchService->listRmeEnabled(),
+            'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
+    }
+
+    /**
+     * Sprint 58.6 — Doctor/Perawat treatment room worklist. Shows only visits
+     * that already have an assigned treatment room and are still in an active
+     * (non-terminal) state, scoped to the active RME-enabled branch set.
+     */
+    public function roomWorklist(Request $request): View
+    {
+        $this->authorize('viewAny', ClinicVisit::class);
+
+        $filters = [
+            'search' => $request->string('search')->toString() ?: null,
+            'status' => $request->string('status')->toString() ?: null,
+            'clinic_room_id' => $request->integer('clinic_room_id') ?: null,
+            'branch_id' => $request->integer('branch_id') ?: null,
+        ];
+
+        return view('rme.visits.room-worklist', [
+            'visits' => $this->visits->roomWorklist($filters),
+            'filters' => $filters,
+            'statuses' => ClinicVisit::STATUSES,
+            'rooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)
+                ->whereIn('branch_id', $this->branchService->rmeEnabledIds())
+                ->orderBy('name')
+                ->get(),
+        ]);
+    }
+
+    public function assignRoom(AssignRoomRequest $request, ClinicVisit $clinicVisit): RedirectResponse
+    {
+        $this->authorize('update', $clinicVisit);
+
+        $this->visits->assignRoom($clinicVisit, (int) $request->validated()['clinic_room_id']);
+
+        return redirect()
+            ->back()
+            ->with('status', 'Ruangan pasien berhasil diperbarui.');
     }
 
     public function create(Request $request): View
@@ -80,7 +120,6 @@ class ClinicVisitController extends Controller
         return view('rme.visits.create', [
             'patients' => Patient::with('branch')->orderBy('name')->get(),
             'doctors' => Doctor::orderBy('name')->get(),
-            'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'rmeBranches' => $this->branchService->listRmeEnabled(),
             'prefill' => $prefill,
@@ -146,7 +185,6 @@ class ClinicVisitController extends Controller
 
         return view('rme.visits.edit', [
             'visit' => $clinicVisit,
-            'clinicRooms' => ClinicRoom::where('status', ClinicRoom::STATUS_ACTIVE)->orderBy('name')->get(),
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'statuses' => ClinicVisit::STATUSES,
         ]);

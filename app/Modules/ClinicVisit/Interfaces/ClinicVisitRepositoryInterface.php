@@ -21,6 +21,15 @@ interface ClinicVisitRepositoryInterface
      */
     public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
 
+    /**
+     * Paginate room-assigned, non-terminal visits for the doctor/nurse worklist,
+     * scoped to the active RME-enabled branch set.
+     *
+     * @param  array<int, int>  $branchIds
+     * @param  array{search?: string|null, status?: string|null, clinic_room_id?: int|null}  $filters
+     */
+    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator;
+
     public function findInBranch(int $branchId, int $id): ?ClinicVisit;
 
     public function nextQueueNumber(int $branchId, Carbon $visitDate): int;

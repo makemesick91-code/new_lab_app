@@ -189,6 +189,8 @@ class RoleSeeder extends Seeder
             // Sprint 20 Phase 1.12 — RME pilot: doctor workflow (no cashier billing)
             'view_clinic_visits',
             'manage_clinic_visits',
+            // Sprint 58.6 — treatment room worklist
+            'view_treatment_worklist',
         ],
         // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)
         'Owner' => [
@@ -224,6 +226,8 @@ class RoleSeeder extends Seeder
             'manage patients',
             'view_clinic_visits',
             'manage_clinic_visits',
+            // Sprint 58.6 — treatment room worklist
+            'view_treatment_worklist',
         ],
         // Sprint 58.1 — Admin Warehouse: inventory-focused role that lands on
         // the Inventory Executive Dashboard after login (least-privilege).
