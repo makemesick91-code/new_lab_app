@@ -50,6 +50,36 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->withQueryString();
     }
 
+    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator
+    {
+        return ClinicVisit::query()
+            ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
+            ->whereIn('branch_id', $branchIds)
+            ->whereNotNull('clinic_room_id')
+            ->whereNotIn('status', [
+                ClinicVisit::STATUS_CASHIER_PENDING,
+                ClinicVisit::STATUS_COMPLETED,
+                ClinicVisit::STATUS_CANCELLED,
+            ])
+            ->when($filters['clinic_room_id'] ?? null, fn ($q, $v) => $q->where('clinic_room_id', $v))
+            ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->when($filters['search'] ?? null, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(visit_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', function ($p) use ($term) {
+                            $p->whereRaw('LOWER(name) LIKE ?', [$term])
+                                ->orWhereRaw('LOWER(medical_record_number) LIKE ?', [$term]);
+                        });
+                });
+            })
+            ->orderByDesc('visit_date')
+            ->orderBy('clinic_room_id')
+            ->orderBy('queue_number')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
     public function findInBranch(int $branchId, int $id): ?ClinicVisit
     {
         return ClinicVisit::query()->where('branch_id', $branchId)->find($id);

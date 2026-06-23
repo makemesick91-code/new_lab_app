@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Services;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
@@ -57,6 +58,59 @@ class ClinicVisitService
         }
 
         return $allowed;
+    }
+
+    /**
+     * Doctor/Perawat treatment room worklist: room-assigned, non-terminal visits
+     * across the active RME-enabled branch set (optionally narrowed to one RME
+     * branch). Never falls back to a single BranchContext branch.
+     */
+    public function roomWorklist(array $filters = [], int $perPage = 20): LengthAwarePaginator
+    {
+        return $this->visits->worklistForBranches(
+            $this->scopeBranchIds($filters['branch_id'] ?? null),
+            $filters,
+            $perPage,
+        );
+    }
+
+    /**
+     * Active treatment rooms for the active RME-enabled branch set, grouped by
+     * branch_id, for the queue's per-row room assignment selector.
+     *
+     * @return Collection<int, Collection<int, ClinicRoom>>
+     */
+    public function activeRoomsByRmeBranch(): Collection
+    {
+        return ClinicRoom::query()
+            ->whereIn('branch_id', $this->branches->rmeEnabledIds())
+            ->where('status', ClinicRoom::STATUS_ACTIVE)
+            ->orderBy('name')
+            ->get()
+            ->groupBy('branch_id');
+    }
+
+    /**
+     * Assign a treatment room to a visit. The room must be active and belong to
+     * the same branch as the visit — rooms from other branches are rejected.
+     */
+    public function assignRoom(ClinicVisit $visit, int $roomId): ClinicVisit
+    {
+        $room = ClinicRoom::query()->find($roomId);
+
+        if ($room === null || $room->status !== ClinicRoom::STATUS_ACTIVE) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Ruangan tidak ditemukan atau tidak aktif.',
+            ]);
+        }
+
+        if ((int) $room->branch_id !== (int) $visit->branch_id) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Ruangan harus berasal dari cabang yang sama dengan kunjungan.',
+            ]);
+        }
+
+        return DB::transaction(fn () => $this->visits->update($visit, ['clinic_room_id' => $room->id]));
     }
 
     public function find(int $id): ?ClinicVisit

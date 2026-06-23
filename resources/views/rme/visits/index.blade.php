@@ -123,6 +123,7 @@
                         <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
                         <th scope="col" class="px-3 py-3 font-medium">Klinik/Cabang</th>
                         <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
+                        <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
                         <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
                         <th scope="col" class="px-3 py-3 font-medium">Status</th>
                         <th scope="col" class="px-4 py-3 text-right font-medium">Aksi</th>
@@ -147,6 +148,37 @@
                             </td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
+                            <td class="px-3 py-3 text-gray-600">
+                                @php
+                                    $branchRooms = ($roomsByBranch ?? collect())->get($visit->branch_id) ?? collect();
+                                @endphp
+                                @if ($isTerminal || $branchRooms->isEmpty())
+                                    <span class="{{ $visit->clinicRoom ? 'text-gray-700' : 'text-gray-400' }}">
+                                        {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
+                                    </span>
+                                @elseif (auth()->user()?->can('update', $visit))
+                                    <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
+                                          class="flex flex-wrap items-center gap-1.5">
+                                        @csrf
+                                        @method('PATCH')
+                                        <select name="clinic_room_id"
+                                                class="min-w-[8rem] rounded-lg border-gray-300 text-xs focus:border-teal-500 focus:ring-teal-500">
+                                            <option value="">- Pilih ruangan -</option>
+                                            @foreach ($branchRooms as $room)
+                                                <option value="{{ $room->id }}" @selected($visit->clinic_room_id == $room->id)>{{ $room->name }}</option>
+                                            @endforeach
+                                        </select>
+                                        <button type="submit"
+                                                class="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
+                                            Simpan
+                                        </button>
+                                    </form>
+                                @else
+                                    <span class="{{ $visit->clinicRoom ? 'text-gray-700' : 'text-gray-400' }}">
+                                        {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
+                                    </span>
+                                @endif
+                            </td>
                             <td class="px-3 py-3 text-gray-600">{{ $visit->visit_date?->format('d/m/Y') }}</td>
                             <td class="px-3 py-3">
                                 <x-ui.badge :tone="$statusTone[$visit->status] ?? 'neutral'">
@@ -166,7 +198,7 @@
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="8" class="px-4 py-12 text-center">
+                            <td colspan="9" class="px-4 py-12 text-center">
                                 <p class="text-sm font-medium text-gray-900">Belum ada kunjungan.</p>
                                 <p class="mt-1 text-sm text-gray-500">Daftarkan kunjungan baru untuk memulai antrian hari ini.</p>
                             </td>

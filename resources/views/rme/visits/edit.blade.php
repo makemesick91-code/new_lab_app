@@ -29,15 +29,8 @@
                             @endforeach
                         </select>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Ruangan <span class="text-gray-400">(opsional)</span></label>
-                        <select name="clinic_room_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">- Tanpa ruangan -</option>
-                            @foreach ($clinicRooms as $room)
-                                <option value="{{ $room->id }}" @selected(old('clinic_room_id', $visit->clinic_room_id) == $room->id)>{{ $room->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    {{-- Sprint 58.6 — Room selection removed from the visit edit form.
+                         Treatment rooms are assigned by Admin Klinik from the queue. --}}
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Keluhan Utama <span class="text-gray-400">(opsional)</span></label>
                         <textarea name="chief_complaint" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('chief_complaint', $visit->chief_complaint) }}</textarea>
