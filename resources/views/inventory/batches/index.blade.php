@@ -14,6 +14,38 @@
             </div>
         </div>
 
+        <div class="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900" role="note">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="max-w-2xl">
+                    <p class="font-semibold text-sky-900">Halaman pemantauan Batch &amp; Lot</p>
+                    <p class="mt-1 text-sky-800">Batch/Lot tidak dibuat manual dari halaman ini. Batch/Lot akan muncul otomatis setelah stok masuk melalui Goods Receipt, Opening Stock, atau Adjustment In.</p>
+                </div>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+                @if (Route::has('inventory.goods-receipts.create'))
+                    <a href="{{ route('inventory.goods-receipts.create') }}" class="inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        Input via Goods Receipt
+                    </a>
+                @endif
+                @if (Route::has('inventory.products.index'))
+                    <a href="{{ route('inventory.products.index') }}" class="inline-flex items-center rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2">
+                        Input Stok Awal Produk
+                    </a>
+                @endif
+                @if (Route::has('inventory.products.index'))
+                    <a href="{{ route('inventory.products.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">
+                        Lihat Produk
+                    </a>
+                @endif
+                @if (Route::has('inventory.goods-receipts.index'))
+                    <a href="{{ route('inventory.goods-receipts.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2">
+                        Lihat Penerimaan Barang
+                    </a>
+                @endif
+            </div>
+            <p class="mt-2 text-xs text-sky-700">Stok awal per produk diisi dari halaman produk → tombol "Stok Awal" pada masing-masing produk.</p>
+        </div>
+
         <form method="GET" action="{{ route('inventory.batches.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 md:items-end">
                 <div class="xl:col-span-2">

@@ -236,6 +236,7 @@
             <h3 class="text-base font-semibold text-gray-900">Item Penerimaan</h3>
             <p class="mt-1 text-sm text-gray-500">Isi lokasi stok dan jumlah diterima per baris. Kolom sudah diterima (PO) bersifat baca-saja.</p>
             <p class="mt-1 text-sm text-gray-500">Jumlah Diterima dihitung otomatis dari Diterima Baik + Ditolak. Hanya Diterima Baik yang menambah stok saat posting.</p>
+            <p class="mt-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-800">Isi nomor batch/lot dan tanggal kedaluwarsa untuk barang yang dilacak batch atau expired. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch &amp; Lot.</p>
         </div>
 
         @error('items')

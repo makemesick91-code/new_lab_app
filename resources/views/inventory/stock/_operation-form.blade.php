@@ -204,6 +204,7 @@
                                 'batches' => $batches ?? collect(),
                                 'allowCreate' => $batchAllowCreate,
                                 'showBatchSelector' => $batchShowSelector,
+                                'batchHelp' => $batchHelp ?? null,
                             ])
                         @endif
 

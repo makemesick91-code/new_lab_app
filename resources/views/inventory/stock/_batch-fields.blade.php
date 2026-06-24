@@ -2,6 +2,7 @@
     $batches = collect($batches ?? []);
     $allowCreate = $allowCreate ?? true;
     $showBatchSelector = $showBatchSelector ?? true;
+    $batchHelp = $batchHelp ?? null;
     $batchMode = old('batch_mode', '');
 @endphp
 
@@ -10,8 +11,11 @@
     x-data="{ batchMode: @js($batchMode) }"
 >
     <div>
-        <p class="text-sm font-semibold text-gray-900">Batch</p>
+        <p class="text-sm font-semibold text-gray-900">Batch / Lot</p>
         <p class="mt-1 text-xs text-gray-500">Opsional. Tautkan pergerakan ini ke identitas batch/lot untuk pelacakan stok.</p>
+        @if ($batchHelp)
+            <p class="mt-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-800">{{ $batchHelp }}</p>
+        @endif
     </div>
 
     @if ($allowCreate)

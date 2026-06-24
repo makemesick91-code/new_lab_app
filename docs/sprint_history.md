@@ -7480,3 +7480,17 @@ already references `mst_branches` exclusively via `App\Modules\Branch\Models\Bra
 model-relation reflection, migration/seeder/source file scanning) to prevent any future redundant
 branch master, plus `docs/hotfix_inventory_unified_branch_master.md`. **Safety:** no migration, no
 schema change, no data change, no business-flow/stock-movement/RME change.
+
+---
+
+## Hotfix — Inventory Batch/Lot Stock-In UI Visibility (June 2026)
+
+Clarified that the Batch/Lot page is monitoring-only and added visible stock-in guidance/fields for
+Goods Receipt and Opening Stock workflows. Added an operator guidance card (with `Route::has`-guarded
+shortcuts) on the Batch & Lot index, batch helper text on the Goods Receipt and Receive/Adjustment-In
+forms, and wired the Opening Stock form + `StoreOpeningStockRequest` to the existing
+`ValidatesInventoryBatchInput` concern and the already-present `InventoryStockService::createOpeningStock`
+`$batchData` parameter. **Safety:** no manual batch create button/route, no new/duplicate batch table,
+no migration, no ledger-stock logic change, no RME change, no branch master change. Tests:
+`tests/Feature/Inventory/InventoryBatchLotUiVisibilityHotfixTest.php` (11 passed); full Inventory suite
+1200 passed; Pint passed. Doc: `docs/hotfix_inventory_batch_lot_ui_visibility.md`.
