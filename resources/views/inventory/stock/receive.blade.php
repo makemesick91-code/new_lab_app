@@ -7,5 +7,6 @@
         'includeSupplier' => true,
         'includeBatch' => true,
         'batches' => $batches ?? collect(),
+        'batchHelp' => 'Pilih "Buat Batch Baru" untuk mengisi nomor batch/lot dan tanggal kedaluwarsa. Batch akan tampil di halaman Batch & Lot setelah stok diterima.',
     ])
 </x-settings-shell>

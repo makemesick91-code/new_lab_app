@@ -53,6 +53,7 @@ class InventoryStockController extends Controller
         return $this->renderInventoryView('inventory.stock.opening', [
             'product' => $product->load(['category', 'unit']),
             'locations' => $this->locations->listActive(),
+            'batches' => $this->stock->listActiveBatchesForProduct($product->id),
         ]);
     }
 
@@ -66,6 +67,7 @@ class InventoryStockController extends Controller
             (float) $request->validated('quantity'),
             (float) ($request->validated('unit_cost') ?: 0),
             $request->validated('notes'),
+            $request->batchData(),
         );
 
         return redirect()->route('inventory.products.stock-card', $product)->with('status', 'Stok awal berhasil ditambahkan.');
