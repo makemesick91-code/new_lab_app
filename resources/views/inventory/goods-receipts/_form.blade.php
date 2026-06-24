@@ -307,7 +307,7 @@
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatCurrency(item.unit_cost)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums font-medium text-gray-900" x-text="formatCurrency(lineTotal(item))"></td>
                             </tr>
-                            <tr x-show="item.requires_batch_tracking && Number(item.accepted_qty || 0) > 0">
+                            <tr x-show="item.requires_batch_tracking">
                                 <td colspan="10" class="px-3 pb-3">
                                     @include('inventory.goods-receipts._batch-item-fields')
                                 </td>
