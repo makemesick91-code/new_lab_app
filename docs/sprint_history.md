@@ -7494,3 +7494,20 @@ forms, and wired the Opening Stock form + `StoreOpeningStockRequest` to the exis
 no migration, no ledger-stock logic change, no RME change, no branch master change. Tests:
 `tests/Feature/Inventory/InventoryBatchLotUiVisibilityHotfixTest.php` (11 passed); full Inventory suite
 1200 passed; Pint passed. Doc: `docs/hotfix_inventory_batch_lot_ui_visibility.md`.
+
+---
+
+## Hotfix — Goods Receipt Batch Fields Visible (June 2026)
+
+Goods Receipt item lines now visibly show Batch/Lot fields for batch-tracked products and prevent
+posting batch-tracked receipts without `batch_number`. Root cause was UI-only: the batch section in
+`_form.blade.php` and `_batch-item-fields.blade.php` was gated by
+`item.requires_batch_tracking && Number(item.accepted_qty || 0) > 0`, so the Batch/Lot inputs hid
+whenever accepted_qty was blank/zero. The gate is now `item.requires_batch_tracking` alone, with a
+mandatory operator notice ("Produk ini wajib batch. Isi Nomor Batch sebelum Submit/Post Goods
+Receipt."). Backend validation and the existing ledger post flow (which already creates the
+`InventoryBatch` and stamps `inventory_batch_id` on item + movement) were already correct and are
+unchanged. **Safety:** no migration, no new/duplicate batch table, no manual batch create/store route,
+no ledger-stock logic change, no procurement/PO lifecycle change, no RME change, no branch master
+change. Tests: `tests/Feature/Inventory/GoodsReceiptBatchFieldsVisibleHotfixTest.php` (8 passed). Doc:
+`docs/hotfix_goods_receipt_batch_fields_visible.md`.

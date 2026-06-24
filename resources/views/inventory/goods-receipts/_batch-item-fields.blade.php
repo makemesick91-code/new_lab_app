@@ -3,12 +3,13 @@
 @endphp
 
 <div
-    x-show="item.requires_batch_tracking && Number(item.accepted_qty || 0) > 0"
+    x-show="item.requires_batch_tracking"
     x-cloak
-    class="mt-3 rounded-lg border border-teal-100 bg-teal-50/60 p-3"
+    class="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3"
 >
     <p class="text-xs font-semibold uppercase tracking-wide text-teal-800">Batch / Lot</p>
-    <p class="mt-1 text-xs text-teal-700">Wajib untuk produk dengan pelacakan batch. Pilih batch existing atau buat batch baru.</p>
+    <p class="mt-1 text-xs font-semibold text-red-700">Produk ini wajib batch. Isi Nomor Batch sebelum Submit/Post Goods Receipt.</p>
+    <p class="mt-1 text-xs text-teal-700">Pilih batch existing atau buat batch baru.</p>
 
     <div class="mt-3 flex flex-wrap gap-2">
         <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-medium text-gray-700">
