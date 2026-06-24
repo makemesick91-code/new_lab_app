@@ -7511,3 +7511,25 @@ unchanged. **Safety:** no migration, no new/duplicate batch table, no manual bat
 no ledger-stock logic change, no procurement/PO lifecycle change, no RME change, no branch master
 change. Tests: `tests/Feature/Inventory/GoodsReceiptBatchFieldsVisibleHotfixTest.php` (8 passed). Doc:
 `docs/hotfix_goods_receipt_batch_fields_visible.md`.
+
+---
+
+## Hotfix — Goods Receipt Create PO Batch Panel Rendering (June 2026)
+
+Ensures the actual create-from-PO receipt page renders Batch/Lot inputs for PO items whose products
+require batch tracking. Follow-up to the batch-visibility hotfix: even though the panel was gated only
+on `item.requires_batch_tracking`, on VPS the batch panel never reached the live DOM (browser console:
+`document.body.innerText.includes('Produk ini wajib batch') === false`) for `PO-20260624-4-000002`
+whose four products (COTTON ROLL, ALKOHOL, ASEPTIC GEL, CAIRAN SPIRTUS) are all batch-tracked. Root
+cause was UI-only: the desktop items table placed **two sibling `<tr>` roots** (data row + batch row)
+inside one `<template x-for>`, but Alpine `x-for` requires a **single root element**, so it cloned only
+the data row and silently dropped the batch row — the server HTML still contained the markup (inside
+the inert `<template>`), so `assertSee` passed while the desktop DOM showed nothing. Fix: make the
+per-item **`<tbody>` the single x-for root** wrapping both rows (a table may hold multiple `<tbody>`),
+plus a hidden `requires_batch_tracking` input so the flag round-trips through old-input re-render. Data
+binding was already correct (`buildPrefillItemsFromPurchaseOrder` emits the flag; edit eager-loads
+`items.product`). **Safety:** no migration, no manual batch create/store route, no ledger redesign, no
+procurement lifecycle change, no RME change, no branch master change, no destructive data change.
+Tests: `tests/Feature/Inventory/GoodsReceiptCreatePoBatchPanelRenderingHotfixTest.php` (8 passed);
+full Inventory suite 1216 passed (6178 assertions); Pint passed; `git diff --check` clean. Doc:
+`docs/hotfix_goods_receipt_create_po_batch_panel_rendering.md`.
