@@ -7533,3 +7533,23 @@ procurement lifecycle change, no RME change, no branch master change, no destruc
 Tests: `tests/Feature/Inventory/GoodsReceiptCreatePoBatchPanelRenderingHotfixTest.php` (8 passed);
 full Inventory suite 1216 passed (6178 assertions); Pint passed; `git diff --check` clean. Doc:
 `docs/hotfix_goods_receipt_create_po_batch_panel_rendering.md`.
+
+## Hotfix — Stock Transfer Checklist Branding Daengtisia (June 2026)
+
+The downloaded/printed **"Checklist Pengiriman Barang Antar Lokasi"** still showed the legacy brand
+text `ASIA DENTAL LAB` in the document header. Root cause was a hardcoded brand string in the
+checklist PDF template (`resources/views/inventory/stock-transfers/checklist-pdf.blade.php`:
+`<p class="brand">Asia Dental Lab</p>`); the `.brand` CSS already uppercases the text, so it rendered
+as `ASIA DENTAL LAB`. Fix: replace the literal with a config-driven expression
+`{{ strtoupper(config('app.name', 'Daengtisia Management System')) }}`, which resolves `APP_NAME`
+(`"Daengtisia Management System"` in `.env`) so the header now reads `DAENGTISIA MANAGEMENT SYSTEM`.
+Route/view fixed: `inventory.stock-transfers.checklist`
+(`StockTransferController@downloadChecklist`) → `inventory/stock-transfers/checklist-pdf.blade.php`.
+Test added to `tests/Feature/Inventory/StockTransferChecklistPdfTest.php` renders the actual checklist
+view with real transfer data and asserts it contains `DAENGTISIA MANAGEMENT SYSTEM` and not
+`ASIA DENTAL LAB` (download route returns compressed binary PDF, so text is asserted against the
+rendered Blade view the route loads). **Safety:** no migration, no stock transfer lifecycle change, no
+inventory ledger change, no branch master change, no route redesign, no RME change. Validation:
+`php artisan test --filter=StockTransfer` 116 passed (552 assertions);
+`php artisan test --filter=Inventory` 1217 passed (6181 assertions); Pint passed; `git diff --check`
+clean. Doc: `docs/hotfix_stock_transfer_checklist_branding_daengtisia.md`.
