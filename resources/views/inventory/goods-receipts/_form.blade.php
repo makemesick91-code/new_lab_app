@@ -275,8 +275,12 @@
                             <th scope="col" class="px-3 py-3 text-right font-medium">Total</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100 bg-white">
-                        <template x-for="(item, index) in items" :key="index">
+                    {{-- Alpine x-for requires a SINGLE root element per iteration. A table may
+                         contain multiple <tbody> elements, so each item renders its own <tbody>
+                         wrapping both the data row and the batch/lot detail row. Using two sibling
+                         <tr> roots silently drops the batch row from the DOM on desktop. --}}
+                    <template x-for="(item, index) in items" :key="index">
+                        <tbody class="divide-y divide-gray-100 bg-white">
                             <tr>
                                 <td class="px-3 py-3">
                                     <p class="font-semibold text-gray-900" x-text="item.product_name"></p>
@@ -284,6 +288,7 @@
                                     <input type="hidden" :name="'items[' + index + '][purchase_order_item_id]'" :value="item.purchase_order_item_id">
                                     <input type="hidden" :name="'items[' + index + '][product_id]'" :value="item.product_id">
                                     <input type="hidden" :name="'items[' + index + '][received_qty]'" :value="item.received_qty">
+                                    <input type="hidden" :name="'items[' + index + '][requires_batch_tracking]'" :value="item.requires_batch_tracking ? 1 : 0">
                                 </td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatNumber(item.quantity_ordered)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-500" x-text="formatNumber(item.previously_received_qty)"></td>
@@ -312,8 +317,8 @@
                                     @include('inventory.goods-receipts._batch-item-fields')
                                 </td>
                             </tr>
-                        </template>
-                    </tbody>
+                        </tbody>
+                    </template>
                 </table>
             </div>
 
@@ -325,6 +330,7 @@
                         <input type="hidden" :name="'items[' + index + '][purchase_order_item_id]'" :value="item.purchase_order_item_id">
                         <input type="hidden" :name="'items[' + index + '][product_id]'" :value="item.product_id">
                         <input type="hidden" :name="'items[' + index + '][received_qty]'" :value="item.received_qty">
+                        <input type="hidden" :name="'items[' + index + '][requires_batch_tracking]'" :value="item.requires_batch_tracking ? 1 : 0">
                         <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
                             <div>
                                 <dt class="text-gray-500">Jumlah Dipesan</dt>
