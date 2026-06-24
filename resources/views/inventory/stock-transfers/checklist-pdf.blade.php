@@ -115,7 +115,7 @@
 </head>
 <body>
     <div class="header">
-        <p class="brand">Asia Dental Lab</p>
+        <p class="brand">{{ strtoupper(config('app.name', 'Daengtisia Management System')) }}</p>
         <h1 class="title">Checklist Pengiriman Barang Antar Lokasi</h1>
         <p class="muted">Dokumen pemeriksaan fisik transfer stok antar lokasi dalam satu cabang.</p>
     </div>

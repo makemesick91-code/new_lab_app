@@ -8,6 +8,7 @@ use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\StockTransferItem;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\View;
 use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
@@ -138,6 +139,19 @@ it('hides the checklist button for unauthorized users', function () {
         ->get(route('inventory.stock-transfers.show', $transfer))
         ->assertOk()
         ->assertDontSee('Download Checklist PDF');
+});
+
+it('renders the Daengtisia branding on the checklist and not the old brand', function () {
+    config(['app.name' => 'Daengtisia Management System']);
+    $transfer = checklistTransfer($this->branch, StockTransfer::STATUS_IN_TRANSIT, 'TRF-PDF-BRAND');
+
+    $html = View::make('inventory.stock-transfers.checklist-pdf', [
+        'stockTransfer' => $transfer,
+    ])->render();
+
+    expect($html)->toContain('DAENGTISIA MANAGEMENT SYSTEM')
+        ->and($html)->not->toContain('ASIA DENTAL LAB')
+        ->and($html)->not->toContain('Asia Dental Lab');
 });
 
 it('hides and blocks the checklist for draft and submitted transfers', function (string $status) {
