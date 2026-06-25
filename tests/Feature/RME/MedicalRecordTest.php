@@ -473,7 +473,7 @@ it('doctor-facing show page hides SOAP editable fields for draft record', functi
         ->assertDontSee('name="plan"', false)
         ->assertSee('id="rme-canvas"', false)
         ->assertSee('Simpan Tulisan Tangan')
-        ->assertSee('Bersihkan')
+        ->assertSee('Reset ke Tulisan Tersimpan')
         ->assertSee('Isi Rekam Medis lengkap');
 });
 

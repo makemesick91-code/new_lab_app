@@ -270,7 +270,10 @@ it('shows previous visit reference on control medical record page without mutati
         ->assertSee('Jenis Kunjungan:')
         ->assertSee('Kontrol dari:')
         ->assertSee($parent->visit_number)
-        ->assertSee('Riwayat Kunjungan Pasien');
+        // Sprint 59.2 — the patient visit history section was removed from the
+        // Medical Record page; the parent visit reference now comes only from
+        // the page header (Kontrol dari / visit number above).
+        ->assertDontSee('Riwayat Kunjungan Pasien');
 
     expect($parentMr->fresh()->notes)->toBe('RME final lama')
         ->and($parentMr->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
