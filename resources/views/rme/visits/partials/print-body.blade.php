@@ -12,7 +12,8 @@
         'normal' => 'Normal',
     ];
     $conditionLabels = $statusLabels;
-    $savedHandwriting = $medicalRecord?->latestHandwriting();
+    // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
+    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
 @endphp
 
 {{-- Patient & Visit Info --}}
@@ -91,12 +92,14 @@
 
         <div class="handwriting-preview">
             <div class="section-title" style="margin-bottom: 8px; border-bottom: none; padding-bottom: 0;">RME Tulisan Tangan</div>
-            @if ($savedHandwriting && $savedHandwriting->previewUrl())
-                <p class="handwriting-saved-at">
-                    Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
-                </p>
-                <img src="{{ $savedHandwriting->previewUrl() }}"
-                     alt="RME Tulisan Tangan">
+            @if ($rmPages->isNotEmpty())
+                @foreach ($rmPages as $rmPage)
+                    <p class="handwriting-saved-at">
+                        Halaman {{ $rmPage['page_number'] }} &mdash; Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}
+                    </p>
+                    <img src="{{ $rmPage['preview_url'] }}"
+                         alt="RME Tulisan Tangan Halaman {{ $rmPage['page_number'] }}">
+                @endforeach
             @else
                 <p class="field-empty">Belum ada handwriting RM.</p>
             @endif
