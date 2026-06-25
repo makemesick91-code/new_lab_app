@@ -120,18 +120,23 @@ class MedicalRecordService
         });
     }
 
+    /**
+     * Sprint 59 — doctors may revise a medical record at any time, including
+     * records that were previously finalized and visits from older dates. The
+     * finalization lock that previously blocked edits is removed; the `status`,
+     * `finalized_at`, and `finalized_by` columns are preserved as-is for
+     * backward compatibility.
+     *
+     * Only keys actually present in the submitted payload are written, so a
+     * partial save (e.g. only `notes`) never blanks out previously stored
+     * fields the doctor did not touch.
+     */
     public function updateDraft(MedicalRecord $medicalRecord, array $data): MedicalRecord
     {
         return DB::transaction(function () use ($medicalRecord, $data) {
             if (! $this->isActiveRmeBranch($medicalRecord->branch_id)) {
                 throw ValidationException::withMessages([
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
-                ]);
-            }
-
-            if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
-                throw ValidationException::withMessages([
-                    'status' => 'Rekam medis yang sudah final tidak dapat diubah.',
                 ]);
             }
 

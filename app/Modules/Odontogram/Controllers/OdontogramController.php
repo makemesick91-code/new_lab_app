@@ -4,6 +4,7 @@ namespace App\Modules\Odontogram\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramService;
@@ -29,7 +30,12 @@ class OdontogramController extends Controller
 
         $parentOdontogram = $clinicVisit->followUpOf?->odontogram;
 
-        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram'));
+        // Prev/next arrow navigation across the patient's visits. The odontogram
+        // show route auto-creates a placeholder per visit, so no medical-record
+        // requirement is needed here (Sprint 59).
+        $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
+
+        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits'));
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse

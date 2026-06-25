@@ -52,11 +52,10 @@ class OdontogramService
                 ]);
             }
 
-            if ($odontogram->isFinalized()) {
-                throw ValidationException::withMessages([
-                    'status' => 'Odontogram yang sudah final tidak dapat diubah.',
-                ]);
-            }
+            // Sprint 59 — odontogram data (table + generated visual) is revisable
+            // at any time, including previously finalized records and older
+            // visits. The finalization edit-lock is removed; `status`,
+            // `finalized_at`, and `finalized_by` remain for backward compatibility.
 
             $safe = array_intersect_key($payload, array_flip(['summary_notes', 'additional_conditions', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;

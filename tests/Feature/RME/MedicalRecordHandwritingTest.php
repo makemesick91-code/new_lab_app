@@ -118,7 +118,7 @@ it('viewer cannot save handwriting', function () {
         ->assertForbidden();
 });
 
-it('cannot save handwriting on finalized medical record', function () {
+it('can save handwriting on finalized medical record (Sprint 59)', function () {
     $this->record->update([
         'status' => MedicalRecord::STATUS_FINAL,
         'finalized_at' => now(),
@@ -128,7 +128,10 @@ it('cannot save handwriting on finalized medical record', function () {
         ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
             'handwriting_data' => validHandwritingData(),
         ])
-        ->assertSessionHasErrors(['handwriting_data']);
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($this->record->fresh()->hasHandwriting())->toBeTrue();
 });
 
 it('hasHandwriting returns false when no handwriting exists', function () {
@@ -207,7 +210,7 @@ it('draft show page displays saved handwriting preview', function () {
         ->assertSee('Simpan Tulisan Tangan');
 });
 
-it('final show page displays saved handwriting preview', function () {
+it('final show page displays saved handwriting preview and keeps the canvas editable (Sprint 59)', function () {
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
             'handwriting_data' => validHandwritingData(),
@@ -223,8 +226,9 @@ it('final show page displays saved handwriting preview', function () {
         ->assertSee('RME Tulisan Tangan')
         ->assertSee('Tersimpan pada')
         ->assertSee($handwriting->previewUrl(), false)
-        ->assertDontSee('id="rme-canvas"', false)
-        ->assertDontSee('Simpan Tulisan Tangan');
+        // Sprint 59 — handwriting remains revisable after finalization.
+        ->assertSee('id="rme-canvas"', false)
+        ->assertSee('Simpan Tulisan Tangan');
 });
 
 it('show page displays empty handwriting message when none exists', function () {

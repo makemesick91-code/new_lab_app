@@ -24,6 +24,13 @@
                     </p>
                 @endif
             </div>
+
+            {{-- Prev/next visit navigation (same patient, RM page) — Sprint 59 --}}
+            @include('rme.visits.partials.visit-nav-arrows', [
+                'prev' => $adjacentVisits['previous'] ?? null,
+                'next' => $adjacentVisits['next'] ?? null,
+                'routeName' => 'rme.visits.medical-record.show',
+            ])
         </div>
 
         <x-ui.card title="Informasi Kunjungan">
@@ -135,15 +142,45 @@
             $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
             $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
             $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
-            $canEditHandwriting = $isDraft && $canUpdate;
+            // Sprint 59 — handwriting and notes remain editable after finalization.
+            $canEditHandwriting = $canUpdate;
             $savedHandwriting = $medicalRecord->latestHandwriting();
             $hasHandwriting = $savedHandwriting !== null;
             $hasLegacySoap = filled($medicalRecord->subjective)
                 || filled($medicalRecord->objective)
                 || filled($medicalRecord->assessment)
-                || filled($medicalRecord->plan)
-                || filled($medicalRecord->notes);
+                || filled($medicalRecord->plan);
         @endphp
+
+        {{-- Catatan Rekam Medis — primary doctor writing area (Sprint 59).
+             Large, comfortable editor for long notes; editable on any visit
+             (including older finalized ones). Pre-filled with existing content;
+             partial saves never blank other fields. --}}
+        <x-ui.card
+            title="Catatan Rekam Medis"
+            description="Area penulisan rekam medis dokter. Dapat diisi untuk kunjungan lama maupun baru dan tetap dapat diperbarui setelah finalisasi."
+        >
+            @if ($canUpdate)
+                <form method="POST" action="{{ route('rme.visits.medical-record.update', [$clinicVisit, $medicalRecord]) }}">
+                    @csrf
+                    @method('PATCH')
+                    <textarea
+                        name="notes"
+                        rows="18"
+                        placeholder="Tulis catatan rekam medis lengkap di sini…"
+                        class="block w-full min-h-[24rem] rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm leading-relaxed @error('notes') border-rose-300 @enderror"
+                    >{{ old('notes', $medicalRecord->notes) }}</textarea>
+                    @error('notes')
+                        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
+                    @enderror
+                    <div class="mt-3 flex justify-end">
+                        <x-ui.button type="submit" variant="primary">Simpan Catatan</x-ui.button>
+                    </div>
+                </form>
+            @else
+                <p class="text-sm text-gray-700 whitespace-pre-wrap min-h-[6rem]">{{ $medicalRecord->notes ?: '—' }}</p>
+            @endif
+        </x-ui.card>
 
         @if ($hasLegacySoap)
             {{-- Legacy SOAP data (read-only; hidden from doctor input workflow) --}}
@@ -171,12 +208,6 @@
                         <div>
                             <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Plan</dt>
                             <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->plan }}</dd>
-                        </div>
-                    @endif
-                    @if (filled($medicalRecord->notes))
-                        <div>
-                            <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan</dt>
-                            <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $medicalRecord->notes }}</dd>
                         </div>
                     @endif
                 </dl>
@@ -305,7 +336,7 @@
             @endif
         @elseif (! $isDraft)
             <div class="rounded-lg bg-emerald-50 border border-emerald-300 px-4 py-3 text-sm text-emerald-800 font-medium">
-                Rekam Medis ini telah difinalkan dan tidak dapat diubah.
+                Rekam Medis ini telah difinalkan. Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
             </div>
         @endif
 

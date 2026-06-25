@@ -143,9 +143,9 @@ it('finalization does not change visit status when not in_progress', function ()
     ]);
 });
 
-// ─── Part C: Finalized RME is locked ─────────────────────────────────────────
+// ─── Part C: Finalized RME remains editable (Sprint 59) ──────────────────────
 
-it('finalized RME cannot be edited via service updateDraft', function () {
+it('finalized RME can still be edited via service updateDraft', function () {
     $this->actingAs($this->manager);
 
     [$visit, $record] = makeVisitWithDraft($this->branch);
@@ -154,11 +154,15 @@ it('finalized RME cannot be edited via service updateDraft', function () {
     $service = app(MedicalRecordService::class);
     $service->finalize($record);
 
-    expect(fn () => $service->updateDraft($record->fresh(), ['subjective' => 'diubah']))
-        ->toThrow(ValidationException::class);
+    $updated = $service->updateDraft($record->fresh(), ['notes' => 'revisi setelah final']);
+
+    expect($updated->notes)->toBe('revisi setelah final')
+        // Status/finalized columns are preserved for backward compatibility.
+        ->and($updated->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and($updated->finalized_at)->not->toBeNull();
 });
 
-it('finalized RME cannot be edited via HTTP PATCH', function () {
+it('finalized RME can still be edited via HTTP PATCH', function () {
     [$visit, $record] = makeVisitWithDraft($this->branch);
     addHandwriting($record, $visit);
 
@@ -167,10 +171,28 @@ it('finalized RME cannot be edited via HTTP PATCH', function () {
 
     $this->actingAs($this->manager)
         ->patch(route('rme.visits.medical-record.update', [$visit, $record->fresh()]), [
-            'subjective' => 'coba ubah',
+            'notes' => 'revisi via http',
         ])
         ->assertRedirect()
-        ->assertSessionHasErrors(['status']);
+        ->assertSessionHasNoErrors();
+
+    expect($record->fresh()->notes)->toBe('revisi via http');
+});
+
+it('updating a finalized RME does not blank fields the doctor did not submit', function () {
+    [$visit, $record] = makeVisitWithDraft($this->branch);
+    $record->update(['subjective' => 'keluhan awal']);
+    addHandwriting($record, $visit);
+
+    $this->actingAs($this->manager);
+    app(MedicalRecordService::class)->finalize($record);
+
+    // Submit only notes — subjective must survive.
+    app(MedicalRecordService::class)->updateDraft($record->fresh(), ['notes' => 'catatan baru']);
+
+    $fresh = $record->fresh();
+    expect($fresh->notes)->toBe('catatan baru')
+        ->and($fresh->subjective)->toBe('keluhan awal');
 });
 
 // ─── Part D: Authorization ────────────────────────────────────────────────────

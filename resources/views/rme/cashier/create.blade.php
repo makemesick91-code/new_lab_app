@@ -31,14 +31,21 @@
 
             <x-ui.card title="Item Tagihan" class="space-y-6">
 
+                <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3 text-xs text-sky-800">
+                    Tindakan dapat dipilih dari master <span class="font-medium">Treatment</span> atau diketik manual.
+                    Kosongkan dropdown Treatment dan isi kolom <span class="font-medium">Tindakan / Deskripsi</span>
+                    untuk tindakan manual. Setiap baris boleh memakai <span class="font-medium">treatment master</span> atau
+                    <span class="font-medium">nama tindakan manual</span>.
+                </div>
+
                 <div id="items-container" class="space-y-3">
                     @foreach ($oldItems as $idx => $item)
                         <div class="item-row grid grid-cols-12 gap-2 items-start border border-gray-200 rounded-md p-3">
                             <div class="col-span-3">
-                                <label class="block text-xs text-gray-500 mb-1">Treatment</label>
+                                <label class="block text-xs text-gray-500 mb-1">Treatment <span class="text-gray-400">(opsional)</span></label>
                                 <select name="items[{{ $idx }}][treatment_id]"
                                     class="treatment-select w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-teal-500 focus:ring-teal-500">
-                                    <option value="">— Pilih Treatment —</option>
+                                    <option value="">— Manual / Pilih Treatment —</option>
                                     @foreach ($treatments as $treatment)
                                         <option value="{{ $treatment->id }}"
                                             data-name="{{ $treatment->name }}"
@@ -49,9 +56,10 @@
                                 </select>
                             </div>
                             <div class="col-span-3">
-                                <label class="block text-xs text-gray-500 mb-1">Deskripsi <span class="text-red-500">*</span></label>
+                                <label class="block text-xs text-gray-500 mb-1">Tindakan / Deskripsi <span class="text-red-500">*</span></label>
                                 <input type="text" name="items[{{ $idx }}][description]"
                                     value="{{ $item['description'] ?? '' }}"
+                                    placeholder="Nama tindakan (manual atau dari treatment)"
                                     class="description-input w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-teal-500 focus:ring-teal-500"
                                     required>
                             </div>
@@ -148,17 +156,17 @@
             row.className = 'item-row grid grid-cols-12 gap-2 items-start border border-gray-200 rounded-md p-3';
             row.innerHTML = `
                 <div class="col-span-3">
-                    <label class="block text-xs text-gray-500 mb-1">Treatment</label>
+                    <label class="block text-xs text-gray-500 mb-1">Treatment <span class="text-gray-400">(opsional)</span></label>
                     <select name="items[${itemIndex}][treatment_id]" class="treatment-select w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-teal-500 focus:ring-teal-500" onchange="fillDescription(this)">
-                        <option value="">— Pilih Treatment —</option>
+                        <option value="">— Manual / Pilih Treatment —</option>
                         @foreach ($treatments as $treatment)
                         <option value="{{ $treatment->id }}" data-name="{{ $treatment->name }}">{{ $treatment->name }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="col-span-3">
-                    <label class="block text-xs text-gray-500 mb-1">Deskripsi <span class="text-red-500">*</span></label>
-                    <input type="text" name="items[${itemIndex}][description]" class="description-input w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-teal-500 focus:ring-teal-500" required>
+                    <label class="block text-xs text-gray-500 mb-1">Tindakan / Deskripsi <span class="text-red-500">*</span></label>
+                    <input type="text" name="items[${itemIndex}][description]" placeholder="Nama tindakan (manual atau dari treatment)" class="description-input w-full rounded-md border-gray-300 shadow-sm text-sm focus:border-teal-500 focus:ring-teal-500" required>
                 </div>
                 <div class="col-span-1">
                     <label class="block text-xs text-gray-500 mb-1">Qty <span class="text-red-500">*</span></label>

@@ -189,4 +189,45 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->whereIn('branch_id', $branchIds)
             ->find($id);
     }
+
+    public function adjacentVisitsForPatient(
+        array $branchIds,
+        ClinicVisit $visit,
+        bool $requireMedicalRecord = false
+    ): array {
+        $base = fn () => ClinicVisit::query()
+            ->whereIn('branch_id', $branchIds)
+            ->where('patient_id', $visit->patient_id)
+            ->where('id', '!=', $visit->id)
+            ->when($requireMedicalRecord, fn ($query) => $query->whereHas('medicalRecord'));
+
+        // Chronological ordering by (visit_date, id). "Previous" = the most
+        // recent visit strictly before the current one; "Next" = the earliest
+        // visit strictly after it. Tie-breaking on id keeps same-day visits stable.
+        $previous = $base()
+            ->where(function ($query) use ($visit) {
+                $query->where('visit_date', '<', $visit->visit_date)
+                    ->orWhere(function ($q) use ($visit) {
+                        $q->where('visit_date', '=', $visit->visit_date)
+                            ->where('id', '<', $visit->id);
+                    });
+            })
+            ->orderByDesc('visit_date')
+            ->orderByDesc('id')
+            ->first();
+
+        $next = $base()
+            ->where(function ($query) use ($visit) {
+                $query->where('visit_date', '>', $visit->visit_date)
+                    ->orWhere(function ($q) use ($visit) {
+                        $q->where('visit_date', '=', $visit->visit_date)
+                            ->where('id', '>', $visit->id);
+                    });
+            })
+            ->orderBy('visit_date')
+            ->orderBy('id')
+            ->first();
+
+        return ['previous' => $previous, 'next' => $next];
+    }
 }
