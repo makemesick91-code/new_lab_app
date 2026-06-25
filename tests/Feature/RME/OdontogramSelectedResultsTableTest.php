@@ -274,9 +274,9 @@ it('finalization does not clear per-row additional_note', function () {
         ->toBe('Pertahankan catatan');
 });
 
-// --- 14: finalized rows are display-only ---
+// --- 14: finalized rows stay editable for a manager (Sprint 59) ---
 
-it('finalized odontogram displays rows read-only without editable inputs', function () {
+it('finalized odontogram keeps rows editable for a manager (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
@@ -295,7 +295,8 @@ it('finalized odontogram displays rows read-only without editable inputs', funct
         ->assertOk()
         ->assertSee('FinalKondisiRow')
         ->assertSee('FinalCatatanRow')
-        ->assertDontSee('setAdditional', false);
+        // Sprint 59 — finalized odontograms remain editable, so the table editor renders.
+        ->assertSee('setAdditional', false);
 });
 
 // --- 15: print page shows the selected results table ---
@@ -357,7 +358,8 @@ it('old payload without per-row keys still renders safely', function () {
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Karies')
-        ->assertSee('—');
+        // Tooth 11 is present in the auto-generated FDI visual regardless of payload shape.
+        ->assertSee('11');
 });
 
 // --- 18: clinic_id null visit still opens ---

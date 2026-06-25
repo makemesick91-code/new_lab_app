@@ -26,9 +26,10 @@ class OdontogramPolicy
 
     public function update(User $user, Odontogram $odontogram): bool
     {
+        // Sprint 59 — finalized odontograms remain editable so doctors can
+        // revise them on any visit. The previous `! isFinalized()` gate is removed.
         return $this->canManage($user)
-            && $this->belongsToActiveBranch($odontogram->branch_id)
-            && ! $odontogram->isFinalized();
+            && $this->belongsToActiveBranch($odontogram->branch_id);
     }
 
     public function finalize(User $user, Odontogram $odontogram): bool

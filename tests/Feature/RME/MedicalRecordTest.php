@@ -257,7 +257,7 @@ it('updateDraft ignores unsafe fields', function () {
         ->and($updated->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 
-it('updateDraft rejects final record', function () {
+it('updateDraft still edits a final record (Sprint 59)', function () {
     $user = User::factory()->create();
     $this->actingAs($user);
 
@@ -265,8 +265,10 @@ it('updateDraft rejects final record', function () {
     // Let factory create its own visit to avoid visit_number collision within the same test
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
 
-    expect(fn () => app(MedicalRecordService::class)->updateDraft($record, ['subjective' => 'nyeri']))
-        ->toThrow(ValidationException::class);
+    $updated = app(MedicalRecordService::class)->updateDraft($record, ['subjective' => 'nyeri']);
+
+    expect($updated->subjective)->toBe('nyeri')
+        ->and($updated->status)->toBe(MedicalRecord::STATUS_FINAL);
 });
 
 // --- HTTP layer (Sprint 20 Phase 1.2.3) ---
@@ -343,7 +345,7 @@ it('manager can update draft medical record', function () {
     expect($record->fresh()->subjective)->toBe('nyeri diperbarui');
 });
 
-it('manager cannot update final medical record', function () {
+it('manager can update final medical record (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     // Use factory's own visit so no visit_number collision within the same test
@@ -353,10 +355,12 @@ it('manager cannot update final medical record', function () {
     $this->actingAs($manager)
         ->from(route('rme.visits.medical-record.show', $visit))
         ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
-            'subjective' => 'coba ubah',
+            'notes' => 'revisi dokter',
         ])
         ->assertRedirect()
-        ->assertSessionHasErrors(['status']);
+        ->assertSessionHasNoErrors();
+
+    expect($record->fresh()->notes)->toBe('revisi dokter');
 });
 
 it('manager can finalize draft medical record', function () {
@@ -566,7 +570,7 @@ it('manager can update SOAP fields from show page', function () {
     ]);
 });
 
-it('final record remains read-only from UI perspective', function () {
+it('final record remains editable from UI perspective (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $record = MedicalRecord::factory()->final()->create([
@@ -577,14 +581,17 @@ it('final record remains read-only from UI perspective', function () {
 
     $this->actingAs($manager)
         ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
-            'subjective' => 'coba ubah paksa',
+            'notes' => 'catatan revisi dokter',
         ])
         ->assertRedirect()
-        ->assertSessionHasErrors(['status']);
+        ->assertSessionHasNoErrors();
 
+    // Notes updated; the field the doctor did not submit (subjective) is preserved.
     $this->assertDatabaseHas('trx_medical_records', [
         'id' => $record->id,
+        'notes' => 'catatan revisi dokter',
         'subjective' => 'original subjective',
+        'status' => MedicalRecord::STATUS_FINAL,
     ]);
 });
 

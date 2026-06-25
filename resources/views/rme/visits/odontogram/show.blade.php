@@ -3,7 +3,9 @@
         $payload   = $odontogram->tooth_map_payload ?? [];
         $teethData = ! empty($payload['teeth']) ? (object) $payload['teeth'] : new \stdClass();
         $isFinalized = $odontogram->isFinalized();
-        $canUpdate = (! $isFinalized) && (auth()->user()?->can('update', $odontogram) ?? false);
+        // Sprint 59 — odontogram remains editable after finalization so doctors
+        // can revise table data (and the auto-generated visual) on any visit.
+        $canUpdate = auth()->user()?->can('update', $odontogram) ?? false;
         $canFinalize = (! $isFinalized) && (auth()->user()?->can('finalize', $odontogram) ?? false);
 
         // FDI display order: center → outer
@@ -11,6 +13,14 @@
         $upperLeft  = [21, 22, 23, 24, 25, 26, 27, 28]; // Q2 center-to-left
         $lowerRight = [48, 47, 46, 45, 44, 43, 42, 41]; // Q4 right-to-center
         $lowerLeft  = [31, 32, 33, 34, 35, 36, 37, 38]; // Q3 center-to-left
+
+        // Full FDI set in natural order — drives the table-first tooth picker.
+        $allFdiTeeth = [];
+        foreach ([1, 2, 3, 4] as $q) {
+            for ($i = 1; $i <= 8; $i++) {
+                $allFdiTeeth[] = (string) ($q * 10 + $i);
+            }
+        }
 
         // Odontogram status → human label (Kondisi Odontogram column).
         $statusLabels = [
@@ -36,6 +46,7 @@
             'canEdit' => $canUpdate,
             'teeth' => (array) $teethData,
             'statusLabels' => $statusLabels,
+            'allTeeth' => $allFdiTeeth,
         ];
     @endphp
 
@@ -54,7 +65,7 @@
         {{-- Finalized notice --}}
         @if ($isFinalized)
             <div class="rounded-lg bg-sky-50 border border-sky-200 p-4 text-sm text-sky-800">
-                Odontogram sudah final dan tidak bisa diedit.
+                Odontogram sudah final namun masih dapat direvisi oleh dokter.
                 @if ($odontogram->finalized_at)
                     Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
                     @if ($odontogram->finalizer)
@@ -83,6 +94,13 @@
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+                {{-- Prev/next visit navigation (same patient, Odontogram page) — Sprint 59 --}}
+                @include('rme.visits.partials.visit-nav-arrows', [
+                    'prev' => $adjacentVisits['previous'] ?? null,
+                    'next' => $adjacentVisits['next'] ?? null,
+                    'routeName' => 'rme.visits.odontogram.show',
+                ])
+
                 <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
                     &larr; Kembali ke Kunjungan
                 </x-ui.button>
@@ -403,10 +421,36 @@
 
                 <x-ui.card title="Hasil Odontogram yang Dipilih">
                     <p class="mb-4 text-xs text-gray-500">
-                        Setiap gigi/area yang ditandai pada peta gigi muncul di tabel berikut. Lengkapi
+                        Input odontogram berbasis tabel. Tambahkan baris gigi, pilih
+                        <span class="font-medium text-gray-700">Kondisi Odontogram</span>, lalu lengkapi
                         <span class="font-medium text-gray-700">Kondisi Tambahan</span> dan
-                        <span class="font-medium text-gray-700">Catatan Tambahan</span> per baris sebelum finalisasi.
+                        <span class="font-medium text-gray-700">Catatan Tambahan</span>. Peta gigi (visual)
+                        di atas diperbarui otomatis dari tabel ini — dokter tidak perlu menggambar manual.
                     </p>
+
+                    {{-- Table-first add-row control (Sprint 59) --}}
+                    <div class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Gigi / Area (FDI)</label>
+                            <select x-model="newTooth"
+                                class="rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                <option value="">— Pilih gigi —</option>
+                                <template x-for="t in availableTeeth" :key="t">
+                                    <option :value="t" x-text="t"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Kondisi Odontogram</label>
+                            <select x-model="newStatus"
+                                class="rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                @foreach ($statusLabels as $value => $label)
+                                    <option value="{{ $value }}">{{ $label }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <x-ui.button type="button" variant="secondary" x-on:click="addRow()">+ Tambah Baris</x-ui.button>
+                    </div>
 
                     {{-- Empty state --}}
                     <p x-show="selectedRows.length === 0" class="text-sm text-gray-500 italic">
@@ -420,9 +464,10 @@
                                 <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
                                     <th class="px-3 py-2 w-12">No</th>
                                     <th class="px-3 py-2 w-24">Gigi / Area</th>
-                                    <th class="px-3 py-2 w-32">Kondisi Odontogram</th>
+                                    <th class="px-3 py-2 w-36">Kondisi Odontogram</th>
                                     <th class="px-3 py-2">Kondisi Tambahan</th>
                                     <th class="px-3 py-2">Catatan Tambahan</th>
+                                    <th class="px-3 py-2 w-16">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-100">
@@ -431,8 +476,14 @@
                                         <td class="px-3 py-2 text-gray-500" x-text="idx + 1"></td>
                                         <td class="px-3 py-2 font-semibold text-gray-900" x-text="row.tooth"></td>
                                         <td class="px-3 py-2">
-                                            <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-200"
-                                                  x-text="statusLabel(row.status)"></span>
+                                            <select
+                                                :value="row.status"
+                                                @change="setStatus(row.tooth, $event.target.value)"
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                                @foreach ($statusLabels as $value => $label)
+                                                    <option value="{{ $value }}">{{ $label }}</option>
+                                                @endforeach
+                                            </select>
                                         </td>
                                         <td class="px-3 py-2">
                                             <input
@@ -451,6 +502,12 @@
                                                 :value="row.additional_note"
                                                 @input="setAdditional(row.tooth, 'additional_note', $event.target.value)"
                                                 class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
+                                        </td>
+                                        <td class="px-3 py-2">
+                                            <button type="button" @click="removeRow(row.tooth)"
+                                                class="inline-flex items-center justify-center rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-400">
+                                                Hapus
+                                            </button>
                                         </td>
                                     </tr>
                                 </template>

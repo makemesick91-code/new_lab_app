@@ -178,6 +178,22 @@ class ClinicVisitService
     }
 
     /**
+     * Previous/next visit for the same patient (chronological), used for the
+     * prev/next arrow navigation on the RM and Odontogram pages. Scoped to the
+     * active RME branch set, mirroring patientVisitHistory access (Sprint 59).
+     *
+     * @return array{previous: ?ClinicVisit, next: ?ClinicVisit}
+     */
+    public function adjacentVisits(ClinicVisit $visit, bool $requireMedicalRecord = false): array
+    {
+        return $this->visits->adjacentVisitsForPatient(
+            $this->branches->rmeEnabledIds(),
+            $visit,
+            $requireMedicalRecord,
+        );
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function patientVisitOptions(int $patientId, ?int $excludeVisitId = null): array

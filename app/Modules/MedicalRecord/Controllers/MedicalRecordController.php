@@ -55,11 +55,22 @@ class MedicalRecordController extends Controller
 
         $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf.medicalRecord', 'followUpOf.odontogram']);
 
-        $patientVisitHistory = app(ClinicVisitService::class)
+        $visitService = app(ClinicVisitService::class);
+
+        $patientVisitHistory = $visitService
             ->patientVisitHistory((int) $clinicVisit->patient_id, $clinicVisit->id)
             ->load(['medicalRecord', 'odontogram', 'doctor', 'initialTreatment']);
 
-        return view('rme.visits.medical-record.show', compact('clinicVisit', 'medicalRecord', 'patientVisitHistory'));
+        // Prev/next arrow navigation restricted to visits that already have a
+        // medical record, so the target RM page never 404s (Sprint 59).
+        $adjacentVisits = $visitService->adjacentVisits($clinicVisit, requireMedicalRecord: true);
+
+        return view('rme.visits.medical-record.show', compact(
+            'clinicVisit',
+            'medicalRecord',
+            'patientVisitHistory',
+            'adjacentVisits',
+        ));
     }
 
     public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit): RedirectResponse

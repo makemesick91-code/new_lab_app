@@ -50,8 +50,73 @@ Alpine.data('odontogramEditor', (config = {}) => ({
     canEdit: config.canEdit ?? false,
     teeth: config.teeth ?? {},
     statusLabels: config.statusLabels ?? {},
+    // Full FDI tooth set — drives the table-first tooth picker (Sprint 59).
+    allTeeth: config.allTeeth ?? [],
+    newTooth: '',
+    newStatus: 'caries',
     selectedTooth: null,
     toothNote: '',
+
+    /**
+     * Teeth available to add as a new table row = the full FDI set minus those
+     * already carrying a status. Keeps the picker from creating duplicate rows.
+     */
+    get availableTeeth() {
+        return this.allTeeth.filter((t) => ! (this.teeth[String(t)] && this.teeth[String(t)].status));
+    },
+
+    /**
+     * Table-first add: create a new selected row from the tooth/status picker.
+     * The FDI grid visual re-colours automatically because it reads `teeth`.
+     */
+    addRow() {
+        if (! this.canEdit) {
+            return;
+        }
+        const key = String(this.newTooth || '').trim();
+        if (key === '' || ! this.allTeeth.map(String).includes(key)) {
+            return;
+        }
+        if (this.teeth[key] && this.teeth[key].status) {
+            return;
+        }
+        this.teeth = Object.assign({}, this.teeth, {
+            [key]: {
+                status: this.newStatus || 'caries',
+                note: (this.teeth[key] && this.teeth[key].note) || '',
+                conditions: (this.teeth[key] && Array.isArray(this.teeth[key].conditions)) ? this.teeth[key].conditions : [],
+                additional_condition: (this.teeth[key] && this.teeth[key].additional_condition) || '',
+                additional_note: (this.teeth[key] && this.teeth[key].additional_note) || '',
+            },
+        });
+        this.newTooth = '';
+    },
+
+    /** Change a row's odontogram status from the per-row table dropdown. */
+    setStatus(toothKey, status) {
+        const key = String(toothKey);
+        if (! this.canEdit || ! this.teeth[key] || ! status) {
+            return;
+        }
+        this.teeth = Object.assign({}, this.teeth, {
+            [key]: Object.assign({}, this.teeth[key], { status }),
+        });
+    },
+
+    /** Remove a selected row entirely (clears the tooth from the visual too). */
+    removeRow(toothKey) {
+        if (! this.canEdit) {
+            return;
+        }
+        const key = String(toothKey);
+        const copy = Object.assign({}, this.teeth);
+        delete copy[key];
+        this.teeth = copy;
+        if (this.selectedTooth !== null && String(this.selectedTooth) === key) {
+            this.selectedTooth = null;
+            this.toothNote = '';
+        }
+    },
 
     clickTooth(num) {
         const key = String(num);

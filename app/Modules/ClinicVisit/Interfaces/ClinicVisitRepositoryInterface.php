@@ -73,4 +73,20 @@ interface ClinicVisitRepositoryInterface
      * @param  array<int, int>  $branchIds
      */
     public function findByIdInBranches(array $branchIds, int $id): ?ClinicVisit;
+
+    /**
+     * Resolve the previous/next visit for the same patient, scoped to the given
+     * RME branches and ordered chronologically by (visit_date, id). Used for the
+     * prev/next arrow navigation on the RM and Odontogram pages (Sprint 59).
+     * When $requireMedicalRecord is true, only visits that already have a medical
+     * record are considered (so RM navigation never lands on a 404).
+     *
+     * @param  array<int, int>  $branchIds
+     * @return array{previous: ?ClinicVisit, next: ?ClinicVisit}
+     */
+    public function adjacentVisitsForPatient(
+        array $branchIds,
+        ClinicVisit $visit,
+        bool $requireMedicalRecord = false
+    ): array;
 }

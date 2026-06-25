@@ -29,11 +29,9 @@ class MedicalRecordHandwritingController extends Controller
 
         $this->authorize('update', $medicalRecord);
 
-        if ($medicalRecord->status === MedicalRecord::STATUS_FINAL) {
-            throw ValidationException::withMessages([
-                'handwriting_data' => 'Rekam medis yang sudah final tidak dapat diubah.',
-            ]);
-        }
+        // Sprint 59 — handwriting RM is revisable after finalization. The
+        // previous immutability lock is removed so doctors can correct or
+        // append handwriting on any visit, including older finalized ones.
 
         $request->validate([
             'handwriting_data' => ['required', 'string'],

@@ -182,9 +182,9 @@ it('finalizing odontogram does not clear odontogram notes', function () {
     expect($odontogram->fresh()->summary_notes)->toBe('Catatan dipertahankan setelah final.');
 });
 
-// --- 10: finalized odontogram displays fields non-editable ---
+// --- 10: finalized odontogram stays editable for a manager (Sprint 59) ---
 
-it('finalized odontogram displays fields read-only (no editable input)', function () {
+it('finalized odontogram still exposes editable fields for a manager (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     Odontogram::factory()->create([
@@ -202,7 +202,8 @@ it('finalized odontogram displays fields read-only (no editable input)', functio
         ->assertOk()
         ->assertSee('Final kondisi tambahan.')
         ->assertSee('Final catatan.')
-        ->assertDontSee('name="additional_conditions"', false);
+        // Sprint 59 — finalized odontograms remain editable, so the input renders.
+        ->assertSee('name="additional_conditions"', false);
 });
 
 // --- 11: tooth-specific data still saves alongside new fields ---
