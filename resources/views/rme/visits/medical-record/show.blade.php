@@ -34,11 +34,61 @@
         </div>
 
         <x-ui.card title="Informasi Kunjungan">
-            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Pasien</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->patient?->name ?? '—' }}</dd>
-                </div>
+            {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
+                 two-column table (label : value). KTP number is intentionally
+                 never shown here, preserving RME privacy rules. Marital status
+                 and religion have no column in the pilot schema, so they use the
+                 safe "-" fallback (no migration added). --}}
+            @php
+                $patient = $clinicVisit->patient;
+                $bioDash = '-';
+                $genderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
+
+                // TTL / Umur — birth date (and age) only; the schema has no
+                // place-of-birth column, so the place segment is omitted.
+                if ($patient?->date_of_birth) {
+                    $ttlUmur = $patient->date_of_birth->format('d-m-Y');
+                    $patientAge = $patient->age();
+                    if ($patientAge !== null) {
+                        $ttlUmur .= ' / '.$patientAge.' tahun';
+                    }
+                } else {
+                    $ttlUmur = $bioDash;
+                }
+
+                $bioLeft = [
+                    ['Nama', $patient?->name ?: $bioDash],
+                    ['TTL / Umur', $ttlUmur],
+                    ['Pekerjaan', $patient?->occupation ?: $bioDash],
+                    ['Status Pernikahan', $patient?->marital_status ?: $bioDash],
+                    ['Alamat', $patient?->address ?: $bioDash],
+                ];
+                $bioRight = [
+                    ['Jenis Kelamin', $patient?->gender ? ($genderLabels[$patient->gender] ?? $patient->gender) : $bioDash],
+                    ['Agama', $patient?->religion ?: $bioDash],
+                    ['No. Tlp / Wa', $patient?->whatsapp_number ?: ($patient?->phone ?: $bioDash)],
+                    ['Email', $patient?->email ?: $bioDash],
+                    ['No. RM', $patient?->medical_record_number ?: $bioDash],
+                ];
+            @endphp
+
+            <div class="overflow-x-auto">
+                <table class="w-full border-collapse text-sm">
+                    <tbody>
+                        @foreach (range(0, 4) as $i)
+                            <tr class="align-top">
+                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioLeft[$i][0] }}</th>
+                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioLeft[$i][1] }}</td>
+                                <th class="border border-gray-200 bg-gray-50 px-3 py-1.5 text-left font-semibold text-gray-700 whitespace-nowrap">{{ $bioRight[$i][0] }}</th>
+                                <td class="w-1/3 border border-gray-200 px-3 py-1.5 text-gray-900">: {{ $bioRight[$i][1] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+
+            {{-- Visit-level context retained below the patient biodata table. --}}
+            <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dokter</dt>
                     <dd class="mt-1 text-sm text-gray-900">{{ $clinicVisit->doctor?->name ?? '—' }}</dd>
