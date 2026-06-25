@@ -53,22 +53,21 @@ class MedicalRecordController extends Controller
 
         $this->authorize('view', $medicalRecord);
 
-        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf.medicalRecord', 'followUpOf.odontogram']);
-
-        $visitService = app(ClinicVisitService::class);
-
-        $patientVisitHistory = $visitService
-            ->patientVisitHistory((int) $clinicVisit->patient_id, $clinicVisit->id)
-            ->load(['medicalRecord', 'odontogram', 'doctor', 'initialTreatment']);
+        // Sprint 59.2 — the Medical Record page no longer renders the patient
+        // visit history or the typed notes section, so only the relationships
+        // still used by the header are eager-loaded. The patientVisitHistory
+        // query is dropped here (the removed history card was its only
+        // consumer), cutting unnecessary per-page load.
+        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf']);
 
         // Prev/next arrow navigation restricted to visits that already have a
         // medical record, so the target RM page never 404s (Sprint 59).
-        $adjacentVisits = $visitService->adjacentVisits($clinicVisit, requireMedicalRecord: true);
+        $adjacentVisits = app(ClinicVisitService::class)
+            ->adjacentVisits($clinicVisit, requireMedicalRecord: true);
 
         return view('rme.visits.medical-record.show', compact(
             'clinicVisit',
             'medicalRecord',
-            'patientVisitHistory',
             'adjacentVisits',
         ));
     }

@@ -56,60 +56,10 @@
             </dl>
         </x-ui.card>
 
-        @if ($clinicVisit->isFollowUpVisit() || ($patientVisitHistory ?? collect())->isNotEmpty())
-            <x-ui.card title="Riwayat Kunjungan Pasien">
-                @if (($patientVisitHistory ?? collect())->isEmpty())
-                    <p class="text-sm text-gray-500">Tidak ada riwayat kunjungan sebelumnya.</p>
-                @else
-                    <div class="space-y-4">
-                        @foreach ($patientVisitHistory as $historyVisit)
-                            @php
-                                $historyMr = $historyVisit->medicalRecord;
-                                $historyOdontogram = $historyVisit->odontogram;
-                            @endphp
-                            <div class="rounded-lg border border-gray-200 p-4">
-                                <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <div>
-                                        <p class="font-mono text-sm font-semibold text-gray-900">{{ $historyVisit->visit_number }}</p>
-                                        <p class="text-xs text-gray-500">{{ $historyVisit->visit_date?->format('d/m/Y') }} — {{ $historyVisit->visitTypeLabel() }} — {{ $historyVisit->doctor?->name ?? '—' }}</p>
-                                    </div>
-                                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $historyVisit)">Buka Kunjungan</x-ui.button>
-                                </div>
-                                <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                                    <div>
-                                        <dt class="text-gray-500">Tindakan Awal</dt>
-                                        <dd class="text-gray-900">{{ $historyVisit->initialTreatment?->name ?? '—' }}</dd>
-                                    </div>
-                                    <div>
-                                        <dt class="text-gray-500">Status RME</dt>
-                                        <dd class="text-gray-900">{{ $historyMr ? strtoupper($historyMr->status) : 'Belum ada' }}</dd>
-                                    </div>
-                                    @if ($historyMr?->notes)
-                                        <div class="sm:col-span-2">
-                                            <dt class="text-gray-500">Catatan RME</dt>
-                                            <dd class="text-gray-700 whitespace-pre-wrap">{{ \Illuminate\Support\Str::limit($historyMr->notes, 200) }}</dd>
-                                        </div>
-                                    @endif
-                                    <div>
-                                        <dt class="text-gray-500">Odontogram</dt>
-                                        <dd class="text-gray-900">
-                                            @if ($historyOdontogram)
-                                                {{ $historyOdontogram->isFinalized() ? 'Final' : 'Draft' }}
-                                                @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $historyVisit])
-                                                    — <a href="{{ route('rme.visits.odontogram.show', $historyVisit) }}" class="text-teal-700 hover:text-teal-900">Lihat (read-only jika final)</a>
-                                                @endcan
-                                            @else
-                                                Belum ada
-                                            @endif
-                                        </dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-            </x-ui.card>
-        @endif
+        {{-- Sprint 59.2 — "Riwayat Kunjungan Pasien" removed from the Medical
+             Record page to declutter the doctor handwriting workflow and avoid
+             loading visit-history data that is no longer rendered here. The
+             history remains available on the clinic visit detail page. --}}
 
         <x-ui.card title="Riwayat Pencatatan">
             <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -152,35 +102,11 @@
                 || filled($medicalRecord->plan);
         @endphp
 
-        {{-- Catatan Rekam Medis — primary doctor writing area (Sprint 59).
-             Large, comfortable editor for long notes; editable on any visit
-             (including older finalized ones). Pre-filled with existing content;
-             partial saves never blank other fields. --}}
-        <x-ui.card
-            title="Catatan Rekam Medis"
-            description="Area penulisan rekam medis dokter. Dapat diisi untuk kunjungan lama maupun baru dan tetap dapat diperbarui setelah finalisasi."
-        >
-            @if ($canUpdate)
-                <form method="POST" action="{{ route('rme.visits.medical-record.update', [$clinicVisit, $medicalRecord]) }}">
-                    @csrf
-                    @method('PATCH')
-                    <textarea
-                        name="notes"
-                        rows="18"
-                        placeholder="Tulis catatan rekam medis lengkap di sini…"
-                        class="block w-full min-h-[24rem] rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm leading-relaxed @error('notes') border-rose-300 @enderror"
-                    >{{ old('notes', $medicalRecord->notes) }}</textarea>
-                    @error('notes')
-                        <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-                    @enderror
-                    <div class="mt-3 flex justify-end">
-                        <x-ui.button type="submit" variant="primary">Simpan Catatan</x-ui.button>
-                    </div>
-                </form>
-            @else
-                <p class="text-sm text-gray-700 whitespace-pre-wrap min-h-[6rem]">{{ $medicalRecord->notes ?: '—' }}</p>
-            @endif
-        </x-ui.card>
+        {{-- Sprint 59.2 — the typed "Catatan Rekam Medis" notes section is
+             removed from the doctor UI. Handwriting RM is the primary clinical
+             input, so the typed-notes editor only cluttered the workflow. The
+             `notes` column and its update route are kept untouched for
+             backward compatibility (print/detail views and the data layer). --}}
 
         @if ($hasLegacySoap)
             {{-- Legacy SOAP data (read-only; hidden from doctor input workflow) --}}
@@ -246,8 +172,13 @@
                         </p>
                     @endif
 
+                    {{-- Sprint 59.2 — taller canvas (extended downward) so the
+                         doctor has more vertical handwriting space. Width is
+                         unchanged at 900 and the element keeps max-width:100%
+                         with height:auto, so it stays responsive and never
+                         overflows horizontally. --}}
                     <canvas id="rme-canvas"
-                            width="900" height="500"
+                            width="900" height="1100"
                             data-existing-src="{{ ($savedHandwriting && $savedHandwriting->previewUrl()) ? $savedHandwriting->previewUrl() : '' }}"
                             class="block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
                             style="max-width:100%;height:auto;"></canvas>
@@ -274,6 +205,16 @@
                     let baselineImg = null;
                     let baselineLoaded = false;
 
+                    // Sprint 59.2 — draw a saved baseline at the top of the (now
+                    // taller) canvas while preserving its aspect ratio, so the
+                    // existing handwriting is never vertically stretched and the
+                    // added height simply extends downward as blank writing space.
+                    function drawBaseline(img) {
+                        const ratio = img.width > 0 ? canvas.width / img.width : 1;
+                        const drawH = Math.min(img.height * ratio, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, drawH);
+                    }
+
                     // Sprint 59.1 — load previously saved handwriting back into the
                     // canvas so new strokes are added on top of (and saved together
                     // with) the old handwriting. The canvas must never open blank
@@ -282,7 +223,7 @@
                         const img = new Image();
                         img.crossOrigin = 'anonymous';
                         img.onload = function () {
-                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            drawBaseline(img);
                             baselineImg = img;
                             baselineLoaded = true;
                         };
@@ -344,7 +285,7 @@
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         userDrew = false;
                         if (baselineLoaded && baselineImg) {
-                            ctx.drawImage(baselineImg, 0, 0, canvas.width, canvas.height);
+                            drawBaseline(baselineImg);
                         }
                     });
 
