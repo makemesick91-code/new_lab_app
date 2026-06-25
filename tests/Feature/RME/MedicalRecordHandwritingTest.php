@@ -42,10 +42,16 @@ beforeEach(function () {
     ]);
 });
 
-// Minimal valid PNG base64 (10x10 white canvas)
+// Minimal valid PNG base64 (10x10, has drawn content — treated as real handwriting)
 function validHandwritingData(): string
 {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC';
+}
+
+// Fully transparent 20x20 RGBA PNG — the output of a blank/cleared canvas (Sprint 59.1)
+function blankHandwritingData(): string
+{
+    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAAFUlEQVR4nGNgGAWjYBSMglEwCqgDAAZUAAGDHP/NAAAAAElFTkSuQmCC';
 }
 
 it('authorized user can save handwriting', function () {
@@ -273,6 +279,97 @@ it('previewUrl supports data image paths', function () {
     ]);
 
     expect($handwriting->previewUrl())->toBe($dataUrl);
+});
+
+it('show page loads existing handwriting back into the editable canvas (Sprint 59.1)', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    $handwriting = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        // The canvas carries the saved handwriting URL so JS can redraw it,
+        // i.e. the canvas never opens blank when handwriting already exists.
+        ->assertSee('data-existing-src="'.$handwriting->previewUrl().'"', false);
+});
+
+it('blank/transparent handwriting submission does not erase existing handwriting (Sprint 59.1)', function () {
+    // Seed an existing saved handwriting.
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    $existing = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+    $existingPath = $existing->handwriting_path;
+
+    // Submitting a blank (fully transparent) canvas must be rejected and must
+    // NOT overwrite the previously stored handwriting.
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => blankHandwritingData(),
+        ])
+        ->assertSessionHasErrors(['handwriting_data']);
+
+    $fresh = $this->record->fresh()->latestHandwriting();
+    expect($fresh)->not->toBeNull()
+        ->and($fresh->handwriting_path)->toBe($existingPath);
+    expect(Storage::disk('public')->exists($existingPath))->toBeTrue();
+});
+
+it('blank handwriting submission is rejected even when none exists yet (Sprint 59.1)', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => blankHandwritingData(),
+        ])
+        ->assertSessionHasErrors(['handwriting_data']);
+
+    expect($this->record->fresh()->hasHandwriting())->toBeFalse();
+});
+
+it('blank submission does not erase handwriting on a finalized record (Sprint 59.1)', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    app(MedicalRecordService::class)->finalize($this->record->fresh());
+
+    $existing = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail();
+    $existingPath = $existing->handwriting_path;
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => blankHandwritingData(),
+        ])
+        ->assertSessionHasErrors(['handwriting_data']);
+
+    expect($this->record->fresh()->latestHandwriting()->handwriting_path)->toBe($existingPath);
+});
+
+it('valid handwriting update overwrites the stored path with real content (Sprint 59.1)', function () {
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ]);
+
+    $firstPath = MedicalRecordHandwriting::where('medical_record_id', $this->record->id)->firstOrFail()->handwriting_path;
+
+    // A second valid (merged old+new) submission replaces the stored image and
+    // keeps non-blank content available.
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => validHandwritingData(),
+        ])
+        ->assertSessionHasNoErrors();
+
+    $latest = $this->record->fresh()->latestHandwriting();
+    expect($latest)->not->toBeNull();
+    expect(Storage::disk('public')->exists($latest->handwriting_path))->toBeTrue();
 });
 
 it('latestHandwriting returns the most recently saved record', function () {

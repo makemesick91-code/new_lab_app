@@ -240,8 +240,15 @@
                     @csrf
                     <input type="hidden" name="handwriting_data" id="handwriting-data-input">
 
+                    @if ($savedHandwriting && $savedHandwriting->previewUrl())
+                        <p class="mb-2 text-xs text-gray-500">
+                            Tulisan tangan tersimpan dimuat ke kanvas di bawah. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
+                        </p>
+                    @endif
+
                     <canvas id="rme-canvas"
                             width="900" height="500"
+                            data-existing-src="{{ ($savedHandwriting && $savedHandwriting->previewUrl()) ? $savedHandwriting->previewUrl() : '' }}"
                             class="block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
                             style="max-width:100%;height:auto;"></canvas>
 
@@ -250,7 +257,7 @@
                     @enderror
 
                     <div class="mt-3 flex items-center gap-3">
-                        <x-ui.button type="button" variant="secondary" id="clear-canvas-btn">Bersihkan</x-ui.button>
+                        <x-ui.button type="button" variant="secondary" id="clear-canvas-btn">Reset ke Tulisan Tersimpan</x-ui.button>
                         <x-ui.button type="submit" variant="primary" id="save-handwriting-btn">Simpan Tulisan Tangan</x-ui.button>
                     </div>
                 </form>
@@ -259,7 +266,33 @@
                 (function () {
                     const canvas = document.getElementById('rme-canvas');
                     const ctx = canvas.getContext('2d');
+                    const form = document.getElementById('handwriting-form');
+                    const input = document.getElementById('handwriting-data-input');
+                    const existingSrc = canvas.dataset.existingSrc || '';
                     let drawing = false;
+                    let userDrew = false;
+                    let baselineImg = null;
+                    let baselineLoaded = false;
+
+                    // Sprint 59.1 — load previously saved handwriting back into the
+                    // canvas so new strokes are added on top of (and saved together
+                    // with) the old handwriting. The canvas must never open blank
+                    // when handwriting already exists.
+                    if (existingSrc) {
+                        const img = new Image();
+                        img.crossOrigin = 'anonymous';
+                        img.onload = function () {
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                            baselineImg = img;
+                            baselineLoaded = true;
+                        };
+                        img.onerror = function () {
+                            // Baseline failed to load — keep it null so the submit
+                            // guard blocks an accidental blank overwrite.
+                            baselineLoaded = false;
+                        };
+                        img.src = existingSrc;
+                    }
 
                     function getPos(e) {
                         const rect = canvas.getBoundingClientRect();
@@ -283,6 +316,7 @@
                     function draw(e) {
                         if (!drawing) return;
                         e.preventDefault();
+                        userDrew = true;
                         const p = getPos(e);
                         ctx.lineWidth = 2;
                         ctx.lineCap = 'round';
@@ -303,12 +337,27 @@
                     canvas.addEventListener('touchmove', draw, { passive: false });
                     canvas.addEventListener('touchend', stop);
 
+                    // "Reset ke Tulisan Tersimpan" only discards the in-progress (unsaved) additions.
+                    // When saved handwriting exists it is redrawn so the doctor
+                    // never accidentally wipes previously stored content.
                     document.getElementById('clear-canvas-btn').addEventListener('click', function () {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        userDrew = false;
+                        if (baselineLoaded && baselineImg) {
+                            ctx.drawImage(baselineImg, 0, 0, canvas.width, canvas.height);
+                        }
                     });
 
-                    document.getElementById('handwriting-form').addEventListener('submit', function () {
-                        document.getElementById('handwriting-data-input').value = canvas.toDataURL('image/png');
+                    form.addEventListener('submit', function (e) {
+                        // Guard: never overwrite existing handwriting with a blank
+                        // canvas. If a baseline exists but has not loaded and the
+                        // doctor has not drawn anything new, block the save.
+                        if (existingSrc && !baselineLoaded && !userDrew) {
+                            e.preventDefault();
+                            window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
+                            return;
+                        }
+                        input.value = canvas.toDataURL('image/png');
                     });
                 })();
                 </script>
