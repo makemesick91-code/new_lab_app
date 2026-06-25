@@ -1,7 +1,8 @@
 @php
     $medicalRecord = $visit->medicalRecord;
     $odontogram = $visit->odontogram;
-    $handwriting = $medicalRecord?->handwriting;
+    // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
+    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
     $statusLabels = [
         'normal' => 'Normal',
         'caries' => 'Karies',
@@ -90,14 +91,22 @@
         @endif
     </dl>
 
-    @if ($handwriting?->previewUrl())
+    @if ($rmPages->isNotEmpty())
         <div class="mt-5 border-t border-gray-100 pt-5">
             <h4 class="text-sm font-semibold text-gray-900">RME Tulisan Tangan</h4>
-            @if ($handwriting->saved_at)
-                <p class="mt-1 text-xs text-gray-500">Tersimpan {{ $handwriting->saved_at->format('d/m/Y H:i') }}</p>
-            @endif
-            <img src="{{ $handwriting->previewUrl() }}" alt="RME tulisan tangan dokter"
-                 class="mt-3 max-h-64 rounded-lg border border-gray-200 bg-white object-contain" />
+            <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                @foreach ($rmPages as $rmPage)
+                    <div>
+                        <p class="text-xs text-gray-500">Halaman {{ $rmPage['page_number'] }}
+                            @if ($rmPage['saved_at'])
+                                &mdash; Tersimpan {{ $rmPage['saved_at']->format('d/m/Y H:i') }}
+                            @endif
+                        </p>
+                        <img src="{{ $rmPage['preview_url'] }}" alt="RME tulisan tangan dokter halaman {{ $rmPage['page_number'] }}"
+                             class="mt-1 max-h-64 rounded-lg border border-gray-200 bg-white object-contain" />
+                    </div>
+                @endforeach
+            </div>
         </div>
     @endif
 

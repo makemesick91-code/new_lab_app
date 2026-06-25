@@ -33,14 +33,52 @@ class MedicalRecordHandwritingController extends Controller
         // previous immutability lock is removed so doctors can correct or
         // append handwriting on any visit, including older finalized ones.
 
+        // Sprint 60 — 1 canvas = 1 RM page. `page_number` selects which RM page
+        // is being saved. Page 1 is the legacy `trx_medical_record_handwritings`
+        // row (read-through, backward compatible); Page 2+ persist to the
+        // additive pages table. Saving a higher page never touches Page 1.
         $request->validate([
             'handwriting_data' => ['required', 'string'],
+            'page_number' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $raw = $request->input('handwriting_data');
+        $pageNumber = (int) ($request->input('page_number') ?? 1);
 
+        // The PNG is decoded, validated and blank-guarded identically for every
+        // page (Sprint 59.1 guard applies per page), before any storage/DB write.
+        $decoded = $this->decodeHandwriting($request->input('handwriting_data'));
+
+        $path = sprintf(
+            'handwritings/%d/%d/handwriting_p%d_%s.png',
+            $clinicVisit->branch_id,
+            $clinicVisit->id,
+            max($pageNumber, 1),
+            now()->format('YmdHis'),
+        );
+
+        Storage::disk('public')->put($path, $decoded);
+
+        $hash = hash('sha256', $decoded);
+
+        if ($pageNumber <= 1) {
+            $this->savePageOne($clinicVisit, $medicalRecord, $path, $hash);
+        } else {
+            $this->savePage($clinicVisit, $medicalRecord, $pageNumber, $path, $hash);
+        }
+
+        return redirect()
+            ->route('rme.visits.medical-record.show', $clinicVisit)
+            ->with('status', 'Tulisan tangan RME berhasil disimpan.');
+    }
+
+    /**
+     * Decode, validate and blank-guard the submitted canvas PNG. Returns the raw
+     * PNG bytes or throws a ValidationException (Sprint 59 / 59.1 semantics).
+     */
+    private function decodeHandwriting(?string $raw): string
+    {
         // Strip the data URI prefix if present (data:image/png;base64,...)
-        $base64 = preg_replace('/^data:image\/\w+;base64,/', '', $raw);
+        $base64 = preg_replace('/^data:image\/\w+;base64,/', '', (string) $raw);
 
         $decoded = base64_decode($base64, strict: true);
 
@@ -60,17 +98,15 @@ class MedicalRecordHandwritingController extends Controller
             ]);
         }
 
-        $path = sprintf(
-            'handwritings/%d/%d/handwriting_%s.png',
-            $clinicVisit->branch_id,
-            $clinicVisit->id,
-            now()->format('YmdHis'),
-        );
+        return $decoded;
+    }
 
-        Storage::disk('public')->put($path, $decoded);
-
-        $hash = hash('sha256', $decoded);
-
+    /**
+     * Page 1 — legacy read-through. Writes the legacy single-row table exactly as
+     * before so every existing reader (print/receipt/tests) keeps working.
+     */
+    private function savePageOne(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, string $path, string $hash): void
+    {
         $existing = $this->handwritings->findByMedicalRecordId($medicalRecord->id);
 
         if ($existing !== null) {
@@ -91,10 +127,41 @@ class MedicalRecordHandwritingController extends Controller
                 'created_by' => Auth::id(),
             ]);
         }
+    }
 
-        return redirect()
-            ->route('rme.visits.medical-record.show', $clinicVisit)
-            ->with('status', 'Tulisan tangan RME berhasil disimpan.');
+    /**
+     * Page 2+ — additive pages table. The requested page is clamped to the next
+     * addable page so the doctor can never skip a page or write an arbitrary high
+     * number, and saving here never touches Page 1 (or any sibling page).
+     */
+    private function savePage(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, int $pageNumber, string $path, string $hash): void
+    {
+        $maxAllowed = $this->handwritings->nextPageNumber($medicalRecord->id);
+        $pageNumber = min($pageNumber, $maxAllowed);
+
+        $existing = $this->handwritings->findPageByMedicalRecordIdAndPage($medicalRecord->id, $pageNumber);
+
+        if ($existing !== null) {
+            $this->handwritings->updatePage($existing, [
+                'handwriting_path' => $path,
+                'handwriting_hash' => $hash,
+                'saved_at' => now(),
+                'updated_by' => Auth::id(),
+            ]);
+        } else {
+            $this->handwritings->createPage([
+                'medical_record_id' => $medicalRecord->id,
+                'clinic_visit_id' => $clinicVisit->id,
+                'branch_id' => $clinicVisit->branch_id,
+                'doctor_id' => $clinicVisit->doctor_id,
+                'page_number' => $pageNumber,
+                'handwriting_path' => $path,
+                'handwriting_hash' => $hash,
+                'saved_at' => now(),
+                'created_by' => Auth::id(),
+                'updated_by' => Auth::id(),
+            ]);
+        }
     }
 
     /**

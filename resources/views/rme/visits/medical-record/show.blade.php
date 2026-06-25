@@ -190,58 +190,110 @@
             </x-ui.card>
         @endif
 
-        {{-- Handwriting RME preview (always) + canvas (draft editors only) --}}
+        {{-- Sprint 60 — Multi-page handwriting RME. 1 canvas = 1 RM page. The
+             card lists read-only page previews (Page 1 = legacy read-through;
+             Page 2+ from the additive pages table). Editors click a preview to
+             open the same-page overlay editor for that page only, or add a new
+             RM page inside the same Medical Record. KTP is never rendered. --}}
+        @php
+            $rmPages = $medicalRecord->orderedHandwritingPages();
+            $nextPageNumber = ($rmPages->max('page_number') ?? 1) + 1;
+            // Page 1's saved preview seeds the shared canvas so it never opens
+            // blank when Page 1 already has handwriting (Sprint 59.1 compat).
+            $page1Src = $rmPages->firstWhere('page_number', 1)['preview_url'] ?? '';
+        @endphp
+
         <x-ui.card
             :title="$canEditHandwriting ? 'RME Tulisan Tangan Lengkap' : 'RME Tulisan Tangan'"
-            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap, tindakan, catatan tambahan, estimasi biaya/tindakan, dan tanda tangan dokter pada area handwriting berikut.' : null"
+            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Klik sebuah halaman untuk menulis. Tambah halaman baru bila halaman penuh. Menyimpan satu halaman tidak menghapus halaman lain.' : null"
         >
-            @if ($savedHandwriting && $savedHandwriting->previewUrl())
-                <div class="{{ $canEditHandwriting ? 'mb-4' : '' }}">
-                    <p class="text-xs {{ $canEditHandwriting ? 'text-emerald-700 font-medium' : 'text-gray-500' }} mb-2">
-                        Tersimpan pada {{ $savedHandwriting->saved_at?->format('d/m/Y H:i') }}
-                    </p>
-                    <img src="{{ $savedHandwriting->previewUrl() }}"
-                         alt="RME Tulisan Tangan"
-                         class="border border-gray-300 rounded-lg max-w-full" />
-                </div>
-            @else
-                <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-                    Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
-                </div>
-            @endif
+            <div id="rm-page-previews" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                @foreach ($rmPages as $rmPage)
+                    <figure
+                        class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
+                        data-page-number="{{ $rmPage['page_number'] }}"
+                        data-existing-src="{{ $rmPage['preview_url'] }}"
+                        @if ($canEditHandwriting) role="button" tabindex="0" @endif
+                    >
+                        <figcaption class="mb-2 flex items-center justify-between text-xs">
+                            <span class="font-semibold text-gray-700">Halaman {{ $rmPage['page_number'] }}</span>
+                            @if ($rmPage['has_content'])
+                                <span class="text-gray-500">Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}</span>
+                            @endif
+                        </figcaption>
+
+                        @if ($rmPage['has_content'] && $rmPage['preview_url'])
+                            <img src="{{ $rmPage['preview_url'] }}"
+                                 alt="RME Tulisan Tangan Halaman {{ $rmPage['page_number'] }}"
+                                 class="block w-full rounded border border-gray-200"
+                                 style="aspect-ratio:900/1273;object-fit:contain;" />
+                        @else
+                            <div class="flex items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800"
+                                 style="aspect-ratio:900/1273;">
+                                Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
+                            </div>
+                        @endif
+
+                        @if ($canEditHandwriting)
+                            <span class="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition group-hover:opacity-100">
+                                Klik untuk menulis
+                            </span>
+                        @endif
+                    </figure>
+                @endforeach
+            </div>
 
             @if ($canEditHandwriting)
-                <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}"
-                      id="handwriting-form" class="{{ $savedHandwriting ? 'mt-4' : 'mt-3' }}">
-                    @csrf
-                    <input type="hidden" name="handwriting_data" id="handwriting-data-input">
+                <div class="mt-4">
+                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn" data-next-page="{{ $nextPageNumber }}">
+                        + Tambah Halaman RM
+                    </x-ui.button>
+                </div>
 
-                    @if ($savedHandwriting && $savedHandwriting->previewUrl())
+                @error('handwriting_data')
+                    <p class="mt-2 text-xs text-rose-600">{{ $message }}</p>
+                @enderror
+
+                {{-- Same-page overlay editor (relocated Sprint 59 canvas). One
+                     shared canvas edits the selected page only; the hidden
+                     page_number routes the save to the right RM page row. --}}
+                <div id="rm-editor-overlay" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/50 p-4">
+                    <div class="my-6 w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">
+                        <div class="mb-3 flex items-center justify-between">
+                            <h3 class="text-base font-semibold text-gray-900">
+                                Menulis Halaman <span id="editor-page-label">1</span>
+                            </h3>
+                            <button type="button" id="close-editor-btn" class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Tutup">
+                                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
                         <p class="mb-2 text-xs text-gray-500">
-                            Tulisan tangan tersimpan dimuat ke kanvas di bawah. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
+                            Tulisan tangan tersimpan halaman ini dimuat ke kanvas. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
                         </p>
-                    @endif
 
-                    {{-- Sprint 59.2 — taller canvas (extended downward) so the
-                         doctor has more vertical handwriting space. Width is
-                         unchanged at 900 and the element keeps max-width:100%
-                         with height:auto, so it stays responsive and never
-                         overflows horizontally. --}}
-                    <canvas id="rme-canvas"
-                            width="900" height="1100"
-                            data-existing-src="{{ ($savedHandwriting && $savedHandwriting->previewUrl()) ? $savedHandwriting->previewUrl() : '' }}"
-                            class="block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
-                            style="max-width:100%;height:auto;"></canvas>
+                        <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}" id="handwriting-form">
+                            @csrf
+                            <input type="hidden" name="handwriting_data" id="handwriting-data-input">
+                            <input type="hidden" name="page_number" id="handwriting-page-input" value="1">
 
-                    @error('handwriting_data')
-                        <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
-                    @enderror
+                            {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
+                                 ≈ 1:1.414). One canvas = one RM page; overflow
+                                 goes to the next page, never an endlessly tall
+                                 canvas. max-width:100%;height:auto stays responsive. --}}
+                            <canvas id="rme-canvas"
+                                    width="900" height="1273"
+                                    data-existing-src="{{ $page1Src }}"
+                                    class="mx-auto block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
+                                    style="max-width:100%;height:auto;max-height:70vh;"></canvas>
 
-                    <div class="mt-3 flex items-center gap-3">
-                        <x-ui.button type="button" variant="secondary" id="clear-canvas-btn">Reset ke Tulisan Tersimpan</x-ui.button>
-                        <x-ui.button type="submit" variant="primary" id="save-handwriting-btn">Simpan Tulisan Tangan</x-ui.button>
+                            <div class="mt-3 flex flex-wrap items-center gap-3">
+                                <x-ui.button type="button" variant="secondary" id="clear-canvas-btn">Reset ke Tulisan Tersimpan</x-ui.button>
+                                <x-ui.button type="submit" variant="primary" id="save-handwriting-btn">Simpan Tulisan Tangan</x-ui.button>
+                            </div>
+                        </form>
                     </div>
-                </form>
+                </div>
 
                 <script>
                 (function () {
@@ -249,17 +301,22 @@
                     const ctx = canvas.getContext('2d');
                     const form = document.getElementById('handwriting-form');
                     const input = document.getElementById('handwriting-data-input');
-                    const existingSrc = canvas.dataset.existingSrc || '';
+                    const pageInput = document.getElementById('handwriting-page-input');
+                    const overlay = document.getElementById('rm-editor-overlay');
+                    const pageLabel = document.getElementById('editor-page-label');
+
+                    // The page currently loaded into the shared canvas. `existingSrc`
+                    // is the saved PNG of that selected page ('' for a brand-new page).
+                    let existingSrc = canvas.dataset.existingSrc || '';
                     let drawing = false;
                     let userDrew = false;
                     let baselineImg = null;
                     let baselineLoaded = false;
 
                     // Sprint 59.3 — RM table template drawn directly onto the
-                    // canvas so the doctor writes on a layout that mirrors the
-                    // physical medical record sheet: a header row with three
-                    // columns (narrow "Hari / Tanggal", wide "Pemeriksaan",
-                    // narrow "Ket") above a large blank writing area.
+                    // canvas (header columns "Hari / Tanggal", "Pemeriksaan",
+                    // "Ket" above a large writing area). Recomputed from the
+                    // canvas size so it fills the full A4-ratio page (Sprint 60).
                     const TEMPLATE = { headerH: 80, leftW: 135, rightW: 145 };
 
                     function drawTemplate() {
@@ -269,25 +326,18 @@
                         const midX2 = w - TEMPLATE.rightW;
 
                         ctx.save();
-
-                        // White sheet background.
                         ctx.fillStyle = '#ffffff';
                         ctx.fillRect(0, 0, w, h);
 
-                        // Readable black table lines.
                         ctx.strokeStyle = '#111827';
                         ctx.lineWidth = 1.5;
                         ctx.beginPath();
-                        // Outer border.
                         ctx.rect(0.75, 0.75, w - 1.5, h - 1.5);
-                        // Column separators (full height).
                         ctx.moveTo(midX1, 0); ctx.lineTo(midX1, h);
                         ctx.moveTo(midX2, 0); ctx.lineTo(midX2, h);
-                        // Header bottom border.
                         ctx.moveTo(0, TEMPLATE.headerH); ctx.lineTo(w, TEMPLATE.headerH);
                         ctx.stroke();
 
-                        // Header labels.
                         ctx.fillStyle = '#111827';
                         ctx.font = '600 18px sans-serif';
                         ctx.textAlign = 'center';
@@ -297,25 +347,15 @@
                         ctx.fillText('Tanggal', midX1 / 2, headerMid + 11);
                         ctx.fillText('Pemeriksaan', (midX1 + midX2) / 2, headerMid);
                         ctx.fillText('Ket', (midX2 + w) / 2, headerMid);
-
                         ctx.restore();
                     }
 
-                    // Sprint 59.2 — draw a saved baseline at the top of the (now
-                    // taller) canvas while preserving its aspect ratio, so the
-                    // existing handwriting is never vertically stretched and the
-                    // added height simply extends downward as blank writing space.
-                    // Same-size PNGs (900x1100) are drawn 1:1.
                     function drawBaseline(img) {
                         const ratio = img.width > 0 ? canvas.width / img.width : 1;
                         const drawH = Math.min(img.height * ratio, canvas.height);
                         ctx.drawImage(img, 0, 0, canvas.width, drawH);
                     }
 
-                    // Render order baseline: clear → white background + template →
-                    // saved handwriting PNG on top (if any). Legacy transparent
-                    // PNGs let the fresh template show through; newer PNGs already
-                    // carry the template, so nothing is hidden.
                     function renderBase() {
                         ctx.clearRect(0, 0, canvas.width, canvas.height);
                         drawTemplate();
@@ -324,29 +364,70 @@
                         }
                     }
 
-                    // Draw the empty template immediately so the canvas is never
-                    // blank while a saved image loads.
-                    drawTemplate();
+                    // Load a given page's saved PNG (or blank template) into the
+                    // shared canvas. Resets the per-page draw state so the blank
+                    // guard and reset stay scoped to the selected page only.
+                    function loadPage(src) {
+                        existingSrc = src || '';
+                        userDrew = false;
+                        baselineImg = null;
+                        baselineLoaded = false;
+                        renderBase();
 
-                    // Sprint 59.1 — load previously saved handwriting back into the
-                    // canvas so new strokes are added on top of (and saved together
-                    // with) the old handwriting. The canvas must never open blank
-                    // when handwriting already exists.
-                    if (existingSrc) {
-                        const img = new Image();
-                        img.crossOrigin = 'anonymous';
-                        img.onload = function () {
-                            baselineImg = img;
-                            baselineLoaded = true;
-                            renderBase();
-                        };
-                        img.onerror = function () {
-                            // Baseline failed to load — keep it null so the submit
-                            // guard blocks an accidental blank overwrite.
-                            baselineLoaded = false;
-                        };
-                        img.src = existingSrc;
+                        if (existingSrc) {
+                            const img = new Image();
+                            img.crossOrigin = 'anonymous';
+                            img.onload = function () {
+                                baselineImg = img;
+                                baselineLoaded = true;
+                                renderBase();
+                            };
+                            img.onerror = function () { baselineLoaded = false; };
+                            img.src = existingSrc;
+                        }
                     }
+
+                    function openEditor(pageNumber, src) {
+                        pageInput.value = pageNumber;
+                        pageLabel.textContent = pageNumber;
+                        canvas.dataset.existingSrc = src || '';
+                        loadPage(src);
+                        overlay.classList.remove('hidden');
+                        overlay.classList.add('flex');
+                    }
+
+                    function closeEditor() {
+                        overlay.classList.add('hidden');
+                        overlay.classList.remove('flex');
+                    }
+
+                    // Draw the empty template immediately so the canvas is never
+                    // blank before a page is loaded.
+                    loadPage(existingSrc);
+
+                    // Read-only previews open the overlay for their own page.
+                    document.querySelectorAll('#rm-page-previews .rm-page-preview').forEach(function (fig) {
+                        function open() {
+                            openEditor(parseInt(fig.dataset.pageNumber, 10) || 1, fig.dataset.existingSrc || '');
+                        }
+                        fig.addEventListener('click', open);
+                        fig.addEventListener('keydown', function (e) {
+                            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+                        });
+                    });
+
+                    // "+ Tambah Halaman RM" opens a brand-new blank page editor.
+                    const addBtn = document.getElementById('add-rm-page-btn');
+                    if (addBtn) {
+                        addBtn.addEventListener('click', function () {
+                            openEditor(parseInt(addBtn.dataset.nextPage, 10) || 2, '');
+                        });
+                    }
+
+                    document.getElementById('close-editor-btn').addEventListener('click', closeEditor);
+                    overlay.addEventListener('click', function (e) {
+                        if (e.target === overlay) closeEditor();
+                    });
 
                     function getPos(e) {
                         const rect = canvas.getBoundingClientRect();
@@ -379,9 +460,7 @@
                         ctx.stroke();
                     }
 
-                    function stop(e) {
-                        drawing = false;
-                    }
+                    function stop() { drawing = false; }
 
                     canvas.addEventListener('mousedown', start);
                     canvas.addEventListener('mousemove', draw);
@@ -391,32 +470,24 @@
                     canvas.addEventListener('touchmove', draw, { passive: false });
                     canvas.addEventListener('touchend', stop);
 
-                    // "Reset ke Tulisan Tersimpan" only discards the in-progress (unsaved) additions.
-                    // When saved handwriting exists it is redrawn so the doctor
-                    // never accidentally wipes previously stored content.
-                    // "Reset ke Tulisan Tersimpan" is non-destructive: it only
-                    // discards the in-progress (unsaved) additions and restores
-                    // the saved baseline (template + saved handwriting). When no
-                    // handwriting has been saved yet, it returns to the blank RM
-                    // template only.
+                    // "Reset ke Tulisan Tersimpan" is non-destructive and affects
+                    // ONLY the page currently loaded: it discards the in-progress
+                    // additions and restores that page's saved baseline.
                     document.getElementById('clear-canvas-btn').addEventListener('click', function () {
                         userDrew = false;
                         renderBase();
                     });
 
                     form.addEventListener('submit', function (e) {
-                        // Guard: never overwrite existing handwriting with a blank
-                        // canvas. If a baseline exists but has not loaded and the
-                        // doctor has not drawn anything new, block the save.
+                        // Guard: never overwrite an existing page with a blank
+                        // canvas while its baseline is still loading.
                         if (existingSrc && !baselineLoaded && !userDrew) {
                             e.preventDefault();
                             window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
                             return;
                         }
-                        // Guard: with the template baked onto the canvas, a save
-                        // with no strokes and no saved baseline would only persist
-                        // the empty template. Block it so the empty-submit guard
-                        // stays meaningful for brand-new records.
+                        // Guard: a brand-new page with no strokes would only
+                        // persist the empty template — block it.
                         if (!existingSrc && !userDrew) {
                             e.preventDefault();
                             window.alert('Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.');
