@@ -205,15 +205,78 @@
                     let baselineImg = null;
                     let baselineLoaded = false;
 
+                    // Sprint 59.3 — RM table template drawn directly onto the
+                    // canvas so the doctor writes on a layout that mirrors the
+                    // physical medical record sheet: a header row with three
+                    // columns (narrow "Hari / Tanggal", wide "Pemeriksaan",
+                    // narrow "Ket") above a large blank writing area.
+                    const TEMPLATE = { headerH: 80, leftW: 135, rightW: 145 };
+
+                    function drawTemplate() {
+                        const w = canvas.width;
+                        const h = canvas.height;
+                        const midX1 = TEMPLATE.leftW;
+                        const midX2 = w - TEMPLATE.rightW;
+
+                        ctx.save();
+
+                        // White sheet background.
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillRect(0, 0, w, h);
+
+                        // Readable black table lines.
+                        ctx.strokeStyle = '#111827';
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        // Outer border.
+                        ctx.rect(0.75, 0.75, w - 1.5, h - 1.5);
+                        // Column separators (full height).
+                        ctx.moveTo(midX1, 0); ctx.lineTo(midX1, h);
+                        ctx.moveTo(midX2, 0); ctx.lineTo(midX2, h);
+                        // Header bottom border.
+                        ctx.moveTo(0, TEMPLATE.headerH); ctx.lineTo(w, TEMPLATE.headerH);
+                        ctx.stroke();
+
+                        // Header labels.
+                        ctx.fillStyle = '#111827';
+                        ctx.font = '600 18px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        const headerMid = TEMPLATE.headerH / 2;
+                        ctx.fillText('Hari /', midX1 / 2, headerMid - 11);
+                        ctx.fillText('Tanggal', midX1 / 2, headerMid + 11);
+                        ctx.fillText('Pemeriksaan', (midX1 + midX2) / 2, headerMid);
+                        ctx.fillText('Ket', (midX2 + w) / 2, headerMid);
+
+                        ctx.restore();
+                    }
+
                     // Sprint 59.2 — draw a saved baseline at the top of the (now
                     // taller) canvas while preserving its aspect ratio, so the
                     // existing handwriting is never vertically stretched and the
                     // added height simply extends downward as blank writing space.
+                    // Same-size PNGs (900x1100) are drawn 1:1.
                     function drawBaseline(img) {
                         const ratio = img.width > 0 ? canvas.width / img.width : 1;
                         const drawH = Math.min(img.height * ratio, canvas.height);
                         ctx.drawImage(img, 0, 0, canvas.width, drawH);
                     }
+
+                    // Render order baseline: clear → white background + template →
+                    // saved handwriting PNG on top (if any). Legacy transparent
+                    // PNGs let the fresh template show through; newer PNGs already
+                    // carry the template, so nothing is hidden.
+                    function renderBase() {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        drawTemplate();
+                        if (baselineLoaded && baselineImg) {
+                            drawBaseline(baselineImg);
+                        }
+                    }
+
+                    // Draw the empty template immediately so the canvas is never
+                    // blank while a saved image loads.
+                    drawTemplate();
 
                     // Sprint 59.1 — load previously saved handwriting back into the
                     // canvas so new strokes are added on top of (and saved together
@@ -223,9 +286,9 @@
                         const img = new Image();
                         img.crossOrigin = 'anonymous';
                         img.onload = function () {
-                            drawBaseline(img);
                             baselineImg = img;
                             baselineLoaded = true;
+                            renderBase();
                         };
                         img.onerror = function () {
                             // Baseline failed to load — keep it null so the submit
@@ -281,12 +344,14 @@
                     // "Reset ke Tulisan Tersimpan" only discards the in-progress (unsaved) additions.
                     // When saved handwriting exists it is redrawn so the doctor
                     // never accidentally wipes previously stored content.
+                    // "Reset ke Tulisan Tersimpan" is non-destructive: it only
+                    // discards the in-progress (unsaved) additions and restores
+                    // the saved baseline (template + saved handwriting). When no
+                    // handwriting has been saved yet, it returns to the blank RM
+                    // template only.
                     document.getElementById('clear-canvas-btn').addEventListener('click', function () {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
                         userDrew = false;
-                        if (baselineLoaded && baselineImg) {
-                            drawBaseline(baselineImg);
-                        }
+                        renderBase();
                     });
 
                     form.addEventListener('submit', function (e) {
@@ -296,6 +361,15 @@
                         if (existingSrc && !baselineLoaded && !userDrew) {
                             e.preventDefault();
                             window.alert('Tulisan tangan tersimpan belum dimuat. Mohon tunggu sejenak lalu coba lagi agar tulisan lama tidak terhapus.');
+                            return;
+                        }
+                        // Guard: with the template baked onto the canvas, a save
+                        // with no strokes and no saved baseline would only persist
+                        // the empty template. Block it so the empty-submit guard
+                        // stays meaningful for brand-new records.
+                        if (!existingSrc && !userDrew) {
+                            e.preventDefault();
+                            window.alert('Belum ada tulisan tangan untuk disimpan. Silakan tulis pada kanvas terlebih dahulu.');
                             return;
                         }
                         input.value = canvas.toDataURL('image/png');
