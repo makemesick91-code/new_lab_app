@@ -40,6 +40,7 @@ use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
+use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
@@ -310,6 +311,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('reports.payments.export')->middleware('permission:view_rme_payment_reports');
     Route::get('reports/payments/print', [RmeReportController::class, 'paymentsPrint'])
         ->name('reports.payments.print')->middleware('permission:view_rme_payment_reports');
+
+    // Sprint 61.0 — Patient Data Completeness Audit & RM Gap Review (read-only).
+    // Gated to RME report viewers (Owner) OR patient managers (FO/Admin); doctors
+    // and cashiers are excluded. Full KTP is never exposed.
+    Route::get('patients/audit', [PatientAuditController::class, 'index'])
+        ->name('patients.audit')->middleware('permission:view_rme_patient_reports|manage patients');
+    Route::get('patients/audit/export', [PatientAuditController::class, 'export'])
+        ->name('patients.audit.export')->middleware('permission:view_rme_patient_reports|manage patients');
 });
 
 /*

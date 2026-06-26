@@ -152,6 +152,10 @@
                             <a href="{{ route('rme.reports.payments') }}"
                                class="menu-subitem {{ request()->routeIs('rme.reports.payments') ? $linkActive : $linkIdle }}">Laporan Pembayaran RME</a>
                         @endcan
+                        @canany(['view_rme_patient_reports', 'manage patients'])
+                            <a href="{{ route('rme.patients.audit') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.patients.audit') ? $linkActive : $linkIdle }}">Audit Data Pasien</a>
+                        @endcanany
                     </div>
                 </div>
             @endcanany
