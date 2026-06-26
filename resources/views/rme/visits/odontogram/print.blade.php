@@ -17,9 +17,18 @@
 
         /* Daengtisia clinic header (page 1) */
         .clinic-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
             border-bottom: 2px solid #111827;
             padding-bottom: 10px;
             margin-bottom: 12px;
+        }
+        .clinic-header .clinic-logo {
+            height: 48px;
+            width: auto;
+            max-width: 160px;
+            flex-shrink: 0;
         }
         .clinic-header h1 {
             font-size: 17px;
@@ -328,10 +337,13 @@
 
     {{-- Daengtisia clinic header (page 1) --}}
     <div class="clinic-header">
+        <x-brand.daengtisia-logo class="clinic-logo" />
+        <div>
         <h1>KLINIK GIGI DAENGTISIA</h1>
         <div class="clinic-meta">
             Jl. Telkomas Raya, Ruko No. 07, Kel. Berua, Kec. Biringkanaya, Kota Makassar, Sulawesi Selatan. 90245.<br>
             Telp/.WA +62 895 3253 54253 / 085757297146
+        </div>
         </div>
     </div>
 

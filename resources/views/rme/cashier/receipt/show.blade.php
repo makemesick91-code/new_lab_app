@@ -36,6 +36,7 @@
             {{-- Clinic / Receipt Header --}}
             <x-ui.card>
                 <div class="text-center border-b border-gray-200 pb-4 mb-5">
+                    <x-brand.daengtisia-logo class="mx-auto mb-3 h-14 w-auto" />
                     <h2 class="text-xl font-bold text-gray-900">{{ $invoice->branch?->name ?? config('app.name') }}</h2>
                     <p class="mt-1 text-sm font-semibold uppercase tracking-wide text-teal-700">Kwitansi Pembayaran RME</p>
                 </div>

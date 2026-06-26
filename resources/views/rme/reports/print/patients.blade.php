@@ -7,7 +7,8 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 24px; }
-        .header { border-bottom: 2px solid #0f766e; padding-bottom: 10px; margin-bottom: 14px; }
+        .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #0f766e; padding-bottom: 10px; margin-bottom: 14px; }
+        .header .clinic-logo { height: 44px; width: auto; max-width: 150px; flex-shrink: 0; }
         .header h1 { font-size: 18px; font-weight: 700; color: #0f766e; }
         .meta { font-size: 11px; color: #6b7280; margin-bottom: 12px; }
         .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -30,8 +31,11 @@
     </div>
 
     <div class="header">
-        <h1>Laporan Pasien RME</h1>
-        <p class="meta">Dicetak: {{ $printedAt->format('d/m/Y H:i') }}</p>
+        <x-brand.daengtisia-logo class="clinic-logo" />
+        <div>
+            <h1>Laporan Pasien RME</h1>
+            <p class="meta">Dicetak: {{ $printedAt->format('d/m/Y H:i') }}</p>
+        </div>
     </div>
 
     @if (! empty($filterSummary))

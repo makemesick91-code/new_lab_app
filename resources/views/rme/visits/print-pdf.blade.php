@@ -17,6 +17,8 @@
             padding-bottom: 10px;
             margin-bottom: 14px;
         }
+        .header .clinic-logo { height: 42px; width: auto; max-width: 150px; vertical-align: middle; }
+        .header .header-text { display: inline-block; vertical-align: middle; padding-left: 12px; }
         .header h1 { font-size: 16px; font-weight: 700; color: #0f766e; }
         .header .app-name { font-size: 10px; color: #6b7280; }
         .info-grid {
@@ -89,8 +91,11 @@
 </head>
 <body>
     <div class="header">
-        <div class="app-name">{{ config('app.name') }}</div>
-        <h1>Rekam Medis Elektronik</h1>
+        <x-brand.daengtisia-logo :pdf="true" class="clinic-logo" />
+        <span class="header-text">
+            <div class="app-name">{{ config('app.name') }}</div>
+            <h1>Rekam Medis Elektronik</h1>
+        </span>
     </div>
 
     @include('rme.visits.partials.print-body', [
