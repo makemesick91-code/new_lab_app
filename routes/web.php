@@ -42,6 +42,7 @@ use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
+use App\Modules\Patient\Controllers\PatientDocumentController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
 use App\Modules\Production\Controllers\ProductionStepController;
@@ -128,6 +129,15 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::resource('patients', PatientController::class)->except(['show']);
         Route::patch('patients/{patient}/activate', [PatientController::class, 'activate'])->name('patients.activate');
         Route::patch('patients/{patient}/deactivate', [PatientController::class, 'deactivate'])->name('patients.deactivate');
+
+        // Sprint 61.1 — Direct KTP Scanner Capture & Compression.
+        // Temp upload (patient may not exist yet) + private document access.
+        Route::post('patients/ktp-scan/upload-temp', [PatientDocumentController::class, 'uploadTemp'])
+            ->name('patients.ktp-scan.upload-temp');
+        Route::get('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'show'])
+            ->name('patients.documents.show');
+        Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])
+            ->name('patients.documents.destroy');
     });
 
     // Lab Services (TASK-0204)

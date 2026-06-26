@@ -43,6 +43,9 @@ class StorePatientRequest extends FormRequest
             'address' => ['nullable', 'string', 'max:1000'],
             'occupation' => ['nullable', 'string', 'max:150'],
             'is_active' => ['sometimes', 'boolean'],
+            // Sprint 61.1 — opaque token for a KTP scan parked via the scanner
+            // workflow. Attached to the patient after creation (controller).
+            'ktp_scan_token' => ['nullable', 'string', 'max:64'],
         ];
     }
 
