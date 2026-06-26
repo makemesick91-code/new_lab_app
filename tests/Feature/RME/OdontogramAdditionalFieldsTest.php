@@ -6,12 +6,13 @@ use App\Modules\Odontogram\Models\Odontogram;
 use Database\Seeders\BranchSeeder;
 
 /**
- * Sprint 23 Phase 23.10.2 — Odontogram Additional Conditions and Notes Input Fix.
+ * Sprint 23 Phase 23.10.2 — Odontogram Additional Conditions and Notes.
  *
- * General odontogram-level "Kondisi Tambahan" (additional_conditions) and
- * "Catatan Odontogram" (summary_notes) must be visible/editable before
- * finalization, persisted on save, shown on show/print, and preserved through
- * finalization.
+ * Sprint 60.2 (table-only hotfix) update: the general "Catatan Umum Odontogram"
+ * inputs (additional_conditions / summary_notes) are removed from the doctor's
+ * show/input UI. The columns, validation, persistence and print output are kept
+ * intact for backward compatibility, so the fields still save and still appear
+ * on the printable odontogram.
  */
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -20,28 +21,30 @@ beforeEach(function () {
 
 // MAIN branch is RME-enabled by default; used as the active RME branch here.
 
-// --- 1 & 2: fill/edit page shows both fields before finalization ---
+// --- 1 & 2: general "Catatan Umum Odontogram" inputs removed (table-only) ---
 
-it('odontogram fill page shows Kondisi Tambahan field before finalization', function () {
+it('odontogram fill page no longer renders the general Catatan Umum inputs', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Kondisi Tambahan')
-        ->assertSee('name="additional_conditions"', false);
+        ->assertDontSee('name="additional_conditions"', false)
+        ->assertDontSee('name="summary_notes"', false)
+        ->assertDontSee('Catatan Odontogram');
 });
 
-it('odontogram fill page shows Catatan Odontogram field before finalization', function () {
+it('odontogram fill page renders the table-only input with two vertical tables', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Catatan Odontogram')
-        ->assertSee('name="summary_notes"', false);
+        ->assertSee('Hasil Odontogram yang Dipilih')
+        ->assertSee('Rahang Atas')
+        ->assertSee('Rahang Bawah');
 });
 
 // --- 3 & 4: saving persists both fields ---
@@ -95,27 +98,34 @@ it('additional_conditions over 5000 chars is rejected', function () {
         ->assertSessionHasErrors('additional_conditions');
 });
 
-// --- 5 & 6: saved fields visible on show page ---
+// --- 5 & 6: saved general fields stay available on print (removed from show) ---
 
-it('saved additional conditions are visible on show page', function () {
+it('saved additional conditions remain available on print', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
-    Odontogram::factory()->create([
+    $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'additional_conditions' => 'Kondisi jaringan lunak normal.',
     ]);
 
+    // No longer shown on the table-only show page…
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Kondisi jaringan lunak normal.');
+
+    // …but persisted and still printed.
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
         ->assertOk()
         ->assertSee('Kondisi jaringan lunak normal.');
 });
 
-it('saved odontogram notes are visible on show page', function () {
+it('saved odontogram notes remain available on print', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
-    Odontogram::factory()->create([
+    $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'summary_notes' => 'Catatan odontogram tersimpan.',
@@ -123,6 +133,11 @@ it('saved odontogram notes are visible on show page', function () {
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Catatan odontogram tersimpan.');
+
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
         ->assertOk()
         ->assertSee('Catatan odontogram tersimpan.');
 });
@@ -184,7 +199,7 @@ it('finalizing odontogram does not clear odontogram notes', function () {
 
 // --- 10: finalized odontogram stays editable for a manager (Sprint 59) ---
 
-it('finalized odontogram still exposes editable fields for a manager (Sprint 59)', function () {
+it('finalized odontogram still exposes the editable table for a manager (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     Odontogram::factory()->create([
@@ -200,10 +215,11 @@ it('finalized odontogram still exposes editable fields for a manager (Sprint 59)
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Final kondisi tambahan.')
-        ->assertSee('Final catatan.')
-        // Sprint 59 — finalized odontograms remain editable, so the input renders.
-        ->assertSee('name="additional_conditions"', false);
+        // Sprint 59 — finalized odontograms remain editable, so the table editor renders…
+        ->assertSee('Hasil Odontogram yang Dipilih')
+        ->assertSee('setAdditional', false)
+        // …Sprint 60.2 — but the removed general Catatan Umum input is gone.
+        ->assertDontSee('name="additional_conditions"', false);
 });
 
 // --- 11: tooth-specific data still saves alongside new fields ---

@@ -240,8 +240,58 @@ Alpine.data('odontogramEditor', (config = {}) => ({
         return base + 'bg-white text-gray-600 ring-gray-200';
     },
 
+    // ── Table-only input (Sprint 60.2) ─────────────────────────────────────
+    // Each FDI tooth renders as a fixed table row. `pickStatus` creates or
+    // clears a tooth entry from the dropdown; `rowStatus`/`rowField` read the
+    // current value so the inputs stay in sync. The FDI image is generated
+    // server-side from saved data and is never edited here.
+
+    /** Current saved status for a tooth ('' = unselected). */
+    rowStatus(toothKey) {
+        const e = this.teeth[String(toothKey)];
+        return (e && e.status) ? e.status : '';
+    },
+
+    /** Read an arbitrary per-tooth field ('' when the tooth has no entry). */
+    rowField(toothKey, field) {
+        const e = this.teeth[String(toothKey)];
+        return (e && e[field]) ? e[field] : '';
+    },
+
+    /** Set/clear a tooth's odontogram status from its table-row dropdown. */
+    pickStatus(toothKey, value) {
+        if (! this.canEdit) {
+            return;
+        }
+        const key = String(toothKey);
+        if (! value) {
+            const copy = Object.assign({}, this.teeth);
+            delete copy[key];
+            this.teeth = copy;
+            return;
+        }
+        const existing = this.teeth[key] || {};
+        this.teeth = Object.assign({}, this.teeth, {
+            [key]: {
+                status: value,
+                note: existing.note || '',
+                conditions: Array.isArray(existing.conditions) ? existing.conditions : [],
+                additional_condition: existing.additional_condition || '',
+                additional_note: existing.additional_note || '',
+            },
+        });
+    },
+
     getPayload() {
-        return JSON.stringify({ teeth: this.teeth });
+        // Only persist teeth that carry a status; empty rows are excluded so the
+        // payload never contains invalid empty-status entries.
+        const out = {};
+        Object.keys(this.teeth).forEach((k) => {
+            if (this.teeth[k] && this.teeth[k].status) {
+                out[k] = this.teeth[k];
+            }
+        });
+        return JSON.stringify({ teeth: out });
     },
 }));
 

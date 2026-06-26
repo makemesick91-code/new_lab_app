@@ -1,26 +1,28 @@
 <x-settings-shell title="Odontogram">
     @php
         $payload   = $odontogram->tooth_map_payload ?? [];
-        $teethData = ! empty($payload['teeth']) ? (object) $payload['teeth'] : new \stdClass();
+        $teethArr  = ! empty($payload['teeth']) && is_array($payload['teeth']) ? $payload['teeth'] : [];
         $isFinalized = $odontogram->isFinalized();
-        // Sprint 59 — odontogram remains editable after finalization so doctors
-        // can revise table data (and the auto-generated visual) on any visit.
+        // Sprint 60.2 (table-only hotfix) — odontogram input is table-only. The
+        // FDI visual is a generated, read-only output rendered from saved table
+        // data; the doctor never draws on the image. Odontogram remains editable
+        // after finalization (Sprint 59).
         $canUpdate = auth()->user()?->can('update', $odontogram) ?? false;
         $canFinalize = (! $isFinalized) && (auth()->user()?->can('finalize', $odontogram) ?? false);
 
-        // FDI display order: center → outer
+        // FDI display order for the generated visual: center → outer.
         $upperRight = [18, 17, 16, 15, 14, 13, 12, 11]; // Q1 right-to-center
         $upperLeft  = [21, 22, 23, 24, 25, 26, 27, 28]; // Q2 center-to-left
         $lowerRight = [48, 47, 46, 45, 44, 43, 42, 41]; // Q4 right-to-center
         $lowerLeft  = [31, 32, 33, 34, 35, 36, 37, 38]; // Q3 center-to-left
 
-        // Full FDI set in natural order — drives the table-first tooth picker.
-        $allFdiTeeth = [];
-        foreach ([1, 2, 3, 4] as $q) {
-            for ($i = 1; $i <= 8; $i++) {
-                $allFdiTeeth[] = (string) ($q * 10 + $i);
-            }
-        }
+        // Two vertical input tables (canonical FDI set, split upper / lower jaw).
+        // "Gigi 1–41" requested by the user maps to the app's canonical FDI
+        // numbering (11–18, 21–28, 31–38, 41–48 = 32 teeth).
+        $toothTables = [
+            'Rahang Atas' => array_merge($upperRight, $upperLeft),
+            'Rahang Bawah' => array_merge(array_reverse($lowerRight), $lowerLeft),
+        ];
 
         // Odontogram status → human label (Kondisi Odontogram column).
         $statusLabels = [
@@ -31,10 +33,10 @@
             'root_treated' => 'PSA',
         ];
 
-        // Selected odontogram results = teeth that carry a status. Used for the
-        // server-rendered (read-only) selected-results table.
+        // Selected odontogram results = teeth that carry a status. Drives the
+        // "appears only after save" generated visual and the read-only table.
         $selectedTeeth = [];
-        foreach ((array) $teethData as $toothNum => $toothEntry) {
+        foreach ($teethArr as $toothNum => $toothEntry) {
             $toothEntry = (array) $toothEntry;
             if (! empty($toothEntry['status'])) {
                 $selectedTeeth[(string) $toothNum] = $toothEntry;
@@ -42,11 +44,22 @@
         }
         ksort($selectedTeeth, SORT_NATURAL);
 
+        // Tailwind classes for the generated (read-only) FDI visual cells.
+        $visualClass = function (string $st): string {
+            return match ($st) {
+                'caries'       => 'bg-red-200 text-red-900 ring-red-400',
+                'missing'      => 'bg-gray-800 text-white ring-gray-600',
+                'crown'        => 'bg-amber-200 text-amber-900 ring-amber-400',
+                'root_treated' => 'bg-sky-200 text-sky-900 ring-sky-400',
+                'normal'       => 'bg-green-100 text-green-900 ring-green-400',
+                default        => 'bg-white text-gray-600 ring-gray-200',
+            };
+        };
+
         $odontogramEditorConfig = [
             'canEdit' => $canUpdate,
-            'teeth' => (array) $teethData,
+            'teeth' => $teethArr,
             'statusLabels' => $statusLabels,
-            'allTeeth' => $allFdiTeeth,
         ];
     @endphp
 
@@ -113,7 +126,7 @@
 
                 @if ($canFinalize)
                     <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
-                          onsubmit="return confirm('Finalisasi odontogram ini? Data tidak akan bisa diedit setelah difinalisasi.')">
+                          onsubmit="return confirm('Finalisasi odontogram ini? Data masih dapat direvisi setelah final.')">
                         @csrf
                         <x-ui.button type="submit" variant="primary">Finalisasi Odontogram</x-ui.button>
                     </form>
@@ -154,257 +167,10 @@
             </x-ui.card>
         @endif
 
-        {{-- Legend --}}
-        <x-ui.card padding="p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Keterangan Status</p>
-            <div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-700">
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-gray-200 bg-white inline-block flex-shrink-0"></span>
-                    Normal (default)
-                </span>
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-green-400 bg-green-100 inline-block flex-shrink-0"></span>
-                    Normal (ditandai)
-                </span>
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-red-400 bg-red-200 inline-block flex-shrink-0"></span>
-                    Karies
-                </span>
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-gray-600 bg-gray-800 inline-block flex-shrink-0"></span>
-                    Hilang
-                </span>
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-amber-400 bg-amber-200 inline-block flex-shrink-0"></span>
-                    Crown
-                </span>
-                <span class="inline-flex items-center gap-1.5">
-                    <span class="w-4 h-4 rounded ring-1 ring-inset ring-sky-400 bg-sky-200 inline-block flex-shrink-0"></span>
-                    PSA (Perawatan Saluran Akar)
-                </span>
-            </div>
-        </x-ui.card>
-
-        {{-- Tooth Map --}}
-        <x-ui.card>
-            <div class="flex items-center justify-between mb-4">
-                <h4 class="text-base font-semibold text-gray-900">Peta Gigi (FDI)</h4>
-                @if ($isFinalized)
-                    <span class="text-xs italic text-gray-400">Read-only (sudah final)</span>
-                @elseif (! $canUpdate)
-                    <span class="text-xs italic text-gray-400">Hanya lihat</span>
-                @endif
-            </div>
-
-            {{-- Status selector — manager only, draft only --}}
-            @if ($canUpdate)
-                <div class="mb-5">
-                    <p class="text-xs text-gray-500 mb-2">Status aktif — klik gigi untuk menerapkan (klik ulang untuk hapus):</p>
-                    <div class="flex flex-wrap gap-2">
-                        <button type="button" @click="activeStatus = 'normal'"
-                            :class="activeStatus === 'normal' ? 'ring-2 ring-offset-1 ring-green-600' : ''"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md bg-green-100 text-green-900 ring-1 ring-inset ring-green-400 hover:bg-green-200 transition-all">
-                            Normal
-                        </button>
-                        <button type="button" @click="activeStatus = 'caries'"
-                            :class="activeStatus === 'caries' ? 'ring-2 ring-offset-1 ring-red-600' : ''"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md bg-red-200 text-red-900 ring-1 ring-inset ring-red-400 hover:bg-red-300 transition-all">
-                            Karies
-                        </button>
-                        <button type="button" @click="activeStatus = 'missing'"
-                            :class="activeStatus === 'missing' ? 'ring-2 ring-offset-1 ring-gray-700' : ''"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-800 text-white ring-1 ring-inset ring-gray-600 hover:bg-gray-700 transition-all">
-                            Hilang
-                        </button>
-                        <button type="button" @click="activeStatus = 'crown'"
-                            :class="activeStatus === 'crown' ? 'ring-2 ring-offset-1 ring-amber-600' : ''"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md bg-amber-200 text-amber-900 ring-1 ring-inset ring-amber-400 hover:bg-amber-300 transition-all">
-                            Crown
-                        </button>
-                        <button type="button" @click="activeStatus = 'root_treated'"
-                            :class="activeStatus === 'root_treated' ? 'ring-2 ring-offset-1 ring-sky-600' : ''"
-                            class="px-3 py-1.5 text-xs font-medium rounded-md bg-sky-200 text-sky-900 ring-1 ring-inset ring-sky-400 hover:bg-sky-300 transition-all">
-                            PSA
-                        </button>
-                    </div>
-                </div>
-            @endif
-
-            {{-- Tooth grid --}}
-            <div class="overflow-x-auto -mx-2 px-2">
-                <div class="inline-flex flex-col items-center min-w-max">
-
-                    {{-- Upper jaw labels --}}
-                    <div class="flex w-full mb-0.5 text-[10px] text-gray-400 select-none">
-                        <div class="flex-1 text-right pr-3">← Kanan atas (Q1)</div>
-                        <div class="w-3"></div>
-                        <div class="flex-1 text-left pl-3">Kiri atas (Q2) →</div>
-                    </div>
-
-                    {{-- Upper jaw row --}}
-                    <div class="flex items-stretch gap-0.5">
-                        @foreach ($upperRight as $tooth)
-                            <button
-                                type="button"
-                                @click="clickTooth({{ $tooth }})"
-                                :class="cellClass({{ $tooth }})"
-                                class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold transition-all select-none flex items-center justify-center"
-                                title="Gigi {{ $tooth }}">
-                                {{ $tooth }}
-                            </button>
-                        @endforeach
-                        <div class="w-px bg-gray-400 mx-1 self-stretch flex-shrink-0"></div>
-                        @foreach ($upperLeft as $tooth)
-                            <button
-                                type="button"
-                                @click="clickTooth({{ $tooth }})"
-                                :class="cellClass({{ $tooth }})"
-                                class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold transition-all select-none flex items-center justify-center"
-                                title="Gigi {{ $tooth }}">
-                                {{ $tooth }}
-                            </button>
-                        @endforeach
-                    </div>
-
-                    {{-- Jaw divider --}}
-                    <div class="w-full border-t-2 border-dashed border-gray-300 my-2"></div>
-
-                    {{-- Lower jaw row --}}
-                    <div class="flex items-stretch gap-0.5">
-                        @foreach ($lowerRight as $tooth)
-                            <button
-                                type="button"
-                                @click="clickTooth({{ $tooth }})"
-                                :class="cellClass({{ $tooth }})"
-                                class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold transition-all select-none flex items-center justify-center"
-                                title="Gigi {{ $tooth }}">
-                                {{ $tooth }}
-                            </button>
-                        @endforeach
-                        <div class="w-px bg-gray-400 mx-1 self-stretch flex-shrink-0"></div>
-                        @foreach ($lowerLeft as $tooth)
-                            <button
-                                type="button"
-                                @click="clickTooth({{ $tooth }})"
-                                :class="cellClass({{ $tooth }})"
-                                class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold transition-all select-none flex items-center justify-center"
-                                title="Gigi {{ $tooth }}">
-                                {{ $tooth }}
-                            </button>
-                        @endforeach
-                    </div>
-
-                    {{-- Lower jaw labels --}}
-                    <div class="flex w-full mt-0.5 text-[10px] text-gray-400 select-none">
-                        <div class="flex-1 text-right pr-3">← Kanan bawah (Q4)</div>
-                        <div class="w-3"></div>
-                        <div class="flex-1 text-left pl-3">Kiri bawah (Q3) →</div>
-                    </div>
-
-                </div>
-            </div>
-
-            {{-- Per-tooth note panel — appears when a tooth is selected --}}
-            <div x-show="selectedTooth !== null" class="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                <div class="flex items-center justify-between mb-3">
-                    <p class="text-sm font-semibold text-gray-800">
-                        Gigi <span x-text="selectedTooth"></span>
-                        <span
-                            x-show="teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status"
-                            class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
-                            :class="{
-                                'bg-red-100 text-red-700 ring-red-300':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'caries',
-                                'bg-gray-700 text-white ring-gray-500':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'missing',
-                                'bg-amber-100 text-amber-700 ring-amber-300': teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'crown',
-                                'bg-sky-100 text-sky-700 ring-sky-300':   teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'root_treated',
-                                'bg-green-100 text-green-700 ring-green-300': teeth[String(selectedTooth)] && teeth[String(selectedTooth)].status === 'normal',
-                            }"
-                            x-text="teeth[String(selectedTooth)] ? teeth[String(selectedTooth)].status : ''">
-                        </span>
-                    </p>
-                    <button type="button" @click="selectedTooth = null"
-                            class="text-xs text-gray-400 hover:text-gray-700 focus:outline-none">&#10005; Tutup</button>
-                </div>
-
-                {{-- Tooth has a status: show conditions + note area --}}
-                <div x-show="teeth[String(selectedTooth)]">
-                    {{-- Conditions --}}
-                    <div class="mb-3">
-                        <p class="text-xs font-medium text-gray-600 mb-2">Kondisi Tambahan:</p>
-                        <div class="flex flex-wrap gap-x-4 gap-y-1.5">
-                            @php
-                                $conditionLabels = [
-                                    'caries'       => 'Karies',
-                                    'missing'      => 'Hilang',
-                                    'crown'        => 'Crown',
-                                    'root_treated' => 'PSA',
-                                    'mobility'     => 'Mobility',
-                                    'impaction'    => 'Impaksi',
-                                    'filling'      => 'Tambalan',
-                                ];
-                            @endphp
-                            @foreach ($conditionLabels as $condValue => $condLabel)
-                                @if ($canUpdate)
-                                    <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                                        <input
-                                            type="checkbox"
-                                            :checked="hasCondition('{{ $condValue }}')"
-                                            @change="toggleCondition('{{ $condValue }}')"
-                                            class="rounded border-gray-300 text-teal-600 shadow-sm focus:ring-teal-500 focus:ring-offset-0">
-                                        <span class="text-xs text-gray-700">{{ $condLabel }}</span>
-                                    </label>
-                                @else
-                                    <span
-                                        x-show="hasCondition('{{ $condValue }}')"
-                                        class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-200">
-                                        {{ $condLabel }}
-                                    </span>
-                                @endif
-                            @endforeach
-                            @if (! $canUpdate)
-                                <span
-                                    x-show="! teeth[String(selectedTooth)] || ! Array.isArray(teeth[String(selectedTooth)].conditions) || teeth[String(selectedTooth)].conditions.length === 0"
-                                    class="text-xs text-gray-400 italic">
-                                    Tidak ada kondisi tambahan.
-                                </span>
-                            @endif
-                        </div>
-                    </div>
-
-                    @if ($canUpdate)
-                        <label class="block text-xs font-medium text-gray-600 mb-1">
-                            Catatan Gigi <span class="text-gray-400 font-normal">(maks. 1000 karakter)</span>
-                        </label>
-                        <textarea
-                            x-model="toothNote"
-                            @input="syncNote()"
-                            rows="3"
-                            maxlength="1000"
-                            placeholder="Catatan untuk gigi ini…"
-                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                        </textarea>
-                    @else
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Catatan Gigi</label>
-                        <p class="text-sm text-gray-700 whitespace-pre-wrap min-h-[2rem]"
-                           x-text="(teeth[String(selectedTooth)] && teeth[String(selectedTooth)].note) ? teeth[String(selectedTooth)].note : '—'">
-                        </p>
-                    @endif
-                </div>
-
-                {{-- Tooth has no status yet --}}
-                <div x-show="!teeth[String(selectedTooth)]">
-                    <p class="text-xs text-gray-400 italic">
-                        @if ($canUpdate)
-                            Pilih status di atas lalu klik gigi untuk memberi tanda, kemudian tambahkan catatan.
-                        @else
-                            Gigi ini belum ditandai.
-                        @endif
-                    </p>
-                </div>
-            </div>
-        </x-ui.card>
-
-        {{-- Hasil Odontogram yang Dipilih — per-selected-row Kondisi Tambahan & Catatan Tambahan --}}
+        {{-- ============================================================ --}}
+        {{-- INPUT — table only. Doctor fills the two vertical tables.      --}}
+        {{-- The doctor never draws on an image; the visual below is output. --}}
+        {{-- ============================================================ --}}
         @if ($canUpdate)
             <form method="POST" action="{{ route('rme.odontograms.update', $odontogram) }}" class="space-y-6">
                 @csrf
@@ -421,138 +187,69 @@
 
                 <x-ui.card title="Hasil Odontogram yang Dipilih">
                     <p class="mb-4 text-xs text-gray-500">
-                        Input odontogram berbasis tabel. Tambahkan baris gigi, pilih
-                        <span class="font-medium text-gray-700">Kondisi Odontogram</span>, lalu lengkapi
-                        <span class="font-medium text-gray-700">Kondisi Tambahan</span> dan
-                        <span class="font-medium text-gray-700">Catatan Tambahan</span>. Peta gigi (visual)
-                        di atas diperbarui otomatis dari tabel ini — dokter tidak perlu menggambar manual.
+                        Input odontogram berbasis tabel. Pilih <span class="font-medium text-gray-700">Kondisi
+                        Odontogram</span> per gigi, lalu lengkapi <span class="font-medium text-gray-700">Kondisi
+                        Tambahan</span> dan <span class="font-medium text-gray-700">Catatan Tambahan</span>.
+                        Visual <span class="font-medium text-gray-700">Peta Gigi (FDI)</span> dihasilkan otomatis
+                        dari tabel ini setelah disimpan — dokter tidak menggambar pada gambar.
                     </p>
 
-                    {{-- Table-first add-row control (Sprint 59) --}}
-                    <div class="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Gigi / Area (FDI)</label>
-                            <select x-model="newTooth"
-                                class="rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                                <option value="">— Pilih gigi —</option>
-                                <template x-for="t in availableTeeth" :key="t">
-                                    <option :value="t" x-text="t"></option>
-                                </template>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-600 mb-1">Kondisi Odontogram</label>
-                            <select x-model="newStatus"
-                                class="rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                                @foreach ($statusLabels as $value => $label)
-                                    <option value="{{ $value }}">{{ $label }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <x-ui.button type="button" variant="secondary" x-on:click="addRow()">+ Tambah Baris</x-ui.button>
-                    </div>
-
-                    {{-- Empty state --}}
-                    <p x-show="selectedRows.length === 0" class="text-sm text-gray-500 italic">
-                        Belum ada kondisi odontogram yang dipilih.
-                    </p>
-
-                    {{-- Selected results table --}}
-                    <div x-show="selectedRows.length > 0" class="overflow-x-auto">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead>
-                                <tr class="text-left text-xs font-medium uppercase tracking-wide text-gray-500">
-                                    <th class="px-3 py-2 w-12">No</th>
-                                    <th class="px-3 py-2 w-24">Gigi / Area</th>
-                                    <th class="px-3 py-2 w-36">Kondisi Odontogram</th>
-                                    <th class="px-3 py-2">Kondisi Tambahan</th>
-                                    <th class="px-3 py-2">Catatan Tambahan</th>
-                                    <th class="px-3 py-2 w-16">Aksi</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                <template x-for="(row, idx) in selectedRows" :key="row.tooth">
-                                    <tr class="align-top">
-                                        <td class="px-3 py-2 text-gray-500" x-text="idx + 1"></td>
-                                        <td class="px-3 py-2 font-semibold text-gray-900" x-text="row.tooth"></td>
-                                        <td class="px-3 py-2">
-                                            <select
-                                                :value="row.status"
-                                                @change="setStatus(row.tooth, $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                                                @foreach ($statusLabels as $value => $label)
-                                                    <option value="{{ $value }}">{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        <td class="px-3 py-2">
-                                            <input
-                                                type="text"
-                                                maxlength="1000"
-                                                placeholder="Kondisi tambahan…"
-                                                :value="row.additional_condition"
-                                                @input="setAdditional(row.tooth, 'additional_condition', $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                                        </td>
-                                        <td class="px-3 py-2">
-                                            <textarea
-                                                rows="2"
-                                                maxlength="1000"
-                                                placeholder="Catatan tambahan…"
-                                                :value="row.additional_note"
-                                                @input="setAdditional(row.tooth, 'additional_note', $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
-                                        </td>
-                                        <td class="px-3 py-2">
-                                            <button type="button" @click="removeRow(row.tooth)"
-                                                class="inline-flex items-center justify-center rounded-md bg-rose-100 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-200 focus:outline-none focus:ring-2 focus:ring-rose-400">
-                                                Hapus
-                                            </button>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
-                    </div>
-                </x-ui.card>
-
-                {{-- Catatan umum odontogram (opsional, tingkat odontogram) --}}
-                <x-ui.card title="Catatan Umum Odontogram (Opsional)">
-                    <p class="mb-4 text-xs text-gray-500">
-                        Bagian umum opsional untuk catatan tingkat odontogram. Untuk kondisi spesifik per gigi,
-                        gunakan tabel <span class="font-medium text-gray-700">Hasil Odontogram yang Dipilih</span> di atas.
-                    </p>
-
-                    <div class="mb-4">
-                        <label for="additional_conditions" class="block text-sm font-medium text-gray-700">
-                            Kondisi Tambahan <span class="font-normal text-gray-400">(umum, opsional)</span>
-                        </label>
-                        <textarea
-                            id="additional_conditions"
-                            name="additional_conditions"
-                            rows="3"
-                            maxlength="5000"
-                            placeholder="Catatan kondisi umum tingkat odontogram (opsional)."
-                            class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('additional_conditions') border-rose-300 @enderror">{{ old('additional_conditions', $odontogram->additional_conditions) }}</textarea>
-                        @error('additional_conditions')
-                            <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-                        @enderror
-                    </div>
-
-                    <div class="mb-4">
-                        <label for="summary_notes" class="block text-sm font-medium text-gray-700">
-                            Catatan Odontogram <span class="font-normal text-gray-400">(umum, opsional)</span>
-                        </label>
-                        <textarea
-                            id="summary_notes"
-                            name="summary_notes"
-                            rows="4"
-                            maxlength="5000"
-                            placeholder="Tambahkan catatan umum dokter/perawat terkait odontogram pasien."
-                            class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 sm:text-sm @error('summary_notes') border-rose-300 @enderror">{{ old('summary_notes', $odontogram->summary_notes) }}</textarea>
-                        @error('summary_notes')
-                            <p class="mt-1 text-sm text-rose-600">{{ $message }}</p>
-                        @enderror
+                    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                        @foreach ($toothTables as $tableLabel => $tableTeeth)
+                            <div>
+                                <h4 class="mb-2 text-sm font-semibold text-gray-900">{{ $tableLabel }}</h4>
+                                <div class="overflow-x-auto rounded-lg ring-1 ring-gray-200">
+                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead class="bg-gray-50">
+                                            <tr class="text-left text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                                                <th class="px-2 py-2 w-14">Gigi</th>
+                                                <th class="px-2 py-2 w-28">Kondisi Odontogram</th>
+                                                <th class="px-2 py-2">Kondisi Tambahan</th>
+                                                <th class="px-2 py-2">Catatan Tambahan</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-100">
+                                            @foreach ($tableTeeth as $tooth)
+                                                <tr class="align-top">
+                                                    <td class="px-2 py-2 font-semibold text-gray-900">{{ $tooth }}</td>
+                                                    <td class="px-2 py-2">
+                                                        <select
+                                                            :value="rowStatus('{{ $tooth }}')"
+                                                            @change="pickStatus('{{ $tooth }}', $event.target.value)"
+                                                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                                            <option value="">—</option>
+                                                            @foreach ($statusLabels as $value => $label)
+                                                                <option value="{{ $value }}">{{ $label }}</option>
+                                                            @endforeach
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-2 py-2">
+                                                        <input
+                                                            type="text"
+                                                            maxlength="1000"
+                                                            placeholder="Kondisi tambahan…"
+                                                            :value="rowField('{{ $tooth }}', 'additional_condition')"
+                                                            :disabled="! rowStatus('{{ $tooth }}')"
+                                                            @input="setAdditional('{{ $tooth }}', 'additional_condition', $event.target.value)"
+                                                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm disabled:bg-gray-100 disabled:text-gray-400">
+                                                    </td>
+                                                    <td class="px-2 py-2">
+                                                        <textarea
+                                                            rows="1"
+                                                            maxlength="1000"
+                                                            placeholder="Catatan tambahan…"
+                                                            :value="rowField('{{ $tooth }}', 'additional_note')"
+                                                            :disabled="! rowStatus('{{ $tooth }}')"
+                                                            @input="setAdditional('{{ $tooth }}', 'additional_note', $event.target.value)"
+                                                            class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm disabled:bg-gray-100 disabled:text-gray-400"></textarea>
+                                                    </td>
+                                                </tr>
+                                            @endforeach
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        @endforeach
                     </div>
                 </x-ui.card>
 
@@ -561,7 +258,7 @@
                 </div>
             </form>
         @else
-            {{-- Read-only display (viewer or finalized) --}}
+            {{-- Read-only display (viewer) — table only, no image input --}}
             <x-ui.card title="Hasil Odontogram yang Dipilih">
                 @if (count($selectedTeeth) > 0)
                     <div class="overflow-x-auto">
@@ -594,21 +291,90 @@
                     <p class="text-sm text-gray-500 italic">Belum ada kondisi odontogram yang dipilih.</p>
                 @endif
             </x-ui.card>
-
-            {{-- Read-only general odontogram notes --}}
-            <x-ui.card title="Catatan Umum Odontogram">
-                <dl class="space-y-4">
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kondisi Tambahan</dt>
-                        <dd class="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{{ $odontogram->additional_conditions ?: '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Odontogram</dt>
-                        <dd class="mt-1 text-sm text-gray-700 whitespace-pre-wrap">{{ $odontogram->summary_notes ?: '—' }}</dd>
-                    </div>
-                </dl>
-            </x-ui.card>
         @endif
+
+        {{-- ============================================================ --}}
+        {{-- OUTPUT — generated FDI visual. Read-only, derived from saved   --}}
+        {{-- table data, shown only after a save produced selected teeth.   --}}
+        {{-- ============================================================ --}}
+        <x-ui.card title="Peta Gigi (FDI)">
+            @if (count($selectedTeeth) > 0)
+                <p class="mb-3 text-xs text-gray-500">
+                    Visual ini dihasilkan otomatis dari tabel yang tersimpan dan tidak dapat diedit langsung.
+                    Ubah tabel di atas lalu simpan untuk memperbarui visual.
+                </p>
+
+                {{-- Legend --}}
+                <div class="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-700">
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded ring-1 ring-inset ring-green-400 bg-green-100 inline-block flex-shrink-0"></span>
+                        Normal
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded ring-1 ring-inset ring-red-400 bg-red-200 inline-block flex-shrink-0"></span>
+                        Karies
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded ring-1 ring-inset ring-gray-600 bg-gray-800 inline-block flex-shrink-0"></span>
+                        Hilang
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded ring-1 ring-inset ring-amber-400 bg-amber-200 inline-block flex-shrink-0"></span>
+                        Crown
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-4 h-4 rounded ring-1 ring-inset ring-sky-400 bg-sky-200 inline-block flex-shrink-0"></span>
+                        PSA
+                    </span>
+                </div>
+
+                {{-- Generated tooth grid (read-only output) --}}
+                <div class="overflow-x-auto -mx-2 px-2">
+                    <div class="inline-flex flex-col items-center min-w-max">
+                        <div class="flex w-full mb-0.5 text-[10px] text-gray-400 select-none">
+                            <div class="flex-1 text-right pr-3">← Kanan atas (Q1)</div>
+                            <div class="w-3"></div>
+                            <div class="flex-1 text-left pl-3">Kiri atas (Q2) →</div>
+                        </div>
+
+                        <div class="flex items-stretch gap-0.5">
+                            @foreach (array_merge($upperRight, [null], $upperLeft) as $tooth)
+                                @if ($tooth === null)
+                                    <div class="w-px bg-gray-400 mx-1 self-stretch flex-shrink-0"></div>
+                                @else
+                                    @php $st = $selectedTeeth[(string) $tooth]['status'] ?? ''; @endphp
+                                    <div class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold flex items-center justify-center select-none {{ $visualClass($st) }}" title="Gigi {{ $tooth }}">{{ $tooth }}</div>
+                                @endif
+                            @endforeach
+                        </div>
+
+                        <div class="w-full border-t-2 border-dashed border-gray-300 my-2"></div>
+
+                        <div class="flex items-stretch gap-0.5">
+                            @foreach (array_merge($lowerRight, [null], $lowerLeft) as $tooth)
+                                @if ($tooth === null)
+                                    <div class="w-px bg-gray-400 mx-1 self-stretch flex-shrink-0"></div>
+                                @else
+                                    @php $st = $selectedTeeth[(string) $tooth]['status'] ?? ''; @endphp
+                                    <div class="w-9 h-9 rounded ring-1 ring-inset text-[10px] font-bold flex items-center justify-center select-none {{ $visualClass($st) }}" title="Gigi {{ $tooth }}">{{ $tooth }}</div>
+                                @endif
+                            @endforeach
+                        </div>
+
+                        <div class="flex w-full mt-0.5 text-[10px] text-gray-400 select-none">
+                            <div class="flex-1 text-right pr-3">← Kanan bawah (Q4)</div>
+                            <div class="w-3"></div>
+                            <div class="flex-1 text-left pl-3">Kiri bawah (Q3) →</div>
+                        </div>
+                    </div>
+                </div>
+            @else
+                <p class="text-sm text-gray-500 italic">
+                    Belum ada kondisi odontogram yang dipilih. Visual Peta Gigi akan muncul otomatis
+                    setelah tabel odontogram disimpan.
+                </p>
+            @endif
+        </x-ui.card>
 
     </div>
 </x-settings-shell>
