@@ -277,6 +277,8 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // Sprint 20 Phase 1.10 — Cashier RME Billing
     Route::middleware('permission:manage_rme_billing')->group(function () {
         Route::get('cashier', [RmeInvoiceController::class, 'index'])->name('cashier.index');
+        // Hotfix Sprint 60.7 — Doctor → Cashier sync queue (read-only visibility).
+        Route::get('cashier/handoff', [RmeInvoiceController::class, 'handoff'])->name('cashier.handoff');
         Route::get('cashier/receivables', [RmeInvoiceController::class, 'receivables'])->name('cashier.receivables');
         Route::get('cashier/receivables/export', [RmeInvoiceController::class, 'exportReceivables'])->name('cashier.receivables.export');
         // Sprint 24 Phase 24.8 — RME receivable follow-up / reminder foundation

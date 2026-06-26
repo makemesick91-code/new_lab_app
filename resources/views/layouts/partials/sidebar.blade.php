@@ -137,6 +137,8 @@
                                class="menu-subitem {{ request()->routeIs('rme.treatment-room-worklist.*') ? $linkActive : $linkIdle }}">Ruang Perawatan</a>
                         @endcan
                         @can('manage_rme_billing')
+                            <a href="{{ route('rme.cashier.handoff') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.cashier.handoff') ? $linkActive : $linkIdle }}">Sinkronisasi Dokter–Kasir</a>
                             <a href="{{ route('rme.cashier.index') }}"
                                class="menu-subitem {{ request()->routeIs('rme.cashier.index', 'rme.cashier.create', 'rme.cashier.store', 'rme.cashier.show', 'rme.cashier.payment.*', 'rme.cashier.receipt.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
                             <a href="{{ route('rme.cashier.receivables') }}"

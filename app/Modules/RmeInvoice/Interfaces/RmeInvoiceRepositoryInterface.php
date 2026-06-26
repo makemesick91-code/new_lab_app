@@ -2,8 +2,10 @@
 
 namespace App\Modules\RmeInvoice\Interfaces;
 
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 
 interface RmeInvoiceRepositoryInterface
 {
@@ -20,6 +22,18 @@ interface RmeInvoiceRepositoryInterface
      * @param  array<string, mixed>  $filters
      */
     public function paginateCashierPendingForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+
+    /**
+     * Hotfix Sprint 60.7 — Doctor → Cashier sync queue. Active (non-terminal)
+     * visits across the active "Cabang RME" set, including pre-cashier stages so
+     * the cashier/front office can see what each visit is still waiting on. Returns
+     * an eager-loaded collection (grouped client-side), not a paginator.
+     *
+     * @param  array<int, int>  $branchIds
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, ClinicVisit>
+     */
+    public function cashierHandoffQueueForBranches(array $branchIds, array $filters = []): Collection;
 
     public function findForVisit(int $clinicVisitId): ?RmeInvoice;
 

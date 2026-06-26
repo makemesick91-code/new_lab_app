@@ -11,6 +11,7 @@ use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -21,7 +22,65 @@ class RmeInvoiceService
         private readonly BranchContext $branchContext,
         private readonly RmeInvoiceNumberGeneratorService $numberGenerator,
         private readonly BranchService $branches,
+        private readonly CashierHandoffStatusService $handoffStatus,
     ) {}
+
+    /**
+     * Hotfix Sprint 60.7 — Doctor → Cashier sync queue. Returns active visits across
+     * the active "Cabang RME" set, each tagged with its derived handoff status and
+     * grouped into the cashier-facing pipeline groups. Read-only/visibility only.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{
+     *     groups: array<string, Collection<int, ClinicVisit>>,
+     *     counts: array<string, int>,
+     *     total: int
+     * }
+     */
+    public function cashierHandoffQueue(array $filters = []): array
+    {
+        $visits = $this->invoices->cashierHandoffQueueForBranches(
+            $this->branches->rmeEnabledIds(),
+            $filters,
+        );
+
+        $groups = [];
+        $counts = [];
+        foreach (CashierHandoffStatusService::QUEUE_GROUPS as $group) {
+            $groups[$group] = collect();
+            $counts[$group] = 0;
+        }
+
+        $requestedGroup = $filters['group'] ?? null;
+
+        $total = 0;
+        foreach ($visits as $visit) {
+            $key = $this->handoffStatus->determineKey($visit);
+
+            if (! array_key_exists($key, $groups)) {
+                continue; // terminal states never reach the queue, but stay defensive
+            }
+
+            $visit->setAttribute('handoff_status', $key);
+
+            // Counts always reflect the full pipeline so the cashier sees how many
+            // visits sit in every group; the group filter only narrows what is listed.
+            $counts[$key]++;
+
+            if ($requestedGroup !== null && $requestedGroup !== $key) {
+                continue;
+            }
+
+            $groups[$key]->push($visit);
+            $total++;
+        }
+
+        return [
+            'groups' => $groups,
+            'counts' => $counts,
+            'total' => $total,
+        ];
+    }
 
     /**
      * Cashier pending queue is scoped to the operational "Cabang RME" set (active

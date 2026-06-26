@@ -10,6 +10,7 @@ use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeReceivableFollowUp;
 use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
+use App\Modules\RmeInvoice\Services\CashierHandoffStatusService;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
 use App\Modules\Treatment\Services\TreatmentService;
@@ -58,6 +59,45 @@ class RmeInvoiceController extends Controller
             'visits' => $this->service->paginatePendingVisits($filters),
             'filters' => $filters,
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
+        ]);
+    }
+
+    /**
+     * Hotfix Sprint 60.7 — Doctor → Cashier sync queue. Read-only visibility page
+     * that groups active RME visits by what they are still waiting on (doctor input,
+     * RME finalization, consent, ready to pay, in payment) so the cashier/front
+     * office no longer needs manual WhatsApp confirmation. No workflow/payment change.
+     */
+    public function handoff(Request $request): View
+    {
+        $this->authorize('viewAny', RmeInvoice::class);
+
+        $branches = $this->rmeBranches();
+        $activeBranchIds = $branches->pluck('id')->all();
+
+        $requestedBranchId = $request->integer('branch_id') ?: null;
+        $requestedGroup = $request->string('group')->toString();
+
+        $filters = [
+            'search' => $request->string('search')->toString() ?: null,
+            'branch_id' => $requestedBranchId && in_array($requestedBranchId, $activeBranchIds, true)
+                ? $requestedBranchId
+                : null,
+            'group' => in_array($requestedGroup, CashierHandoffStatusService::QUEUE_GROUPS, true)
+                ? $requestedGroup
+                : null,
+        ];
+
+        $queue = $this->service->cashierHandoffQueue($filters);
+
+        return view('rme.cashier.handoff', [
+            'branches' => $branches,
+            'filters' => $filters,
+            'groups' => $queue['groups'],
+            'counts' => $queue['counts'],
+            'total' => $queue['total'],
+            'groupKeys' => CashierHandoffStatusService::QUEUE_GROUPS,
+            'groupMeta' => CashierHandoffStatusService::META,
         ]);
     }
 
