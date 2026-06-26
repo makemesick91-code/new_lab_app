@@ -20,6 +20,22 @@ class Odontogram extends Model
 
     public const STATUS_FINALIZED = 'finalized';
 
+    /**
+     * Daengtisia DMF-T mapping (Hotfix Sprint 60.3 — PDF template parity).
+     *
+     * Per the official Daengtisia odontogram legend: D = Decay, M = Missing,
+     * F = Filling. The per-tooth `status` stored in tooth_map_payload is the
+     * single source of truth; restorative statuses (filling/crown/root_treated)
+     * count toward the F component. `normal` and unset teeth are excluded.
+     */
+    public const DMF_MAP = [
+        'caries' => 'D',
+        'missing' => 'M',
+        'filling' => 'F',
+        'crown' => 'F',
+        'root_treated' => 'F',
+    ];
+
     protected $table = 'trx_odontograms';
 
     protected $fillable = [
@@ -44,6 +60,32 @@ class Odontogram extends Model
     public function isFinalized(): bool
     {
         return $this->status === self::STATUS_FINALIZED;
+    }
+
+    /**
+     * Compute the Daengtisia DMF-T tally (Jumlah D / M / F / DMF-T) from the
+     * saved table data only. Source of truth = tooth_map_payload.teeth[*].status.
+     *
+     * @return array{D:int, M:int, F:int, DMFT:int}
+     */
+    public function dmftCounts(): array
+    {
+        $teeth = $this->tooth_map_payload['teeth'] ?? [];
+        $counts = ['D' => 0, 'M' => 0, 'F' => 0];
+
+        if (is_array($teeth)) {
+            foreach ($teeth as $tooth) {
+                $status = is_array($tooth) ? ($tooth['status'] ?? null) : null;
+                $component = $status ? (self::DMF_MAP[$status] ?? null) : null;
+                if ($component !== null) {
+                    $counts[$component]++;
+                }
+            }
+        }
+
+        $counts['DMFT'] = $counts['D'] + $counts['M'] + $counts['F'];
+
+        return $counts;
     }
 
     public function clinicVisit(): BelongsTo

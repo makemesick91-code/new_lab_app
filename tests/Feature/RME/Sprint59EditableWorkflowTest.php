@@ -121,21 +121,25 @@ it('Odontogram page shows prev/next links to adjacent visits of the same patient
 
 // ─── Table-first odontogram editor ───────────────────────────────────────────
 
-it('odontogram page renders the table-only input for a manager (Sprint 60.2)', function () {
+it('odontogram page renders the table-only Daengtisia input for a manager (Hotfix Sprint 60.3)', function () {
     $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id]);
 
     $this->actingAs($this->manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Hasil Odontogram yang Dipilih')
-        // Two vertical tables drive all input.
-        ->assertSee('Rahang Atas')
-        ->assertSee('Rahang Bawah')
-        ->assertSee('pickStatus', false)
-        // The old add-row workflow and image-based input are gone.
-        ->assertDontSee('Tambah Baris')
+        // Daengtisia columns drive all input (GIGI / DIAGNOSA / PERAWATAN / DOKTER).
+        ->assertSee('GIGI')
+        ->assertSee('DIAGNOSA')
+        ->assertSee('PERAWATAN')
+        ->assertSee('DOKTER')
+        // Doctor adds rows per tooth number; status edits go through the editor.
+        ->assertSee('Tambah Baris')
+        ->assertSee('setStatus', false)
         // The FDI visual is a generated output section (shown once data is saved).
-        ->assertSee('Peta Gigi (FDI)');
+        ->assertSee('Peta Gigi (FDI)')
+        // No interactive drawing/image input.
+        ->assertDontSee('<canvas', false);
 });
 
 // ─── Manual billing treatment ────────────────────────────────────────────────
