@@ -83,6 +83,44 @@
             </div>
         @endif
 
+        {{-- Hotfix Sprint 60.8 — room-assignment gate. An active visit must be
+             placed into a treatment room before the doctor can examine. --}}
+        @if ($visit->requiresRoomBeforeExam())
+            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-amber-800">Menunggu Penempatan Ruangan</p>
+                        <p class="mt-0.5 text-sm text-amber-700">
+                            Pasien belum ditempatkan ke ruangan perawatan. Dokter belum dapat memulai pemeriksaan
+                            sebelum ruangan dipilih.
+                        </p>
+                    </div>
+                    @can('update', $visit)
+                        @if (($rooms ?? collect())->isNotEmpty())
+                            <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
+                                  class="flex flex-wrap items-center gap-1.5">
+                                @csrf
+                                @method('PATCH')
+                                <select name="clinic_room_id"
+                                        class="min-w-[10rem] rounded-lg border-amber-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <option value="">- Pilih ruangan -</option>
+                                    @foreach ($rooms as $room)
+                                        <option value="{{ $room->id }}">{{ $room->name }}</option>
+                                    @endforeach
+                                </select>
+                                <button type="submit"
+                                        class="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
+                                    Tempatkan Ruangan
+                                </button>
+                            </form>
+                        @else
+                            <span class="text-xs text-amber-700">Belum ada ruangan aktif pada cabang ini.</span>
+                        @endif
+                    @endcan
+                </div>
+            </div>
+        @endif
+
         <x-ui.card title="Informasi Kunjungan">
             <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
@@ -207,7 +245,11 @@
         {{-- Rekam Medis --}}
         @php $medicalRecord = $visit->medicalRecord; @endphp
         <x-ui.card title="Rekam Medis">
-            @if ($medicalRecord)
+            @if ($visit->requiresRoomBeforeExam())
+                <p class="text-sm text-amber-700">
+                    Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
+                </p>
+            @elseif ($medicalRecord)
                 <div class="flex flex-wrap items-center gap-3">
                     <x-ui.badge :tone="$medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL ? 'success' : 'warning'">
                         {{ $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL ? 'Final' : 'Draft' }}
@@ -232,10 +274,16 @@
         {{-- Odontogram --}}
         @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $visit])
             <x-ui.card title="Odontogram">
-                <x-ui.button variant="primary" :href="route('rme.visits.odontogram.show', $visit)">
-                    Buka Odontogram
-                </x-ui.button>
-                <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
+                @if ($visit->requiresRoomBeforeExam())
+                    <p class="text-sm text-amber-700">
+                        Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
+                    </p>
+                @else
+                    <x-ui.button variant="primary" :href="route('rme.visits.odontogram.show', $visit)">
+                        Buka Odontogram
+                    </x-ui.button>
+                    <p class="mt-2 text-xs text-gray-500">Placeholder — Odontogram interaktif akan tersedia di Sprint berikutnya.</p>
+                @endif
             </x-ui.card>
         @endcan
 

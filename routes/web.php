@@ -233,10 +233,13 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->patch('visits/{clinicVisit}/room', [ClinicVisitController::class, 'assignRoom'])
             ->name('visits.assign-room');
 
-        Route::get('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'show'])
+        // Hotfix Sprint 60.8 — doctor examination requires an assigned treatment
+        // room. The `visit.room` gate blocks RM input on a roomless active visit.
+        Route::middleware('visit.room')
+            ->get('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'show'])
             ->name('visits.medical-record.show');
 
-        Route::middleware('permission:manage_clinic_visits')->group(function () {
+        Route::middleware(['permission:manage_clinic_visits', 'visit.room'])->group(function () {
             Route::post('visits/{clinicVisit}/medical-record', [MedicalRecordController::class, 'store'])
                 ->name('visits.medical-record.store');
             Route::patch('visits/{clinicVisit}/medical-record/{medicalRecord}', [MedicalRecordController::class, 'update'])
@@ -249,7 +252,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         });
 
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder Foundation
-        Route::get('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'show'])
+        // Hotfix Sprint 60.8 — odontogram input is gated behind room assignment.
+        Route::middleware('visit.room')
+            ->get('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'show'])
             ->name('visits.odontogram.show');
 
         // Sprint 20 Phase 1.6 — Odontogram Print View
@@ -264,7 +269,7 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('visits/{clinicVisit}/pdf', [ClinicVisitController::class, 'pdf'])
             ->name('visits.pdf');
 
-        Route::middleware('permission:manage_clinic_visits')->group(function () {
+        Route::middleware(['permission:manage_clinic_visits', 'visit.room'])->group(function () {
             Route::patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
                 ->name('odontograms.update');
 

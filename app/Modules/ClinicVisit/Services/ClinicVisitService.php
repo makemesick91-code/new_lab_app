@@ -106,11 +106,36 @@ class ClinicVisitService
     }
 
     /**
+     * Active treatment rooms for a single branch, used by the visit detail page
+     * room-assignment selector. Scoped strictly to the visit's own branch so a
+     * room from another branch (or MAIN) can never be offered.
+     *
+     * @return Collection<int, ClinicRoom>
+     */
+    public function activeRoomsForBranch(int $branchId): Collection
+    {
+        return ClinicRoom::query()
+            ->where('branch_id', $branchId)
+            ->where('status', ClinicRoom::STATUS_ACTIVE)
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
      * Assign a treatment room to a visit. The room must be active and belong to
      * the same branch as the visit — rooms from other branches are rejected.
      */
     public function assignRoom(ClinicVisit $visit, int $roomId): ClinicVisit
     {
+        // Hotfix Sprint 60.8 — room assignment is a queue-stage action. A visit
+        // that has already been completed or cancelled is past the workflow and
+        // its room must not be reassigned.
+        if ($visit->isTerminal()) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Kunjungan yang sudah selesai atau dibatalkan tidak dapat diubah ruangannya.',
+            ]);
+        }
+
         $room = ClinicRoom::query()->find($roomId);
 
         if ($room === null || $room->status !== ClinicRoom::STATUS_ACTIVE) {

@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
@@ -29,7 +30,11 @@ class ClinicVisitFactory extends Factory
             'clinic_id' => Clinic::factory(),
             'patient_id' => Patient::factory(),
             'doctor_id' => Doctor::factory(),
-            'clinic_room_id' => null,
+            // Hotfix Sprint 60.8 — visits default to an assigned treatment room so
+            // the room-assignment exam gate is satisfied by default. Tests that
+            // exercise the roomless/queue state pass `clinic_room_id => null`
+            // explicitly, which overrides this default.
+            'clinic_room_id' => ClinicRoom::factory(),
             'visit_date' => $visitDate->toDateString(),
             'queue_number' => $queueNumber,
             'status' => ClinicVisit::STATUS_REGISTERED,

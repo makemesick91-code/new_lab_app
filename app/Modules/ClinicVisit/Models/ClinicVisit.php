@@ -74,6 +74,19 @@ class ClinicVisit extends Model
         self::VISIT_TYPE_CONTINUED_TREATMENT,
     ];
 
+    /**
+     * Hotfix Sprint 60.8 — statuses in the "before doctor examination" window.
+     * A visit in one of these statuses must have an assigned treatment room
+     * before the doctor may open/continue examination input (RM / odontogram).
+     * cashier_pending and the terminal statuses are past examination and are
+     * intentionally exempt so post-exam editing (Sprint 59) is never blocked.
+     */
+    public const PRE_EXAM_STATUSES = [
+        self::STATUS_REGISTERED,
+        self::STATUS_WAITING,
+        self::STATUS_IN_PROGRESS,
+    ];
+
     protected $table = 'trx_clinic_visits';
 
     protected $fillable = [
@@ -119,6 +132,28 @@ class ClinicVisit extends Model
     {
         return $this->consent_signed_by_patient === true
             && $this->consent_signed_by_doctor === true;
+    }
+
+    public function hasAssignedRoom(): bool
+    {
+        return $this->clinic_room_id !== null;
+    }
+
+    public function isTerminal(): bool
+    {
+        return in_array($this->status, [self::STATUS_COMPLETED, self::STATUS_CANCELLED], true);
+    }
+
+    /**
+     * Hotfix Sprint 60.8 — the room-assignment gate. An active pre-examination
+     * visit (registered/waiting/in_progress) must have a treatment room before
+     * the doctor can start/open examination. Returns true when examination must
+     * be blocked because no room has been assigned yet.
+     */
+    public function requiresRoomBeforeExam(): bool
+    {
+        return ! $this->hasAssignedRoom()
+            && in_array($this->status, self::PRE_EXAM_STATUSES, true);
     }
 
     public function branch(): BelongsTo

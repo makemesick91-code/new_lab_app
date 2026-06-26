@@ -104,6 +104,9 @@
                                 </x-ui.badge>
                             </td>
                             <td class="px-3 py-3 text-gray-600">
+                                @unless ($visit->clinicRoom)
+                                    <x-ui.badge tone="warning" class="mb-1">Menunggu Penempatan Ruangan</x-ui.badge>
+                                @endunless
                                 @if ($branchRooms->isEmpty() || ! auth()->user()?->can('update', $visit))
                                     <span class="{{ $visit->clinicRoom ? 'text-gray-700' : 'text-gray-400' }}">
                                         {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}

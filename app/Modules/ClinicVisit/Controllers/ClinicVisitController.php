@@ -202,6 +202,9 @@ class ClinicVisitController extends Controller
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
             'patientVisitHistory' => $patientVisitHistory,
+            // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
+            // room-assignment selector when the visit still has no room.
+            'rooms' => $this->visits->activeRoomsForBranch((int) $clinicVisit->branch_id),
         ]);
     }
 

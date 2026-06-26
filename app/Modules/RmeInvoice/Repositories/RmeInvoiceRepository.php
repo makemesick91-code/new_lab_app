@@ -61,6 +61,7 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
                 'patient',
                 'doctor',
                 'branch',
+                'clinicRoom',
                 'initialTreatment',
                 'medicalRecord',
                 'rmeInvoice',
