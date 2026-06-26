@@ -35,16 +35,19 @@ it('odontogram fill page no longer renders the general Catatan Umum inputs', fun
         ->assertDontSee('Catatan Odontogram');
 });
 
-it('odontogram fill page renders the table-only input with two vertical tables', function () {
+it('odontogram fill page renders the table-only Daengtisia columns', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
 
+    // Hotfix Sprint 60.3 — single GIGI / DIAGNOSA / PERAWATAN / DOKTER table.
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Hasil Odontogram yang Dipilih')
-        ->assertSee('Rahang Atas')
-        ->assertSee('Rahang Bawah');
+        ->assertSee('GIGI')
+        ->assertSee('DIAGNOSA')
+        ->assertSee('PERAWATAN')
+        ->assertSee('DOKTER');
 });
 
 // --- 3 & 4: saving persists both fields ---
@@ -282,7 +285,7 @@ it('additional RME branch visit odontogram is allowed', function () {
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Kondisi Tambahan');
+        ->assertSee('Hasil Odontogram yang Dipilih');
 
     $odontogram = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
 

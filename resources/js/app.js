@@ -87,6 +87,7 @@ Alpine.data('odontogramEditor', (config = {}) => ({
                 conditions: (this.teeth[key] && Array.isArray(this.teeth[key].conditions)) ? this.teeth[key].conditions : [],
                 additional_condition: (this.teeth[key] && this.teeth[key].additional_condition) || '',
                 additional_note: (this.teeth[key] && this.teeth[key].additional_note) || '',
+                dokter: (this.teeth[key] && this.teeth[key].dokter) || '',
             },
         });
         this.newTooth = '';
@@ -165,6 +166,7 @@ Alpine.data('odontogramEditor', (config = {}) => ({
                 status: this.teeth[k].status,
                 additional_condition: this.teeth[k].additional_condition || '',
                 additional_note: this.teeth[k].additional_note || '',
+                dokter: this.teeth[k].dokter || '',
             }));
     },
 
@@ -278,6 +280,7 @@ Alpine.data('odontogramEditor', (config = {}) => ({
                 conditions: Array.isArray(existing.conditions) ? existing.conditions : [],
                 additional_condition: existing.additional_condition || '',
                 additional_note: existing.additional_note || '',
+                dokter: existing.dokter || '',
             },
         });
     },

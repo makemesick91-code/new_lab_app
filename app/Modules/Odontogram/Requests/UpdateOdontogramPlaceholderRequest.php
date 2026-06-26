@@ -32,13 +32,18 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
             'tooth_map_payload' => ['nullable', 'array'],
             'tooth_map_payload.teeth' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*' => ['nullable', 'array'],
-            'tooth_map_payload.teeth.*.status' => ['nullable', 'string', 'in:normal,caries,missing,crown,root_treated'],
+            // Hotfix Sprint 60.3 — `filling` added so the F (Filling) DMF-T
+            // component is selectable directly from the DIAGNOSA dropdown.
+            'tooth_map_payload.teeth.*.status' => ['nullable', 'string', 'in:normal,caries,missing,filling,crown,root_treated'],
             'tooth_map_payload.teeth.*.note' => ['nullable', 'string', 'max:1000'],
             'tooth_map_payload.teeth.*.conditions' => ['nullable', 'array'],
             'tooth_map_payload.teeth.*.conditions.*' => ['nullable', 'string', 'in:caries,missing,crown,root_treated,mobility,impaction,filling'],
-            // Per-selected-row additional fields (Sprint 23 Phase 23.10.4).
+            // Per-selected-row fields. additional_condition/additional_note are the
+            // legacy keys reused for the DIAGNOSA/PERAWATAN columns (Phase 23.10.4);
+            // `dokter` is the new DOKTER column (Hotfix Sprint 60.3, additive).
             'tooth_map_payload.teeth.*.additional_condition' => ['nullable', 'string', 'max:1000'],
             'tooth_map_payload.teeth.*.additional_note' => ['nullable', 'string', 'max:1000'],
+            'tooth_map_payload.teeth.*.dokter' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -77,12 +82,24 @@ class UpdateOdontogramPlaceholderRequest extends FormRequest
         });
     }
 
-    /** @return string[] */
+    /**
+     * Valid FDI numbers per the Daengtisia odontogram (Hotfix Sprint 60.3).
+     * Permanent quadrants 1–4 (teeth 1–8) and primary quadrants 5–8 (teeth 1–5):
+     *   Permanent: 11–18, 21–28, 31–38, 41–48
+     *   Primary:   51–55, 61–65, 71–75, 81–85
+     *
+     * @return string[]
+     */
     private function validFdiNumbers(): array
     {
         $numbers = [];
         foreach ([1, 2, 3, 4] as $quadrant) {
             for ($i = 1; $i <= 8; $i++) {
+                $numbers[] = (string) ($quadrant * 10 + $i);
+            }
+        }
+        foreach ([5, 6, 7, 8] as $quadrant) {
+            for ($i = 1; $i <= 5; $i++) {
                 $numbers[] = (string) ($quadrant * 10 + $i);
             }
         }

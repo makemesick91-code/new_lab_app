@@ -86,33 +86,35 @@ it('medical record print shows the selected odontogram condition label', functio
         ->assertSee('Karies');
 });
 
-// --- 5: per-row Tanda Klinis / Kondisi Tambahan ---
+// --- 5: per-row DIAGNOSA detail (additional_condition) ---
 
-it('medical record print shows per-row Tanda Klinis / Kondisi Tambahan', function () {
+it('medical record print shows per-row DIAGNOSA detail', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = visitWithOdontogram([
         '11' => ['status' => 'caries', 'additional_condition' => 'TandaKlinisRow11'],
     ]);
 
+    // Hotfix Sprint 60.3 — Daengtisia columns; additional_condition renders in DIAGNOSA.
     $this->actingAs($manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Tanda Klinis / Kondisi Tambahan')
+        ->assertSee('DIAGNOSA')
         ->assertSee('TandaKlinisRow11');
 });
 
-// --- 6: per-row Catatan Gigi / Catatan Tambahan ---
+// --- 6: per-row PERAWATAN (additional_note) + legacy note preserved ---
 
-it('medical record print shows per-row Catatan Gigi / Catatan Tambahan', function () {
+it('medical record print shows per-row PERAWATAN and preserves legacy note', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = visitWithOdontogram([
         '11' => ['status' => 'caries', 'note' => 'CatatanGigiRow11', 'additional_note' => 'CatatanTambahanRow11'],
     ]);
 
+    // additional_note renders in PERAWATAN; legacy note is preserved in DIAGNOSA detail.
     $this->actingAs($manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Catatan Gigi / Catatan Tambahan')
+        ->assertSee('PERAWATAN')
         ->assertSee('CatatanGigiRow11')
         ->assertSee('CatatanTambahanRow11');
 });

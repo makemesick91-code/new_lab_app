@@ -113,7 +113,7 @@ it('selected results table row shows the selected odontogram condition', functio
 
 // --- 6, 7: draft row shows per-row inputs ---
 
-it('draft selected results table exposes a Kondisi Tambahan input column', function () {
+it('draft selected results table exposes a DIAGNOSA input column', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
@@ -122,14 +122,15 @@ it('draft selected results table exposes a Kondisi Tambahan input column', funct
         'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
     ]);
 
+    // Hotfix Sprint 60.3 — Daengtisia columns; DIAGNOSA detail reuses additional_condition.
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Kondisi Tambahan')
+        ->assertSee('DIAGNOSA')
         ->assertSee('additional_condition', false);
 });
 
-it('draft selected results table exposes a Catatan Tambahan input column', function () {
+it('draft selected results table exposes a PERAWATAN input column', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
@@ -138,10 +139,11 @@ it('draft selected results table exposes a Catatan Tambahan input column', funct
         'tooth_map_payload' => ['teeth' => ['11' => ['status' => 'caries']]],
     ]);
 
+    // Hotfix Sprint 60.3 — PERAWATAN column reuses additional_note.
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Catatan Tambahan')
+        ->assertSee('PERAWATAN')
         ->assertSee('additional_note', false);
 });
 

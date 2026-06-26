@@ -9,25 +9,36 @@
      * empty states. Used by the combined Cetak Rekam Medis bundle (print-body)
      * so odontogram results appear without opening the separate Cetak Odontogram.
      */
+    // Hotfix Sprint 60.3 — Daengtisia columns GIGI / DIAGNOSA / PERAWATAN / DOKTER.
     $statusLabels = [
         'caries' => 'Karies',
-        'missing' => 'Cabut/Missing',
-        'crown' => 'Mahkota',
-        'root_treated' => 'Perawatan Saluran Akar',
+        'missing' => 'Hilang',
+        'filling' => 'Tambalan',
+        'crown' => 'Crown',
+        'root_treated' => 'PSA',
+        'normal' => 'Normal',
+    ];
+    // Legacy per-tooth clinical signs (Sprint 20) — still rendered in DIAGNOSA detail.
+    $conditionLabels = [
+        'caries' => 'Karies',
+        'missing' => 'Hilang',
+        'crown' => 'Crown',
+        'root_treated' => 'PSA',
         'mobility' => 'Goyang',
         'impaction' => 'Impaksi',
         'filling' => 'Tambalan',
-        'normal' => 'Normal',
     ];
-    $conditionLabels = $statusLabels;
 
     $teethData = $odontogram?->tooth_map_payload['teeth'] ?? [];
     $markedTeeth = array_filter($teethData, fn ($td) =>
         ! empty($td['status'])
         || ! empty($td['conditions'])
         || (isset($td['note']) && $td['note'] !== '' && $td['note'] !== null)
+        || (isset($td['additional_condition']) && $td['additional_condition'] !== '' && $td['additional_condition'] !== null)
+        || (isset($td['additional_note']) && $td['additional_note'] !== '' && $td['additional_note'] !== null)
+        || (isset($td['dokter']) && $td['dokter'] !== '' && $td['dokter'] !== null)
     );
-    ksort($markedTeeth);
+    ksort($markedTeeth, SORT_NATURAL);
 @endphp
 
 <div class="section-title" style="font-size:11px; margin-top:10px; border-bottom:none; padding-bottom:0;">
@@ -38,40 +49,41 @@
     <table class="odonto-table" style="margin-top:6px;">
         <thead>
             <tr>
-                <th style="width:34px">No</th>
-                <th style="width:60px">Gigi / Area</th>
-                <th style="width:105px">Kondisi Odontogram</th>
-                <th>Tanda Klinis / Kondisi Tambahan</th>
-                <th>Catatan Gigi / Catatan Tambahan</th>
+                <th style="width:50px">GIGI</th>
+                <th style="width:150px">DIAGNOSA</th>
+                <th>PERAWATAN</th>
+                <th style="width:120px">DOKTER</th>
             </tr>
         </thead>
         <tbody>
             @foreach ($markedTeeth as $toothNum => $td)
                 @php
-                    $signs = [];
-                    if (! empty($td['conditions']) && is_array($td['conditions'])) {
-                        foreach ($td['conditions'] as $cond) {
-                            $signs[] = $conditionLabels[$cond] ?? $cond;
-                        }
+                    $diagnosaParts = [];
+                    $statusLabel = $statusLabels[$td['status'] ?? ''] ?? ($td['status'] ? ucfirst($td['status']) : '');
+                    if ($statusLabel !== '') {
+                        $diagnosaParts[] = $statusLabel;
                     }
                     if (isset($td['additional_condition']) && $td['additional_condition'] !== '') {
-                        $signs[] = $td['additional_condition'];
+                        $diagnosaParts[] = $td['additional_condition'];
                     }
-
-                    $notes = [];
+                    // Legacy per-tooth clinical signs + note preserved within DIAGNOSA detail.
+                    if (! empty($td['conditions']) && is_array($td['conditions'])) {
+                        foreach ($td['conditions'] as $cond) {
+                            $diagnosaParts[] = $conditionLabels[$cond] ?? $cond;
+                        }
+                    }
                     if (isset($td['note']) && $td['note'] !== '') {
-                        $notes[] = $td['note'];
+                        $diagnosaParts[] = $td['note'];
                     }
-                    if (isset($td['additional_note']) && $td['additional_note'] !== '') {
-                        $notes[] = $td['additional_note'];
-                    }
+                    $diagnosa = implode(' — ', $diagnosaParts);
+                    $perawatan = (isset($td['additional_note']) && $td['additional_note'] !== '') ? $td['additional_note'] : '';
+                    $dokter = (isset($td['dokter']) && $td['dokter'] !== '') ? $td['dokter'] : '';
                 @endphp
                 <tr>
-                    <td>{{ $loop->iteration }}</td>
                     <td><strong>{{ $toothNum }}</strong></td>
-                    <td>{{ $statusLabels[$td['status'] ?? ''] ?? ($td['status'] ? ucfirst($td['status']) : '—') }}</td>
-                    <td>{{ count($signs) ? implode(', ', $signs) : '—' }}</td>
-                    <td>{{ count($notes) ? implode(' — ', $notes) : '—' }}</td>
+                    <td>{{ $diagnosa !== '' ? $diagnosa : '—' }}</td>
+                    <td>{{ $perawatan !== '' ? $perawatan : '—' }}</td>
+                    <td>{{ $dokter !== '' ? $dokter : '—' }}</td>
                 </tr>
             @endforeach
         </tbody>

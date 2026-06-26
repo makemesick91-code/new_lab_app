@@ -1188,7 +1188,7 @@ it('existing tooth status update still works after phase 1.5', function () {
         ->and($fresh->tooth_map_payload['teeth']['31']['status'])->toBe('root_treated');
 });
 
-it('filling and mobility are not valid status values', function () {
+it('mobility is not a valid status value', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
@@ -1197,10 +1197,12 @@ it('filling and mobility are not valid status values', function () {
         'branch_id' => $branch->id,
     ]);
 
+    // Hotfix Sprint 60.3 — `filling` is now a valid status (F component of DMF-T);
+    // `mobility` remains a clinical condition only, not a valid DIAGNOSA status.
     $this->actingAs($manager)
         ->patch(route('rme.odontograms.update', $odontogram), [
             'tooth_map_payload' => json_encode([
-                'teeth' => ['11' => ['status' => 'filling']],
+                'teeth' => ['11' => ['status' => 'mobility']],
             ]),
         ])
         ->assertSessionHasErrors('tooth_map_payload.teeth.11.status');
