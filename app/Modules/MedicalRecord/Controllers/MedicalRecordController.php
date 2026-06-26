@@ -58,7 +58,10 @@ class MedicalRecordController extends Controller
         // still used by the header are eager-loaded. The patientVisitHistory
         // query is dropped here (the removed history card was its only
         // consumer), cutting unnecessary per-page load.
-        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf']);
+        // Hotfix 60.5 — `branch` is eager-loaded so the RM canvas/template can
+        // render the branch-aware official Daengtisia header
+        // ("CABANG {BRANCH} KLINIK GIGI DAENGTISIA").
+        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf', 'branch']);
 
         // Prev/next arrow navigation restricted to visits that already have a
         // medical record, so the target RM page never 404s (Sprint 59).
