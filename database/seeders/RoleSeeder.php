@@ -242,6 +242,28 @@ class RoleSeeder extends Seeder
             'approve_inventory_purchase_request',
             'approve_inventory_purchase_order',
         ],
+        // Hotfix — Supervisor RME: full access to the entire RME module only.
+        // Aggregates every permission that gates an RME route (clinic visits,
+        // medical record, odontogram, treatment worklist, cashier/receivable/
+        // follow-up billing, RME reports, patient audit) plus `manage patients`
+        // for patient register/edit + KTP scan documents that feed the RME
+        // workflow. Intentionally excludes Lab, Inventory, Procurement, Access
+        // Control, Owner/branch dashboards, and system settings.
+        'Supervisor RME' => [
+            'view dashboard',
+            // Patient registration/edit + KTP scan documents (RME entry point)
+            'manage patients',
+            // Clinic visit queue, RM, odontogram, print bundle, room assignment
+            'view_clinic_visits',
+            'manage_clinic_visits',
+            // Doctor/Perawat treatment room worklist
+            'view_treatment_worklist',
+            // Cashier RME: billing, payment, receivables, follow-ups
+            'manage_rme_billing',
+            // RME reports + patient data completeness audit
+            'view_rme_patient_reports',
+            'view_rme_payment_reports',
+        ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [
             'view dashboard',

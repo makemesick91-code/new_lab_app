@@ -1,0 +1,98 @@
+<?php
+
+use App\Modules\Branch\Models\Branch;
+use Database\Seeders\BranchSeeder;
+use Spatie\Permission\Models\Role;
+
+beforeEach(function () {
+    seedAccessControl();
+    test()->seed(BranchSeeder::class);
+    $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+});
+
+/**
+ * Every permission that gates an RME route. Supervisor RME must hold all of them.
+ */
+const SUPERVISOR_RME_PERMISSIONS = [
+    'view dashboard',
+    'manage patients',
+    'view_clinic_visits',
+    'manage_clinic_visits',
+    'view_treatment_worklist',
+    'manage_rme_billing',
+    'view_rme_patient_reports',
+    'view_rme_payment_reports',
+];
+
+it('creates the Supervisor RME role after seeding', function () {
+    expect(Role::where('name', 'Supervisor RME')->where('guard_name', 'web')->exists())->toBeTrue();
+});
+
+it('is idempotent — re-running the seeder keeps a single role with the same permissions', function () {
+    seedAccessControl();
+    seedAccessControl();
+
+    expect(Role::where('name', 'Supervisor RME')->count())->toBe(1);
+
+    $role = Role::findByName('Supervisor RME');
+
+    expect($role->permissions->pluck('name')->sort()->values()->all())
+        ->toBe(collect(SUPERVISOR_RME_PERMISSIONS)->sort()->values()->all());
+});
+
+it('grants Supervisor RME every RME-related permission', function () {
+    $role = Role::findByName('Supervisor RME');
+
+    foreach (SUPERVISOR_RME_PERMISSIONS as $permission) {
+        expect($role->hasPermissionTo($permission))->toBeTrue("missing RME permission: {$permission}");
+    }
+});
+
+it('does not grant Supervisor RME unrelated Lab module permissions', function () {
+    $role = Role::findByName('Supervisor RME');
+
+    foreach (['view_lab_orders', 'manage_lab_orders', 'create_lab_orders', 'manage_production', 'manage_quality_control'] as $permission) {
+        expect($role->hasPermissionTo($permission))->toBeFalse("unexpected lab permission: {$permission}");
+    }
+});
+
+it('does not grant Supervisor RME unrelated Inventory or Procurement permissions', function () {
+    $role = Role::findByName('Supervisor RME');
+
+    foreach (['view_inventory', 'manage_inventory', 'view_inventory_executive_dashboard', 'manage_purchase_request', 'manage_purchase_order', 'manage_goods_receipt'] as $permission) {
+        expect($role->hasPermissionTo($permission))->toBeFalse("unexpected inventory/procurement permission: {$permission}");
+    }
+});
+
+it('does not grant Supervisor RME Access Control, Owner dashboard, or branch master data', function () {
+    $role = Role::findByName('Supervisor RME');
+
+    foreach (['manage users', 'manage roles', 'manage permissions', 'view_owner_dashboard', 'manage_branch_master_data'] as $permission) {
+        expect($role->hasPermissionTo($permission))->toBeFalse("unexpected admin permission: {$permission}");
+    }
+});
+
+it('lets a Supervisor RME user reach representative RME pages', function () {
+    $user = userInRole('Supervisor RME');
+
+    $this->actingAs($user)->get(route('rme.dashboard'))->assertOk();
+    $this->actingAs($user)->get(route('rme.visits.index'))->assertOk();
+    $this->actingAs($user)->get(route('rme.visits.create'))->assertOk();
+    $this->actingAs($user)->get(route('rme.patient-queue.index'))->assertOk();
+    $this->actingAs($user)->get(route('rme.treatment-room-worklist.index'))->assertOk();
+    $this->actingAs($user)->get(route('rme.medical-records.index'))->assertOk();
+    $this->actingAs($user)->get(route('rme.cashier.index'))->assertOk();
+    $this->actingAs($user)->get(route('rme.cashier.receivables'))->assertOk();
+    $this->actingAs($user)->get(route('rme.reports.patients'))->assertOk();
+    $this->actingAs($user)->get(route('rme.reports.payments'))->assertOk();
+    $this->actingAs($user)->get(route('settings.patients.index'))->assertOk();
+    $this->actingAs($user)->get(route('settings.patients.create'))->assertOk();
+    $this->actingAs($user)->get(route('rme.patients.audit'))->assertOk();
+});
+
+it('forbids a Supervisor RME user from unrelated Lab and Inventory pages', function () {
+    $user = userInRole('Supervisor RME');
+
+    $this->actingAs($user)->get(route('lab-orders.index'))->assertForbidden();
+    $this->actingAs($user)->get(route('lab-case-candidates.index'))->assertForbidden();
+});

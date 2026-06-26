@@ -7553,3 +7553,26 @@ inventory ledger change, no branch master change, no route redesign, no RME chan
 `php artisan test --filter=StockTransfer` 116 passed (552 assertions);
 `php artisan test --filter=Inventory` 1217 passed (6181 assertions); Pint passed; `git diff --check`
 clean. Doc: `docs/hotfix_stock_transfer_checklist_branding_daengtisia.md`.
+
+## Hotfix — Supervisor RME Role with Full RME Permissions (June 2026)
+
+Added a new least-privilege role **`Supervisor RME`** that grants full access to the entire RME
+module only. The role is defined in `database/seeders/RoleSeeder.php::ROLE_PERMISSIONS` (the existing
+idempotent `Role::firstOrCreate` + `syncPermissions` seeder), so re-running the seeder is safe and no
+existing role is changed. Permissions were selected by enumerating every permission that gates an RME
+route in `routes/web.php` (cross-checked against the `rme` group in
+`App\Modules\AccessControl\Services\PermissionGroupingService`): `view dashboard`, `manage patients`
+(patient register/edit + KTP scan documents that feed the RME workflow, and the patient-audit page),
+`view_clinic_visits`, `manage_clinic_visits` (visit queue, room assignment, medical record,
+odontogram, print/PDF bundle, doctor examination), `view_treatment_worklist`, `manage_rme_billing`
+(cashier billing, payment, receivables, follow-ups), `view_rme_patient_reports`, and
+`view_rme_payment_reports`. The role intentionally excludes Lab, Inventory, Procurement, Access
+Control admin, Owner/branch dashboards, HR, and system settings. **Safety:** no migration, no
+permission added/removed/renamed, no route/policy/middleware change, no behavior change to existing
+roles. Validation: new `tests/Feature/Auth/SupervisorRmeRolePermissionTest.php` (8 passed, 42
+assertions) asserts the role exists, holds every RME permission, is idempotent, excludes
+Lab/Inventory/Procurement/Access-Control/Owner permissions, and that a Supervisor RME user can reach
+representative RME pages (dashboard, visit list/create, queue, treatment worklist, medical records,
+cashier, receivables, patient/payment reports, patient list/create, patient audit) while being
+forbidden from lab-order and lab-candidate pages. `--filter=Permission` 211 passed; `--filter=Role`
+76 passed; Pint passed; `git diff --check` clean.
