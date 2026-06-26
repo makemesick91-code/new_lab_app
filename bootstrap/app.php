@@ -3,6 +3,7 @@
 use App\Console\Commands\AssignOwnerRoleCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
+use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,6 +28,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            // Hotfix Sprint 60.8 — RME room-assignment gate before examination.
+            'visit.room' => EnsureVisitRoomAssigned::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

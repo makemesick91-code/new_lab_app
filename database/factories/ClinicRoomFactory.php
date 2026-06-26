@@ -19,7 +19,10 @@ class ClinicRoomFactory extends Factory
         return [
             'branch_id' => Branch::factory(),
             'code' => 'RM-'.strtoupper(Str::random(6)),
-            'name' => fake()->unique()->randomElement([
+            // The random suffix already differentiates names; `unique()` is not
+            // used here because a tiny base-name pool would exhaust once many
+            // visits each auto-create a room (Hotfix Sprint 60.8 factory default).
+            'name' => fake()->randomElement([
                 'Ruang Perawatan',
                 'Ruang Konsultasi',
                 'Ruang Rontgen',

@@ -103,6 +103,7 @@
                             <tr class="text-left text-gray-500">
                                 <th scope="col" class="px-4 py-3 font-medium">No. RM / Pasien</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Cabang</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Waktu Kunjungan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Status Kunjungan</th>
@@ -129,6 +130,16 @@
                                         </span>
                                     </td>
                                     <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code : '—' }}</td>
+                                    <td class="px-3 py-3">
+                                        @if ($visit->clinicRoom)
+                                            <span class="text-gray-700">{{ $visit->clinicRoom->name }}</span>
+                                        @elseif ($visit->requiresRoomBeforeExam())
+                                            <x-ui.badge tone="warning">Menunggu Ruangan</x-ui.badge>
+                                            <span class="mt-0.5 block text-xs text-amber-600">Belum siap diperiksa</span>
+                                        @else
+                                            <span class="text-xs text-gray-400">—</span>
+                                        @endif
+                                    </td>
                                     <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
                                     <td class="px-3 py-3 text-gray-600">
                                         {{ $visit->visit_date?->format('d/m/Y') ?? '—' }}
