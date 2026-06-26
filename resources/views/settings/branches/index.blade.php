@@ -1,13 +1,6 @@
 <x-settings-shell title="Master Data Cabang">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <div class="p-6 space-y-4">
-            @if (session('status'))
-                <div class="rounded-md bg-green-50 px-4 py-2 text-sm text-green-700">{{ session('status') }}</div>
-            @endif
-            @if (session('error'))
-                <div class="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{{ session('error') }}</div>
-            @endif
-
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <form method="GET" action="{{ route('settings.branches.index') }}" class="flex flex-wrap items-center gap-2">
                     <input type="text" name="search" value="{{ $search }}" placeholder="Cari nama atau kode"

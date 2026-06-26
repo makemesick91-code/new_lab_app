@@ -24,6 +24,8 @@
             window.addEventListener('resize', onResize);
         "
     >
+        <x-flash-toasts />
+
         <div class="min-h-screen xl:flex">
             @include('layouts.partials.backdrop')
             @include('layouts.sidebar')

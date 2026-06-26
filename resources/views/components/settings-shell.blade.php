@@ -9,9 +9,7 @@
     </x-slot>
 
     <div class="mx-auto max-w-7xl space-y-6">
-        @if (session('status'))
-            <div class="rounded-lg border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">{{ session('status') }}</div>
-        @endif
+        {{-- Flash status renders as a global toast (see <x-flash-toasts />) --}}
 
         @if ($errors->any())
             <div class="rounded-lg border border-rose-100 bg-rose-50 p-4 text-sm text-rose-800">
