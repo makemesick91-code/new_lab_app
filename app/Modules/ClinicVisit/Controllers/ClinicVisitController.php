@@ -15,6 +15,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -34,6 +35,7 @@ class ClinicVisitController extends Controller
         private readonly ClinicVisitService $visits,
         private readonly MedicalRecordService $medicalRecords,
         private readonly BranchService $branchService,
+        private readonly KtpScanService $ktpScans,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -170,13 +172,31 @@ class ClinicVisitController extends Controller
 
         $data = $request->validated();
 
+        // Sprint 61.1.1 — the KTP scan token is a UI-only attachment hint; strip
+        // it before it reaches visit/patient creation.
+        $ktpScanToken = $data['ktp_scan_token'] ?? null;
+        unset($data['ktp_scan_token']);
+
+        $isNewPatient = ($data['patient_mode'] ?? 'existing') === 'new';
+
         // Creating a brand-new patient inside the visit flow requires patient
         // management rights in addition to visit management.
-        if (($data['patient_mode'] ?? 'existing') === 'new') {
+        if ($isNewPatient) {
             $this->authorize('create', Patient::class);
         }
 
         $visit = $this->visits->create($data);
+
+        // Sprint 61.1.1 — promote a scanned KTP (if any) into the freshly created
+        // patient's private document folder. Only for the new-patient flow; an
+        // existing-patient visit never attaches. A missing/expired token is a
+        // no-op so registration never fails because of the scan.
+        if ($isNewPatient && is_string($ktpScanToken) && $ktpScanToken !== '') {
+            $patient = $visit->patient;
+            if ($patient !== null) {
+                $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id);
+            }
+        }
 
         return redirect()->route('rme.visits.show', $visit)->with('status', 'Kunjungan berhasil didaftarkan.');
     }

@@ -156,6 +156,10 @@
                         <textarea name="new_patient[address]" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('new_patient.address') }}</textarea>
                         @error('new_patient.address')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                     </div>
+                    {{-- Sprint 61.1.1 — reuse the Sprint 61.1 direct KTP scanner section
+                         inside the RME "Pasien Baru" panel. The hidden ktp_scan_token is
+                         only attached when this new-patient form is submitted. --}}
+                    @include('settings.patients._ktp-scan')
                     <div class="sm:col-span-2">
                         <label class="block text-sm font-medium text-gray-700">Nomor RM Final (Preview)</label>
                         <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
