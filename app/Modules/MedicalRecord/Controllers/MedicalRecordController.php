@@ -45,7 +45,7 @@ class MedicalRecordController extends Controller
         ]);
     }
 
-    public function show(ClinicVisit $clinicVisit): View
+    public function show(Request $request, ClinicVisit $clinicVisit): View
     {
         $medicalRecord = $this->medicalRecords->findByVisitId($clinicVisit->id);
 
@@ -65,10 +65,37 @@ class MedicalRecordController extends Controller
         $adjacentVisits = app(ClinicVisitService::class)
             ->adjacentVisits($clinicVisit, requireMedicalRecord: true);
 
+        // Sprint 60.1 — single active RM canvas pagination. The edit page must
+        // load/render only ONE RM page canvas at a time; the rest are reached
+        // through pagination (?rm_page=). `orderedHandwritingPages()` is still
+        // used here for the lightweight page metadata (no <img> is rendered for
+        // it), giving the total count and which pages exist. The selected page
+        // comes from ?rm_page=, then a flashed `focus_rm_page` (so a save/add
+        // lands on the page that was just written without changing the redirect
+        // URL), defaulting to Page 1. It is clamped to the available range so a
+        // stale/invalid value never renders a non-existent page.
+        $rmPages = $medicalRecord->orderedHandwritingPages();
+        $totalRmPages = max($rmPages->count(), 1);
+
+        $activePageNumber = $request->integer('rm_page')
+            ?: (int) $request->session()->get('focus_rm_page', 1);
+        $activePageNumber = max(1, min($activePageNumber, $totalRmPages));
+
+        $activeRmPage = $rmPages->firstWhere('page_number', $activePageNumber)
+            ?? $rmPages->first();
+
+        $rmPageNumbers = $rmPages->pluck('page_number');
+        $nextRmPageNumber = ($rmPages->max('page_number') ?? 1) + 1;
+
         return view('rme.visits.medical-record.show', compact(
             'clinicVisit',
             'medicalRecord',
             'adjacentVisits',
+            'activeRmPage',
+            'activePageNumber',
+            'totalRmPages',
+            'rmPageNumbers',
+            'nextRmPageNumber',
         ));
     }
 

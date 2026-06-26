@@ -62,13 +62,18 @@ class MedicalRecordHandwritingController extends Controller
 
         if ($pageNumber <= 1) {
             $this->savePageOne($clinicVisit, $medicalRecord, $path, $hash);
+            $focusPage = 1;
         } else {
-            $this->savePage($clinicVisit, $medicalRecord, $pageNumber, $path, $hash);
+            $focusPage = $this->savePage($clinicVisit, $medicalRecord, $pageNumber, $path, $hash);
         }
 
+        // Sprint 60.1 — focus the page that was just saved/added on the next
+        // load. Flashed (not added to the redirect URL) so the show page lands
+        // on this page while existing redirect-target assertions stay valid.
         return redirect()
             ->route('rme.visits.medical-record.show', $clinicVisit)
-            ->with('status', 'Tulisan tangan RME berhasil disimpan.');
+            ->with('status', 'Tulisan tangan RME berhasil disimpan.')
+            ->with('focus_rm_page', $focusPage);
     }
 
     /**
@@ -134,7 +139,7 @@ class MedicalRecordHandwritingController extends Controller
      * addable page so the doctor can never skip a page or write an arbitrary high
      * number, and saving here never touches Page 1 (or any sibling page).
      */
-    private function savePage(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, int $pageNumber, string $path, string $hash): void
+    private function savePage(ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, int $pageNumber, string $path, string $hash): int
     {
         $maxAllowed = $this->handwritings->nextPageNumber($medicalRecord->id);
         $pageNumber = min($pageNumber, $maxAllowed);
@@ -162,6 +167,8 @@ class MedicalRecordHandwritingController extends Controller
                 'updated_by' => Auth::id(),
             ]);
         }
+
+        return $pageNumber;
     }
 
     /**
