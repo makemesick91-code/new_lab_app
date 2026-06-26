@@ -121,16 +121,20 @@ it('Odontogram page shows prev/next links to adjacent visits of the same patient
 
 // ─── Table-first odontogram editor ───────────────────────────────────────────
 
-it('odontogram page renders the table-first add-row controls for a manager', function () {
+it('odontogram page renders the table-only input for a manager (Sprint 60.2)', function () {
     $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id]);
 
     $this->actingAs($this->manager)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
-        ->assertSee('Tambah Baris')
-        ->assertSee('availableTeeth', false)
-        ->assertSee('addRow', false)
-        // The FDI visual grid is still present and auto-generated from the table.
+        ->assertSee('Hasil Odontogram yang Dipilih')
+        // Two vertical tables drive all input.
+        ->assertSee('Rahang Atas')
+        ->assertSee('Rahang Bawah')
+        ->assertSee('pickStatus', false)
+        // The old add-row workflow and image-based input are gone.
+        ->assertDontSee('Tambah Baris')
+        // The FDI visual is a generated output section (shown once data is saved).
         ->assertSee('Peta Gigi (FDI)');
 });
 

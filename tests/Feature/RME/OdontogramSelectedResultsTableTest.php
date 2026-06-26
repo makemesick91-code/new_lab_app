@@ -447,9 +447,9 @@ it('existing tooth-grid status save still works alongside per-row fields', funct
         ->and($fresh->tooth_map_payload['teeth']['21']['status'])->toBe('crown');
 });
 
-// --- 22: general summary_notes behavior remains safe ---
+// --- 22: general summary_notes still saves (table-only UI hides it on show) ---
 
-it('general summary_notes still saves and displays', function () {
+it('general summary_notes still saves and prints (removed from table-only show)', function () {
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
@@ -465,8 +465,15 @@ it('general summary_notes still saves and displays', function () {
 
     expect($odontogram->fresh()->summary_notes)->toBe('Catatan umum tersimpan.');
 
+    // Sprint 60.2 — the general note is no longer shown on the table-only show page…
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Catatan umum tersimpan.');
+
+    // …but it is preserved and still printed.
+    $this->actingAs($manager)
+        ->get(route('rme.odontograms.print', $odontogram))
         ->assertOk()
         ->assertSee('Catatan umum tersimpan.');
 });
