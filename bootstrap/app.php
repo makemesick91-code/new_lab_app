@@ -1,6 +1,8 @@
 <?php
 
 use App\Console\Commands\AssignOwnerRoleCommand;
+use App\Console\Commands\PatientDocumentsAuditCommand;
+use App\Console\Commands\PatientDocumentsPruneTempCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
@@ -19,6 +21,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         AssignOwnerRoleCommand::class,
+        PatientDocumentsAuditCommand::class,
+        PatientDocumentsPruneTempCommand::class,
         PruneInventoryAnalyticsSummaryCommand::class,
         RefreshInventoryAnalyticsSummaryCommand::class,
     ])
