@@ -16,9 +16,18 @@
         }
 
         .header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
             border-bottom: 2px solid #0f766e;
             padding-bottom: 10px;
             margin-bottom: 14px;
+        }
+        .header .clinic-logo {
+            height: 46px;
+            width: auto;
+            max-width: 160px;
+            flex-shrink: 0;
         }
         .header h1 {
             font-size: 18px;
@@ -222,8 +231,11 @@
     </div>
 
     <div class="header">
-        <div class="app-name">{{ config('app.name') }}</div>
-        <h1>Rekam Medis Elektronik</h1>
+        <x-brand.daengtisia-logo class="clinic-logo" />
+        <div>
+            <div class="app-name">{{ config('app.name') }}</div>
+            <h1>Rekam Medis Elektronik</h1>
+        </div>
     </div>
 
     @include('rme.visits.partials.print-body', [
