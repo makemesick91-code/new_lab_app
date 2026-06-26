@@ -339,6 +339,52 @@
                     </div>
                 </div>
 
+                @php
+                    // Hotfix 60.5 — official Daengtisia RM template data, baked
+                    // into the canvas (and therefore the saved PNG) so the print
+                    // bundle automatically follows the paper format.
+                    //
+                    // Branch-aware header line: "CABANG {BRANCH} KLINIK GIGI
+                    // DAENGTISIA". The branch token is derived from the visit
+                    // branch name/code with the clinic name stripped to avoid
+                    // duplication, falling back to "TELKOMAS" when unavailable.
+                    $rmBranchRaw = $clinicVisit->branch?->name ?? $clinicVisit->branch?->code ?? '';
+                    $rmBranchToken = trim(preg_replace('/\b(klinik|gigi|daengtisia|cabang)\b/i', '', $rmBranchRaw));
+                    $rmBranchToken = trim(preg_replace('/\s+/', ' ', $rmBranchToken));
+                    $rmBranchLabel = strtoupper($rmBranchToken !== '' ? $rmBranchToken : ($rmBranchRaw !== '' ? $rmBranchRaw : 'TELKOMAS'));
+
+                    // Page-1 biodata grid — same fields/order as the spec (no KTP).
+                    // Recomputed here (independent of the component slot scope) so
+                    // it is reliably available to the canvas script.
+                    $rmPatient = $clinicVisit->patient;
+                    $rmDash = '-';
+                    $rmGenderLabels = ['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'];
+                    if ($rmPatient?->date_of_birth) {
+                        $rmTtlUmur = $rmPatient->date_of_birth->format('d-m-Y');
+                        $rmAge = $rmPatient->age();
+                        if ($rmAge !== null) {
+                            $rmTtlUmur .= ' / '.$rmAge.' tahun';
+                        }
+                    } else {
+                        $rmTtlUmur = $rmDash;
+                    }
+                    $rmBio = [
+                        'left' => [
+                            ['Nama', $rmPatient?->name ?: $rmDash],
+                            ['TTL / Umur', $rmTtlUmur],
+                            ['Pekerjaan', $rmPatient?->occupation ?: $rmDash],
+                            ['Status Pernikahan', $rmPatient?->marital_status ?: $rmDash],
+                            ['Alamat', $rmPatient?->address ?: $rmDash],
+                        ],
+                        'right' => [
+                            ['Jenis Kelamin', $rmPatient?->gender ? ($rmGenderLabels[$rmPatient->gender] ?? $rmPatient->gender) : $rmDash],
+                            ['Agama', $rmPatient?->religion ?: $rmDash],
+                            ['No. Tlp / Wa', $rmPatient?->whatsapp_number ?: ($rmPatient?->phone ?: $rmDash)],
+                            ['Email', $rmPatient?->email ?: $rmDash],
+                            ['No. RM', $rmPatient?->medical_record_number ?: $rmDash],
+                        ],
+                    ];
+                @endphp
                 <script>
                 (function () {
                     const canvas = document.getElementById('rme-canvas');
@@ -349,25 +395,129 @@
                     const overlay = document.getElementById('rm-editor-overlay');
                     const pageLabel = document.getElementById('editor-page-label');
 
+                    // Hotfix 60.5 — official Daengtisia RM template data.
+                    const RM_BRANCH = @json($rmBranchLabel);
+                    const RM_BIO = @json($rmBio);
+
                     // The page currently loaded into the shared canvas. `existingSrc`
                     // is the saved PNG of that selected page ('' for a brand-new page).
                     let existingSrc = canvas.dataset.existingSrc || '';
+                    // The active RM page number. Page 1 carries the patient biodata
+                    // grid; Page 2+ are header + continuation table only.
+                    let currentPage = parseInt(pageInput.value, 10) || 1;
                     let drawing = false;
                     let userDrew = false;
                     let baselineImg = null;
                     let baselineLoaded = false;
 
-                    // Sprint 59.3 — RM table template drawn directly onto the
-                    // canvas (header columns "Hari / Tanggal", "Pemeriksaan",
-                    // "Ket" above a large writing area). Recomputed from the
-                    // canvas size so it fills the full A4-ratio page (Sprint 60).
-                    const TEMPLATE = { headerH: 80, leftW: 135, rightW: 145 };
+                    // Hotfix 60.5 — official Daengtisia Rekam Medik template baked
+                    // onto the canvas. Every page renders the three-line RM header;
+                    // Page 1 additionally renders the patient biodata grid; all
+                    // pages render the "Hari / Tanggal | Pemeriksaan | Ket" table.
+                    // KTP is never part of the biodata grid.
+                    const TEMPLATE = {
+                        headerH: 96,                       // 3-line official RM header
+                        bioRowH: 28,                       // page-1 biodata row height
+                        bioRows: 5,
+                        colHeaderH: 46,                    // table column-header band
+                        leftW: 150,                        // "Hari / Tanggal" column
+                        rightW: 150,                       // "Ket" column
+                        bioCols: [0, 150, 470, 620, 900], // label|value|label|value
+                    };
 
-                    function drawTemplate() {
+                    function rmTruncate(text, maxW) {
+                        text = String(text);
+                        if (ctx.measureText(text).width <= maxW) return text;
+                        let t = text;
+                        while (t.length > 1 && ctx.measureText(t + '…').width > maxW) {
+                            t = t.slice(0, -1);
+                        }
+                        return t + '…';
+                    }
+
+                    function drawHeader() {
+                        const cx = canvas.width / 2;
+                        ctx.fillStyle = '#111827';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        ctx.font = '700 22px sans-serif';
+                        ctx.fillText('REKAM MEDIK KEDOKTERAN GIGI', cx, 28);
+                        ctx.font = '600 15px sans-serif';
+                        ctx.fillText('CABANG ' + RM_BRANCH + ' KLINIK GIGI DAENGTISIA', cx, 54);
+                        ctx.font = '600 14px sans-serif';
+                        ctx.fillText('MAKASSAR', cx, 76);
+                    }
+
+                    // Page-1 biodata grid; returns the Y where the table starts.
+                    function drawBiodata(top) {
+                        const w = canvas.width;
+                        const cols = TEMPLATE.bioCols;
+                        const rowH = TEMPLATE.bioRowH;
+                        const rows = TEMPLATE.bioRows;
+                        const bottom = top + rowH * rows;
+
+                        ctx.strokeStyle = '#111827';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        for (let i = 0; i <= rows; i++) {
+                            ctx.moveTo(0, top + i * rowH);
+                            ctx.lineTo(w, top + i * rowH);
+                        }
+                        cols.forEach(function (x) {
+                            ctx.moveTo(x, top);
+                            ctx.lineTo(x, bottom);
+                        });
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#111827';
+                        ctx.textBaseline = 'middle';
+                        for (let i = 0; i < rows; i++) {
+                            const yMid = top + i * rowH + rowH / 2;
+                            const L = RM_BIO.left[i] || ['', ''];
+                            const R = RM_BIO.right[i] || ['', ''];
+                            ctx.textAlign = 'left';
+                            ctx.font = '600 12px sans-serif';
+                            ctx.fillText(rmTruncate(L[0], cols[1] - cols[0] - 12), cols[0] + 6, yMid);
+                            ctx.fillText(rmTruncate(R[0], cols[3] - cols[2] - 12), cols[2] + 6, yMid);
+                            ctx.font = '12px sans-serif';
+                            ctx.fillText(': ' + rmTruncate(L[1], cols[2] - cols[1] - 20), cols[1] + 6, yMid);
+                            ctx.fillText(': ' + rmTruncate(R[1], cols[4] - cols[3] - 20), cols[3] + 6, yMid);
+                        }
+                        return bottom;
+                    }
+
+                    // Continuation table (all pages): "Hari / Tanggal",
+                    // "Pemeriksaan", "Ket" column headers above the writing area.
+                    function drawTable(top) {
                         const w = canvas.width;
                         const h = canvas.height;
                         const midX1 = TEMPLATE.leftW;
                         const midX2 = w - TEMPLATE.rightW;
+                        const colHeadBottom = top + TEMPLATE.colHeaderH;
+
+                        ctx.strokeStyle = '#111827';
+                        ctx.lineWidth = 1.25;
+                        ctx.beginPath();
+                        ctx.moveTo(0, top); ctx.lineTo(w, top);
+                        ctx.moveTo(0, colHeadBottom); ctx.lineTo(w, colHeadBottom);
+                        ctx.moveTo(midX1, top); ctx.lineTo(midX1, h);
+                        ctx.moveTo(midX2, top); ctx.lineTo(midX2, h);
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#111827';
+                        ctx.font = '600 16px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        const hm = top + TEMPLATE.colHeaderH / 2;
+                        ctx.fillText('Hari /', midX1 / 2, hm - 10);
+                        ctx.fillText('Tanggal', midX1 / 2, hm + 10);
+                        ctx.fillText('Pemeriksaan', (midX1 + midX2) / 2, hm);
+                        ctx.fillText('Ket', (midX2 + w) / 2, hm);
+                    }
+
+                    function drawTemplate() {
+                        const w = canvas.width;
+                        const h = canvas.height;
 
                         ctx.save();
                         ctx.fillStyle = '#ffffff';
@@ -375,22 +525,17 @@
 
                         ctx.strokeStyle = '#111827';
                         ctx.lineWidth = 1.5;
-                        ctx.beginPath();
-                        ctx.rect(0.75, 0.75, w - 1.5, h - 1.5);
-                        ctx.moveTo(midX1, 0); ctx.lineTo(midX1, h);
-                        ctx.moveTo(midX2, 0); ctx.lineTo(midX2, h);
-                        ctx.moveTo(0, TEMPLATE.headerH); ctx.lineTo(w, TEMPLATE.headerH);
-                        ctx.stroke();
+                        ctx.strokeRect(0.75, 0.75, w - 1.5, h - 1.5);
 
-                        ctx.fillStyle = '#111827';
-                        ctx.font = '600 18px sans-serif';
-                        ctx.textAlign = 'center';
-                        ctx.textBaseline = 'middle';
-                        const headerMid = TEMPLATE.headerH / 2;
-                        ctx.fillText('Hari /', midX1 / 2, headerMid - 11);
-                        ctx.fillText('Tanggal', midX1 / 2, headerMid + 11);
-                        ctx.fillText('Pemeriksaan', (midX1 + midX2) / 2, headerMid);
-                        ctx.fillText('Ket', (midX2 + w) / 2, headerMid);
+                        drawHeader();
+
+                        // Page 1 = header + biodata + table; Page 2+ = header +
+                        // continuation table only (no biodata).
+                        let tableTop = TEMPLATE.headerH;
+                        if (currentPage <= 1) {
+                            tableTop = drawBiodata(TEMPLATE.headerH);
+                        }
+                        drawTable(tableTop);
                         ctx.restore();
                     }
 
@@ -432,6 +577,7 @@
                     }
 
                     function openEditor(pageNumber, src) {
+                        currentPage = parseInt(pageNumber, 10) || 1;
                         pageInput.value = pageNumber;
                         pageLabel.textContent = pageNumber;
                         canvas.dataset.existingSrc = src || '';
