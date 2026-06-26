@@ -1,0 +1,17 @@
+{
+  "name": "daengtisia-scanner-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local desktop scanner agent prototype for DaengtisiaMS (Sprint 61.2). Runs on the FO/operator computer and exposes a localhost-only HTTP scanner contract.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,9 @@
+# Local config & dependencies — never commit these.
+.env
+node_modules/
+
+# Never commit scanned documents or samples (no real KTP in the repo).
+*.jpg
+*.jpeg
+*.png
+!**/docs-assets/*.png
