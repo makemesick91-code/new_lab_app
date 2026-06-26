@@ -9,6 +9,7 @@ use App\Modules\Doctor\Services\DoctorService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Requests\StorePatientRequest;
 use App\Modules\Patient\Requests\UpdatePatientRequest;
+use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -24,6 +25,7 @@ class PatientController extends Controller
         private readonly ClinicService $clinicService,
         private readonly DoctorService $doctorService,
         private readonly BranchService $branchService,
+        private readonly KtpScanService $ktpScans,
     ) {}
 
     public function index(Request $request): View
@@ -59,7 +61,18 @@ class PatientController extends Controller
     {
         $this->authorize('create', Patient::class);
 
-        $this->patientService->create($request->validated());
+        $data = $request->validated();
+        $ktpScanToken = $data['ktp_scan_token'] ?? null;
+        unset($data['ktp_scan_token']);
+
+        $patient = $this->patientService->create($data);
+
+        // Sprint 61.1 — promote a scanned KTP (if any) into the patient's
+        // private document folder. A missing/expired token is a no-op so
+        // registration never fails because of the scan.
+        if (is_string($ktpScanToken) && $ktpScanToken !== '') {
+            $this->ktpScans->attachTempToPatient($patient, $ktpScanToken, (int) $request->user()->id);
+        }
 
         return redirect()->route('settings.patients.index')->with('status', 'Pasien berhasil dibuat.');
     }

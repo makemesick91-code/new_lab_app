@@ -9,6 +9,8 @@ use Database\Factories\PatientFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Patient extends Model
@@ -103,6 +105,25 @@ class Patient extends Model
     public function doctor(): BelongsTo
     {
         return $this->belongsTo(Doctor::class, 'doctor_id');
+    }
+
+    /**
+     * Private identity documents (Sprint 61.1 — KTP scans). Stored on the
+     * private disk; never expose file paths directly to the UI.
+     */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(PatientDocument::class, 'patient_id');
+    }
+
+    /**
+     * Latest KTP scan for this patient, if any.
+     */
+    public function ktpDocument(): HasOne
+    {
+        return $this->hasOne(PatientDocument::class, 'patient_id')
+            ->where('document_type', PatientDocument::TYPE_KTP)
+            ->latestOfMany();
     }
 
     protected static function newFactory(): PatientFactory
