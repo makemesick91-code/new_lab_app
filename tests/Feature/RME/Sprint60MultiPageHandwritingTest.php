@@ -293,6 +293,99 @@ it('finalize still requires at least one non-blank saved page', function () {
     expect($service->canFinalizeRme($this->record->fresh()))->toBeTrue();
 });
 
+// --- Sprint 60.1 — Single Active RM Canvas Pagination -----------------------
+
+it('renders only the active RM page preview, not every page image (Sprint 60.1)', function () {
+    s60SaveLegacyPageOne($this->record);
+
+    MedicalRecordHandwritingPage::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'page_number' => 2,
+        'handwriting_path' => 'handwritings/legacy/page1.png',
+    ]);
+
+    $response = $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        // Default active page is Page 1 — only its image preview is rendered.
+        ->assertSee('alt="RME Tulisan Tangan Halaman 1"', false)
+        ->assertDontSee('alt="RME Tulisan Tangan Halaman 2"', false)
+        // Pagination shows the total page count even though only one is loaded.
+        ->assertSee('Halaman 1 dari 2');
+
+    // Exactly one RM page <img> preview is present on the edit page.
+    $content = $response->getContent();
+    expect(substr_count($content, 'alt="RME Tulisan Tangan Halaman'))->toBe(1);
+});
+
+it('loads only the selected page when ?rm_page= is provided (Sprint 60.1)', function () {
+    s60SaveLegacyPageOne($this->record);
+
+    MedicalRecordHandwritingPage::factory()->create([
+        'medical_record_id' => $this->record->id,
+        'clinic_visit_id' => $this->visit->id,
+        'branch_id' => $this->branch->id,
+        'page_number' => 2,
+        'handwriting_path' => 'handwritings/legacy/page1.png',
+    ]);
+
+    $response = $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', [$this->visit, 'rm_page' => 2]))
+        ->assertOk()
+        ->assertSee('alt="RME Tulisan Tangan Halaman 2"', false)
+        ->assertDontSee('alt="RME Tulisan Tangan Halaman 1"', false)
+        ->assertSee('Halaman 2 dari 2')
+        // The overlay editor + hidden page_number target the selected page.
+        ->assertSee('value="2"', false);
+
+    expect(substr_count($response->getContent(), 'alt="RME Tulisan Tangan Halaman'))->toBe(1);
+});
+
+it('an out-of-range ?rm_page= is clamped to an existing page (Sprint 60.1)', function () {
+    s60SaveLegacyPageOne($this->record);
+
+    // Only Page 1 exists; requesting Page 9 must clamp to Page 1 (never 404).
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', [$this->visit, 'rm_page' => 9]))
+        ->assertOk()
+        ->assertSee('Halaman 1 dari 1')
+        ->assertSee('alt="RME Tulisan Tangan Halaman 1"', false);
+});
+
+it('focuses the just-saved page on the next load via flashed focus (Sprint 60.1)', function () {
+    s60SaveLegacyPageOne($this->record);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.medical-record.handwriting.store', [$this->visit, $this->record]), [
+            'handwriting_data' => s60ValidPng(),
+            'page_number' => 2,
+        ])
+        // Redirect target stays query-free (existing Sprint 60 contract).
+        ->assertRedirect(route('rme.visits.medical-record.show', $this->visit))
+        ->assertSessionHasNoErrors();
+
+    // The flashed focus_rm_page lands the follow-up load on the saved page.
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('Halaman 2 dari 2')
+        ->assertSee('alt="RME Tulisan Tangan Halaman 2"', false)
+        ->assertDontSee('alt="RME Tulisan Tangan Halaman 1"', false);
+});
+
+it('shows page navigation controls and the add-page button (Sprint 60.1)', function () {
+    s60SaveLegacyPageOne($this->record);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $this->visit))
+        ->assertOk()
+        ->assertSee('Sebelumnya')
+        ->assertSee('Berikutnya')
+        ->assertSee('Tambah Halaman RM');
+});
+
 it('print body renders all RM pages, not just Page 1', function () {
     s60SaveLegacyPageOne($this->record);
 

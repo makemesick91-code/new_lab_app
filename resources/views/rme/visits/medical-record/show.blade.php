@@ -190,66 +190,110 @@
             </x-ui.card>
         @endif
 
-        {{-- Sprint 60 — Multi-page handwriting RME. 1 canvas = 1 RM page. The
-             card lists read-only page previews (Page 1 = legacy read-through;
-             Page 2+ from the additive pages table). Editors click a preview to
-             open the same-page overlay editor for that page only, or add a new
-             RM page inside the same Medical Record. KTP is never rendered. --}}
+        {{-- Sprint 60 / 60.1 — Multi-page handwriting RME. 1 canvas = 1 RM page.
+             Storage is still multi-page (Page 1 = legacy read-through; Page 2+
+             from the additive pages table), but this edit page now loads and
+             renders ONLY the single selected RM page canvas to stay fast — all
+             other pages are reached via the pagination below (?rm_page=). The
+             controller supplies the active page metadata + total count so no
+             per-page <img>/canvas is rendered for the non-active pages. KTP is
+             never rendered. --}}
         @php
-            $rmPages = $medicalRecord->orderedHandwritingPages();
-            $nextPageNumber = ($rmPages->max('page_number') ?? 1) + 1;
-            // Page 1's saved preview seeds the shared canvas so it never opens
-            // blank when Page 1 already has handwriting (Sprint 59.1 compat).
-            $page1Src = $rmPages->firstWhere('page_number', 1)['preview_url'] ?? '';
+            // Active (selected) page metadata only — the single page whose
+            // preview/canvas is loaded on this request.
+            $activeSrc = $activeRmPage['preview_url'] ?? '';
+            $activeHasContent = $activeRmPage['has_content'] ?? false;
+            $activeSavedAt = $activeRmPage['saved_at'] ?? null;
         @endphp
 
         <x-ui.card
             :title="$canEditHandwriting ? 'RME Tulisan Tangan Lengkap' : 'RME Tulisan Tangan'"
-            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Klik sebuah halaman untuk menulis. Tambah halaman baru bila halaman penuh. Menyimpan satu halaman tidak menghapus halaman lain.' : null"
+            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Hanya satu halaman dimuat per layar — gunakan navigasi halaman untuk berpindah. Klik halaman aktif untuk menulis. Menyimpan satu halaman tidak menghapus halaman lain.' : null"
         >
-            <div id="rm-page-previews" class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                @foreach ($rmPages as $rmPage)
-                    <figure
-                        class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
-                        data-page-number="{{ $rmPage['page_number'] }}"
-                        data-existing-src="{{ $rmPage['preview_url'] }}"
-                        @if ($canEditHandwriting) role="button" tabindex="0" @endif
-                    >
-                        <figcaption class="mb-2 flex items-center justify-between text-xs">
-                            <span class="font-semibold text-gray-700">Halaman {{ $rmPage['page_number'] }}</span>
-                            @if ($rmPage['has_content'])
-                                <span class="text-gray-500">Tersimpan pada {{ $rmPage['saved_at']?->format('d/m/Y H:i') }}</span>
-                            @endif
-                        </figcaption>
+            {{-- Sprint 60.1 — page navigation/pagination. Numbered buttons carry
+                 the page number and link via ?rm_page= so selecting a page
+                 reloads with only that page's canvas. No page image is rendered
+                 here. --}}
+            <div id="rm-page-nav" class="mb-4 flex flex-wrap items-center gap-2">
+                @php
+                    $prevPage = max(1, $activePageNumber - 1);
+                    $nextNavPage = min($totalRmPages, $activePageNumber + 1);
+                    $navBase = 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
+                @endphp
 
-                        @if ($rmPage['has_content'] && $rmPage['preview_url'])
-                            <img src="{{ $rmPage['preview_url'] }}"
-                                 alt="RME Tulisan Tangan Halaman {{ $rmPage['page_number'] }}"
-                                 class="block w-full rounded border border-gray-200"
-                                 style="aspect-ratio:900/1273;object-fit:contain;" />
-                        @else
-                            <div class="flex items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800"
-                                 style="aspect-ratio:900/1273;">
-                                Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
-                            </div>
-                        @endif
+                @if ($activePageNumber > 1)
+                    <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $prevPage]) }}"
+                       class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Sebelumnya</a>
+                @else
+                    <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">&larr; Sebelumnya</span>
+                @endif
 
-                        @if ($canEditHandwriting)
-                            <span class="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition group-hover:opacity-100">
-                                Klik untuk menulis
-                            </span>
+                <span class="text-sm font-medium text-gray-700">Halaman {{ $activePageNumber }} dari {{ $totalRmPages }}</span>
+
+                <div class="flex flex-wrap items-center gap-1">
+                    @foreach ($rmPageNumbers as $pageNo)
+                        <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $pageNo]) }}"
+                           data-page-number="{{ $pageNo }}"
+                           @class([
+                               $navBase,
+                               'border-teal-600 bg-teal-700 text-white' => $pageNo === $activePageNumber,
+                               'border-gray-200 bg-white text-gray-700 hover:bg-gray-50' => $pageNo !== $activePageNumber,
+                           ])
+                           @if ($pageNo === $activePageNumber) aria-current="page" @endif
+                        >{{ $pageNo }}</a>
+                    @endforeach
+                </div>
+
+                @if ($activePageNumber < $totalRmPages)
+                    <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $nextNavPage]) }}"
+                       class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Berikutnya &rarr;</a>
+                @else
+                    <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">Berikutnya &rarr;</span>
+                @endif
+
+                @if ($canEditHandwriting)
+                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn" data-next-page="{{ $nextRmPageNumber }}" class="!px-3 !py-1.5 !text-xs">
+                        + Tambah Halaman RM
+                    </x-ui.button>
+                @endif
+            </div>
+
+            {{-- Only the ACTIVE page preview is rendered (single <img>/canvas). --}}
+            <div id="rm-page-previews" class="mx-auto max-w-md">
+                <figure
+                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
+                    data-page-number="{{ $activePageNumber }}"
+                    data-existing-src="{{ $activeSrc }}"
+                    @if ($canEditHandwriting) role="button" tabindex="0" @endif
+                >
+                    <figcaption class="mb-2 flex items-center justify-between text-xs">
+                        <span class="font-semibold text-gray-700">Halaman {{ $activePageNumber }}</span>
+                        @if ($activeHasContent)
+                            <span class="text-gray-500">Tersimpan pada {{ $activeSavedAt?->format('d/m/Y H:i') }}</span>
                         @endif
-                    </figure>
-                @endforeach
+                    </figcaption>
+
+                    @if ($activeHasContent && $activeSrc)
+                        <img src="{{ $activeSrc }}"
+                             alt="RME Tulisan Tangan Halaman {{ $activePageNumber }}"
+                             class="block w-full rounded border border-gray-200"
+                             style="aspect-ratio:900/1273;object-fit:contain;" />
+                    @else
+                        <div class="flex items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800"
+                             style="aspect-ratio:900/1273;">
+                            Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
+                        </div>
+                    @endif
+
+                    @if ($canEditHandwriting)
+                        <span class="pointer-events-none absolute inset-x-0 bottom-2 mx-auto w-fit rounded bg-black/60 px-2 py-0.5 text-[11px] text-white opacity-0 transition group-hover:opacity-100">
+                            Klik untuk menulis
+                        </span>
+                    @endif
+                </figure>
             </div>
 
             @if ($canEditHandwriting)
-                <div class="mt-4">
-                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn" data-next-page="{{ $nextPageNumber }}">
-                        + Tambah Halaman RM
-                    </x-ui.button>
-                </div>
-
                 @error('handwriting_data')
                     <p class="mt-2 text-xs text-rose-600">{{ $message }}</p>
                 @enderror
@@ -261,7 +305,7 @@
                     <div class="my-6 w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">
                         <div class="mb-3 flex items-center justify-between">
                             <h3 class="text-base font-semibold text-gray-900">
-                                Menulis Halaman <span id="editor-page-label">1</span>
+                                Menulis Halaman <span id="editor-page-label">{{ $activePageNumber }}</span>
                             </h3>
                             <button type="button" id="close-editor-btn" class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Tutup">
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -275,7 +319,7 @@
                         <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}" id="handwriting-form">
                             @csrf
                             <input type="hidden" name="handwriting_data" id="handwriting-data-input">
-                            <input type="hidden" name="page_number" id="handwriting-page-input" value="1">
+                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $activePageNumber }}">
 
                             {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
                                  ≈ 1:1.414). One canvas = one RM page; overflow
@@ -283,7 +327,7 @@
                                  canvas. max-width:100%;height:auto stays responsive. --}}
                             <canvas id="rme-canvas"
                                     width="900" height="1273"
-                                    data-existing-src="{{ $page1Src }}"
+                                    data-existing-src="{{ $activeSrc }}"
                                     class="mx-auto block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
                                     style="max-width:100%;height:auto;max-height:70vh;"></canvas>
 
