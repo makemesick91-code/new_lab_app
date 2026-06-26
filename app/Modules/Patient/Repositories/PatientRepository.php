@@ -57,6 +57,23 @@ class PatientRepository implements PatientRepositoryInterface
             ->get();
     }
 
+    /**
+     * Read-only audit scope: branch + active-status only. Ordered newest-first by
+     * id so the downstream service can apply display filters / sorting in PHP.
+     *
+     * @param  array{branch_id?: int|null, is_active?: bool|null}  $filters
+     * @return Collection<int, Patient>
+     */
+    public function forAudit(array $filters = []): Collection
+    {
+        return Patient::query()
+            ->with('branch:id,code,name,is_rme_enabled')
+            ->when(($filters['branch_id'] ?? null) !== null, fn ($query) => $query->where('branch_id', $filters['branch_id']))
+            ->when(array_key_exists('is_active', $filters) && $filters['is_active'] !== null, fn ($query) => $query->where('is_active', $filters['is_active']))
+            ->orderByDesc('id')
+            ->get();
+    }
+
     public function create(array $data): Patient
     {
         return Patient::create($data);

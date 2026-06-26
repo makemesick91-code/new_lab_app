@@ -94,3 +94,28 @@ Rules:
 * Do **not** target `main`; continue using base branch: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`.
 
 **Hotfix Sprint 60.8 — RME Room Assignment Gate Before Doctor Examination (2026-06-26):** Branch `hotfix/rme-room-assignment-gate-before-exam` (base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`; do NOT target main). Baseline before: Sprint 60.7 merge `b24f7d7`. Workflow: Pendaftaran → Antrian → **Input Ruangan** → diperiksa dokter → Consent → Kasir. Room assignment is a **queue-stage** requirement, not registration-stage. **No migration** — `clinic_room_id` (nullable FK, indexed) already exists on `trx_clinic_visits` since Sprint 58.6. Changes: (1) `ClinicVisit` adds `PRE_EXAM_STATUSES` (registered/waiting/in_progress), `hasAssignedRoom()`, `isTerminal()`, `requiresRoomBeforeExam()` (roomless AND pre-exam — cashier_pending & terminal are EXEMPT so Sprint 59 post-exam editing of finalized/old visits is never blocked). (2) New route-middleware `App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned` (alias `visit.room` in `bootstrap/app.php`) gates RM + Odontogram routes (`rme.visits.medical-record.show|store|update|finalize|handwriting`, `rme.visits.odontogram.show`, `rme.odontograms.update|finalize`); a roomless active visit redirects to `rme.visits.show` with flash `error` = "Pasien belum ditempatkan ke ruangan perawatan." — enforced at controller/middleware level, not just hidden buttons. (3) Reuses existing `rme.visits.assign-room` route/`assignRoom()`; service now rejects room reassignment on terminal visits and adds `activeRoomsForBranch()` (visit-branch-scoped, MAIN never selectable). (4) UI: visit detail shows "Menunggu Penempatan Ruangan" banner + inline branch-scoped room selector and locks RM/Odontogram buttons when roomless; patient-queue adds the waiting badge; cashier handoff (Sprint 60.7) shows room name or "Menunggu Ruangan / Belum siap diperiksa" (repo eager-loads `clinicRoom`). KTP stays hidden. **Test-fixture change:** `ClinicVisitFactory` now defaults `clinic_room_id` to a `ClinicRoom::factory()` (roomless tests pass explicit `null`); `ClinicRoomFactory` dropped `unique()` on its 5-name pool (random suffix already unique) so per-visit room creation does not overflow. Production registration (`ClinicVisitService::create`) still leaves new visits roomless. No payment/consent/invoice/receivable/SOAP changes; full-payment-only preserved; no JS/CSS asset change (no `npm run build` needed). Tests: new `tests/Feature/RME/RmeRoomAssignmentGateTest.php` (17). Green: RME dir 736, ClinicVisit 81, MedicalRecord 121, Odontogram 144, ClinicRoom master 14, DoctorCashierSyncQueue 15; pint + `git diff --check` clean.
+
+## Sprint 61.0 — Patient Data Completeness Audit & RM Gap Review
+
+Status: GO CANDIDATE FOR PR REVIEW
+
+Summary:
+- Added RME patient data completeness audit page.
+- Added patient completeness scoring, missing-field classification, KTP masking, duplicate-risk detection, and RM gap review.
+- Added CSV export without exposing full KTP.
+- Added branch filter limited to active RME-enabled branches.
+- MAIN branch is excluded from audit filters.
+- Added routes:
+  - GET /rme/patients/audit
+  - GET /rme/patients/audit/export
+- No migration required.
+- No full KTP rendered or exported.
+
+Validation:
+- PatientDataCompletenessAuditTest: 13 passed
+- PatientRmGapReviewTest: 5 passed
+- php artisan test --filter=Patient: 160 passed
+- php artisan test tests/Feature/RME: 754 passed
+- vendor/bin/pint --test: passed
+- git diff --check: clean
+- npm run build: passed

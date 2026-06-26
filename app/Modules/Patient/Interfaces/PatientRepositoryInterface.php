@@ -27,6 +27,17 @@ interface PatientRepositoryInterface
     public function legacyWithoutBranch(): Collection;
 
     /**
+     * Read-only patient set for the Sprint 61.0 data-completeness audit, scoped
+     * by branch and active status only (completeness/search filters are applied
+     * downstream in PHP so duplicate-risk detection sees the full scope). Eager
+     * loads the branch for labelling.
+     *
+     * @param  array{branch_id?: int|null, is_active?: bool|null}  $filters
+     * @return Collection<int, Patient>
+     */
+    public function forAudit(array $filters = []): Collection;
+
+    /**
      * @param  array<string, mixed>  $data
      */
     public function create(array $data): Patient;
