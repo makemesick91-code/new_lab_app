@@ -91,6 +91,11 @@ class StoreClinicVisitRequest extends FormRequest
             'new_patient.email' => ['nullable', 'email', 'max:150'],
             'new_patient.occupation' => ['nullable', 'string', 'max:150'],
             'new_patient.address' => ['nullable', 'string', 'max:1000'],
+
+            // Sprint 61.1.1 — optional temp token for a KTP scan captured in the
+            // RME "Pasien Baru" panel; promoted to a PatientDocument after the
+            // patient is created. Missing/expired token never blocks creation.
+            'ktp_scan_token' => ['nullable', 'string', 'max:64'],
         ];
     }
 
