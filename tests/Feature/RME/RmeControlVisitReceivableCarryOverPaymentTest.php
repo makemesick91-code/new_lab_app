@@ -600,14 +600,18 @@ it('does not auto-complete a free control visit when no payment is made', functi
         ->and(RmePayment::where('clinic_visit_id', $control->id)->count())->toBe(0);
 });
 
-it('leaves a normal non-control visit cashier_pending on partial payment', function () {
+it('completes a normal non-control visit on partial payment, balance stays piutang', function () {
+    // Hotfix (rme-partial-payment-completes-visit): a partial payment counts as
+    // "sudah membayar" — the visit completes while the invoice stays PARTIAL and
+    // the remaining balance remains an active receivable.
     $visit = covParentVisit($this->patient, $this->rmeBranch, $this->doctor);
     $invoice = covCreateInvoice($visit, $this->cashier, 200000);
 
     app(RmePaymentService::class)->pay($invoice, $this->cashier, covPaymentPayload(120000));
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+        ->and($invoice->fresh()->remainingAmount())->toBe(80000.0)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 it('does not let an unpaid parent receivable block control visit completion', function () {

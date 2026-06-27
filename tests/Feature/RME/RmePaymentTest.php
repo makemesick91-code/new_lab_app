@@ -166,7 +166,7 @@ it('service rejects payment with negative amount', function () {
 
 // ─── Test 7: Partial payment is accepted as cicilan ─────────────────────────
 
-it('partial payment marks invoice partial and keeps visit cashier pending', function () {
+it('partial payment marks invoice partial and completes the visit', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = pmtUnpaidInvoice($this->branch, $this->cashier);
@@ -182,7 +182,9 @@ it('partial payment marks invoice partial and keeps visit cashier pending', func
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
         ->and($invoice->fresh()->paidAmount())->toBe($partial)
         ->and($invoice->fresh()->remainingAmount())->toBe(round((float) $invoice->grand_total - $partial, 2))
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+        // Hotfix (rme-partial-payment-completes-visit): a partial payment completes
+        // the visit; the remaining balance stays an active receivable.
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 // ─── Test 8: Full payment creates RME payment record ─────────────────────────
@@ -366,8 +368,10 @@ it('second payment can fully pay a partial rme invoice', function () {
 
     $partialInvoice = $invoice->fresh();
 
+    // Hotfix (rme-partial-payment-completes-visit): the visit completes on the
+    // first partial payment; a later top-up payment still settles the invoice.
     expect($partialInvoice->status)->toBe(RmeInvoice::STATUS_PARTIAL)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 
     app(RmePaymentService::class)->pay(
         $partialInvoice,

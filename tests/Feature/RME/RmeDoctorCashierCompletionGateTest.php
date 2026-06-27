@@ -186,9 +186,12 @@ it('full payment marks the invoice PAID and the visit completed', function () {
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
-// ─── Rule 6: Partial payment does not complete the visit ─────────────────────
+// ─── Rule 6: Partial payment completes the visit, balance becomes piutang ────
+// Hotfix (rme-partial-payment-completes-visit): a partial payment counts as
+// "sudah membayar" — the visit becomes "Selesai Visit" (completed) and the
+// remaining balance stays an active receivable, collected at a future follow-up.
 
-it('partial payment keeps the invoice PARTIAL and the visit cashier_pending', function () {
+it('partial payment keeps the invoice PARTIAL and completes the visit', function () {
     $this->actingAs($this->cashier);
 
     [$visit] = gateBillableVisit($this->branch);
@@ -198,7 +201,25 @@ it('partial payment keeps the invoice PARTIAL and the visit cashier_pending', fu
         ->assertRedirect();
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('a partially paid invoice still appears as an active receivable after the visit completes', function () {
+    $this->actingAs($this->cashier);
+
+    [$visit] = gateBillableVisit($this->branch);
+    $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
+
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), gatePaymentPayload(['amount' => 50000]));
+
+    expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
+        ->and($invoice->fresh()->remainingAmount())->toBe(100000.0);
+
+    // PARTIAL invoice with remaining > 0 stays an active receivable / piutang
+    // even though the visit is completed.
+    $this->get(route('rme.cashier.receivables'))
+        ->assertOk()
+        ->assertSee($invoice->invoice_number);
 });
 
 // ─── Rule 6: Unpaid invoice does not complete the visit ──────────────────────

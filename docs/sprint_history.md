@@ -7673,3 +7673,40 @@ SupervisorRme + Permission suites 223 passed; Pint clean; `git diff --check` cle
 **Known limitations:** zero-grand-total/free control visits still settle on `remainingAmount() == 0`
 via the existing batch-payment path (unchanged Sprint 27/ control-receivable behavior); no migration,
 no permission, no route added.
+
+## Hotfix — RME Partial Payment Completes Visit (2026-06-27)
+
+**Branch** `hotfix/rme-partial-payment-completes-visit` (base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `3ced441`; do NOT target main).
+
+**Business rule correction.** Bayar sebagian tetap menyelesaikan visit. A partial RME
+payment now counts as "sudah membayar": the current visit becomes **Selesai Visit**
+(`completed`) and the remaining balance stays an **active piutang** (invoice keeps
+`PARTIAL` status), collected at a future kunjungan/follow-up — not by holding the old
+visit open. Previously (Sprint 62.1) a partial payment left the visit stuck at
+`cashier_pending`, which was operationally incorrect.
+
+**Payment → status mapping after hotfix:**
+- No payment (`amount` must be > 0, so `pay()` is never reached) → invoice `UNPAID`, visit stays `cashier_pending`.
+- Partial payment → invoice `PARTIAL`, visit `completed`, remaining stays active piutang.
+- Full payment → invoice `PAID`, visit `completed`, no piutang.
+- Zero-grand-total / free control visit → unchanged (settles on `remainingAmount() == 0` via existing batch path).
+
+**Change:** `RmePaymentService::completeVisitIfPaid()` renamed to
+`completeVisitAfterCashierPayment()` and now transitions `cashier_pending → completed`
+when the invoice is `PAID` **or** `PARTIAL` (any successful cashier payment), still guarded
+by `status === cashier_pending`. Partial-payment flash message →
+"Pembayaran sebagian berhasil, visit selesai dan sisa tagihan masuk piutang."
+
+**Gates preserved (Sprint 62.1):** completion only runs *inside* `pay()` after the payable /
+consent / room assertions; the doctor still cannot mark a visit `completed` directly
+(`in_progress → completed` edge still removed); Supervisor RME cannot bypass server-side gates.
+Receivable list (`RmeInvoiceController::receivableQuery`) and Owner KPI
+(`OwnerDashboardKpiService`) key off **invoice** status + remaining (not visit status), so a
+completed partial visit still surfaces as active piutang; zero-grand-total and zero-remaining
+stay excluded.
+
+**Tests:** `RmeDoctorCashierCompletionGateTest` updated (partial now completes + appears in
+receivables; +1 test = 15). Updated stale partial→`cashier_pending` assertions in
+`RmePaymentTest` and `RmeControlVisitReceivableCarryOverPaymentTest`. Green: RME dir 802,
+CashierBilling 33, RmePayment 19, OwnerKpiDashboard+Receivable 129, SupervisorRme+Permission
+212; Pint clean; `git diff --check` clean. **No migration, no permission, no route added.**

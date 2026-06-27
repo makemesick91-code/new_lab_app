@@ -86,7 +86,7 @@ class RmePaymentController extends Controller
 
         return redirect()
             ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
-            ->with('status', 'Pembayaran cicilan berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
+            ->with('status', 'Pembayaran sebagian berhasil, visit selesai dan sisa tagihan masuk piutang. No. Kwitansi: '.$payment->payment_number);
     }
 
     public function receipt(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): View|RedirectResponse
