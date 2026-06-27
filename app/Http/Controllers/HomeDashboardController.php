@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Modules\Reporting\Services\OwnerDashboardKpiService;
 use App\Modules\Reporting\Services\OwnerDashboardRmeLabDrilldownService;
 use App\Modules\Reporting\Services\OwnerDashboardRmeLabKpiService;
 use Illuminate\Http\Request;
@@ -13,6 +14,7 @@ class HomeDashboardController extends Controller
     public function __construct(
         private readonly OwnerDashboardRmeLabKpiService $ownerRmeLabKpis,
         private readonly OwnerDashboardRmeLabDrilldownService $ownerRmeLabDrilldowns,
+        private readonly OwnerDashboardKpiService $ownerKpis,
     ) {}
 
     public function index(Request $request): View
@@ -25,6 +27,9 @@ class HomeDashboardController extends Controller
         $ownerRmeLabSelectedBranchId = null;
         $ownerRmeLabDrilldowns = [];
 
+        // Sprint 62.0 — executive period-based Owner KPI block.
+        $ownerKpi = null;
+
         if ($user instanceof User && $this->shouldLoadOwnerRmeLabPilot($user)) {
             $requestedBranchId = $request->filled('branch_id')
                 ? (int) $request->input('branch_id')
@@ -36,6 +41,24 @@ class HomeDashboardController extends Controller
             $ownerRmeLabBranchSummary = $this->ownerRmeLabKpis->branchSummary($ownerRmeLabSelectedBranchId);
             $ownerRmeLabBranchReceivableSummary = $this->ownerRmeLabKpis->branchReceivableSummary($ownerRmeLabSelectedBranchId);
             $ownerRmeLabDrilldowns = $this->ownerRmeLabDrilldowns->linksFor($user);
+
+            $period = $this->ownerKpis->resolvePeriod(
+                $request->input('range'),
+                $request->input('date_from'),
+                $request->input('date_to'),
+            );
+            $kpiBranchId = $this->ownerKpis->resolveSelectedBranchId($requestedBranchId);
+
+            $ownerKpi = [
+                'period' => $period,
+                'selected_branch_id' => $kpiBranchId,
+                'metrics' => $this->ownerKpis->metrics($kpiBranchId, $period['from'], $period['to']),
+                'branch_performance' => $this->ownerKpis->branchPerformance($kpiBranchId, $period['from'], $period['to']),
+                'visit_trend' => $this->ownerKpis->dailyVisitTrend($kpiBranchId, $period['from'], $period['to']),
+                'payment_trend' => $this->ownerKpis->dailyPaymentTrend($kpiBranchId, $period['from'], $period['to']),
+                'top_unpaid' => $this->ownerKpis->topUnpaidReceivables($kpiBranchId),
+                'drilldowns' => $this->ownerKpis->drilldownLinks($user, $period['from'], $period['to']),
+            ];
         }
 
         return view('dashboard', [
@@ -45,6 +68,7 @@ class HomeDashboardController extends Controller
             'ownerRmeLabActiveBranches' => $ownerRmeLabActiveBranches,
             'ownerRmeLabSelectedBranchId' => $ownerRmeLabSelectedBranchId,
             'ownerRmeLabDrilldowns' => $ownerRmeLabDrilldowns,
+            'ownerKpi' => $ownerKpi,
         ]);
     }
 

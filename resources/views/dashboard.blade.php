@@ -428,6 +428,10 @@
                     </div>
                 </section>
 
+                @if (is_array($ownerKpi ?? null))
+                    @include('dashboards.owner-kpi', ['ownerKpi' => $ownerKpi])
+                @endif
+
                 @if (is_array($ownerRmeLabPilot))
                     <section aria-labelledby="rme-lab-pilot-monitoring" class="space-y-6">
                         <div class="rounded-lg border border-teal-100 bg-teal-50/40 p-5 shadow-sm">

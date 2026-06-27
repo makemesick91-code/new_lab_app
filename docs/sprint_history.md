@@ -7576,3 +7576,47 @@ representative RME pages (dashboard, visit list/create, queue, treatment worklis
 cashier, receivables, patient/payment reports, patient list/create, patient audit) while being
 forbidden from lab-order and lab-candidate pages. `--filter=Permission` 211 passed; `--filter=Role`
 76 passed; Pint passed; `git diff --check` clean.
+
+## Sprint 62.0 — Owner KPI Dashboard Implementation (2026-06-27)
+
+Enhanced the existing Owner dashboard (route `dashboard` → `HomeDashboardController`, gated by
+`permission:view dashboard|view_owner_dashboard`) with an executive, period-based **Owner KPI
+Dashboard** block. Did **not** create a duplicate route/page — per the existing access model the
+`/dashboard` page already is the Owner dashboard, so the new block was added alongside the existing
+"today snapshot" RME/Lab pilot monitoring.
+
+**Permission:** reuses existing `view_owner_dashboard` (Owner role already holds it). **Supervisor
+RME** has `view dashboard` (can reach `/dashboard`) but lacks `view_owner_dashboard`/`manage_report`,
+so the Owner KPI block does **not** load for that role — no permission was added, renamed, or removed.
+
+**New service:** `App\Modules\Reporting\Services\OwnerDashboardKpiService` — read-only aggregates with
+a configurable period (`today` / `7d` / `month` / `30d` / `custom date_from..date_to`, default `month`)
+and the existing `branch_id` filter. Provides 10 KPI cards (Total Kunjungan, Pasien Baru, Total
+Pendapatan, Piutang Aktif, Invoice Belum Lunas, Follow-up Jatuh Tempo, Lab Order Aktif, Low Stock,
+Nilai Stok, Tingkat Penagihan), a per-branch performance table, daily visit + payment trends (PHP
+day-grouping for PostgreSQL/SQLite portability, capped to 31 days), a privacy-safe latest-receivables
+list, an operational alert panel, and permission/`Route::has`-guarded drilldown links. Lab Order Aktif
+stays global (Sprint 23.5 rule); inventory low-stock + valuation reuse
+`InventoryAnalyticsRepositoryInterface` aggregated across active branches, wrapped in try/catch so a
+wiring failure degrades to a safe "Belum tersedia" state. Active-receivable math excludes zero
+grand_total and zero remaining.
+
+**View:** new partial `resources/views/dashboards/owner-kpi.blade.php`, `@include`d into
+`resources/views/dashboard.blade.php` inside the `@elseif ($showOwnerDashboard)` branch (guarded by
+`is_array($ownerKpi)`). TailAdmin/Tailwind/Alpine + Indonesian labels + Rupiah formatting; empty state
+"Belum ada data pada periode ini."
+
+**Privacy:** no KTP/NIK, no scanned documents, no raw medical notes; only aggregate counts, currency
+totals, patient name + branch + visit date + remaining + status on the receivables list. No HR scope.
+
+**Route/permission/schema:** no new route, no new permission, **no migration**. Controller change is
+additive (`HomeDashboardController` injects `OwnerDashboardKpiService` and loads the block only inside
+the existing owner-eligibility guard).
+
+**Validation:** new `tests/Feature/Owner/OwnerKpiDashboardTest.php` (12 passed, 40 assertions);
+`tests/Feature/Dashboard` + `tests/Feature/Auth` 83 passed (369 assertions); Pint passed;
+`git diff --check` clean.
+
+**Known limitations:** daily trend window capped to last 31 days regardless of a wider custom range;
+inventory KPIs aggregate per active branch (small N) rather than a single set-based query; collection
+rate uses invoices created in-period as the billable denominator; Lab Order Aktif is not branch-scoped.
