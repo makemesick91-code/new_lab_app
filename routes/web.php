@@ -40,6 +40,7 @@ use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
+use App\Modules\Patient\Controllers\LegacyPatientImportController;
 use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\Patient\Controllers\PatientDocumentController;
@@ -126,6 +127,20 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 
     // Patients (TASK-0203)
     Route::middleware('permission:manage patients')->group(function () {
+        // Sprint 62.3 — Legacy RME Patient Batch Import (staging + preview + commit).
+        // Declared before the resource so the static `import` segment is not
+        // shadowed by any wildcard patient route.
+        Route::prefix('patients/import')->name('patients.import.')->group(function () {
+            Route::get('/', [LegacyPatientImportController::class, 'index'])->name('index');
+            Route::get('template', [LegacyPatientImportController::class, 'template'])->name('template');
+            Route::post('/', [LegacyPatientImportController::class, 'store'])->name('store');
+            Route::get('{batch}', [LegacyPatientImportController::class, 'show'])->name('show');
+            Route::get('{batch}/errors', [LegacyPatientImportController::class, 'errors'])->name('errors');
+            Route::post('{batch}/commit', [LegacyPatientImportController::class, 'commit'])->name('commit');
+            Route::post('{batch}/rollback', [LegacyPatientImportController::class, 'rollback'])->name('rollback');
+            Route::delete('{batch}', [LegacyPatientImportController::class, 'destroy'])->name('destroy');
+        });
+
         Route::resource('patients', PatientController::class)->except(['show']);
         Route::patch('patients/{patient}/activate', [PatientController::class, 'activate'])->name('patients.activate');
         Route::patch('patients/{patient}/deactivate', [PatientController::class, 'deactivate'])->name('patients.deactivate');
