@@ -53,7 +53,7 @@ class RmePaymentService
             $payment = $this->recordPayment($invoice, $visit, $cashier, $data, $amount);
 
             $this->refreshInvoiceStatus($invoice);
-            $this->completeVisitIfPaid($invoice, $visit);
+            $this->completeVisitAfterCashierPayment($invoice, $visit);
 
             return $payment->refresh();
         });
@@ -136,7 +136,7 @@ class RmePaymentService
                 );
 
                 $this->refreshInvoiceStatus($parentInvoice);
-                $this->completeVisitIfPaid($parentInvoice, $parentVisit);
+                $this->completeVisitAfterCashierPayment($parentInvoice, $parentVisit);
 
                 $parentPayments->push($parentPayment->refresh());
                 $allocatedToParent = round($allocatedToParent + $allocateAmount, 2);
@@ -319,9 +319,24 @@ class RmePaymentService
         $invoice->refresh();
     }
 
-    private function completeVisitIfPaid(RmeInvoice $invoice, ClinicVisit $visit): void
+    /**
+     * Hotfix (rme-partial-payment-completes-visit): any successful cashier
+     * payment — full (PAID) or partial (PARTIAL) — completes the current visit
+     * ("Selesai Visit"). A partial payment counts as "sudah membayar"; the
+     * remaining balance stays an active receivable/piutang (invoice keeps PARTIAL
+     * status) and is collected at a future follow-up, not by holding this visit
+     * open. A zero-payment / still-UNPAID invoice never reaches here because
+     * {@see normalizeAmount()} requires amount > 0, so the visit stays
+     * cashier_pending. The Sprint 62.1 doctor→cashier gate is untouched: this
+     * only ever runs after consent, payable, and room assertions inside pay().
+     */
+    private function completeVisitAfterCashierPayment(RmeInvoice $invoice, ClinicVisit $visit): void
     {
-        if ($invoice->isPaid() && $visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
+        if (! $invoice->isPaid() && ! $invoice->isPartial()) {
+            return;
+        }
+
+        if ($visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
             $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
         }
     }
@@ -329,7 +344,7 @@ class RmePaymentService
     /**
      * Complete a control visit when its own invoice has no remaining balance.
      *
-     * Unlike {@see completeVisitIfPaid()}, this does not require the control
+     * Unlike {@see completeVisitAfterCashierPayment()}, this does not require the control
      * invoice to be PAID — a free follow-up (grand_total 0, still UNPAID) settles
      * once a payment has been recorded in the batch. Parent receivables never
      * gate this transition.
