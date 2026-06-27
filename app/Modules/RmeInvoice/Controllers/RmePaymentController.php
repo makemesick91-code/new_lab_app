@@ -36,11 +36,21 @@ class RmePaymentController extends Controller
 
         $payableSummary = $this->carryOver->getControlPayableSummary($rmeInvoice);
 
+        // Sprint 62.2 — for ordinary (non control-chain) visits, surface the
+        // patient's other outstanding receivables so the cashier may optionally
+        // collect them. Control-chain visits keep their dedicated carry-over card.
+        $outstandingReceivables = collect();
+        if (! $payableSummary['has_carry_over']) {
+            $outstandingReceivables = $this->carryOver
+                ->getVisitPayableSummary($rmeInvoice)['outstanding_receivables'];
+        }
+
         return view('rme.cashier.payment.create', [
             'visit' => $clinicVisit->load(['patient', 'doctor', 'followUpOf']),
             'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
             'paymentMethods' => $this->paymentMethods->listActive(),
             'payableSummary' => $payableSummary,
+            'outstandingReceivables' => $outstandingReceivables,
         ]);
     }
 
@@ -72,6 +82,39 @@ class RmePaymentController extends Controller
             return redirect()
                 ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
                 ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$receiptNumber)
+                ->with('payment_allocation', $allocation);
+        }
+
+        // Sprint 62.2 — ordinary new visit collecting selected previous receivables.
+        $selectedReceivableIds = array_values(array_filter(
+            array_map('intval', (array) $request->input('selected_receivable_ids', [])),
+        ));
+        $visitSummary = $this->carryOver->getVisitPayableSummary($rmeInvoice, $selectedReceivableIds);
+
+        if ($visitSummary['selected_remaining'] > 0) {
+            $result = $this->service->allocateVisitPayment(
+                $rmeInvoice,
+                $request->user(),
+                $validated,
+                $selectedReceivableIds,
+            );
+            $freshInvoice = $rmeInvoice->fresh();
+            $allocation = [
+                'allocated_to_parent' => $result->allocatedToParent,
+                'allocated_to_control' => $result->allocatedToControl,
+                'payment_batch_uuid' => $result->paymentBatchUuid,
+            ];
+
+            if ($freshInvoice?->isPaid()) {
+                return redirect()
+                    ->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
+                    ->with('status', 'Pembayaran selesai, visit selesai total.')
+                    ->with('payment_allocation', $allocation);
+            }
+
+            return redirect()
+                ->route('rme.cashier.show', [$clinicVisit, $freshInvoice ?? $rmeInvoice])
+                ->with('status', 'Pembayaran berhasil dicatat, visit selesai dan sisa tagihan masuk piutang. No. Kwitansi: '.($result->primaryPayment()?->payment_number ?? '-'))
                 ->with('payment_allocation', $allocation);
         }
 

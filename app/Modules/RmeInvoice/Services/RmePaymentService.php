@@ -200,6 +200,153 @@ class RmePaymentService
         return $result;
     }
 
+    /**
+     * Sprint 62.2 — generalized FIFO allocation for ANY new visit.
+     *
+     * Collects the patient's selected previous receivables (oldest-first) then the
+     * current visit invoice, recording one {@see RmePayment} per real invoice id
+     * under a shared payment_batch_uuid. The current invoice grand_total is never
+     * inflated — each invoice keeps its own ledger and identity. The authoritative
+     * selection is recomputed server-side via getVisitPayableSummary(), so forged /
+     * other-patient / other-branch / already-paid ids are dropped and never paid.
+     *
+     * @param  array{payment_method_id?: int|null, amount: numeric, paid_at: string, reference_number?: string|null, notes?: string|null}  $data
+     * @param  list<int|string>  $selectedReceivableIds
+     */
+    public function allocateVisitPayment(RmeInvoice $currentInvoice, User $cashier, array $data, array $selectedReceivableIds): RmeControlPaymentResult
+    {
+        $summary = $this->carryOver->getVisitPayableSummary($currentInvoice, $selectedReceivableIds);
+
+        if ($summary['selected_remaining'] <= 0) {
+            throw ValidationException::withMessages([
+                'selected_receivable_ids' => 'Tidak ada piutang sebelumnya yang valid untuk ditagihkan.',
+            ]);
+        }
+
+        $amount = $this->normalizeAmount($data['amount']);
+
+        if ($amount > $summary['total_payable']) {
+            throw ValidationException::withMessages([
+                'amount' => 'Pembayaran tidak boleh melebihi total yang harus dibayar.',
+            ]);
+        }
+
+        $currentInvoice->loadMissing('clinicVisit');
+        $currentVisit = $this->requireVisit($currentInvoice);
+        $batchUuid = (string) Str::uuid();
+
+        $result = DB::transaction(function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
+            $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
+            $this->assertInvoicePayable($currentInvoice);
+
+            $this->applyConsentVerification($currentVisit, $cashier, $data);
+            $this->assertConsentVerified($currentVisit);
+
+            $remainingPayment = $amount;
+            $allocatedToParent = 0.0;
+            $parentPayments = collect();
+
+            foreach ($summary['selected_receivables'] as $receivable) {
+                if ($remainingPayment <= 0) {
+                    break;
+                }
+
+                $receivable = RmeInvoice::query()->lockForUpdate()->findOrFail($receivable->id);
+
+                if (! $receivable->isPayable()) {
+                    continue;
+                }
+
+                // Re-assert branch isolation under lock (defence in depth).
+                if (! in_array((int) $receivable->branch_id, $this->branches->rmeEnabledIds(), true)) {
+                    continue;
+                }
+
+                $receivableVisit = $this->requireVisit($receivable);
+                $receivableRemaining = $this->remainingForInvoice($receivable);
+                $allocateAmount = min($remainingPayment, $receivableRemaining);
+
+                if ($allocateAmount <= 0) {
+                    continue;
+                }
+
+                $note = sprintf(
+                    'Alokasi pembayaran piutang sebelumnya dari visit %s',
+                    $currentVisit->visit_number,
+                );
+
+                $receivablePayment = $this->recordPayment(
+                    $receivable,
+                    $receivableVisit,
+                    $cashier,
+                    $data,
+                    $allocateAmount,
+                    $batchUuid,
+                    $note,
+                );
+
+                $this->refreshInvoiceStatus($receivable);
+                $this->completeVisitAfterCashierPayment($receivable, $receivableVisit);
+
+                $parentPayments->push($receivablePayment->refresh());
+                $allocatedToParent = round($allocatedToParent + $allocateAmount, 2);
+                $remainingPayment = round($remainingPayment - $allocateAmount, 2);
+            }
+
+            $currentPayment = null;
+            $allocatedToControl = 0.0;
+
+            if ($remainingPayment > 0) {
+                $currentRemaining = $this->remainingForInvoice($currentInvoice);
+                $allocateAmount = min($remainingPayment, $currentRemaining);
+
+                if ($allocateAmount > 0) {
+                    $currentPayment = $this->recordPayment(
+                        $currentInvoice,
+                        $currentVisit,
+                        $cashier,
+                        $data,
+                        $allocateAmount,
+                        $batchUuid,
+                        $data['notes'] ?? null,
+                    );
+
+                    $this->refreshInvoiceStatus($currentInvoice);
+                    $allocatedToControl = $allocateAmount;
+                }
+            }
+
+            // Sprint 62.2 completion rule for ordinary visits: any successful
+            // payment in this cashier batch completes the current cashier_pending
+            // visit (generalizes the partial-payment-completes-visit hotfix). A
+            // partial current invoice stays active piutang; unfilled prior
+            // receivables stay active piutang. Prior visits are already completed,
+            // so completeVisitAfterCashierPayment above is a no-op guard for them.
+            $this->completeVisitAfterCashierBatch(
+                $currentVisit,
+                paymentMade: $allocatedToParent > 0 || $allocatedToControl > 0,
+            );
+
+            return new RmeControlPaymentResult(
+                parentPayments: $parentPayments,
+                controlPayment: $currentPayment?->refresh(),
+                allocatedToParent: $allocatedToParent,
+                allocatedToControl: $allocatedToControl,
+                paymentBatchUuid: $batchUuid,
+            );
+        });
+
+        foreach ($summary['selected_receivables'] as $receivable) {
+            $this->generateLabCandidatesIfPaid($receivable->id, $cashier);
+        }
+
+        if ($result->controlPayment) {
+            $this->generateLabCandidatesIfPaid($result->controlPayment->rme_invoice_id, $cashier);
+        }
+
+        return $result;
+    }
+
     public function paymentsForInvoice(RmeInvoice $invoice): Collection
     {
         return $this->payments->forInvoice($invoice);
@@ -361,6 +508,29 @@ class RmePaymentService
 
         if ($controlVisit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
             $this->visitService->transitionStatus($controlVisit, ClinicVisit::STATUS_COMPLETED);
+        }
+    }
+
+    /**
+     * Sprint 62.2 — complete the current visit after a generalized cashier batch.
+     *
+     * Mirrors the partial-payment-completes-visit hotfix for the patient-level
+     * carry-over path: any successful payment in the batch (whether allocated to a
+     * prior receivable, the current invoice, or both) completes the current
+     * cashier_pending visit. The current invoice may remain UNPAID/PARTIAL — its
+     * unpaid balance stays active piutang and is collected at a future visit. A
+     * zero-payment batch never reaches here (normalizeAmount requires amount > 0).
+     * The Sprint 62.1 doctor→cashier gate is untouched: this only runs after
+     * consent, payable, and branch assertions inside allocateVisitPayment().
+     */
+    private function completeVisitAfterCashierBatch(ClinicVisit $visit, bool $paymentMade): void
+    {
+        if (! $paymentMade) {
+            return;
+        }
+
+        if ($visit->status === ClinicVisit::STATUS_CASHIER_PENDING) {
+            $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_COMPLETED);
         }
     }
 

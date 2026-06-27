@@ -27,6 +27,8 @@ class CreateRmePaymentRequest extends FormRequest
             'paid_at' => ['required', 'date'],
             'reference_number' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
+            'selected_receivable_ids' => ['nullable', 'array'],
+            'selected_receivable_ids.*' => ['integer'],
             'consent_signed_by_patient' => ['required', 'accepted'],
             'consent_signed_by_doctor' => ['required', 'accepted'],
         ];
@@ -48,10 +50,26 @@ class CreateRmePaymentRequest extends FormRequest
             $carryOver = app(RmeControlReceivableService::class);
 
             if (! $carryOver->hasCarryOver($invoice)) {
-                $remaining = $invoice->remainingAmount();
+                // Sprint 62.2 — ordinary visit may optionally collect selected
+                // previous patient receivables; the cap accounts for them.
+                $selectedIds = array_values(array_filter(
+                    array_map('intval', (array) $this->input('selected_receivable_ids', [])),
+                ));
 
-                if ((float) $this->input('amount') > $remaining) {
-                    $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi sisa tagihan.');
+                if ($selectedIds === []) {
+                    $remaining = $invoice->remainingAmount();
+
+                    if ((float) $this->input('amount') > $remaining) {
+                        $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi sisa tagihan.');
+                    }
+
+                    return;
+                }
+
+                $visitSummary = $carryOver->getVisitPayableSummary($invoice, $selectedIds);
+
+                if ((float) $this->input('amount') > $visitSummary['total_payable']) {
+                    $validator->errors()->add('amount', 'Pembayaran tidak boleh melebihi total yang harus dibayar.');
                 }
 
                 return;

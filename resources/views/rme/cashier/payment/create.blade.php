@@ -23,6 +23,10 @@
         $hasCarryOver = ($payableSummary['has_carry_over'] ?? false) && $carryOverInvoices->isNotEmpty();
         $maxAmount = $hasCarryOver ? $totalPayable : $remainingAmount;
         $defaultAmount = old('amount', $maxAmount);
+
+        // Sprint 62.2 — patient-level outstanding receivables (ordinary new visit).
+        $outstandingReceivables = $outstandingReceivables ?? collect();
+        $showSelectableReceivables = ! $hasCarryOver && $outstandingReceivables->isNotEmpty();
     @endphp
 
     <div class="space-y-6">
@@ -193,8 +197,77 @@
                 @endif
             </p>
 
-            <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5">
+            <form method="POST" action="{{ route('rme.cashier.payment.store', [$visit, $invoice]) }}" class="space-y-5"
+                x-data="{
+                    baseAmount: {{ (float) $maxAmount }},
+                    selected: {},
+                    get selectedTotal() { return Object.values(this.selected).reduce((sum, value) => sum + value, 0); },
+                    get totalPayable() { return this.baseAmount + this.selectedTotal; },
+                    toggle(id, amount, checked) {
+                        if (checked) { this.selected[id] = amount; } else { delete this.selected[id]; }
+                        if (this.$refs.amount) { this.$refs.amount.value = this.totalPayable; }
+                    },
+                }">
                 @csrf
+
+                @if ($showSelectableReceivables)
+                    {{-- Sprint 62.2 — patient outstanding receivables (opt-in collection) --}}
+                    <div class="rounded-md border border-amber-200 bg-amber-50 p-4 space-y-3">
+                        <div>
+                            <p class="text-sm font-medium text-amber-900">Piutang Sebelumnya</p>
+                            <p class="text-xs text-amber-800">Pasien ini memiliki tagihan kunjungan sebelumnya yang belum lunas. Centang untuk ikut ditagih bersama pembayaran hari ini. Tagihan lama tetap menjadi invoice terpisah (tidak digabung ke total visit ini).</p>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-amber-200 text-sm">
+                                <thead>
+                                    <tr class="text-left text-xs uppercase tracking-wide text-amber-700">
+                                        <th class="px-3 py-2">Pilih</th>
+                                        <th class="px-3 py-2">No. Kunjungan</th>
+                                        <th class="px-3 py-2">Tanggal</th>
+                                        <th class="px-3 py-2">Cabang</th>
+                                        <th class="px-3 py-2">No. Invoice</th>
+                                        <th class="px-3 py-2 text-right">Total</th>
+                                        <th class="px-3 py-2 text-right">Sudah Dibayar</th>
+                                        <th class="px-3 py-2 text-right">Sisa Piutang</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-amber-100">
+                                    @foreach ($outstandingReceivables as $receivable)
+                                        <tr>
+                                            <td class="px-3 py-2">
+                                                <input type="checkbox" name="selected_receivable_ids[]" value="{{ $receivable->id }}"
+                                                    @checked(in_array($receivable->id, old('selected_receivable_ids', []) ?: []))
+                                                    x-on:change="toggle({{ $receivable->id }}, {{ (float) $receivable->remainingAmount() }}, $event.target.checked)"
+                                                    class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                                            </td>
+                                            <td class="px-3 py-2 font-mono text-gray-900">{{ $receivable->clinicVisit?->visit_number ?? '-' }}</td>
+                                            <td class="px-3 py-2 text-gray-700">{{ $receivable->clinicVisit?->visit_date?->format('d/m/Y') ?? '-' }}</td>
+                                            <td class="px-3 py-2 text-gray-700">{{ $receivable->branch?->name ?? '-' }}</td>
+                                            <td class="px-3 py-2 font-mono text-gray-900">{{ $receivable->invoice_number }}</td>
+                                            <td class="px-3 py-2 text-right text-gray-700">Rp {{ number_format($receivable->grand_total, 0, ',', '.') }}</td>
+                                            <td class="px-3 py-2 text-right text-emerald-700">Rp {{ number_format($receivable->paidAmount(), 0, ',', '.') }}</td>
+                                            <td class="px-3 py-2 text-right font-semibold text-amber-800">Rp {{ number_format($receivable->remainingAmount(), 0, ',', '.') }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                        <dl class="grid grid-cols-1 gap-3 border-t border-amber-200 pt-3 text-sm sm:grid-cols-3">
+                            <div>
+                                <dt class="text-amber-700">Tagihan Visit Saat Ini</dt>
+                                <dd class="font-semibold text-teal-800">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
+                            </div>
+                            <div>
+                                <dt class="text-amber-700">Total Dipilih dari Piutang Sebelumnya</dt>
+                                <dd class="font-semibold text-amber-900">Rp <span x-text="selectedTotal.toLocaleString('id-ID')">0</span></dd>
+                            </div>
+                            <div>
+                                <dt class="text-amber-700">Total Harus Dibayar</dt>
+                                <dd class="text-lg font-bold text-gray-900">Rp <span x-text="totalPayable.toLocaleString('id-ID')">{{ number_format($remainingAmount, 0, ',', '.') }}</span></dd>
+                            </div>
+                        </dl>
+                    </div>
+                @endif
 
                 {{-- Payment Method --}}
                 <div>
@@ -220,13 +293,16 @@
                     <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">
                         Jumlah Dibayar <span class="text-red-500">*</span>
                     </label>
-                    <input type="number" name="amount" id="amount"
+                    <input type="number" name="amount" id="amount" x-ref="amount"
                         value="{{ $defaultAmount }}"
                         step="0.01" min="0.01" max="{{ $maxAmount }}"
+                        @if ($showSelectableReceivables) x-bind:max="totalPayable" @endif
                         class="block w-full max-w-xs rounded-md border-gray-300 shadow-sm text-sm focus:ring-teal-500 focus:border-teal-500 @error('amount') border-red-500 @enderror">
                     <p class="mt-1 text-xs text-gray-500">
                         @if ($hasCarryOver)
                             Maksimal total yang harus dibayar: Rp {{ number_format($maxAmount, 0, ',', '.') }}.
+                        @elseif ($showSelectableReceivables)
+                            Maksimal total yang harus dibayar (visit ini + piutang terpilih): Rp <span x-text="totalPayable.toLocaleString('id-ID')">{{ number_format($remainingAmount, 0, ',', '.') }}</span>.
                         @else
                             Maksimal sisa tagihan: Rp {{ number_format($maxAmount, 0, ',', '.') }}.
                         @endif
