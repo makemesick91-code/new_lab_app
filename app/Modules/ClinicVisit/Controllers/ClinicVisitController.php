@@ -250,9 +250,16 @@ class ClinicVisitController extends Controller
     public function transitionStatus(TransitionStatusRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {
         $this->authorize('transition', $clinicVisit);
-        $this->visits->transitionStatus($clinicVisit, $request->validated()['status']);
+        $newStatus = $request->validated()['status'];
+        $this->visits->transitionStatus($clinicVisit, $newStatus);
 
-        return redirect()->route('rme.visits.show', $clinicVisit)->with('status', 'Status kunjungan berhasil diperbarui.');
+        // Sprint 62.1 — "Selesai Pemeriksaan" handoff: a visit moved to
+        // cashier_pending is now waiting at the cashier.
+        $message = $newStatus === ClinicVisit::STATUS_CASHIER_PENDING
+            ? 'Pemeriksaan selesai, pasien masuk ke kasir.'
+            : 'Status kunjungan berhasil diperbarui.';
+
+        return redirect()->route('rme.visits.show', $clinicVisit)->with('status', $message);
     }
 
     public function print(ClinicVisit $clinicVisit): View

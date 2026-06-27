@@ -45,10 +45,17 @@ class ClinicVisit extends Model
         self::STATUS_CANCELLED,
     ];
 
+    /**
+     * Sprint 62.1 — Doctor → Cashier completion gate.
+     * `in_progress` may only advance to `cashier_pending` ("Selesai Pemeriksaan"),
+     * never directly to `completed`. `completed` ("Selesai Visit") is reachable
+     * ONLY from `cashier_pending`, and in practice only via RmePaymentService once
+     * the invoice is settled — the doctor can never mark a visit fully completed.
+     */
     public const VALID_TRANSITIONS = [
         self::STATUS_REGISTERED => [self::STATUS_WAITING, self::STATUS_CANCELLED],
         self::STATUS_WAITING => [self::STATUS_IN_PROGRESS, self::STATUS_CANCELLED],
-        self::STATUS_IN_PROGRESS => [self::STATUS_CASHIER_PENDING, self::STATUS_COMPLETED, self::STATUS_CANCELLED],
+        self::STATUS_IN_PROGRESS => [self::STATUS_CASHIER_PENDING, self::STATUS_CANCELLED],
         self::STATUS_CASHIER_PENDING => [self::STATUS_COMPLETED],
         self::STATUS_COMPLETED => [],
         self::STATUS_CANCELLED => [],

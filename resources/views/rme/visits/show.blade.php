@@ -1,32 +1,40 @@
 <x-settings-shell title="Detail Kunjungan">
     @php
         $statusLabels = [
-            'registered'  => 'Terdaftar',
-            'waiting'     => 'Menunggu',
-            'in_progress' => 'Dalam Pemeriksaan',
-            'completed'   => 'Selesai',
-            'cancelled'   => 'Dibatalkan',
+            'registered'      => 'Terdaftar',
+            'waiting'         => 'Menunggu',
+            'in_progress'     => 'Dalam Pemeriksaan',
+            'cashier_pending' => 'Menunggu Kasir',
+            'completed'       => 'Selesai Visit',
+            'cancelled'       => 'Dibatalkan',
         ];
         $statusTone = [
-            'registered'  => 'info',
-            'waiting'     => 'warning',
-            'in_progress' => 'primary',
-            'completed'   => 'success',
-            'cancelled'   => 'danger',
+            'registered'      => 'info',
+            'waiting'         => 'warning',
+            'in_progress'     => 'primary',
+            'cashier_pending' => 'warning',
+            'completed'       => 'success',
+            'cancelled'       => 'danger',
         ];
+        // Sprint 62.1 — the doctor/front office can advance examination to the
+        // cashier ("Selesai Pemeriksaan" = cashier_pending) but never to
+        // `completed`; "Selesai Visit" is reached only after the cashier settles
+        // the invoice, so no manual `completed` button is rendered.
         $transitionLabels = [
-            'waiting'     => 'Check-in',
-            'in_progress' => 'Mulai Pemeriksaan',
-            'completed'   => 'Selesaikan',
-            'cancelled'   => 'Batalkan',
+            'waiting'         => 'Check-in',
+            'in_progress'     => 'Mulai Pemeriksaan',
+            'cashier_pending' => 'Selesai Pemeriksaan',
+            'cancelled'       => 'Batalkan',
         ];
         $transitionStyle = [
-            'waiting'     => 'bg-amber-600 hover:bg-amber-500 focus:ring-amber-500',
-            'in_progress' => 'bg-teal-700 hover:bg-teal-600 focus:ring-teal-500',
-            'completed'   => 'bg-emerald-600 hover:bg-emerald-500 focus:ring-emerald-500',
-            'cancelled'   => 'bg-rose-600 hover:bg-rose-500 focus:ring-rose-500',
+            'waiting'         => 'bg-amber-600 hover:bg-amber-500 focus:ring-amber-500',
+            'in_progress'     => 'bg-teal-700 hover:bg-teal-600 focus:ring-teal-500',
+            'cashier_pending' => 'bg-emerald-600 hover:bg-emerald-500 focus:ring-emerald-500',
+            'cancelled'       => 'bg-rose-600 hover:bg-rose-500 focus:ring-rose-500',
         ];
-        $validNextStatuses = \App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];
+        $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
+            ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
+            ->all();
     @endphp
 
     <div class="space-y-6">

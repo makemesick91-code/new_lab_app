@@ -415,6 +415,18 @@ class ClinicVisitService
 
     public function transitionStatus(ClinicVisit $visit, string $newStatus): ClinicVisit
     {
+        // Sprint 62.1 — Doctor → Cashier completion gate. A visit may only become
+        // `completed` ("Selesai Visit") from `cashier_pending`, i.e. after the
+        // cashier has settled the invoice (RmePaymentService is the only caller
+        // that reaches this from cashier_pending). The doctor/front office can
+        // never skip the cashier and mark a visit fully completed.
+        if ($newStatus === ClinicVisit::STATUS_COMPLETED
+            && $visit->status !== ClinicVisit::STATUS_CASHIER_PENDING) {
+            throw ValidationException::withMessages([
+                'status' => 'Visit belum dapat diselesaikan total karena pembayaran belum selesai.',
+            ]);
+        }
+
         $allowed = ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];
 
         if (! in_array($newStatus, $allowed, true)) {

@@ -7620,3 +7620,56 @@ the existing owner-eligibility guard).
 **Known limitations:** daily trend window capped to last 31 days regardless of a wider custom range;
 inventory KPIs aggregate per active branch (small N) rather than a single set-based query; collection
 rate uses invoices created in-period as the billable denominator; Lab Order Aktif is not branch-scoped.
+
+## Sprint 62.1 — RME Doctor-to-Cashier Completion Gate (2026-06-27)
+
+**Branch:** `feature/sprint-62-1-rme-doctor-cashier-completion-gate` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `5ccf253`; do NOT
+target main).
+
+**Goal:** enforce the correct RME pipeline so the cashier can never bill before the doctor finishes
+examination, and the doctor (or any RME role) can never mark a visit fully completed before payment:
+
+`Pendaftaran → Antrian → Input Ruangan → Pemeriksaan Dokter → Consent → Status Selesai Pemeriksaan
+(cashier_pending) → Kasir / Pembayaran → Status Selesai Visit (completed)`.
+
+**Status strategy:** no new status, **no migration**. Reuses `cashier_pending` ("Selesai Pemeriksaan",
+set by RME finalize / the manual transition) and `completed` ("Selesai Visit", reached only via
+`RmePaymentService` once the invoice is settled).
+
+**Changes (minimal/additive):**
+- `ClinicVisit::VALID_TRANSITIONS` — `in_progress` may only advance to `cashier_pending` (or
+  `cancelled`); the direct `in_progress → completed` edge is removed. `completed` is reachable only
+  from `cashier_pending`.
+- `TransitionStatusRequest` — drops `completed` from the allowed manual-transition statuses and adds
+  `cashier_pending`; the manual route can never request "Selesai Visit".
+- `ClinicVisitService::transitionStatus()` — guards any `→ completed` transition from a non
+  `cashier_pending` status with the message "Visit belum dapat diselesaikan total karena pembayaran
+  belum selesai." (`RmePaymentService` is the only caller that reaches `completed`, always from
+  `cashier_pending` after `isPaid()`).
+- `ClinicVisitController::transitionStatus()` — a move to `cashier_pending` now flashes "Pemeriksaan
+  selesai, pasien masuk ke kasir."
+- `RmeInvoiceService::create()` — the cashier billing gate message is now "Pembayaran belum dapat
+  diproses karena pemeriksaan dokter belum selesai."
+- `RmePaymentController` — full-payment success now flashes "Pembayaran selesai, visit selesai total."
+- `resources/views/rme/visits/show.blade.php` — `cashier_pending` transition labelled "Selesai
+  Pemeriksaan"; the manual `completed` button is no longer rendered; status labels add "Menunggu
+  Kasir" / "Selesai Visit".
+
+**Gates preserved:** consent gate (`CreateRmePaymentRequest` still requires
+`consent_signed_by_patient|doctor` accepted), room gate (`visit.room` middleware), full-payment-only
+behavior, SOAP-hidden, and KTP/NIK + scanned-document + raw-medical-note privacy. Supervisor RME can
+access the workflow but cannot bypass any gate (enforced server-side). Owner KPI dashboard remains
+read-only and renders unchanged.
+
+**Tests:** new `tests/Feature/RME/RmeDoctorCashierCompletionGateTest.php` (14 passed, 44 assertions).
+Updated `tests/Feature/RME/ClinicVisitTest.php` (3 transition tests that assumed the old
+`in_progress → completed` workflow now assert the gated workflow + service-driven completion).
+
+**Validation:** RmeDoctorCashierCompletionGate 14; `tests/Feature/RME` 801 passed (2417 assertions);
+ClinicVisit/CashierBilling/MedicalRecord/RmePayment/etc. regression 322 passed; OwnerKpiDashboard +
+SupervisorRme + Permission suites 223 passed; Pint clean; `git diff --check` clean.
+
+**Known limitations:** zero-grand-total/free control visits still settle on `remainingAmount() == 0`
+via the existing batch-payment path (unchanged Sprint 27/ control-receivable behavior); no migration,
+no permission, no route added.
