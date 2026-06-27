@@ -119,3 +119,7 @@ Validation:
 - vendor/bin/pint --test: passed
 - git diff --check: clean
 - npm run build: passed
+
+## Sprint 62.0 — Owner KPI Dashboard (2026-06-27)
+
+Branch `feature/sprint-62-owner-kpi-dashboard-implementation` (base `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `0860db9`; do NOT target main). **Enhanced** the existing Owner dashboard (route `dashboard` → `HomeDashboardController`, gated `view dashboard|view_owner_dashboard`) — did NOT create a duplicate `/owner/dashboard` route. New executive, period-based KPI block alongside the existing "today snapshot" RME/Lab pilot section. New service `App\Modules\Reporting\Services\OwnerDashboardKpiService` (period `today|7d|month|30d|custom`, default `month`, + existing `branch_id` filter): 10 KPI cards, per-branch table, daily visit/payment trends (PHP day-grouping for PG/SQLite portability), privacy-safe latest-receivables, operational alerts, permission+`Route::has`-guarded drilldowns. New partial `resources/views/dashboards/owner-kpi.blade.php` included in `dashboard.blade.php`. Reuses `view_owner_dashboard` (Supervisor RME excluded by design — no permission change). Inventory low-stock/value via `InventoryAnalyticsRepositoryInterface` (try/catch → "Belum tersedia"). No KTP/NIK, no scanned docs, no raw medical notes, no HR. **No route/permission/migration added.** Tests: `tests/Feature/Owner/OwnerKpiDashboardTest.php` (12). Green: Owner 12, Dashboard+Auth 83; pint + `git diff --check` clean.
