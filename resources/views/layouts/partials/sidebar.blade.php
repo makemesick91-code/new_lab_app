@@ -461,7 +461,9 @@
                         @endcan
                         @can('manage patients')
                             <a href="{{ route('settings.patients.index') }}"
-                               class="menu-subitem {{ request()->routeIs('settings.patients.*') ? $linkActive : $linkIdle }}">Pasien</a>
+                               class="menu-subitem {{ request()->routeIs('settings.patients.*') && ! request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Pasien</a>
+                            <a href="{{ route('settings.patients.import.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Impor Pasien Legacy</a>
                         @endcan
                         @can('manage lab services')
                             <a href="{{ route('settings.lab-services.index') }}"

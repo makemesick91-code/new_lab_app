@@ -7779,3 +7779,44 @@ pays only prior receivables (current invoice receives zero) still completes the 
 matching the spec appendix "any payment made → cashier_pending→completed" and the
 partial-payment hotfix philosophy (current invoice stays active piutang). Control visits keep
 the stricter "own invoice must settle" completion rule (unchanged).
+
+## Sprint 62.3 — Legacy RME Patient Batch Import (2026-06-27)
+
+Branch `feature/sprint-62-3-legacy-rme-patient-batch-import` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `298a440`; not
+targeting main). Spec: `docs/sprint_62_3_legacy_rme_patient_batch_import_spec.md`.
+
+Safe, auditable, rollback-safe batch import of legacy RME **patient master data** via a
+staging → preview → commit workflow. Nothing touches `mst_patients` until an explicit Commit.
+No visit / medical record / invoice / payment / consent / odontogram / scanned-document record
+is created (historical visits explicitly deferred). Advisory columns (Ruangan, Tindakan Awal,
+Keluhan Utama, TTD Dokter/Pasien) are **staged only**, never promoted to RME.
+
+**Migrations (additive, `migrate` only):** `stg_legacy_patient_import_batches`,
+`stg_legacy_patient_imports`, nullable indexed `mst_patients.import_batch_id` FK, and
+`mst_patients.doctor_id` relaxed to nullable (unresolved legacy doctor → `doctor_id = NULL`;
+mirrors Sprint 23.9.1 `clinic_id` relaxation; non-destructive).
+
+**Code:** models `LegacyPatientImportBatch` / `LegacyPatientImportRow`;
+`LegacyPatientImportService`; `LegacyPatientImportController` + `UploadLegacyPatientCsvRequest`;
+routes `settings.patients.import.{index,template,store,show,errors,commit,rollback,destroy}`
+under the existing `manage patients` group; views `settings/patients/import/{create,preview}`;
+sidebar "Impor Pasien Legacy".
+
+**Rules:** CSV parse mirrors `ProductImportService` (native fgetcsv, BOM strip, header assert,
+blank-row skip — no `maatwebsite/excel`). RM via
+`PatientMedicalRecordNumberService::composeForRegistration` (year from Timestamp, manual number
+verbatim). Hard block (error) on composed-RM collision incl. soft-deleted, KTP collision incl.
+soft-deleted, and in-file duplicate RM/KTP. Soft warning on name+DOB match, unresolved doctor,
+unmappable gender, age/DOB mismatch. Commit = single `DB::transaction` + `lockForUpdate` RM/KTP
+re-check (preview→commit race → row `skipped`, never overwritten); idempotent (committed batch
+re-commit is a no-op). Rollback soft-deletes the batch's patients (by `import_batch_id` +
+`committed_patient_id`), blocked when any imported patient already has a downstream visit/RM.
+Pre-commit discard soft-deletes staging only. KTP/NIK masked everywhere via `maskKtp()`; full
+value lives only in JSON payload columns, never rendered/exported. MAIN excluded; branch set =
+active + RME-enabled. Reuses `manage patients` permission — no new permission. No
+payment/receivable logic from Sprint 62.1/62.2 changed; no RME gate weakened.
+
+**Tests:** `tests/Feature/Patient/LegacyPatientBatchImportTest.php` (24 passed). Regression green:
+Patient 236, ClinicVisit 82, MedicalRecord 121, Permission 212, RME dir suite. `pint --dirty`
++ `git diff --check` clean.

@@ -36,6 +36,7 @@ class Patient extends Model
         'address',
         'occupation',
         'is_active',
+        'import_batch_id',
     ];
 
     protected function casts(): array
@@ -105,6 +106,15 @@ class Patient extends Model
     public function doctor(): BelongsTo
     {
         return $this->belongsTo(Doctor::class, 'doctor_id');
+    }
+
+    /**
+     * Sprint 62.3 — the legacy import batch this patient was created from (if
+     * any). Used for batch-scoped rollback and provenance reporting.
+     */
+    public function importBatch(): BelongsTo
+    {
+        return $this->belongsTo(LegacyPatientImportBatch::class, 'import_batch_id');
     }
 
     /**
