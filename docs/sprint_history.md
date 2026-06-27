@@ -7710,3 +7710,72 @@ receivables; +1 test = 15). Updated stale partial→`cashier_pending` assertions
 `RmePaymentTest` and `RmeControlVisitReceivableCarryOverPaymentTest`. Green: RME dir 802,
 CashierBilling 33, RmePayment 19, OwnerKpiDashboard+Receivable 129, SupervisorRme+Permission
 212; Pint clean; `git diff --check` clean. **No migration, no permission, no route added.**
+
+---
+
+## Sprint 62.2 — Patient Outstanding Receivable Carry-over for New Visits (2026-06-27)
+
+Branch `feature/sprint-62-2-patient-outstanding-receivable-carryover` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `150d2d2`; do
+NOT target main). Spec: `docs/sprint_62_2_patient_outstanding_receivable_carryover_spec.md`.
+
+**Goal:** Let the cashier see and optionally collect a patient's *previous* outstanding
+receivables during **any** new RME visit — without merging old debt into the new invoice. Old
+invoices stay separate rows with their own status/ledger/grand_total (audit + KPI accuracy).
+
+**No migration, no table/column, no permission, no route added.** Pure
+service + controller + request + view + tests over existing columns and the existing
+`payment_batch_uuid` correlation.
+
+**Service (`RmeControlReceivableService`):** New `getOutstandingReceivablesForPatientVisit(visit,
+currentInvoice)` — patient's other UNPAID/PARTIAL invoices, RME branches only, `grand_total > 0`,
+`remainingAmount() > 0`, `id != current`, oldest-first by `(visit_date, id)`. New
+`getVisitPayableSummary(currentInvoice, selectedIds[])` returns
+`outstanding_receivables` / `selected_receivables` / `selected_remaining` / `current_remaining` /
+`total_payable` / `has_outstanding`. `selected_receivables` is **always** the server-side
+intersection of eligible ∩ submitted ids (the IDOR boundary). The existing control-chain methods
+(`getControlPayableSummary`, `getCarryOverInvoicesForControlVisit`, `allocateControlPayment`)
+are **unchanged** — control visits keep their dedicated chain carry-over flow.
+
+**Allocation (`RmePaymentService::allocateVisitPayment`)** — new sibling of
+`allocateControlPayment` that reuses the same private helpers (`recordPayment`,
+`refreshInvoiceStatus`, `assertInvoicePayable`, consent asserts). Single `DB::transaction` +
+`lockForUpdate`; FIFO: selected prior receivables (oldest-first, re-asserted branch+payable under
+lock) → current invoice; one `trx_rme_payment` per real invoice id sharing one
+`payment_batch_uuid`. New `completeVisitAfterCashierBatch()` generalizes the partial-payment
+hotfix: **any** successful payment in the batch completes the current `cashier_pending` visit;
+unfilled prior + current balances stay active piutang. Lab candidate generation reuses the
+idempotent post-commit hook.
+
+**Controller (`RmePaymentController`):** `create()` adds `outstandingReceivables` for ordinary
+(non control-chain) visits. `store()` reads `selected_receivable_ids`; if the server-recomputed
+`selected_remaining > 0` it calls `allocateVisitPayment`, else falls back to the existing
+plain `pay()` / control `allocateControlPayment` paths. **Request** adds nullable
+`selected_receivable_ids` array and caps `amount` at `total_payable` when receivables are
+selected (else keeps the legacy "sisa tagihan" cap/message).
+
+**UI (`payment/create.blade.php`):** New opt-in "Piutang Sebelumnya" card (only for ordinary
+visits with eligible receivables) — checkbox per old invoice with visit no/date/branch/invoice
+no/total/paid/remaining; **unchecked by default**. Alpine recomputes "Total Dipilih" + "Total
+Harus Dibayar" live and updates the amount input/max; server is authoritative. **No KTP/NIK,
+no scanned docs, no raw medical notes** loaded or rendered. Receipt allocation labels reused
+as-is (control + generalized share the `RmeControlPaymentResult` DTO + `payment_allocation`
+flash).
+
+**Owner KPI / receivable report:** unchanged logic — `active_receivable` is per-invoice
+`grand_total − payments_sum`; paying an old receivable reduces exactly that invoice's remaining
+once, attributed to its own branch; current invoice grand_total stays pure. No double counting.
+
+**Gates preserved:** Sprint 62.1 doctor→cashier gate, consent gate, room gate, branch
+isolation, Supervisor-RME-cannot-bypass — all enforced server-side inside the transaction.
+
+**Tests:** new `tests/Feature/RME/PatientOutstandingReceivableCarryOverTest.php` (20). Green:
+new file 20, RME dir (full), RmeControlVisitReceivableCarryOverPaymentTest 35, RmePayment 19,
+CashierBilling 33, Receivable 138, OwnerKpiDashboard 12, SupervisorRme 8, Permission 212; Pint
+clean; `git diff --check` clean.
+
+**Known limitation / documented decision:** for the generalized ordinary path, a batch that
+pays only prior receivables (current invoice receives zero) still completes the current visit —
+matching the spec appendix "any payment made → cashier_pending→completed" and the
+partial-payment hotfix philosophy (current invoice stays active piutang). Control visits keep
+the stricter "own invoice must settle" completion rule (unchanged).
