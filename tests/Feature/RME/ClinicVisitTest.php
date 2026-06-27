@@ -4,6 +4,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
@@ -342,7 +343,28 @@ it('manager can transition waiting to in_progress', function () {
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
-it('manager can transition in_progress to completed', function () {
+// Sprint 62.1 — "Selesai Pemeriksaan": in_progress advances to cashier_pending.
+it('manager can transition in_progress to cashier_pending', function () {
+    $visit = ClinicVisit::factory()->inProgress()->create([
+        'branch_id' => $this->branch->id,
+        'clinic_id' => $this->clinic->id,
+        'patient_id' => $this->patient->id,
+        'doctor_id' => $this->doctor->id,
+        'created_by' => $this->manager->id,
+        'queue_number' => 1,
+    ]);
+
+    $this->actingAs($this->manager)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING])
+        ->assertRedirect(route('rme.visits.show', $visit));
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+});
+
+// Sprint 62.1 — Doctor → Cashier completion gate. A visit can never be marked
+// fully completed ("Selesai Visit") through the manual transition route; that
+// only happens after the cashier settles the invoice.
+it('manager cannot transition in_progress directly to completed', function () {
     $visit = ClinicVisit::factory()->inProgress()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -354,9 +376,9 @@ it('manager can transition in_progress to completed', function () {
 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED])
-        ->assertRedirect(route('rme.visits.show', $visit));
+        ->assertSessionHasErrors('status');
 
-    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
 it('manager can cancel from registered, waiting, or in_progress', function () {
@@ -520,8 +542,14 @@ it('sets check_in_at on transition to waiting, started_at on in_progress, comple
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
     expect($visit->refresh()->started_at)->not->toBeNull();
 
+    // Sprint 62.1 — "Selesai Pemeriksaan" then cashier-driven completion.
     $this->actingAs($this->manager)
-        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED]);
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+
+    // completed_at is set when the cashier settles the invoice (service path).
+    app(ClinicVisitService::class)
+        ->transitionStatus($visit->refresh(), ClinicVisit::STATUS_COMPLETED);
     $visit->refresh();
     expect($visit->completed_at)->not->toBeNull()
         ->and($visit->status)->toBe(ClinicVisit::STATUS_COMPLETED);
@@ -542,8 +570,11 @@ it('does not overwrite existing timestamps on transition', function () {
         'started_at' => $fixedStarted,
     ]);
 
+    // Sprint 62.1 — reach completion through cashier_pending + service.
     $this->actingAs($this->manager)
-        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_COMPLETED]);
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+    app(ClinicVisitService::class)
+        ->transitionStatus($visit->refresh(), ClinicVisit::STATUS_COMPLETED);
 
     $visit->refresh();
     expect($visit->check_in_at->timestamp)->toBe($fixedCheckIn->timestamp)

@@ -63,7 +63,7 @@ class RmePaymentController extends Controller
             if ($freshInvoice?->isPaid()) {
                 return redirect()
                     ->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
-                    ->with('status', 'Pembayaran berhasil dicatat.')
+                    ->with('status', 'Pembayaran selesai, visit selesai total.')
                     ->with('payment_allocation', $allocation);
             }
 
@@ -81,7 +81,7 @@ class RmePaymentController extends Controller
         if ($freshInvoice?->isPaid()) {
             return redirect()
                 ->route('rme.cashier.receipt.show', [$clinicVisit, $freshInvoice])
-                ->with('status', 'Pembayaran berhasil dicatat. No. Kwitansi: '.$payment->payment_number);
+                ->with('status', 'Pembayaran selesai, visit selesai total. No. Kwitansi: '.$payment->payment_number);
         }
 
         return redirect()

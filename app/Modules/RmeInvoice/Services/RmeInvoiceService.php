@@ -126,9 +126,12 @@ class RmeInvoiceService
                 ]);
             }
 
+            // Sprint 62.1 — Doctor → Cashier completion gate. The cashier can only
+            // bill a visit once the doctor has completed the examination (the RME
+            // finalize moves the visit to cashier_pending).
             if ($visit->status !== ClinicVisit::STATUS_CASHIER_PENDING) {
                 throw ValidationException::withMessages([
-                    'clinic_visit_id' => 'Kunjungan belum siap untuk ditagih. Status harus cashier_pending.',
+                    'clinic_visit_id' => 'Pembayaran belum dapat diproses karena pemeriksaan dokter belum selesai.',
                 ]);
             }
 
