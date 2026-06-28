@@ -152,7 +152,7 @@
             // Sprint 59 — handwriting and notes remain editable after finalization.
             $canEditHandwriting = $canUpdate;
             $savedHandwriting = $medicalRecord->latestHandwriting();
-            $hasHandwriting = $savedHandwriting !== null;
+            $hasHandwriting = $hasRequiredHandwriting ?? false;
             $hasLegacySoap = filled($medicalRecord->subjective)
                 || filled($medicalRecord->objective)
                 || filled($medicalRecord->assessment)
@@ -217,25 +217,36 @@
             :title="$canEditHandwriting ? 'RME Tulisan Tangan Lengkap' : 'RME Tulisan Tangan'"
             :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Hanya satu halaman dimuat per layar — gunakan navigasi halaman untuk berpindah. Klik halaman aktif untuk menulis. Menyimpan satu halaman tidak menghapus halaman lain.' : null"
         >
-            {{-- Sprint 60.1 — page navigation/pagination. Numbered buttons carry
-                 the page number and link via ?rm_page= so selecting a page
-                 reloads with only that page's canvas. No page image is rendered
-                 here. --}}
-            <div id="rm-page-nav" class="mb-4 flex flex-wrap items-center gap-2">
-                @php
-                    $prevPage = max(1, $activePageNumber - 1);
-                    $nextNavPage = min($totalRmPages, $activePageNumber + 1);
-                    $navBase = 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
-                    // Sprint 64.0 — canvas-page links stay on the canonical
-                    // workspace URL, keeping the active sheet + source visit so a
-                    // page change never bounces through the per-visit redirect.
-                    $rmPageBase = array_filter([
-                        'sheet' => $medicalRecord->id,
-                        'source_visit_id' => $sourceVisit?->id,
-                    ], fn ($v) => $v !== null);
-                    $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', array_merge([$workspaceVisit], $rmPageBase, ['rm_page' => $page]));
-                @endphp
+            {{-- Sprint 64.0.2 — page navigation/pagination for the patient's single
+                 handwriting RM book (virtual merge across visits). Numbered buttons
+                 link via ?rm_page= (virtual page index). Swipe is scoped to this
+                 block only — the drawing canvas ignores swipe gestures. --}}
+            @php
+                $prevPage = $prevRmPage;
+                $nextNavPage = $nextRmPage;
+                $navBase = 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
+                $rmPageBase = array_filter([
+                    'sheet' => $activeSheet->id,
+                    'source_visit_id' => $sourceVisit?->id,
+                ], fn ($v) => $v !== null);
+                $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', array_merge([$workspaceVisit], $rmPageBase, ['rm_page' => $page]));
+                $prevSwipeUrl = $prevPage ? $rmPageUrl($prevPage) : '';
+                $nextSwipeUrl = $nextNavPage ? $rmPageUrl($nextNavPage) : '';
+                $canonicalHandwritingVisit = $handwritingRecord?->clinicVisit ?? $workspaceVisit;
+                $canonicalHandwritingFormAction = route('rme.visits.medical-record.handwriting.store', [
+                    $canonicalHandwritingVisit,
+                    $handwritingRecord ?? $handwritingFormRecord,
+                ]);
+                $storagePageNumber = $activeRmPage['storage_page_number'] ?? $activePageNumber;
+            @endphp
 
+            <div
+                id="rm-handwriting-swipe"
+                class="mb-4"
+                @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
+                @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
+            >
+            <div id="rm-page-nav" class="flex flex-wrap items-center gap-2">
                 @if ($activePageNumber > 1)
                     <a href="{{ $rmPageUrl($prevPage) }}"
                        class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Sebelumnya</a>
@@ -267,17 +278,23 @@
                 @endif
 
                 @if ($canEditHandwriting)
-                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn" data-next-page="{{ $nextRmPageNumber }}" class="!px-3 !py-1.5 !text-xs">
+                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn"
+                                 data-next-page="{{ $nextRmPageNumber }}"
+                                 data-form-action="{{ $canonicalHandwritingFormAction }}"
+                                 class="!px-3 !py-1.5 !text-xs">
                         + Tambah Halaman RM
                     </x-ui.button>
                 @endif
             </div>
 
+            <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
             {{-- Only the ACTIVE page preview is rendered (single <img>/canvas). --}}
             <div id="rm-page-previews" class="mx-auto max-w-md">
                 <figure
                     class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
+                    data-storage-page="{{ $storagePageNumber }}"
+                    data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
                     data-existing-src="{{ $activeSrc }}"
                     @if ($canEditHandwriting) role="button" tabindex="0" @endif
                 >
@@ -307,7 +324,7 @@
                     @endif
                 </figure>
             </div>
-
+            </div>{{-- /#rm-handwriting-swipe --}}
             @if ($canEditHandwriting)
                 @error('handwriting_data')
                     <p class="mt-2 text-xs text-rose-600">{{ $message }}</p>
@@ -316,7 +333,7 @@
                 {{-- Same-page overlay editor (relocated Sprint 59 canvas). One
                      shared canvas edits the selected page only; the hidden
                      page_number routes the save to the right RM page row. --}}
-                <div id="rm-editor-overlay" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/50 p-4">
+                <div id="rm-editor-overlay" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/50 p-4" data-ignore-swipe>
                     <div class="my-6 w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">
                         <div class="mb-3 flex items-center justify-between">
                             <h3 class="text-base font-semibold text-gray-900">
@@ -331,10 +348,13 @@
                             Tulisan tangan tersimpan halaman ini dimuat ke kanvas. Lanjutkan menulis untuk menambah coretan tanpa menghapus yang lama.
                         </p>
 
-                        <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$clinicVisit, $medicalRecord]) }}" id="handwriting-form">
+                        <form method="POST" action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}" id="handwriting-form">
                             @csrf
+                            @if ($sourceVisit)
+                                <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
+                            @endif
                             <input type="hidden" name="handwriting_data" id="handwriting-data-input">
-                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $activePageNumber }}">
+                            <input type="hidden" name="page_number" id="handwriting-page-input" value="{{ $storagePageNumber }}">
 
                             {{-- Sprint 60 — A4-portrait page canvas (900 x 1273,
                                  ≈ 1:1.414). One canvas = one RM page; overflow
@@ -343,6 +363,7 @@
                             <canvas id="rme-canvas"
                                     width="900" height="1273"
                                     data-existing-src="{{ $activeSrc }}"
+                                    data-ignore-swipe
                                     class="mx-auto block w-full border border-gray-400 rounded-lg cursor-crosshair bg-white touch-none"
                                     style="max-width:100%;height:auto;max-height:70vh;"></canvas>
 
@@ -613,7 +634,11 @@
                     // Read-only previews open the overlay for their own page.
                     document.querySelectorAll('#rm-page-previews .rm-page-preview').forEach(function (fig) {
                         function open() {
-                            openEditor(parseInt(fig.dataset.pageNumber, 10) || 1, fig.dataset.existingSrc || '');
+                            const storagePage = parseInt(fig.dataset.storagePage, 10) || parseInt(fig.dataset.pageNumber, 10) || 1;
+                            if (fig.dataset.formAction) {
+                                form.action = fig.dataset.formAction;
+                            }
+                            openEditor(storagePage, fig.dataset.existingSrc || '');
                         }
                         fig.addEventListener('click', open);
                         fig.addEventListener('keydown', function (e) {
@@ -625,7 +650,11 @@
                     const addBtn = document.getElementById('add-rm-page-btn');
                     if (addBtn) {
                         addBtn.addEventListener('click', function () {
-                            openEditor(parseInt(addBtn.dataset.nextPage, 10) || 2, '');
+                            const nextPage = parseInt(addBtn.dataset.nextPage, 10) || 2;
+                            if (addBtn.dataset.formAction) {
+                                form.action = addBtn.dataset.formAction;
+                            }
+                            openEditor(nextPage, '');
                         });
                     }
 
@@ -703,6 +732,42 @@
                 })();
                 </script>
             @endif
+
+            <script>
+            (function () {
+                const zone = document.getElementById('rm-handwriting-swipe');
+                if (!zone) return;
+
+                const prevUrl = zone.dataset.prevUrl || '';
+                const nextUrl = zone.dataset.nextUrl || '';
+                let startX = 0, startY = 0, tracking = false;
+
+                function shouldIgnore(target) {
+                    if (!target || !zone.contains(target)) return true;
+                    if (target.closest('[data-ignore-swipe]')) return true;
+                    if (target.closest('button, a, input, textarea, select, label')) return true;
+
+                    return false;
+                }
+
+                zone.addEventListener('pointerdown', function (e) {
+                    if (shouldIgnore(e.target)) return;
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    tracking = true;
+                });
+
+                zone.addEventListener('pointerup', function (e) {
+                    if (!tracking) return;
+                    tracking = false;
+                    const dx = e.clientX - startX;
+                    const dy = e.clientY - startY;
+                    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
+                    if (dx < 0 && nextUrl) { window.location.href = nextUrl; }
+                    else if (dx > 0 && prevUrl) { window.location.href = prevUrl; }
+                });
+            })();
+            </script>
         </x-ui.card>
 
         {{-- Finalize form: draft only, manager only --}}

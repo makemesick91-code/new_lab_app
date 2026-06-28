@@ -74,6 +74,54 @@ class PatientRmWorkspaceResolver
     }
 
     /**
+     * Sprint 64.0.2 — the single handwriting RM book: the medical record attached
+     * to the patient's canonical (earliest non-cancelled RME) visit, if any.
+     */
+    public function canonicalMedicalRecord(int $patientId): ?MedicalRecord
+    {
+        $visit = $this->resolveCanonicalWorkspaceVisit($patientId);
+
+        if ($visit === null) {
+            return null;
+        }
+
+        return MedicalRecord::query()
+            ->where('clinic_visit_id', $visit->id)
+            ->first();
+    }
+
+    /**
+     * Sprint 64.0.2 — virtual handwriting RM book for one patient. Collects every
+     * handwriting page from all same-patient sheets (canonical + legacy later-visit
+     * records) without moving data. Ordered by source visit (visit_date, id) then
+     * page_number within each sheet.
+     *
+     * Each entry extends orderedHandwritingPages() with:
+     * virtual_page_number, medical_record_id, clinic_visit_id, storage_page_number.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function orderedHandwritingBookForPatient(int $patientId): Collection
+    {
+        $virtualPages = collect();
+        $virtualIndex = 1;
+
+        foreach ($this->sheetsForPatient($patientId) as $sheet) {
+            foreach ($sheet->orderedHandwritingPages() as $page) {
+                $virtualPages->push(array_merge($page, [
+                    'virtual_page_number' => $virtualIndex,
+                    'medical_record_id' => $sheet->id,
+                    'clinic_visit_id' => $sheet->clinic_visit_id,
+                    'storage_page_number' => $page['page_number'],
+                ]));
+                $virtualIndex++;
+            }
+        }
+
+        return $virtualPages;
+    }
+
+    /**
      * All RM sheets (medical records) of a patient within the RME branch scope,
      * ordered chronologically by their source visit (visit_date, id). This is the
      * swipe order shown in the workspace.

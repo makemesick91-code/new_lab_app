@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
@@ -24,6 +25,7 @@ class MedicalRecordController extends Controller
     public function __construct(
         private readonly MedicalRecordService $service,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
+        private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -83,7 +85,7 @@ class MedicalRecordController extends Controller
         if ($sheets->isEmpty()) {
             $this->authorize('viewAny', MedicalRecord::class);
 
-            $addSheetVisit = $sourceVisit ?? $workspaceVisit;
+            $addSheetVisit = $workspaceVisit;
             $addSheetVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'branch']);
 
             return view('rme.visits.medical-record.empty', [
@@ -91,7 +93,7 @@ class MedicalRecordController extends Controller
                 'sourceVisit' => $sourceVisit,
                 'addSheetVisit' => $addSheetVisit,
                 'patient' => $addSheetVisit->patient,
-                'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $addSheetVisit]) ?? false,
+                'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $workspaceVisit]) ?? false,
             ]);
         }
 
@@ -123,23 +125,50 @@ class MedicalRecordController extends Controller
             : null;
 
         $notice = ($sourceVisit !== null && $sourceVisit->id !== $workspaceVisit->id)
-            ? 'Anda membuka RM pasien dari Kunjungan #'.$sourceVisit->visit_number.'. Lembar baru akan ditautkan ke kunjungan ini.'
+            ? 'Anda membuka buku RM tulisan tangan dari Kunjungan #'.$sourceVisit->visit_number.'. Halaman baru ditambahkan ke buku RM kunjungan pertama.'
             : null;
 
-        // Sprint 60.1 — single active RM canvas pagination, now scoped to the
-        // ACTIVE sheet's medical record (not the canonical visit's).
-        $rmPages = $activeSheet->orderedHandwritingPages();
-        $totalRmPages = max($rmPages->count(), 1);
+        // Sprint 64.0.2 — one patient = one handwriting RM book on the canonical
+        // visit. Virtual navigation merges same-patient pages from all sheets;
+        // new pages are always added to the canonical medical record.
+        $handwritingBook = $workspace->orderedHandwritingBookForPatient($patientId);
+        $handwritingRecord = $workspace->canonicalMedicalRecord($patientId);
+        $totalRmPages = max($handwritingBook->count(), 1);
 
         $activePageNumber = $request->integer('rm_page')
             ?: (int) $request->session()->get('focus_rm_page', 1);
         $activePageNumber = max(1, min($activePageNumber, $totalRmPages));
 
-        $activeRmPage = $rmPages->firstWhere('page_number', $activePageNumber)
-            ?? $rmPages->first();
+        $activeRmPage = $handwritingBook->firstWhere('virtual_page_number', $activePageNumber)
+            ?? $handwritingBook->first()
+            ?? [
+                'page_number' => 1,
+                'virtual_page_number' => 1,
+                'storage_page_number' => 1,
+                'is_legacy' => true,
+                'preview_url' => null,
+                'saved_at' => null,
+                'has_content' => false,
+                'medical_record_id' => $handwritingRecord?->id ?? $activeSheet->id,
+                'clinic_visit_id' => $handwritingRecord?->clinic_visit_id ?? $activeSheet->clinic_visit_id,
+            ];
 
-        $rmPageNumbers = $rmPages->pluck('page_number');
-        $nextRmPageNumber = ($rmPages->max('page_number') ?? 1) + 1;
+        $handwritingFormRecord = MedicalRecord::query()->find($activeRmPage['medical_record_id'])
+            ?? $handwritingRecord
+            ?? $activeSheet;
+        $handwritingFormVisit = $handwritingFormRecord->clinicVisit ?? $activeVisit;
+
+        $rmPageNumbers = $handwritingBook->pluck('virtual_page_number');
+        if ($rmPageNumbers->isEmpty()) {
+            $rmPageNumbers = collect([1]);
+        }
+
+        $nextRmPageNumber = $handwritingRecord !== null
+            ? $this->handwritings->nextPageNumber($handwritingRecord->id)
+            : 1;
+
+        $prevRmPage = $activePageNumber > 1 ? $activePageNumber - 1 : null;
+        $nextRmPage = $activePageNumber < $totalRmPages ? $activePageNumber + 1 : null;
 
         return view('rme.visits.medical-record.show', [
             'clinicVisit' => $activeVisit,
@@ -156,29 +185,53 @@ class MedicalRecordController extends Controller
             'totalRmPages' => $totalRmPages,
             'rmPageNumbers' => $rmPageNumbers,
             'nextRmPageNumber' => $nextRmPageNumber,
+            'handwritingRecord' => $handwritingRecord,
+            'handwritingFormRecord' => $handwritingFormRecord,
+            'handwritingFormVisit' => $handwritingFormVisit,
+            'prevRmPage' => $prevRmPage,
+            'nextRmPage' => $nextRmPage,
+            'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
         ]);
     }
 
-    public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit): RedirectResponse
+    public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): RedirectResponse
     {
-        $this->authorize('create', [MedicalRecord::class, $clinicVisit]);
+        $patientId = $clinicVisit->patient_id;
+        $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId) ?? $clinicVisit;
+        $sourceVisitId = $request->integer('source_visit_id') ?: $clinicVisit->id;
 
-        // Sprint 64.0 — idempotent open/create. UNIQUE(clinic_visit_id) means a
-        // visit owns at most one sheet. If this visit already has one (e.g. the
-        // empty-state "Buat Lembar RM Pertama" button raced, or "Tambah Lembar"
-        // pointed at an existing sheet), just activate it — never create a
-        // duplicate. The patient-centric show() then resolves the active sheet.
-        $existing = $this->medicalRecords->findByVisitId($clinicVisit->id);
+        $patientHasSheets = MedicalRecord::query()
+            ->where('patient_id', $patientId)
+            ->whereIn('branch_id', $workspace->rmeBranchIds())
+            ->exists();
+
+        // Sprint 64.0.2 — the handwriting RM book starts on the canonical visit
+        // when the patient has zero sheets. Per-visit "Tambah Lembar RM" (when
+        // sheets already exist) still creates on the submitted visit.
+        $targetVisit = $patientHasSheets ? $clinicVisit : $canonicalVisit;
+
+        $this->authorize('create', [MedicalRecord::class, $targetVisit]);
+
+        $existing = $this->medicalRecords->findByVisitId($targetVisit->id);
 
         if ($existing === null) {
-            $this->service->createDraft($clinicVisit, auth()->id(), $request->validated());
+            $this->service->createDraft($targetVisit, auth()->id(), array_merge(
+                $request->validated(),
+                ['source_visit_id' => $sourceVisitId],
+            ));
             $status = 'Rekam medis berhasil dibuat.';
         } else {
             $status = 'Rekam medis sudah ada untuk kunjungan ini.';
         }
 
+        $redirectVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId) ?? $targetVisit;
+        $redirectParams = [$redirectVisit];
+        if ($sourceVisitId !== $redirectVisit->id) {
+            $redirectParams['source_visit_id'] = $sourceVisitId;
+        }
+
         return redirect()
-            ->route('rme.visits.medical-record.show', $clinicVisit)
+            ->route('rme.visits.medical-record.show', $redirectParams)
             ->with('status', $status);
     }
 
