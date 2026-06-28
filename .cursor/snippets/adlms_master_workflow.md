@@ -1,136 +1,157 @@
-# ADLMS MASTER WORKFLOW
+# DaengtisiaMS Master Workflow (Cursor Snippet)
 
-Paste this snippet at the beginning of every ADLMS Codex/Cursor implementation prompt.
+Paste snippet ini di awal setiap task implementasi besar di Cursor.
 
-You are working on ADLMS, the Asia Dental Lab Management System: a Laravel modular monolith for multi-branch dental laboratory operations. Treat this repository as production-adjacent. Make small, scoped, tested changes. Preserve completed sprint contracts.
+Kamu bekerja pada **Daengtisia Management System (DaengtisiaMS)** — sebelumnya ADLMS. Laravel 12 modular monolith untuk Klinik Gigi Daengtisia multi-cabang. Repo: `~/Projects/new_lab_app`. Perlakukan sebagai production-adjacent: patch kecil, ter-scope, ditest.
 
-## Mandatory Read Workflow
+---
 
-Before analysis, planning, or coding, read these files in this order:
+## Knowledge base
 
-1. `AGENTS.md`
-2. `docs/ai_bootstrap_prompt.md`
-3. `docs/inventory_rules.md`
-4. `docs/sprint_history.md`
-5. `graphify-out/GRAPH_REPORT.md`
-6. `.cursor/memory/*` if present
+Baca sesuai task (urutan minimum):
+1. `docs/ai-knowledge/01_DaengtisiaMS_Master_Context.md`
+2. `docs/ai-knowledge/03_DaengtisiaMS_Tech_Stack_Architecture.md`
+3. `docs/ai-knowledge/07_DaengtisiaMS_Branch_Context_Rules.md`
+4. Dokumen modul di `docs/ai-knowledge/` (08–20) sesuai domain
+5. `docs/architecture_rules.md`, `docs/inventory_rules.md` (jika inventory)
+6. `docs/sprint_history.md`, `CLAUDE.md` untuk kontrak sprint
 
-Also inspect the target module, related routes, policies, requests, services, repositories, views, tests, and migrations before changing files. For branch-owned work, inspect `app/Modules/Branch/Services/BranchContext.php`.
+Index lengkap: `docs/ai-knowledge/README.md`
 
-If `graphify-out/GRAPH_REPORT.md` is stale compared with the current commit, say so and rely on the current code and docs as source of truth.
+---
 
-## Operating Modes
+## Aturan kerja sprint
 
-Use these internal modes whenever relevant:
+- Base branch stabil: `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` — **jangan target `main`** kecuali diinstruksikan
+- Scope sprint eksplisit — no scope creep ke sprint future
+- Hotfix/spec terbaru mengalahkan dokumen lama (contoh: partial payment completes visit)
+- Jangan reopen SOAP di UI dokter; handwriting RM adalah input klinis primer
+- Dokumentasi sprint baru → update `docs/ai-knowledge/24_*` jika keputusan permanen
 
-- CONTEXT-MODE: load project rules, architecture, inventory rules, sprint history, graph context, and target module context before implementation.
-- CLAUDE-MEM MODE: read `.cursor/memory/*` and use it as durable project context. If memory conflicts with current docs or code, current docs/code win.
-- SUPERPOWER MODE: inspect related files first, make minimal safe changes, preserve completed sprint contracts, add or update tests, and run applicable quality gates.
-- FRONTEND-DESIGN MODE: for UI, Blade, sidebar, layout, dashboard, and navigation work, keep the UI operational, permission-gated, mobile responsive, and aligned with the ADLMS design system.
+---
 
-## Architecture Rules
+## Aturan sebelum coding
 
-Always preserve:
+1. `git status --short` + `git diff --stat` pada file relevan
+2. Identifikasi modul: `app/Modules/<Module>/`
+3. Cek route: `php artisan route:list | rg keyword`
+4. Cek policy, permission, migration, test existing
+5. Rencana max 5 bullet + file list + test plan + risk
+6. **Tunggu approval** jika workflow bootstrap (`docs/ai_bootstrap_prompt.md`) aktif
 
-- Laravel modular monolith under `app/Modules`.
-- Flow: Controller -> Form Request -> Service -> Repository -> Model.
-- Business logic in Services.
-- Queries and persistence in Repositories.
-- Validation in Form Requests.
-- Authorization through Policies/Gates and Spatie permissions.
-- Repository interfaces and provider bindings where the module uses them.
-- Branch-owned data resolved through `BranchContext`; never trust submitted `branch_id`.
-- Multi-branch isolation; cross-branch leakage is a critical bug.
+---
 
-Never:
+## Aturan membaca konteks
 
-- Put business logic in controllers or Blade.
-- Query branch-owned data without branch scope.
-- Bypass policies or permissions.
-- Introduce a new framework or parallel architecture.
-- Modify unrelated files or revert unrelated user changes.
-- Touch the HR module unless the prompt explicitly scopes HR work.
+- Prioritas: **kode > migration > test > docs/ai-knowledge > docs lama**
+- `docs/database_schema.md` V1 tidak lengkap untuk RME/inventory modern
+- Gunakan `graphify query "..."` untuk navigasi arsitektur
+- Jangan scan vendor, node_modules, storage, graphify-out penuh
+- Context-mode: `ctx_execute` untuk output terminal besar
 
-## Inventory Non-Negotiable Rules
+---
 
-Inventory remains ledger-only.
+## Aturan tidak merusak ledger inventory
 
-- Never add mutable stock columns.
-- Stock = `SUM(quantity_in) - SUM(quantity_out)`.
-- Do not update stock directly.
-- Do not read stock from product/location/batch balance columns.
-- Do not create inventory movements unless explicitly required by sprint scope.
-- Every stock-affecting movement must be branch-owned, location-aware, product-aware, and transactional.
-- Use `BranchContext` for branch-owned inventory operations.
-- Use Form Requests for validation.
-- Use Policies for authorization.
-- Use Services for business rules and workflow transitions.
-- Preserve multi-branch isolation.
-- Preserve location isolation.
-- Reject inactive products and inactive locations for stock operations.
-- Reject zero or negative quantities.
-- Prevent negative stock whenever an outbound operation is in scope.
-- Do not implement manual transfer as adjustment-out plus adjustment-in guidance.
+```text
+STOCK = SUM(quantity_in) - SUM(quantity_out)
+```
 
-## Sprint Baseline
+- **Jangan** tambah kolom `current_stock`, `qty_on_hand`, dll.
+- **Jangan** update stok langsung di model produk
+- Semua perubahan stok via `trx_inventory_movements`
+- Types: OPENING, PURCHASE, ADJUSTMENT_IN/OUT, TRANSFER_IN/OUT
+- Opname: ledger post hanya saat finalize
+- Transfer: ship/receive via `StockTransferService` — bukan adjustment manual
+- Test ledger wajib untuk perubahan inventory
 
-Treat these sprint contracts as completed baselines:
+---
 
-- Sprint 12 Inventory Core complete.
-- Sprint 13 Stock Opname complete.
-- Sprint 14 Stock Transfer complete.
-- Sprint 15.2 Transfer Receiving complete.
-- Sprint 15.3 Batch & Lot complete.
-- Sprint 15.4 Reorder & Alerts complete.
-- Sprint 15.5 Analytics complete.
-- Sprint 15.6 Inventory Advanced Hardening complete.
+## Aturan branch isolation
 
-Important transfer baseline:
+- Resolver: `app/Modules/Branch/Services/BranchContext.php`
+- `requireId()` di setiap service write branch-owned
+- **Jangan** percaya `$request->input('branch_id')`
+- Repository: param pertama `int $branchId`, `findInBranch()`
+- Cross-branch hanya dengan permission eksplisit (Owner analytics, RM lookup Sprint 57)
+- Test branch isolation wajib
 
-- Sprint 14 introduced stock transfer.
-- Sprint 15.2 superseded the original single-step completion workflow with a two-phase ship/receive workflow.
-- Preserve the current repo's transfer statuses, routes, service methods, policies, and tests. Do not reintroduce removed legacy workflows unless explicitly requested and validated against sprint history.
+---
 
-## Output Before Coding
+## Aturan RME / consent / payment
 
-Before making changes, output:
+Pipeline: Pendaftaran → Antrian → Ruangan → RM + Odontogram → `cashier_pending` → Kasir → `completed`
 
-- Files reviewed.
-- Existing patterns found.
-- Risks.
-- Planned implementation.
+- Middleware `visit.room` sebelum RM/Odontogram (pre-exam)
+- Handwriting wajib sebelum finalize RM
+- Doctor **tidak** boleh `in_progress` → `completed` langsung
+- Visit `completed` via `RmePaymentService` setelah payment (PAID atau PARTIAL)
+- Consent gate pada payment
+- Piutang carry-over visit baru: opt-in, server-side IDOR protection
+- KTP: mask di UI/export — tidak render penuh
+- Lab: `LabCaseCandidate` setelah RME PAID — bukan auto LabOrder
 
-The plan must identify:
+---
 
-- Affected module(s).
-- Affected services.
-- Affected repositories/interfaces.
-- Affected policies/permissions.
-- Affected requests.
-- Affected views/components, if UI is touched.
-- Tests to add or update.
-- Quality gates to run.
-- Out-of-scope items.
+## Aturan testing
 
-## Implementation Discipline
+```bash
+php artisan test --filter=<Module>
+./vendor/bin/pint --dirty
+```
 
-When implementation is approved or clearly requested:
+- Pest feature tests: happy path, validation, auth, branch isolation
+- Inventory: ledger correctness
+- Tes berat full suite: Ubuntu terminal biasa (bukan IDE terminal)
+- Jangan claim pass tanpa run
+- Dusk smoke: `tests/Browser/Rme*` jika UI kritis
 
-1. Keep changes minimal and scoped.
-2. Follow existing module conventions.
-3. Prefer existing services, repositories, policies, requests, factories, and helpers.
-4. Add focused tests for happy path, validation failure, authorization, branch isolation, and ledger correctness when inventory is touched.
-5. Run requested gates and report results honestly.
-6. Before final response, verify no mutable stock columns, no direct stock mutation, no branch leakage, and no unrelated app-code changes.
+---
 
-## Final Response Checklist
+## Aturan PR
 
-Report:
+- PR kecil, reviewable — satu concern per PR jika memungkinkan
+- Summary: files, tests, risks, manual checks
+- Tidak commit otomatis kecuali user minta
+- `gh pr create` dengan test plan checklist
+- Quality gates hijau sebelum merge claim
 
-- Files created/updated.
-- Summary of behavior or documentation changed.
-- Tests added/updated, if any.
-- Commands run.
-- Quality gate results.
-- Assumptions.
-- Risks.
+---
+
+## Aturan deploy
+
+- Baca `docs/ai-knowledge/23_DaengtisiaMS_Deployment_VPS_Runbook.md`
+- **Backup DB wajib** sebelum pull/migrate di VPS
+- `php artisan migrate --force` only — **never** `migrate:fresh` / `db:wipe` di VPS
+- Path contoh: `/var/www/asia-dental-lab-v2`
+- `composer install`, `npm run build`, cache, storage permissions, php-fpm/nginx reload
+- Smoke test pasca deploy
+- Rollback plan documented
+
+---
+
+## Checklist final (sebelum claim done)
+
+- [ ] Hanya file scope yang berubah
+- [ ] Controller → Service → Repository dihormati
+- [ ] BranchContext & policy OK
+- [ ] Ledger tidak dilanggar (jika inventory)
+- [ ] RME gates intact (jika RME)
+- [ ] Test relevan dijalankan & dilaporkan jujur
+- [ ] Pint clean
+- [ ] `graphify update .` jika kode berubah
+- [ ] Tidak ada KTP/PII leak di UI/export baru
+- [ ] Summary: files, tests, commands, assumptions, risks
+
+---
+
+## Output format respons
+
+Setelah task:
+- Files changed
+- Tests added/updated
+- Commands run (dengan hasil jujur)
+- Assumptions
+- Risks / follow-up
+
+Prompt templates lengkap: `docs/ai-knowledge/25_DaengtisiaMS_AI_Workflow_Prompts.md`
