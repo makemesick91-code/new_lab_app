@@ -137,7 +137,21 @@
                 </div>
             @endif
 
-            @include('rme.visits.partials.odontogram-selected-results', ['odontogram' => $odontogram])
+            {{-- Sprint 63.1 — structured Daengtisia odontogram (visual + DMF-T + legend + table).
+                 Reuses the same formatter/partial as the standalone print; the clinic header is
+                 suppressed because the print bundle already renders its own header. --}}
+            @php
+                $odontogramPrint = $odontogramPrint
+                    ?? app(\App\Modules\Odontogram\Services\OdontogramPrintFormatter::class)->format($odontogram);
+            @endphp
+            @include('rme.visits.odontogram.partials.structured-print-template', [
+                'structured' => $odontogramPrint,
+                'patientName' => $visit->patient?->name ?? '—',
+                'rmNumber' => $visit->patient?->medical_record_number ?? '—',
+                'branchTitle' => strtoupper($visit->branch?->name ?: 'Telkomas'),
+                'showHeader' => false,
+                'showVisual' => true,
+            ])
         </div>
     @else
         <div class="not-available">Belum ada data odontogram. Odontogram belum tersedia.</div>

@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
+use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -60,13 +61,15 @@ class OdontogramController extends Controller
             ->with('status', 'Odontogram berhasil difinalisasi.');
     }
 
-    public function print(Odontogram $odontogram): View
+    public function print(Odontogram $odontogram, OdontogramPrintFormatter $formatter): View
     {
         $this->authorize('print', $odontogram);
 
-        $odontogram->load(['clinicVisit.patient', 'clinicVisit.doctor', 'finalizer']);
+        $odontogram->load(['clinicVisit.patient', 'clinicVisit.doctor', 'clinicVisit.branch', 'finalizer']);
         $clinicVisit = $odontogram->clinicVisit;
 
-        return view('rme.visits.odontogram.print', compact('odontogram', 'clinicVisit'));
+        $structured = $formatter->format($odontogram);
+
+        return view('rme.visits.odontogram.print', compact('odontogram', 'clinicVisit', 'structured'));
     }
 }

@@ -7820,3 +7820,29 @@ payment/receivable logic from Sprint 62.1/62.2 changed; no RME gate weakened.
 **Tests:** `tests/Feature/Patient/LegacyPatientBatchImportTest.php` (24 passed). Regression green:
 Patient 236, ClinicVisit 82, MedicalRecord 121, Permission 212, RME dir suite. `pint --dirty`
 + `git diff --check` clean.
+
+## Sprint 63.1 — Structured Odontogram Print Template Conversion (2026-06-28)
+
+Branch `feature/sprint-63-1-structured-odontogram-print-template-conversion` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`; do NOT target main).
+Spec: `docs/sprint_63_1_structured_odontogram_print_template_conversion_spec.md`. Presentation-only:
+renders already-saved structured odontogram data (`trx_odontograms.tooth_map_payload`) into the
+Daengtisia print/PDF layout. **No handwriting/canvas/OCR/AI. No migration. No data mutation. No
+external dependency. KTP/NIK never rendered.**
+
+New read-only formatter `App\Modules\Odontogram\Services\OdontogramPrintFormatter` builds the FDI
+visual jaw rows (center→outer), delegates DMF-T to `Odontogram::dmftCounts()` (D=caries, M=missing,
+F=filling/crown/root_treated; normal/untouched/unknown excluded — unknown status degrades to the
+default cell and never inflates DMF-T), and builds one-row-per-tooth ascending GIGI/DIAGNOSA/
+PERAWATAN/DOKTER rows. New shared dompdf-safe partial
+`resources/views/rme/visits/odontogram/partials/structured-print-template.blade.php` renders header
+(optional)/visual/DMF-T/legend/table using **HTML `<table>` cells — no flexbox** (continuation via
+`thead{display:table-header-group}` + `tr{page-break-inside:avoid}`). Standalone print
+(`rme.odontograms.print`) and the combined visit print/PDF bundle (`rme.visits.print` /
+`rme.visits.pdf` via `resolvePrintViewData()` → `print-body`) both consume the same formatter +
+partial; the now-redundant `odontogram-selected-results.blade.php` was removed. Generated on demand;
+nothing stored.
+
+**Tests:** new `tests/Feature/RME/StructuredOdontogramPrintTemplateTest.php` (11 passed, incl. dompdf
+render + KTP/NIK absence). Regression green: Odontogram filter 155, RME dir 833, print/merge/pdf
+regression 55. `pint --dirty` + `git diff --check` clean.
