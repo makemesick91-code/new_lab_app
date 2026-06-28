@@ -13,6 +13,7 @@ use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
@@ -308,11 +309,19 @@ class ClinicVisitController extends Controller
 
         $payment = $paidInvoice?->payments->first();
 
+        // Sprint 63.1 — structured odontogram print view-model (visual + DMF-T +
+        // legend + table), generated on demand from saved data. Null when the
+        // visit has no odontogram yet.
+        $odontogramPrint = $clinicVisit->odontogram
+            ? app(OdontogramPrintFormatter::class)->format($clinicVisit->odontogram)
+            : null;
+
         return [
             'visit' => $clinicVisit,
             'paidInvoice' => $paidInvoice,
             'payment' => $payment,
             'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
+            'odontogramPrint' => $odontogramPrint,
         ];
     }
 }
