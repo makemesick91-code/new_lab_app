@@ -7846,3 +7846,47 @@ nothing stored.
 **Tests:** new `tests/Feature/RME/StructuredOdontogramPrintTemplateTest.php` (11 passed, incl. dompdf
 render + KTP/NIK absence). Regression green: Odontogram filter 155, RME dir 833, print/merge/pdf
 regression 55. `pint --dirty` + `git diff --check` clean.
+
+## Sprint 64.0 — Patient-Centric RM Workspace with Swipeable Sheets (2026-06-28)
+
+Branch `feature/sprint-64-0-patient-centric-rm-workspace-swipeable-sheets` (base
+`feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`, HEAD `5b60450`; do NOT
+target main). Spec: `docs/sprint_64_0_patient_centric_rm_workspace_swipeable_sheets_spec.md`. Turns
+visit-centric RM navigation into a patient-centric workspace: **1 pasien = 1 buku RM = banyak lembar
+RM (1 lembar per kunjungan, UNIQUE(clinic_visit_id) preserved).** No data deleted, no payment/consent/
+room/odontogram/print regression, KTP/NIK never rendered, no HR scope.
+
+**Migration (additive only — `migrate`, never `migrate:fresh`/`db:wipe`):**
+`2026_06_28_100001_add_workspace_columns_to_trx_medical_records_table` adds nullable indexed
+`canonical_visit_id`, `source_visit_id`, `sheet_number` to `trx_medical_records`. No drops, no NOT
+NULL, no backfill; legacy rows keep working with NULLs.
+
+**Model:** `MedicalRecord` gains `canonical_visit_id`/`source_visit_id`/`sheet_number` (fillable +
+`sheet_number` int cast) and `canonicalVisit()` / `sourceVisit()` relations; `clinicVisit()` unchanged.
+
+**Resolver:** new `App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver` (read-side, scoped to
+`BranchService::rmeEnabledIds()`, MAIN excluded). `resolveCanonicalVisit()` = earliest non-cancelled
+RME-branch visit **with an MR** (visit_date,id); `sheetsForPatient()` = chronological sheet list;
+`resolveSourceVisit()` = IDOR-validated source visit (same patient + RME branch, else null);
+`nextSheetNumber()`, `pickCanonicalVisitId()`, and `stampWorkspaceFields()` (lazy backfill, no-op once
+stamped).
+
+**Redirect/workspace:** `MedicalRecordController@show` resolves the canonical visit; a non-canonical
+visit 302-redirects to the canonical URL with `?source_visit_id=` (deterministic anchor → no loop).
+The canonical page renders the workspace: active sheet = `?sheet=` → source visit's sheet → canonical
+sheet → first; the active sheet's OWN visit drives the header + update/finalize/handwriting forms, so
+finalize transitions only that visit (Sprint 62.1 doctor→cashier gate intact). `createDraft` stamps
+canonical/source/sheet_number; `updateDraft`/`finalize` lazily backfill. Within-sheet canvas
+pagination (`?rm_page=`, Sprint 60) now scoped to the active sheet and linked via the canonical URL.
+
+**UI:** new partial `resources/views/rme/visits/partials/rm-sheet-nav.blade.php` ("Buku RM Pasien"):
+sheet tabs + prev/next + **touch swipe** (no new JS dep) + "Tambah Lembar RM" (only when the source
+visit has no sheet) + opened-from-later-visit notice; active sheet persisted via URL `?sheet=` with
+`sessionStorage` (`rmws:{patientId}:sheet`/`:scroll`) scroll restore; read-only for view-only users.
+Per-visit print/PDF untouched.
+
+**Tests:** new `tests/Feature/RME/PatientCentricRmWorkspaceTest.php` (17). Updated for the new nav model:
+3 Sprint 59 RM-nav tests, 1 Sprint 60 multipage nav assertion, 1 ClinicVisit control-RM test (now
+`followingRedirects()`). Green: PatientCentricRmWorkspace 17, RME dir 857, CashierBilling 33,
+Odontogram 162, MR/print regression 163. `pint --dirty` + `git diff --check` clean. Pending review —
+no PR/merge/tag/deploy.

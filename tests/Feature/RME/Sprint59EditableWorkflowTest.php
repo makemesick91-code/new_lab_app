@@ -51,56 +51,50 @@ function makePatientVisitSeries(Branch $branch, int $count = 3): array
 }
 
 // ─── Navigation: Medical Record page ─────────────────────────────────────────
+// Sprint 64.0 superseded the Sprint 59 per-visit prev/next arrows with the
+// patient-centric RM workspace: any later visit redirects to the canonical
+// (earliest) visit's workspace, where sheets are swiped instead of visits.
 
-it('RM page shows prev/next links to adjacent visits of the same patient', function () {
+it('RM page redirects a later visit to the canonical patient workspace', function () {
     [$patient, $visits] = makePatientVisitSeries($this->branch);
     [$older, $middle, $newer] = $visits;
 
+    // Later visits bounce to the earliest visit's workspace, carrying source.
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $middle))
+        ->assertRedirect(route('rme.visits.medical-record.show', [$older, 'source_visit_id' => $middle->id]));
+
+    // The canonical visit renders the one-book workspace with every sheet.
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', $older))
         ->assertOk()
-        ->assertSee('Kunjungan Sebelumnya')
-        ->assertSee('Kunjungan Berikutnya')
-        // Prev points to the older visit, next to the newer visit (same patient).
-        ->assertSee(route('rme.visits.medical-record.show', $older), false)
-        ->assertSee(route('rme.visits.medical-record.show', $newer), false);
+        ->assertSee('Buku RM Pasien')
+        ->assertSee('Lembar 1')
+        ->assertSee('Lembar 3');
 });
 
-it('RM page disables prev on the earliest visit and next on the latest visit', function () {
+it('RM workspace disables the previous-sheet control on the first sheet', function () {
     [$patient, $visits] = makePatientVisitSeries($this->branch);
-    [$older, $middle, $newer] = $visits;
+    [$older] = $visits;
 
-    // Earliest visit → previous arrow is disabled, but a next link exists.
+    // On the first sheet, "Lembar Sebelumnya" is disabled but "Berikutnya" works.
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $older))
         ->assertOk()
         ->assertSee('aria-disabled="true"', false)
-        ->assertSee(route('rme.visits.medical-record.show', $middle), false);
-
-    // Latest visit → next arrow is disabled, but a previous link exists.
-    $this->actingAs($this->manager)
-        ->get(route('rme.visits.medical-record.show', $newer))
-        ->assertOk()
-        ->assertSee('aria-disabled="true"', false)
-        ->assertSee(route('rme.visits.medical-record.show', $middle), false);
-
-    // Middle visit → both arrows active, neither disabled.
-    $this->actingAs($this->manager)
-        ->get(route('rme.visits.medical-record.show', $middle))
-        ->assertOk()
-        ->assertDontSee('aria-disabled="true"', false);
+        ->assertSee('Lembar Berikutnya');
 });
 
-it('RM navigation never crosses to a different patient', function () {
+it('RM workspace never shows another patient sheets', function () {
     [$patientA, $visitsA] = makePatientVisitSeries($this->branch);
     [$patientB, $visitsB] = makePatientVisitSeries($this->branch);
 
     $response = $this->actingAs($this->manager)
-        ->get(route('rme.visits.medical-record.show', $visitsA[1]))
+        ->get(route('rme.visits.medical-record.show', $visitsA[0]))
         ->assertOk();
 
     foreach ($visitsB as $visitB) {
-        $response->assertDontSee(route('rme.visits.medical-record.show', $visitB), false);
+        $response->assertDontSee($visitB->visit_number);
     }
 });
 

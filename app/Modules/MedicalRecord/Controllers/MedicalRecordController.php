@@ -4,13 +4,13 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
-use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\StoreMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -45,39 +45,90 @@ class MedicalRecordController extends Controller
         ]);
     }
 
-    public function show(Request $request, ClinicVisit $clinicVisit): View
+    public function show(Request $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): View|RedirectResponse
     {
-        $medicalRecord = $this->medicalRecords->findByVisitId($clinicVisit->id);
+        $clinicVisit->loadMissing('patient');
+        $patientId = $clinicVisit->patient_id;
 
-        abort_if($medicalRecord === null, 404);
+        // Sprint 64.0 — patient-centric redirect. Any visit's RM URL resolves to
+        // the patient's canonical workspace: the earliest non-cancelled RME visit
+        // REGARDLESS of whether an MR exists yet (zero-MR fix). When the opened
+        // visit is NOT canonical, bounce to the canonical URL carrying
+        // source_visit_id so a new sheet defaults to the visit the doctor came
+        // from. Deterministic anchor → no redirect loop. Null anchor only when
+        // the opened visit is not an eligible RME-branch visit → 404 as before.
+        $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId);
+        abort_if($canonicalVisit === null, 404);
 
-        $this->authorize('view', $medicalRecord);
+        if ($canonicalVisit->id !== $clinicVisit->id) {
+            return redirect()->route('rme.visits.medical-record.show', [
+                $canonicalVisit,
+                'source_visit_id' => $clinicVisit->id,
+            ]);
+        }
 
-        // Sprint 59.2 — the Medical Record page no longer renders the patient
-        // visit history or the typed notes section, so only the relationships
-        // still used by the header are eager-loaded. The patientVisitHistory
-        // query is dropped here (the removed history card was its only
-        // consumer), cutting unnecessary per-page load.
-        // Hotfix 60.5 — `branch` is eager-loaded so the RM canvas/template can
-        // render the branch-aware official Daengtisia header
-        // ("CABANG {BRANCH} KLINIK GIGI DAENGTISIA").
-        $clinicVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf', 'branch']);
+        $workspaceVisit = $canonicalVisit;
 
-        // Prev/next arrow navigation restricted to visits that already have a
-        // medical record, so the target RM page never 404s (Sprint 59).
-        $adjacentVisits = app(ClinicVisitService::class)
-            ->adjacentVisits($clinicVisit, requireMedicalRecord: true);
+        // All sheets of the patient, chronological (swipe order).
+        $sheets = $workspace->sheetsForPatient($patientId);
 
-        // Sprint 60.1 — single active RM canvas pagination. The edit page must
-        // load/render only ONE RM page canvas at a time; the rest are reached
-        // through pagination (?rm_page=). `orderedHandwritingPages()` is still
-        // used here for the lightweight page metadata (no <img> is rendered for
-        // it), giving the total count and which pages exist. The selected page
-        // comes from ?rm_page=, then a flashed `focus_rm_page` (so a save/add
-        // lands on the page that was just written without changing the redirect
-        // URL), defaulting to Page 1. It is clamped to the available range so a
-        // stale/invalid value never renders a non-existent page.
-        $rmPages = $medicalRecord->orderedHandwritingPages();
+        // The visit the doctor opened the workspace from (IDOR-validated).
+        $sourceVisit = $workspace->resolveSourceVisit($patientId, $request->integer('source_visit_id') ?: null);
+
+        // Sprint 64.0 zero-MR fix — the patient has visits but no RM sheet yet.
+        // Render a safe empty-state workspace shell (no $medicalRecord) instead
+        // of 404ing, with an opt-in "Buat Lembar RM Pertama" control for users
+        // who may manage RME. The first sheet is created against the source
+        // visit (the one the doctor came from) or the canonical visit otherwise.
+        if ($sheets->isEmpty()) {
+            $this->authorize('viewAny', MedicalRecord::class);
+
+            $addSheetVisit = $sourceVisit ?? $workspaceVisit;
+            $addSheetVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'branch']);
+
+            return view('rme.visits.medical-record.empty', [
+                'workspaceVisit' => $workspaceVisit,
+                'sourceVisit' => $sourceVisit,
+                'addSheetVisit' => $addSheetVisit,
+                'patient' => $addSheetVisit->patient,
+                'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $addSheetVisit]) ?? false,
+            ]);
+        }
+
+        // Active sheet: explicit ?sheet=, else the source visit's sheet, else the
+        // canonical visit's sheet, else the first sheet. Always validated against
+        // the patient's own sheet set (no cross-patient access).
+        $activeSheet = null;
+        if ($request->integer('sheet')) {
+            $activeSheet = $sheets->firstWhere('id', $request->integer('sheet'));
+        }
+        if ($activeSheet === null && $sourceVisit !== null) {
+            $activeSheet = $sheets->firstWhere('clinic_visit_id', $sourceVisit->id);
+        }
+        if ($activeSheet === null) {
+            $activeSheet = $sheets->firstWhere('clinic_visit_id', $workspaceVisit->id) ?? $sheets->first();
+        }
+
+        $this->authorize('view', $activeSheet);
+
+        // The active sheet's OWN visit drives the header + the update/finalize/
+        // handwriting forms, so finalize transitions only that visit (gate intact).
+        $medicalRecord = $activeSheet;
+        $activeVisit = $activeSheet->clinicVisit;
+        $activeVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'followUpOf', 'branch']);
+
+        // "Tambah Lembar RM" target — the source visit when it has no sheet yet.
+        $addSheetVisit = ($sourceVisit !== null && $sheets->firstWhere('clinic_visit_id', $sourceVisit->id) === null)
+            ? $sourceVisit
+            : null;
+
+        $notice = ($sourceVisit !== null && $sourceVisit->id !== $workspaceVisit->id)
+            ? 'Anda membuka RM pasien dari Kunjungan #'.$sourceVisit->visit_number.'. Lembar baru akan ditautkan ke kunjungan ini.'
+            : null;
+
+        // Sprint 60.1 — single active RM canvas pagination, now scoped to the
+        // ACTIVE sheet's medical record (not the canonical visit's).
+        $rmPages = $activeSheet->orderedHandwritingPages();
         $totalRmPages = max($rmPages->count(), 1);
 
         $activePageNumber = $request->integer('rm_page')
@@ -90,27 +141,45 @@ class MedicalRecordController extends Controller
         $rmPageNumbers = $rmPages->pluck('page_number');
         $nextRmPageNumber = ($rmPages->max('page_number') ?? 1) + 1;
 
-        return view('rme.visits.medical-record.show', compact(
-            'clinicVisit',
-            'medicalRecord',
-            'adjacentVisits',
-            'activeRmPage',
-            'activePageNumber',
-            'totalRmPages',
-            'rmPageNumbers',
-            'nextRmPageNumber',
-        ));
+        return view('rme.visits.medical-record.show', [
+            'clinicVisit' => $activeVisit,
+            'medicalRecord' => $medicalRecord,
+            'workspaceVisit' => $workspaceVisit,
+            'sheets' => $sheets,
+            'activeSheet' => $activeSheet,
+            'sourceVisit' => $sourceVisit,
+            'addSheetVisit' => $addSheetVisit,
+            'notice' => $notice,
+            'patient' => $activeVisit->patient,
+            'activeRmPage' => $activeRmPage,
+            'activePageNumber' => $activePageNumber,
+            'totalRmPages' => $totalRmPages,
+            'rmPageNumbers' => $rmPageNumbers,
+            'nextRmPageNumber' => $nextRmPageNumber,
+        ]);
     }
 
     public function store(StoreMedicalRecordRequest $request, ClinicVisit $clinicVisit): RedirectResponse
     {
         $this->authorize('create', [MedicalRecord::class, $clinicVisit]);
 
-        $this->service->createDraft($clinicVisit, auth()->id(), $request->validated());
+        // Sprint 64.0 — idempotent open/create. UNIQUE(clinic_visit_id) means a
+        // visit owns at most one sheet. If this visit already has one (e.g. the
+        // empty-state "Buat Lembar RM Pertama" button raced, or "Tambah Lembar"
+        // pointed at an existing sheet), just activate it — never create a
+        // duplicate. The patient-centric show() then resolves the active sheet.
+        $existing = $this->medicalRecords->findByVisitId($clinicVisit->id);
+
+        if ($existing === null) {
+            $this->service->createDraft($clinicVisit, auth()->id(), $request->validated());
+            $status = 'Rekam medis berhasil dibuat.';
+        } else {
+            $status = 'Rekam medis sudah ada untuk kunjungan ini.';
+        }
 
         return redirect()
             ->route('rme.visits.medical-record.show', $clinicVisit)
-            ->with('status', 'Rekam medis berhasil dibuat.');
+            ->with('status', $status);
     }
 
     public function update(UpdateMedicalRecordRequest $request, ClinicVisit $clinicVisit, MedicalRecord $medicalRecord): RedirectResponse
