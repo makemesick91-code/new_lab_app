@@ -242,7 +242,8 @@
 
             <div
                 id="rm-handwriting-swipe"
-                class="mb-4"
+                class="mb-4 touch-pan-y"
+                data-rm-swipe-zone
                 @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
                 @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
             >
@@ -289,9 +290,9 @@
 
             <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
             {{-- Only the ACTIVE page preview is rendered (single <img>/canvas). --}}
-            <div id="rm-page-previews" class="mx-auto max-w-md">
+            <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y">
                 <figure
-                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
+                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
                     data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
@@ -308,7 +309,8 @@
                     @if ($activeHasContent && $activeSrc)
                         <img src="{{ $activeSrc }}"
                              alt="RME Tulisan Tangan Halaman {{ $activePageNumber }}"
-                             class="block w-full rounded border border-gray-200"
+                             class="block w-full rounded border border-gray-200 pointer-events-none select-none"
+                             draggable="false"
                              style="aspect-ratio:900/1273;object-fit:contain;" />
                     @else
                         <div class="flex items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800"
@@ -640,7 +642,13 @@
                             }
                             openEditor(storagePage, fig.dataset.existingSrc || '');
                         }
-                        fig.addEventListener('click', open);
+                        fig.addEventListener('click', function (e) {
+                            if (window.__rmHandwritingSwipeHandled && window.__rmHandwritingSwipeHandled()) {
+                                e.preventDefault();
+                                return;
+                            }
+                            open();
+                        });
                         fig.addEventListener('keydown', function (e) {
                             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
                         });
@@ -740,32 +748,115 @@
 
                 const prevUrl = zone.dataset.prevUrl || '';
                 const nextUrl = zone.dataset.nextUrl || '';
-                let startX = 0, startY = 0, tracking = false;
+                const MIN_SWIPE = 60;
+                const H_RATIO = 1.5;
+
+                let startX = 0;
+                let startY = 0;
+                let tracking = false;
+                let activePointerId = null;
+                let touchFallbackActive = false;
+                let swipeHandled = false;
 
                 function shouldIgnore(target) {
                     if (!target || !zone.contains(target)) return true;
                     if (target.closest('[data-ignore-swipe]')) return true;
                     if (target.closest('button, a, input, textarea, select, label')) return true;
+                    if (document.getElementById('rm-editor-overlay')?.classList.contains('flex')) return true;
 
                     return false;
                 }
 
-                zone.addEventListener('pointerdown', function (e) {
-                    if (shouldIgnore(e.target)) return;
-                    startX = e.clientX;
-                    startY = e.clientY;
+                function isHorizontalSwipe(dx, dy) {
+                    return Math.abs(dx) >= MIN_SWIPE && Math.abs(dx) > Math.abs(dy) * H_RATIO;
+                }
+
+                function navigate(dx) {
+                    if (dx < 0 && nextUrl) {
+                        swipeHandled = true;
+                        window.location.href = nextUrl;
+                        return true;
+                    }
+                    if (dx > 0 && prevUrl) {
+                        swipeHandled = true;
+                        window.location.href = prevUrl;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                function resetTracking() {
+                    tracking = false;
+                    activePointerId = null;
+                    touchFallbackActive = false;
+                }
+
+                function onGestureEnd(clientX, clientY) {
+                    if (!tracking) return;
+                    const dx = clientX - startX;
+                    const dy = clientY - startY;
+                    resetTracking();
+                    if (!isHorizontalSwipe(dx, dy)) return;
+                    navigate(dx);
+                }
+
+                function onGestureStart(clientX, clientY, target) {
+                    if (shouldIgnore(target)) return;
+                    startX = clientX;
+                    startY = clientY;
                     tracking = true;
+                }
+
+                zone.addEventListener('pointerdown', function (e) {
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    if (shouldIgnore(e.target)) return;
+                    touchFallbackActive = false;
+                    activePointerId = e.pointerId;
+                    onGestureStart(e.clientX, e.clientY, e.target);
+                    if (e.pointerType !== 'mouse') {
+                        try { zone.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+                    }
                 });
 
                 zone.addEventListener('pointerup', function (e) {
-                    if (!tracking) return;
-                    tracking = false;
-                    const dx = e.clientX - startX;
-                    const dy = e.clientY - startY;
-                    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
-                    if (dx < 0 && nextUrl) { window.location.href = nextUrl; }
-                    else if (dx > 0 && prevUrl) { window.location.href = prevUrl; }
+                    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+                    onGestureEnd(e.clientX, e.clientY);
+                    try { zone.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
                 });
+
+                zone.addEventListener('pointercancel', function (e) {
+                    if (activePointerId !== null && e.pointerId !== activePointerId) return;
+                    resetTracking();
+                });
+
+                // Touch fallback when pointer events are cancelled or unavailable on preview surfaces.
+                zone.addEventListener('touchstart', function (e) {
+                    if (activePointerId !== null) return;
+                    if (shouldIgnore(e.target)) return;
+                    const t = e.touches[0];
+                    if (!t) return;
+                    touchFallbackActive = true;
+                    onGestureStart(t.clientX, t.clientY, e.target);
+                }, { passive: true });
+
+                zone.addEventListener('touchend', function (e) {
+                    if (!touchFallbackActive || activePointerId !== null) return;
+                    const t = e.changedTouches[0];
+                    if (!t) return;
+                    onGestureEnd(t.clientX, t.clientY);
+                }, { passive: true });
+
+                zone.addEventListener('touchcancel', function () {
+                    if (!touchFallbackActive || activePointerId !== null) return;
+                    resetTracking();
+                }, { passive: true });
+
+                window.__rmHandwritingSwipeHandled = function () {
+                    if (!swipeHandled) return false;
+                    swipeHandled = false;
+                    return true;
+                };
             })();
             </script>
         </x-ui.card>

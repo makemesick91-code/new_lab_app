@@ -206,6 +206,8 @@ it('renders the handwriting swipe container and hint', function () {
         ->get(route('rme.visits.medical-record.show', [$visit1, 'rm_page' => 1]))
         ->assertOk()
         ->assertSee('id="rm-handwriting-swipe"', false)
+        ->assertSee('data-rm-swipe-zone', false)
+        ->assertSee('touch-pan-y', false)
         ->assertSee('Geser kiri/kanan pada area halaman untuk berpindah halaman.')
         ->assertSee('data-next-url', false);
 });
