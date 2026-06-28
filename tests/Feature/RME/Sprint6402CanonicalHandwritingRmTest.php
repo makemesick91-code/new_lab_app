@@ -212,6 +212,33 @@ it('renders the handwriting swipe container and hint', function () {
         ->assertSee('data-next-url', false);
 });
 
+it('renders handwriting page navigation markers and scroll restore script', function () {
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $visit1 = hw2Visit($this->branch, $patient, now()->subDays(10)->toDateString());
+    $sheet = hw2Sheet($this->branch, $visit1);
+    MedicalRecordHandwriting::factory()->create([
+        'medical_record_id' => $sheet->id,
+        'clinic_visit_id' => $visit1->id,
+        'branch_id' => $visit1->branch_id,
+        'handwriting_path' => 'handwritings/test/p1.png',
+    ]);
+    MedicalRecordHandwritingPage::factory()->create([
+        'medical_record_id' => $sheet->id,
+        'clinic_visit_id' => $visit1->id,
+        'branch_id' => $visit1->branch_id,
+        'page_number' => 2,
+        'handwriting_path' => 'handwritings/test/p2.png',
+    ]);
+
+    $this->actingAs($this->manager)
+        ->get(route('rme.visits.medical-record.show', [$visit1, 'rm_page' => 1]))
+        ->assertOk()
+        ->assertSee('data-rm-page-nav', false)
+        ->assertSee('data-rm-scroll-restore', false)
+        ->assertSee('rememberRmHandwritingScroll', false)
+        ->assertSee('rm_handwriting_scroll_restore', false);
+});
+
 it('exposes previous swipe url only when a previous handwriting page exists', function () {
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = hw2Visit($this->branch, $patient, now()->subDays(10)->toDateString());

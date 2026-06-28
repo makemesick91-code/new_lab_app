@@ -247,9 +247,10 @@
                 @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
                 @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
             >
-            <div id="rm-page-nav" class="flex flex-wrap items-center gap-2">
+            <div id="rm-page-nav" class="flex flex-wrap items-center gap-2" data-rm-page-nav-container>
                 @if ($activePageNumber > 1)
                     <a href="{{ $rmPageUrl($prevPage) }}"
+                       data-rm-page-nav
                        class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Sebelumnya</a>
                 @else
                     <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">&larr; Sebelumnya</span>
@@ -260,6 +261,7 @@
                 <div class="flex flex-wrap items-center gap-1">
                     @foreach ($rmPageNumbers as $pageNo)
                         <a href="{{ $rmPageUrl($pageNo) }}"
+                           data-rm-page-nav
                            data-page-number="{{ $pageNo }}"
                            @class([
                                $navBase,
@@ -273,6 +275,7 @@
 
                 @if ($activePageNumber < $totalRmPages)
                     <a href="{{ $rmPageUrl($nextNavPage) }}"
+                       data-rm-page-nav
                        class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Berikutnya &rarr;</a>
                 @else
                     <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">Berikutnya &rarr;</span>
@@ -741,6 +744,79 @@
                 </script>
             @endif
 
+            <script data-rm-scroll-restore>
+            (function () {
+                const STORAGE_KEY = 'rm_handwriting_scroll_restore';
+                const MAX_AGE_MS = 10000;
+                const HANDWRITING_ID = 'rm-handwriting-swipe';
+
+                function rememberRmHandwritingScroll() {
+                    try {
+                        const zone = document.getElementById(HANDWRITING_ID);
+                        const payload = {
+                            y: window.scrollY || 0,
+                            ts: Date.now(),
+                            path: window.location.pathname + window.location.search,
+                        };
+                        if (zone) {
+                            payload.zoneTop = zone.getBoundingClientRect().top + window.scrollY;
+                        }
+                        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+                    } catch (err) { /* storage unavailable */ }
+                }
+
+                function restoreRmHandwritingScroll() {
+                    try {
+                        const raw = sessionStorage.getItem(STORAGE_KEY);
+                        if (!raw) return;
+                        const data = JSON.parse(raw);
+                        sessionStorage.removeItem(STORAGE_KEY);
+                        if (!data?.ts || Date.now() - data.ts > MAX_AGE_MS) return;
+
+                        function applyRestore() {
+                            const savedY = parseInt(data.y, 10);
+                            if (!Number.isNaN(savedY) && savedY > 50) {
+                                window.scrollTo(0, savedY);
+                                return;
+                            }
+                            const zone = document.getElementById(HANDWRITING_ID);
+                            if (zone) {
+                                zone.scrollIntoView({ block: 'start', behavior: 'instant' });
+                            } else if (!Number.isNaN(savedY) && data.zoneTop > 0) {
+                                window.scrollTo(0, data.zoneTop);
+                            }
+                        }
+
+                        requestAnimationFrame(function () {
+                            applyRestore();
+                            setTimeout(applyRestore, 50);
+                            setTimeout(applyRestore, 200);
+                            const previewImg = document.querySelector('#rm-page-previews img');
+                            if (previewImg && !previewImg.complete) {
+                                previewImg.addEventListener('load', applyRestore, { once: true });
+                            }
+                        });
+                    } catch (err) { /* ignore corrupt payload */ }
+                }
+
+                window.rememberRmHandwritingScroll = rememberRmHandwritingScroll;
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', restoreRmHandwritingScroll);
+                } else {
+                    restoreRmHandwritingScroll();
+                }
+
+                document.addEventListener('DOMContentLoaded', function () {
+                    const nav = document.getElementById('rm-page-nav');
+                    if (!nav) return;
+                    nav.querySelectorAll('a[data-rm-page-nav]').forEach(function (link) {
+                        link.addEventListener('click', rememberRmHandwritingScroll);
+                    });
+                });
+            })();
+            </script>
+
             <script>
             (function () {
                 const zone = document.getElementById('rm-handwriting-swipe');
@@ -774,11 +850,13 @@
                 function navigate(dx) {
                     if (dx < 0 && nextUrl) {
                         swipeHandled = true;
+                        if (window.rememberRmHandwritingScroll) window.rememberRmHandwritingScroll();
                         window.location.href = nextUrl;
                         return true;
                     }
                     if (dx > 0 && prevUrl) {
                         swipeHandled = true;
+                        if (window.rememberRmHandwritingScroll) window.rememberRmHandwritingScroll();
                         window.location.href = prevUrl;
                         return true;
                     }
