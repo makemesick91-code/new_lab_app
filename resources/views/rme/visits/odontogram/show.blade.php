@@ -483,5 +483,49 @@
             @endif
         </x-ui.card>
 
+        {{-- ============================================================ --}}
+        {{-- OUTPUT — read-only saved-result table (Sprint 63.1.1). Sits     --}}
+        {{-- directly under the FDI visual so the lower preview area shows    --}}
+        {{-- both the Peta Gigi diagram AND the saved GIGI / DIAGNOSA /       --}}
+        {{-- PERAWATAN / DOKTER table after a save. Rows are built by the     --}}
+        {{-- Sprint 63.1 OdontogramPrintFormatter (same logic as print/PDF).  --}}
+        {{-- Read-only, derived from saved data only — no input, no mutation. --}}
+        {{-- ============================================================ --}}
+        <x-ui.card title="Hasil Odontogram Tersimpan">
+            @if (! empty($structured['table_rows']))
+                <p class="mb-3 text-xs text-gray-500">
+                    Ringkasan tabel ini dihasilkan otomatis dari odontogram yang tersimpan dan identik dengan
+                    tampilan cetak/PDF. Ubah tabel input di atas lalu simpan untuk memperbaruinya.
+                </p>
+                <div class="overflow-x-auto rounded-lg ring-1 ring-gray-200">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr class="text-left text-[11px] font-medium uppercase tracking-wide text-gray-500">
+                                <th class="px-3 py-2 w-16">GIGI</th>
+                                <th class="px-3 py-2 w-56">DIAGNOSA</th>
+                                <th class="px-3 py-2">PERAWATAN</th>
+                                <th class="px-3 py-2 w-44">DOKTER</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 text-gray-700">
+                            @foreach ($structured['table_rows'] as $row)
+                                <tr class="align-top">
+                                    <td class="px-3 py-2 font-semibold text-gray-900">{{ $row['gigi'] }}</td>
+                                    <td class="px-3 py-2 whitespace-pre-wrap">{{ $row['diagnosa'] !== '' ? $row['diagnosa'] : '—' }}</td>
+                                    <td class="px-3 py-2 whitespace-pre-wrap">{{ $row['perawatan'] !== '' ? $row['perawatan'] : '—' }}</td>
+                                    <td class="px-3 py-2">{{ $row['dokter'] !== '' ? $row['dokter'] : '—' }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                <p class="text-sm text-gray-500 italic">
+                    Belum ada kondisi odontogram yang dipilih. Tabel hasil tersimpan akan muncul otomatis
+                    setelah tabel odontogram disimpan.
+                </p>
+            @endif
+        </x-ui.card>
+
     </div>
 </x-settings-shell>

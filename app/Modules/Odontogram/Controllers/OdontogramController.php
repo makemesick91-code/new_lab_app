@@ -21,7 +21,7 @@ class OdontogramController extends Controller
         private readonly OdontogramService $service,
     ) {}
 
-    public function show(ClinicVisit $clinicVisit): View
+    public function show(ClinicVisit $clinicVisit, OdontogramPrintFormatter $formatter): View
     {
         $this->authorize('create', [Odontogram::class, $clinicVisit]);
 
@@ -36,7 +36,13 @@ class OdontogramController extends Controller
         // requirement is needed here (Sprint 59).
         $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
 
-        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits'));
+        // Sprint 63.1.1 — read-only saved-result table rendered below the visual
+        // preview. Reuses the Sprint 63.1 print formatter row-building logic so the
+        // screen read-back and the print/PDF table stay in lockstep (no duplication,
+        // no mutation, presentation-only).
+        $structured = $formatter->format($odontogram);
+
+        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits', 'structured'));
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse
