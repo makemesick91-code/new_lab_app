@@ -264,7 +264,11 @@ it('shows previous visit reference on control medical record page without mutati
         'doctor_id' => $this->doctor->id,
     ]);
 
+    // Sprint 64.0 — opening a later (control) visit's RM redirects to the
+    // patient's canonical workspace with the control as the active sheet, so the
+    // control header (Jenis Kunjungan / Kontrol dari) still renders.
     $this->actingAs($this->manager)
+        ->followingRedirects()
         ->get(route('rme.visits.medical-record.show', $control))
         ->assertOk()
         ->assertSee('Jenis Kunjungan:')

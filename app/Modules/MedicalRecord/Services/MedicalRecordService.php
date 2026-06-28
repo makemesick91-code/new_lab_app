@@ -18,6 +18,7 @@ class MedicalRecordService
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly BranchService $branches,
         private readonly ClinicVisitService $visitService,
+        private readonly PatientRmWorkspaceResolver $workspace,
     ) {}
 
     /**
@@ -75,8 +76,15 @@ class MedicalRecordService
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
             ]));
 
+            // Sprint 64.0 — stamp the patient-workspace audit columns at create
+            // time. canonical = the true first visit (existing anchor or self);
+            // source = this visit (one sheet per visit); sheet_number = next
+            // per-patient ordinal.
             return $this->medicalRecords->create(array_merge($safe, [
                 'clinic_visit_id' => $clinicVisit->id,
+                'canonical_visit_id' => $this->workspace->pickCanonicalVisitId($clinicVisit),
+                'source_visit_id' => $clinicVisit->id,
+                'sheet_number' => $this->workspace->nextSheetNumber($clinicVisit->patient_id),
                 'branch_id' => $clinicVisit->branch_id,
                 'patient_id' => $clinicVisit->patient_id,
                 'doctor_id' => $clinicVisit->doctor_id,
@@ -111,6 +119,10 @@ class MedicalRecordService
                 'finalized_by' => Auth::id(),
             ]);
 
+            // Sprint 64.0 — lazily backfill workspace audit columns (no-op once
+            // stamped). Finalize transitions only THIS sheet's own visit.
+            $this->workspace->stampWorkspaceFields($finalized);
+
             $visit = $medicalRecord->clinicVisit;
             if ($visit && $visit->status === ClinicVisit::STATUS_IN_PROGRESS) {
                 $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
@@ -144,7 +156,13 @@ class MedicalRecordService
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
             ]));
 
-            return $this->medicalRecords->update($medicalRecord, $safe);
+            $updated = $this->medicalRecords->update($medicalRecord, $safe);
+
+            // Sprint 64.0 — lazily backfill workspace audit columns for legacy
+            // sheets created before this sprint (no-op once stamped).
+            $this->workspace->stampWorkspaceFields($updated);
+
+            return $updated;
         });
     }
 

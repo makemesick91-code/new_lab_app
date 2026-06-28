@@ -25,13 +25,20 @@
                 @endif
             </div>
 
-            {{-- Prev/next visit navigation (same patient, RM page) — Sprint 59 --}}
-            @include('rme.visits.partials.visit-nav-arrows', [
-                'prev' => $adjacentVisits['previous'] ?? null,
-                'next' => $adjacentVisits['next'] ?? null,
-                'routeName' => 'rme.visits.medical-record.show',
-            ])
         </div>
+
+        {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
+        @if (! empty($notice))
+            <div class="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                {{ $notice }}
+            </div>
+        @endif
+
+        {{-- Sprint 64.0 — patient RM workspace sheet navigation (swipe / tabs /
+             prev-next / Tambah Lembar RM). One pasien = one buku RM. --}}
+        @include('rme.visits.partials.rm-sheet-nav', [
+            'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
+        ])
 
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
@@ -219,10 +226,18 @@
                     $prevPage = max(1, $activePageNumber - 1);
                     $nextNavPage = min($totalRmPages, $activePageNumber + 1);
                     $navBase = 'inline-flex items-center justify-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors';
+                    // Sprint 64.0 — canvas-page links stay on the canonical
+                    // workspace URL, keeping the active sheet + source visit so a
+                    // page change never bounces through the per-visit redirect.
+                    $rmPageBase = array_filter([
+                        'sheet' => $medicalRecord->id,
+                        'source_visit_id' => $sourceVisit?->id,
+                    ], fn ($v) => $v !== null);
+                    $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', array_merge([$workspaceVisit], $rmPageBase, ['rm_page' => $page]));
                 @endphp
 
                 @if ($activePageNumber > 1)
-                    <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $prevPage]) }}"
+                    <a href="{{ $rmPageUrl($prevPage) }}"
                        class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Sebelumnya</a>
                 @else
                     <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">&larr; Sebelumnya</span>
@@ -232,7 +247,7 @@
 
                 <div class="flex flex-wrap items-center gap-1">
                     @foreach ($rmPageNumbers as $pageNo)
-                        <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $pageNo]) }}"
+                        <a href="{{ $rmPageUrl($pageNo) }}"
                            data-page-number="{{ $pageNo }}"
                            @class([
                                $navBase,
@@ -245,7 +260,7 @@
                 </div>
 
                 @if ($activePageNumber < $totalRmPages)
-                    <a href="{{ route('rme.visits.medical-record.show', [$clinicVisit, 'rm_page' => $nextNavPage]) }}"
+                    <a href="{{ $rmPageUrl($nextNavPage) }}"
                        class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Berikutnya &rarr;</a>
                 @else
                     <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">Berikutnya &rarr;</span>

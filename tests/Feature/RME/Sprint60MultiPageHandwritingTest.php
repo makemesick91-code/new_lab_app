@@ -272,14 +272,16 @@ it('enforces UNIQUE(medical_record_id, page_number) on the pages table', functio
     ]))->toThrow(QueryException::class);
 });
 
-it('keeps the Informasi Kunjungan biodata table and visit navigation', function () {
+it('keeps the Informasi Kunjungan biodata table and patient RM workspace navigation', function () {
     s60SaveLegacyPageOne($this->record);
 
+    // Sprint 64.0 — the per-visit nav arrows became the patient-centric RM
+    // workspace (one buku RM, swipeable sheets).
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $this->visit))
         ->assertOk()
         ->assertSee('Informasi Kunjungan')
-        ->assertSee('Navigasi kunjungan pasien', false);
+        ->assertSee('Buku RM Pasien');
 });
 
 it('finalize still requires at least one non-blank saved page', function () {

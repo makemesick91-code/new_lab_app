@@ -32,18 +32,40 @@ class MedicalRecord extends Model
     protected $table = 'trx_medical_records';
 
     protected $fillable = [
-        'clinic_visit_id', 'branch_id', 'patient_id', 'doctor_id',
+        'clinic_visit_id', 'canonical_visit_id', 'source_visit_id', 'sheet_number',
+        'branch_id', 'patient_id', 'doctor_id',
         'subjective', 'objective', 'assessment', 'plan', 'notes',
         'status', 'recorded_by', 'finalized_at', 'finalized_by',
     ];
 
     protected $casts = [
         'finalized_at' => 'datetime',
+        'sheet_number' => 'integer',
     ];
 
     public function clinicVisit(): BelongsTo
     {
         return $this->belongsTo(ClinicVisit::class);
+    }
+
+    /**
+     * Sprint 64.0 — the patient RM workspace anchor (earliest non-cancelled RME
+     * visit with an MR). Audit cache only; the live anchor is computed by
+     * PatientRmWorkspaceResolver.
+     */
+    public function canonicalVisit(): BelongsTo
+    {
+        return $this->belongsTo(ClinicVisit::class, 'canonical_visit_id');
+    }
+
+    /**
+     * Sprint 64.0 — the visit this RM sheet was created from. Under the
+     * one-sheet-per-visit rule this equals clinic_visit_id; kept for audit and
+     * forward-compatibility.
+     */
+    public function sourceVisit(): BelongsTo
+    {
+        return $this->belongsTo(ClinicVisit::class, 'source_visit_id');
     }
 
     public function branch(): BelongsTo
