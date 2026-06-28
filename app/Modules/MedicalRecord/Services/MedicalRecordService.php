@@ -80,10 +80,14 @@ class MedicalRecordService
             // time. canonical = the true first visit (existing anchor or self);
             // source = this visit (one sheet per visit); sheet_number = next
             // per-patient ordinal.
+            $sourceVisitId = isset($data['source_visit_id'])
+                ? (int) $data['source_visit_id']
+                : $clinicVisit->id;
+
             return $this->medicalRecords->create(array_merge($safe, [
                 'clinic_visit_id' => $clinicVisit->id,
                 'canonical_visit_id' => $this->workspace->pickCanonicalVisitId($clinicVisit),
-                'source_visit_id' => $clinicVisit->id,
+                'source_visit_id' => $sourceVisitId,
                 'sheet_number' => $this->workspace->nextSheetNumber($clinicVisit->patient_id),
                 'branch_id' => $clinicVisit->branch_id,
                 'patient_id' => $clinicVisit->patient_id,
@@ -168,14 +172,68 @@ class MedicalRecordService
 
     // --- Phase 1.8 alignment helpers (used by Phase 1.9 finalization enforcement) ---
 
+    /**
+     * Sprint 64.0.2 — ensure the canonical visit owns the patient's handwriting
+     * RM book. Creates a draft on the canonical visit when missing; never creates
+     * a duplicate on a later visit.
+     */
+    public function getOrCreateCanonicalMedicalRecord(
+        ClinicVisit $contextVisit,
+        ?int $recordedBy = null,
+        ?int $sourceVisitId = null,
+    ): MedicalRecord {
+        $patientId = $contextVisit->patient_id;
+        $canonicalVisit = $this->workspace->resolveCanonicalWorkspaceVisit($patientId)
+            ?? $contextVisit;
+
+        $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id);
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        return $this->createDraft($canonicalVisit, $recordedBy, array_filter([
+            'source_visit_id' => $sourceVisitId ?? $contextVisit->id,
+        ], fn ($v) => $v !== null));
+    }
+
     public function requiresHandwritingBeforeFinal(): bool
     {
         return true;
     }
 
+    /**
+     * Sprint 64.0.2 — one patient = one handwriting RM book on the canonical
+     * visit. Finalize may proceed when the active sheet OR the canonical book
+     * has at least one saved handwriting page.
+     */
+    public function hasHandwritingForVisitOrCanonicalBook(MedicalRecord $medicalRecord): bool
+    {
+        if ($this->recordHasHandwriting($medicalRecord)) {
+            return true;
+        }
+
+        $canonical = $this->workspace->canonicalMedicalRecord($medicalRecord->patient_id);
+
+        if ($canonical === null || $canonical->is($medicalRecord)) {
+            return false;
+        }
+
+        return $this->recordHasHandwriting($canonical);
+    }
+
     public function hasRequiredHandwriting(MedicalRecord $medicalRecord): bool
     {
-        return $medicalRecord->hasHandwriting();
+        return $this->hasHandwritingForVisitOrCanonicalBook($medicalRecord);
+    }
+
+    private function recordHasHandwriting(MedicalRecord $medicalRecord): bool
+    {
+        if ($medicalRecord->hasHandwriting()) {
+            return true;
+        }
+
+        return $medicalRecord->handwritingPages()->exists();
     }
 
     public function canFinalizeRme(MedicalRecord $medicalRecord): bool

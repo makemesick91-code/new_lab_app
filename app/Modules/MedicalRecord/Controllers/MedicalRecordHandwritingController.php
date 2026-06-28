@@ -7,6 +7,8 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,8 +25,35 @@ class MedicalRecordHandwritingController extends Controller
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
     ) {}
 
-    public function store(Request $request, ClinicVisit $clinicVisit, MedicalRecord $medicalRecord): RedirectResponse
-    {
+    public function store(
+        Request $request,
+        ClinicVisit $clinicVisit,
+        MedicalRecord $medicalRecord,
+        PatientRmWorkspaceResolver $workspace,
+        MedicalRecordService $medicalRecordService,
+    ): RedirectResponse {
+        $pageNumber = (int) ($request->input('page_number') ?? 1);
+
+        // Sprint 64.0.2 — new handwriting pages always persist on the canonical
+        // medical record. Existing legacy pages on later visits may still be
+        // edited in place when the doctor re-saves that virtual page.
+        $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($clinicVisit->patient_id) ?? $clinicVisit;
+        $canonicalRecord = $workspace->canonicalMedicalRecord($clinicVisit->patient_id);
+
+        $isNewCanonicalPage = $canonicalRecord === null
+            || $medicalRecord->id === $canonicalRecord->id
+            || $pageNumber >= $this->handwritings->nextPageNumber($medicalRecord->id);
+
+        if ($isNewCanonicalPage) {
+            $canonicalRecord = $medicalRecordService->getOrCreateCanonicalMedicalRecord(
+                $clinicVisit,
+                Auth::id(),
+                $clinicVisit->id,
+            );
+            $medicalRecord = $canonicalRecord;
+            $clinicVisit = $canonicalVisit;
+        }
+
         abort_if($medicalRecord->clinic_visit_id !== $clinicVisit->id, 404);
 
         $this->authorize('update', $medicalRecord);
@@ -42,7 +71,7 @@ class MedicalRecordHandwritingController extends Controller
             'page_number' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $pageNumber = (int) ($request->input('page_number') ?? 1);
+        // page_number already read above for canonical routing
 
         // The PNG is decoded, validated and blank-guarded identically for every
         // page (Sprint 59.1 guard applies per page), before any storage/DB write.
@@ -67,13 +96,26 @@ class MedicalRecordHandwritingController extends Controller
             $focusPage = $this->savePage($clinicVisit, $medicalRecord, $pageNumber, $path, $hash);
         }
 
+        $handwritingBook = $workspace->orderedHandwritingBookForPatient($medicalRecord->patient_id);
+        $virtualFocus = $handwritingBook->first(
+            fn (array $page) => $page['medical_record_id'] === $medicalRecord->id
+                && (int) $page['storage_page_number'] === $focusPage
+        );
+        $focusVirtualPage = $virtualFocus['virtual_page_number'] ?? $focusPage;
+
+        $redirectVisit = $workspace->resolveCanonicalWorkspaceVisit($medicalRecord->patient_id) ?? $clinicVisit;
+        $sourceVisitId = $request->integer('source_visit_id') ?: null;
+
         // Sprint 60.1 — focus the page that was just saved/added on the next
         // load. Flashed (not added to the redirect URL) so the show page lands
         // on this page while existing redirect-target assertions stay valid.
         return redirect()
-            ->route('rme.visits.medical-record.show', $clinicVisit)
+            ->route('rme.visits.medical-record.show', array_filter([
+                $redirectVisit,
+                'source_visit_id' => $sourceVisitId,
+            ], fn ($v) => $v !== null && $v !== ''))
             ->with('status', 'Tulisan tangan RME berhasil disimpan.')
-            ->with('focus_rm_page', $focusPage);
+            ->with('focus_rm_page', $focusVirtualPage);
     }
 
     /**

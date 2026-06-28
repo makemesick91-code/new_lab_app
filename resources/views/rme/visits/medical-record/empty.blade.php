@@ -1,19 +1,22 @@
 <x-settings-shell title="Rekam Medis">
     {{--
-        Sprint 64.0 zero-MR fix — patient-centric RM workspace empty state.
+        Sprint 64.0 / 64.0.2 — patient-centric RM workspace empty state.
 
-        The patient has visits but no RM sheet yet, so there is no $medicalRecord
-        to render. Instead of 404ing we show a safe workspace shell: one patient =
-        one buku RM, and this book is still empty. Users who may manage RME get a
-        "Buat Lembar RM Pertama" control that creates the first sheet for the
-        source visit (the one the doctor came from) or the canonical visit. KTP /
-        NIK is never rendered.
+        The patient has visits but no RM sheet yet. The handwriting RM book is
+        always anchored to the canonical (first) visit. Users who may manage RME
+        get "Buat Halaman RM Pertama" which creates the canonical medical
+        record. KTP / NIK is never rendered.
     --}}
     <div class="space-y-6">
         <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-900">Buku RM Pasien</h2>
-            <p class="mt-1 text-sm text-gray-500">{{ $addSheetVisit->visit_number }} &mdash; {{ $addSheetVisit->visit_date?->format('d/m/Y') }}</p>
+            <h2 class="mt-1 text-xl font-semibold text-gray-900">Buku RM Tulisan Tangan Pasien</h2>
+            <p class="mt-1 text-sm text-gray-500">{{ $workspaceVisit->visit_number }} &mdash; {{ $workspaceVisit->visit_date?->format('d/m/Y') }}</p>
+            @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
+                <p class="mt-2 text-sm text-sky-800">
+                    Dibuka dari Kunjungan #{{ $sourceVisit->visit_number }}. Buku RM tulisan tangan ditambahkan ke kunjungan pertama pasien.
+                </p>
+            @endif
         </div>
 
         <x-ui.card title="Informasi Pasien">
@@ -51,33 +54,36 @@
             </dl>
         </x-ui.card>
 
-        <x-ui.card title="Buku RM Pasien">
+        <x-ui.card title="Buku RM Tulisan Tangan">
             <div class="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center">
                 <p class="text-sm font-medium text-amber-800">
-                    Belum ada lembar RM tersimpan untuk pasien ini.
+                    Belum ada halaman RM tulisan tangan untuk pasien ini.
                 </p>
 
                 @if ($canEdit)
                     <p class="mt-2 text-xs text-amber-700">
-                        Buat lembar RM pertama untuk mulai mencatat rekam medis pasien pada
-                        Kunjungan #{{ $addSheetVisit->visit_number }}.
+                        Buat halaman RM pertama pada kunjungan pertama pasien
+                        (Kunjungan #{{ $workspaceVisit->visit_number }}).
                     </p>
-                    <form method="POST" action="{{ route('rme.visits.medical-record.store', $addSheetVisit) }}" class="mt-4">
+                    <form method="POST" action="{{ route('rme.visits.medical-record.store', $workspaceVisit) }}" class="mt-4">
                         @csrf
+                        @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
+                            <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
+                        @endif
                         <x-ui.button type="submit" variant="primary">
-                            Buat Lembar RM Pertama
+                            Buat Halaman RM Pertama
                         </x-ui.button>
                     </form>
                 @else
                     <p class="mt-2 text-xs text-amber-700">
-                        Lembar RM akan tampil di sini setelah dokter membuat rekam medis pasien.
+                        Halaman RM tulisan tangan akan tampil di sini setelah dokter membuat rekam medis pasien.
                     </p>
                 @endif
             </div>
         </x-ui.card>
 
         <div>
-            <a href="{{ route('rme.visits.show', $addSheetVisit) }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke detail kunjungan</a>
+            <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke detail kunjungan</a>
         </div>
     </div>
 </x-settings-shell>

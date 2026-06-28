@@ -319,7 +319,7 @@ it('renders the empty-state workspace for a patient with zero medical records', 
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $visit1))
         ->assertOk()
-        ->assertSee('Belum ada lembar RM tersimpan untuk pasien ini.');
+        ->assertSee('Belum ada halaman RM tulisan tangan untuk pasien ini.');
 });
 
 // 20 — The empty workspace shows the create button for an edit-capable user.
@@ -330,11 +330,11 @@ it('shows the create-first-sheet button to an edit-capable user', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $visit1))
         ->assertOk()
-        ->assertSee('Buat Lembar RM Pertama');
+        ->assertSee('Buat Halaman RM Pertama');
 });
 
 // 21 — Creating the first sheet from the empty workspace stamps the audit
-// columns (canonical = earliest visit, source = current visit, sheet_number 1).
+// columns on the canonical visit (sheet_number 1).
 it('creates the first sheet from the empty workspace with workspace audit columns', function () {
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = rmwsVisit($this->branch, $patient, now()->subDays(10)->toDateString());
@@ -360,8 +360,8 @@ it('shows the empty state without a create button to a view-only user', function
     $this->actingAs($this->viewer)
         ->get(route('rme.visits.medical-record.show', $visit1))
         ->assertOk()
-        ->assertSee('Belum ada lembar RM tersimpan untuk pasien ini.')
-        ->assertDontSee('Buat Lembar RM Pertama');
+        ->assertSee('Belum ada halaman RM tulisan tangan untuk pasien ini.')
+        ->assertDontSee('Buat Halaman RM Pertama');
 
     $this->actingAs($this->viewer)
         ->post(route('rme.visits.medical-record.store', $visit1))
@@ -369,28 +369,27 @@ it('shows the empty state without a create button to a view-only user', function
 });
 
 // 23 — Opening RM from visit 2 (zero MRs) redirects to canonical visit 1 with
-// source_visit_id=visit2, and the first sheet can then be created for visit 2.
-it('redirects a zero-MR later visit to canonical then creates the first sheet for it', function () {
+// source_visit_id=visit2, and the first sheet is created on the canonical visit.
+it('redirects a zero-MR later visit to canonical then creates the first sheet on canonical', function () {
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = rmwsVisit($this->branch, $patient, now()->subDays(10)->toDateString());
     $visit2 = rmwsVisit($this->branch, $patient, now()->subDays(2)->toDateString());
 
-    // Visit 2 is not canonical → bounce to visit 1 carrying source_visit_id.
     $this->actingAs($this->manager)
         ->get(route('rme.visits.medical-record.show', $visit2))
         ->assertRedirect(route('rme.visits.medical-record.show', [$visit1, 'source_visit_id' => $visit2->id]));
 
-    // The empty workspace then creates the first sheet against the source visit.
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.store', $visit2))
         ->assertRedirect();
 
-    $sheet = MedicalRecord::where('clinic_visit_id', $visit2->id)->firstOrFail();
+    $sheet = MedicalRecord::where('clinic_visit_id', $visit1->id)->firstOrFail();
 
     expect($sheet->source_visit_id)->toBe($visit2->id)
         ->and($sheet->canonical_visit_id)->toBe($visit1->id)
         ->and($sheet->sheet_number)->toBe(1)
-        ->and(MedicalRecord::where('patient_id', $patient->id)->count())->toBe(1);
+        ->and(MedicalRecord::where('patient_id', $patient->id)->count())->toBe(1)
+        ->and(MedicalRecord::where('clinic_visit_id', $visit2->id)->exists())->toBeFalse();
 });
 
 // 24 — Re-posting store for a visit that already has a sheet does not create a
