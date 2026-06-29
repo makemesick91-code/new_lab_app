@@ -36,7 +36,7 @@
             @else
                 <x-ui.card>
                     <form method="POST" action="{{ route('rme.online-context.doctor') }}" class="space-y-5"
-                        x-data="onlineContextDoctorForm(@js($roomsByBranch->only($doctorAllowedBranches->pluck('id')->all())->map(fn ($rooms, $branchId) => ['branch_id' => (int) $branchId, 'rooms' => $rooms->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values()])->values()))">
+                        x-data="onlineContextDoctorForm(@js(collect($roomsByBranch->all())->only($doctorAllowedBranches->pluck('id')->all())->map(fn ($rooms, $branchId) => ['branch_id' => (int) $branchId, 'rooms' => $rooms->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values()])->values()))">
                         @csrf
                         <div>
                             <p class="text-sm text-gray-600">Dokter: <span class="font-medium text-gray-900">{{ $linkedDoctor->name }}</span></p>

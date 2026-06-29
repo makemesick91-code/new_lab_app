@@ -206,6 +206,35 @@ it('redirects doctor without context to selection page', function () {
         ->assertRedirect(route('rme.online-context.select'));
 });
 
+it('renders doctor online context select page with allowed branches', function () {
+    test()->doctor->branches()->sync([test()->rmeBranch->id]);
+
+    $this->actingAs(test()->doctorUser)
+        ->get(route('rme.online-context.select'))
+        ->assertOk()
+        ->assertSee('Mulai Online')
+        ->assertSee(test()->rmeBranch->name)
+        ->assertSee(test()->room->name, false);
+});
+
+it('renders empty state for doctor without allowed branches on select page', function () {
+    test()->doctor->branches()->sync([]);
+
+    $this->actingAs(test()->doctorUser)
+        ->get(route('rme.online-context.select'))
+        ->assertOk()
+        ->assertSee('Dokter belum memiliki Cabang Praktik')
+        ->assertDontSee('Mulai Online');
+});
+
+it('renders admin klinik online context select page', function () {
+    $this->actingAs(test()->adminUser)
+        ->get(route('rme.online-context.select'))
+        ->assertOk()
+        ->assertSee('Mulai Bertugas')
+        ->assertSee(test()->rmeBranch->name);
+});
+
 it('stores doctor online context with expected status fields', function () {
     test()->onlineContext->startDoctorSession(
         test()->doctorUser,
