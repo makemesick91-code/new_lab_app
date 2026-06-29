@@ -43,6 +43,31 @@ class StoreClinicVisitRequest extends FormRequest
         }
 
         $this->applyAdminClinicBranchContext();
+        $this->applyAdminClinicDoctorContext();
+    }
+
+    /**
+     * Sprint 66.1.4 — Admin Klinik does not pick a doctor at registration.
+     * doctor_id is resolved when a treatment room is assigned from the queue.
+     */
+    private function applyAdminClinicDoctorContext(): void
+    {
+        if (! $this->isAdminClinicRegistration()) {
+            return;
+        }
+
+        $this->merge(['doctor_id' => null]);
+    }
+
+    private function isAdminClinicRegistration(): bool
+    {
+        $user = $this->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        return app(UserOnlineContextService::class)->resolveActiveBranchForAdmin($user) !== null;
     }
 
     /**
@@ -97,7 +122,12 @@ class StoreClinicVisitRequest extends FormRequest
             // Legacy clinic master reference — no longer the RME "Klinik" source.
             // Kept nullable for backward compatibility; new RME visits omit it.
             'clinic_id' => ['nullable', 'integer', Rule::exists('mst_clinics', 'id')],
-            'doctor_id' => ['required', 'integer', Rule::exists('mst_doctors', 'id')],
+            'doctor_id' => [
+                Rule::requiredIf(! $this->isAdminClinicRegistration()),
+                'nullable',
+                'integer',
+                Rule::exists('mst_doctors', 'id'),
+            ],
             'clinic_room_id' => ['nullable', 'integer', Rule::exists('mst_clinic_rooms', 'id')],
             'chief_complaint' => ['nullable', 'string', 'max:5000'],
             'initial_treatment_id' => ['required', 'integer', Rule::exists('mst_treatments', 'id')->where('is_active', true)],
@@ -276,7 +306,7 @@ class StoreClinicVisitRequest extends FormRequest
 
     private function validateOnlineDoctor(Validator $validator): void
     {
-        if ($validator->errors()->isNotEmpty()) {
+        if ($validator->errors()->isNotEmpty() || $this->isAdminClinicRegistration()) {
             return;
         }
 

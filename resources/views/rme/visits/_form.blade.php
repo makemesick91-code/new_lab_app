@@ -10,6 +10,7 @@
     $prefillBranchId = old('branch_id', $prefill['branch_id'] ?? $visit?->branch_id);
     $lockedBranchId = $lockedBranchId ?? null;
     $noOnlineDoctors = $noOnlineDoctors ?? false;
+    $hideDoctorSelection = $hideDoctorSelection ?? false;
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -198,6 +199,12 @@
             />
         </div>
     @endif
+    @if ($hideDoctorSelection)
+        <div class="sm:col-span-2 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2">
+            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Dokter</p>
+            <p class="mt-1 text-sm text-gray-700">Dokter akan otomatis dipilih berdasarkan ruangan yang diassign pada halaman antrian.</p>
+        </div>
+    @else
     <div>
         <label class="block text-sm font-medium text-gray-700">Dokter <span class="text-rose-500">*</span></label>
         <select name="doctor_id" required data-visit-doctor class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($noOnlineDoctors && ($doctors ?? collect())->isEmpty())>
@@ -214,6 +221,7 @@
             Hanya dokter yang sedang online di cabang kunjungan yang dapat dipilih.
         </p>
     </div>
+    @endif
     {{-- Sprint 58.6 — Room selection removed from registration. Admin Klinik now
          assigns a treatment room from the queue (Daftar Kunjungan) before treatment. --}}
     <div class="sm:col-span-2">
@@ -405,7 +413,9 @@
 
         visitBranchSelect?.addEventListener('change', () => {
             syncNewPatientBranchWithVisitBranch();
+            @if (! $hideDoctorSelection)
             loadOnlineDoctors();
+            @endif
         });
         document.querySelectorAll('[data-mode-radio]').forEach((radio) => {
             radio.addEventListener('change', syncNewPatientBranchWithVisitBranch);
@@ -413,6 +423,7 @@
 
         syncNewPatientBranchWithVisitBranch();
 
+        @if (! $hideDoctorSelection)
         const onlineDoctorsUrl = @json(route('rme.visits.online-doctors'));
         const doctorSelect = document.querySelector('[data-visit-doctor]');
         const doctorEmpty = document.querySelector('[data-visit-doctor-empty]');
@@ -470,6 +481,7 @@
         };
 
         loadOnlineDoctors();
+        @endif
     })();
 </script>
 @endif

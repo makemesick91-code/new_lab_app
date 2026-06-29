@@ -34,4 +34,16 @@ class UserOnlineContextRepository implements UserOnlineContextRepositoryInterfac
             ->orderBy('online_since')
             ->get();
     }
+
+    public function onlineDoctorsInRoom(int $branchId, int $clinicRoomId): Collection
+    {
+        return UserOnlineContext::query()
+            ->with(['user'])
+            ->where('branch_id', $branchId)
+            ->where('clinic_room_id', $clinicRoomId)
+            ->where('role_context', UserOnlineContext::ROLE_DOCTOR)
+            ->where('status', UserOnlineContext::STATUS_ONLINE)
+            ->orderBy('online_since')
+            ->get();
+    }
 }

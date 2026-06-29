@@ -9,6 +9,7 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -24,6 +25,7 @@ class ClinicVisitService
         private readonly BranchContext $branchContext,
         private readonly PatientService $patients,
         private readonly BranchService $branches,
+        private readonly UserOnlineContextService $onlineContext,
     ) {}
 
     /**
@@ -150,7 +152,12 @@ class ClinicVisitService
             ]);
         }
 
-        return DB::transaction(fn () => $this->visits->update($visit, ['clinic_room_id' => $room->id]));
+        $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
+
+        return DB::transaction(fn () => $this->visits->update($visit, [
+            'clinic_room_id' => $room->id,
+            'doctor_id' => $doctorId,
+        ]));
     }
 
     public function find(int $id): ?ClinicVisit

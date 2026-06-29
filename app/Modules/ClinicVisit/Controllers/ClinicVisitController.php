@@ -164,7 +164,8 @@ class ClinicVisitController extends Controller
             'rmeBranches' => $this->branchService->listRmeEnabled(),
             'prefill' => $prefill,
             'lockedBranchId' => $adminBranchId,
-            'noOnlineDoctors' => $selectedBranchId !== null && $doctors->isEmpty(),
+            'noOnlineDoctors' => $selectedBranchId !== null && $doctors->isEmpty() && $adminBranchId === null,
+            'hideDoctorSelection' => $adminBranchId !== null,
         ]);
     }
 

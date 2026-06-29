@@ -15,4 +15,9 @@ interface UserOnlineContextRepositoryInterface
      * @return Collection<int, UserOnlineContext>
      */
     public function onlineDoctorsForBranch(int $branchId): Collection;
+
+    /**
+     * @return Collection<int, UserOnlineContext>
+     */
+    public function onlineDoctorsInRoom(int $branchId, int $clinicRoomId): Collection;
 }

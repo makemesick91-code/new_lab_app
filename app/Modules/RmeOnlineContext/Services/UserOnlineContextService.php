@@ -148,6 +148,7 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
         $this->assertActiveRoomInBranch($clinicRoomId, $branchId);
+        $this->assertRoomNotOccupiedByOtherDoctor($branchId, $clinicRoomId, (int) $user->id);
 
         $now = now();
 
@@ -278,6 +279,89 @@ class UserOnlineContextService
                 'doctor_id' => 'Dokter yang dipilih tidak online di cabang kunjungan ini.',
             ]);
         }
+    }
+
+    /**
+     * Sprint 66.1.4 — resolve the single online doctor for a branch+room when
+     * Admin Klinik assigns a treatment room from the patient queue.
+     */
+    public function resolveDoctorIdForRoom(int $branchId, int $clinicRoomId): int
+    {
+        $contexts = $this->activeOnlineDoctorContextsInRoom($branchId, $clinicRoomId);
+
+        if ($contexts->isEmpty()) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Belum ada dokter online di ruangan ini.',
+            ]);
+        }
+
+        if ($contexts->count() > 1) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Terdapat lebih dari satu dokter online di ruangan ini. Pastikan hanya satu dokter aktif per ruangan.',
+            ]);
+        }
+
+        $user = $contexts->first()->user;
+
+        if ($user === null) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Belum ada dokter online di ruangan ini.',
+            ]);
+        }
+
+        $doctor = $this->doctorResolver->resolveForUser($user);
+
+        if ($doctor === null || ! $doctor->is_active) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Belum ada dokter online di ruangan ini.',
+            ]);
+        }
+
+        return (int) $doctor->id;
+    }
+
+    private function assertRoomNotOccupiedByOtherDoctor(int $branchId, int $roomId, int $userId): void
+    {
+        $occupied = $this->activeOnlineDoctorContextsInRoom($branchId, $roomId)
+            ->contains(fn (UserOnlineContext $context) => (int) $context->user_id !== $userId);
+
+        if ($occupied) {
+            throw ValidationException::withMessages([
+                'clinic_room_id' => 'Ruangan ini sedang digunakan oleh dokter lain.',
+            ]);
+        }
+    }
+
+    /**
+     * @return Collection<int, UserOnlineContext>
+     */
+    private function activeOnlineDoctorContextsInRoom(int $branchId, int $roomId): Collection
+    {
+        $active = collect();
+
+        foreach ($this->contexts->onlineDoctorsInRoom($branchId, $roomId) as $context) {
+            if ($this->isExpired($context)) {
+                $this->markExpiredInactive($context);
+
+                continue;
+            }
+
+            $user = $context->user;
+
+            if ($user === null) {
+                continue;
+            }
+
+            $doctor = $this->doctorResolver->resolveForUser($user);
+
+            if ($doctor === null || ! $doctor->is_active) {
+                continue;
+            }
+
+            $active->push($context);
+        }
+
+        return $active->values();
     }
 
     private function assertRmeBranch(int $branchId): void

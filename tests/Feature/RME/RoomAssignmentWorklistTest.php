@@ -82,11 +82,12 @@ it('creates a registered visit with no room assigned', function () {
 
 it('lets Admin Klinik assign a same-branch room to a queued visit', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Ruang Antang 1']);
+    rmeMakeDoctorOnline($this->doctor, $this->atg, $room);
     $patient = Patient::factory()->create(['branch_id' => $this->atg->id]);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->atg->id,
         'patient_id' => $patient->id,
-        'doctor_id' => $this->doctor->id,
+        'doctor_id' => null,
         'clinic_room_id' => null,
         'status' => ClinicVisit::STATUS_WAITING,
     ]);
@@ -96,7 +97,8 @@ it('lets Admin Klinik assign a same-branch room to a queued visit', function () 
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
         ->assertRedirect();
 
-    expect($visit->refresh()->clinic_room_id)->toBe($room->id);
+    expect($visit->refresh()->clinic_room_id)->toBe($room->id)
+        ->and($visit->doctor_id)->toBe($this->doctor->id);
 });
 
 it('rejects assigning a room from another branch', function () {

@@ -129,14 +129,16 @@ it('filters the queue by Sudah dipilih (assigned room)', function () {
 
 it('lets Admin Klinik assign a same-branch room from the queue page', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Ruang Antang Q']);
-    $visit = queueVisit($this->atg, 'Pasien Assign');
+    rmeMakeDoctorOnline($this->doctor, $this->atg, $room);
+    $visit = queueVisit($this->atg, 'Pasien Assign', ['doctor_id' => null]);
 
     $this->actingAs(rmeAdminClinicUser($this->atg))
         ->from(route('rme.patient-queue.index'))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
         ->assertRedirect();
 
-    expect($visit->refresh()->clinic_room_id)->toBe($room->id);
+    expect($visit->refresh()->clinic_room_id)->toBe($room->id)
+        ->and($visit->doctor_id)->toBe($this->doctor->id);
 });
 
 it('rejects assigning a room from another branch via the queue page', function () {

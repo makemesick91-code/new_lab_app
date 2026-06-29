@@ -85,14 +85,16 @@ it('exempts terminal visits from the room gate (Sprint 59 editing preserved)', f
 
 it('lets FO/operator assign a room after the visit is in the queue', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Ruang Antang 1']);
-    $visit = gateVisit($this->atg);
+    rmeMakeDoctorOnline($this->doctor, $this->atg, $room);
+    $visit = gateVisit($this->atg, overrides: ['doctor_id' => null]);
 
     $this->actingAs($this->admin)
         ->from(route('rme.visits.show', $visit))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
         ->assertRedirect();
 
-    expect($visit->refresh()->clinic_room_id)->toBe($room->id);
+    expect($visit->refresh()->clinic_room_id)->toBe($room->id)
+        ->and($visit->doctor_id)->toBe($this->doctor->id);
 });
 
 it('scopes room options to the visit branch only', function () {
