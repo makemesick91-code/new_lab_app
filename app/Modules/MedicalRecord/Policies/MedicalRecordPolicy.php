@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use Illuminate\Auth\Access\Response;
 
 class MedicalRecordPolicy
 {
@@ -14,24 +16,57 @@ class MedicalRecordPolicy
         return $this->canView($user);
     }
 
-    public function view(User $user, MedicalRecord $medicalRecord): bool
+    public function view(User $user, MedicalRecord $medicalRecord): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($medicalRecord->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($medicalRecord->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForRecord($user, $medicalRecord);
     }
 
-    public function create(User $user, ClinicVisit $clinicVisit): bool
+    public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($clinicVisit->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
-    public function update(User $user, MedicalRecord $medicalRecord): bool
+    public function update(User $user, MedicalRecord $medicalRecord): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($medicalRecord->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($medicalRecord->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForRecord($user, $medicalRecord);
     }
 
-    public function finalize(User $user, MedicalRecord $medicalRecord): bool
+    public function finalize(User $user, MedicalRecord $medicalRecord): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($medicalRecord->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($medicalRecord->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForRecord($user, $medicalRecord);
+    }
+
+    private function authorizePatientForRecord(User $user, MedicalRecord $medicalRecord): Response|bool
+    {
+        $patient = $medicalRecord->patient;
+
+        if ($patient !== null) {
+            return app(DoctorPatientScopeService::class)->authorizePatientAccess($user, $patient);
+        }
+
+        $visit = $medicalRecord->clinicVisit;
+
+        if ($visit !== null) {
+            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        }
+
+        return false;
     }
 
     private function canView(User $user): bool
@@ -44,12 +79,6 @@ class MedicalRecordPolicy
         return $user->can('manage_clinic_visits');
     }
 
-    /**
-     * RME medical records are scoped to the operational "Cabang RME" set (active
-     * RME-enabled branches), mirroring ClinicVisitPolicy. A single BranchContext
-     * fallback (MAIN, not RME-enabled) would otherwise forbid every RME-branch
-     * visit for doctors in the pilot. Sprint 23 Phase 23.10.
-     */
     private function belongsToActiveBranch(?int $branchId): bool
     {
         if ($branchId === null) {

@@ -29,9 +29,9 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
             ->withQueryString();
     }
 
-    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15, ?\Closure $scope = null): LengthAwarePaginator
     {
-        return MedicalRecord::query()
+        $query = MedicalRecord::query()
             ->with(['clinicVisit', 'clinicVisit.clinicRoom', 'patient', 'doctor', 'recordedBy'])
             ->whereIn('branch_id', $branchIds)
             ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
@@ -45,9 +45,13 @@ class MedicalRecordRepository implements MedicalRecordRepositoryInterface
                         ->orWhereHas('clinicVisit', fn ($q) => $q->whereRaw('LOWER(visit_number) LIKE ?', [$term]));
                 });
             })
-            ->orderByDesc('created_at')
-            ->paginate($perPage)
-            ->withQueryString();
+            ->orderByDesc('created_at');
+
+        if ($scope !== null) {
+            $query = $scope($query);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
     public function findByVisitId(int $clinicVisitId): ?MedicalRecord

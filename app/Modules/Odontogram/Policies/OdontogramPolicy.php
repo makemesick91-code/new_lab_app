@@ -6,35 +6,71 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use Illuminate\Auth\Access\Response;
 
 class OdontogramPolicy
 {
-    public function view(User $user, Odontogram $odontogram): bool
+    public function view(User $user, Odontogram $odontogram): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($odontogram->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForOdontogram($user, $odontogram);
     }
 
-    public function print(User $user, Odontogram $odontogram): bool
+    public function print(User $user, Odontogram $odontogram): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($odontogram->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForOdontogram($user, $odontogram);
     }
 
-    public function create(User $user, ClinicVisit $clinicVisit): bool
+    public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($clinicVisit->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
-    public function update(User $user, Odontogram $odontogram): bool
+    public function update(User $user, Odontogram $odontogram): Response|bool
     {
-        // Sprint 59 — finalized odontograms remain editable so doctors can
-        // revise them on any visit. The previous `! isFinalized()` gate is removed.
-        return $this->canManage($user)
-            && $this->belongsToActiveBranch($odontogram->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForOdontogram($user, $odontogram);
     }
 
-    public function finalize(User $user, Odontogram $odontogram): bool
+    public function finalize(User $user, Odontogram $odontogram): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($odontogram->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
+            return false;
+        }
+
+        return $this->authorizePatientForOdontogram($user, $odontogram);
+    }
+
+    private function authorizePatientForOdontogram(User $user, Odontogram $odontogram): Response|bool
+    {
+        $visit = $odontogram->clinicVisit;
+
+        if ($visit !== null) {
+            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
+        }
+
+        $patient = $odontogram->patient;
+
+        if ($patient !== null) {
+            return app(DoctorPatientScopeService::class)->authorizePatientAccess($user, $patient);
+        }
+
+        return false;
     }
 
     private function canView(User $user): bool
@@ -47,12 +83,6 @@ class OdontogramPolicy
         return $user->can('manage_clinic_visits');
     }
 
-    /**
-     * RME odontograms are scoped to the operational "Cabang RME" set (active
-     * RME-enabled branches), mirroring ClinicVisitPolicy. A single BranchContext
-     * fallback (MAIN, not RME-enabled) would otherwise forbid every RME-branch
-     * visit for doctors in the pilot. Sprint 23 Phase 23.10.
-     */
     private function belongsToActiveBranch(?int $branchId): bool
     {
         if ($branchId === null) {

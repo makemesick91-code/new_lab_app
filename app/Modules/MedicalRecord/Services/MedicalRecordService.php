@@ -7,6 +7,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class MedicalRecordService
         private readonly BranchService $branches,
         private readonly ClinicVisitService $visitService,
         private readonly PatientRmWorkspaceResolver $workspace,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -34,10 +36,16 @@ class MedicalRecordService
     /** @param array<string, mixed> $filters */
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
+        $user = Auth::user();
+        $scope = $user !== null
+            ? fn ($query) => $this->doctorScope->applyMedicalRecordScopeForUser($user, $query)
+            : null;
+
         return $this->medicalRecords->paginateForBranches(
             $this->branches->rmeEnabledIds(),
             $filters,
             $perPage,
+            $scope,
         );
     }
 

@@ -17,6 +17,7 @@ use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
@@ -39,6 +40,7 @@ class ClinicVisitController extends Controller
         private readonly BranchService $branchService,
         private readonly KtpScanService $ktpScans,
         private readonly UserOnlineContextService $onlineContext,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -157,8 +159,13 @@ class ClinicVisitController extends Controller
             ? $this->onlineContext->activeDoctorsForBranch((int) $selectedBranchId)
             : collect();
 
+        $patientsQuery = Patient::with('branch')->orderBy('name');
+        if ($user !== null) {
+            $patientsQuery = $this->doctorScope->applyPatientScopeForUser($user, $patientsQuery);
+        }
+
         return view('rme.visits.create', [
-            'patients' => Patient::with('branch')->orderBy('name')->get(),
+            'patients' => $patientsQuery->get(),
             'doctors' => $doctors,
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'rmeBranches' => $this->branchService->listRmeEnabled(),
@@ -175,6 +182,14 @@ class ClinicVisitController extends Controller
 
         $patientId = $request->integer('patient_id');
         abort_if($patientId <= 0, 422, 'patient_id wajib diisi.');
+
+        $patient = Patient::query()->findOrFail($patientId);
+        $access = $this->doctorScope->authorizePatientAccess($request->user(), $patient);
+        if ($access instanceof \Illuminate\Auth\Access\Response) {
+            abort_if($access->denied(), 403, $access->message() ?? 'Forbidden');
+        } elseif ($access === false) {
+            abort(403);
+        }
 
         return response()->json([
             'visits' => $this->visits->patientVisitOptions($patientId),
@@ -256,6 +271,9 @@ class ClinicVisitController extends Controller
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
             'patientVisitHistory' => $patientVisitHistory,
+            'doctorAccessSummary' => $clinicVisit->patient
+                ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient)
+                : [],
             // Hotfix Sprint 60.8 — branch-scoped active rooms for the inline
             // room-assignment selector when the visit still has no room.
             'rooms' => $this->visits->activeRoomsForBranch((int) $clinicVisit->branch_id),

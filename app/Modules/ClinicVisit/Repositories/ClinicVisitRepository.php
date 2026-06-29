@@ -30,9 +30,9 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->withQueryString();
     }
 
-    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15, ?\Closure $scope = null): LengthAwarePaginator
     {
-        return ClinicVisit::query()
+        $query = ClinicVisit::query()
             ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
             ->whereIn('branch_id', $branchIds)
             ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
@@ -45,14 +45,18 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
                 });
             })
             ->orderByDesc('visit_date')
-            ->orderBy('queue_number')
-            ->paginate($perPage)
-            ->withQueryString();
+            ->orderBy('queue_number');
+
+        if ($scope !== null) {
+            $query = $scope($query);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
-    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator
+    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20, ?\Closure $scope = null): LengthAwarePaginator
     {
-        return ClinicVisit::query()
+        $query = ClinicVisit::query()
             ->with(['patient', 'doctor', 'clinicRoom', 'branch', 'medicalRecord'])
             ->whereIn('branch_id', $branchIds)
             ->whereNotNull('clinic_room_id')
@@ -75,14 +79,18 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             })
             ->orderByDesc('visit_date')
             ->orderBy('clinic_room_id')
-            ->orderBy('queue_number')
-            ->paginate($perPage)
-            ->withQueryString();
+            ->orderBy('queue_number');
+
+        if ($scope !== null) {
+            $query = $scope($query);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
-    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator
+    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20, ?\Closure $scope = null): LengthAwarePaginator
     {
-        return ClinicVisit::query()
+        $query = ClinicVisit::query()
             ->with(['patient', 'doctor', 'clinicRoom', 'branch'])
             ->whereIn('branch_id', $branchIds)
             ->whereNotIn('status', [
@@ -105,9 +113,13 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
                 });
             })
             ->orderByDesc('visit_date')
-            ->orderBy('queue_number')
-            ->paginate($perPage)
-            ->withQueryString();
+            ->orderBy('queue_number');
+
+        if ($scope !== null) {
+            $query = $scope($query);
+        }
+
+        return $query->paginate($perPage)->withQueryString();
     }
 
     public function findInBranch(int $branchId, int $id): ?ClinicVisit

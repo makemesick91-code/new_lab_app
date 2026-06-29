@@ -225,6 +225,10 @@
             </dl>
         </x-ui.card>
 
+        @include('rme.visits.partials.doctor-rm-access-panel', [
+            'doctorAccessSummary' => $doctorAccessSummary ?? [],
+        ])
+
         @if ($visit->check_in_at || $visit->started_at || $visit->completed_at || $visit->cancelled_at)
             <x-ui.card title="Linimasa Kunjungan">
                 <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

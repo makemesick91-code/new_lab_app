@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Models\PatientDoctorAssignment;
 use Database\Factories\DoctorFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +69,18 @@ class Doctor extends Model
     public function patients(): HasMany
     {
         return $this->hasMany(Patient::class, 'doctor_id');
+    }
+
+    /** Sprint 66.2 — full patient assignment history. */
+    public function patientAssignments(): HasMany
+    {
+        return $this->hasMany(PatientDoctorAssignment::class, 'doctor_id');
+    }
+
+    /** Sprint 66.2 — active patient assignments only. */
+    public function activePatientAssignments(): HasMany
+    {
+        return $this->patientAssignments()->whereNull('unassigned_at');
     }
 
     protected static function newFactory(): DoctorFactory

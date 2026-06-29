@@ -17,7 +17,7 @@ interface MedicalRecordRepositoryInterface
      * @param  array<int, int>  $branchIds
      * @param  array<string, mixed>  $filters
      */
-    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15, ?\Closure $scope = null): LengthAwarePaginator;
 
     public function findByVisitId(int $clinicVisitId): ?MedicalRecord;
 

@@ -50,6 +50,8 @@ class MedicalRecordController extends Controller
     public function show(Request $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): View|RedirectResponse
     {
         $clinicVisit->loadMissing('patient');
+        $this->authorize('view', $clinicVisit);
+
         $patientId = $clinicVisit->patient_id;
 
         // Sprint 64.0 — patient-centric redirect. Any visit's RM URL resolves to

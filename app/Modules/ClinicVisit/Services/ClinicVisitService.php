@@ -9,6 +9,8 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\PatientDoctorAssignmentService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -26,6 +28,8 @@ class ClinicVisitService
         private readonly PatientService $patients,
         private readonly BranchService $branches,
         private readonly UserOnlineContextService $onlineContext,
+        private readonly DoctorPatientScopeService $doctorScope,
+        private readonly PatientDoctorAssignmentService $patientDoctorAssignments,
     ) {}
 
     /**
@@ -41,6 +45,7 @@ class ClinicVisitService
             $this->scopeBranchIds($filters['branch_id'] ?? null),
             $filters,
             $perPage,
+            $this->doctorVisitScope(),
         );
     }
 
@@ -73,6 +78,7 @@ class ClinicVisitService
             $this->scopeBranchIds($filters['branch_id'] ?? null),
             $filters,
             $perPage,
+            $this->doctorVisitScope(),
         );
     }
 
@@ -88,6 +94,7 @@ class ClinicVisitService
             $this->scopeBranchIds($filters['branch_id'] ?? null),
             $filters,
             $perPage,
+            $this->doctorVisitScope(),
         );
     }
 
@@ -154,10 +161,18 @@ class ClinicVisitService
 
         $doctorId = $this->onlineContext->resolveDoctorIdForRoom((int) $visit->branch_id, $room->id);
 
-        return DB::transaction(fn () => $this->visits->update($visit, [
-            'clinic_room_id' => $room->id,
-            'doctor_id' => $doctorId,
-        ]));
+        return DB::transaction(function () use ($visit, $room, $doctorId) {
+            $updated = $this->visits->update($visit, [
+                'clinic_room_id' => $room->id,
+                'doctor_id' => $doctorId,
+            ]);
+
+            if ($doctorId !== null) {
+                $this->patientDoctorAssignments->ensureAssignedFromVisit($updated->fresh(), Auth::user());
+            }
+
+            return $updated;
+        });
     }
 
     public function find(int $id): ?ClinicVisit
@@ -463,5 +478,16 @@ class ClinicVisitService
 
             return $this->visits->update($visit, array_merge(['status' => $newStatus], $timestamps));
         });
+    }
+
+    private function doctorVisitScope(): ?\Closure
+    {
+        $user = Auth::user();
+
+        if ($user === null) {
+            return null;
+        }
+
+        return fn ($query) => $this->doctorScope->applyVisitScopeForUser($user, $query);
     }
 }

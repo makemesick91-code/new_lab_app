@@ -5,6 +5,8 @@ namespace App\Modules\ClinicVisit\Policies;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use Illuminate\Auth\Access\Response;
 
 class ClinicVisitPolicy
 {
@@ -13,9 +15,13 @@ class ClinicVisitPolicy
         return $this->canView($user);
     }
 
-    public function view(User $user, ClinicVisit $visit): bool
+    public function view(User $user, ClinicVisit $visit): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveRmeBranch($visit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     public function create(User $user): bool
@@ -23,19 +29,31 @@ class ClinicVisitPolicy
         return $this->canManage($user);
     }
 
-    public function update(User $user, ClinicVisit $visit): bool
+    public function update(User $user, ClinicVisit $visit): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveRmeBranch($visit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
-    public function transition(User $user, ClinicVisit $visit): bool
+    public function transition(User $user, ClinicVisit $visit): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveRmeBranch($visit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
-    public function print(User $user, ClinicVisit $visit): bool
+    public function print(User $user, ClinicVisit $visit): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveRmeBranch($visit->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveRmeBranch($visit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     private function canView(User $user): bool
@@ -48,12 +66,6 @@ class ClinicVisitPolicy
         return $user->can('manage_clinic_visits');
     }
 
-    /**
-     * RME visits are scoped to the operational "Cabang RME" set, not a single
-     * BranchContext fallback branch. A visit is viewable when its branch is one
-     * of the active RME-enabled branches (MAIN is excluded — not RME-enabled).
-     * This intentionally does NOT rely on users.branch_id (Sprint 23 Phase 23.9.3).
-     */
     private function belongsToActiveRmeBranch(?int $branchId): bool
     {
         if ($branchId === null) {

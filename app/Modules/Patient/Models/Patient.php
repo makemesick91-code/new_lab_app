@@ -5,6 +5,7 @@ namespace App\Modules\Patient\Models;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\RME\Models\PatientDoctorAssignment;
 use Database\Factories\PatientFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -134,6 +135,18 @@ class Patient extends Model
         return $this->hasOne(PatientDocument::class, 'patient_id')
             ->where('document_type', PatientDocument::TYPE_KTP)
             ->latestOfMany();
+    }
+
+    /** Sprint 66.2 — full assignment history (active + unassigned). */
+    public function doctorAssignments(): HasMany
+    {
+        return $this->hasMany(PatientDoctorAssignment::class, 'patient_id');
+    }
+
+    /** Sprint 66.2 — currently active doctor assignments only. */
+    public function activeDoctorAssignments(): HasMany
+    {
+        return $this->doctorAssignments()->whereNull('unassigned_at');
     }
 
     protected static function newFactory(): PatientFactory

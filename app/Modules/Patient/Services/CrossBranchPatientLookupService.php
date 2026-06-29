@@ -5,8 +5,11 @@ namespace App\Modules\Patient\Services;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * Cross-branch Nomor RM lookup (Sprint 57, suffix usability in Sprint 57.1).
@@ -42,6 +45,7 @@ class CrossBranchPatientLookupService
 
     public function __construct(
         private readonly BranchContext $branchContext,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -78,8 +82,7 @@ class CrossBranchPatientLookupService
 
         // 1) Exact match first — preserves Sprint 57 full-RM behaviour verbatim.
         $exact = $this->mapResults(
-            Patient::query()
-                ->select(['id', 'name', 'medical_record_number', 'branch_id', 'is_active'])
+            $this->scopedPatientQuery()
                 ->where('medical_record_number', $rm) // intentionally no branch filter
                 ->with('branch:id,code,name')
                 ->limit(self::DISPLAY_LIMIT)
@@ -101,8 +104,7 @@ class CrossBranchPatientLookupService
         }
 
         // 3) Suffix ("ends with") match across ALL branches; wildcards escaped.
-        $suffix = Patient::query()
-            ->select(['id', 'name', 'medical_record_number', 'branch_id', 'is_active'])
+        $suffix = $this->scopedPatientQuery()
             ->where('medical_record_number', 'LIKE', '%'.$this->escapeLike($rm))
             ->with('branch:id,code,name')
             ->limit(self::DISPLAY_LIMIT + 1) // +1 sentinel to detect "too many"
@@ -162,6 +164,25 @@ class CrossBranchPatientLookupService
     private function escapeLike(string $value): string
     {
         return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+    }
+
+    /**
+     * Base patient query for lookup; doctors only see patients in their RM scope.
+     *
+     * @return Builder<Patient>
+     */
+    private function scopedPatientQuery()
+    {
+        $query = Patient::query()
+            ->select(['id', 'name', 'medical_record_number', 'branch_id', 'is_active']);
+
+        $user = Auth::user();
+
+        if ($user !== null) {
+            $query = $this->doctorScope->applyPatientScopeForUser($user, $query);
+        }
+
+        return $query;
     }
 
     private function latestVisitDate(int $patientId): ?string

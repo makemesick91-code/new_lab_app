@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use Illuminate\Auth\Access\Response;
 
 class RmePrescriptionPolicy
 {
@@ -14,29 +16,49 @@ class RmePrescriptionPolicy
         return $this->canView($user);
     }
 
-    public function view(User $user, RmePrescription $prescription): bool
+    public function view(User $user, RmePrescription $prescription): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($prescription->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($prescription->branch_id)) {
+            return false;
+        }
+
+        $visit = $prescription->clinicVisit;
+
+        return $visit !== null
+            ? app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit)
+            : false;
     }
 
-    public function print(User $user, RmePrescription $prescription): bool
+    public function print(User $user, RmePrescription $prescription): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($prescription->branch_id);
+        return $this->view($user, $prescription);
     }
 
-    public function viewForVisit(User $user, ClinicVisit $clinicVisit): bool
+    public function viewForVisit(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        return $this->canView($user) && $this->belongsToActiveBranch($clinicVisit->branch_id);
+        if (! $this->canView($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
-    public function create(User $user, ClinicVisit $clinicVisit): bool
+    public function create(User $user, ClinicVisit $clinicVisit): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($clinicVisit->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
-    public function update(User $user, RmePrescription $prescription): bool
+    public function update(User $user, RmePrescription $prescription): Response|bool
     {
-        return $this->canManage($user) && $this->belongsToActiveBranch($prescription->branch_id);
+        if (! $this->canManage($user) || ! $this->belongsToActiveBranch($prescription->branch_id)) {
+            return false;
+        }
+
+        return $this->view($user, $prescription);
     }
 
     private function canView(User $user): bool

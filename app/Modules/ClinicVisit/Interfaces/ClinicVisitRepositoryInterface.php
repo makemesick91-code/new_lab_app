@@ -19,7 +19,7 @@ interface ClinicVisitRepositoryInterface
      * @param  array<int, int>  $branchIds
      * @param  array{search?: string|null, status?: string|null, visit_date?: string|null}  $filters
      */
-    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15): LengthAwarePaginator;
+    public function paginateForBranches(array $branchIds, array $filters = [], int $perPage = 15, ?\Closure $scope = null): LengthAwarePaginator;
 
     /**
      * Paginate room-assigned, non-terminal visits for the doctor/nurse worklist,
@@ -28,7 +28,7 @@ interface ClinicVisitRepositoryInterface
      * @param  array<int, int>  $branchIds
      * @param  array{search?: string|null, status?: string|null, clinic_room_id?: int|null}  $filters
      */
-    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator;
+    public function worklistForBranches(array $branchIds, array $filters = [], int $perPage = 20, ?\Closure $scope = null): LengthAwarePaginator;
 
     /**
      * Paginate active (non-terminal) registered-patient queue visits scoped to
@@ -38,7 +38,7 @@ interface ClinicVisitRepositoryInterface
      * @param  array<int, int>  $branchIds
      * @param  array{search?: string|null, status?: string|null, room_status?: string|null, visit_date?: string|null}  $filters
      */
-    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20): LengthAwarePaginator;
+    public function queueForBranches(array $branchIds, array $filters = [], int $perPage = 20, ?\Closure $scope = null): LengthAwarePaginator;
 
     public function findInBranch(int $branchId, int $id): ?ClinicVisit;
 
