@@ -113,8 +113,85 @@ it('shows admin klinik only online doctors from the active branch', function () 
     $this->actingAs(test()->adminUser)
         ->get(route('rme.visits.create'))
         ->assertOk()
+        ->assertSee('Cabang Kunjungan')
+        ->assertSee(test()->rmeBranch->code)
         ->assertSee(test()->doctor->name)
+        ->assertDontSee('- Pilih cabang RME -')
         ->assertDontSee($otherDoctor->name);
+});
+
+it('stores admin klinik visit using active context branch without manual branch input', function () {
+    rmeMakeAdminClinicActive(test()->adminUser, test()->rmeBranch);
+    rmeMakeDoctorOnline(test()->doctor, test()->rmeBranch, test()->room);
+
+    $this->actingAs(test()->adminUser)
+        ->post(route('rme.visits.store'), [
+            'patient_mode' => 'existing',
+            'patient_id' => test()->patient->id,
+            'doctor_id' => test()->doctor->id,
+            'initial_treatment_id' => test()->treatment->id,
+            'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+        ])
+        ->assertRedirect();
+
+    $visit = ClinicVisit::query()->latest('id')->first();
+
+    expect($visit)->not->toBeNull()
+        ->and($visit->branch_id)->toBe(test()->rmeBranch->id);
+});
+
+it('ignores manipulated branch_id for admin klinik visit store', function () {
+    rmeMakeAdminClinicActive(test()->adminUser, test()->rmeBranch);
+    rmeMakeDoctorOnline(test()->doctor, test()->rmeBranch, test()->room);
+
+    $this->actingAs(test()->adminUser)
+        ->post(route('rme.visits.store'), [
+            'patient_mode' => 'existing',
+            'branch_id' => test()->otherRmeBranch->id,
+            'patient_id' => test()->patient->id,
+            'doctor_id' => test()->doctor->id,
+            'initial_treatment_id' => test()->treatment->id,
+            'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+        ])
+        ->assertRedirect();
+
+    $visit = ClinicVisit::query()->latest('id')->first();
+
+    expect($visit->branch_id)->toBe(test()->rmeBranch->id)
+        ->and($visit->branch_id)->not->toBe(test()->otherRmeBranch->id);
+});
+
+it('redirects admin klinik without context from visit create to context selection', function () {
+    $this->actingAs(test()->adminUser)
+        ->get(route('rme.visits.create'))
+        ->assertRedirect(route('rme.online-context.select'));
+});
+
+it('lets owner keep manual branch selection on visit create', function () {
+    rmeMakeDoctorOnline(test()->doctor, test()->rmeBranch, test()->room);
+
+    $this->actingAs(test()->ownerUser)
+        ->get(route('rme.visits.create'))
+        ->assertOk()
+        ->assertSee('- Pilih cabang RME -')
+        ->assertDontSee('Cabang Kunjungan');
+});
+
+it('returns only context-branch online doctors for admin klinik online-doctors endpoint', function () {
+    rmeMakeAdminClinicActive(test()->adminUser, test()->rmeBranch);
+    rmeMakeDoctorOnline(test()->doctor, test()->rmeBranch, test()->room);
+
+    $otherDoctor = Doctor::factory()->withAllowedBranches([test()->otherRmeBranch])->create(['clinic_id' => test()->clinic->id]);
+    rmeMakeDoctorOnline($otherDoctor, test()->otherRmeBranch, test()->otherRoom);
+
+    $response = $this->actingAs(test()->adminUser)
+        ->getJson(route('rme.visits.online-doctors', ['branch_id' => test()->otherRmeBranch->id]))
+        ->assertOk();
+
+    $doctorIds = collect($response->json('doctors'))->pluck('id');
+
+    expect($doctorIds)->toContain(test()->doctor->id)
+        ->and($doctorIds)->not->toContain($otherDoctor->id);
 });
 
 it('does not show offline doctors to admin klinik', function () {

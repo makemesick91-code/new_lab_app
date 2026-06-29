@@ -14,15 +14,18 @@
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
-        <label class="block text-sm font-medium text-gray-700">Klinik/Cabang <span class="text-gray-400">(Cabang RME)</span> <span class="text-rose-500">*</span></label>
         @if ($lockedBranchId && ! $visit)
-            <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
             @php $lockedBranch = $rmeBranches->firstWhere('id', $lockedBranchId); @endphp
-            <p class="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
-                {{ $lockedBranch?->code }} — {{ $lockedBranch?->name }}
-            </p>
-            <p class="mt-1 text-xs text-gray-500">Cabang mengikuti konteks kerja admin klinik Anda.</p>
+            <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
+            <div class="rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Cabang Kunjungan</p>
+                <p class="mt-1 text-sm font-medium text-gray-900">
+                    {{ $lockedBranch?->code }} — {{ $lockedBranch?->name }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500">Mengikuti konteks kerja admin klinik Anda.</p>
+            </div>
         @else
+            <label class="block text-sm font-medium text-gray-700">Klinik/Cabang <span class="text-gray-400">(Cabang RME)</span> <span class="text-rose-500">*</span></label>
             <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                 <option value="">- Pilih cabang RME -</option>
                 @foreach ($rmeBranches as $branch)
@@ -97,12 +100,20 @@
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Cabang RME</label>
-                        <select name="new_patient[branch_id]" data-rm-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="" data-code="">- Pilih cabang RME -</option>
-                            @foreach ($rmeBranches as $branch)
-                                <option value="{{ $branch->id }}" data-code="{{ $branch->code }}" @selected((int) old('new_patient.branch_id') === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
-                            @endforeach
-                        </select>
+                        @if ($lockedBranchId)
+                            @php $lockedNewPatientBranch = $rmeBranches->firstWhere('id', $lockedBranchId); @endphp
+                            <input type="hidden" name="new_patient[branch_id]" value="{{ $lockedBranchId }}" data-rm-branch data-code="{{ $lockedNewPatientBranch?->code }}">
+                            <p class="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                                {{ $lockedNewPatientBranch?->code }} — {{ $lockedNewPatientBranch?->name }}
+                            </p>
+                        @else
+                            <select name="new_patient[branch_id]" data-rm-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <option value="" data-code="">- Pilih cabang RME -</option>
+                                @foreach ($rmeBranches as $branch)
+                                    <option value="{{ $branch->id }}" data-code="{{ $branch->code }}" @selected((int) old('new_patient.branch_id') === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                                @endforeach
+                            </select>
+                        @endif
                         @error('new_patient.branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
                         <p class="mt-1 text-xs text-gray-400">Harus sama dengan Klinik/Cabang kunjungan di atas.</p>
                     </div>
@@ -358,7 +369,11 @@
 
         const recompute = function () {
             if (!preview) return;
-            const code = (branch?.selectedOptions[0]?.dataset.code || '').trim().toUpperCase();
+            const code = (
+                branch?.selectedOptions?.[0]?.dataset.code
+                || branch?.dataset?.code
+                || ''
+            ).trim().toUpperCase();
             const year = (dateEl?.value || '').slice(0, 4);
             const num = (manual?.value || '').trim();
             preview.value = (code && year && num) ? `DG-${code}-${year}-${num}` : '';

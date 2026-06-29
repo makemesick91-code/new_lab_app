@@ -184,7 +184,8 @@ class ClinicVisitController extends Controller
     {
         $this->authorize('create', ClinicVisit::class);
 
-        $branchId = $request->integer('branch_id');
+        $adminBranchId = $this->onlineContext->resolveActiveBranchForAdmin($request->user());
+        $branchId = $adminBranchId ?? $request->integer('branch_id');
         abort_if($branchId <= 0, 422, 'branch_id wajib diisi.');
 
         $doctors = $this->onlineContext->activeDoctorsForBranch($branchId);

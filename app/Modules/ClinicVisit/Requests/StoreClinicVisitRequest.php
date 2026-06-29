@@ -41,6 +41,41 @@ class StoreClinicVisitRequest extends FormRequest
                 ]),
             ]);
         }
+
+        $this->applyAdminClinicBranchContext();
+    }
+
+    /**
+     * Sprint 66.1.3 — Admin Klinik visits always use the active online context
+     * branch. Never trust branch_id from the form for this role.
+     */
+    private function applyAdminClinicBranchContext(): void
+    {
+        $user = $this->user();
+
+        if ($user === null) {
+            return;
+        }
+
+        $adminBranchId = app(UserOnlineContextService::class)
+            ->resolveActiveBranchForAdmin($user);
+
+        if ($adminBranchId === null) {
+            return;
+        }
+
+        if ($this->input('patient_mode') === 'new') {
+            $this->merge([
+                'new_patient' => array_merge($this->input('new_patient', []), [
+                    'branch_id' => $adminBranchId,
+                ]),
+                'branch_id' => $adminBranchId,
+            ]);
+
+            return;
+        }
+
+        $this->merge(['branch_id' => $adminBranchId]);
     }
 
     public function rules(): array

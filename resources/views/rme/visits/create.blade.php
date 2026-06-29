@@ -10,11 +10,13 @@
             <form method="POST" action="{{ route('rme.visits.store') }}" class="space-y-6">
                 @csrf
                 @include('rme.visits._form', [
-                    'visit'       => null,
-                    'patients'    => $patients,
-                    'doctors'     => $doctors,
+                    'visit' => null,
+                    'patients' => $patients,
+                    'doctors' => $doctors,
                     'rmeBranches' => $rmeBranches,
-                    'prefill'     => $prefill ?? [],
+                    'prefill' => $prefill ?? [],
+                    'lockedBranchId' => $lockedBranchId ?? null,
+                    'noOnlineDoctors' => $noOnlineDoctors ?? false,
                 ])
                 <div class="flex items-center justify-end gap-2 border-t border-gray-100 pt-5">
                     <x-ui.button variant="secondary" :href="route('rme.visits.index')">Batal</x-ui.button>
