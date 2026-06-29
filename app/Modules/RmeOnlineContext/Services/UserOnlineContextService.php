@@ -126,6 +126,18 @@ class UserOnlineContextService
             ]);
         }
 
+        if ($doctor->branch_id === null) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Dokter belum memiliki Cabang RME. Hubungi admin klinik.',
+            ]);
+        }
+
+        if ((int) $doctor->branch_id !== $branchId) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Cabang online harus sama dengan Cabang RME master dokter.',
+            ]);
+        }
+
         $this->assertRmeBranch($branchId);
         $this->assertActiveRoomInBranch($clinicRoomId, $branchId);
 

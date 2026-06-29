@@ -16,7 +16,7 @@ it('lets Super Admin view the branch master list', function () {
         ->get(route('settings.branches.index'))
         ->assertOk()
         ->assertViewIs('settings.branches.index')
-        ->assertSee('Master Data Cabang');
+        ->assertSee('Master Cabang RME');
 });
 
 it('lets a manager create a branch with manual code and name', function () {
@@ -111,7 +111,7 @@ it('protects the default MAIN branch from deletion', function () {
 it('forbids an unauthorized role from branch master data', function () {
     $this->actingAs(userInRole('Doctor'))
         ->get(route('settings.branches.index'))
-        ->assertForbidden();
+        ->assertRedirect(route('rme.online-context.select'));
 });
 
 it('forbids a Courier from branch master data', function () {

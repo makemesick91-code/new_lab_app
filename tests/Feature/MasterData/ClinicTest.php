@@ -6,27 +6,19 @@ beforeEach(function () {
     seedAccessControl();
 });
 
-it('lists clinics for an authorized user', function () {
-    Clinic::factory()->count(3)->create();
-
+it('redirects legacy clinic index to Cabang RME master', function () {
     $this->actingAs(userWith(['manage clinics']))
         ->get(route('settings.clinics.index'))
-        ->assertOk()
-        ->assertViewIs('settings.clinics.index');
+        ->assertRedirect(route('settings.branches.index'));
 });
 
-it('searches clinics by name', function () {
-    Clinic::factory()->create(['name' => 'Bright Smile Clinic']);
-    Clinic::factory()->create(['name' => 'Other Place']);
-
-    $this->actingAs(superAdmin())
-        ->get(route('settings.clinics.index', ['search' => 'bright']))
-        ->assertOk()
-        ->assertSee('Bright Smile Clinic')
-        ->assertDontSee('Other Place');
+it('redirects legacy clinic create to Cabang RME master', function () {
+    $this->actingAs(userWith(['manage clinics']))
+        ->get(route('settings.clinics.create'))
+        ->assertRedirect(route('settings.branches.index'));
 });
 
-it('creates a clinic (happy path)', function () {
+it('blocks creating a legacy clinic', function () {
     $this->actingAs(userWith(['manage clinics']))
         ->post(route('settings.clinics.store'), [
             'code' => 'CLN-001',
@@ -34,55 +26,43 @@ it('creates a clinic (happy path)', function () {
             'city' => 'Jakarta',
             'is_active' => 1,
         ])
-        ->assertRedirect(route('settings.clinics.index'));
+        ->assertRedirect(route('settings.branches.index'))
+        ->assertSessionHas('error');
 
-    expect(Clinic::where('code', 'CLN-001')->exists())->toBeTrue();
+    expect(Clinic::where('code', 'CLN-001')->exists())->toBeFalse();
 });
 
-it('validates required code and name', function () {
-    $this->actingAs(superAdmin())
-        ->post(route('settings.clinics.store'), ['code' => '', 'name' => ''])
-        ->assertSessionHasErrors(['code', 'name']);
-});
-
-it('rejects a duplicate clinic code', function () {
-    Clinic::factory()->create(['code' => 'DUP-1']);
-
-    $this->actingAs(superAdmin())
-        ->post(route('settings.clinics.store'), ['code' => 'DUP-1', 'name' => 'X'])
-        ->assertSessionHasErrors('code');
-});
-
-it('updates a clinic keeping its own code', function () {
+it('blocks updating a legacy clinic', function () {
     $clinic = Clinic::factory()->create(['code' => 'KEEP-1', 'name' => 'Old']);
 
     $this->actingAs(superAdmin())
         ->put(route('settings.clinics.update', $clinic), ['code' => 'KEEP-1', 'name' => 'Renamed'])
-        ->assertRedirect(route('settings.clinics.index'));
+        ->assertRedirect(route('settings.branches.index'))
+        ->assertSessionHas('error');
 
-    expect($clinic->refresh()->name)->toBe('Renamed');
+    expect($clinic->refresh()->name)->toBe('Old');
 });
 
-it('activates and deactivates a clinic', function () {
+it('blocks activating a legacy clinic', function () {
     $clinic = Clinic::factory()->inactive()->create();
     $admin = superAdmin();
 
-    $this->actingAs($admin)->patch(route('settings.clinics.activate', $clinic))->assertRedirect();
-    expect($clinic->refresh()->is_active)->toBeTrue();
+    $this->actingAs($admin)->patch(route('settings.clinics.activate', $clinic))
+        ->assertRedirect(route('settings.branches.index'))
+        ->assertSessionHas('error');
 
-    $this->actingAs($admin)->patch(route('settings.clinics.deactivate', $clinic))->assertRedirect();
     expect($clinic->refresh()->is_active)->toBeFalse();
 });
 
-it('soft deletes a clinic', function () {
+it('blocks soft deleting a legacy clinic via UI', function () {
     $clinic = Clinic::factory()->create();
 
     $this->actingAs(superAdmin())
         ->delete(route('settings.clinics.destroy', $clinic))
-        ->assertRedirect(route('settings.clinics.index'));
+        ->assertRedirect(route('settings.branches.index'))
+        ->assertSessionHas('error');
 
-    expect(Clinic::find($clinic->id))->toBeNull();
-    expect(Clinic::withTrashed()->find($clinic->id))->not->toBeNull();
+    expect(Clinic::find($clinic->id))->not->toBeNull();
 });
 
 it('denies clinic access without permission', function () {

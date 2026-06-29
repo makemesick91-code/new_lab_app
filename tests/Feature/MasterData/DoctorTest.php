@@ -1,10 +1,19 @@
 <?php
 
-use App\Modules\Clinic\Models\Clinic;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Doctor\Models\Doctor;
+use Database\Seeders\BranchSeeder;
 
 beforeEach(function () {
+    test()->seed(BranchSeeder::class);
     seedAccessControl();
+
+    test()->rmeBranch = Branch::factory()->create([
+        'code' => 'DOC1',
+        'name' => 'Cabang Dokter Test',
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
 });
 
 it('lists doctors for an authorized user', function () {
@@ -16,55 +25,58 @@ it('lists doctors for an authorized user', function () {
         ->assertViewIs('settings.doctors.index');
 });
 
-it('filters doctors by clinic', function () {
-    $clinicA = Clinic::factory()->create();
-    $clinicB = Clinic::factory()->create();
-    Doctor::factory()->create(['clinic_id' => $clinicA->id, 'name' => 'Dr. Alpha']);
-    Doctor::factory()->create(['clinic_id' => $clinicB->id, 'name' => 'Dr. Beta']);
+it('filters doctors by Cabang RME', function () {
+    $branchA = Branch::factory()->create(['code' => 'BRA', 'is_active' => true, 'is_rme_enabled' => true]);
+    $branchB = Branch::factory()->create(['code' => 'BRB', 'is_active' => true, 'is_rme_enabled' => true]);
+    Doctor::factory()->create(['branch_id' => $branchA->id, 'name' => 'Dr. Alpha']);
+    Doctor::factory()->create(['branch_id' => $branchB->id, 'name' => 'Dr. Beta']);
 
     $this->actingAs(superAdmin())
-        ->get(route('settings.doctors.index', ['clinic_id' => $clinicA->id]))
+        ->get(route('settings.doctors.index', ['branch_id' => $branchA->id]))
         ->assertOk()
         ->assertSee('Dr. Alpha')
         ->assertDontSee('Dr. Beta');
 });
 
 it('creates a doctor (happy path)', function () {
-    $clinic = Clinic::factory()->create();
-
     $this->actingAs(userWith(['manage doctors']))
         ->post(route('settings.doctors.store'), [
-            'clinic_id' => $clinic->id,
+            'branch_id' => test()->rmeBranch->id,
             'code' => 'DOC-001',
             'name' => 'Dr. New',
             'is_active' => 1,
         ])
         ->assertRedirect(route('settings.doctors.index'));
 
-    expect(Doctor::where('code', 'DOC-001')->exists())->toBeTrue();
+    $doctor = Doctor::where('code', 'DOC-001')->firstOrFail();
+    expect($doctor->branch_id)->toBe(test()->rmeBranch->id);
+    expect($doctor->clinic_id)->toBeNull();
 });
 
-it('requires clinic_id and name', function () {
+it('requires branch_id and name', function () {
     $this->actingAs(superAdmin())
         ->post(route('settings.doctors.store'), ['code' => 'X', 'name' => ''])
-        ->assertSessionHasErrors(['clinic_id', 'name']);
+        ->assertSessionHasErrors(['branch_id', 'name']);
 });
 
 it('rejects a duplicate doctor code', function () {
-    $clinic = Clinic::factory()->create();
     Doctor::factory()->create(['code' => 'DDUP']);
 
     $this->actingAs(superAdmin())
-        ->post(route('settings.doctors.store'), ['clinic_id' => $clinic->id, 'code' => 'DDUP', 'name' => 'X'])
+        ->post(route('settings.doctors.store'), [
+            'branch_id' => test()->rmeBranch->id,
+            'code' => 'DDUP',
+            'name' => 'X',
+        ])
         ->assertSessionHasErrors('code');
 });
 
 it('updates a doctor', function () {
-    $doctor = Doctor::factory()->create(['name' => 'Old']);
+    $doctor = Doctor::factory()->create(['name' => 'Old', 'branch_id' => test()->rmeBranch->id]);
 
     $this->actingAs(superAdmin())
         ->put(route('settings.doctors.update', $doctor), [
-            'clinic_id' => $doctor->clinic_id,
+            'branch_id' => test()->rmeBranch->id,
             'code' => $doctor->code,
             'name' => 'Updated Doctor',
         ])
@@ -88,4 +100,8 @@ it('denies doctor access without permission', function () {
     $this->actingAs(userWith(['manage clinics']))
         ->get(route('settings.doctors.index'))
         ->assertForbidden();
+});
+
+it('redirects guests to login', function () {
+    $this->get(route('settings.doctors.index'))->assertRedirect(route('login'));
 });

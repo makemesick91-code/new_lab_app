@@ -3,7 +3,7 @@
 namespace App\Modules\Doctor\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Modules\Clinic\Services\ClinicService;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Requests\StoreDoctorRequest;
 use App\Modules\Doctor\Requests\UpdateDoctorRequest;
@@ -19,7 +19,7 @@ class DoctorController extends Controller
 
     public function __construct(
         private readonly DoctorService $doctorService,
-        private readonly ClinicService $clinicService,
+        private readonly BranchService $branchService,
     ) {}
 
     public function index(Request $request): View
@@ -29,11 +29,11 @@ class DoctorController extends Controller
         return view('settings.doctors.index', [
             'doctors' => $this->doctorService->list([
                 'search' => $request->string('search')->toString() ?: null,
-                'clinic_id' => $request->integer('clinic_id') ?: null,
+                'branch_id' => $request->integer('branch_id') ?: null,
             ], 10),
             'search' => $request->string('search')->toString(),
-            'clinicId' => $request->integer('clinic_id') ?: null,
-            'clinics' => $this->clinicService->listAll(),
+            'branchId' => $request->integer('branch_id') ?: null,
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 
@@ -41,7 +41,9 @@ class DoctorController extends Controller
     {
         $this->authorize('create', Doctor::class);
 
-        return view('settings.doctors.create', ['clinics' => $this->clinicService->listAll()]);
+        return view('settings.doctors.create', [
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
+        ]);
     }
 
     public function store(StoreDoctorRequest $request): RedirectResponse
@@ -59,7 +61,7 @@ class DoctorController extends Controller
 
         return view('settings.doctors.edit', [
             'doctor' => $doctor,
-            'clinics' => $this->clinicService->listAll(),
+            'rmeBranches' => $this->branchService->listRmeEnabled(),
         ]);
     }
 

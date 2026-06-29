@@ -36,7 +36,10 @@ class BranchController extends Controller
 
         return view('settings.branches.index', [
             'branches' => $this->branchService->list(
-                ['search' => $request->string('search')->toString() ?: null],
+                [
+                    'search' => $request->string('search')->toString() ?: null,
+                    'rme_only' => true,
+                ],
                 10
             ),
             'search' => $request->string('search')->toString(),

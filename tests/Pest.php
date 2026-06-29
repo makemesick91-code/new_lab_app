@@ -229,7 +229,7 @@ function rmeMakeDoctorOnline(
 ): User {
     $user ??= $doctor->user_id ? User::query()->find($doctor->user_id) : null;
     $user ??= User::factory()->create();
-    $doctor->update(['user_id' => $user->id]);
+    $doctor->update(['user_id' => $user->id, 'branch_id' => $branch->id]);
 
     if (! $user->hasRole('Doctor')) {
         $user->assignRole('Doctor');

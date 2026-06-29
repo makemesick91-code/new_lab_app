@@ -48,7 +48,6 @@
         'finance' => request()->routeIs('invoices.*', 'reports.payments'),
         'reporting' => request()->routeIs('reports.*'),
         'master-data' => request()->routeIs(
-            'settings.clinics.*',
             'settings.doctors.*',
             'settings.patients.*',
             'settings.lab-services.*',
@@ -437,24 +436,20 @@
                 </div>
             @endcanany
 
-            @canany(['manage clinics', 'manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
+            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
                         <span class="flex items-center gap-3">
                             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 7v10c0 1.105 3.582 2 8 2s8-.895 8-2V7M4 7c0 1.105 3.582 2 8 2s8-.895 8-2M4 7c0-1.105 3.582-2 8-2s8 .895 8 2m0 5c0 1.105-3.582 2-8 2s-8-.895-8-2" />
                             </svg>
-                            <span>Master Data Klinik</span>
+                            <span>Master Data RME</span>
                         </span>
                         <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('master-data') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
                     <div data-sidebar-panel="master-data" x-show="isOpen('master-data')" class="mt-1 space-y-0.5 pl-8">
-                        @can('manage clinics')
-                            <a href="{{ route('settings.clinics.index') }}"
-                               class="menu-subitem {{ request()->routeIs('settings.clinics.*') ? $linkActive : $linkIdle }}">Klinik</a>
-                        @endcan
                         @can('manage doctors')
                             <a href="{{ route('settings.doctors.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.doctors.*') ? $linkActive : $linkIdle }}">Dokter</a>
@@ -489,7 +484,7 @@
                         @endcanany
                         @canany(['view_branch_master_data', 'manage_branch_master_data'])
                             <a href="{{ route('settings.branches.index') }}"
-                               class="menu-subitem {{ request()->routeIs('settings.branches.*') ? $linkActive : $linkIdle }}">Master Data Cabang</a>
+                               class="menu-subitem {{ request()->routeIs('settings.branches.*') ? $linkActive : $linkIdle }}">Master Cabang RME</a>
                         @endcanany
                     </div>
                 </div>

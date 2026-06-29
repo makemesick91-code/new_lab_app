@@ -1,4 +1,4 @@
-<x-settings-shell title="Master Data Cabang">
+<x-settings-shell title="Master Cabang RME">
     <div class="bg-white shadow-sm sm:rounded-lg">
         <div class="p-6 space-y-4">
             <div class="flex flex-wrap items-center justify-between gap-3">

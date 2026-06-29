@@ -19,9 +19,9 @@ class DoctorService
         return $this->doctors->paginate($filters, $perPage);
     }
 
-    public function listAll(?int $clinicId = null): Collection
+    public function listAll(?int $branchId = null): Collection
     {
-        return $this->doctors->listAll($clinicId);
+        return $this->doctors->listAll($branchId);
     }
 
     public function find(int $id): ?Doctor
@@ -31,12 +31,12 @@ class DoctorService
 
     public function create(array $data): Doctor
     {
-        return DB::transaction(fn () => $this->doctors->create($data));
+        return DB::transaction(fn () => $this->doctors->create($this->canonicalWritePayload($data)));
     }
 
     public function update(Doctor $doctor, array $data): Doctor
     {
-        return DB::transaction(fn () => $this->doctors->update($doctor, $data));
+        return DB::transaction(fn () => $this->doctors->update($doctor, $this->canonicalWritePayload($data)));
     }
 
     public function delete(Doctor $doctor): bool
@@ -52,5 +52,19 @@ class DoctorService
     public function deactivate(Doctor $doctor): Doctor
     {
         return $this->doctors->setActiveStatus($doctor, false);
+    }
+
+    /**
+     * Sprint 66.1 — new doctor writes use branch_id only; legacy clinic_id is not set.
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    private function canonicalWritePayload(array $data): array
+    {
+        unset($data['clinic_id']);
+        $data['clinic_id'] = null;
+
+        return $data;
     }
 }

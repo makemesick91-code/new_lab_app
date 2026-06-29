@@ -17,6 +17,9 @@ class BranchRepository implements BranchRepositoryInterface
         $search = $filters['search'] ?? null;
 
         return Branch::query()
+            ->when($filters['rme_only'] ?? false, fn ($query) => $query
+                ->where('is_active', true)
+                ->where('is_rme_enabled', true))
             ->when($search, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
                 $query->where(function ($q) use ($term) {

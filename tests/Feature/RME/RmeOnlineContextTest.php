@@ -31,7 +31,10 @@ beforeEach(function () {
     test()->clinic = Clinic::factory()->create();
     test()->patient = Patient::factory()->create();
     test()->treatment = Treatment::factory()->create(['is_active' => true]);
-    test()->doctor = Doctor::factory()->create(['clinic_id' => test()->clinic->id]);
+    test()->doctor = Doctor::factory()->create([
+        'clinic_id' => test()->clinic->id,
+        'branch_id' => test()->rmeBranch->id,
+    ]);
     test()->doctorUser = User::factory()->create()->assignRole('Doctor');
     test()->doctor->update(['user_id' => test()->doctorUser->id]);
     test()->adminUser = User::factory()->create()->assignRole('Admin Klinik');
@@ -68,6 +71,14 @@ it('rejects a doctor choosing a non-RME branch', function () {
         test()->doctorUser,
         test()->nonRmeBranch->id,
         test()->room->id,
+    ))->toThrow(ValidationException::class);
+});
+
+it('rejects a doctor going online in a branch different from master Cabang RME', function () {
+    expect(fn () => test()->onlineContext->startDoctorSession(
+        test()->doctorUser,
+        test()->otherRmeBranch->id,
+        test()->otherRoom->id,
     ))->toThrow(ValidationException::class);
 });
 

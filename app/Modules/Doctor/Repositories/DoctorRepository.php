@@ -12,10 +12,10 @@ class DoctorRepository implements DoctorRepositoryInterface
     public function paginate(array $filters = [], int $perPage = 10): LengthAwarePaginator
     {
         $search = $filters['search'] ?? null;
-        $clinicId = $filters['clinic_id'] ?? null;
+        $branchId = $filters['branch_id'] ?? null;
 
         return Doctor::query()
-            ->with('clinic')
+            ->with(['branch', 'clinic'])
             ->when($search, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
                 $query->where(function ($q) use ($term) {
@@ -23,24 +23,24 @@ class DoctorRepository implements DoctorRepositoryInterface
                         ->orWhereRaw('LOWER(code) LIKE ?', [$term]);
                 });
             })
-            ->when($clinicId, fn ($query, $clinicId) => $query->where('clinic_id', $clinicId))
+            ->when($branchId, fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->orderBy('name')
             ->paginate($perPage)
             ->withQueryString();
     }
 
-    public function listAll(?int $clinicId = null): Collection
+    public function listAll(?int $branchId = null): Collection
     {
         return Doctor::query()
             ->where('is_active', true)
-            ->when($clinicId, fn ($query, $clinicId) => $query->where('clinic_id', $clinicId))
+            ->when($branchId, fn ($query, $branchId) => $query->where('branch_id', $branchId))
             ->orderBy('name')
             ->get();
     }
 
     public function findById(int $id): ?Doctor
     {
-        return Doctor::with('clinic')->find($id);
+        return Doctor::with(['branch', 'clinic'])->find($id);
     }
 
     public function create(array $data): Doctor

@@ -2,13 +2,16 @@
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
-        <label class="block text-sm font-medium text-gray-700">Klinik</label>
-        <select name="clinic_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-            <option value="">- Pilih klinik -</option>
-            @foreach ($clinics as $clinic)
-                <option value="{{ $clinic->id }}" @selected((int) old('clinic_id', $doctor?->clinic_id) === $clinic->id)>{{ $clinic->name }}</option>
+        <label class="block text-sm font-medium text-gray-700" for="branch_id">Cabang RME</label>
+        <select id="branch_id" name="branch_id" class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+            <option value="">- Pilih cabang RME -</option>
+            @foreach ($rmeBranches as $branch)
+                <option value="{{ $branch->id }}" @selected((int) old('branch_id', $doctor?->branch_id) === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
             @endforeach
         </select>
+        @error('branch_id')
+            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+        @enderror
     </div>
     <div>
         <label class="block text-sm font-medium text-gray-700">Kode</label>

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Doctor\Models\Doctor;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -17,7 +18,11 @@ class DoctorFactory extends Factory
     public function definition(): array
     {
         return [
-            'clinic_id' => Clinic::factory(),
+            'clinic_id' => null,
+            'branch_id' => Branch::factory()->state([
+                'is_active' => true,
+                'is_rme_enabled' => true,
+            ]),
             'code' => 'DOC-'.strtoupper(Str::random(6)),
             'name' => 'Dr. '.fake()->name(),
             'phone' => fake()->numerify('08##########'),
@@ -29,5 +34,16 @@ class DoctorFactory extends Factory
     public function inactive(): static
     {
         return $this->state(fn () => ['is_active' => false]);
+    }
+
+    /**
+     * Legacy clinic association for historical-read tests only.
+     */
+    public function withLegacyClinic(): static
+    {
+        return $this->state(fn () => [
+            'clinic_id' => Clinic::factory(),
+            'branch_id' => null,
+        ]);
     }
 }

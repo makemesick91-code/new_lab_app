@@ -75,14 +75,14 @@ it('shows production menu for Technician but not RME group', function () {
         ->assertDontSee('Dashboard RME');
 });
 
-it('shows Master Data Cabang for Owner but hides it from Courier', function () {
+it('shows Master Cabang RME for Owner but hides it from Courier', function () {
     $this->actingAs(userInRole('Owner'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Master Data Cabang');
+        ->assertSee('Master Cabang RME');
 
     $this->actingAs(userInRole('Courier'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertDontSee('Master Data Cabang');
+        ->assertDontSee('Master Cabang RME');
 });

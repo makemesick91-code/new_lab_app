@@ -6,89 +6,84 @@ use App\Http\Controllers\Controller;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Clinic\Requests\StoreClinicRequest;
 use App\Modules\Clinic\Requests\UpdateClinicRequest;
-use App\Modules\Clinic\Services\ClinicService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 
+/**
+ * Sprint 66.1 — Legacy clinic master is deprecated; all routes redirect to Cabang RME.
+ */
 class ClinicController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct(
-        private readonly ClinicService $clinicService,
-    ) {}
-
-    public function index(Request $request): View
+    public function index(Request $request): RedirectResponse
     {
         $this->authorize('viewAny', Clinic::class);
 
-        return view('settings.clinics.index', [
-            'clinics' => $this->clinicService->list(
-                ['search' => $request->string('search')->toString() ?: null],
-                10
-            ),
-            'search' => $request->string('search')->toString(),
-        ]);
+        return $this->redirectToRmeBranches('Master Klinik legacy sudah digantikan oleh Master Cabang RME.');
     }
 
-    public function create(): View
+    public function create(): RedirectResponse
     {
         $this->authorize('create', Clinic::class);
 
-        return view('settings.clinics.create');
+        return $this->redirectToRmeBranches('Master Klinik legacy sudah digantikan oleh Master Cabang RME.');
     }
 
     public function store(StoreClinicRequest $request): RedirectResponse
     {
         $this->authorize('create', Clinic::class);
 
-        $this->clinicService->create($request->validated());
-
-        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dibuat.');
+        return $this->redirectDeprecatedWrite();
     }
 
-    public function edit(Clinic $clinic): View
+    public function edit(Clinic $clinic): RedirectResponse
     {
         $this->authorize('update', $clinic);
 
-        return view('settings.clinics.edit', ['clinic' => $clinic]);
+        return $this->redirectToRmeBranches('Master Klinik legacy sudah digantikan oleh Master Cabang RME.');
     }
 
     public function update(UpdateClinicRequest $request, Clinic $clinic): RedirectResponse
     {
         $this->authorize('update', $clinic);
 
-        $this->clinicService->update($clinic, $request->validated());
-
-        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil diperbarui.');
+        return $this->redirectDeprecatedWrite();
     }
 
     public function destroy(Clinic $clinic): RedirectResponse
     {
         $this->authorize('delete', $clinic);
 
-        $this->clinicService->delete($clinic);
-
-        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dihapus.');
+        return $this->redirectDeprecatedWrite();
     }
 
     public function activate(Clinic $clinic): RedirectResponse
     {
         $this->authorize('update', $clinic);
 
-        $this->clinicService->activate($clinic);
-
-        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil diaktifkan.');
+        return $this->redirectDeprecatedWrite();
     }
 
     public function deactivate(Clinic $clinic): RedirectResponse
     {
         $this->authorize('update', $clinic);
 
-        $this->clinicService->deactivate($clinic);
+        return $this->redirectDeprecatedWrite();
+    }
 
-        return redirect()->route('settings.clinics.index')->with('status', 'Klinik berhasil dinonaktifkan.');
+    private function redirectToRmeBranches(string $message): RedirectResponse
+    {
+        return redirect()
+            ->route('settings.branches.index')
+            ->with('status', $message);
+    }
+
+    private function redirectDeprecatedWrite(): RedirectResponse
+    {
+        return redirect()
+            ->route('settings.branches.index')
+            ->with('error', 'Tidak dapat membuat atau mengubah data Klinik legacy. Gunakan Master Cabang RME.');
     }
 }

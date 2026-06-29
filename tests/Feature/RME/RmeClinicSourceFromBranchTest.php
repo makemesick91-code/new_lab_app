@@ -235,12 +235,12 @@ it('rejects a non-RME branch supplied as the visit Klinik/Cabang', function () {
 
 // --- Backward compatibility ----------------------------------------------------
 
-it('keeps the legacy clinic master settings route working', function () {
+it('redirects legacy clinic master to Cabang RME master', function () {
     $clinicAdmin = userWith(['manage clinics']);
 
     $this->actingAs($clinicAdmin)
         ->get(route('settings.clinics.index'))
-        ->assertOk();
+        ->assertRedirect(route('settings.branches.index'));
 });
 
 it('does not enforce an RME branch on the global lab order list', function () {
