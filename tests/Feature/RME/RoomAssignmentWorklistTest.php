@@ -29,6 +29,8 @@ beforeEach(function () {
 
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Uji']);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    $this->doctorUser = userInRole('Doctor');
+    rmeMakeDoctorOnline($this->doctor, $this->atg, null, $this->doctorUser);
 
     $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits']);
 });
@@ -89,7 +91,7 @@ it('lets Admin Klinik assign a same-branch room to a queued visit', function () 
         'status' => ClinicVisit::STATUS_WAITING,
     ]);
 
-    $this->actingAs(userInRole('Admin Klinik'))
+    $this->actingAs(rmeAdminClinicUser($this->atg))
         ->from(route('rme.visits.index'))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
         ->assertRedirect();
@@ -108,7 +110,7 @@ it('rejects assigning a room from another branch', function () {
         'status' => ClinicVisit::STATUS_WAITING,
     ]);
 
-    $this->actingAs(userInRole('Admin Klinik'))
+    $this->actingAs(rmeAdminClinicUser($this->atg))
         ->from(route('rme.visits.index'))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $otherRoom->id])
         ->assertSessionHasErrors('clinic_room_id');
@@ -119,7 +121,7 @@ it('rejects assigning a room from another branch', function () {
 // --- C. Worklist access control ------------------------------------------------
 
 it('lets a Doctor open the treatment room worklist', function () {
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertViewIs('rme.visits.room-worklist');
@@ -143,7 +145,7 @@ it('shows a room-assigned active visit on the worklist', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     worklistVisit($this->atg, $room, 'Pasien Sudah Ruangan');
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertSee('Pasien Sudah Ruangan');
@@ -159,7 +161,7 @@ it('hides a visit without an assigned room from the worklist', function () {
         'status' => ClinicVisit::STATUS_WAITING,
     ]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertDontSee('Pasien Tanpa Ruangan');
@@ -169,7 +171,7 @@ it('hides terminal visits even when a room is assigned', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     worklistVisit($this->atg, $room, 'Pasien Selesai', ['status' => ClinicVisit::STATUS_COMPLETED]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertDontSee('Pasien Selesai');
@@ -181,7 +183,7 @@ it('scopes the worklist by branch filter (no cross-branch leak)', function () {
     worklistVisit($this->atg, $roomA, 'Pasien Antang Worklist');
     worklistVisit($this->tkm, $roomB, 'Pasien Telkomas Worklist');
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index', ['branch_id' => $this->atg->id]))
         ->assertOk()
         ->assertSee('Pasien Antang Worklist')
@@ -205,7 +207,7 @@ it('does not expose sensitive patient fields on the worklist', function () {
         'status' => ClinicVisit::STATUS_WAITING,
     ]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertSee('Pasien Privasi')
@@ -223,7 +225,7 @@ it('links the worklist action to the visit detail page, not the medical record',
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     $visit = worklistVisit($this->atg, $room, 'Pasien Detail', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk()
         ->assertSee('Buka Detail Pasien')
@@ -237,7 +239,7 @@ it('opens the visit detail page from the worklist without a 404 when no medical 
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     $visit = worklistVisit($this->atg, $room, 'Pasien Tanpa RM Detail', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.show', $visit))
         ->assertOk();
 
@@ -261,7 +263,7 @@ it('opens the visit detail page from the worklist without a 404 when a medical r
         'doctor_id' => $this->doctor->id,
     ]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.show', $visit))
         ->assertOk();
 });
@@ -270,7 +272,7 @@ it('exposes Rekam Medis access on the visit detail page', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     $visit = worklistVisit($this->atg, $room, 'Pasien RM Akses', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
         ->assertSee('Rekam Medis')
@@ -281,7 +283,7 @@ it('exposes Odontogram access on the visit detail page', function () {
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
     $visit = worklistVisit($this->atg, $room, 'Pasien Odontogram Akses', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
         ->assertSee('Odontogram')

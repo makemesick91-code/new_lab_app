@@ -51,6 +51,7 @@ beforeEach(function () {
 
     $this->doctor = Doctor::factory()->create();
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->atg3);
 
     $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits', 'manage patients']);
     $this->cashier = userWith(['manage_rme_billing']);
@@ -130,6 +131,8 @@ it('composes the new patient RM as DG-{branch_code}-{year}-{manual}', function (
 });
 
 it('preserves leading zeros in the manual RM number', function () {
+    rmeMakeDoctorOnline($this->doctor, $this->tkm1);
+
     $this->actingAs($this->admin)
         ->post(route('rme.visits.store'), [
             'patient_mode' => 'new',
@@ -189,6 +192,7 @@ it('shows a new patient visit in the all-RME visit list', function () {
 // ─── B. Existing patient ─────────────────────────────────────────────────────
 
 it('uses the selected Cabang RME as the visit branch for an existing patient', function () {
+    rmeMakeDoctorOnline($this->doctor, $this->atg3);
     $patient = Patient::factory()->create(['branch_id' => $this->tkm1->id, 'medical_record_number' => 'DG-TKM1-2026-0001']);
 
     $this->actingAs($this->admin)
@@ -205,6 +209,7 @@ it('uses the selected Cabang RME as the visit branch for an existing patient', f
 });
 
 it('allows a legacy patient (branch_id null) to create a visit under a selected branch', function () {
+    rmeMakeDoctorOnline($this->doctor, $this->ldk2);
     $patient = Patient::factory()->create(['branch_id' => null, 'clinic_id' => null, 'medical_record_number' => 'RM-LEGACY-001']);
 
     $this->actingAs($this->admin)

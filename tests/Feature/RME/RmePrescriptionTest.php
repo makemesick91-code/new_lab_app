@@ -21,11 +21,13 @@ function prescriptionBranchId(): int
 function prescriptionVisit(array $overrides = []): ClinicVisit
 {
     $branchId = prescriptionBranchId();
+    Branch::query()->whereKey($branchId)->update(['is_rme_enabled' => true]);
     $patient = Patient::factory()->create([
         'branch_id' => $branchId,
         'date_of_birth' => now()->subYears(32)->toDateString(),
     ]);
     $doctor = Doctor::factory()->create(['name' => 'drg. Andi Wijaya']);
+    rmeMakeDoctorOnline($doctor, Branch::query()->findOrFail($branchId));
 
     return ClinicVisit::factory()->inProgress()->create(array_merge([
         'branch_id' => $branchId,

@@ -168,6 +168,8 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
+use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
+use App\Modules\RmeOnlineContext\Repositories\UserOnlineContextRepository;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
 use App\Modules\Tariff\Policies\TariffPolicy;
@@ -268,6 +270,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
+        // Sprint 66.0 — RME online context
+        UserOnlineContextRepositoryInterface::class => UserOnlineContextRepository::class,
         // Sprint 20 Phase 1.8
         MedicalRecordHandwritingRepositoryInterface::class => MedicalRecordHandwritingRepository::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing

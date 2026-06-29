@@ -25,6 +25,7 @@ beforeEach(function () {
     $this->tkm = Branch::factory()->create(['code' => 'TKM7', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
 
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Uji']);
+    rmeMakeDoctorOnline($this->doctor, $this->atg);
     $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits']);
 });
 
@@ -130,7 +131,7 @@ it('lets Admin Klinik assign a same-branch room from the queue page', function (
     $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Ruang Antang Q']);
     $visit = queueVisit($this->atg, 'Pasien Assign');
 
-    $this->actingAs(userInRole('Admin Klinik'))
+    $this->actingAs(rmeAdminClinicUser($this->atg))
         ->from(route('rme.patient-queue.index'))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $room->id])
         ->assertRedirect();
@@ -142,7 +143,7 @@ it('rejects assigning a room from another branch via the queue page', function (
     $otherRoom = ClinicRoom::factory()->create(['branch_id' => $this->tkm->id]);
     $visit = queueVisit($this->atg, 'Pasien Assign Lintas');
 
-    $this->actingAs(userInRole('Admin Klinik'))
+    $this->actingAs(rmeAdminClinicUser($this->atg))
         ->from(route('rme.patient-queue.index'))
         ->patch(route('rme.visits.assign-room', $visit), ['clinic_room_id' => $otherRoom->id])
         ->assertSessionHasErrors('clinic_room_id');

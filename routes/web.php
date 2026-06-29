@@ -61,6 +61,7 @@ use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
+use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -226,6 +227,18 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
+    // Sprint 66.0 — Doctor/Admin online context (before permission gates).
+    Route::get('online-context/select', [OnlineContextController::class, 'select'])
+        ->name('online-context.select');
+    Route::get('online-context/rooms', [OnlineContextController::class, 'rooms'])
+        ->name('online-context.rooms');
+    Route::post('online-context/doctor', [OnlineContextController::class, 'storeDoctor'])
+        ->name('online-context.doctor');
+    Route::post('online-context/admin-clinic', [OnlineContextController::class, 'storeAdminClinic'])
+        ->name('online-context.admin-clinic');
+    Route::post('online-context/offline', [OnlineContextController::class, 'offline'])
+        ->name('online-context.offline');
+
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
         // Sprint 58.4 — Standalone RME dashboard (replaces the Sprint 58.3
         // availability redirect). Aggregate KPI cards + RME shortcuts.
@@ -246,6 +259,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
 
         Route::get('visits/patient-options', [ClinicVisitController::class, 'patientVisitOptions'])
             ->name('visits.patient-options');
+
+        Route::get('visits/online-doctors', [ClinicVisitController::class, 'onlineDoctors'])
+            ->name('visits.online-doctors');
 
         Route::resource('visits', ClinicVisitController::class)
             ->only(['index', 'create', 'store', 'show', 'edit', 'update'])

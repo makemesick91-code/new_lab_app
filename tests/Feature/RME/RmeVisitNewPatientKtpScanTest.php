@@ -32,6 +32,8 @@ beforeEach(function () {
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->branch->update(['is_rme_enabled' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
 
     // Visit creation + new-patient creation require both rights (see controller).
     $this->actor = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
@@ -139,6 +141,7 @@ it('creates a new patient with no KTP scan token', function () {
 it('does not attach a KTP scan in existing-patient mode even with a token', function () {
     $patient = Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0009']);
     $branch = Branch::factory()->create(['code' => 'RME1', 'is_rme_enabled' => true]);
+    rmeMakeDoctorOnline($this->doctor, $branch);
     $token = rmeUploadTempKtp($this->actor)['token'];
 
     $this->actingAs($this->actor)

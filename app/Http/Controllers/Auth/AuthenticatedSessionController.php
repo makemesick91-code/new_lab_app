@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -39,7 +39,16 @@ class AuthenticatedSessionController extends Controller
      */
     private function redirectPathFor(Request $request): string
     {
-        if ($request->user()?->hasRole('Admin Warehouse')) {
+        $user = $request->user();
+        $onlineContext = app(UserOnlineContextService::class);
+
+        if ($user !== null && ! $onlineContext->hasSatisfiedContext($user)) {
+            if ($onlineContext->requiresDoctorContext($user) || $onlineContext->requiresAdminClinicContext($user)) {
+                return route('rme.online-context.select', absolute: false);
+            }
+        }
+
+        if ($user?->hasRole('Admin Warehouse')) {
             return route('inventory.executive-dashboard', absolute: false);
         }
 
@@ -51,6 +60,12 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $user = $request->user();
+
+        if ($user !== null) {
+            app(UserOnlineContextService::class)->markOffline($user);
+        }
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

@@ -23,6 +23,7 @@ beforeEach(function () {
     $this->patient = Patient::factory()->create();
     $this->doctor = Doctor::factory()->create();
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
 });
 
 // --- Part A: Initial Service on Create ---

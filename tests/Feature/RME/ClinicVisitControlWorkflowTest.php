@@ -20,6 +20,7 @@ beforeEach(function () {
     $this->nonRmeBranch = Branch::factory()->create(['code' => 'NORM', 'is_rme_enabled' => false]);
     $this->doctor = Doctor::factory()->create();
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
     $this->manager = userWith(['manage_clinic_visits', 'view_clinic_visits']);
     $this->viewer = userWith(['view_clinic_visits']);
     $this->patient = Patient::factory()->create([

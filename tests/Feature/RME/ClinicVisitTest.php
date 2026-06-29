@@ -28,6 +28,7 @@ beforeEach(function () {
     $this->patient = Patient::factory()->create();
     $this->doctor = Doctor::factory()->create();
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
 });
 
 it('denies users without clinic visit permission', function () {
@@ -181,6 +182,7 @@ it('rejects invalid patient, doctor, or room', function () {
 it('uses the selected RME branch as the visit branch (Klinik = Cabang RME)', function () {
     // Sprint 23 Phase 23.9.1 — visit branch follows the chosen RME-enabled branch.
     $rmeBranch = Branch::factory()->create(['code' => 'RME9', 'is_rme_enabled' => true]);
+    rmeMakeDoctorOnline($this->doctor, $rmeBranch);
 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.store'), [

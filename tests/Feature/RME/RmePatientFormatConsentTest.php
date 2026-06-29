@@ -23,6 +23,7 @@ beforeEach(function () {
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->branch = Branch::factory()->create(['code' => 'FMT1', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->branch);
     $this->visitAdmin = userWith(['manage_clinic_visits', 'view_clinic_visits', 'manage patients']);
     $this->cashier = userWith(['manage_rme_billing']);
 });

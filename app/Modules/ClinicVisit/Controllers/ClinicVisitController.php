@@ -18,6 +18,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -37,6 +38,7 @@ class ClinicVisitController extends Controller
         private readonly MedicalRecordService $medicalRecords,
         private readonly BranchService $branchService,
         private readonly KtpScanService $ktpScans,
+        private readonly UserOnlineContextService $onlineContext,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -139,19 +141,30 @@ class ClinicVisitController extends Controller
     {
         $this->authorize('create', ClinicVisit::class);
 
+        $user = $request->user();
+        $adminBranchId = $this->onlineContext->resolveActiveBranchForAdmin($user);
+        $selectedBranchId = $adminBranchId
+            ?? ($request->integer('branch_id') ?: null);
+
         $prefill = [
             'patient_id' => $request->integer('patient_id') ?: null,
             'visit_type' => $request->string('visit_type')->toString() ?: ClinicVisit::VISIT_TYPE_NEW,
             'follow_up_of_visit_id' => $request->integer('follow_up_of_visit_id') ?: null,
-            'branch_id' => $request->integer('branch_id') ?: null,
+            'branch_id' => $selectedBranchId,
         ];
+
+        $doctors = $selectedBranchId
+            ? $this->onlineContext->activeDoctorsForBranch((int) $selectedBranchId)
+            : collect();
 
         return view('rme.visits.create', [
             'patients' => Patient::with('branch')->orderBy('name')->get(),
-            'doctors' => Doctor::orderBy('name')->get(),
+            'doctors' => $doctors,
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'rmeBranches' => $this->branchService->listRmeEnabled(),
             'prefill' => $prefill,
+            'lockedBranchId' => $adminBranchId,
+            'noOnlineDoctors' => $selectedBranchId !== null && $doctors->isEmpty(),
         ]);
     }
 
@@ -164,6 +177,23 @@ class ClinicVisitController extends Controller
 
         return response()->json([
             'visits' => $this->visits->patientVisitOptions($patientId),
+        ]);
+    }
+
+    public function onlineDoctors(Request $request): JsonResponse
+    {
+        $this->authorize('create', ClinicVisit::class);
+
+        $branchId = $request->integer('branch_id');
+        abort_if($branchId <= 0, 422, 'branch_id wajib diisi.');
+
+        $doctors = $this->onlineContext->activeDoctorsForBranch($branchId);
+
+        return response()->json([
+            'doctors' => $doctors->map(fn (Doctor $doctor) => [
+                'id' => $doctor->id,
+                'name' => $doctor->name,
+            ])->values(),
         ]);
     }
 

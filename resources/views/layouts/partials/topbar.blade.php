@@ -47,6 +47,8 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-3">
+            @include('layouts.partials.rme-online-context-badge')
+
             <div class="hidden text-right sm:block">
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Daengtisia Management System</p>
                 <p class="text-sm font-medium text-gray-900">{{ $user?->name }}</p>

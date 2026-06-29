@@ -6,6 +6,8 @@ use App\Console\Commands\PatientDocumentsPruneTempCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,13 +29,19 @@ return Application::configure(basePath: dirname(__DIR__))
         RefreshInventoryAnalyticsSummaryCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware) {
-        // Spatie Permission middleware aliases (TASK-0105).
+        $middleware->web(append: [
+            TouchOnlineContextLastSeen::class,
+            EnsureRmeOnlineContext::class,
+        ]);
+
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
             // Hotfix Sprint 60.8 — RME room-assignment gate before examination.
             'visit.room' => EnsureVisitRoomAssigned::class,
+            // Sprint 66.0 — doctor/admin online context gate (alias for selective use).
+            'rme.online-context' => EnsureRmeOnlineContext::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

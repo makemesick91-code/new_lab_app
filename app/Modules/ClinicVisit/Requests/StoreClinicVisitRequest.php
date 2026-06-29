@@ -6,10 +6,12 @@ use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class StoreClinicVisitRequest extends FormRequest
 {
@@ -122,6 +124,7 @@ class StoreClinicVisitRequest extends FormRequest
         $validator->after(function (Validator $validator) {
             $this->validateNewPatientRm($validator);
             $this->validateFollowUpVisit($validator);
+            $this->validateOnlineDoctor($validator);
         });
     }
 
@@ -233,6 +236,40 @@ class StoreClinicVisitRequest extends FormRequest
 
         if ($followUpId && in_array($visitType, [ClinicVisit::VISIT_TYPE_NEW, ClinicVisit::VISIT_TYPE_EMERGENCY], true)) {
             // follow_up_of_visit_id is optional and ignored for new/emergency — no error.
+        }
+    }
+
+    private function validateOnlineDoctor(Validator $validator): void
+    {
+        if ($validator->errors()->isNotEmpty()) {
+            return;
+        }
+
+        $doctorId = $this->input('doctor_id');
+
+        if (! $doctorId) {
+            return;
+        }
+
+        $branchId = ($this->input('patient_mode') === 'new')
+            ? ($this->input('new_patient.branch_id') ?? $this->input('branch_id'))
+            : $this->input('branch_id');
+
+        if (! $branchId) {
+            return;
+        }
+
+        try {
+            app(UserOnlineContextService::class)->assertDoctorSelectableForVisit(
+                (int) $doctorId,
+                (int) $branchId,
+            );
+        } catch (ValidationException $e) {
+            foreach ($e->errors() as $field => $messages) {
+                foreach ($messages as $message) {
+                    $validator->errors()->add($field, $message);
+                }
+            }
         }
     }
 }

@@ -8,17 +8,28 @@
     $prefillFollowUpId = old('follow_up_of_visit_id', $prefill['follow_up_of_visit_id'] ?? null);
     $prefillPatientId = old('patient_id', $prefill['patient_id'] ?? $visit?->patient_id);
     $prefillBranchId = old('branch_id', $prefill['branch_id'] ?? $visit?->branch_id);
+    $lockedBranchId = $lockedBranchId ?? null;
+    $noOnlineDoctors = $noOnlineDoctors ?? false;
 @endphp
 
 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
     <div>
         <label class="block text-sm font-medium text-gray-700">Klinik/Cabang <span class="text-gray-400">(Cabang RME)</span> <span class="text-rose-500">*</span></label>
-        <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-            <option value="">- Pilih cabang RME -</option>
-            @foreach ($rmeBranches as $branch)
-                <option value="{{ $branch->id }}" @selected((int) $prefillBranchId === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
-            @endforeach
-        </select>
+        @if ($lockedBranchId && ! $visit)
+            <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
+            @php $lockedBranch = $rmeBranches->firstWhere('id', $lockedBranchId); @endphp
+            <p class="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                {{ $lockedBranch?->code }} — {{ $lockedBranch?->name }}
+            </p>
+            <p class="mt-1 text-xs text-gray-500">Cabang mengikuti konteks kerja admin klinik Anda.</p>
+        @else
+            <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <option value="">- Pilih cabang RME -</option>
+                @foreach ($rmeBranches as $branch)
+                    <option value="{{ $branch->id }}" @selected((int) $prefillBranchId === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                @endforeach
+            </select>
+        @endif
         @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
         <p class="mt-1 text-xs text-gray-400">Untuk pasien baru, Cabang RME pasien otomatis mengikuti Klinik/Cabang kunjungan.</p>
     </div>
@@ -177,13 +188,20 @@
         </div>
     @endif
     <div>
-        <label class="block text-sm font-medium text-gray-700">Dokter</label>
-        <select name="doctor_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+        <label class="block text-sm font-medium text-gray-700">Dokter <span class="text-rose-500">*</span></label>
+        <select name="doctor_id" required data-visit-doctor class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($noOnlineDoctors && ($doctors ?? collect())->isEmpty())>
             <option value="">- Pilih dokter -</option>
-            @foreach ($doctors as $doctor)
+            @foreach ($doctors ?? [] as $doctor)
                 <option value="{{ $doctor->id }}" @selected(old('doctor_id', $visit?->doctor_id) == $doctor->id)>{{ $doctor->name }}</option>
             @endforeach
         </select>
+        @error('doctor_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+        <p data-visit-doctor-empty class="mt-2 text-xs text-amber-700 @if(! $noOnlineDoctors) hidden @endif">
+            Belum ada dokter online di cabang ini. Minta dokter memilih cabang dan ruangan terlebih dahulu.
+        </p>
+        <p data-visit-doctor-hint class="mt-1 text-xs text-gray-500 @if($noOnlineDoctors) hidden @endif">
+            Hanya dokter yang sedang online di cabang kunjungan yang dapat dipilih.
+        </p>
     </div>
     {{-- Sprint 58.6 — Room selection removed from registration. Admin Klinik now
          assigns a treatment room from the queue (Daftar Kunjungan) before treatment. --}}
@@ -370,12 +388,73 @@
             }
         };
 
-        visitBranchSelect?.addEventListener('change', syncNewPatientBranchWithVisitBranch);
+        visitBranchSelect?.addEventListener('change', () => {
+            syncNewPatientBranchWithVisitBranch();
+            loadOnlineDoctors();
+        });
         document.querySelectorAll('[data-mode-radio]').forEach((radio) => {
             radio.addEventListener('change', syncNewPatientBranchWithVisitBranch);
         });
 
         syncNewPatientBranchWithVisitBranch();
+
+        const onlineDoctorsUrl = @json(route('rme.visits.online-doctors'));
+        const doctorSelect = document.querySelector('[data-visit-doctor]');
+        const doctorEmpty = document.querySelector('[data-visit-doctor-empty]');
+        const doctorHint = document.querySelector('[data-visit-doctor-hint]');
+
+        const resolveVisitBranchId = function () {
+            if (visitBranchSelect?.value) {
+                return visitBranchSelect.value;
+            }
+
+            const hiddenBranch = document.querySelector('input[name="branch_id"][type="hidden"]');
+
+            return hiddenBranch?.value || '';
+        };
+
+        const loadOnlineDoctors = async function () {
+            const branchId = resolveVisitBranchId();
+
+            if (!doctorSelect || !branchId) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${onlineDoctorsUrl}?branch_id=${encodeURIComponent(branchId)}`, {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                });
+
+                if (!response.ok) {
+                    return;
+                }
+
+                const payload = await response.json();
+                const current = doctorSelect.value;
+                doctorSelect.innerHTML = '<option value="">- Pilih dokter -</option>';
+                (payload.doctors || []).forEach((doctor) => {
+                    const option = document.createElement('option');
+                    option.value = String(doctor.id);
+                    option.textContent = doctor.name;
+                    if (String(doctor.id) === current) {
+                        option.selected = true;
+                    }
+                    doctorSelect.appendChild(option);
+                });
+
+                const isEmpty = (payload.doctors || []).length === 0;
+                doctorSelect.disabled = isEmpty;
+                doctorEmpty?.classList.toggle('hidden', !isEmpty);
+                doctorHint?.classList.toggle('hidden', isEmpty);
+            } catch (error) {
+                // Keep the server-rendered list when the lookup fails.
+            }
+        };
+
+        loadOnlineDoctors();
     })();
 </script>
 @endif

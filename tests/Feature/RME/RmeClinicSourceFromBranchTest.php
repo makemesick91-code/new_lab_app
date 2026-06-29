@@ -57,6 +57,7 @@ beforeEach(function () {
     $this->clinic = Clinic::factory()->create(['name' => 'Legacy Klinik Lama']);
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
+    rmeMakeDoctorOnline($this->doctor, $this->rmeBranch);
 
     $this->admin = userWith(['manage patients', 'manage_clinic_visits', 'view_clinic_visits']);
 });

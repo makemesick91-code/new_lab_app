@@ -50,7 +50,9 @@ expect()->extend('toBeOne', function () {
 */
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
@@ -60,6 +62,7 @@ use App\Modules\Production\Services\AssignmentService;
 use App\Modules\Production\Services\ProductionWorkflowService;
 use App\Modules\QualityControl\Models\QualityControl;
 use App\Modules\QualityControl\Services\QualityControlService;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -213,4 +216,53 @@ function inventoryQuickActionsPanelHtml(string $html): string
     }
 
     return $matches[0];
+}
+
+/**
+ * Sprint 66.0 — mark a doctor master record as online in an RME branch.
+ */
+function rmeMakeDoctorOnline(
+    Doctor $doctor,
+    Branch $branch,
+    ?ClinicRoom $room = null,
+    ?User $user = null,
+): User {
+    $user ??= $doctor->user_id ? User::query()->find($doctor->user_id) : null;
+    $user ??= User::factory()->create();
+    $doctor->update(['user_id' => $user->id]);
+
+    if (! $user->hasRole('Doctor')) {
+        $user->assignRole('Doctor');
+    }
+
+    $room ??= ClinicRoom::factory()->create([
+        'branch_id' => $branch->id,
+        'status' => ClinicRoom::STATUS_ACTIVE,
+    ]);
+
+    app(UserOnlineContextService::class)
+        ->startDoctorSession($user, (int) $branch->id, (int) $room->id);
+
+    return $user;
+}
+
+/**
+ * Sprint 66.0 — activate admin klinik branch context for a user.
+ */
+function rmeMakeAdminClinicActive(User $user, Branch $branch): void
+{
+    if (! $user->hasRole('Admin Klinik')) {
+        $user->assignRole('Admin Klinik');
+    }
+
+    app(UserOnlineContextService::class)
+        ->startAdminClinicSession($user, (int) $branch->id);
+}
+
+function rmeAdminClinicUser(Branch $branch): User
+{
+    $user = userInRole('Admin Klinik');
+    rmeMakeAdminClinicActive($user, $branch);
+
+    return $user;
 }

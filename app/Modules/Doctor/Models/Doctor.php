@@ -2,6 +2,7 @@
 
 namespace App\Modules\Doctor\Models;
 
+use App\Models\User;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\Patient\Models\Patient;
 use Database\Factories\DoctorFactory;
@@ -19,6 +20,7 @@ class Doctor extends Model
 
     protected $fillable = [
         'clinic_id',
+        'user_id',
         'code',
         'name',
         'phone',
@@ -30,6 +32,7 @@ class Doctor extends Model
     {
         return [
             'clinic_id' => 'integer',
+            'user_id' => 'integer',
             'is_active' => 'boolean',
         ];
     }
@@ -37,6 +40,11 @@ class Doctor extends Model
     public function clinic(): BelongsTo
     {
         return $this->belongsTo(Clinic::class, 'clinic_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function patients(): HasMany

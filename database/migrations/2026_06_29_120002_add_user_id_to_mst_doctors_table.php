@@ -1,0 +1,32 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Sprint 66.0 — Link doctor master records to user accounts for online presence.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table('mst_doctors', function (Blueprint $table) {
+            $table->foreignId('user_id')
+                ->nullable()
+                ->after('clinic_id')
+                ->constrained('users')
+                ->cascadeOnUpdate()
+                ->nullOnDelete();
+
+            $table->unique('user_id');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::table('mst_doctors', function (Blueprint $table) {
+            $table->dropConstrainedForeignId('user_id');
+        });
+    }
+};
