@@ -27,7 +27,7 @@ it('allows Kasir to access cashier routes but not visit creation', function () {
 });
 
 it('allows Doctor clinical routes but denies cashier billing', function () {
-    $doctor = userInRole('Doctor');
+    $doctor = doctorWithOnlineContext();
 
     $this->actingAs($doctor)->get(route('rme.visits.index'))->assertOk();
     $this->actingAs($doctor)->get(route('rme.medical-records.index'))->assertOk();

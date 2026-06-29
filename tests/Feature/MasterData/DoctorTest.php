@@ -25,11 +25,11 @@ it('lists doctors for an authorized user', function () {
         ->assertViewIs('settings.doctors.index');
 });
 
-it('filters doctors by Cabang RME', function () {
+it('filters doctors by Cabang Praktik pivot', function () {
     $branchA = Branch::factory()->create(['code' => 'BRA', 'is_active' => true, 'is_rme_enabled' => true]);
     $branchB = Branch::factory()->create(['code' => 'BRB', 'is_active' => true, 'is_rme_enabled' => true]);
-    Doctor::factory()->create(['branch_id' => $branchA->id, 'name' => 'Dr. Alpha']);
-    Doctor::factory()->create(['branch_id' => $branchB->id, 'name' => 'Dr. Beta']);
+    Doctor::factory()->withAllowedBranches([$branchA])->create(['name' => 'Dr. Alpha']);
+    Doctor::factory()->withAllowedBranches([$branchB])->create(['name' => 'Dr. Beta']);
 
     $this->actingAs(superAdmin())
         ->get(route('settings.doctors.index', ['branch_id' => $branchA->id]))
@@ -41,7 +41,7 @@ it('filters doctors by Cabang RME', function () {
 it('creates a doctor (happy path)', function () {
     $this->actingAs(userWith(['manage doctors']))
         ->post(route('settings.doctors.store'), [
-            'branch_id' => test()->rmeBranch->id,
+            'branch_ids' => [test()->rmeBranch->id],
             'code' => 'DOC-001',
             'name' => 'Dr. New',
             'is_active' => 1,
@@ -49,14 +49,14 @@ it('creates a doctor (happy path)', function () {
         ->assertRedirect(route('settings.doctors.index'));
 
     $doctor = Doctor::where('code', 'DOC-001')->firstOrFail();
-    expect($doctor->branch_id)->toBe(test()->rmeBranch->id);
     expect($doctor->clinic_id)->toBeNull();
+    expect($doctor->branches->pluck('id')->all())->toBe([test()->rmeBranch->id]);
 });
 
-it('requires branch_id and name', function () {
+it('requires branch_ids and name', function () {
     $this->actingAs(superAdmin())
         ->post(route('settings.doctors.store'), ['code' => 'X', 'name' => ''])
-        ->assertSessionHasErrors(['branch_id', 'name']);
+        ->assertSessionHasErrors(['branch_ids', 'name']);
 });
 
 it('rejects a duplicate doctor code', function () {
@@ -64,7 +64,7 @@ it('rejects a duplicate doctor code', function () {
 
     $this->actingAs(superAdmin())
         ->post(route('settings.doctors.store'), [
-            'branch_id' => test()->rmeBranch->id,
+            'branch_ids' => [test()->rmeBranch->id],
             'code' => 'DDUP',
             'name' => 'X',
         ])
@@ -72,11 +72,11 @@ it('rejects a duplicate doctor code', function () {
 });
 
 it('updates a doctor', function () {
-    $doctor = Doctor::factory()->create(['name' => 'Old', 'branch_id' => test()->rmeBranch->id]);
+    $doctor = Doctor::factory()->withAllowedBranches([test()->rmeBranch])->create(['name' => 'Old']);
 
     $this->actingAs(superAdmin())
         ->put(route('settings.doctors.update', $doctor), [
-            'branch_id' => test()->rmeBranch->id,
+            'branch_ids' => [test()->rmeBranch->id],
             'code' => $doctor->code,
             'name' => 'Updated Doctor',
         ])

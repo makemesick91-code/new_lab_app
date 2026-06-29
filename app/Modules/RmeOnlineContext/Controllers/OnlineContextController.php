@@ -38,10 +38,21 @@ class OnlineContextController extends Controller
 
         $linkedDoctor = $requiresDoctor ? $this->doctorResolver->resolveForUser($user) : null;
 
+        if ($linkedDoctor !== null) {
+            $linkedDoctor->load(['branches' => fn ($query) => $query
+                ->where('is_active', true)
+                ->where('is_rme_enabled', true)
+                ->orderBy('name'),
+            ]);
+        }
+
+        $doctorAllowedBranches = $linkedDoctor?->branches ?? collect();
+
         return view('rme.online-context.select', [
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
             'linkedDoctor' => $linkedDoctor,
+            'doctorAllowedBranches' => $doctorAllowedBranches,
             'rmeBranches' => $this->branches->listRmeEnabled(),
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'currentContext' => $this->onlineContext->currentContextFor($user),

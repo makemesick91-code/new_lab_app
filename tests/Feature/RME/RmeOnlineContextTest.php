@@ -74,7 +74,7 @@ it('rejects a doctor choosing a non-RME branch', function () {
     ))->toThrow(ValidationException::class);
 });
 
-it('rejects a doctor going online in a branch different from master Cabang RME', function () {
+it('rejects a doctor going online in a branch not in allowed practice list', function () {
     expect(fn () => test()->onlineContext->startDoctorSession(
         test()->doctorUser,
         test()->otherRmeBranch->id,
@@ -107,7 +107,7 @@ it('shows admin klinik only online doctors from the active branch', function () 
     rmeMakeAdminClinicActive(test()->adminUser, test()->rmeBranch);
     rmeMakeDoctorOnline(test()->doctor, test()->rmeBranch, test()->room);
 
-    $otherDoctor = Doctor::factory()->create(['clinic_id' => test()->clinic->id]);
+    $otherDoctor = Doctor::factory()->withAllowedBranches([test()->otherRmeBranch])->create(['clinic_id' => test()->clinic->id]);
     rmeMakeDoctorOnline($otherDoctor, test()->otherRmeBranch, test()->otherRoom);
 
     $this->actingAs(test()->adminUser)

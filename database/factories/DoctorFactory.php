@@ -31,6 +31,15 @@ class DoctorFactory extends Factory
         ];
     }
 
+    public function configure(): static
+    {
+        return $this->afterCreating(function (Doctor $doctor): void {
+            if ($doctor->branch_id !== null) {
+                $doctor->branches()->syncWithoutDetaching([(int) $doctor->branch_id]);
+            }
+        });
+    }
+
     public function inactive(): static
     {
         return $this->state(fn () => ['is_active' => false]);
@@ -45,5 +54,19 @@ class DoctorFactory extends Factory
             'clinic_id' => Clinic::factory(),
             'branch_id' => null,
         ]);
+    }
+
+    /**
+     * @param  array<int, Branch|int>  $branches
+     */
+    public function withAllowedBranches(array $branches): static
+    {
+        return $this->afterCreating(function (Doctor $doctor) use ($branches): void {
+            $ids = collect($branches)->map(function ($branch) {
+                return $branch instanceof Branch ? $branch->id : (int) $branch;
+            })->unique()->values()->all();
+
+            $doctor->branches()->sync($ids);
+        });
     }
 }

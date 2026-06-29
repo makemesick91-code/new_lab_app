@@ -1,11 +1,15 @@
 <?php
 
+use App\Modules\Branch\Models\Branch;
+
 beforeEach(function () {
     seedAccessControl();
 });
 
 it('shows RME visit links but hides Kasir RME for Doctor', function () {
-    $this->actingAs(userInRole('Doctor'))
+    $doctor = doctorWithOnlineContext();
+
+    $this->actingAs($doctor)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Dashboard RME')
@@ -20,12 +24,16 @@ it('shows Kasir RME for Kasir and Admin Klinik but not Doctor', function () {
         ->assertOk()
         ->assertSee('Kasir RME');
 
-    $this->actingAs(userInRole('Admin Klinik'))
+    $adminBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $admin = userInRole('Admin Klinik');
+    rmeMakeAdminClinicActive($admin, $adminBranch);
+
+    $this->actingAs($admin)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Kasir RME');
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs(doctorWithOnlineContext())
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Kasir RME');

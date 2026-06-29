@@ -219,6 +219,21 @@ function inventoryQuickActionsPanelHtml(string $html): string
 }
 
 /**
+ * Sprint 66.1.1 — doctor user with linked master record and online context.
+ */
+function doctorWithOnlineContext(?Branch $branch = null): User
+{
+    $branch ??= Branch::factory()->create([
+        'is_active' => true,
+        'is_rme_enabled' => true,
+    ]);
+
+    $doctor = Doctor::factory()->withAllowedBranches([$branch])->create();
+
+    return rmeMakeDoctorOnline($doctor, $branch);
+}
+
+/**
  * Sprint 66.0 — mark a doctor master record as online in an RME branch.
  */
 function rmeMakeDoctorOnline(
@@ -229,7 +244,9 @@ function rmeMakeDoctorOnline(
 ): User {
     $user ??= $doctor->user_id ? User::query()->find($doctor->user_id) : null;
     $user ??= User::factory()->create();
-    $doctor->update(['user_id' => $user->id, 'branch_id' => $branch->id]);
+    $doctor->update(['user_id' => $user->id]);
+
+    $doctor->branches()->syncWithoutDetaching([(int) $branch->id]);
 
     if (! $user->hasRole('Doctor')) {
         $user->assignRole('Doctor');

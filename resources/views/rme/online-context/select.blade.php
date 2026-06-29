@@ -26,20 +26,27 @@
                         <p>Hubungi admin klinik untuk menghubungkan akun login Anda dengan data dokter di pengaturan master data.</p>
                     </div>
                 </x-ui.card>
+            @elseif ($doctorAllowedBranches->isEmpty())
+                <x-ui.card>
+                    <div class="space-y-2 text-sm text-amber-800">
+                        <p class="font-medium">Dokter belum memiliki Cabang Praktik</p>
+                        <p>Hubungi Admin Klinik untuk menetapkan Cabang Praktik yang Diizinkan pada data master dokter Anda.</p>
+                    </div>
+                </x-ui.card>
             @else
                 <x-ui.card>
                     <form method="POST" action="{{ route('rme.online-context.doctor') }}" class="space-y-5"
-                        x-data="onlineContextDoctorForm(@js($roomsByBranch->map(fn ($rooms, $branchId) => ['branch_id' => (int) $branchId, 'rooms' => $rooms->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values()])->values()))">
+                        x-data="onlineContextDoctorForm(@js($roomsByBranch->only($doctorAllowedBranches->pluck('id')->all())->map(fn ($rooms, $branchId) => ['branch_id' => (int) $branchId, 'rooms' => $rooms->map(fn ($r) => ['id' => $r->id, 'name' => $r->name])->values()])->values()))">
                         @csrf
                         <div>
                             <p class="text-sm text-gray-600">Dokter: <span class="font-medium text-gray-900">{{ $linkedDoctor->name }}</span></p>
                         </div>
                         <div>
-                            <label for="doctor_branch_id" class="block text-sm font-medium text-gray-700">Cabang RME <span class="text-rose-500">*</span></label>
+                            <label for="doctor_branch_id" class="block text-sm font-medium text-gray-700">Cabang Praktik <span class="text-rose-500">*</span></label>
                             <select id="doctor_branch_id" name="branch_id" required x-model="branchId" @change="syncRooms()"
                                 class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                                <option value="">- Pilih cabang RME -</option>
-                                @foreach ($rmeBranches as $branch)
+                                <option value="">- Pilih cabang praktik -</option>
+                                @foreach ($doctorAllowedBranches as $branch)
                                     <option value="{{ $branch->id }}">{{ $branch->code }} — {{ $branch->name }}</option>
                                 @endforeach
                             </select>

@@ -59,6 +59,8 @@ class DoctorController extends Controller
     {
         $this->authorize('update', $doctor);
 
+        $doctor->load('branches');
+
         return view('settings.doctors.edit', [
             'doctor' => $doctor,
             'rmeBranches' => $this->branchService->listRmeEnabled(),

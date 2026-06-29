@@ -3,12 +3,14 @@
 namespace App\Modules\Branch\Models;
 
 use App\Modules\Delivery\Models\Delivery;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Invoice\Models\Invoice;
 use App\Modules\Invoice\Models\Payment;
 use App\Modules\LabOrder\Models\LabOrder;
 use Database\Factories\BranchFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -54,6 +56,12 @@ class Branch extends Model
     public function scopeInventoryEnabled($query)
     {
         return $query->where('is_inventory_enabled', true);
+    }
+
+    public function doctors(): BelongsToMany
+    {
+        return $this->belongsToMany(Doctor::class, 'mst_doctor_branches', 'branch_id', 'doctor_id')
+            ->withTimestamps();
     }
 
     public function labOrders(): HasMany

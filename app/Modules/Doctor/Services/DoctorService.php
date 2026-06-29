@@ -31,12 +31,24 @@ class DoctorService
 
     public function create(array $data): Doctor
     {
-        return DB::transaction(fn () => $this->doctors->create($this->canonicalWritePayload($data)));
+        return DB::transaction(function () use ($data) {
+            $branchIds = $this->extractBranchIds($data);
+            $doctor = $this->doctors->create($this->canonicalWritePayload($data));
+            $this->doctors->syncAllowedBranches($doctor, $branchIds);
+
+            return $doctor->load('branches');
+        });
     }
 
     public function update(Doctor $doctor, array $data): Doctor
     {
-        return DB::transaction(fn () => $this->doctors->update($doctor, $this->canonicalWritePayload($data)));
+        return DB::transaction(function () use ($doctor, $data) {
+            $branchIds = $this->extractBranchIds($data);
+            $doctor = $this->doctors->update($doctor, $this->canonicalWritePayload($data));
+            $this->doctors->syncAllowedBranches($doctor, $branchIds);
+
+            return $doctor->load('branches');
+        });
     }
 
     public function delete(Doctor $doctor): bool
@@ -55,16 +67,31 @@ class DoctorService
     }
 
     /**
-     * Sprint 66.1 — new doctor writes use branch_id only; legacy clinic_id is not set.
+     * Sprint 66.1.1 — clinic_id stays null; branch_id is not the write source of truth.
      *
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
     private function canonicalWritePayload(array $data): array
     {
-        unset($data['clinic_id']);
+        unset($data['branch_ids'], $data['branches'], $data['branch_id']);
         $data['clinic_id'] = null;
 
         return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<int, int>
+     */
+    private function extractBranchIds(array $data): array
+    {
+        $branchIds = $data['branch_ids'] ?? $data['branches'] ?? [];
+
+        return collect($branchIds)
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
     }
 }

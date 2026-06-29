@@ -5,11 +5,13 @@ namespace Database\Seeders;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
+use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Carbon\Carbon;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -72,8 +74,11 @@ class RmeSmokeTestSeeder extends Seeder
                 'address' => 'Makassar',
                 'phone' => null,
                 'is_active' => true,
+                'is_rme_enabled' => true,
             ]
         );
+
+        $branch->forceFill(['is_rme_enabled' => true, 'is_active' => true])->save();
 
         $clinic = Clinic::firstOrCreate(
             ['code' => self::CLINIC_CODE],
@@ -120,6 +125,27 @@ class RmeSmokeTestSeeder extends Seeder
             'Doctor'
         );
 
+        $doctor->forceFill([
+            'user_id' => $doctorUser->id,
+            'branch_id' => $branch->id,
+        ])->save();
+        $doctor->branches()->syncWithoutDetaching([(int) $branch->id]);
+
+        $smokeRoom = ClinicRoom::firstOrCreate(
+            ['branch_id' => $branch->id, 'code' => 'RM-SMOKE'],
+            [
+                'name' => 'Ruangan Smoke Test',
+                'type' => ClinicRoom::TYPE_TREATMENT_ROOM,
+                'status' => ClinicRoom::STATUS_ACTIVE,
+            ]
+        );
+
+        app(UserOnlineContextService::class)->startDoctorSession(
+            $doctorUser,
+            (int) $branch->id,
+            (int) $smokeRoom->id,
+        );
+
         $perawatUser = $this->seedUser(
             self::PERAWAT_USER_EMAIL,
             self::PERAWAT_USER_NAME,
@@ -145,6 +171,7 @@ class RmeSmokeTestSeeder extends Seeder
             [
                 'branch_id' => $branch->id,
                 'clinic_id' => $clinic->id,
+                'clinic_room_id' => $smokeRoom->id,
                 'patient_id' => $patient->id,
                 'doctor_id' => $doctor->id,
                 'visit_date' => $visitDate,
@@ -156,6 +183,7 @@ class RmeSmokeTestSeeder extends Seeder
                 'created_by' => $perawatUser->id,
             ]
         );
+        $clinicalVisit->forceFill(['clinic_room_id' => $smokeRoom->id])->save();
 
         MedicalRecord::firstOrCreate(
             ['clinic_visit_id' => $clinicalVisit->id],
@@ -185,6 +213,7 @@ class RmeSmokeTestSeeder extends Seeder
             [
                 'branch_id' => $branch->id,
                 'clinic_id' => $clinic->id,
+                'clinic_room_id' => $smokeRoom->id,
                 'patient_id' => $patient->id,
                 'doctor_id' => $doctor->id,
                 'visit_date' => $visitDate,
@@ -196,6 +225,7 @@ class RmeSmokeTestSeeder extends Seeder
                 'created_by' => $perawatUser->id,
             ]
         );
+        $cashierVisit->forceFill(['clinic_room_id' => $smokeRoom->id])->save();
 
         MedicalRecord::firstOrCreate(
             ['clinic_visit_id' => $cashierVisit->id],

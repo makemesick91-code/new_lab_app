@@ -29,7 +29,8 @@ beforeEach(function () {
     seedAccessControl();
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
-    $this->doctor = userInRole('Doctor');
+    $this->branch->update(['is_rme_enabled' => true, 'is_active' => true]);
+    $this->doctor = doctorWithOnlineContext($this->branch);
     $this->kasir = userInRole('Kasir');
     $this->adminLab = userInRole('Admin Lab');
     $this->labService = LabService::factory()->create(['is_active' => true, 'price' => 850000]);

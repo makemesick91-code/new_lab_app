@@ -30,4 +30,9 @@ interface DoctorRepositoryInterface
     public function delete(Doctor $doctor): bool;
 
     public function setActiveStatus(Doctor $doctor, bool $isActive): Doctor;
+
+    /**
+     * @param  array<int, int>  $branchIds
+     */
+    public function syncAllowedBranches(Doctor $doctor, array $branchIds): void;
 }

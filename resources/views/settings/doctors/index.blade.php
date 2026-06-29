@@ -23,7 +23,7 @@
                         <tr class="text-left text-gray-500">
                             <th class="px-3 py-2 font-medium">Kode</th>
                             <th class="px-3 py-2 font-medium">Nama</th>
-                            <th class="px-3 py-2 font-medium">Cabang RME</th>
+                            <th class="px-3 py-2 font-medium">Cabang Praktik</th>
                             <th class="px-3 py-2 font-medium">Telepon</th>
                             <th class="px-3 py-2 font-medium">Status</th>
                             <th class="px-3 py-2 font-medium text-right">Aksi</th>
@@ -35,10 +35,14 @@
                                 <td class="px-3 py-2 text-gray-600">{{ $doctor->code }}</td>
                                 <td class="px-3 py-2 font-medium text-gray-900">{{ $doctor->name }}</td>
                                 <td class="px-3 py-2 text-gray-600">
-                                    @if ($doctor->branch)
-                                        {{ $doctor->branch->code }} — {{ $doctor->branch->name }}
+                                    @if ($doctor->branches->isNotEmpty())
+                                        <div class="flex flex-wrap gap-1">
+                                            @foreach ($doctor->branches as $branch)
+                                                <span class="inline-flex items-center rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-800">{{ $branch->code }} — {{ $branch->name }}</span>
+                                            @endforeach
+                                        </div>
                                     @else
-                                        <span class="text-amber-600">Dokter belum memiliki Cabang RME</span>
+                                        <span class="text-amber-600">Dokter belum memiliki Cabang Praktik</span>
                                     @endif
                                 </td>
                                 <td class="px-3 py-2 text-gray-600">{{ $doctor->phone ?? '—' }}</td>

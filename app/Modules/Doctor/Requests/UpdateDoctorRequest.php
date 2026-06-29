@@ -20,9 +20,10 @@ class UpdateDoctorRequest extends FormRequest
         $doctorId = $this->route('doctor')?->id;
 
         return [
-            'branch_id' => [
-                'required',
+            'branch_ids' => ['required', 'array', 'min:1'],
+            'branch_ids.*' => [
                 'integer',
+                'distinct',
                 Rule::exists('mst_branches', 'id')->where('is_active', true)->where('is_rme_enabled', true),
             ],
             'code' => ['required', 'string', 'max:50', Rule::unique('mst_doctors', 'code')->ignore($doctorId)],
@@ -36,8 +37,9 @@ class UpdateDoctorRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'branch_id.required' => 'Cabang RME wajib dipilih.',
-            'branch_id.exists' => 'Cabang yang dipilih harus cabang RME aktif.',
+            'branch_ids.required' => 'Minimal satu Cabang Praktik wajib dipilih.',
+            'branch_ids.min' => 'Minimal satu Cabang Praktik wajib dipilih.',
+            'branch_ids.*.exists' => 'Setiap cabang harus cabang RME aktif.',
         ];
     }
 }

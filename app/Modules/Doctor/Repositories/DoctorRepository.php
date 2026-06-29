@@ -15,7 +15,7 @@ class DoctorRepository implements DoctorRepositoryInterface
         $branchId = $filters['branch_id'] ?? null;
 
         return Doctor::query()
-            ->with(['branch', 'clinic'])
+            ->with(['branches', 'branch', 'clinic'])
             ->when($search, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
                 $query->where(function ($q) use ($term) {
@@ -23,7 +23,10 @@ class DoctorRepository implements DoctorRepositoryInterface
                         ->orWhereRaw('LOWER(code) LIKE ?', [$term]);
                 });
             })
-            ->when($branchId, fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($branchId, fn ($query, $branchId) => $query->whereHas(
+                'branches',
+                fn ($branchQuery) => $branchQuery->where('mst_branches.id', $branchId),
+            ))
             ->orderBy('name')
             ->paginate($perPage)
             ->withQueryString();
@@ -33,14 +36,17 @@ class DoctorRepository implements DoctorRepositoryInterface
     {
         return Doctor::query()
             ->where('is_active', true)
-            ->when($branchId, fn ($query, $branchId) => $query->where('branch_id', $branchId))
+            ->when($branchId, fn ($query, $branchId) => $query->whereHas(
+                'branches',
+                fn ($branchQuery) => $branchQuery->where('mst_branches.id', $branchId),
+            ))
             ->orderBy('name')
             ->get();
     }
 
     public function findById(int $id): ?Doctor
     {
-        return Doctor::with(['branch', 'clinic'])->find($id);
+        return Doctor::with(['branches', 'branch', 'clinic'])->find($id);
     }
 
     public function create(array $data): Doctor
@@ -65,5 +71,16 @@ class DoctorRepository implements DoctorRepositoryInterface
         $doctor->update(['is_active' => $isActive]);
 
         return $doctor->refresh();
+    }
+
+    public function syncAllowedBranches(Doctor $doctor, array $branchIds): void
+    {
+        $doctor->branches()->sync(
+            collect($branchIds)
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all(),
+        );
     }
 }

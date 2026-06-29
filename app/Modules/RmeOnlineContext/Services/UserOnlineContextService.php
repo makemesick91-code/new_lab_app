@@ -126,15 +126,23 @@ class UserOnlineContextService
             ]);
         }
 
-        if ($doctor->branch_id === null) {
+        if (! $doctor->is_active) {
             throw ValidationException::withMessages([
-                'branch_id' => 'Dokter belum memiliki Cabang RME. Hubungi admin klinik.',
+                'branch_id' => 'Data dokter tidak aktif. Hubungi admin klinik.',
             ]);
         }
 
-        if ((int) $doctor->branch_id !== $branchId) {
+        $doctor->loadMissing('branches');
+
+        if ($doctor->branches->isEmpty()) {
             throw ValidationException::withMessages([
-                'branch_id' => 'Cabang online harus sama dengan Cabang RME master dokter.',
+                'branch_id' => 'Dokter belum memiliki Cabang Praktik. Hubungi admin.',
+            ]);
+        }
+
+        if (! $doctor->branches->contains('id', $branchId)) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Cabang yang dipilih tidak termasuk Cabang Praktik yang Diizinkan.',
             ]);
         }
 
