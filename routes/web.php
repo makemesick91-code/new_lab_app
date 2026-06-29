@@ -45,6 +45,7 @@ use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\Patient\Controllers\PatientDocumentController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
+use App\Modules\Prescription\Controllers\RmePrescriptionController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
 use App\Modules\Production\Controllers\ProductionStepController;
 use App\Modules\Production\Controllers\ProductionWorkflowController;
@@ -282,6 +283,21 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::middleware('visit.room')
             ->get('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'show'])
             ->name('visits.odontogram.show');
+
+        // Resep Dokter — doctor prescription canvas per visit.
+        Route::middleware('visit.room')
+            ->get('visits/{clinicVisit}/prescription', [RmePrescriptionController::class, 'show'])
+            ->name('visits.prescription.show');
+
+        Route::middleware(['permission:manage_clinic_visits', 'visit.room'])->group(function () {
+            Route::post('visits/{clinicVisit}/prescription', [RmePrescriptionController::class, 'store'])
+                ->name('visits.prescription.store');
+            Route::patch('prescriptions/{rmePrescription}', [RmePrescriptionController::class, 'update'])
+                ->name('prescriptions.update');
+        });
+
+        Route::get('prescriptions/{rmePrescription}/print', [RmePrescriptionController::class, 'print'])
+            ->name('prescriptions.print');
 
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])

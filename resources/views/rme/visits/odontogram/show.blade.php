@@ -152,6 +152,11 @@
             </div>
         </div>
 
+        @include('rme.visits.partials.visit-workflow-nav', [
+            'clinicVisit' => $clinicVisit,
+            'active' => 'odontogram',
+        ])
+
         {{-- Daengtisia document identity (matches the official odontogram form) --}}
         <x-ui.card>
             <div class="text-center">

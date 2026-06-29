@@ -135,6 +135,10 @@ use App\Modules\PaymentMethod\Interfaces\PaymentMethodRepositoryInterface;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\PaymentMethod\Policies\PaymentMethodPolicy;
 use App\Modules\PaymentMethod\Repositories\PaymentMethodRepository;
+use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
+use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\Prescription\Policies\RmePrescriptionPolicy;
+use App\Modules\Prescription\Repositories\RmePrescriptionRepository;
 use App\Modules\Production\Interfaces\AssignmentRepositoryInterface;
 use App\Modules\Production\Interfaces\ProductionStepRepositoryInterface;
 use App\Modules\Production\Interfaces\WorkLogRepositoryInterface;
@@ -263,6 +267,7 @@ class RepositoryServiceProvider extends ServiceProvider
         MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
+        RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
         // Sprint 20 Phase 1.8
         MedicalRecordHandwritingRepositoryInterface::class => MedicalRecordHandwritingRepository::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
@@ -333,6 +338,7 @@ class RepositoryServiceProvider extends ServiceProvider
         MedicalRecord::class => MedicalRecordPolicy::class,
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder
         Odontogram::class => OdontogramPolicy::class,
+        RmePrescription::class => RmePrescriptionPolicy::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoice::class => RmeInvoicePolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,

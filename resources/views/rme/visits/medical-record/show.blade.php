@@ -27,6 +27,11 @@
 
         </div>
 
+        @include('rme.visits.partials.visit-workflow-nav', [
+            'clinicVisit' => $clinicVisit,
+            'active' => 'medical-record',
+        ])
+
         {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
         @if (! empty($notice))
             <div class="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800">

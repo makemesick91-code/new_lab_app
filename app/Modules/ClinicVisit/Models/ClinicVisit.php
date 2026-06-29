@@ -10,6 +10,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Treatment\Models\Treatment;
 use Database\Factories\ClinicVisitFactory;
@@ -251,6 +252,11 @@ class ClinicVisit extends Model
     public function odontogram(): HasOne
     {
         return $this->hasOne(Odontogram::class);
+    }
+
+    public function rmePrescription(): HasOne
+    {
+        return $this->hasOne(RmePrescription::class, 'clinic_visit_id');
     }
 
     public function rmeInvoice(): HasOne

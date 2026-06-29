@@ -295,6 +295,30 @@
             </x-ui.card>
         @endcan
 
+        {{-- Resep Dokter --}}
+        @can('viewForVisit', [\App\Modules\Prescription\Models\RmePrescription::class, $visit])
+            <x-ui.card title="Resep Dokter">
+                @if ($visit->requiresRoomBeforeExam())
+                    <p class="text-sm text-amber-700">
+                        Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
+                    </p>
+                @else
+                    @php $visitPrescription = $visit->rmePrescription; @endphp
+                    @if ($visitPrescription)
+                        <div class="flex flex-wrap items-center gap-3">
+                            <x-ui.badge tone="success">Tersimpan</x-ui.badge>
+                            <span class="text-sm text-gray-600">{{ $visitPrescription->prescription_date?->format('d/m/Y') }}</span>
+                        </div>
+                    @else
+                        <p class="text-sm text-gray-500 mb-3">Resep dokter belum dibuat untuk kunjungan ini.</p>
+                    @endif
+                    <x-ui.button variant="primary" :href="route('rme.visits.prescription.show', $visit)" class="mt-3">
+                        {{ $visitPrescription ? 'Lihat Resep Dokter' : 'Buat Resep Dokter' }}
+                    </x-ui.button>
+                @endif
+            </x-ui.card>
+        @endcan
+
         @include('rme.visits.partials.patient-visit-history', [
             'patientVisitHistory' => $patientVisitHistory,
             'currentVisitId' => $visit->id,

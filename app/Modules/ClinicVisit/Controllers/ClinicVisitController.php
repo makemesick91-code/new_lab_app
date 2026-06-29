@@ -214,6 +214,7 @@ class ClinicVisitController extends Controller
             'initialTreatment',
             'followUpOf',
             'followUpVisits.doctor',
+            'rmePrescription',
         ]);
 
         $patientVisitHistory = $this->visits->patientVisitHistory(
