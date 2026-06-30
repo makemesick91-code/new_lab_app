@@ -709,9 +709,11 @@
                             @endif
                         @endcanany
                         @can('manage_rme_billing')
-                            <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                                Buka Kasir RME
-                            </a>
+                            @unless($user?->hasRole('Admin Klinik'))
+                                <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                    Buka Kasir RME
+                                </a>
+                            @endunless
                         @endcan
                     </div>
                 </section>
