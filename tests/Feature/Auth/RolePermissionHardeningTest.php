@@ -72,7 +72,9 @@ it('keeps Admin Klinik on full clinic and cashier workflow', function () {
 
     expect($role->hasPermissionTo('manage_clinic_visits'))->toBeTrue()
         ->and($role->hasPermissionTo('manage_rme_billing'))->toBeTrue()
-        ->and($role->hasPermissionTo('view_clinic_master_data'))->toBeTrue();
+        ->and($role->hasPermissionTo('view_clinic_master_data'))->toBeTrue()
+        ->and($role->hasPermissionTo('view_rme_patient_reports'))->toBeTrue()
+        ->and($role->hasPermissionTo('view_rme_payment_reports'))->toBeFalse();
 });
 
 it('keeps Admin Lab on lab and RME integration permissions', function () {

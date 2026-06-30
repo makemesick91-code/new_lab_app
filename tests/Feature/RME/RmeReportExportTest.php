@@ -265,6 +265,24 @@ it('denies patient export without patient report permission', function () {
         ->assertForbidden();
 });
 
+it('lets Admin Klinik open export and print patient reports', function () {
+    $admin = rmeAdminClinicUser($this->branch);
+
+    $this->actingAs($admin)
+        ->get(route('rme.reports.patients'))
+        ->assertOk()
+        ->assertSee('Laporan Pasien RME');
+
+    $this->actingAs($admin)
+        ->get(route('rme.reports.patients.export'))
+        ->assertOk();
+
+    $this->actingAs($admin)
+        ->get(route('rme.reports.patients.print'))
+        ->assertOk()
+        ->assertSee('Laporan Pasien RME');
+});
+
 it('denies payment export without payment report permission', function () {
     $user = userWith(['view_rme_patient_reports']);
 

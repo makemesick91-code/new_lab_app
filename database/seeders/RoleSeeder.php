@@ -102,6 +102,8 @@ class RoleSeeder extends Seeder
             'manage_clinic_visits',
             // Sprint 20 Phase 1.10 — RME Cashier Billing
             'manage_rme_billing',
+            // Hotfix 66.2.6 — Admin Klinik may view/export/print patient reports only
+            'view_rme_patient_reports',
         ],
         'Technician' => [
             'view dashboard',
