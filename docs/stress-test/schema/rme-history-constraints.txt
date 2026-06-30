@@ -1,0 +1,155 @@
+              table_name              |                             conname                             | contype |                                                 definition                                                  
+--------------------------------------+-----------------------------------------------------------------+---------+-------------------------------------------------------------------------------------------------------------
+ trx_clinic_visits                    | trx_clinic_visits_branch_date_queue_unique                      | u       | UNIQUE (branch_id, visit_date, queue_number)
+ trx_clinic_visits                    | trx_clinic_visits_branch_id_foreign                             | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_clinic_visits                    | trx_clinic_visits_branch_id_not_null                            | n       | NOT NULL branch_id
+ trx_clinic_visits                    | trx_clinic_visits_clinic_id_foreign                             | f       | FOREIGN KEY (clinic_id) REFERENCES mst_clinics(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_clinic_visits                    | trx_clinic_visits_clinic_room_id_foreign                        | f       | FOREIGN KEY (clinic_room_id) REFERENCES mst_clinic_rooms(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_clinic_visits                    | trx_clinic_visits_consent_signed_by_doctor_not_null             | n       | NOT NULL consent_signed_by_doctor
+ trx_clinic_visits                    | trx_clinic_visits_consent_signed_by_patient_not_null            | n       | NOT NULL consent_signed_by_patient
+ trx_clinic_visits                    | trx_clinic_visits_consent_verified_by_foreign                   | f       | FOREIGN KEY (consent_verified_by) REFERENCES users(id) ON DELETE SET NULL
+ trx_clinic_visits                    | trx_clinic_visits_created_by_foreign                            | f       | FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_clinic_visits                    | trx_clinic_visits_created_by_not_null                           | n       | NOT NULL created_by
+ trx_clinic_visits                    | trx_clinic_visits_doctor_id_foreign                             | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_clinic_visits                    | trx_clinic_visits_follow_up_of_visit_id_foreign                 | f       | FOREIGN KEY (follow_up_of_visit_id) REFERENCES trx_clinic_visits(id) ON DELETE SET NULL
+ trx_clinic_visits                    | trx_clinic_visits_id_not_null                                   | n       | NOT NULL id
+ trx_clinic_visits                    | trx_clinic_visits_initial_treatment_id_foreign                  | f       | FOREIGN KEY (initial_treatment_id) REFERENCES mst_treatments(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_clinic_visits                    | trx_clinic_visits_patient_id_foreign                            | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_clinic_visits                    | trx_clinic_visits_patient_id_not_null                           | n       | NOT NULL patient_id
+ trx_clinic_visits                    | trx_clinic_visits_pkey                                          | p       | PRIMARY KEY (id)
+ trx_clinic_visits                    | trx_clinic_visits_queue_number_not_null                         | n       | NOT NULL queue_number
+ trx_clinic_visits                    | trx_clinic_visits_status_not_null                               | n       | NOT NULL status
+ trx_clinic_visits                    | trx_clinic_visits_visit_date_not_null                           | n       | NOT NULL visit_date
+ trx_clinic_visits                    | trx_clinic_visits_visit_number_not_null                         | n       | NOT NULL visit_number
+ trx_clinic_visits                    | trx_clinic_visits_visit_number_unique                           | u       | UNIQUE (visit_number)
+ trx_clinic_visits                    | trx_clinic_visits_visit_type_not_null                           | n       | NOT NULL visit_type
+ trx_lab_case_candidates              | trx_lab_case_candidates_branch_id_foreign                       | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_lab_case_candidates              | trx_lab_case_candidates_branch_id_not_null                      | n       | NOT NULL branch_id
+ trx_lab_case_candidates              | trx_lab_case_candidates_clinic_visit_id_foreign                 | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_lab_case_candidates              | trx_lab_case_candidates_clinic_visit_id_not_null                | n       | NOT NULL clinic_visit_id
+ trx_lab_case_candidates              | trx_lab_case_candidates_created_by_foreign                      | f       | FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_lab_case_candidates              | trx_lab_case_candidates_doctor_id_foreign                       | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_lab_case_candidates              | trx_lab_case_candidates_id_not_null                             | n       | NOT NULL id
+ trx_lab_case_candidates              | trx_lab_case_candidates_medical_record_id_foreign               | f       | FOREIGN KEY (medical_record_id) REFERENCES trx_medical_records(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_lab_case_candidates              | trx_lab_case_candidates_patient_id_foreign                      | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_lab_case_candidates              | trx_lab_case_candidates_patient_id_not_null                     | n       | NOT NULL patient_id
+ trx_lab_case_candidates              | trx_lab_case_candidates_pkey                                    | p       | PRIMARY KEY (id)
+ trx_lab_case_candidates              | trx_lab_case_candidates_quantity_not_null                       | n       | NOT NULL quantity
+ trx_lab_case_candidates              | trx_lab_case_candidates_reviewed_by_foreign                     | f       | FOREIGN KEY (reviewed_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_lab_case_candidates              | trx_lab_case_candidates_rme_invoice_id_foreign                  | f       | FOREIGN KEY (rme_invoice_id) REFERENCES trx_rme_invoices(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_lab_case_candidates              | trx_lab_case_candidates_rme_invoice_id_not_null                 | n       | NOT NULL rme_invoice_id
+ trx_lab_case_candidates              | trx_lab_case_candidates_rme_invoice_item_id_foreign             | f       | FOREIGN KEY (rme_invoice_item_id) REFERENCES trx_rme_invoice_items(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_lab_case_candidates              | trx_lab_case_candidates_rme_invoice_item_id_not_null            | n       | NOT NULL rme_invoice_item_id
+ trx_lab_case_candidates              | trx_lab_case_candidates_rme_invoice_item_id_unique              | u       | UNIQUE (rme_invoice_item_id)
+ trx_lab_case_candidates              | trx_lab_case_candidates_source_description_not_null             | n       | NOT NULL source_description
+ trx_lab_case_candidates              | trx_lab_case_candidates_status_not_null                         | n       | NOT NULL status
+ trx_lab_case_candidates              | trx_lab_case_candidates_treatment_id_foreign                    | f       | FOREIGN KEY (treatment_id) REFERENCES mst_treatments(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_branch_id_foreign          | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_branch_id_not_null         | n       | NOT NULL branch_id
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_clinic_visit_id_foreign    | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_clinic_visit_id_not_null   | n       | NOT NULL clinic_visit_id
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_created_by_foreign         | f       | FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_doctor_id_foreign          | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_handwriting_hash_not_null  | n       | NOT NULL handwriting_hash
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_handwriting_path_not_null  | n       | NOT NULL handwriting_path
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_id_not_null                | n       | NOT NULL id
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_medical_record_id_foreign  | f       | FOREIGN KEY (medical_record_id) REFERENCES trx_medical_records(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_medical_record_id_not_null | n       | NOT NULL medical_record_id
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_medical_record_id_page_num | u       | UNIQUE (medical_record_id, page_number)
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_page_number_not_null       | n       | NOT NULL page_number
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_pkey                       | p       | PRIMARY KEY (id)
+ trx_medical_record_handwriting_pages | trx_medical_record_handwriting_pages_updated_by_foreign         | f       | FOREIGN KEY (updated_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_records                  | trx_medical_records_branch_id_foreign                           | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_records                  | trx_medical_records_branch_id_not_null                          | n       | NOT NULL branch_id
+ trx_medical_records                  | trx_medical_records_canonical_visit_id_foreign                  | f       | FOREIGN KEY (canonical_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_records                  | trx_medical_records_clinic_visit_id_foreign                     | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_records                  | trx_medical_records_clinic_visit_id_not_null                    | n       | NOT NULL clinic_visit_id
+ trx_medical_records                  | trx_medical_records_clinic_visit_id_unique                      | u       | UNIQUE (clinic_visit_id)
+ trx_medical_records                  | trx_medical_records_doctor_id_foreign                           | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_records                  | trx_medical_records_doctor_id_not_null                          | n       | NOT NULL doctor_id
+ trx_medical_records                  | trx_medical_records_finalized_by_foreign                        | f       | FOREIGN KEY (finalized_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_records                  | trx_medical_records_id_not_null                                 | n       | NOT NULL id
+ trx_medical_records                  | trx_medical_records_patient_id_foreign                          | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_medical_records                  | trx_medical_records_patient_id_not_null                         | n       | NOT NULL patient_id
+ trx_medical_records                  | trx_medical_records_pkey                                        | p       | PRIMARY KEY (id)
+ trx_medical_records                  | trx_medical_records_recorded_by_foreign                         | f       | FOREIGN KEY (recorded_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_records                  | trx_medical_records_source_visit_id_foreign                     | f       | FOREIGN KEY (source_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_medical_records                  | trx_medical_records_status_not_null                             | n       | NOT NULL status
+ trx_odontograms                      | trx_odontograms_branch_id_foreign                               | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_odontograms                      | trx_odontograms_branch_id_not_null                              | n       | NOT NULL branch_id
+ trx_odontograms                      | trx_odontograms_clinic_visit_id_foreign                         | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_odontograms                      | trx_odontograms_clinic_visit_id_not_null                        | n       | NOT NULL clinic_visit_id
+ trx_odontograms                      | trx_odontograms_clinic_visit_id_unique                          | u       | UNIQUE (clinic_visit_id)
+ trx_odontograms                      | trx_odontograms_created_by_foreign                              | f       | FOREIGN KEY (created_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_odontograms                      | trx_odontograms_finalized_by_foreign                            | f       | FOREIGN KEY (finalized_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_odontograms                      | trx_odontograms_id_not_null                                     | n       | NOT NULL id
+ trx_odontograms                      | trx_odontograms_medical_record_id_foreign                       | f       | FOREIGN KEY (medical_record_id) REFERENCES trx_medical_records(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_odontograms                      | trx_odontograms_pkey                                            | p       | PRIMARY KEY (id)
+ trx_odontograms                      | trx_odontograms_status_not_null                                 | n       | NOT NULL status
+ trx_odontograms                      | trx_odontograms_updated_by_foreign                              | f       | FOREIGN KEY (updated_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_invoice_items                | trx_rme_invoice_items_description_not_null                      | n       | NOT NULL description
+ trx_rme_invoice_items                | trx_rme_invoice_items_discount_not_null                         | n       | NOT NULL discount
+ trx_rme_invoice_items                | trx_rme_invoice_items_doctor_id_foreign                         | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_invoice_items                | trx_rme_invoice_items_id_not_null                               | n       | NOT NULL id
+ trx_rme_invoice_items                | trx_rme_invoice_items_pkey                                      | p       | PRIMARY KEY (id)
+ trx_rme_invoice_items                | trx_rme_invoice_items_qty_not_null                              | n       | NOT NULL qty
+ trx_rme_invoice_items                | trx_rme_invoice_items_rme_invoice_id_foreign                    | f       | FOREIGN KEY (rme_invoice_id) REFERENCES trx_rme_invoices(id) ON UPDATE CASCADE ON DELETE CASCADE
+ trx_rme_invoice_items                | trx_rme_invoice_items_rme_invoice_id_not_null                   | n       | NOT NULL rme_invoice_id
+ trx_rme_invoice_items                | trx_rme_invoice_items_subtotal_not_null                         | n       | NOT NULL subtotal
+ trx_rme_invoice_items                | trx_rme_invoice_items_treatment_id_foreign                      | f       | FOREIGN KEY (treatment_id) REFERENCES mst_treatments(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_invoice_items                | trx_rme_invoice_items_unit_price_not_null                       | n       | NOT NULL unit_price
+ trx_rme_invoices                     | trx_rme_invoices_branch_id_foreign                              | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_invoices                     | trx_rme_invoices_branch_id_not_null                             | n       | NOT NULL branch_id
+ trx_rme_invoices                     | trx_rme_invoices_cashier_id_foreign                             | f       | FOREIGN KEY (cashier_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_invoices                     | trx_rme_invoices_cashier_id_not_null                            | n       | NOT NULL cashier_id
+ trx_rme_invoices                     | trx_rme_invoices_clinic_visit_id_foreign                        | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_invoices                     | trx_rme_invoices_clinic_visit_id_not_null                       | n       | NOT NULL clinic_visit_id
+ trx_rme_invoices                     | trx_rme_invoices_discount_total_not_null                        | n       | NOT NULL discount_total
+ trx_rme_invoices                     | trx_rme_invoices_grand_total_not_null                           | n       | NOT NULL grand_total
+ trx_rme_invoices                     | trx_rme_invoices_id_not_null                                    | n       | NOT NULL id
+ trx_rme_invoices                     | trx_rme_invoices_invoice_number_not_null                        | n       | NOT NULL invoice_number
+ trx_rme_invoices                     | trx_rme_invoices_invoice_number_unique                          | u       | UNIQUE (invoice_number)
+ trx_rme_invoices                     | trx_rme_invoices_medical_record_id_foreign                      | f       | FOREIGN KEY (medical_record_id) REFERENCES trx_medical_records(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_invoices                     | trx_rme_invoices_patient_id_foreign                             | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_invoices                     | trx_rme_invoices_patient_id_not_null                            | n       | NOT NULL patient_id
+ trx_rme_invoices                     | trx_rme_invoices_pkey                                           | p       | PRIMARY KEY (id)
+ trx_rme_invoices                     | trx_rme_invoices_status_not_null                                | n       | NOT NULL status
+ trx_rme_invoices                     | trx_rme_invoices_subtotal_not_null                              | n       | NOT NULL subtotal
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_assigned_at_not_null         | n       | NOT NULL assigned_at
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_assigned_by_foreign          | f       | FOREIGN KEY (assigned_by) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_assignment_type_not_null     | n       | NOT NULL assignment_type
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_branch_id_foreign            | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_doctor_id_foreign            | f       | FOREIGN KEY (doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_doctor_id_not_null           | n       | NOT NULL doctor_id
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_from_doctor_id_foreign       | f       | FOREIGN KEY (from_doctor_id) REFERENCES mst_doctors(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_id_not_null                  | n       | NOT NULL id
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_patient_id_foreign           | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_patient_id_not_null          | n       | NOT NULL patient_id
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_pkey                         | p       | PRIMARY KEY (id)
+ trx_rme_patient_doctor_assignments   | trx_rme_patient_doctor_assignments_source_visit_id_foreign      | f       | FOREIGN KEY (source_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_payments                     | trx_rme_payments_amount_not_null                                | n       | NOT NULL amount
+ trx_rme_payments                     | trx_rme_payments_branch_id_foreign                              | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_payments                     | trx_rme_payments_branch_id_not_null                             | n       | NOT NULL branch_id
+ trx_rme_payments                     | trx_rme_payments_cashier_id_foreign                             | f       | FOREIGN KEY (cashier_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_payments                     | trx_rme_payments_cashier_id_not_null                            | n       | NOT NULL cashier_id
+ trx_rme_payments                     | trx_rme_payments_clinic_visit_id_foreign                        | f       | FOREIGN KEY (clinic_visit_id) REFERENCES trx_clinic_visits(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_payments                     | trx_rme_payments_clinic_visit_id_not_null                       | n       | NOT NULL clinic_visit_id
+ trx_rme_payments                     | trx_rme_payments_id_not_null                                    | n       | NOT NULL id
+ trx_rme_payments                     | trx_rme_payments_paid_at_not_null                               | n       | NOT NULL paid_at
+ trx_rme_payments                     | trx_rme_payments_patient_id_foreign                             | f       | FOREIGN KEY (patient_id) REFERENCES mst_patients(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_payments                     | trx_rme_payments_patient_id_not_null                            | n       | NOT NULL patient_id
+ trx_rme_payments                     | trx_rme_payments_payment_method_id_foreign                      | f       | FOREIGN KEY (payment_method_id) REFERENCES mst_payment_methods(id) ON UPDATE CASCADE ON DELETE SET NULL
+ trx_rme_payments                     | trx_rme_payments_payment_number_not_null                        | n       | NOT NULL payment_number
+ trx_rme_payments                     | trx_rme_payments_payment_number_unique                          | u       | UNIQUE (payment_number)
+ trx_rme_payments                     | trx_rme_payments_pkey                                           | p       | PRIMARY KEY (id)
+ trx_rme_payments                     | trx_rme_payments_rme_invoice_id_foreign                         | f       | FOREIGN KEY (rme_invoice_id) REFERENCES trx_rme_invoices(id) ON UPDATE CASCADE ON DELETE RESTRICT
+ trx_rme_payments                     | trx_rme_payments_rme_invoice_id_not_null                        | n       | NOT NULL rme_invoice_id
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_branch_id_foreign                 | f       | FOREIGN KEY (branch_id) REFERENCES mst_branches(id) ON DELETE SET NULL
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_id_not_null                       | n       | NOT NULL id
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_pkey                              | p       | PRIMARY KEY (id)
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_rme_invoice_id_foreign            | f       | FOREIGN KEY (rme_invoice_id) REFERENCES trx_rme_invoices(id) ON DELETE CASCADE
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_rme_invoice_id_not_null           | n       | NOT NULL rme_invoice_id
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_status_not_null                   | n       | NOT NULL status
+ trx_rme_receivable_follow_ups        | trx_rme_receivable_follow_ups_user_id_foreign                   | f       | FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+(151 rows)
+

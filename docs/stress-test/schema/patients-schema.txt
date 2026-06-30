@@ -1,0 +1,25 @@
+  table_name  | ordinal_position |      column_name      |          data_type          | is_nullable |              column_default              
+--------------+------------------+-----------------------+-----------------------------+-------------+------------------------------------------
+ mst_patients |                1 | id                    | bigint                      | NO          | nextval('mst_patients_id_seq'::regclass)
+ mst_patients |                2 | clinic_id             | bigint                      | YES         | 
+ mst_patients |                3 | doctor_id             | bigint                      | YES         | 
+ mst_patients |                4 | medical_record_number | character varying           | YES         | 
+ mst_patients |                5 | name                  | character varying           | NO          | 
+ mst_patients |                6 | gender                | character varying           | YES         | 
+ mst_patients |                7 | date_of_birth         | date                        | YES         | 
+ mst_patients |                8 | phone                 | character varying           | YES         | 
+ mst_patients |                9 | address               | text                        | YES         | 
+ mst_patients |               10 | is_active             | boolean                     | NO          | true
+ mst_patients |               11 | created_at            | timestamp without time zone | YES         | 
+ mst_patients |               12 | updated_at            | timestamp without time zone | YES         | 
+ mst_patients |               13 | deleted_at            | timestamp without time zone | YES         | 
+ mst_patients |               14 | ktp_number            | character varying           | YES         | 
+ mst_patients |               15 | whatsapp_number       | character varying           | YES         | 
+ mst_patients |               16 | email                 | character varying           | YES         | 
+ mst_patients |               17 | occupation            | character varying           | YES         | 
+ mst_patients |               18 | branch_id             | bigint                      | YES         | 
+ mst_patients |               19 | registered_at         | date                        | YES         | 
+ mst_patients |               20 | manual_rm_number      | character varying           | YES         | 
+ mst_patients |               21 | import_batch_id       | bigint                      | YES         | 
+(21 rows)
+
