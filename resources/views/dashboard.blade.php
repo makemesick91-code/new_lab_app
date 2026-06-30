@@ -702,7 +702,7 @@
                                 <a href="{{ route('rme.treatment-room-worklist.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
                                     Buka Ruang Perawatan
                                 </a>
-                            @else
+                            @elseif(! $user?->hasRole('Kasir'))
                                 <a href="{{ route('rme.visits.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
                                     Buka Kunjungan
                                 </a>

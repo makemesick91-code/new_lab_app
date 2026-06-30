@@ -26,11 +26,23 @@ it('shows doctor-focused RME navigation but hides admin queue links and Kasir RM
         ->assertDontSee('Kasir RME');
 });
 
-it('shows Kasir RME for Kasir but not Doctor or Admin Klinik', function () {
+it('shows cashier workflow navigation for Kasir but hides visit shortcuts', function () {
     $this->actingAs(userInRole('Kasir'))
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('Kasir RME');
+        ->assertSee('Dashboard RME')
+        ->assertSee('Sinkronisasi Dokter–Kasir')
+        ->assertSee('Kasir RME')
+        ->assertSee('Piutang RME')
+        ->assertSee('Laporan Pembayaran RME')
+        ->assertSee('Buka Kasir RME')
+        ->assertDontSee('Kunjungan')
+        ->assertDontSee('Antrian Pasien')
+        ->assertDontSee('Rekam Medis')
+        ->assertDontSee('Buka Kunjungan')
+        ->assertDontSee(route('rme.visits.index'))
+        ->assertDontSee(route('rme.patient-queue.index'))
+        ->assertDontSee(route('rme.medical-records.index'));
 
     $this->actingAs(doctorWithOnlineContext())
         ->get(route('dashboard'))
