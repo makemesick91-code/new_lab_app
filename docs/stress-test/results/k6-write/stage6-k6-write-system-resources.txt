@@ -1,0 +1,96 @@
+Sprint 67.6 — k6 WRITE full-flow local — system resources
+Captured: 2026-06-30T21:46:56+08:00
+Host: Linux 7.0.0-27-generic x86_64
+CPU cores (nproc): 8
+Memory:
+                 total        used        free      shared  buff/cache   available
+  Mem:            15Gi       8.5Gi       1.6Gi       1.1Gi       5.7Gi       6.5Gi
+  Swap:          4.0Gi       605Mi       3.4Gi
+
+k6 version: k6 v2.0.0 (commit/8c3be52cc1, go1.26.3, linux/amd64)
+PHP: PHP 8.5.4 (cli) (built: May 25 2026 12:19:37) (NTS)
+PostgreSQL server: PostgreSQL 18.4
+
+App under test: php artisan serve @ http://127.0.0.1:8008 (APP_ENV=stress, DB=daengtisia_stress)
+
+=== Resource sampling during 20 VU WATCH run (4s interval) ===
+=== sample 1 21:44:38 ===
+21:44:38 up  6:27,  1 user,  load average: 0.88, 1.09, 0.94
+  proc=postgres cpu=0.1 mem=4.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 2 21:44:42 ===
+21:44:42 up  6:27,  1 user,  load average: 0.89, 1.08, 0.94
+  proc=postgres cpu=0.1 mem=4.3
+  proc=php cpu=0.0 mem=0.3
+=== sample 3 21:44:46 ===
+21:44:46 up  6:28,  1 user,  load average: 0.98, 1.10, 0.95
+  proc=postgres cpu=0.1 mem=4.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 4 21:44:50 ===
+21:44:50 up  6:28,  1 user,  load average: 1.30, 1.17, 0.97
+  proc=postgres cpu=684.7 mem=5.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 5 21:44:54 ===
+21:44:54 up  6:28,  1 user,  load average: 1.36, 1.18, 0.98
+  proc=postgres cpu=0.1 mem=4.3
+  proc=php cpu=0.0 mem=0.3
+=== sample 6 21:44:58 ===
+21:44:58 up  6:28,  1 user,  load average: 1.36, 1.18, 0.98
+  proc=postgres cpu=0.1 mem=4.3
+  proc=php cpu=0.0 mem=0.3
+=== sample 7 21:45:02 ===
+21:45:02 up  6:28,  1 user,  load average: 1.49, 1.21, 0.99
+  proc=postgres cpu=97.0 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 8 21:45:07 ===
+21:45:07 up  6:28,  1 user,  load average: 1.45, 1.21, 0.99
+  proc=postgres cpu=83.4 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 9 21:45:11 ===
+21:45:11 up  6:28,  1 user,  load average: 1.41, 1.20, 0.99
+  proc=postgres cpu=94.3 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 10 21:45:15 ===
+21:45:15 up  6:28,  1 user,  load average: 1.46, 1.22, 1.00
+  proc=postgres cpu=100.2 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 11 21:45:19 ===
+21:45:19 up  6:28,  1 user,  load average: 1.46, 1.22, 1.00
+  proc=postgres cpu=0.2 mem=4.3
+  proc=php cpu=0.0 mem=0.3
+=== sample 12 21:45:23 ===
+21:45:23 up  6:28,  1 user,  load average: 1.42, 1.21, 1.00
+  proc=postgres cpu=0.2 mem=4.3
+  proc=php cpu=0.0 mem=0.3
+=== sample 13 21:45:27 ===
+21:45:27 up  6:28,  1 user,  load average: 1.55, 1.24, 1.01
+  proc=postgres cpu=486.8 mem=5.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 14 21:45:31 ===
+21:45:31 up  6:28,  1 user,  load average: 1.59, 1.25, 1.01
+  proc=postgres cpu=66.8 mem=4.5
+  proc=php cpu=0.0 mem=0.3
+=== sample 15 21:45:35 ===
+21:45:35 up  6:28,  1 user,  load average: 1.54, 1.25, 1.01
+  proc=postgres cpu=91.1 mem=4.9
+  proc=php cpu=0.0 mem=0.3
+=== sample 16 21:45:39 ===
+21:45:39 up  6:28,  1 user,  load average: 1.54, 1.25, 1.01
+  proc=postgres cpu=93.0 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 17 21:45:43 ===
+21:45:43 up  6:28,  1 user,  load average: 1.50, 1.25, 1.01
+  proc=postgres cpu=95.5 mem=5.1
+  proc=php cpu=0.0 mem=0.3
+=== sample 18 21:45:47 ===
+21:45:47 up  6:29,  1 user,  load average: 1.46, 1.24, 1.01
+  proc=postgres cpu=90.4 mem=4.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 19 21:45:51 ===
+21:45:51 up  6:29,  1 user,  load average: 1.42, 1.24, 1.01
+  proc=postgres cpu=0.2 mem=4.2
+  proc=php cpu=0.0 mem=0.3
+=== sample 20 21:45:55 ===
+21:45:55 up  6:29,  1 user,  load average: 1.31, 1.22, 1.01
+  proc=postgres cpu=0.2 mem=4.2
+  proc=php cpu=0.0 mem=0.3
