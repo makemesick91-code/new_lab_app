@@ -698,9 +698,15 @@
                     </p>
                     <div class="mt-4 flex flex-wrap gap-2">
                         @canany(['view_clinic_visits', 'manage_clinic_visits'])
-                            <a href="{{ route('rme.visits.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                                Buka Kunjungan
-                            </a>
+                            @if($user?->hasRole('Doctor'))
+                                <a href="{{ route('rme.treatment-room-worklist.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                                    Buka Ruang Perawatan
+                                </a>
+                            @else
+                                <a href="{{ route('rme.visits.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                                    Buka Kunjungan
+                                </a>
+                            @endif
                         @endcanany
                         @can('manage_rme_billing')
                             <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
