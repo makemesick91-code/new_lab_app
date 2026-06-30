@@ -1,0 +1,55 @@
+=== Sprint 68.1 — Patch Verification (LOCAL ONLY) ===
+Captured: 2026-07-01
+
+PATCH
+  database/migrations/2026_07_01_100001_add_visit_number_pattern_index_to_trx_clinic_visits_table.php
+  Adds: CREATE INDEX CONCURRENTLY IF NOT EXISTS
+        trx_clinic_visits_visit_number_pattern_idx
+        ON trx_clinic_visits (visit_number varchar_pattern_ops)
+  - Additive only. No column / constraint / data change.
+  - Visit-number format and numbering rules UNCHANGED (no code logic touched).
+  - PostgreSQL only; SQLite (test DB) = no-op (driver guard).
+  - withinTransaction=false so CONCURRENTLY can run; safe for the pilot VPS
+    (no write-lock on the 1M-row table). Run with `php artisan migrate --force`.
+
+MIGRATION RUN (stress DB)
+  2026_07_01_100001_add_visit_number_pattern_index_...   757.58ms DONE
+  Index confirmed present: trx_clinic_visits_visit_number_pattern_idx
+
+EXPLAIN BEFORE -> AFTER  (generateUniqueVisitNumber LIKE query)
+  Historical prefix (rows present):   250.572 ms  ->   1.534 ms   (~163x)
+  Fresh-day prefix (0 rows, k6 case):  36.382 ms  ->   0.057 ms   (~638x)
+  Buffers (fresh-day):              hit=5378     ->   hit=3
+  Plan BEFORE: Parallel Index Only Scan, Rows Removed by Filter ~1,000,000
+  Plan AFTER : Index Only Scan, Index Cond ~>=~ / ~<~ (prefix range seek)
+
+SINGLE-SESSION WRITE LATENCY (curl, AFTER patch)
+  POST /rme/visits = 0.069 s, 0.058 s   (now the cheapest step in the flow)
+
+k6 BEFORE -> AFTER  (composite write flow; full breakdown in *-10vu/-20vu-observed.txt)
+  10 VU: http_reqs 5.30/s -> 5.27/s ; write_flow med 18.08s -> 18.39s
+  20 VU: http_reqs 5.01/s -> 5.44/s ; write_flow med 39.20s -> 35.84s
+  All runs: 100% visit-create success, 0 HTTP failures, 0 CSRF/419, 0 duplicate conflict.
+  => Composite flow ~unchanged: the k6 journey is READ-dominated (patient-queue ~0.81s,
+     visits index ~0.29s) so removing the write's full scan does not move the aggregate
+     number. The patch is a real, safe write-path fix; the flow ceiling is a separate
+     (read-path) item deferred to Sprint 68.2.
+
+REGRESSION CHECK (targeted tests, SQLite in-memory)
+  ClinicVisitTest:  26 failed / 27 passed  WITH migration
+  ClinicVisitTest:  26 failed / 27 passed  WITHOUT migration   (byte-identical)
+  PatientQueueTest:  2 failed / 12 passed   WITH and WITHOUT migration (identical)
+  => Pre-existing local failures ("Failed asserting that false is true",
+     "Session is missing expected key [errors]" — NOT schema errors). They are present
+     on the base branch independent of this patch and are UNCHANGED by it. The migration
+     is a pgsql-only no-op under SQLite and therefore cannot alter test behavior.
+     (Pre-existing local-env failures are out of scope for Sprint 68.1.)
+
+ROLLBACK
+  php artisan migrate:rollback  (down() drops the index CONCURRENTLY IF EXISTS; pgsql only)
+  Pure index drop — no data impact.
+
+SAFETY
+  Local only. No VPS deploy. No SSH. No destructive SQL (no migrate:fresh/db:wipe/
+  truncate/delete/mass-update). Stress data remains local. No password/cookie/CSRF/
+  session/login-HTML committed.
