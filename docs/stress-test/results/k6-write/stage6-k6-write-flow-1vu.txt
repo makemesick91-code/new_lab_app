@@ -1,0 +1,102 @@
+
+         /\      Grafana   /‾‾/
+    /\  /  \     |\  __   /  /
+   /  \/    \    | |/ /  /   ‾‾\
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/
+
+
+     execution: local
+        script: tests/k6/rme-write-full-flow-local.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * write_flow: 5 iterations for each of 1 VUs (maxDuration: 10m0s, exec: writeFlow, gracefulStop: 30s)
+
+
+running (00m01.0s), 1/1 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 1 VUs  00m01.0s/10m0s  0/5 iters, 5 per VU
+
+running (00m02.0s), 1/1 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 1 VUs  00m02.0s/10m0s  0/5 iters, 5 per VU
+
+running (00m03.0s), 1/1 VUs, 1 complete and 0 interrupted iterations
+write_flow   [  20% ] 1 VUs  00m03.0s/10m0s  1/5 iters, 5 per VU
+
+running (00m04.0s), 1/1 VUs, 1 complete and 0 interrupted iterations
+write_flow   [  20% ] 1 VUs  00m04.0s/10m0s  1/5 iters, 5 per VU
+
+running (00m05.0s), 1/1 VUs, 2 complete and 0 interrupted iterations
+write_flow   [  40% ] 1 VUs  00m05.0s/10m0s  2/5 iters, 5 per VU
+
+running (00m06.0s), 1/1 VUs, 2 complete and 0 interrupted iterations
+write_flow   [  40% ] 1 VUs  00m06.0s/10m0s  2/5 iters, 5 per VU
+
+running (00m07.0s), 1/1 VUs, 3 complete and 0 interrupted iterations
+write_flow   [  60% ] 1 VUs  00m07.0s/10m0s  3/5 iters, 5 per VU
+
+running (00m08.0s), 1/1 VUs, 3 complete and 0 interrupted iterations
+write_flow   [  60% ] 1 VUs  00m08.0s/10m0s  3/5 iters, 5 per VU
+
+running (00m09.0s), 1/1 VUs, 4 complete and 0 interrupted iterations
+write_flow   [  80% ] 1 VUs  00m09.0s/10m0s  4/5 iters, 5 per VU
+
+running (00m10.0s), 1/1 VUs, 4 complete and 0 interrupted iterations
+write_flow   [  80% ] 1 VUs  00m10.0s/10m0s  4/5 iters, 5 per VU
+
+
+  █ THRESHOLDS
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+    visit_create_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+    write_flow_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+
+  █ TOTAL RESULTS
+
+    checks_total.......: 45      4.250749/s
+    checks_succeeded...: 100.00% 45 out of 45
+    checks_failed......: 0.00%   0 out of 45
+
+    ✓ login page 200
+    ✓ login accepted
+    ✓ authenticated (not /login)
+    ✓ context set (redirect, not /login)
+    ✓ visit index 200
+    ✓ visit create redirected
+    ✓ visit id parsed
+    ✓ visit show 200
+    ✓ patient queue 200
+
+    CUSTOM
+    page_verify_success_rate.......: 100.00% 5 out of 5
+    visit_create_success_rate......: 100.00% 5 out of 5
+    write_flow_duration............: avg=1.81s   min=1.8s    med=1.8s     max=1.85s    p(90)=1.83s    p(95)=1.84s
+    write_flow_success_rate........: 100.00% 5 out of 5
+
+    HTTP
+    http_req_duration..............: avg=181.2ms min=20.35ms med=120.14ms max=768.08ms p(90)=318.75ms p(95)=732.75ms
+      { expected_response:true }...: avg=181.2ms min=20.35ms med=120.14ms max=768.08ms p(90)=318.75ms p(95)=732.75ms
+    http_req_failed................: 0.00%   0 out of 50
+    http_reqs......................: 50      4.723055/s
+
+    EXECUTION
+    iteration_duration.............: avg=2.11s   min=2.1s    med=2.11s    max=2.15s    p(90)=2.13s    p(95)=2.14s
+    iterations.....................: 5       0.472305/s
+    vus............................: 1       min=1       max=1
+    vus_max........................: 1       min=1       max=1
+
+    NETWORK
+    data_received..................: 1.4 MB  133 kB/s
+    data_sent......................: 41 kB   3.8 kB/s
+
+
+
+
+running (00m10.6s), 0/1 VUs, 5 complete and 0 interrupted iterations
+write_flow ✓ [ 100% ] 1 VUs  00m10.6s/10m0s  5/5 iters, 5 per VU
