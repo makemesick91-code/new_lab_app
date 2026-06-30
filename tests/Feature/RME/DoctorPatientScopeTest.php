@@ -14,6 +14,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\Prescription\Models\RmePrescription;
 use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
 use App\Modules\Treatment\Models\Treatment;
@@ -80,6 +81,44 @@ function scopeDoctorOnline(User $user, Doctor $doctor): void
 {
     rmeMakeDoctorOnline($doctor, test()->rmeBranch, test()->room, $user);
     $user->givePermissionTo(['view_clinic_visits', 'manage_clinic_visits']);
+}
+
+/**
+ * @return array{visit: ClinicVisit, record: MedicalRecord, odontogram: Odontogram, prescription: RmePrescription}
+ */
+function scopeClinicalArtifacts(Patient $patient, Doctor $doctor): array
+{
+    $visit = scopeVisit($patient, $doctor);
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'patient_id' => $patient->id,
+        'branch_id' => test()->rmeBranch->id,
+        'doctor_id' => $doctor->id,
+    ]);
+    $odontogram = Odontogram::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => test()->rmeBranch->id,
+    ]);
+    $prescription = RmePrescription::factory()->withStoredCanvases()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => test()->rmeBranch->id,
+        'patient_id' => $patient->id,
+        'doctor_id' => $doctor->id,
+    ]);
+
+    return compact('visit', 'record', 'odontogram', 'prescription');
+}
+
+function scopePrescriptionPatchPayload(ClinicVisit $visit): array
+{
+    return [
+        'prescribed_by_name' => $visit->doctor?->name ?? 'drg. Test',
+        'prescription_date' => now()->toDateString(),
+        'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien Test',
+        'patient_age_snapshot' => '30',
+        'prescription_canvas_data' => validPodSignatureData(),
+        'doctor_signature_canvas_data' => validPodSignatureData(),
+    ];
 }
 
 it('lets doctor see patient actively assigned to them', function () {
@@ -149,6 +188,154 @@ it('forbids doctor opening unrelated visit detail by direct url', function () {
     $this->actingAs(test()->doctorAUser)
         ->get(route('rme.visits.show', $visit))
         ->assertForbidden();
+});
+
+it('forbids doctor with old patient visit history from opening another doctors visit detail', function () {
+    $patient = scopePatient();
+    scopeVisit($patient, test()->doctorA);
+    $doctorBVisit = scopeVisit($patient, test()->doctorB);
+    scopeDoctorOnline(test()->doctorAUser, test()->doctorA);
+
+    $this->actingAs(test()->doctorAUser)
+        ->get(route('rme.visits.show', $doctorBVisit))
+        ->assertForbidden();
+});
+
+it('lets doctor with active shared assignment open another doctors visit for same patient', function () {
+    $patient = scopePatient(['name' => 'Pasien Shared Visit']);
+    $doctorAVisit = scopeVisit($patient, test()->doctorA);
+    test()->assignmentService->assignPatientToDoctor($patient, test()->doctorA, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->sharePatientWithDoctor($patient, test()->doctorB, test()->doctorA, test()->adminUser, test()->rmeBranch);
+    scopeDoctorOnline(test()->doctorBUser, test()->doctorB);
+    test()->doctorBUser->givePermissionTo(['view_clinic_visits', 'manage_clinic_visits']);
+
+    $this->actingAs(test()->doctorBUser)
+        ->get(route('rme.visits.show', $doctorAVisit))
+        ->assertOk();
+});
+
+it('forbids doctor with ended shared assignment from opening another doctors visit detail', function () {
+    $patient = scopePatient();
+    $doctorBVisit = scopeVisit($patient, test()->doctorB);
+    test()->assignmentService->assignPatientToDoctor($patient, test()->doctorB, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->sharePatientWithDoctor($patient, test()->doctorA, test()->doctorB, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->unassignPatientDoctor($patient, test()->doctorA, test()->adminUser);
+    scopeDoctorOnline(test()->doctorAUser, test()->doctorA);
+
+    $this->actingAs(test()->doctorAUser)
+        ->get(route('rme.visits.show', $doctorBVisit))
+        ->assertForbidden();
+});
+
+it('forbids doctor with old patient history from accessing another doctors clinical artifacts', function () {
+    $patient = scopePatient();
+    scopeVisit($patient, test()->doctorA);
+    ['visit' => $doctorBVisit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
+    scopeDoctorOnline(test()->doctorAUser, test()->doctorA);
+
+    $actor = $this->actingAs(test()->doctorAUser);
+
+    $actor->get(route('rme.visits.medical-record.show', $doctorBVisit))->assertForbidden();
+    $actor->patch(route('rme.visits.medical-record.update', [$doctorBVisit, $record]), ['notes' => 'curi data'])->assertForbidden();
+    $actor->post(route('rme.visits.medical-record.finalize', [$doctorBVisit, $record]))->assertForbidden();
+
+    $actor->get(route('rme.visits.odontogram.show', $doctorBVisit))->assertForbidden();
+    $actor->patch(route('rme.odontograms.update', $odontogram), ['summary_notes' => 'curi data'])->assertForbidden();
+    $actor->post(route('rme.odontograms.finalize', $odontogram))->assertForbidden();
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertForbidden();
+
+    $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertForbidden();
+    $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertForbidden();
+    $actor->get(route('rme.prescriptions.print', $prescription))->assertForbidden();
+});
+
+it('lets visit owner doctor access own clinical artifacts', function () {
+    $patient = scopePatient();
+    ['visit' => $visit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
+    scopeDoctorOnline(test()->doctorBUser, test()->doctorB);
+
+    $actor = $this->actingAs(test()->doctorBUser);
+
+    $actor->get(route('rme.visits.medical-record.show', $visit))->assertOk();
+    $actor->patch(route('rme.visits.medical-record.update', [$visit, $record]), ['notes' => 'catatan dokter b'])->assertRedirect();
+    $actor->get(route('rme.visits.odontogram.show', $visit))->assertOk();
+    $actor->patch(route('rme.odontograms.update', $odontogram), ['summary_notes' => 'odontogram dokter b'])->assertRedirect();
+    $actor->get(route('rme.visits.prescription.show', $visit))->assertOk();
+    $actor->get(route('rme.prescriptions.print', $prescription))->assertOk();
+});
+
+it('lets doctor with active shared assignment access another doctors clinical artifacts', function () {
+    $patient = scopePatient();
+    ['visit' => $doctorAVisit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorA);
+    test()->assignmentService->assignPatientToDoctor($patient, test()->doctorA, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->sharePatientWithDoctor($patient, test()->doctorB, test()->doctorA, test()->adminUser, test()->rmeBranch);
+    scopeDoctorOnline(test()->doctorBUser, test()->doctorB);
+
+    $actor = $this->actingAs(test()->doctorBUser);
+
+    $actor->get(route('rme.visits.medical-record.show', $doctorAVisit))->assertOk();
+    $actor->patch(route('rme.visits.medical-record.update', [$doctorAVisit, $record]), ['notes' => 'shared edit'])->assertRedirect();
+    $actor->get(route('rme.visits.odontogram.show', $doctorAVisit))->assertOk();
+    $actor->get(route('rme.visits.prescription.show', $doctorAVisit))->assertOk();
+    $actor->get(route('rme.prescriptions.print', $prescription))->assertOk();
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertOk();
+});
+
+it('forbids doctor with ended shared assignment from accessing another doctors clinical artifacts', function () {
+    $patient = scopePatient();
+    ['visit' => $doctorBVisit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
+    test()->assignmentService->assignPatientToDoctor($patient, test()->doctorB, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->sharePatientWithDoctor($patient, test()->doctorA, test()->doctorB, test()->adminUser, test()->rmeBranch);
+    test()->assignmentService->unassignPatientDoctor($patient, test()->doctorA, test()->adminUser);
+    scopeDoctorOnline(test()->doctorAUser, test()->doctorA);
+
+    $actor = $this->actingAs(test()->doctorAUser);
+
+    $actor->get(route('rme.visits.medical-record.show', $doctorBVisit))->assertForbidden();
+    $actor->get(route('rme.visits.odontogram.show', $doctorBVisit))->assertForbidden();
+    $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertForbidden();
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertForbidden();
+    $actor->get(route('rme.prescriptions.print', $prescription))->assertForbidden();
+});
+
+it('lets supervisor rme access clinical artifacts without doctor scope', function () {
+    $patient = scopePatient();
+    ['visit' => $visit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
+    $supervisor = User::factory()->create()->assignRole('Supervisor RME');
+    $supervisor->givePermissionTo(['view_clinic_visits', 'manage_clinic_visits']);
+
+    $this->actingAs($supervisor)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk();
+
+    $this->actingAs($supervisor)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk();
+
+    $this->actingAs($supervisor)
+        ->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk();
+
+    $this->actingAs($supervisor)
+        ->get(route('rme.prescriptions.print', $prescription))
+        ->assertOk();
+});
+
+it('lets owner access clinical artifacts without doctor scope', function () {
+    $patient = scopePatient();
+    ['visit' => $visit, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
+
+    $this->actingAs(test()->ownerUser)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk();
+
+    $this->actingAs(test()->ownerUser)
+        ->get(route('rme.visits.prescription.show', $visit))
+        ->assertOk();
+
+    $this->actingAs(test()->ownerUser)
+        ->get(route('rme.prescriptions.print', $prescription))
+        ->assertOk();
 });
 
 it('forbids doctor printing unrelated visit bundle', function () {
@@ -407,4 +594,14 @@ it('lets super admin see all visits without doctor scope', function () {
         ->get(route('rme.visits.index'))
         ->assertOk()
         ->assertSee('Super Pasien');
+});
+
+it('lets supervisor rme open any visit detail without doctor scope', function () {
+    $visit = scopeVisit(scopePatient(['name' => 'Supervisor Pasien']), test()->doctorB);
+    $supervisor = User::factory()->create()->assignRole('Supervisor RME');
+    $supervisor->givePermissionTo(['view_clinic_visits']);
+
+    $this->actingAs($supervisor)
+        ->get(route('rme.visits.show', $visit))
+        ->assertOk();
 });

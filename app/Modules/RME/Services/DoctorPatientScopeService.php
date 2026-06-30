@@ -181,6 +181,55 @@ class DoctorPatientScopeService
     }
 
     /**
+     * Strict visit-level scope for specific visit detail/actions (not patient workspace).
+     */
+    public function doctorCanAccessSpecificVisit(User $user, ClinicVisit $visit): bool
+    {
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        if ($visit->patient_id === null) {
+            return false;
+        }
+
+        $doctor = $this->resolveDoctorForUser($user);
+
+        if ($doctor === null) {
+            return false;
+        }
+
+        $doctorId = (int) $doctor->id;
+
+        if ((int) $visit->doctor_id === $doctorId) {
+            return true;
+        }
+
+        return PatientDoctorAssignment::query()
+            ->where('patient_id', (int) $visit->patient_id)
+            ->where('doctor_id', $doctorId)
+            ->whereNull('unassigned_at')
+            ->exists();
+    }
+
+    public function authorizeSpecificVisitAccess(User $user, ClinicVisit $visit): Response|bool
+    {
+        if (! $this->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        if ($this->resolveDoctorForUser($user) === null) {
+            return Response::deny('Akun dokter belum terhubung ke Master Dokter.');
+        }
+
+        if (! $this->doctorCanAccessSpecificVisit($user, $visit)) {
+            return Response::deny('Anda tidak memiliki akses ke detail kunjungan pasien ini.');
+        }
+
+        return true;
+    }
+
+    /**
      * @return array<int, array{doctor: Doctor, badges: array<int, string>}>
      */
     public function doctorsWithAccessSummary(Patient $patient): array

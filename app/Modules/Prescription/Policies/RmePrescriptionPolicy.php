@@ -25,7 +25,7 @@ class RmePrescriptionPolicy
         $visit = $prescription->clinicVisit;
 
         return $visit !== null
-            ? app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit)
+            ? app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit)
             : false;
     }
 
@@ -40,7 +40,7 @@ class RmePrescriptionPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $clinicVisit);
     }
 
     public function create(User $user, ClinicVisit $clinicVisit): Response|bool
@@ -49,7 +49,7 @@ class RmePrescriptionPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
+        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $clinicVisit);
     }
 
     public function update(User $user, RmePrescription $prescription): Response|bool
