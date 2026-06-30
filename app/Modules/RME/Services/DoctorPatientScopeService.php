@@ -136,7 +136,8 @@ class DoctorPatientScopeService
                 $sub->selectRaw('1')
                     ->from('trx_rme_patient_doctor_assignments as pda')
                     ->whereColumn('pda.patient_id', 'trx_medical_records.patient_id')
-                    ->where('pda.doctor_id', $doctorId);
+                    ->where('pda.doctor_id', $doctorId)
+                    ->whereNull('pda.unassigned_at');
             })->orWhereExists(function ($sub) use ($doctorId) {
                 $sub->selectRaw('1')
                     ->from('trx_clinic_visits as v')
@@ -298,14 +299,18 @@ class DoctorPatientScopeService
 
     private function doctorHasPatientAccess(int $doctorId, int $patientId): bool
     {
+        if (ClinicVisit::query()
+            ->where('patient_id', $patientId)
+            ->where('doctor_id', $doctorId)
+            ->exists()) {
+            return true;
+        }
+
         return PatientDoctorAssignment::query()
             ->where('patient_id', $patientId)
             ->where('doctor_id', $doctorId)
-            ->exists()
-            || ClinicVisit::query()
-                ->where('patient_id', $patientId)
-                ->where('doctor_id', $doctorId)
-                ->exists();
+            ->whereNull('unassigned_at')
+            ->exists();
     }
 
     /**
@@ -319,7 +324,8 @@ class DoctorPatientScopeService
                 $sub->selectRaw('1')
                     ->from('trx_rme_patient_doctor_assignments as pda')
                     ->whereColumn('pda.patient_id', 'mst_patients.id')
-                    ->where('pda.doctor_id', $doctorId);
+                    ->where('pda.doctor_id', $doctorId)
+                    ->whereNull('pda.unassigned_at');
             })->orWhereExists(function ($sub) use ($doctorId) {
                 $sub->selectRaw('1')
                     ->from('trx_clinic_visits as v')
@@ -340,8 +346,14 @@ class DoctorPatientScopeService
                 $sub->selectRaw('1')
                     ->from('trx_rme_patient_doctor_assignments as pda')
                     ->whereColumn('pda.patient_id', 'trx_clinic_visits.patient_id')
-                    ->where('pda.doctor_id', $doctorId);
-            })->orWhere('trx_clinic_visits.doctor_id', $doctorId);
+                    ->where('pda.doctor_id', $doctorId)
+                    ->whereNull('pda.unassigned_at');
+            })->orWhereExists(function ($sub) use ($doctorId) {
+                $sub->selectRaw('1')
+                    ->from('trx_clinic_visits as own_visit')
+                    ->whereColumn('own_visit.patient_id', 'trx_clinic_visits.patient_id')
+                    ->where('own_visit.doctor_id', $doctorId);
+            });
         });
     }
 }
