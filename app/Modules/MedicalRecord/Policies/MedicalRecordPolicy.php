@@ -31,7 +31,7 @@ class MedicalRecordPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $clinicVisit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
     public function update(User $user, MedicalRecord $medicalRecord): Response|bool
@@ -54,12 +54,6 @@ class MedicalRecordPolicy
 
     private function authorizePatientForRecord(User $user, MedicalRecord $medicalRecord): Response|bool
     {
-        $visit = $medicalRecord->clinicVisit;
-
-        if ($visit !== null) {
-            return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
-        }
-
         $patient = $medicalRecord->patient;
 
         if ($patient !== null) {

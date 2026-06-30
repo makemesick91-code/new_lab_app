@@ -35,7 +35,7 @@ class OdontogramPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $clinicVisit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
     public function update(User $user, Odontogram $odontogram): Response|bool
@@ -61,10 +61,10 @@ class OdontogramPolicy
         $visit = $odontogram->clinicVisit;
 
         if ($visit !== null) {
-            return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
+            return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
         }
 
-        $patient = $odontogram->patient;
+        $patient = $odontogram->medicalRecord?->patient;
 
         if ($patient !== null) {
             return app(DoctorPatientScopeService::class)->authorizePatientAccess($user, $patient);

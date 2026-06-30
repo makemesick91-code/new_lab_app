@@ -21,7 +21,7 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     public function create(User $user): bool
@@ -35,7 +35,7 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     public function transition(User $user, ClinicVisit $visit): Response|bool
@@ -44,7 +44,7 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     public function print(User $user, ClinicVisit $visit): Response|bool
@@ -53,7 +53,7 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return app(DoctorPatientScopeService::class)->authorizeSpecificVisitAccess($user, $visit);
+        return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
     private function canView(User $user): bool

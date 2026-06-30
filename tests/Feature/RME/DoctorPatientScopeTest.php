@@ -190,7 +190,7 @@ it('forbids doctor opening unrelated visit detail by direct url', function () {
         ->assertForbidden();
 });
 
-it('forbids doctor with old patient visit history from opening another doctors visit detail', function () {
+it('lets doctor with prior patient visit history open another doctors visit detail', function () {
     $patient = scopePatient();
     scopeVisit($patient, test()->doctorA);
     $doctorBVisit = scopeVisit($patient, test()->doctorB);
@@ -198,7 +198,7 @@ it('forbids doctor with old patient visit history from opening another doctors v
 
     $this->actingAs(test()->doctorAUser)
         ->get(route('rme.visits.show', $doctorBVisit))
-        ->assertForbidden();
+        ->assertOk();
 });
 
 it('lets doctor with active shared assignment open another doctors visit for same patient', function () {
@@ -227,7 +227,7 @@ it('forbids doctor with ended shared assignment from opening another doctors vis
         ->assertForbidden();
 });
 
-it('forbids doctor with old patient history from accessing another doctors clinical artifacts', function () {
+it('lets doctor with prior patient visit history access another doctors clinical artifacts', function () {
     $patient = scopePatient();
     scopeVisit($patient, test()->doctorA);
     ['visit' => $doctorBVisit, 'record' => $record, 'odontogram' => $odontogram, 'prescription' => $prescription] = scopeClinicalArtifacts($patient, test()->doctorB);
@@ -235,18 +235,21 @@ it('forbids doctor with old patient history from accessing another doctors clini
 
     $actor = $this->actingAs(test()->doctorAUser);
 
-    $actor->get(route('rme.visits.medical-record.show', $doctorBVisit))->assertForbidden();
-    $actor->patch(route('rme.visits.medical-record.update', [$doctorBVisit, $record]), ['notes' => 'curi data'])->assertForbidden();
-    $actor->post(route('rme.visits.medical-record.finalize', [$doctorBVisit, $record]))->assertForbidden();
+    $this->followingRedirects()
+        ->actingAs(test()->doctorAUser)
+        ->get(route('rme.visits.medical-record.show', $doctorBVisit))
+        ->assertOk();
+    $actor->patch(route('rme.visits.medical-record.update', [$doctorBVisit, $record]), ['notes' => 'catatan dokter a'])->assertRedirect();
+    $actor->post(route('rme.visits.medical-record.finalize', [$doctorBVisit, $record]))->assertRedirect();
 
-    $actor->get(route('rme.visits.odontogram.show', $doctorBVisit))->assertForbidden();
-    $actor->patch(route('rme.odontograms.update', $odontogram), ['summary_notes' => 'curi data'])->assertForbidden();
-    $actor->post(route('rme.odontograms.finalize', $odontogram))->assertForbidden();
-    $actor->get(route('rme.odontograms.print', $odontogram))->assertForbidden();
+    $actor->get(route('rme.visits.odontogram.show', $doctorBVisit))->assertOk();
+    $actor->patch(route('rme.odontograms.update', $odontogram), ['summary_notes' => 'odontogram dokter a'])->assertRedirect();
+    $actor->post(route('rme.odontograms.finalize', $odontogram))->assertRedirect();
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertOk();
 
-    $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertForbidden();
-    $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertForbidden();
-    $actor->get(route('rme.prescriptions.print', $prescription))->assertForbidden();
+    $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertOk();
+    $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertRedirect();
+    $actor->get(route('rme.prescriptions.print', $prescription))->assertOk();
 });
 
 it('lets visit owner doctor access own clinical artifacts', function () {
