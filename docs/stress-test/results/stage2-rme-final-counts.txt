@@ -1,0 +1,12 @@
+              table_name              | count  
+--------------------------------------+--------
+ mst_patients                         | 100000
+ trx_clinic_visits                    | 300000
+ trx_medical_records                  | 300000
+ trx_rme_invoices                     | 300000
+ trx_rme_invoice_items                | 900000
+ trx_rme_payments                     | 270000
+ trx_lab_case_candidates              | 270000
+ trx_rme_receivable_follow_ups        |  60000
+ trx_odontograms                      | 300000
+ trx_medical_record_handwriting_pages | 300000

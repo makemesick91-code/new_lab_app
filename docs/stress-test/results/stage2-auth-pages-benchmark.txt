@@ -1,0 +1,12 @@
+=== Stage RME benchmark 2026-06-30T11:10:26+00:00 ===
+BASE_URL=http://127.0.0.1:8008 RUNS=5 VISIT_ID=300000
+label,http,n,min,avg,max,p95,url
+rme_dashboard,200,5,0.041041,0.045132,0.047475,0.047475,http://127.0.0.1:8008/rme/dashboard
+rme_visits,200,5,0.040061,0.047103,0.051548,0.051548,http://127.0.0.1:8008/rme/visits
+rme_visit_show,200,5,0.043386,0.045238,0.046210,0.046210,http://127.0.0.1:8008/rme/visits/300000
+rme_medical_record,200,5,0.047676,0.060310,0.076556,0.076556,http://127.0.0.1:8008/rme/visits/300000/medical-record
+rme_odontogram,200,5,0.043253,0.044854,0.045578,0.045578,http://127.0.0.1:8008/rme/visits/300000/odontogram
+rme_cashier,200,5,0.043066,0.047534,0.054015,0.054015,http://127.0.0.1:8008/rme/cashier
+rme_receivables,200,5,0.040848,0.043372,0.045872,0.045872,http://127.0.0.1:8008/rme/cashier/receivables
+rme_reports_patients,200,5,0.039017,0.041145,0.045881,0.045881,http://127.0.0.1:8008/rme/reports/patients
+rme_reports_payments,200,5,0.038739,0.046642,0.054017,0.054017,http://127.0.0.1:8008/rme/reports/payments
