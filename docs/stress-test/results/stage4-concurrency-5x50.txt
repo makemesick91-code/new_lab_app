@@ -1,0 +1,10 @@
+=== Stage 4 concurrency 5 workers / 50 requests ===
+total_requests=50
+completed_requests=50
+http_200_count=50
+failed_count=0
+status_counts={200: 50}
+min_sec=0.129666
+avg_sec=0.198843
+max_sec=0.216697
+p95_sec=0.214890

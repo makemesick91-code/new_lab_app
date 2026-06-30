@@ -1,0 +1,29 @@
+ database_size 
+---------------
+ 3474 MB
+(1 row)
+
+              table_name              | total_size | table_size | indexes_size 
+--------------------------------------+------------+------------+--------------
+ trx_rme_invoice_items                | 590 MB     | 460 MB     | 130 MB
+ trx_odontograms                      | 443 MB     | 372 MB     | 71 MB
+ trx_clinic_visits                    | 423 MB     | 279 MB     | 143 MB
+ trx_medical_records                  | 407 MB     | 313 MB     | 95 MB
+ trx_rme_payments                     | 365 MB     | 201 MB     | 164 MB
+ trx_lab_case_candidates              | 361 MB     | 251 MB     | 110 MB
+ trx_rme_invoices                     | 350 MB     | 182 MB     | 169 MB
+ trx_medical_record_handwriting_pages | 290 MB     | 195 MB     | 94 MB
+ mst_patients                         | 109 MB     | 70 MB      | 39 MB
+ trx_rme_patient_doctor_assignments   | 77 MB      | 42 MB      | 35 MB
+ trx_rme_receivable_follow_ups        | 45 MB      | 32 MB      | 13 MB
+ trx_user_online_contexts             | 168 kB     | 8192 bytes | 128 kB
+ mst_doctors                          | 152 kB     | 8192 bytes | 112 kB
+ mst_clinic_rooms                     | 144 kB     | 8192 bytes | 96 kB
+ mst_treatments                       | 144 kB     | 8192 bytes | 96 kB
+ trx_inventory_movements              | 128 kB     | 0 bytes    | 120 kB
+ mst_tariffs                          | 128 kB     | 8192 bytes | 80 kB
+ mst_treatment_categories             | 128 kB     | 8192 bytes | 80 kB
+ mst_payment_methods                  | 128 kB     | 8192 bytes | 80 kB
+ sessions                             | 112 kB     | 24 kB      | 48 kB
+(20 rows)
+

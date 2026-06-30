@@ -1,0 +1,15 @@
+              table_name              | total_size | table_size | index_size 
+--------------------------------------+------------+------------+------------
+ trx_rme_invoice_items                | 177 MB     | 138 MB     | 39 MB
+ trx_odontograms                      | 133 MB     | 112 MB     | 21 MB
+ trx_clinic_visits                    | 126 MB     | 84 MB      | 42 MB
+ trx_medical_records                  | 123 MB     | 94 MB      | 29 MB
+ trx_lab_case_candidates              | 110 MB     | 75 MB      | 34 MB
+ trx_rme_payments                     | 109 MB     | 60 MB      | 48 MB
+ trx_rme_invoices                     | 102 MB     | 55 MB      | 48 MB
+ trx_medical_record_handwriting_pages | 87 MB      | 59 MB      | 28 MB
+ mst_patients                         | 44 MB      | 28 MB      | 16 MB
+ trx_rme_patient_doctor_assignments   | 31 MB      | 17 MB      | 14 MB
+ trx_rme_receivable_follow_ups        | 14 MB      | 9800 kB    | 4088 kB
+
+Database total: 1070 MB (post-VACUUM ANALYZE)
