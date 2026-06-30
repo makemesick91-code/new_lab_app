@@ -1,0 +1,33 @@
+=== date ===
+Tue Jun 30 08:47:48 PM WITA 2026
+
+=== branch ===
+test/sprint-67-5-k6-full-flow-50-users
+5fcb92c
+
+=== app env ===
+APP_ENV=stress
+DB_DATABASE=daengtisia_stress
+APP_URL=http://127.0.0.1:8008
+
+=== dataset ===
+  table_name   |  count  
+---------------+---------
+ patients      |  250000
+ visits        | 1000000
+ invoices      | 1000000
+ invoice_items | 3000000
+(4 rows)
+
+
+=== disk ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda3        81G   18G   60G  23% /home
+
+=== memory ===
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       7.0Gi       509Mi       1.0Gi       8.5Gi       8.0Gi
+Swap:          4.0Gi       908Ki       4.0Gi
+
+=== k6 version ===
+k6 v2.0.0 (commit/8c3be52cc1, go1.26.3, linux/amd64)
