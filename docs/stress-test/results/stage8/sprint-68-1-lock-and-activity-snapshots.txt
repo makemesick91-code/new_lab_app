@@ -1,0 +1,2196 @@
+######## BEFORE PATCH — 10 VU snapshots ########
+===== SNAPSHOT BEFORE-10VU #1 2026-07-01T05:51:50+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ ExclusiveLock   | t       |     2
+ AccessShareLock | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132059 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #2 2026-07-01T05:51:51+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132077 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #3 2026-07-01T05:51:52+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132090 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #4 2026-07-01T05:51:53+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     2
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132118 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #5 2026-07-01T05:51:54+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                      query                                                                                       
+--------+--------+-----------------+------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132149 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132151 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132152 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132154 | active |                 |            |                                                                                                                                                                                 +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                        +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                       +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-10VU #6 2026-07-01T05:51:56+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                            query                                                             
+--------+--------+-----------------+------------+------------------------------------------------------------------------------------------------------------------------------
+ 132173 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 132182 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 132183 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 132185 | active |                 |            |                                                                                                                             +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                    +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                   +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-10VU #7 2026-07-01T05:51:57+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 132203 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 132206 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #8 2026-07-01T05:51:58+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 132218 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 132222 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #9 2026-07-01T05:51:59+08:00 =====
+ state  | wait_event_type |    wait_event    | sessions 
+--------+-----------------+------------------+----------
+ active | IPC             | BgworkerShutdown |        1
+ active |                 |                  |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 132242 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+ 132241 | active |                 |            | select * from "mst_branches" where "is_active" = $1 and "is_rme_enabled" = $2 and "mst_branches"."deleted_at" is null order by "name" asc
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #10 2026-07-01T05:52:00+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132270 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #11 2026-07-01T05:52:01+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132277 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132286 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #12 2026-07-01T05:52:02+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132288 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132297 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #13 2026-07-01T05:52:04+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132302 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132311 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #14 2026-07-01T05:52:05+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132314 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132324 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #15 2026-07-01T05:52:06+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132329 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132340 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #16 2026-07-01T05:52:07+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type |  wait_event  |                                                                                        query                                                                                         
+--------+--------+-----------------+--------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132344 | active | IO              | DataFileRead | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132353 | active |                 |              |                                                                                                                                                                                     +
+        |        |                 |              | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |              | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |              | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #17 2026-07-01T05:52:08+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132374 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #18 2026-07-01T05:52:09+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132395 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #19 2026-07-01T05:52:10+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132414 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #20 2026-07-01T05:52:11+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132443 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #21 2026-07-01T05:52:13+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type |    wait_event    |                                                            query                                                             
+--------+--------+-----------------+------------------+------------------------------------------------------------------------------------------------------------------------------
+ 132466 | active | IPC             | BgworkerShutdown | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 132477 | active |                 |                  |                                                                                                                             +
+        |        |                 |                  | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                    +
+        |        |                 |                  | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                   +
+        |        |                 |                  | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #22 2026-07-01T05:52:14+08:00 =====
+ state  | wait_event_type |    wait_event    | sessions 
+--------+-----------------+------------------+----------
+ active | IPC             | BgworkerShutdown |        1
+ active |                 |                  |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132506 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #23 2026-07-01T05:52:15+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 132528 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 132532 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #24 2026-07-01T05:52:16+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 132538 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 132551 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #25 2026-07-01T05:52:17+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132575 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #26 2026-07-01T05:52:18+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132603 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #27 2026-07-01T05:52:20+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132609 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132618 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #28 2026-07-01T05:52:21+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type |  wait_event  |                                                                                        query                                                                                         
+--------+--------+-----------------+--------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132620 | active | IO              | DataFileRead | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132629 | active |                 |              |                                                                                                                                                                                     +
+        |        |                 |              | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |              | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |              | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #29 2026-07-01T05:52:22+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type |    wait_event    |                                                                             query                                                                             
+--------+--------+-----------------+------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132636 | active | IPC             | BgworkerShutdown | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null
+ 132643 | active |                 |                  |                                                                                                                                                              +
+        |        |                 |                  | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                     +
+        |        |                 |                  | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                    +
+        |        |                 |                  | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #30 2026-07-01T05:52:23+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132645 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132655 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #31 2026-07-01T05:52:24+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                             query                                                                             
+--------+--------+-----------------+------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132666 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null
+ 132669 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null
+ 132668 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null
+ 132667 | active |                 |            |                                                                                                                                                              +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                     +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                    +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-10VU #32 2026-07-01T05:52:25+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132671 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132680 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #33 2026-07-01T05:52:26+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132693 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 132703 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #34 2026-07-01T05:52:28+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132715 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #35 2026-07-01T05:52:29+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132731 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #36 2026-07-01T05:52:30+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132756 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #37 2026-07-01T05:52:31+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type |    wait_event    |                                                            query                                                             
+--------+--------+-----------------+------------------+------------------------------------------------------------------------------------------------------------------------------
+ 132779 | active | IPC             | BgworkerShutdown | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 132790 | active |                 |                  |                                                                                                                             +
+        |        |                 |                  | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                    +
+        |        |                 |                  | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                   +
+        |        |                 |                  | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #38 2026-07-01T05:52:32+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 132819 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-10VU #39 2026-07-01T05:52:33+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ ExclusiveLock   | t       |     2
+ AccessShareLock | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132846 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+ 132845 | active |                 |            | select "roles".*, "model_has_roles"."model_id" as "pivot_model_id", "model_has_roles"."role_id" as "pivot_role_id", "model_has_roles"."model_type" as "pivot_model_type" from "roles
+(2 rows)
+
+===== SNAPSHOT BEFORE-10VU #40 2026-07-01T05:52:34+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                      query                                                                                       
+--------+--------+-----------------+------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 132857 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132860 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132861 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 132862 | active |                 |            |                                                                                                                                                                                 +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                        +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                       +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+######## BEFORE PATCH — 20 VU snapshots ########
+===== SNAPSHOT BEFORE-20VU #1 2026-07-01T05:54:15+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ ExclusiveLock   | t       |     2
+ AccessShareLock | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133567 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #2 2026-07-01T05:54:17+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133602 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #3 2026-07-01T05:54:18+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133615 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #4 2026-07-01T05:54:19+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133628 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #5 2026-07-01T05:54:20+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133642 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #6 2026-07-01T05:54:21+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133665 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #7 2026-07-01T05:54:22+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133701 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #8 2026-07-01T05:54:23+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   |                 |            |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133735 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #9 2026-07-01T05:54:24+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     6
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                      query                                                                                       
+--------+--------+-----------------+------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 133771 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133774 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133775 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133776 | active |                 |            |                                                                                                                                                                                 +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                        +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                       +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-20VU #10 2026-07-01T05:54:26+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                            query                                                             
+--------+--------+-----------------+------------+------------------------------------------------------------------------------------------------------------------------------
+ 133795 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133804 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133803 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133806 | active |                 |            |                                                                                                                             +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                    +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                   +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-20VU #11 2026-07-01T05:54:27+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     8
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133835 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #12 2026-07-01T05:54:28+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   |                 |            |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                      query                                                                                       
+--------+--------+-----------------+------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 133860 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133863 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133864 | active |                 |            | select count(*) as aggregate from "trx_medical_records" where "branch_id" in ($1) and "status" = $2 and "finalized_at"::date = $3 and "trx_medical_records"."deleted_at" is null
+ 133866 | active |                 |            |                                                                                                                                                                                 +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                        +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                       +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-20VU #13 2026-07-01T05:54:29+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                            query                                                             
+--------+--------+-----------------+------------+------------------------------------------------------------------------------------------------------------------------------
+ 133885 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133894 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133893 | active |                 |            | select count(*) as aggregate from "trx_clinic_visits" where "branch_id" in ($1) and "trx_clinic_visits"."deleted_at" is null
+ 133896 | active |                 |            |                                                                                                                             +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                    +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                   +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-20VU #14 2026-07-01T05:54:30+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133909 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+ 133910 | active | Client          | ClientRead | select * from "sessions" where "id" = $1 limit 1
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #15 2026-07-01T05:54:31+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 133919 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 133923 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #16 2026-07-01T05:54:33+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ RowShareLock    | t       |     8
+ AccessShareLock | t       |     4
+ ExclusiveLock   | t       |     3
+(3 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                   query                                                                   
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------------------------------------------
+ 133929 | active |                 |            | select "visit_number" from "trx_clinic_visits" where "visit_number"::text like $1 and "trx_clinic_visits"."deleted_at" is null for update
+ 133936 | active |                 |            |                                                                                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                 +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #17 2026-07-01T05:54:34+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type |    wait_event    |                                                                     query                                                                     
+--------+--------+-----------------+------------------+-----------------------------------------------------------------------------------------------------------------------------------------------
+ 133948 | active | IPC             | BgworkerShutdown | select * from "trx_clinic_visits" where "trx_clinic_visits"."follow_up_of_visit_id" in (1000272) and "trx_clinic_visits"."deleted_at" is null
+ 133954 | active |                 |                  |                                                                                                                                              +
+        |        |                 |                  | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                     +
+        |        |                 |                  | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                    +
+        |        |                 |                  | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #18 2026-07-01T05:54:35+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 133984 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #19 2026-07-01T05:54:36+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                     query                                                                     
+--------+--------+-----------------+------------+-----------------------------------------------------------------------------------------------------------------------------------------------
+ 134021 | active |                 |            | select * from "trx_clinic_visits" where "trx_clinic_visits"."follow_up_of_visit_id" in (1000284) and "trx_clinic_visits"."deleted_at" is null
+ 134023 | active |                 |            | select * from "trx_clinic_visits" where "trx_clinic_visits"."follow_up_of_visit_id" in (1000284) and "trx_clinic_visits"."deleted_at" is null
+ 134024 | active |                 |            | select * from "trx_clinic_visits" where "trx_clinic_visits"."follow_up_of_visit_id" in (1000284) and "trx_clinic_visits"."deleted_at" is null
+ 134026 | active |                 |            |                                                                                                                                              +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                     +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                    +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(4 rows)
+
+===== SNAPSHOT BEFORE-20VU #20 2026-07-01T05:54:37+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134140 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #21 2026-07-01T05:54:39+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134148 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134184 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #22 2026-07-01T05:54:40+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134196 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #23 2026-07-01T05:54:41+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134222 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134231 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #24 2026-07-01T05:54:42+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134238 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134247 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #25 2026-07-01T05:54:43+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134249 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134258 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #26 2026-07-01T05:54:44+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134263 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134273 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #27 2026-07-01T05:54:45+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type |  wait_event  |                                                                                        query                                                                                         
+--------+--------+-----------------+--------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134275 | active | IO              | DataFileRead | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134285 | active |                 |              |                                                                                                                                                                                     +
+        |        |                 |              | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |              | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |              | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #28 2026-07-01T05:54:47+08:00 =====
+ state  | wait_event_type |  wait_event  | sessions 
+--------+-----------------+--------------+----------
+ active | IO              | DataFileRead |        1
+ active |                 |              |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134292 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134301 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #29 2026-07-01T05:54:48+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134312 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134323 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #30 2026-07-01T05:54:49+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134352 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #31 2026-07-01T05:54:50+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134357 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134367 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #32 2026-07-01T05:54:51+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134369 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134378 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #33 2026-07-01T05:54:52+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134393 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #34 2026-07-01T05:54:54+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    11
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134425 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134434 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #35 2026-07-01T05:54:55+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     9
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                                                        query                                                                                         
+--------+--------+-----------------+------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 134484 | active |                 |            | select * from "trx_clinic_visits" where "branch_id" in ($1) and "status" not in ($2, $3, $4) and "trx_clinic_visits"."deleted_at" is null order by "visit_date" desc, "queue_number"
+ 134493 | active |                 |            |                                                                                                                                                                                     +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                                                                                                            +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                                                                                                           +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #36 2026-07-01T05:54:56+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active | IO              | WalSync    |        1
+ active |                 |            |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134540 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #37 2026-07-01T05:54:57+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                                 query                                                 
+--------+--------+-----------------+------------+-------------------------------------------------------------------------------------------------------
+ 134555 | active |                 |            |                                                                                                      +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query                             +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'                            +
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+ 134548 | active |                 |            | select * from "mst_branches" where "mst_branches"."id" in (1) and "mst_branches"."deleted_at" is null
+(2 rows)
+
+===== SNAPSHOT BEFORE-20VU #38 2026-07-01T05:54:58+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134568 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #39 2026-07-01T05:54:59+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134583 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+===== SNAPSHOT BEFORE-20VU #40 2026-07-01T05:55:00+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+  pid   | state  | wait_event_type | wait_event |                                   query                                   
+--------+--------+-----------------+------------+---------------------------------------------------------------------------
+ 134598 | active |                 |            |                                                                          +
+        |        |                 |            | SELECT pid, state, wait_event_type, wait_event, left(query,180) AS query +
+        |        |                 |            | FROM pg_stat_activity WHERE datname='daengtisia_stress' AND state<>'idle'+
+        |        |                 |            | ORDER BY query_start NULLS LAST 
+(1 row)
+
+######## AFTER PATCH — 10 VU snapshots ########
+===== SNAPSHOT AFTER-10VU #1 2026-07-01T05:57:56+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #2 2026-07-01T05:57:57+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #3 2026-07-01T05:57:58+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #4 2026-07-01T05:57:59+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #5 2026-07-01T05:58:00+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     8
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #6 2026-07-01T05:58:01+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #7 2026-07-01T05:58:03+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #8 2026-07-01T05:58:04+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #9 2026-07-01T05:58:05+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #10 2026-07-01T05:58:06+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #11 2026-07-01T05:58:07+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #12 2026-07-01T05:58:08+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #13 2026-07-01T05:58:09+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #14 2026-07-01T05:58:10+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #15 2026-07-01T05:58:11+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #16 2026-07-01T05:58:13+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #17 2026-07-01T05:58:14+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #18 2026-07-01T05:58:15+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #19 2026-07-01T05:58:16+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #20 2026-07-01T05:58:17+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #21 2026-07-01T05:58:18+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #22 2026-07-01T05:58:19+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #23 2026-07-01T05:58:20+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #24 2026-07-01T05:58:21+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #25 2026-07-01T05:58:22+08:00 =====
+        state        | wait_event_type | wait_event | sessions 
+---------------------+-----------------+------------+----------
+ active              |                 |            |        1
+ idle in transaction |                 |            |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     7
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #26 2026-07-01T05:58:24+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #27 2026-07-01T05:58:25+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #28 2026-07-01T05:58:26+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #29 2026-07-01T05:58:27+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #30 2026-07-01T05:58:28+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+        |                 |            |        2
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #31 2026-07-01T05:58:29+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #32 2026-07-01T05:58:30+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #33 2026-07-01T05:58:31+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    10
+ ExclusiveLock   | t       |     2
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #34 2026-07-01T05:58:32+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        4
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #35 2026-07-01T05:58:34+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+(1 row)
+
+       mode       | granted | locks 
+------------------+---------+-------
+ ExclusiveLock    | t       |     3
+ AccessShareLock  | t       |     1
+ RowExclusiveLock | t       |     1
+(3 rows)
+
+===== SNAPSHOT AFTER-10VU #36 2026-07-01T05:58:35+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ ExclusiveLock   | t       |     2
+ AccessShareLock | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #37 2026-07-01T05:58:36+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #38 2026-07-01T05:58:37+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |     1
+ ExclusiveLock   | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #39 2026-07-01T05:58:38+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        1
+ idle   | Client          | ClientRead |        1
+(2 rows)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ ExclusiveLock   | t       |     2
+ AccessShareLock | t       |     1
+(2 rows)
+
+===== SNAPSHOT AFTER-10VU #40 2026-07-01T05:58:39+08:00 =====
+ state  | wait_event_type | wait_event | sessions 
+--------+-----------------+------------+----------
+ active |                 |            |        2
+(1 row)
+
+      mode       | granted | locks 
+-----------------+---------+-------
+ AccessShareLock | t       |    12
+ ExclusiveLock   | t       |     4
+(2 rows)
+

@@ -1,0 +1,604 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: tests/k6/rme-write-full-flow-local.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 20 max VUs, 10m30s max duration (incl. graceful stop):
+              * write_flow: 2 iterations for each of 20 VUs (maxDuration: 10m0s, exec: writeFlow, gracefulStop: 30s)
+
+
+running (00m01.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m01.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m02.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m02.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m03.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m03.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m04.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m04.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m05.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m05.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m06.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m06.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m07.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m07.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m08.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m08.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m09.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m09.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m10.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m10.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m11.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m11.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m12.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m12.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m13.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m13.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m14.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m14.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m15.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m15.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m16.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m16.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m17.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m17.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m18.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m18.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m19.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m19.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m20.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m20.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m21.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m21.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m22.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m22.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m23.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m23.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m24.0s), 20/20 VUs, 1 complete and 0 interrupted iterations
+write_flow   [   2% ] 20 VUs  00m24.0s/10m0s  01/40 iters, 2 per VU
+
+running (00m25.0s), 20/20 VUs, 2 complete and 0 interrupted iterations
+write_flow   [   5% ] 20 VUs  00m25.0s/10m0s  02/40 iters, 2 per VU
+
+running (00m26.0s), 20/20 VUs, 3 complete and 0 interrupted iterations
+write_flow   [   8% ] 20 VUs  00m26.0s/10m0s  03/40 iters, 2 per VU
+
+running (00m27.0s), 20/20 VUs, 4 complete and 0 interrupted iterations
+write_flow   [  10% ] 20 VUs  00m27.0s/10m0s  04/40 iters, 2 per VU
+
+running (00m28.0s), 20/20 VUs, 5 complete and 0 interrupted iterations
+write_flow   [  12% ] 20 VUs  00m28.0s/10m0s  05/40 iters, 2 per VU
+
+running (00m29.0s), 20/20 VUs, 6 complete and 0 interrupted iterations
+write_flow   [  15% ] 20 VUs  00m29.0s/10m0s  06/40 iters, 2 per VU
+
+running (00m30.0s), 20/20 VUs, 8 complete and 0 interrupted iterations
+write_flow   [  20% ] 20 VUs  00m30.0s/10m0s  08/40 iters, 2 per VU
+
+running (00m31.0s), 20/20 VUs, 9 complete and 0 interrupted iterations
+write_flow   [  22% ] 20 VUs  00m31.0s/10m0s  09/40 iters, 2 per VU
+
+running (00m32.0s), 20/20 VUs, 10 complete and 0 interrupted iterations
+write_flow   [  25% ] 20 VUs  00m32.0s/10m0s  10/40 iters, 2 per VU
+
+running (00m33.0s), 20/20 VUs, 11 complete and 0 interrupted iterations
+write_flow   [  28% ] 20 VUs  00m33.0s/10m0s  11/40 iters, 2 per VU
+
+running (00m34.0s), 20/20 VUs, 13 complete and 0 interrupted iterations
+write_flow   [  32% ] 20 VUs  00m34.0s/10m0s  13/40 iters, 2 per VU
+
+running (00m35.0s), 20/20 VUs, 14 complete and 0 interrupted iterations
+write_flow   [  35% ] 20 VUs  00m35.0s/10m0s  14/40 iters, 2 per VU
+
+running (00m36.0s), 20/20 VUs, 15 complete and 0 interrupted iterations
+write_flow   [  38% ] 20 VUs  00m36.0s/10m0s  15/40 iters, 2 per VU
+
+running (00m37.0s), 20/20 VUs, 16 complete and 0 interrupted iterations
+write_flow   [  40% ] 20 VUs  00m37.0s/10m0s  16/40 iters, 2 per VU
+
+running (00m38.0s), 20/20 VUs, 17 complete and 0 interrupted iterations
+write_flow   [  42% ] 20 VUs  00m38.0s/10m0s  17/40 iters, 2 per VU
+
+running (00m39.0s), 20/20 VUs, 18 complete and 0 interrupted iterations
+write_flow   [  45% ] 20 VUs  00m39.0s/10m0s  18/40 iters, 2 per VU
+
+running (00m40.0s), 20/20 VUs, 19 complete and 0 interrupted iterations
+write_flow   [  48% ] 20 VUs  00m40.0s/10m0s  19/40 iters, 2 per VU
+
+running (00m41.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m41.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m42.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m42.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m43.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m43.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m44.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m44.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m45.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m45.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m46.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m46.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m47.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m47.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m48.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m48.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m49.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m49.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m50.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m50.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m51.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m51.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m52.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m52.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m53.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m53.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m54.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m54.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m55.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m55.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m56.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m56.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m57.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m57.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m58.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m58.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m59.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m59.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m00.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  01m00.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m01.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  01m01.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m02.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  01m02.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m03.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  01m03.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m04.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  01m04.0s/10m0s  20/40 iters, 2 per VU
+
+running (01m05.0s), 18/20 VUs, 22 complete and 0 interrupted iterations
+write_flow   [  55% ] 20 VUs  01m05.0s/10m0s  22/40 iters, 2 per VU
+
+running (01m06.0s), 17/20 VUs, 23 complete and 0 interrupted iterations
+write_flow   [  57% ] 20 VUs  01m06.0s/10m0s  23/40 iters, 2 per VU
+
+running (01m07.0s), 16/20 VUs, 24 complete and 0 interrupted iterations
+write_flow   [  60% ] 20 VUs  01m07.0s/10m0s  24/40 iters, 2 per VU
+
+running (01m08.0s), 15/20 VUs, 25 complete and 0 interrupted iterations
+write_flow   [  62% ] 20 VUs  01m08.0s/10m0s  25/40 iters, 2 per VU
+
+running (01m09.0s), 13/20 VUs, 27 complete and 0 interrupted iterations
+write_flow   [  68% ] 20 VUs  01m09.0s/10m0s  27/40 iters, 2 per VU
+
+running (01m10.0s), 12/20 VUs, 28 complete and 0 interrupted iterations
+write_flow   [  70% ] 20 VUs  01m10.0s/10m0s  28/40 iters, 2 per VU
+
+running (01m11.0s), 11/20 VUs, 29 complete and 0 interrupted iterations
+write_flow   [  72% ] 20 VUs  01m11.0s/10m0s  29/40 iters, 2 per VU
+
+running (01m12.0s), 10/20 VUs, 30 complete and 0 interrupted iterations
+write_flow   [  75% ] 20 VUs  01m12.0s/10m0s  30/40 iters, 2 per VU
+
+running (01m13.0s), 09/20 VUs, 31 complete and 0 interrupted iterations
+write_flow   [  78% ] 20 VUs  01m13.0s/10m0s  31/40 iters, 2 per VU
+
+running (01m14.0s), 07/20 VUs, 33 complete and 0 interrupted iterations
+write_flow   [  82% ] 20 VUs  01m14.0s/10m0s  33/40 iters, 2 per VU
+
+running (01m15.0s), 06/20 VUs, 34 complete and 0 interrupted iterations
+write_flow   [  85% ] 20 VUs  01m15.0s/10m0s  34/40 iters, 2 per VU
+
+running (01m16.0s), 05/20 VUs, 35 complete and 0 interrupted iterations
+write_flow   [  88% ] 20 VUs  01m16.0s/10m0s  35/40 iters, 2 per VU
+
+running (01m17.0s), 04/20 VUs, 36 complete and 0 interrupted iterations
+write_flow   [  90% ] 20 VUs  01m17.0s/10m0s  36/40 iters, 2 per VU
+
+running (01m18.0s), 03/20 VUs, 37 complete and 0 interrupted iterations
+write_flow   [  92% ] 20 VUs  01m18.0s/10m0s  37/40 iters, 2 per VU
+
+running (01m19.0s), 02/20 VUs, 38 complete and 0 interrupted iterations
+write_flow   [  95% ] 20 VUs  01m19.0s/10m0s  38/40 iters, 2 per VU
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+    visit_create_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+    write_flow_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 360     4.509842/s
+    checks_succeeded...: 100.00% 360 out of 360
+    checks_failed......: 0.00%   0 out of 360
+
+    ✓ login page 200
+    ✓ login accepted
+    ✓ authenticated (not /login)
+    ✓ context set (redirect, not /login)
+    ✓ visit index 200
+    ✓ visit create redirected
+    ✓ visit id parsed
+    ✓ visit show 200
+    ✓ patient queue 200
+
+    CUSTOM
+    page_verify_success_rate.......: 100.00% 40 out of 40
+    visit_create_success_rate......: 100.00% 40 out of 40
+    write_flow_duration............: avg=35.65s min=23.46s  med=39.2s max=40.19s p(90)=39.77s p(95)=39.86s
+    write_flow_success_rate........: 100.00% 40 out of 40
+
+    HTTP
+    http_req_duration..............: avg=3.56s  min=30.08ms med=2.67s max=17.69s p(90)=8.14s  p(95)=12.29s
+      { expected_response:true }...: avg=3.56s  min=30.08ms med=2.67s max=17.69s p(90)=8.14s  p(95)=12.29s
+    http_req_failed................: 0.00%   0 out of 400
+    http_reqs......................: 400     5.010936/s
+
+    EXECUTION
+    iteration_duration.............: avg=35.95s min=23.76s  med=39.5s max=40.49s p(90)=40.07s p(95)=40.16s
+    iterations.....................: 40      0.501094/s
+    vus............................: 2       min=2        max=20
+    vus_max........................: 20      min=20       max=20
+
+    NETWORK
+    data_received..................: 12 MB   146 kB/s
+    data_sent......................: 326 kB  4.1 kB/s
+
+
+
+
+running (01m19.8s), 00/20 VUs, 40 complete and 0 interrupted iterations
+write_flow ✓ [ 100% ] 20 VUs  01m19.8s/10m0s  40/40 iters, 2 per VU
+
+############################################################
+## AFTER PATCH (varchar_pattern_ops index) — 20 VU ##
+############################################################
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: tests/k6/rme-write-full-flow-local.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 20 max VUs, 10m30s max duration (incl. graceful stop):
+              * write_flow: 2 iterations for each of 20 VUs (maxDuration: 10m0s, exec: writeFlow, gracefulStop: 30s)
+
+
+running (00m01.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m01.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m02.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m02.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m03.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m03.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m04.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m04.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m05.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m05.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m06.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m06.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m07.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m07.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m08.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m08.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m09.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m09.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m10.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m10.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m11.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m11.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m12.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m12.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m13.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m13.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m14.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m14.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m15.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m15.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m16.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m16.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m17.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m17.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m18.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m18.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m19.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m19.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m20.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m20.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m21.0s), 20/20 VUs, 0 complete and 0 interrupted iterations
+write_flow   [   0% ] 20 VUs  00m21.0s/10m0s  00/40 iters, 2 per VU
+
+running (00m22.0s), 20/20 VUs, 1 complete and 0 interrupted iterations
+write_flow   [   2% ] 20 VUs  00m22.0s/10m0s  01/40 iters, 2 per VU
+
+running (00m23.0s), 20/20 VUs, 2 complete and 0 interrupted iterations
+write_flow   [   5% ] 20 VUs  00m23.0s/10m0s  02/40 iters, 2 per VU
+
+running (00m24.0s), 20/20 VUs, 4 complete and 0 interrupted iterations
+write_flow   [  10% ] 20 VUs  00m24.0s/10m0s  04/40 iters, 2 per VU
+
+running (00m25.0s), 20/20 VUs, 5 complete and 0 interrupted iterations
+write_flow   [  12% ] 20 VUs  00m25.0s/10m0s  05/40 iters, 2 per VU
+
+running (00m26.0s), 20/20 VUs, 6 complete and 0 interrupted iterations
+write_flow   [  15% ] 20 VUs  00m26.0s/10m0s  06/40 iters, 2 per VU
+
+running (00m27.0s), 20/20 VUs, 7 complete and 0 interrupted iterations
+write_flow   [  18% ] 20 VUs  00m27.0s/10m0s  07/40 iters, 2 per VU
+
+running (00m28.0s), 20/20 VUs, 8 complete and 0 interrupted iterations
+write_flow   [  20% ] 20 VUs  00m28.0s/10m0s  08/40 iters, 2 per VU
+
+running (00m29.0s), 20/20 VUs, 10 complete and 0 interrupted iterations
+write_flow   [  25% ] 20 VUs  00m29.0s/10m0s  10/40 iters, 2 per VU
+
+running (00m30.0s), 20/20 VUs, 11 complete and 0 interrupted iterations
+write_flow   [  28% ] 20 VUs  00m30.0s/10m0s  11/40 iters, 2 per VU
+
+running (00m31.0s), 20/20 VUs, 12 complete and 0 interrupted iterations
+write_flow   [  30% ] 20 VUs  00m31.0s/10m0s  12/40 iters, 2 per VU
+
+running (00m32.0s), 20/20 VUs, 13 complete and 0 interrupted iterations
+write_flow   [  32% ] 20 VUs  00m32.0s/10m0s  13/40 iters, 2 per VU
+
+running (00m33.0s), 20/20 VUs, 14 complete and 0 interrupted iterations
+write_flow   [  35% ] 20 VUs  00m33.0s/10m0s  14/40 iters, 2 per VU
+
+running (00m34.0s), 20/20 VUs, 16 complete and 0 interrupted iterations
+write_flow   [  40% ] 20 VUs  00m34.0s/10m0s  16/40 iters, 2 per VU
+
+running (00m35.0s), 20/20 VUs, 17 complete and 0 interrupted iterations
+write_flow   [  42% ] 20 VUs  00m35.0s/10m0s  17/40 iters, 2 per VU
+
+running (00m36.0s), 20/20 VUs, 18 complete and 0 interrupted iterations
+write_flow   [  45% ] 20 VUs  00m36.0s/10m0s  18/40 iters, 2 per VU
+
+running (00m37.0s), 20/20 VUs, 19 complete and 0 interrupted iterations
+write_flow   [  48% ] 20 VUs  00m37.0s/10m0s  19/40 iters, 2 per VU
+
+running (00m38.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m38.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m39.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m39.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m40.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m40.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m41.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m41.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m42.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m42.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m43.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m43.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m44.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m44.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m45.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m45.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m46.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m46.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m47.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m47.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m48.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m48.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m49.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m49.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m50.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m50.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m51.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m51.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m52.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m52.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m53.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m53.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m54.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m54.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m55.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m55.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m56.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m56.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m57.0s), 20/20 VUs, 20 complete and 0 interrupted iterations
+write_flow   [  50% ] 20 VUs  00m57.0s/10m0s  20/40 iters, 2 per VU
+
+running (00m58.0s), 19/20 VUs, 21 complete and 0 interrupted iterations
+write_flow   [  52% ] 20 VUs  00m58.0s/10m0s  21/40 iters, 2 per VU
+
+running (00m59.0s), 18/20 VUs, 22 complete and 0 interrupted iterations
+write_flow   [  55% ] 20 VUs  00m59.0s/10m0s  22/40 iters, 2 per VU
+
+running (01m00.0s), 16/20 VUs, 24 complete and 0 interrupted iterations
+write_flow   [  60% ] 20 VUs  01m00.0s/10m0s  24/40 iters, 2 per VU
+
+running (01m01.0s), 15/20 VUs, 25 complete and 0 interrupted iterations
+write_flow   [  62% ] 20 VUs  01m01.0s/10m0s  25/40 iters, 2 per VU
+
+running (01m02.0s), 14/20 VUs, 26 complete and 0 interrupted iterations
+write_flow   [  65% ] 20 VUs  01m02.0s/10m0s  26/40 iters, 2 per VU
+
+running (01m03.0s), 13/20 VUs, 27 complete and 0 interrupted iterations
+write_flow   [  68% ] 20 VUs  01m03.0s/10m0s  27/40 iters, 2 per VU
+
+running (01m04.0s), 12/20 VUs, 28 complete and 0 interrupted iterations
+write_flow   [  70% ] 20 VUs  01m04.0s/10m0s  28/40 iters, 2 per VU
+
+running (01m05.0s), 11/20 VUs, 29 complete and 0 interrupted iterations
+write_flow   [  72% ] 20 VUs  01m05.0s/10m0s  29/40 iters, 2 per VU
+
+running (01m06.0s), 09/20 VUs, 31 complete and 0 interrupted iterations
+write_flow   [  78% ] 20 VUs  01m06.0s/10m0s  31/40 iters, 2 per VU
+
+running (01m07.0s), 08/20 VUs, 32 complete and 0 interrupted iterations
+write_flow   [  80% ] 20 VUs  01m07.0s/10m0s  32/40 iters, 2 per VU
+
+running (01m08.0s), 07/20 VUs, 33 complete and 0 interrupted iterations
+write_flow   [  82% ] 20 VUs  01m08.0s/10m0s  33/40 iters, 2 per VU
+
+running (01m09.0s), 06/20 VUs, 34 complete and 0 interrupted iterations
+write_flow   [  85% ] 20 VUs  01m09.0s/10m0s  34/40 iters, 2 per VU
+
+running (01m10.0s), 05/20 VUs, 35 complete and 0 interrupted iterations
+write_flow   [  88% ] 20 VUs  01m10.0s/10m0s  35/40 iters, 2 per VU
+
+running (01m11.0s), 04/20 VUs, 36 complete and 0 interrupted iterations
+write_flow   [  90% ] 20 VUs  01m11.0s/10m0s  36/40 iters, 2 per VU
+
+running (01m12.0s), 02/20 VUs, 38 complete and 0 interrupted iterations
+write_flow   [  95% ] 20 VUs  01m12.0s/10m0s  38/40 iters, 2 per VU
+
+running (01m13.0s), 01/20 VUs, 39 complete and 0 interrupted iterations
+write_flow   [  98% ] 20 VUs  01m13.0s/10m0s  39/40 iters, 2 per VU
+
+
+  █ THRESHOLDS 
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+    visit_create_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+    write_flow_success_rate
+    ✓ 'rate>0.99' rate=100.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 360     4.894006/s
+    checks_succeeded...: 100.00% 360 out of 360
+    checks_failed......: 0.00%   0 out of 360
+
+    ✓ login page 200
+    ✓ login accepted
+    ✓ authenticated (not /login)
+    ✓ context set (redirect, not /login)
+    ✓ visit index 200
+    ✓ visit create redirected
+    ✓ visit id parsed
+    ✓ visit show 200
+    ✓ patient queue 200
+
+    CUSTOM
+    page_verify_success_rate.......: 100.00% 40 out of 40
+    visit_create_success_rate......: 100.00% 40 out of 40
+    write_flow_duration............: avg=32.44s min=21.01s  med=35.84s max=36.95s p(90)=36.03s p(95)=36.08s
+    write_flow_success_rate........: 100.00% 40 out of 40
+
+    HTTP
+    http_req_duration..............: avg=3.24s  min=23.81ms med=2.19s  max=16.88s p(90)=7.37s  p(95)=12s   
+      { expected_response:true }...: avg=3.24s  min=23.81ms med=2.19s  max=16.88s p(90)=7.37s  p(95)=12s   
+    http_req_failed................: 0.00%   0 out of 400
+    http_reqs......................: 400     5.437784/s
+
+    EXECUTION
+    iteration_duration.............: avg=32.74s min=21.31s  med=36.14s max=37.25s p(90)=36.33s p(95)=36.38s
+    iterations.....................: 40      0.543778/s
+    vus............................: 1       min=1        max=20
+    vus_max........................: 20      min=20       max=20
+
+    NETWORK
+    data_received..................: 12 MB   158 kB/s
+    data_sent......................: 326 kB  4.4 kB/s
+
+
+
+
+running (01m13.6s), 00/20 VUs, 40 complete and 0 interrupted iterations
+write_flow ✓ [ 100% ] 20 VUs  01m13.6s/10m0s  40/40 iters, 2 per VU
