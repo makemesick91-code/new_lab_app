@@ -6,15 +6,23 @@ beforeEach(function () {
     seedAccessControl();
 });
 
-it('shows RME visit links but hides Kasir RME for Doctor', function () {
+it('shows doctor-focused RME navigation but hides admin queue links and Kasir RME for Doctor', function () {
     $doctor = doctorWithOnlineContext();
 
     $this->actingAs($doctor)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Dashboard RME')
-        ->assertSee('Kunjungan')
         ->assertSee('Rekam Medis')
+        ->assertSee('Ruang Perawatan')
+        ->assertSee('Buka Ruang Perawatan')
+        ->assertSee(route('rme.treatment-room-worklist.index'))
+        ->assertDontSee('Dasbor RME')
+        ->assertDontSee('Antrian Pasien')
+        ->assertDontSee('Buka Kunjungan')
+        ->assertDontSee(route('rme.visits.index'))
+        ->assertDontSee(route('rme.dashboard'))
+        ->assertDontSee(route('rme.patient-queue.index'))
         ->assertDontSee('Kasir RME');
 });
 
