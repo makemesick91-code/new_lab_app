@@ -1,0 +1,101 @@
+        table_name        | ordinal_position |       column_name        |          data_type          | is_nullable |                    column_default                    
+--------------------------+------------------+--------------------------+-----------------------------+-------------+------------------------------------------------------
+ mst_branches             |                1 | id                       | bigint                      | NO          | nextval('mst_branches_id_seq'::regclass)
+ mst_branches             |                2 | code                     | character varying           | NO          | 
+ mst_branches             |                3 | name                     | character varying           | NO          | 
+ mst_branches             |                4 | address                  | character varying           | YES         | 
+ mst_branches             |                5 | phone                    | character varying           | YES         | 
+ mst_branches             |                6 | is_active                | boolean                     | NO          | true
+ mst_branches             |                7 | created_at               | timestamp without time zone | YES         | 
+ mst_branches             |                8 | updated_at               | timestamp without time zone | YES         | 
+ mst_branches             |                9 | deleted_at               | timestamp without time zone | YES         | 
+ mst_branches             |               10 | is_rme_enabled           | boolean                     | NO          | true
+ mst_branches             |               11 | is_inventory_enabled     | boolean                     | NO          | true
+ mst_clinic_rooms         |                1 | id                       | bigint                      | NO          | nextval('mst_clinic_rooms_id_seq'::regclass)
+ mst_clinic_rooms         |                2 | branch_id                | bigint                      | NO          | 
+ mst_clinic_rooms         |                3 | code                     | character varying           | NO          | 
+ mst_clinic_rooms         |                4 | name                     | character varying           | NO          | 
+ mst_clinic_rooms         |                5 | type                     | character varying           | NO          | 
+ mst_clinic_rooms         |                6 | status                   | character varying           | NO          | 'active'::character varying
+ mst_clinic_rooms         |                7 | description              | text                        | YES         | 
+ mst_clinic_rooms         |                8 | created_at               | timestamp without time zone | YES         | 
+ mst_clinic_rooms         |                9 | updated_at               | timestamp without time zone | YES         | 
+ mst_clinic_rooms         |               10 | deleted_at               | timestamp without time zone | YES         | 
+ mst_doctors              |                1 | id                       | bigint                      | NO          | nextval('mst_doctors_id_seq'::regclass)
+ mst_doctors              |                2 | clinic_id                | bigint                      | YES         | 
+ mst_doctors              |                3 | code                     | character varying           | NO          | 
+ mst_doctors              |                4 | name                     | character varying           | NO          | 
+ mst_doctors              |                5 | phone                    | character varying           | YES         | 
+ mst_doctors              |                6 | email                    | character varying           | YES         | 
+ mst_doctors              |                7 | is_active                | boolean                     | NO          | true
+ mst_doctors              |                8 | created_at               | timestamp without time zone | YES         | 
+ mst_doctors              |                9 | updated_at               | timestamp without time zone | YES         | 
+ mst_doctors              |               10 | deleted_at               | timestamp without time zone | YES         | 
+ mst_doctors              |               11 | user_id                  | bigint                      | YES         | 
+ mst_doctors              |               12 | branch_id                | bigint                      | YES         | 
+ mst_payment_methods      |                1 | id                       | bigint                      | NO          | nextval('mst_payment_methods_id_seq'::regclass)
+ mst_payment_methods      |                2 | code                     | character varying           | NO          | 
+ mst_payment_methods      |                3 | name                     | character varying           | NO          | 
+ mst_payment_methods      |                4 | type                     | character varying           | NO          | 
+ mst_payment_methods      |                5 | description              | text                        | YES         | 
+ mst_payment_methods      |                6 | sort_order               | integer                     | NO          | 0
+ mst_payment_methods      |                7 | is_active                | boolean                     | NO          | true
+ mst_payment_methods      |                8 | created_at               | timestamp without time zone | YES         | 
+ mst_payment_methods      |                9 | updated_at               | timestamp without time zone | YES         | 
+ mst_payment_methods      |               10 | deleted_at               | timestamp without time zone | YES         | 
+ mst_tariffs              |                1 | id                       | bigint                      | NO          | nextval('mst_tariffs_id_seq'::regclass)
+ mst_tariffs              |                2 | branch_id                | bigint                      | NO          | 
+ mst_tariffs              |                3 | treatment_id             | bigint                      | NO          | 
+ mst_tariffs              |                4 | price                    | numeric                     | NO          | '0'::numeric
+ mst_tariffs              |                5 | effective_date           | date                        | NO          | 
+ mst_tariffs              |                6 | is_active                | boolean                     | NO          | true
+ mst_tariffs              |                7 | notes                    | text                        | YES         | 
+ mst_tariffs              |                8 | created_at               | timestamp without time zone | YES         | 
+ mst_tariffs              |                9 | updated_at               | timestamp without time zone | YES         | 
+ mst_tariffs              |               10 | deleted_at               | timestamp without time zone | YES         | 
+ mst_treatment_categories |                1 | id                       | bigint                      | NO          | nextval('mst_treatment_categories_id_seq'::regclass)
+ mst_treatment_categories |                2 | code                     | character varying           | NO          | 
+ mst_treatment_categories |                3 | name                     | character varying           | NO          | 
+ mst_treatment_categories |                4 | description              | text                        | YES         | 
+ mst_treatment_categories |                5 | sort_order               | integer                     | NO          | 0
+ mst_treatment_categories |                6 | is_active                | boolean                     | NO          | true
+ mst_treatment_categories |                7 | created_at               | timestamp without time zone | YES         | 
+ mst_treatment_categories |                8 | updated_at               | timestamp without time zone | YES         | 
+ mst_treatment_categories |                9 | deleted_at               | timestamp without time zone | YES         | 
+ mst_treatments           |                1 | id                       | bigint                      | NO          | nextval('mst_treatments_id_seq'::regclass)
+ mst_treatments           |                2 | treatment_category_id    | bigint                      | NO          | 
+ mst_treatments           |                3 | code                     | character varying           | NO          | 
+ mst_treatments           |                4 | name                     | character varying           | NO          | 
+ mst_treatments           |                5 | description              | text                        | YES         | 
+ mst_treatments           |                6 | default_duration_minutes | integer                     | YES         | 
+ mst_treatments           |                7 | requires_doctor          | boolean                     | NO          | true
+ mst_treatments           |                8 | requires_room            | boolean                     | NO          | true
+ mst_treatments           |                9 | requires_lab             | boolean                     | NO          | false
+ mst_treatments           |               10 | is_active                | boolean                     | NO          | true
+ mst_treatments           |               11 | created_at               | timestamp without time zone | YES         | 
+ mst_treatments           |               12 | updated_at               | timestamp without time zone | YES         | 
+ mst_treatments           |               13 | deleted_at               | timestamp without time zone | YES         | 
+ permissions              |                1 | id                       | bigint                      | NO          | nextval('permissions_id_seq'::regclass)
+ permissions              |                2 | name                     | character varying           | NO          | 
+ permissions              |                3 | guard_name               | character varying           | NO          | 
+ permissions              |                4 | created_at               | timestamp without time zone | YES         | 
+ permissions              |                5 | updated_at               | timestamp without time zone | YES         | 
+ roles                    |                1 | id                       | bigint                      | NO          | nextval('roles_id_seq'::regclass)
+ roles                    |                2 | name                     | character varying           | NO          | 
+ roles                    |                3 | guard_name               | character varying           | NO          | 
+ roles                    |                4 | created_at               | timestamp without time zone | YES         | 
+ roles                    |                5 | updated_at               | timestamp without time zone | YES         | 
+ users                    |                1 | id                       | bigint                      | NO          | nextval('users_id_seq'::regclass)
+ users                    |                2 | name                     | character varying           | NO          | 
+ users                    |                3 | email                    | character varying           | NO          | 
+ users                    |                4 | email_verified_at        | timestamp without time zone | YES         | 
+ users                    |                5 | password                 | character varying           | NO          | 
+ users                    |                6 | remember_token           | character varying           | YES         | 
+ users                    |                7 | created_at               | timestamp without time zone | YES         | 
+ users                    |                8 | updated_at               | timestamp without time zone | YES         | 
+ users                    |                9 | phone                    | character varying           | YES         | 
+ users                    |               10 | is_active                | boolean                     | NO          | true
+ users                    |               11 | last_login_at            | timestamp without time zone | YES         | 
+ users                    |               12 | deleted_at               | timestamp without time zone | YES         | 
+(97 rows)
+

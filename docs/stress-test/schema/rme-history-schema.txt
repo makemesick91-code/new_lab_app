@@ -1,0 +1,168 @@
+              table_name              | ordinal_position |        column_name        |          data_type          | is_nullable |                          column_default                          
+--------------------------------------+------------------+---------------------------+-----------------------------+-------------+------------------------------------------------------------------
+ trx_clinic_visits                    |                1 | id                        | bigint                      | NO          | nextval('trx_clinic_visits_id_seq'::regclass)
+ trx_clinic_visits                    |                2 | visit_number              | character varying           | NO          | 
+ trx_clinic_visits                    |                3 | branch_id                 | bigint                      | NO          | 
+ trx_clinic_visits                    |                4 | clinic_id                 | bigint                      | YES         | 
+ trx_clinic_visits                    |                5 | patient_id                | bigint                      | NO          | 
+ trx_clinic_visits                    |                6 | doctor_id                 | bigint                      | YES         | 
+ trx_clinic_visits                    |                7 | clinic_room_id            | bigint                      | YES         | 
+ trx_clinic_visits                    |                8 | visit_date                | date                        | NO          | 
+ trx_clinic_visits                    |                9 | queue_number              | smallint                    | NO          | 
+ trx_clinic_visits                    |               10 | status                    | character varying           | NO          | 'registered'::character varying
+ trx_clinic_visits                    |               11 | chief_complaint           | text                        | YES         | 
+ trx_clinic_visits                    |               12 | check_in_at               | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               13 | started_at                | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               14 | completed_at              | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               15 | created_by                | bigint                      | NO          | 
+ trx_clinic_visits                    |               16 | created_at                | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               17 | updated_at                | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               18 | deleted_at                | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               19 | cancelled_at              | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               20 | initial_treatment_id      | bigint                      | YES         | 
+ trx_clinic_visits                    |               21 | initial_service_note      | text                        | YES         | 
+ trx_clinic_visits                    |               22 | consent_signed_by_patient | boolean                     | NO          | false
+ trx_clinic_visits                    |               23 | consent_signed_by_doctor  | boolean                     | NO          | false
+ trx_clinic_visits                    |               24 | consent_verified_at       | timestamp without time zone | YES         | 
+ trx_clinic_visits                    |               25 | consent_verified_by       | bigint                      | YES         | 
+ trx_clinic_visits                    |               26 | visit_type                | character varying           | NO          | 'new'::character varying
+ trx_clinic_visits                    |               27 | follow_up_of_visit_id     | bigint                      | YES         | 
+ trx_lab_case_candidates              |                1 | id                        | bigint                      | NO          | nextval('trx_lab_case_candidates_id_seq'::regclass)
+ trx_lab_case_candidates              |                2 | branch_id                 | bigint                      | NO          | 
+ trx_lab_case_candidates              |                3 | clinic_visit_id           | bigint                      | NO          | 
+ trx_lab_case_candidates              |                4 | rme_invoice_id            | bigint                      | NO          | 
+ trx_lab_case_candidates              |                5 | rme_invoice_item_id       | bigint                      | NO          | 
+ trx_lab_case_candidates              |                6 | patient_id                | bigint                      | NO          | 
+ trx_lab_case_candidates              |                7 | doctor_id                 | bigint                      | YES         | 
+ trx_lab_case_candidates              |                8 | treatment_id              | bigint                      | YES         | 
+ trx_lab_case_candidates              |                9 | medical_record_id         | bigint                      | YES         | 
+ trx_lab_case_candidates              |               10 | source_description        | character varying           | NO          | 
+ trx_lab_case_candidates              |               11 | quantity                  | integer                     | NO          | 1
+ trx_lab_case_candidates              |               12 | estimated_price           | numeric                     | YES         | 
+ trx_lab_case_candidates              |               13 | status                    | character varying           | NO          | 'pending_review'::character varying
+ trx_lab_case_candidates              |               14 | converted_lab_order_id    | bigint                      | YES         | 
+ trx_lab_case_candidates              |               15 | reviewed_by               | bigint                      | YES         | 
+ trx_lab_case_candidates              |               16 | reviewed_at               | timestamp without time zone | YES         | 
+ trx_lab_case_candidates              |               17 | notes                     | text                        | YES         | 
+ trx_lab_case_candidates              |               18 | metadata                  | json                        | YES         | 
+ trx_lab_case_candidates              |               19 | created_by                | bigint                      | YES         | 
+ trx_lab_case_candidates              |               20 | created_at                | timestamp without time zone | YES         | 
+ trx_lab_case_candidates              |               21 | updated_at                | timestamp without time zone | YES         | 
+ trx_lab_case_candidates              |               22 | deleted_at                | timestamp without time zone | YES         | 
+ trx_medical_record_handwriting_pages |                1 | id                        | bigint                      | NO          | nextval('trx_medical_record_handwriting_pages_id_seq'::regclass)
+ trx_medical_record_handwriting_pages |                2 | medical_record_id         | bigint                      | NO          | 
+ trx_medical_record_handwriting_pages |                3 | clinic_visit_id           | bigint                      | NO          | 
+ trx_medical_record_handwriting_pages |                4 | branch_id                 | bigint                      | NO          | 
+ trx_medical_record_handwriting_pages |                5 | doctor_id                 | bigint                      | YES         | 
+ trx_medical_record_handwriting_pages |                6 | page_number               | integer                     | NO          | 
+ trx_medical_record_handwriting_pages |                7 | handwriting_path          | character varying           | NO          | 
+ trx_medical_record_handwriting_pages |                8 | handwriting_hash          | character varying           | NO          | 
+ trx_medical_record_handwriting_pages |                9 | saved_at                  | timestamp without time zone | YES         | 
+ trx_medical_record_handwriting_pages |               10 | created_by                | bigint                      | YES         | 
+ trx_medical_record_handwriting_pages |               11 | updated_by                | bigint                      | YES         | 
+ trx_medical_record_handwriting_pages |               12 | created_at                | timestamp without time zone | YES         | 
+ trx_medical_record_handwriting_pages |               13 | updated_at                | timestamp without time zone | YES         | 
+ trx_medical_records                  |                1 | id                        | bigint                      | NO          | nextval('trx_medical_records_id_seq'::regclass)
+ trx_medical_records                  |                2 | clinic_visit_id           | bigint                      | NO          | 
+ trx_medical_records                  |                3 | branch_id                 | bigint                      | NO          | 
+ trx_medical_records                  |                4 | patient_id                | bigint                      | NO          | 
+ trx_medical_records                  |                5 | doctor_id                 | bigint                      | NO          | 
+ trx_medical_records                  |                6 | subjective                | text                        | YES         | 
+ trx_medical_records                  |                7 | objective                 | text                        | YES         | 
+ trx_medical_records                  |                8 | assessment                | text                        | YES         | 
+ trx_medical_records                  |                9 | plan                      | text                        | YES         | 
+ trx_medical_records                  |               10 | notes                     | text                        | YES         | 
+ trx_medical_records                  |               11 | status                    | character varying           | NO          | 'draft'::character varying
+ trx_medical_records                  |               12 | recorded_by               | bigint                      | YES         | 
+ trx_medical_records                  |               13 | created_at                | timestamp without time zone | YES         | 
+ trx_medical_records                  |               14 | updated_at                | timestamp without time zone | YES         | 
+ trx_medical_records                  |               15 | deleted_at                | timestamp without time zone | YES         | 
+ trx_medical_records                  |               16 | finalized_at              | timestamp without time zone | YES         | 
+ trx_medical_records                  |               17 | finalized_by              | bigint                      | YES         | 
+ trx_medical_records                  |               18 | canonical_visit_id        | bigint                      | YES         | 
+ trx_medical_records                  |               19 | source_visit_id           | bigint                      | YES         | 
+ trx_medical_records                  |               20 | sheet_number              | integer                     | YES         | 
+ trx_odontograms                      |                1 | id                        | bigint                      | NO          | nextval('trx_odontograms_id_seq'::regclass)
+ trx_odontograms                      |                2 | clinic_visit_id           | bigint                      | NO          | 
+ trx_odontograms                      |                3 | branch_id                 | bigint                      | NO          | 
+ trx_odontograms                      |                4 | medical_record_id         | bigint                      | YES         | 
+ trx_odontograms                      |                5 | status                    | character varying           | NO          | 'draft'::character varying
+ trx_odontograms                      |                6 | summary_notes             | text                        | YES         | 
+ trx_odontograms                      |                7 | tooth_map_payload         | jsonb                       | YES         | 
+ trx_odontograms                      |                8 | created_by                | bigint                      | YES         | 
+ trx_odontograms                      |                9 | updated_by                | bigint                      | YES         | 
+ trx_odontograms                      |               10 | created_at                | timestamp without time zone | YES         | 
+ trx_odontograms                      |               11 | updated_at                | timestamp without time zone | YES         | 
+ trx_odontograms                      |               12 | deleted_at                | timestamp without time zone | YES         | 
+ trx_odontograms                      |               13 | finalized_at              | timestamp without time zone | YES         | 
+ trx_odontograms                      |               14 | finalized_by              | bigint                      | YES         | 
+ trx_odontograms                      |               15 | additional_conditions     | text                        | YES         | 
+ trx_rme_invoice_items                |                1 | id                        | bigint                      | NO          | nextval('trx_rme_invoice_items_id_seq'::regclass)
+ trx_rme_invoice_items                |                2 | rme_invoice_id            | bigint                      | NO          | 
+ trx_rme_invoice_items                |                3 | treatment_id              | bigint                      | YES         | 
+ trx_rme_invoice_items                |                4 | description               | character varying           | NO          | 
+ trx_rme_invoice_items                |                5 | qty                       | integer                     | NO          | 
+ trx_rme_invoice_items                |                6 | unit_price                | numeric                     | NO          | 
+ trx_rme_invoice_items                |                7 | discount                  | numeric                     | NO          | '0'::numeric
+ trx_rme_invoice_items                |                8 | subtotal                  | numeric                     | NO          | 
+ trx_rme_invoice_items                |                9 | doctor_id                 | bigint                      | YES         | 
+ trx_rme_invoice_items                |               10 | created_at                | timestamp without time zone | YES         | 
+ trx_rme_invoice_items                |               11 | updated_at                | timestamp without time zone | YES         | 
+ trx_rme_invoices                     |                1 | id                        | bigint                      | NO          | nextval('trx_rme_invoices_id_seq'::regclass)
+ trx_rme_invoices                     |                2 | branch_id                 | bigint                      | NO          | 
+ trx_rme_invoices                     |                3 | clinic_visit_id           | bigint                      | NO          | 
+ trx_rme_invoices                     |                4 | patient_id                | bigint                      | NO          | 
+ trx_rme_invoices                     |                5 | medical_record_id         | bigint                      | YES         | 
+ trx_rme_invoices                     |                6 | cashier_id                | bigint                      | NO          | 
+ trx_rme_invoices                     |                7 | invoice_number            | character varying           | NO          | 
+ trx_rme_invoices                     |                8 | status                    | character varying           | NO          | 'DRAFT'::character varying
+ trx_rme_invoices                     |                9 | subtotal                  | numeric                     | NO          | '0'::numeric
+ trx_rme_invoices                     |               10 | discount_total            | numeric                     | NO          | '0'::numeric
+ trx_rme_invoices                     |               11 | grand_total               | numeric                     | NO          | '0'::numeric
+ trx_rme_invoices                     |               12 | notes                     | text                        | YES         | 
+ trx_rme_invoices                     |               13 | created_at                | timestamp without time zone | YES         | 
+ trx_rme_invoices                     |               14 | updated_at                | timestamp without time zone | YES         | 
+ trx_rme_invoices                     |               15 | deleted_at                | timestamp without time zone | YES         | 
+ trx_rme_patient_doctor_assignments   |                1 | id                        | bigint                      | NO          | nextval('trx_rme_patient_doctor_assignments_id_seq'::regclass)
+ trx_rme_patient_doctor_assignments   |                2 | patient_id                | bigint                      | NO          | 
+ trx_rme_patient_doctor_assignments   |                3 | doctor_id                 | bigint                      | NO          | 
+ trx_rme_patient_doctor_assignments   |                4 | from_doctor_id            | bigint                      | YES         | 
+ trx_rme_patient_doctor_assignments   |                5 | branch_id                 | bigint                      | YES         | 
+ trx_rme_patient_doctor_assignments   |                6 | source_visit_id           | bigint                      | YES         | 
+ trx_rme_patient_doctor_assignments   |                7 | assigned_by               | bigint                      | YES         | 
+ trx_rme_patient_doctor_assignments   |                8 | assigned_at               | timestamp without time zone | NO          | 
+ trx_rme_patient_doctor_assignments   |                9 | unassigned_at             | timestamp without time zone | YES         | 
+ trx_rme_patient_doctor_assignments   |               10 | assignment_type           | character varying           | NO          | 'auto_visit'::character varying
+ trx_rme_patient_doctor_assignments   |               11 | reason                    | text                        | YES         | 
+ trx_rme_patient_doctor_assignments   |               12 | notes                     | text                        | YES         | 
+ trx_rme_patient_doctor_assignments   |               13 | created_at                | timestamp without time zone | YES         | 
+ trx_rme_patient_doctor_assignments   |               14 | updated_at                | timestamp without time zone | YES         | 
+ trx_rme_payments                     |                1 | id                        | bigint                      | NO          | nextval('trx_rme_payments_id_seq'::regclass)
+ trx_rme_payments                     |                2 | branch_id                 | bigint                      | NO          | 
+ trx_rme_payments                     |                3 | rme_invoice_id            | bigint                      | NO          | 
+ trx_rme_payments                     |                4 | clinic_visit_id           | bigint                      | NO          | 
+ trx_rme_payments                     |                5 | patient_id                | bigint                      | NO          | 
+ trx_rme_payments                     |                6 | cashier_id                | bigint                      | NO          | 
+ trx_rme_payments                     |                7 | payment_method_id         | bigint                      | YES         | 
+ trx_rme_payments                     |                8 | payment_number            | character varying           | NO          | 
+ trx_rme_payments                     |                9 | amount                    | numeric                     | NO          | 
+ trx_rme_payments                     |               10 | paid_at                   | timestamp without time zone | NO          | 
+ trx_rme_payments                     |               11 | reference_number          | character varying           | YES         | 
+ trx_rme_payments                     |               12 | notes                     | text                        | YES         | 
+ trx_rme_payments                     |               13 | created_at                | timestamp without time zone | YES         | 
+ trx_rme_payments                     |               14 | updated_at                | timestamp without time zone | YES         | 
+ trx_rme_payments                     |               15 | deleted_at                | timestamp without time zone | YES         | 
+ trx_rme_payments                     |               16 | payment_batch_uuid        | uuid                        | YES         | 
+ trx_rme_receivable_follow_ups        |                1 | id                        | bigint                      | NO          | nextval('trx_rme_receivable_follow_ups_id_seq'::regclass)
+ trx_rme_receivable_follow_ups        |                2 | rme_invoice_id            | bigint                      | NO          | 
+ trx_rme_receivable_follow_ups        |                3 | branch_id                 | bigint                      | YES         | 
+ trx_rme_receivable_follow_ups        |                4 | user_id                   | bigint                      | YES         | 
+ trx_rme_receivable_follow_ups        |                5 | status                    | character varying           | NO          | 
+ trx_rme_receivable_follow_ups        |                6 | channel                   | character varying           | YES         | 
+ trx_rme_receivable_follow_ups        |                7 | contacted_at              | timestamp without time zone | YES         | 
+ trx_rme_receivable_follow_ups        |                8 | next_follow_up_date       | date                        | YES         | 
+ trx_rme_receivable_follow_ups        |                9 | note                      | text                        | YES         | 
+ trx_rme_receivable_follow_ups        |               10 | created_at                | timestamp without time zone | YES         | 
+ trx_rme_receivable_follow_ups        |               11 | updated_at                | timestamp without time zone | YES         | 
+(164 rows)
+

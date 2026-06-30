@@ -1,0 +1,12 @@
+login,302,0.221317,http://127.0.0.1:8008/dashboard
+rme_receivables,200,0.662717,http://127.0.0.1:8008/rme/cashier/receivables
+rme_receivables,200,0.651073,http://127.0.0.1:8008/rme/cashier/receivables
+rme_receivables,200,0.617515,http://127.0.0.1:8008/rme/cashier/receivables
+rme_receivables,200,0.644878,http://127.0.0.1:8008/rme/cashier/receivables
+rme_receivables,200,0.628998,http://127.0.0.1:8008/rme/cashier/receivables
+
+Summary:
+count=5
+min=0.6175s
+avg=0.6410s
+max=0.6627s

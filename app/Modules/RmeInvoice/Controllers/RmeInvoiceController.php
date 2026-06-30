@@ -20,6 +20,7 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -120,16 +121,12 @@ class RmeInvoiceController extends Controller
         $filters = $this->receivableFilters($request, $activeBranchIds);
         $query = $this->receivableQuery($activeBranchIds, $filters);
 
-        $summaryInvoices = (clone $query)->get();
-
-        $summary = [
-            'invoice_count' => $summaryInvoices->count(),
-            'grand_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => (float) $invoice->grand_total),
-            'paid_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => (float) $invoice->payments->sum('amount')),
-            'remaining_total' => $summaryInvoices->sum(fn (RmeInvoice $invoice) => $this->receivableRemaining($invoice)),
-        ];
-
-        $aging = $this->agingSummary($summaryInvoices);
+        // Sprint 67.1 — Receivables performance hardening.
+        // Do not load every active receivable invoice into PHP just to calculate
+        // summary/aging. With large datasets this used to hydrate tens of
+        // thousands of invoices plus payments before pagination.
+        $summary = $this->receivableSummary($activeBranchIds, $filters);
+        $aging = $this->receivableAgingSummary($activeBranchIds, $filters);
 
         $invoices = $query
             ->orderByRaw('CASE WHEN status = ? THEN 0 ELSE 1 END', [RmeInvoice::STATUS_PARTIAL])
@@ -345,6 +342,121 @@ class RmeInvoiceController extends Controller
         $paidAmount = (float) $invoice->payments->sum('amount');
 
         return max(0, round((float) $invoice->grand_total - $paidAmount, 2));
+    }
+
+    /**
+     * Sprint 67.1 — SQL aggregate base for active receivable summary/aging.
+     *
+     * This reuses the same business filters as the receivable listing but strips
+     * eager loading and only selects the columns needed for aggregate queries.
+     *
+     * @param  array<int, int>  $activeBranchIds
+     * @param  array<string, mixed>  $filters
+     */
+    private function receivableAggregateBaseQuery(array $activeBranchIds, array $filters)
+    {
+        $query = $this->receivableQuery($activeBranchIds, $filters);
+
+        $query->setEagerLoads([]);
+
+        return $query
+            ->select([
+                'trx_rme_invoices.id',
+                'trx_rme_invoices.grand_total',
+                'trx_rme_invoices.created_at',
+            ])
+            ->toBase();
+    }
+
+    private function receivablePaymentTotalsQuery()
+    {
+        return DB::table('trx_rme_payments')
+            ->select('rme_invoice_id')
+            ->selectRaw('SUM(amount) AS paid_total')
+            ->groupBy('rme_invoice_id');
+    }
+
+    /**
+     * @param  array<int, int>  $activeBranchIds
+     * @param  array<string, mixed>  $filters
+     * @return array{invoice_count: int, grand_total: float, paid_total: float, remaining_total: float}
+     */
+    private function receivableSummary(array $activeBranchIds, array $filters): array
+    {
+        $row = DB::query()
+            ->fromSub($this->receivableAggregateBaseQuery($activeBranchIds, $filters), 'receivables')
+            ->leftJoinSub($this->receivablePaymentTotalsQuery(), 'payment_totals', function ($join): void {
+                $join->on('payment_totals.rme_invoice_id', '=', 'receivables.id');
+            })
+            ->selectRaw('COUNT(*) AS invoice_count')
+            ->selectRaw('COALESCE(SUM(receivables.grand_total), 0) AS grand_total')
+            ->selectRaw('COALESCE(SUM(COALESCE(payment_totals.paid_total, 0)), 0) AS paid_total')
+            ->selectRaw('COALESCE(SUM(receivables.grand_total - COALESCE(payment_totals.paid_total, 0)), 0) AS remaining_total')
+            ->first();
+
+        return [
+            'invoice_count' => (int) ($row->invoice_count ?? 0),
+            'grand_total' => (float) ($row->grand_total ?? 0),
+            'paid_total' => (float) ($row->paid_total ?? 0),
+            'remaining_total' => (float) ($row->remaining_total ?? 0),
+        ];
+    }
+
+    /**
+     * @param  array<int, int>  $activeBranchIds
+     * @param  array<string, mixed>  $filters
+     * @return array<string, array{count: int, remaining: float}>
+     */
+    private function receivableAgingSummary(array $activeBranchIds, array $filters): array
+    {
+        $summary = [];
+        foreach (self::AGING_BUCKETS as $bucket) {
+            $summary[$bucket] = ['count' => 0, 'remaining' => 0.0];
+        }
+
+        $today = Carbon::today();
+        $bucketExpression = <<<'SQL'
+CASE
+    WHEN DATE(receivables.created_at) >= ? THEN '0-7'
+    WHEN DATE(receivables.created_at) >= ? THEN '8-14'
+    WHEN DATE(receivables.created_at) >= ? THEN '15-30'
+    ELSE '>30'
+END
+SQL;
+
+        $bucketed = DB::query()
+            ->fromSub($this->receivableAggregateBaseQuery($activeBranchIds, $filters), 'receivables')
+            ->leftJoinSub($this->receivablePaymentTotalsQuery(), 'payment_totals', function ($join): void {
+                $join->on('payment_totals.rme_invoice_id', '=', 'receivables.id');
+            })
+            ->selectRaw($bucketExpression.' AS bucket', [
+                $today->copy()->subDays(7)->toDateString(),
+                $today->copy()->subDays(14)->toDateString(),
+                $today->copy()->subDays(30)->toDateString(),
+            ])
+            ->selectRaw('receivables.grand_total - COALESCE(payment_totals.paid_total, 0) AS remaining_total');
+
+        DB::query()
+            ->fromSub($bucketed, 'bucketed_receivables')
+            ->select('bucket')
+            ->selectRaw('COUNT(*) AS invoice_count')
+            ->selectRaw('COALESCE(SUM(remaining_total), 0) AS remaining_total')
+            ->groupBy('bucket')
+            ->get()
+            ->each(function ($row) use (&$summary): void {
+                $bucket = (string) $row->bucket;
+
+                if (! array_key_exists($bucket, $summary)) {
+                    return;
+                }
+
+                $summary[$bucket] = [
+                    'count' => (int) $row->invoice_count,
+                    'remaining' => (float) $row->remaining_total,
+                ];
+            });
+
+        return $summary;
     }
 
     /**

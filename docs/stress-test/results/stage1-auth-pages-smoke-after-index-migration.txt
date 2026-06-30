@@ -1,0 +1,31 @@
+1) GET /login
+2) POST /login
+login,302,0.217782,http://127.0.0.1:8008/dashboard
+VISIT_ID=150000
+INVOICE_ID=150000
+3) GET target pages
+dashboard,200,0.064483,http://127.0.0.1:8008/dashboard
+rme_dashboard,200,0.201664,http://127.0.0.1:8008/rme/dashboard
+rme_visits,200,0.104847,http://127.0.0.1:8008/rme/visits
+rme_visit_show,200,0.091609,http://127.0.0.1:8008/rme/visits/150000
+rme_medical_record,200,0.079480,http://127.0.0.1:8008/rme/visits/150000/medical-record
+rme_odontogram,200,0.064658,http://127.0.0.1:8008/rme/visits/150000/odontogram
+rme_cashier,200,0.100566,http://127.0.0.1:8008/rme/cashier
+rme_receivables,200,0.627773,http://127.0.0.1:8008/rme/cashier/receivables
+rme_reports_patients,200,0.138722,http://127.0.0.1:8008/rme/reports/patients
+rme_reports_payments,200,0.177066,http://127.0.0.1:8008/rme/reports/payments
+settings_patients,403,0.026956,http://127.0.0.1:8008/settings/patients
+
+Summary:
+dashboard                    1   0.0645   0.0645   0.0645        0        0
+label                        n      min      avg      max      4xx      5xx
+rme_cashier                  1   0.1006   0.1006   0.1006        0        0
+rme_dashboard                1   0.2017   0.2017   0.2017        0        0
+rme_medical_record           1   0.0795   0.0795   0.0795        0        0
+rme_odontogram               1   0.0647   0.0647   0.0647        0        0
+rme_receivables              1   0.6278   0.6278   0.6278        0        0
+rme_reports_patients         1   0.1387   0.1387   0.1387        0        0
+rme_reports_payments         1   0.1771   0.1771   0.1771        0        0
+rme_visits                   1   0.1048   0.1048   0.1048        0        0
+rme_visit_show               1   0.0916   0.0916   0.0916        0        0
+settings_patients            1   0.0270   0.0270   0.0270        1        0
