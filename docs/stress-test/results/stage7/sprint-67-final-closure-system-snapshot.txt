@@ -1,0 +1,36 @@
+=== date ===
+Wed Jul  1 05:39:24 AM WITA 2026
+
+=== branch ===
+test/sprint-67-7-final-stress-closure-report
+490e6d8
+
+=== app env ===
+APP_ENV=stress
+DB_DATABASE=daengtisia_stress
+APP_URL=http://127.0.0.1:8008
+
+=== final sprint 67 tags ===
+sprint-67-1-rme-receivables-stress-performance-go
+sprint-67-2-4-local-rme-stress-concurrency-evidence-go
+sprint-67-5-k6-full-flow-50-users-local-evidence-go
+sprint-67-6-k6-write-full-flow-local-evidence-go
+
+=== latest log ===
+490e6d8 Merge pull request #107 from makemesick91-code/test/sprint-67-6-k6-write-full-flow-local
+009f42f Sprint 67.6 add k6 write full flow local evidence
+a0d99b8 Merge pull request #106 from makemesick91-code/test/sprint-67-5-k6-full-flow-50-users
+d765397 Sprint 67.5 add k6 full flow 50 user local evidence
+0cc482d Merge pull request #105 from makemesick91-code/test/sprint-67-4-local-concurrency-smoke
+2d0b4d1 Sprint 67.4 add local concurrency smoke evidence
+7ea168f Sprint 67.3 add local stress stage 3 evidence
+a4303be Sprint 67.2 add local stress stage 2 evidence
+
+=== disk ===
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda3        81G   17G   61G  22% /home
+
+=== memory ===
+               total        used        free      shared  buff/cache   available
+Mem:            15Gi       8.3Gi       2.0Gi       1.3Gi       5.5Gi       6.7Gi
+Swap:          4.0Gi       615Mi       3.4Gi
