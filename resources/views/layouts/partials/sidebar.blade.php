@@ -126,13 +126,17 @@
                         @unless($user?->hasRole('Doctor'))
                             <a href="{{ route('rme.dashboard') }}"
                                class="menu-subitem {{ request()->routeIs('rme.dashboard') ? $linkActive : $linkIdle }}">Dasbor RME</a>
+                        @endunless
+                        @unless($user?->hasRole('Doctor') || $user?->hasRole('Kasir'))
                             <a href="{{ route('rme.visits.index') }}"
                                class="menu-subitem {{ (request()->routeIs('rme.visits.*') && ! request()->routeIs('rme.visits.medical-record*')) ? $linkActive : $linkIdle }}">Kunjungan</a>
                             <a href="{{ route('rme.patient-queue.index') }}"
                                class="menu-subitem {{ request()->routeIs('rme.patient-queue.*') ? $linkActive : $linkIdle }}">Antrian Pasien</a>
                         @endunless
-                        <a href="{{ route('rme.medical-records.index') }}"
-                           class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
+                        @unless($user?->hasRole('Kasir'))
+                            <a href="{{ route('rme.medical-records.index') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.medical-records.*', 'rme.visits.medical-record*') ? $linkActive : $linkIdle }}">Rekam Medis</a>
+                        @endunless
                         @can('view_treatment_worklist')
                             <a href="{{ route('rme.treatment-room-worklist.index') }}"
                                class="menu-subitem {{ request()->routeIs('rme.treatment-room-worklist.*') ? $linkActive : $linkIdle }}">Ruang Perawatan</a>
