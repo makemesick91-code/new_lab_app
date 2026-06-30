@@ -26,17 +26,8 @@ it('shows doctor-focused RME navigation but hides admin queue links and Kasir RM
         ->assertDontSee('Kasir RME');
 });
 
-it('shows Kasir RME for Kasir and Admin Klinik but not Doctor', function () {
+it('shows Kasir RME for Kasir but not Doctor or Admin Klinik', function () {
     $this->actingAs(userInRole('Kasir'))
-        ->get(route('dashboard'))
-        ->assertOk()
-        ->assertSee('Kasir RME');
-
-    $adminBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
-    $admin = userInRole('Admin Klinik');
-    rmeMakeAdminClinicActive($admin, $adminBranch);
-
-    $this->actingAs($admin)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Kasir RME');
@@ -45,6 +36,27 @@ it('shows Kasir RME for Kasir and Admin Klinik but not Doctor', function () {
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Kasir RME');
+});
+
+it('hides cashier, audit, and master-data shortcuts for Admin Klinik while keeping operational menus', function () {
+    $adminBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $admin = userInRole('Admin Klinik');
+    rmeMakeAdminClinicActive($admin, $adminBranch);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertSee('Dashboard RME')
+        ->assertSee('Kunjungan')
+        ->assertSee('Antrian Pasien')
+        ->assertSee('Rekam Medis')
+        ->assertSee('Buka Kunjungan')
+        ->assertDontSee('Sinkronisasi Dokter–Kasir')
+        ->assertDontSee('Kasir RME')
+        ->assertDontSee('Piutang RME')
+        ->assertDontSee('Audit Data Pasien')
+        ->assertDontSee('Master Data RME')
+        ->assertDontSee('Buka Kasir RME');
 });
 
 it('shows read-only RME and reporting for Owner but hides lab operations', function () {

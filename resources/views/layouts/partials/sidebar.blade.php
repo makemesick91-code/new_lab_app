@@ -138,12 +138,14 @@
                                class="menu-subitem {{ request()->routeIs('rme.treatment-room-worklist.*') ? $linkActive : $linkIdle }}">Ruang Perawatan</a>
                         @endcan
                         @can('manage_rme_billing')
-                            <a href="{{ route('rme.cashier.handoff') }}"
-                               class="menu-subitem {{ request()->routeIs('rme.cashier.handoff') ? $linkActive : $linkIdle }}">Sinkronisasi Dokter–Kasir</a>
-                            <a href="{{ route('rme.cashier.index') }}"
-                               class="menu-subitem {{ request()->routeIs('rme.cashier.index', 'rme.cashier.create', 'rme.cashier.store', 'rme.cashier.show', 'rme.cashier.payment.*', 'rme.cashier.receipt.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
-                            <a href="{{ route('rme.cashier.receivables') }}"
-                               class="menu-subitem {{ request()->routeIs('rme.cashier.receivables') ? $linkActive : $linkIdle }}">Piutang RME</a>
+                            @unless($user?->hasRole('Admin Klinik'))
+                                <a href="{{ route('rme.cashier.handoff') }}"
+                                   class="menu-subitem {{ request()->routeIs('rme.cashier.handoff') ? $linkActive : $linkIdle }}">Sinkronisasi Dokter–Kasir</a>
+                                <a href="{{ route('rme.cashier.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('rme.cashier.index', 'rme.cashier.create', 'rme.cashier.store', 'rme.cashier.show', 'rme.cashier.payment.*', 'rme.cashier.receipt.*') ? $linkActive : $linkIdle }}">Kasir RME</a>
+                                <a href="{{ route('rme.cashier.receivables') }}"
+                                   class="menu-subitem {{ request()->routeIs('rme.cashier.receivables') ? $linkActive : $linkIdle }}">Piutang RME</a>
+                            @endunless
                         @endcan
                         @can('view_rme_patient_reports')
                             <a href="{{ route('rme.reports.patients') }}"
@@ -154,8 +156,10 @@
                                class="menu-subitem {{ request()->routeIs('rme.reports.payments') ? $linkActive : $linkIdle }}">Laporan Pembayaran RME</a>
                         @endcan
                         @canany(['view_rme_patient_reports', 'manage patients'])
-                            <a href="{{ route('rme.patients.audit') }}"
-                               class="menu-subitem {{ request()->routeIs('rme.patients.audit') ? $linkActive : $linkIdle }}">Audit Data Pasien</a>
+                            @unless($user?->hasRole('Admin Klinik'))
+                                <a href="{{ route('rme.patients.audit') }}"
+                                   class="menu-subitem {{ request()->routeIs('rme.patients.audit') ? $linkActive : $linkIdle }}">Audit Data Pasien</a>
+                            @endunless
                         @endcanany
                     </div>
                 </div>
@@ -439,6 +443,7 @@
             @endcanany
 
             @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
+                @unless($user?->hasRole('Admin Klinik'))
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
                         <span class="flex items-center gap-3">
@@ -490,6 +495,7 @@
                         @endcanany
                     </div>
                 </div>
+                @endunless
             @endcanany
 
             @canany(['manage users', 'manage roles', 'manage permissions'])
