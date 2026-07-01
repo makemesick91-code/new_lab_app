@@ -1,6 +1,8 @@
 <?php
 
+use App\Console\Commands\StressSeedRmeHistoryCommand;
 use App\Modules\Branch\Models\Branch;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -265,4 +267,17 @@ it('requires force for very large targets', function () {
     $this->artisan('stress:seed-rme-history', ['--target' => 100001])
         ->expectsOutputToContain('Re-run with --force')
         ->assertExitCode(1);
+});
+
+it('keeps queue_number within PostgreSQL smallint for high visit sequences', function () {
+    $command = app(StressSeedRmeHistoryCommand::class);
+    $method = new ReflectionMethod($command, 'queueNumberForSeq');
+    $method->setAccessible(true);
+
+    $from = Carbon::parse('2026-01-01');
+    $to = Carbon::parse('2026-12-31');
+
+    foreach ([32768, 50000, 100000] as $seq) {
+        expect($method->invoke($command, $seq, $from, $to))->toBeLessThanOrEqual(32767);
+    }
 });

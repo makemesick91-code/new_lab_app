@@ -224,7 +224,7 @@ class StressSeedRmeHistoryCommand extends Command
                     'doctor_id' => $doctorId,
                     'clinic_room_id' => $roomId,
                     'visit_date' => $visitDate->toDateString(),
-                    'queue_number' => $i,
+                    'queue_number' => $this->queueNumberForSeq($i, $fromDate, $toDate),
                     'status' => $visitStatus,
                     'chief_complaint' => 'Dummy keluhan stress test visit '.$seq,
                     'check_in_at' => $checkedInAt,
@@ -609,6 +609,19 @@ class StressSeedRmeHistoryCommand extends Command
         $offset = ($visitSeq - 1) % ($days + 1);
 
         return $fromDate->copy()->addDays($offset);
+    }
+
+    /**
+     * Stress-only queue number that stays within PostgreSQL smallint (signed max 32767)
+     * while remaining unique per branch + visit_date (revisit cycle index on same calendar day).
+     */
+    private function queueNumberForSeq(int $visitSeq, Carbon $fromDate, Carbon $toDate): int
+    {
+        $days = max(0, $fromDate->diffInDays($toDate));
+        $daySpan = max(1, $days + 1);
+        $cycleOnDate = intdiv($visitSeq - 1, $daySpan);
+
+        return ($cycleOnDate % 32767) + 1;
     }
 
     private function billingMode(int $visitSeq): string
