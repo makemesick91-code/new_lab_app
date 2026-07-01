@@ -47,3 +47,22 @@ it('flags debug on pilot and maintenance mode', function () {
         ->and(PilotPerformanceSnapshotClassifier::classifyDebugMode(true, 'local'))->toBe('OK')
         ->and(PilotPerformanceSnapshotClassifier::classifyMaintenanceMode(true))->toBe('INVESTIGATE');
 });
+
+it('classifies fresh log errors with thresholds and critical escalation', function () {
+    expect(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'ok', 0, 66))
+        ->toMatchArray([
+            'status' => 'OK',
+            'reason' => 'No fresh error-like entries within lookback window; historical entries are informational only.',
+        ])
+        ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(5, 0, 'ok', 0, 0)['status'])->toBe('WATCH')
+        ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(25, 0, 'ok', 0, 0)['status'])->toBe('INVESTIGATE')
+        ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(120, 0, 'ok', 0, 0)['status'])->toBe('FIX')
+        ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(2, 10, 'ok', 0, 0)['status'])->toBe('FIX');
+});
+
+it('returns watch when timestamp freshness cannot be determined', function () {
+    $result = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'failed', 25, 0);
+
+    expect($result['status'])->toBe('WATCH')
+        ->and($result['reason'])->toContain('Unable to determine freshness');
+});
