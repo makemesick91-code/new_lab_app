@@ -1,6 +1,9 @@
 <?php
 
 use App\Console\Commands\PilotPerformanceSnapshotCommand;
+use App\Services\Monitoring\PilotPerformanceSnapshotClassifier;
+use App\Services\Monitoring\PilotPerformanceSnapshotService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -129,4 +132,98 @@ it('defines expected command options', function () {
         ->and($command->getDefinition()->getOption('no-db')->getDefault())->toBeFalse()
         ->and($command->getDefinition()->getOption('no-http')->getDefault())->toBeFalse()
         ->and($command->getDefinition()->getOption('fail-on-watch')->getDefault())->toBeFalse();
+});
+
+it('rejects invalid since duration with exit code 10', function () {
+    $exitCode = Artisan::call('pilot:performance-snapshot', [
+        '--since' => 'bad',
+        '--no-http' => true,
+        '--no-db' => true,
+    ]);
+
+    expect($exitCode)->toBe(10)
+        ->and(Artisan::output())->toContain('Invalid --since duration');
+});
+
+it('includes fresh and historical log metrics in json output', function () {
+    Artisan::call('pilot:performance-snapshot', [
+        '--json' => true,
+        '--no-http' => true,
+        '--no-db' => true,
+        '--since' => '24h',
+    ]);
+
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+    $logs = $payload['sections']['logs'];
+
+    expect($logs['metrics'])->toHaveKeys([
+        'lookback_window',
+        'fresh_error_like_count',
+        'historical_tail_error_like_count',
+        'timestamp_parse_status',
+    ]);
+});
+
+it('includes fresh and historical summary in markdown output', function () {
+    Artisan::call('pilot:performance-snapshot', [
+        '--markdown' => true,
+        '--no-http' => true,
+        '--no-db' => true,
+    ]);
+
+    $output = Artisan::output();
+
+    expect($output)->toContain('fresh=')
+        ->and($output)->toContain('historical_tail=')
+        ->and($output)->toContain('lookback=');
+});
+
+it('returns zero fail-on-watch when only historical logs would have previously caused watch', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
+
+    $lines = [];
+
+    for ($i = 0; $i < 30; $i++) {
+        $lines[] = sprintf('[2026-06-01 10:%02d:00] production.ERROR: historical exception %d', $i % 60, $i);
+    }
+
+    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-fow-');
+    file_put_contents($logPath, implode(PHP_EOL, $lines));
+
+    $service = new PilotPerformanceSnapshotService;
+    $snapshot = $service->collect([
+        'skip_db' => true,
+        'skip_http' => true,
+        'since' => '24h',
+        'log_path' => $logPath,
+    ]);
+
+    @unlink($logPath);
+
+    expect($snapshot['overall_status'])->toBe('OK')
+        ->and(PilotPerformanceSnapshotClassifier::exitCodeForStatus($snapshot['overall_status']))->toBe(0);
+});
+
+it('returns fail-on-watch exit code 1 for fresh log watch status', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
+
+    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-fow-fresh-');
+    file_put_contents($logPath, '[2026-07-01 11:00:00] production.ERROR: fresh exception'.PHP_EOL);
+
+    $service = new PilotPerformanceSnapshotService;
+    $snapshot = $service->collect([
+        'skip_db' => true,
+        'skip_http' => true,
+        'since' => '24h',
+        'log_path' => $logPath,
+    ]);
+
+    @unlink($logPath);
+
+    expect($snapshot['sections']['logs']['status'])->toBe('WATCH')
+        ->and(PilotPerformanceSnapshotClassifier::exitCodeForStatus($snapshot['overall_status']))->toBe(1);
+});
+
+afterEach(function () {
+    Carbon::setTestNow();
 });

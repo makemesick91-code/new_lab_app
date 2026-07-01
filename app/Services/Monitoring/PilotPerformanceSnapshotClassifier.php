@@ -172,4 +172,59 @@ class PilotPerformanceSnapshotClassifier
 
         return self::STATUS_OK;
     }
+
+    /**
+     * @return array{status:string, reason:string}
+     */
+    public static function classifyFreshLogErrors(
+        int $freshCount,
+        int $criticalFreshCount,
+        string $timestampParseStatus,
+        int $unparseableCount,
+        int $historicalCount,
+    ): array {
+        if ($timestampParseStatus === 'failed' || ($unparseableCount > 20 && $timestampParseStatus !== 'ok')) {
+            return [
+                'status' => self::STATUS_WATCH,
+                'reason' => 'Unable to determine freshness from log timestamps.',
+            ];
+        }
+
+        if ($freshCount === 0) {
+            if ($historicalCount > 0) {
+                return [
+                    'status' => self::STATUS_OK,
+                    'reason' => 'No fresh error-like entries within lookback window; historical entries are informational only.',
+                ];
+            }
+
+            return [
+                'status' => self::STATUS_OK,
+                'reason' => 'No fresh error-like entries within lookback window.',
+            ];
+        }
+
+        $status = match (true) {
+            $freshCount > 100 => self::STATUS_FIX,
+            $freshCount > 20 => self::STATUS_INVESTIGATE,
+            default => self::STATUS_WATCH,
+        };
+
+        if ($criticalFreshCount >= 10) {
+            $status = self::worst($status, self::STATUS_FIX);
+        } elseif ($criticalFreshCount >= 3) {
+            $status = self::worst($status, self::STATUS_INVESTIGATE);
+        }
+
+        $reason = match ($status) {
+            self::STATUS_FIX => 'Fresh error-like entries exceed FIX threshold within lookback window.',
+            self::STATUS_INVESTIGATE => 'Fresh error-like entries exceed INVESTIGATE threshold within lookback window.',
+            default => 'Fresh error-like entries detected within lookback window.',
+        };
+
+        return [
+            'status' => $status,
+            'reason' => $reason,
+        ];
+    }
 }

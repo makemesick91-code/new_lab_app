@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Services\Monitoring\PilotPerformanceSnapshotClassifier;
+use App\Services\Monitoring\PilotPerformanceSnapshotLogAnalyzer;
 use App\Services\Monitoring\PilotPerformanceSnapshotService;
 use Illuminate\Console\Command;
 
@@ -16,7 +17,7 @@ class PilotPerformanceSnapshotCommand extends Command
         {--json : Output JSON}
         {--markdown : Output Markdown}
         {--output= : Optional output file path under storage/app/monitoring only}
-        {--since=24h : Log lookback window label for summary only}
+        {--since=24h : Log lookback window for fresh error classification}
         {--no-db : Skip database checks}
         {--no-http : Skip basic HTTP checks}
         {--fail-on-watch : Return non-zero exit code for WATCH or worse}
@@ -34,10 +35,18 @@ class PilotPerformanceSnapshotCommand extends Command
             return self::UNSAFE_EXIT;
         }
 
+        $since = (string) $this->option('since');
+
+        if (PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration($since) === null) {
+            $this->error("Invalid --since duration [{$since}]. Supported examples: 1h, 6h, 12h, 24h, 48h, 7d.");
+
+            return self::UNSAFE_EXIT;
+        }
+
         $snapshot = $service->collect([
             'skip_db' => (bool) $this->option('no-db'),
             'skip_http' => (bool) $this->option('no-http'),
-            'since' => (string) $this->option('since'),
+            'since' => $since,
         ]);
 
         if ($this->option('output') !== null && $this->option('output') !== '') {
@@ -168,6 +177,22 @@ class PilotPerformanceSnapshotCommand extends Command
             $this->line(sprintf('%s: %s', $label, $section['status']));
         }
 
+        $logs = $snapshot['sections']['logs'] ?? null;
+
+        if (is_array($logs)) {
+            $logMetrics = $logs['metrics'] ?? [];
+            $lookback = $logMetrics['lookback_window'] ?? 'n/a';
+            $fresh = $logMetrics['fresh_error_like_count'] ?? 'n/a';
+            $historical = $logMetrics['historical_tail_error_like_count'] ?? 'n/a';
+            $this->newLine();
+            $this->line(sprintf('Fresh error-like entries: %s in last %s', (string) $fresh, (string) $lookback));
+            $this->line(sprintf('Historical tail error-like entries: %s', (string) $historical));
+
+            if (isset($logs['reason']) && is_string($logs['reason'])) {
+                $this->line('Reason: '.$logs['reason']);
+            }
+        }
+
         $db = $snapshot['sections']['database']['metrics'] ?? [];
         $this->newLine();
         $this->line('Summary');
@@ -218,12 +243,22 @@ class PilotPerformanceSnapshotCommand extends Command
             '',
             '## Sections',
             '',
-            '| Area | Status |',
-            '|---|---|',
+            '| Area | Status | Notes |',
+            '|---|---|---|',
         ];
 
         foreach ($snapshot['sections'] as $name => $section) {
-            $lines[] = '| '.ucfirst($name).' | '.$section['status'].' |';
+            $detail = '-';
+
+            if ($name === 'logs') {
+                $metrics = $section['metrics'] ?? [];
+                $fresh = $metrics['fresh_error_like_count'] ?? 'n/a';
+                $historical = $metrics['historical_tail_error_like_count'] ?? 'n/a';
+                $lookback = $metrics['lookback_window'] ?? 'n/a';
+                $detail = sprintf('fresh=%s, historical_tail=%s, lookback=%s', (string) $fresh, (string) $historical, (string) $lookback);
+            }
+
+            $lines[] = '| '.ucfirst($name).' | '.$section['status'].' | '.$detail.' |';
         }
 
         $db = $snapshot['sections']['database']['metrics'] ?? [];

@@ -10,10 +10,11 @@ class PilotPerformanceSnapshotService
 {
     public function __construct(
         private readonly PilotPerformanceSnapshotClassifier $classifier = new PilotPerformanceSnapshotClassifier,
+        private readonly PilotPerformanceSnapshotLogAnalyzer $logAnalyzer = new PilotPerformanceSnapshotLogAnalyzer,
     ) {}
 
     /**
-     * @param  array{skip_db:bool,skip_http:bool,since:string}  $options
+     * @param  array{skip_db:bool,skip_http:bool,since:string,log_path?:string|null}  $options
      * @return array{
      *   checked_at:string,
      *   environment:string,
@@ -58,7 +59,7 @@ class PilotPerformanceSnapshotService
             $sections['http'] = $http;
         }
 
-        $logs = $this->collectLogSummary($options['since'], $warnings);
+        $logs = $this->collectLogSummary($options['since'], $warnings, $options['log_path'] ?? null);
         $sections['logs'] = $logs;
 
         $sqlStatus = $sections['database']['metrics']['sql_status'] ?? PilotPerformanceSnapshotClassifier::STATUS_OK;
@@ -504,18 +505,40 @@ class PilotPerformanceSnapshotService
 
     /**
      * @param  list<string>  $warnings
-     * @return array{status:string, metrics:array<string, mixed>}
+     * @return array{status:string, reason:string, metrics:array<string, mixed>}
      */
-    private function collectLogSummary(string $sinceLabel, array &$warnings): array
+    private function collectLogSummary(string $sinceLabel, array &$warnings, ?string $logPathOverride = null): array
     {
-        $logPath = storage_path('logs/laravel.log');
+        $since = PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration($sinceLabel);
+
+        if ($since === null) {
+            $warnings[] = 'Invalid --since duration; log freshness could not be evaluated.';
+
+            return [
+                'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
+                'reason' => 'Invalid lookback window.',
+                'metrics' => [
+                    'lookback_window' => $sinceLabel,
+                    'fresh_error_like_count' => null,
+                    'historical_tail_error_like_count' => null,
+                    'timestamp_parse_status' => 'invalid_since',
+                ],
+            ];
+        }
+
+        $logPath = $logPathOverride ?? storage_path('logs/laravel.log');
 
         if (! is_file($logPath)) {
             return [
                 'status' => PilotPerformanceSnapshotClassifier::STATUS_OK,
+                'reason' => 'Laravel log file not found.',
                 'metrics' => [
-                    'since' => $sinceLabel,
-                    'error_like_count' => 0,
+                    'lookback_window' => $since['label'],
+                    'fresh_error_like_count' => 0,
+                    'historical_tail_error_like_count' => 0,
+                    'critical_fresh_count' => 0,
+                    'unparseable_error_like_count' => 0,
+                    'timestamp_parse_status' => 'ok',
                     'file_exists' => false,
                 ],
             ];
@@ -528,33 +551,50 @@ class PilotPerformanceSnapshotService
 
             return [
                 'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
-                'metrics' => ['since' => $sinceLabel, 'error_like_count' => null],
+                'reason' => 'Could not read Laravel log file.',
+                'metrics' => [
+                    'lookback_window' => $since['label'],
+                    'fresh_error_like_count' => null,
+                    'historical_tail_error_like_count' => null,
+                    'timestamp_parse_status' => 'failed',
+                    'file_exists' => true,
+                ],
             ];
         }
 
         $maxTailBytes = 2 * 1024 * 1024;
         $tail = $this->readTail($logPath, $maxTailBytes);
-        $pattern = '/ERROR|CRITICAL|SQLSTATE|timeout|exception/i';
-        $count = 0;
+        $metrics = $this->logAnalyzer->analyzeTail(
+            $tail,
+            $since['label'],
+            $since['seconds'],
+            now(),
+        );
+        $metrics['tail_bytes_scanned'] = min($size, $maxTailBytes);
 
-        foreach (preg_split('/\R/', $tail) as $line) {
-            if ($line !== '' && preg_match($pattern, $line) === 1) {
-                $count++;
-            }
+        $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
+            $metrics['fresh_error_like_count'],
+            $metrics['critical_fresh_count'],
+            $metrics['timestamp_parse_status'],
+            $metrics['unparseable_error_like_count'],
+            $metrics['historical_tail_error_like_count'],
+        );
+
+        if (
+            $classification['status'] === PilotPerformanceSnapshotClassifier::STATUS_OK
+            && $metrics['historical_tail_error_like_count'] > 0
+        ) {
+            $warnings[] = sprintf(
+                'Historical error-like entries exist outside lookback window (%s): %d in scanned tail.',
+                $since['label'],
+                $metrics['historical_tail_error_like_count'],
+            );
         }
 
-        $status = $count > 100
-          ? PilotPerformanceSnapshotClassifier::STATUS_INVESTIGATE
-          : ($count > 20 ? PilotPerformanceSnapshotClassifier::STATUS_WATCH : PilotPerformanceSnapshotClassifier::STATUS_OK);
-
         return [
-            'status' => $status,
-            'metrics' => [
-                'since' => $sinceLabel,
-                'error_like_count' => $count,
-                'tail_bytes_scanned' => min($size, $maxTailBytes),
-                'file_exists' => true,
-            ],
+            'status' => $classification['status'],
+            'reason' => $classification['reason'],
+            'metrics' => $metrics,
         ];
     }
 
@@ -581,7 +621,7 @@ class PilotPerformanceSnapshotService
     }
 
     /**
-     * @param  array<string, array{status:string, metrics?:array<string, mixed>}>  $sections
+     * @param  array<string, array{status:string, reason?:string, metrics?:array<string, mixed>}>  $sections
      * @return array<string, mixed>
      */
     private function flattenMetrics(array $sections): array
@@ -591,6 +631,7 @@ class PilotPerformanceSnapshotService
         foreach ($sections as $name => $section) {
             $flat[$name] = array_merge(
                 ['status' => $section['status']],
+                isset($section['reason']) ? ['reason' => $section['reason']] : [],
                 $section['metrics'] ?? [],
             );
         }
