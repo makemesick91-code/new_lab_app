@@ -160,11 +160,17 @@ it('includes fresh and historical log metrics in json output', function () {
         'lookback_window',
         'fresh_error_like_count',
         'historical_tail_error_like_count',
+        'unparseable_error_like_count',
+        'fresh_stack_trace_line_count',
+        'historical_stack_trace_line_count',
+        'orphan_unparseable_error_like_count',
+        'attached_unparseable_line_count',
+        'log_grouping_status',
         'timestamp_parse_status',
     ]);
 });
 
-it('includes fresh and historical summary in markdown output', function () {
+it('includes grouped stack trace summary in markdown output', function () {
     Artisan::call('pilot:performance-snapshot', [
         '--markdown' => true,
         '--no-http' => true,
@@ -174,8 +180,26 @@ it('includes fresh and historical summary in markdown output', function () {
     $output = Artisan::output();
 
     expect($output)->toContain('fresh=')
-        ->and($output)->toContain('historical_tail=')
+        ->and($output)->toContain('historical=')
+        ->and($output)->toContain('historical_stack_lines=')
+        ->and($output)->toContain('orphan_unparseable=')
         ->and($output)->toContain('lookback=');
+});
+
+it('includes grouped stack trace summary in console output without raw log lines', function () {
+    Artisan::call('pilot:performance-snapshot', [
+        '--no-http' => true,
+        '--no-db' => true,
+    ]);
+
+    $output = Artisan::output();
+
+    expect($output)->toContain('Fresh error events')
+        ->and($output)->toContain('Historical error events')
+        ->and($output)->toContain('Orphan unparseable error-like lines')
+        ->and($output)->not->toContain('DB_PASSWORD')
+        ->and($output)->not->toContain('KTP')
+        ->and($output)->not->toContain('NIK');
 });
 
 it('returns zero fail-on-watch when only historical logs would have previously caused watch', function () {

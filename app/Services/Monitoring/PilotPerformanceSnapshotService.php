@@ -538,6 +538,11 @@ class PilotPerformanceSnapshotService
                     'historical_tail_error_like_count' => 0,
                     'critical_fresh_count' => 0,
                     'unparseable_error_like_count' => 0,
+                    'fresh_stack_trace_line_count' => 0,
+                    'historical_stack_trace_line_count' => 0,
+                    'orphan_unparseable_error_like_count' => 0,
+                    'attached_unparseable_line_count' => 0,
+                    'log_grouping_status' => 'none',
                     'timestamp_parse_status' => 'ok',
                     'file_exists' => false,
                 ],
@@ -576,18 +581,24 @@ class PilotPerformanceSnapshotService
             $metrics['fresh_error_like_count'],
             $metrics['critical_fresh_count'],
             $metrics['timestamp_parse_status'],
-            $metrics['unparseable_error_like_count'],
+            $metrics['orphan_unparseable_error_like_count'],
             $metrics['historical_tail_error_like_count'],
+            $metrics['historical_stack_trace_line_count'],
         );
 
         if (
             $classification['status'] === PilotPerformanceSnapshotClassifier::STATUS_OK
             && $metrics['historical_tail_error_like_count'] > 0
         ) {
+            $stackNote = $metrics['historical_stack_trace_line_count'] > 0
+                ? sprintf(', %d stack trace continuation lines grouped', $metrics['historical_stack_trace_line_count'])
+                : '';
+
             $warnings[] = sprintf(
-                'Historical error-like entries exist outside lookback window (%s): %d in scanned tail.',
+                'Historical error events exist outside lookback window (%s): %d in scanned tail%s.',
                 $since['label'],
                 $metrics['historical_tail_error_like_count'],
+                $stackNote,
             );
         }
 

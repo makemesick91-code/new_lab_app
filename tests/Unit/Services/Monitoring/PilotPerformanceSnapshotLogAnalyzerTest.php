@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Monitoring\PilotPerformanceSnapshotClassifier;
 use App\Services\Monitoring\PilotPerformanceSnapshotLogAnalyzer;
 use App\Services\Monitoring\PilotPerformanceSnapshotService;
 use Carbon\Carbon;
@@ -7,109 +8,147 @@ use Tests\TestCase;
 
 uses(TestCase::class);
 
-it('parses supported since durations', function () {
-    expect(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration('24h'))
-        ->toMatchArray(['seconds' => 86400, 'label' => '24h'])
-        ->and(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration('7d'))
-        ->toMatchArray(['seconds' => 604800, 'label' => '7d'])
-        ->and(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration('48h'))
-        ->toMatchArray(['seconds' => 172800, 'label' => '48h']);
-});
-
-it('rejects invalid since durations', function () {
-    expect(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration('bad'))->toBeNull()
-        ->and(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration(''))->toBeNull()
-        ->and(PilotPerformanceSnapshotLogAnalyzer::parseSinceDuration('0h'))->toBeNull();
-});
-
-it('separates fresh and historical error-like lines by lookback window', function () {
+it('groups historical error events with stack trace continuation lines', function () {
     Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
 
-    $analyzer = new PilotPerformanceSnapshotLogAnalyzer;
     $tail = implode(PHP_EOL, [
-        '[2026-06-20 10:00:00] production.ERROR: historical SQLSTATE failure',
-        '[2026-06-30 11:00:00] production.ERROR: still historical exception',
-        '[2026-07-01 11:30:00] production.ERROR: fresh timeout in queue',
+        '[2026-06-01 10:00:00] production.ERROR: historical exception',
+        'Stack trace:',
+        '#0 /var/www/app/Exception.php(50): App\\Services\\Example->run()',
+        '#1 {main}',
+        'thrown in /var/www/app/Exception.php on line 50',
     ]);
 
-    $result = $analyzer->analyzeTail($tail, '24h', 86400, now());
+    $metrics = (new PilotPerformanceSnapshotLogAnalyzer)->analyzeTail($tail, '24h', 86400, now());
 
-    expect($result['fresh_error_like_count'])->toBe(1)
-        ->and($result['historical_tail_error_like_count'])->toBe(2)
-        ->and($result['lookback_window'])->toBe('24h')
-        ->and($result['timestamp_parse_status'])->toBe('ok');
+    expect($metrics['fresh_error_like_count'])->toBe(0)
+        ->and($metrics['historical_tail_error_like_count'])->toBe(1)
+        ->and($metrics['historical_stack_trace_line_count'])->toBe(4)
+        ->and($metrics['unparseable_error_like_count'])->toBe(0)
+        ->and($metrics['orphan_unparseable_error_like_count'])->toBe(0)
+        ->and($metrics['attached_unparseable_line_count'])->toBe(0)
+        ->and($metrics['log_grouping_status'])->toBe('grouped')
+        ->and($metrics['timestamp_parse_status'])->toBe('ok');
+
+    $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
+        $metrics['fresh_error_like_count'],
+        $metrics['critical_fresh_count'],
+        $metrics['timestamp_parse_status'],
+        $metrics['orphan_unparseable_error_like_count'],
+        $metrics['historical_tail_error_like_count'],
+        $metrics['historical_stack_trace_line_count'],
+    );
+
+    expect($classification['status'])->toBe('OK');
 });
 
-it('counts many fresh errors for investigate and fix thresholds via service integration', function () {
+it('groups fresh error events with stack trace continuation lines without inflating event count', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
+
+    $tail = implode(PHP_EOL, [
+        '[2026-07-01 11:00:00] production.ERROR: fresh exception',
+        '#0 /var/www/app/Exception.php(50): App\\Services\\Example->run()',
+        '#1 {main}',
+    ]);
+
+    $metrics = (new PilotPerformanceSnapshotLogAnalyzer)->analyzeTail($tail, '24h', 86400, now());
+
+    expect($metrics['fresh_error_like_count'])->toBe(1)
+        ->and($metrics['fresh_stack_trace_line_count'])->toBe(2)
+        ->and($metrics['unparseable_error_like_count'])->toBe(0);
+
+    $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
+        $metrics['fresh_error_like_count'],
+        $metrics['critical_fresh_count'],
+        $metrics['timestamp_parse_status'],
+        $metrics['orphan_unparseable_error_like_count'],
+        $metrics['historical_tail_error_like_count'],
+        $metrics['historical_stack_trace_line_count'],
+    );
+
+    expect($classification['status'])->toBe('WATCH');
+});
+
+it('uses event counts for multiple fresh error thresholds not stack trace line counts', function () {
     Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
 
     $lines = [];
 
     for ($i = 0; $i < 25; $i++) {
         $lines[] = sprintf('[2026-07-01 11:%02d:00] production.ERROR: fresh exception %d', $i, $i);
+        $lines[] = '#0 /var/www/app/Exception.php(50): run()';
+        $lines[] = '#1 {main}';
     }
 
-    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-');
-    file_put_contents($logPath, implode(PHP_EOL, $lines));
+    $metrics = (new PilotPerformanceSnapshotLogAnalyzer)->analyzeTail(implode(PHP_EOL, $lines), '24h', 86400, now());
 
-    $service = new PilotPerformanceSnapshotService;
-    $snapshot = $service->collect([
-        'skip_db' => true,
-        'skip_http' => true,
-        'since' => '24h',
-        'log_path' => $logPath,
-    ]);
+    expect($metrics['fresh_error_like_count'])->toBe(25)
+        ->and($metrics['fresh_stack_trace_line_count'])->toBe(50);
 
-    @unlink($logPath);
+    $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
+        $metrics['fresh_error_like_count'],
+        $metrics['critical_fresh_count'],
+        $metrics['timestamp_parse_status'],
+        $metrics['orphan_unparseable_error_like_count'],
+        $metrics['historical_tail_error_like_count'],
+        $metrics['historical_stack_trace_line_count'],
+    );
 
-    expect($snapshot['sections']['logs']['status'])->toBe('INVESTIGATE')
-        ->and($snapshot['sections']['logs']['metrics']['fresh_error_like_count'])->toBe(25);
+    expect($classification['status'])->toBe('INVESTIGATE');
 });
 
-it('treats unparseable error-like lines as safe watch without raw output', function () {
+it('counts orphan stack trace lines without parent timestamped event', function () {
     Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
 
-    $lines = [];
-
-    for ($i = 0; $i < 25; $i++) {
-        $lines[] = 'stack trace exception without timestamp line '.$i;
-    }
-
-    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-');
-    file_put_contents($logPath, implode(PHP_EOL, $lines));
-
-    $service = new PilotPerformanceSnapshotService;
-    $snapshot = $service->collect([
-        'skip_db' => true,
-        'skip_http' => true,
-        'since' => '24h',
-        'log_path' => $logPath,
+    $tail = implode(PHP_EOL, [
+        '#0 /var/www/app/Exception.php(50): orphan trace',
+        '#1 {main}',
+        'Stack trace:',
     ]);
 
-    $encoded = json_encode($snapshot);
+    $metrics = (new PilotPerformanceSnapshotLogAnalyzer)->analyzeTail($tail, '24h', 86400, now());
 
-    @unlink($logPath);
-
-    expect($snapshot['sections']['logs']['status'])->toBe('WATCH')
-        ->and($snapshot['sections']['logs']['metrics']['timestamp_parse_status'])->toBe('failed')
-        ->and($snapshot['sections']['logs']['metrics']['unparseable_error_like_count'])->toBe(25)
-        ->and($encoded)->not->toContain('stack trace exception');
+    expect($metrics['orphan_unparseable_error_like_count'])->toBe(3)
+        ->and($metrics['unparseable_error_like_count'])->toBe(3)
+        ->and($metrics['fresh_error_like_count'])->toBe(0)
+        ->and($metrics['historical_tail_error_like_count'])->toBe(0)
+        ->and($metrics['log_grouping_status'])->toBe('none');
 });
 
-it('keeps overall status ok when only historical log errors exist', function () {
+it('handles mixed historical grouped events and orphan lines', function () {
     Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
 
-    $lines = [];
+    $tail = implode(PHP_EOL, [
+        '#0 /var/www/app/Exception.php(10): orphan before header',
+        '[2026-06-01 10:00:00] production.ERROR: historical exception',
+        '#0 /var/www/app/Exception.php(50): grouped trace',
+        '#1 orphan without parent after last event',
+    ]);
 
-    for ($i = 0; $i < 66; $i++) {
-        $lines[] = sprintf('[2026-06-01 10:%02d:00] production.ERROR: historical exception %d', $i % 60, $i);
+    $metrics = (new PilotPerformanceSnapshotLogAnalyzer)->analyzeTail($tail, '24h', 86400, now());
+
+    expect($metrics['historical_tail_error_like_count'])->toBe(1)
+        ->and($metrics['historical_stack_trace_line_count'])->toBe(2)
+        ->and($metrics['orphan_unparseable_error_like_count'])->toBe(1)
+        ->and($metrics['log_grouping_status'])->toBe('partial');
+});
+
+it('keeps overall ok for historical-only grouped stack traces via service', function () {
+    Carbon::setTestNow(Carbon::parse('2026-07-01 12:00:00'));
+
+    $lines = [
+        '[2026-06-01 10:00:00] production.ERROR: historical exception',
+        'Stack trace:',
+    ];
+
+    for ($i = 0; $i < 51; $i++) {
+        $lines[] = sprintf('#%d /var/www/app/Exception.php(%d): trace', $i, $i + 1);
     }
 
-    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-');
+    $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-stack-');
     file_put_contents($logPath, implode(PHP_EOL, $lines));
 
-    $service = new PilotPerformanceSnapshotService;
-    $snapshot = $service->collect([
+    $snapshot = (new PilotPerformanceSnapshotService)->collect([
         'skip_db' => true,
         'skip_http' => true,
         'since' => '24h',
@@ -118,10 +157,14 @@ it('keeps overall status ok when only historical log errors exist', function () 
 
     @unlink($logPath);
 
-    expect($snapshot['sections']['logs']['status'])->toBe('OK')
-        ->and($snapshot['sections']['logs']['metrics']['fresh_error_like_count'])->toBe(0)
-        ->and($snapshot['sections']['logs']['metrics']['historical_tail_error_like_count'])->toBe(66)
-        ->and($snapshot['overall_status'])->toBe('OK');
+    $logs = $snapshot['sections']['logs'];
+
+    expect($snapshot['overall_status'])->toBe('OK')
+        ->and($logs['status'])->toBe('OK')
+        ->and($logs['metrics']['historical_tail_error_like_count'])->toBe(1)
+        ->and($logs['metrics']['historical_stack_trace_line_count'])->toBe(52)
+        ->and($logs['metrics']['unparseable_error_like_count'])->toBe(0)
+        ->and($logs['metrics']['orphan_unparseable_error_like_count'])->toBe(0);
 });
 
 afterEach(function () {
