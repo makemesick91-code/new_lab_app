@@ -52,7 +52,12 @@ it('classifies fresh log errors with thresholds and critical escalation', functi
     expect(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'ok', 0, 66))
         ->toMatchArray([
             'status' => 'OK',
-            'reason' => 'No fresh error-like entries within lookback window; historical entries are informational only.',
+            'reason' => 'No fresh error events within lookback window; historical entries are informational only.',
+        ])
+        ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'ok', 0, 15, 51))
+        ->toMatchArray([
+            'status' => 'OK',
+            'reason' => 'No fresh error events within lookback window. Historical stack trace continuation lines were grouped under historical events.',
         ])
         ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(5, 0, 'ok', 0, 0)['status'])->toBe('WATCH')
         ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(25, 0, 'ok', 0, 0)['status'])->toBe('INVESTIGATE')
@@ -60,8 +65,8 @@ it('classifies fresh log errors with thresholds and critical escalation', functi
         ->and(PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(2, 10, 'ok', 0, 0)['status'])->toBe('FIX');
 });
 
-it('returns watch when timestamp freshness cannot be determined', function () {
-    $result = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'failed', 25, 0);
+it('returns watch when orphan unparseable lines exceed threshold', function () {
+    $result = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(0, 0, 'partial', 25, 0);
 
     expect($result['status'])->toBe('WATCH')
         ->and($result['reason'])->toContain('Unable to determine freshness');

@@ -184,9 +184,22 @@ class PilotPerformanceSnapshotCommand extends Command
             $lookback = $logMetrics['lookback_window'] ?? 'n/a';
             $fresh = $logMetrics['fresh_error_like_count'] ?? 'n/a';
             $historical = $logMetrics['historical_tail_error_like_count'] ?? 'n/a';
+            $freshStack = $logMetrics['fresh_stack_trace_line_count'] ?? 0;
+            $historicalStack = $logMetrics['historical_stack_trace_line_count'] ?? 0;
+            $orphan = $logMetrics['orphan_unparseable_error_like_count'] ?? ($logMetrics['unparseable_error_like_count'] ?? 'n/a');
             $this->newLine();
-            $this->line(sprintf('Fresh error-like entries: %s in last %s', (string) $fresh, (string) $lookback));
-            $this->line(sprintf('Historical tail error-like entries: %s', (string) $historical));
+            $this->line(sprintf('Fresh error events: %s in last %s', (string) $fresh, (string) $lookback));
+            $this->line(sprintf('Historical error events: %s', (string) $historical));
+
+            if ((int) $freshStack > 0) {
+                $this->line(sprintf('Fresh stack trace continuation lines: %s', (string) $freshStack));
+            }
+
+            if ((int) $historicalStack > 0) {
+                $this->line(sprintf('Historical stack trace continuation lines: %s', (string) $historicalStack));
+            }
+
+            $this->line(sprintf('Orphan unparseable error-like lines: %s', (string) $orphan));
 
             if (isset($logs['reason']) && is_string($logs['reason'])) {
                 $this->line('Reason: '.$logs['reason']);
@@ -255,7 +268,16 @@ class PilotPerformanceSnapshotCommand extends Command
                 $fresh = $metrics['fresh_error_like_count'] ?? 'n/a';
                 $historical = $metrics['historical_tail_error_like_count'] ?? 'n/a';
                 $lookback = $metrics['lookback_window'] ?? 'n/a';
-                $detail = sprintf('fresh=%s, historical_tail=%s, lookback=%s', (string) $fresh, (string) $historical, (string) $lookback);
+                $historicalStack = $metrics['historical_stack_trace_line_count'] ?? 0;
+                $orphan = $metrics['orphan_unparseable_error_like_count'] ?? ($metrics['unparseable_error_like_count'] ?? 'n/a');
+                $detail = sprintf(
+                    'fresh=%s, historical=%s, historical_stack_lines=%s, orphan_unparseable=%s, lookback=%s',
+                    (string) $fresh,
+                    (string) $historical,
+                    (string) $historicalStack,
+                    (string) $orphan,
+                    (string) $lookback,
+                );
             }
 
             $lines[] = '| '.ucfirst($name).' | '.$section['status'].' | '.$detail.' |';

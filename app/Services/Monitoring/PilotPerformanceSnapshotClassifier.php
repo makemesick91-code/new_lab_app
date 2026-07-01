@@ -180,10 +180,11 @@ class PilotPerformanceSnapshotClassifier
         int $freshCount,
         int $criticalFreshCount,
         string $timestampParseStatus,
-        int $unparseableCount,
+        int $orphanUnparseableCount,
         int $historicalCount,
+        int $historicalStackTraceCount = 0,
     ): array {
-        if ($timestampParseStatus === 'failed' || ($unparseableCount > 20 && $timestampParseStatus !== 'ok')) {
+        if ($timestampParseStatus === 'failed' || ($orphanUnparseableCount > 20 && $timestampParseStatus !== 'ok')) {
             return [
                 'status' => self::STATUS_WATCH,
                 'reason' => 'Unable to determine freshness from log timestamps.',
@@ -192,15 +193,21 @@ class PilotPerformanceSnapshotClassifier
 
         if ($freshCount === 0) {
             if ($historicalCount > 0) {
+                $reason = 'No fresh error events within lookback window; historical entries are informational only.';
+
+                if ($historicalStackTraceCount > 0) {
+                    $reason = 'No fresh error events within lookback window. Historical stack trace continuation lines were grouped under historical events.';
+                }
+
                 return [
                     'status' => self::STATUS_OK,
-                    'reason' => 'No fresh error-like entries within lookback window; historical entries are informational only.',
+                    'reason' => $reason,
                 ];
             }
 
             return [
                 'status' => self::STATUS_OK,
-                'reason' => 'No fresh error-like entries within lookback window.',
+                'reason' => 'No fresh error events within lookback window.',
             ];
         }
 
@@ -217,9 +224,9 @@ class PilotPerformanceSnapshotClassifier
         }
 
         $reason = match ($status) {
-            self::STATUS_FIX => 'Fresh error-like entries exceed FIX threshold within lookback window.',
-            self::STATUS_INVESTIGATE => 'Fresh error-like entries exceed INVESTIGATE threshold within lookback window.',
-            default => 'Fresh error-like entries detected within lookback window.',
+            self::STATUS_FIX => 'Fresh error events exceed FIX threshold within lookback window.',
+            self::STATUS_INVESTIGATE => 'Fresh error events exceed INVESTIGATE threshold within lookback window.',
+            default => 'Fresh error events detected within lookback window.',
         };
 
         return [
