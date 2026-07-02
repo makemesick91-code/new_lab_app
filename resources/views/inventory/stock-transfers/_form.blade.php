@@ -129,12 +129,14 @@
                 <div class="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8rem_minmax(0,1fr)_auto] md:items-end">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Produk <span class="text-red-600">*</span></label>
-                        <select :name="`items[${index}][product_id]`" x-model="item.product_id" @change="onProductChange(item)" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">Pilih produk</option>
-                            @foreach ($products as $product)
-                                <option value="{{ $product->id }}">{{ $product->code }} - {{ $product->name }}</option>
-                            @endforeach
-                        </select>
+                        <x-inventory.searchable-product-select
+                            :products="$products"
+                            alpine-name="`items[${index}][product_id]`"
+                            model="item.product_id"
+                            on-select="onProductChange(item)"
+                            class="mt-1"
+                            required
+                        />
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Batch</label>

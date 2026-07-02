@@ -298,6 +298,168 @@ Alpine.data('odontogramEditor', (config = {}) => ({
     },
 }));
 
+Alpine.data('searchableProductSelect', (config = {}) => ({
+    products: Array.isArray(config.products) ? config.products : [],
+    placeholder: config.placeholder ?? 'Cari kode atau nama produk…',
+    emptyLabel: config.emptyLabel ?? 'Pilih produk',
+    allowEmpty: config.allowEmpty ?? true,
+    required: !!config.required,
+    disabled: !!config.disabled,
+    multiple: !!config.multiple,
+    maxResults: config.maxResults ?? 20,
+    query: '',
+    open: false,
+    activeIndex: 0,
+    selectedId: config.multiple ? '' : String(config.selected ?? ''),
+    selectedIds: config.multiple
+        ? (Array.isArray(config.selected) ? config.selected.map(String) : [])
+        : [],
+
+    init() {
+        if (!this.multiple && this.selectedId) {
+            const product = this.products.find((entry) => String(entry.id) === this.selectedId);
+            if (product) {
+                this.query = product.label;
+            }
+        }
+    },
+
+    filtered() {
+        const term = this.query.trim().toLowerCase();
+        let list = this.products;
+
+        if (term !== '') {
+            list = list.filter((product) => {
+                const code = String(product.code ?? '').toLowerCase();
+                const name = String(product.name ?? '').toLowerCase();
+                const label = String(product.label ?? '').toLowerCase();
+
+                return code.includes(term) || name.includes(term) || label.includes(term);
+            });
+        }
+
+        if (this.multiple) {
+            list = list.filter((product) => !this.selectedIds.includes(String(product.id)));
+        }
+
+        return list.slice(0, this.maxResults);
+    },
+
+    openDropdown() {
+        if (this.disabled) {
+            return;
+        }
+
+        this.open = true;
+        this.activeIndex = 0;
+
+        if (!this.multiple && this.selectedId) {
+            this.query = '';
+        }
+    },
+
+    closeDropdown() {
+        this.open = false;
+        this.activeIndex = 0;
+
+        if (!this.multiple) {
+            const product = this.products.find((entry) => String(entry.id) === this.selectedId);
+            this.query = product?.label ?? '';
+        }
+    },
+
+    select(product) {
+        if (this.multiple) {
+            const id = String(product.id);
+
+            if (!this.selectedIds.includes(id)) {
+                this.selectedIds.push(id);
+            }
+
+            this.query = '';
+            this.activeIndex = 0;
+
+            return;
+        }
+
+        this.selectedId = String(product.id);
+        this.query = product.label;
+        this.open = false;
+        this.activeIndex = 0;
+        this.$dispatch('product-selected', { id: this.selectedId });
+    },
+
+    removeSelected(id) {
+        this.selectedIds = this.selectedIds.filter((value) => value !== String(id));
+    },
+
+    clearSelection() {
+        if (!this.allowEmpty || this.disabled) {
+            return;
+        }
+
+        this.selectedId = '';
+        this.query = '';
+        this.open = false;
+        this.$dispatch('product-selected', { id: '' });
+    },
+
+    onInput(event) {
+        this.query = event.target.value;
+        this.open = true;
+        this.activeIndex = 0;
+
+        if (!this.multiple && this.selectedId) {
+            this.selectedId = '';
+        }
+    },
+
+    onKeydown(event) {
+        if (this.disabled) {
+            return;
+        }
+
+        const options = this.filtered();
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            this.open = true;
+            this.activeIndex = Math.min(this.activeIndex + 1, Math.max(options.length - 1, 0));
+
+            return;
+        }
+
+        if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            this.open = true;
+            this.activeIndex = Math.max(this.activeIndex - 1, 0);
+
+            return;
+        }
+
+        if (event.key === 'Enter') {
+            if (!this.open || options.length === 0) {
+                return;
+            }
+
+            event.preventDefault();
+            this.select(options[this.activeIndex]);
+
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            this.closeDropdown();
+        }
+    },
+
+    selectedTags() {
+        return this.selectedIds
+            .map((id) => this.products.find((product) => String(product.id) === id))
+            .filter(Boolean);
+    },
+}));
+
 Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
     open: {},
 
@@ -310,6 +472,7 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
             qc: false,
             settings: false,
             'master-data': false,
+            'inventory-master-data': false,
             'my-work': false,
             delivery: false,
             inventory: false,

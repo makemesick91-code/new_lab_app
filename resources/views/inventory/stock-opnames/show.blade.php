@@ -73,12 +73,13 @@
                                 <div class="grid gap-4 md:grid-cols-3">
                                     <div class="md:col-span-1">
                                         <label for="new-product" class="block text-sm font-medium text-gray-700">Produk <span class="text-red-600">*</span></label>
-                                        <select id="new-product" name="product_id" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                                            <option value="">Pilih produk</option>
-                                            @foreach ($products as $product)
-                                                <option value="{{ $product->id }}">{{ $product->code }} - {{ $product->name }}</option>
-                                            @endforeach
-                                        </select>
+                                        <x-inventory.searchable-product-select
+                                            id="new-product"
+                                            name="product_id"
+                                            :products="$products"
+                                            class="mt-1"
+                                            required
+                                        />
                                     </div>
                                     <div class="md:col-span-1">
                                         <label for="new-counted" class="block text-sm font-medium text-gray-700">Jumlah Terhitung <span class="text-red-600">*</span></label>

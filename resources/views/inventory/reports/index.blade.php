@@ -52,12 +52,14 @@
 
                 <div>
                     <label for="product_id" class="block text-sm font-medium text-gray-700">Produk</label>
-                    <select id="product_id" name="product_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua produk</option>
-                        @foreach ($filterOptions['products'] as $product)
-                            <option value="{{ $product->id }}" @selected(($filters['product_id'] ?? null) == $product->id)>{{ $product->code }} - {{ $product->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-inventory.searchable-product-select
+                        id="product_id"
+                        name="product_id"
+                        :products="$filterOptions['products']"
+                        :selected="$filters['product_id'] ?? null"
+                        empty-label="Semua produk"
+                        class="mt-1"
+                    />
                 </div>
 
                 <div>
