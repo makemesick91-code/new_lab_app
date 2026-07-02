@@ -473,6 +473,7 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
             settings: false,
             'master-data': false,
             'inventory-master-data': false,
+            'inventory-reports-analytics': false,
             'my-work': false,
             delivery: false,
             inventory: false,

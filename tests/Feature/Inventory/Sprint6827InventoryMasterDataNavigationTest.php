@@ -38,7 +38,7 @@ it('shows inventory master data group with required labels for admin warehouse',
         ->toContain(route('inventory.batches.index'));
 });
 
-it('does not duplicate inventory master data items inside persediaan group', function () {
+it('does not duplicate inventory master data items inside operasional stok group', function () {
     $user = userInRole('Admin Warehouse');
 
     $html = sprint6827RenderSidebarFor($user);
