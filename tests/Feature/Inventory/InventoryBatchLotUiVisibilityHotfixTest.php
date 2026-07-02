@@ -59,7 +59,8 @@ it('renders batch_number, lot_number, and expiry_date inputs plus helper text on
         ->assertSee('batch_number')
         ->assertSee('lot_number')
         ->assertSee('expiry_date')
-        ->assertSee('Isi nomor batch/lot dan tanggal kedaluwarsa untuk barang yang dilacak batch atau expired. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch & Lot.');
+        ->assertSee('Untuk barang dilacak batch, centang', false)
+        ->assertSee('Buat nomor batch otomatis', false);
 });
 
 it('renders batch_number, lot_number, and expiry_date inputs plus helper text on the Opening Stock form', function () {
@@ -156,10 +157,12 @@ it('keeps existing backend validation for batch-tracked products intact on Goods
                 'accepted_qty' => 5,
                 'rejected_qty' => 0,
                 'batch_mode' => 'new',
+                'auto_batch' => true,
                 'batch_number' => '',
+                'expiry_date' => '',
             ]],
         ])
-        ->assertSessionHasErrors('items.0.batch_number');
+        ->assertSessionHasErrors('items.0.expiry_date');
 });
 
 it('introduces no new inventory_batches create/store route', function () {

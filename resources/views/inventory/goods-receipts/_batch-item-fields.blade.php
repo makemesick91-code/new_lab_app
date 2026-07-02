@@ -8,7 +8,6 @@
     class="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3"
 >
     <p class="text-xs font-semibold uppercase tracking-wide text-teal-800">Batch / Lot</p>
-    <p class="mt-1 text-xs font-semibold text-red-700">Produk ini wajib batch. Isi Nomor Batch sebelum Submit/Post Goods Receipt.</p>
     <p class="mt-1 text-xs text-teal-700">Pilih batch existing atau buat batch baru.</p>
 
     <div class="mt-3 flex flex-wrap gap-2">
@@ -36,44 +35,69 @@
         </select>
     </div>
 
-    <div x-show="item.batch_mode === 'new'" x-cloak class="mt-3 grid gap-3 sm:grid-cols-2">
-        <div>
-            <label class="text-xs font-semibold text-gray-800">Nomor Batch <span class="text-red-600">*</span></label>
+    <div x-show="item.batch_mode === 'new'" x-cloak class="mt-3 space-y-3">
+        <label class="inline-flex items-start gap-2 text-sm text-gray-800">
             <input
-                type="text"
-                maxlength="100"
-                :name="'items[' + index + '][batch_number]'"
-                x-model="item.batch_number"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                type="checkbox"
+                class="mt-0.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                x-model="item.auto_batch"
             >
-        </div>
-        <div>
-            <label class="text-xs font-semibold text-gray-800">Nomor Lot</label>
-            <input
-                type="text"
-                maxlength="100"
-                :name="'items[' + index + '][lot_number]'"
-                x-model="item.lot_number"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
-            >
-        </div>
-        <div>
-            <label class="text-xs font-semibold text-gray-800">Tanggal Terima Batch <span class="text-red-600">*</span></label>
-            <input
-                type="date"
-                :name="'items[' + index + '][batch_received_date]'"
-                x-model="item.batch_received_date"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
-            >
-        </div>
-        <div>
-            <label class="text-xs font-semibold text-gray-800">Tanggal Kedaluwarsa</label>
+            <span>
+                <span class="font-semibold">Buat nomor batch otomatis</span>
+                <span class="mt-1 block text-xs text-teal-700">Nomor batch akan dibuat otomatis dari produk dan tanggal expired.</span>
+            </span>
+        </label>
+        <input type="hidden" :name="'items[' + index + '][auto_batch]'" :value="item.auto_batch ? 1 : 0">
+
+        <div x-show="item.auto_batch" x-cloak>
+            <label class="text-xs font-semibold text-gray-800">Tanggal Kedaluwarsa <span class="text-red-600">*</span></label>
             <input
                 type="date"
                 :name="'items[' + index + '][expiry_date]'"
                 x-model="item.expiry_date"
                 class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
             >
+        </div>
+
+        <div x-show="!item.auto_batch" x-cloak class="grid gap-3 sm:grid-cols-2">
+            <div>
+                <label class="text-xs font-semibold text-gray-800">Nomor Batch <span class="text-red-600">*</span></label>
+                <input
+                    type="text"
+                    maxlength="100"
+                    :name="'items[' + index + '][batch_number]'"
+                    x-model="item.batch_number"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                >
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-gray-800">Nomor Lot</label>
+                <input
+                    type="text"
+                    maxlength="100"
+                    :name="'items[' + index + '][lot_number]'"
+                    x-model="item.lot_number"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                >
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-gray-800">Tanggal Terima Batch <span class="text-red-600">*</span></label>
+                <input
+                    type="date"
+                    :name="'items[' + index + '][batch_received_date]'"
+                    x-model="item.batch_received_date"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                >
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-gray-800">Tanggal Kedaluwarsa <span class="text-red-600">*</span></label>
+                <input
+                    type="date"
+                    :name="'items[' + index + '][expiry_date]'"
+                    x-model="item.expiry_date"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                >
+            </div>
         </div>
     </div>
 </div>

@@ -342,15 +342,24 @@ trait ValidatesGoodsReceiptInput
                         (int) $item->inventory_batch_id,
                         "items.{$index}.inventory_batch_id",
                     );
-                } elseif (! filled($item->batch_number)) {
+                } elseif (filled($item->batch_number)) {
+                    if ($item->batch_received_date === null) {
+                        $validator->errors()->add(
+                            "items.{$index}.batch_received_date",
+                            'Tanggal terima batch wajib diisi untuk produk dengan pelacakan batch.',
+                        );
+                    }
+
+                    if ($item->expiry_date === null) {
+                        $validator->errors()->add(
+                            "items.{$index}.expiry_date",
+                            'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
+                        );
+                    }
+                } elseif ($item->expiry_date === null) {
                     $validator->errors()->add(
-                        "items.{$index}.batch_number",
-                        'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
-                    );
-                } elseif ($item->batch_received_date === null) {
-                    $validator->errors()->add(
-                        "items.{$index}.batch_received_date",
-                        'Tanggal terima batch wajib diisi untuk produk dengan pelacakan batch.',
+                        "items.{$index}.expiry_date",
+                        'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
                     );
                 }
             }

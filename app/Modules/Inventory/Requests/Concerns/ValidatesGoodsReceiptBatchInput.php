@@ -4,6 +4,7 @@ namespace App\Modules\Inventory\Requests\Concerns;
 
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Services\AutoBatchNumberService;
 use Illuminate\Contracts\Validation\Validator;
 
 trait ValidatesGoodsReceiptBatchInput
@@ -15,6 +16,7 @@ trait ValidatesGoodsReceiptBatchInput
     {
         return [
             'items.*.batch_mode' => ['nullable', 'string', 'in:existing,new'],
+            'items.*.auto_batch' => ['nullable', 'boolean'],
             'items.*.inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
             'items.*.batch_number' => ['nullable', 'string', 'max:100'],
             'items.*.lot_number' => ['nullable', 'string', 'max:100'],
@@ -75,6 +77,19 @@ trait ValidatesGoodsReceiptBatchInput
                 continue;
             }
 
+            $autoBatch = AutoBatchNumberService::isAutoBatchRequest($item);
+
+            if ($autoBatch) {
+                if (! filled($item['expiry_date'] ?? null)) {
+                    $validator->errors()->add(
+                        "items.{$index}.expiry_date",
+                        'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
+                    );
+                }
+
+                continue;
+            }
+
             if (! filled($item['batch_number'] ?? null)) {
                 $validator->errors()->add(
                     "items.{$index}.batch_number",
@@ -88,6 +103,13 @@ trait ValidatesGoodsReceiptBatchInput
                 $validator->errors()->add(
                     "items.{$index}.batch_received_date",
                     'Tanggal terima batch wajib diisi untuk produk dengan pelacakan batch.',
+                );
+            }
+
+            if (! filled($item['expiry_date'] ?? null)) {
+                $validator->errors()->add(
+                    "items.{$index}.expiry_date",
+                    'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
                 );
             }
 
@@ -137,6 +159,20 @@ trait ValidatesGoodsReceiptBatchInput
             return filled($item['inventory_batch_id'] ?? null)
                 ? ['inventory_batch_id' => (int) $item['inventory_batch_id']]
                 : null;
+        }
+
+        if (AutoBatchNumberService::isAutoBatchRequest($item)) {
+            if (! filled($item['expiry_date'] ?? null)) {
+                return null;
+            }
+
+            return [
+                'inventory_batch_id' => null,
+                'batch_number' => null,
+                'lot_number' => null,
+                'batch_received_date' => $item['batch_received_date'] ?? $receiptDate,
+                'expiry_date' => $item['expiry_date'],
+            ];
         }
 
         if (! filled($item['batch_number'] ?? null)) {

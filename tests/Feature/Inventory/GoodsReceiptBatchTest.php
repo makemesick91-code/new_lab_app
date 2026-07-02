@@ -49,6 +49,7 @@ function grBatchPayload(
                 'accepted_qty' => $acceptedQty,
                 'rejected_qty' => 0,
                 'batch_mode' => 'new',
+                'auto_batch' => false,
                 'batch_number' => 'B-GR-001',
                 'lot_number' => 'LOT-GR-01',
                 'batch_received_date' => now()->toDateString(),
@@ -83,15 +84,17 @@ function createSentPurchaseOrderWithBatchProduct(object $test, float $quantity =
     return compact('supplier', 'product', 'location', 'sent', 'poItem');
 }
 
-it('rejects goods receipt store when batch-tracked product has no batch_number', function () {
+it('rejects goods receipt store when batch-tracked product has no expiry date with auto batch', function () {
     ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithBatchProduct($this);
 
     $payload = grBatchPayload($po->id, $poItem->id, $product->id, $location->id, 5, [
+        'auto_batch' => true,
         'batch_number' => '',
+        'expiry_date' => '',
     ]);
 
     $this->post(route('inventory.goods-receipts.store'), $payload)
-        ->assertSessionHasErrors('items.0.batch_number');
+        ->assertSessionHasErrors('items.0.expiry_date');
 });
 
 it('creates goods receipt when batch-tracked product has valid batch_number', function () {
@@ -174,11 +177,13 @@ it('rejects batch-tracked goods receipt using batch from another branch', functi
         ->toThrow(ValidationException::class);
 });
 
-it('service rejects batch-tracked product without batch_number on create', function () {
+it('service rejects batch-tracked product without expiry date on create when auto batch is enabled', function () {
     ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithBatchProduct($this);
 
     $payload = grBatchPayload($po->id, $poItem->id, $product->id, $location->id, 5, [
+        'auto_batch' => true,
         'batch_number' => '',
+        'expiry_date' => '',
     ]);
 
     expect(fn () => $this->service->createFromPurchaseOrder($payload, $this->manager))

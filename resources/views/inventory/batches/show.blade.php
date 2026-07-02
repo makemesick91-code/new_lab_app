@@ -16,7 +16,12 @@
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Batch & Lot</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $batch->batch_number }}</h2>
+                <h2 class="mt-1 text-xl font-semibold text-gray-900">
+                    {{ $batch->batch_number }}
+                    @if (str_starts_with((string) $batch->batch_number, 'AUTO-'))
+                        <span class="ml-2 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800 align-middle">Auto</span>
+                    @endif
+                </h2>
                 <p class="mt-1 text-sm text-gray-500">
                     {{ $batch->product?->name ?? '-' }}
                     @if ($batch->lot_number)
