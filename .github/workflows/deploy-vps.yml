@@ -1,0 +1,32 @@
+name: Deploy VPS Pilot
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS Pilot
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/daengtisiams_actions_deploy
+          chmod 600 ~/.ssh/daengtisiams_actions_deploy
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/daengtisiams_actions_deploy \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "whoami && hostname && cd /var/www/asia-dental-lab-v2 && git status -sb"
+
+      - name: Deploy
+        run: |
+          ssh -i ~/.ssh/daengtisiams_actions_deploy \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            'bash -s' < scripts/deploy-vps.sh
