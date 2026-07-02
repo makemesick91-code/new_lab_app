@@ -47,7 +47,7 @@ it('blocks unauthorized users from the reports page', function () {
         ->assertForbidden();
 });
 
-it('renders the report filter form', function () {
+it('renders the report filter form for the active tab', function () {
     $product = Product::factory()->create([
         'branch_id' => $this->branch->id,
         'name' => 'Report Filter Product',
@@ -61,20 +61,19 @@ it('renders the report filter form', function () {
         ->get(route('inventory.reports.index'))
         ->assertOk()
         ->assertSee('Cabang')
-        ->assertSee('Tanggal Dari')
-        ->assertSee('Tanggal Sampai')
         ->assertSee('Produk')
         ->assertSee('Kategori')
         ->assertSee('Lokasi/Ruangan')
         ->assertSee('Status Stok')
-        ->assertSee('Tipe Movement')
         ->assertSee('Report Filter Product')
         ->assertSee('Report Filter Room')
         ->assertSee('name="product_id"', false)
-        ->assertSee('name="inventory_location_id"', false);
+        ->assertSee('name="inventory_location_id"', false)
+        ->assertDontSee('name="date_from"', false)
+        ->assertDontSee('name="movement_type"', false);
 });
 
-it('renders all six inventory report labels and notes', function () {
+it('renders all six inventory report tab labels', function () {
     $this->actingAs(userWith(['view_inventory']))
         ->get(route('inventory.reports.index'))
         ->assertOk()
@@ -84,8 +83,8 @@ it('renders all six inventory report labels and notes', function () {
         ->assertSee('Mutasi Stok')
         ->assertSee('Nilai Persediaan')
         ->assertSee('Stok per Ruangan')
-        ->assertSee('Pilih produk dan periode tanggal untuk melihat kartu stok secara detail.')
-        ->assertSee('Ruangan menggunakan data Lokasi Inventory.');
+        ->assertSee('Ringkasan stok produk dari saldo ledger aktif.')
+        ->assertDontSee('Ruangan menggunakan data Lokasi Inventory.');
 });
 
 it('shows reports sidebar link for authorized inventory users', function () {
@@ -384,7 +383,7 @@ it('requires product selection before loading stock card movements', function ()
     $response = $this->actingAs(userWith(['view_inventory']))
         ->get(route('inventory.reports.index', ['report_tab' => 'stock_card']))
         ->assertOk()
-        ->assertSee('Pilih produk untuk melihat kartu stok.')
+        ->assertSee('Pilih produk terlebih dahulu untuk melihat Kartu Stok.')
         ->assertSee('Export kartu stok membutuhkan filter produk.');
 
     $section = stockCardReportSectionHtml($response->getContent());
@@ -2758,56 +2757,41 @@ function createReportMovement(
     ]);
 }
 
-function currentStockReportSectionHtml(string $html): string
+function reportPanelHtml(string $html, string $panel): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Stok Saat Ini<\/h3>[\s\S]*?<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Kartu Stok<\/h3>/', $html, $matches)) {
+    if (! preg_match('/<section[^>]*data-report-panel="'.preg_quote($panel, '/').'"[\s\S]*?<\/section>/', $html, $matches)) {
         return '';
     }
 
     return $matches[0];
+}
+
+function currentStockReportSectionHtml(string $html): string
+{
+    return reportPanelHtml($html, 'current-stock');
 }
 
 function stockCardReportSectionHtml(string $html): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Kartu Stok<\/h3>[\s\S]*?<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Low Stock<\/h3>/', $html, $matches)) {
-        return '';
-    }
-
-    return $matches[0];
+    return reportPanelHtml($html, 'stock-card');
 }
 
 function lowStockReportSectionHtml(string $html): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Low Stock<\/h3>[\s\S]*?<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Mutasi Stok<\/h3>/', $html, $matches)) {
-        return '';
-    }
-
-    return $matches[0];
+    return reportPanelHtml($html, 'low-stock');
 }
 
 function stockMutationReportSectionHtml(string $html): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Mutasi Stok<\/h3>[\s\S]*?<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Nilai Persediaan<\/h3>/', $html, $matches)) {
-        return '';
-    }
-
-    return $matches[0];
+    return reportPanelHtml($html, 'mutation');
 }
 
 function inventoryValuationReportSectionHtml(string $html): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Nilai Persediaan<\/h3>[\s\S]*?<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Stok per Ruangan<\/h3>/', $html, $matches)) {
-        return '';
-    }
-
-    return $matches[0];
+    return reportPanelHtml($html, 'valuation');
 }
 
 function roomStockReportSectionHtml(string $html): string
 {
-    if (! preg_match('/<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">\s*<h3 class="text-base font-semibold text-gray-900">Stok per Ruangan<\/h3>[\s\S]*?<\/section>/', $html, $matches)) {
-        return '';
-    }
-
-    return $matches[0];
+    return reportPanelHtml($html, 'room-stock');
 }

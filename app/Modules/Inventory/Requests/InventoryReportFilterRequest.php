@@ -17,6 +17,24 @@ class InventoryReportFilterRequest extends FormRequest
         'room_stock',
     ];
 
+    public const TAB_KEBAB_ALIASES = [
+        'current-stock' => 'current_stock',
+        'stock-card' => 'stock_card',
+        'low-stock' => 'low_stock',
+        'mutation' => 'mutation',
+        'valuation' => 'valuation',
+        'room-stock' => 'room_stock',
+    ];
+
+    public const TAB_TO_KEBAB = [
+        'current_stock' => 'current-stock',
+        'stock_card' => 'stock-card',
+        'low_stock' => 'low-stock',
+        'mutation' => 'mutation',
+        'valuation' => 'valuation',
+        'room_stock' => 'room-stock',
+    ];
+
     public const REPORT_TYPES = self::REPORT_TABS;
 
     public function authorize(): bool
@@ -40,6 +58,7 @@ class InventoryReportFilterRequest extends FormRequest
             'inventory_location_id' => ['nullable', 'integer', 'exists:inv_inventory_locations,id'],
             'stock_status' => ['nullable', 'string', Rule::in(['normal', 'low', 'empty', 'overstock'])],
             'movement_type' => ['nullable', 'string', Rule::in(InventoryMovement::TYPES)],
+            'tab' => ['nullable', 'string'],
             'report_tab' => ['nullable', 'string', Rule::in(self::REPORT_TABS)],
             'report_type' => [
                 Rule::requiredIf($this->routeIs('inventory.reports.export')),
@@ -65,5 +84,27 @@ class InventoryReportFilterRequest extends FormRequest
     public function perPage(int $default = 15): int
     {
         return (int) ($this->validated('per_page') ?: $default);
+    }
+
+    public function resolveActiveTab(): string
+    {
+        $tab = $this->query('tab');
+
+        if (is_string($tab) && isset(self::TAB_KEBAB_ALIASES[$tab])) {
+            return self::TAB_KEBAB_ALIASES[$tab];
+        }
+
+        $reportTab = $this->query('report_tab', 'current_stock');
+
+        if (is_string($reportTab) && in_array($reportTab, self::REPORT_TABS, true)) {
+            return $reportTab;
+        }
+
+        return 'current_stock';
+    }
+
+    public function activeTabKebab(string $activeTab): string
+    {
+        return self::TAB_TO_KEBAB[$activeTab] ?? 'current-stock';
     }
 }

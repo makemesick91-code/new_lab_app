@@ -1,9 +1,11 @@
 @php
-    $activeTab = $filters['report_tab'] ?? 'current_stock';
-    $stockCardRows = $stockCardReport['rows'];
+    $activeTab = $activeTab ?? ($filters['report_tab'] ?? 'current_stock');
+    $activeTabKebab = $activeTabKebab ?? \App\Modules\Inventory\Requests\InventoryReportFilterRequest::TAB_TO_KEBAB[$activeTab] ?? 'current-stock';
+    $stockCardRows = $stockCardReport['rows'] ?? null;
     $stockMutationDateFrom = $filters['date_from'] ?? now()->startOfMonth()->toDateString();
     $stockMutationDateTo = $filters['date_to'] ?? now()->toDateString();
     $exportFilters = request()->except('page', 'current_stock_page', 'stock_card_page', 'low_stock_page', 'mutation_page', 'valuation_page', 'room_stock_page', 'report_type');
+    $tabQueryParams = request()->except('page', 'current_stock_page', 'stock_card_page', 'low_stock_page', 'mutation_page', 'valuation_page', 'room_stock_page', 'report_tab');
     $tabs = [
         'current_stock' => 'Stok Saat Ini',
         'stock_card' => 'Kartu Stok',
@@ -12,6 +14,12 @@
         'valuation' => 'Nilai Persediaan',
         'room_stock' => 'Stok per Ruangan',
     ];
+    $showDateFilters = in_array($activeTab, ['stock_card', 'mutation'], true);
+    $showProductFilter = in_array($activeTab, ['current_stock', 'stock_card', 'mutation', 'valuation', 'room_stock'], true);
+    $showCategoryFilter = in_array($activeTab, ['current_stock', 'low_stock', 'valuation', 'room_stock'], true);
+    $showLocationFilter = true;
+    $showStockStatusFilter = in_array($activeTab, ['current_stock', 'low_stock', 'room_stock'], true);
+    $showMovementTypeFilter = $activeTab === 'mutation';
 @endphp
 
 <x-settings-shell title="Laporan Inventory">
@@ -40,69 +48,81 @@
                     </select>
                 </div>
 
-                <div>
-                    <label for="date_from" class="block text-sm font-medium text-gray-700">Tanggal Dari</label>
-                    <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                </div>
+                @if ($showDateFilters)
+                    <div>
+                        <label for="date_from" class="block text-sm font-medium text-gray-700">Tanggal Dari</label>
+                        <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    </div>
 
-                <div>
-                    <label for="date_to" class="block text-sm font-medium text-gray-700">Tanggal Sampai</label>
-                    <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                </div>
+                    <div>
+                        <label for="date_to" class="block text-sm font-medium text-gray-700">Tanggal Sampai</label>
+                        <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    </div>
+                @endif
 
-                <div>
-                    <label for="product_id" class="block text-sm font-medium text-gray-700">Produk</label>
-                    <x-inventory.searchable-product-select
-                        id="product_id"
-                        name="product_id"
-                        :products="$filterOptions['products']"
-                        :selected="$filters['product_id'] ?? null"
-                        empty-label="Semua produk"
-                        class="mt-1"
-                    />
-                </div>
+                @if ($showProductFilter)
+                    <div>
+                        <label for="product_id" class="block text-sm font-medium text-gray-700">Produk</label>
+                        <x-inventory.searchable-product-select
+                            id="product_id"
+                            name="product_id"
+                            :products="$filterOptions['products']"
+                            :selected="$filters['product_id'] ?? null"
+                            :empty-label="$activeTab === 'stock_card' ? 'Pilih produk' : 'Semua produk'"
+                            class="mt-1"
+                        />
+                    </div>
+                @endif
 
-                <div>
-                    <label for="category_id" class="block text-sm font-medium text-gray-700">Kategori</label>
-                    <select id="category_id" name="category_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua kategori</option>
-                        @foreach ($filterOptions['categories'] as $category)
-                            <option value="{{ $category->id }}" @selected(($filters['category_id'] ?? null) == $category->id)>{{ $category->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                @if ($showCategoryFilter)
+                    <div>
+                        <label for="category_id" class="block text-sm font-medium text-gray-700">Kategori</label>
+                        <select id="category_id" name="category_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua kategori</option>
+                            @foreach ($filterOptions['categories'] as $category)
+                                <option value="{{ $category->id }}" @selected(($filters['category_id'] ?? null) == $category->id)>{{ $category->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
-                <div>
-                    <label for="inventory_location_id" class="block text-sm font-medium text-gray-700">Lokasi/Ruangan</label>
-                    <select id="inventory_location_id" name="inventory_location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua lokasi</option>
-                        @foreach ($filterOptions['locations'] as $location)
-                            <option value="{{ $location->id }}" @selected(($filters['inventory_location_id'] ?? null) == $location->id)>{{ $location->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                @if ($showLocationFilter)
+                    <div>
+                        <label for="inventory_location_id" class="block text-sm font-medium text-gray-700">Lokasi/Ruangan</label>
+                        <select id="inventory_location_id" name="inventory_location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua lokasi</option>
+                            @foreach ($filterOptions['locations'] as $location)
+                                <option value="{{ $location->id }}" @selected(($filters['inventory_location_id'] ?? null) == $location->id)>{{ $location->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
-                <div>
-                    <label for="stock_status" class="block text-sm font-medium text-gray-700">Status Stok</label>
-                    <select id="stock_status" name="stock_status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua status</option>
-                        @foreach ($filterOptions['stockStatuses'] as $value => $label)
-                            <option value="{{ $value }}" @selected(($filters['stock_status'] ?? null) === $value)>{{ $label }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                @if ($showStockStatusFilter)
+                    <div>
+                        <label for="stock_status" class="block text-sm font-medium text-gray-700">Status Stok</label>
+                        <select id="stock_status" name="stock_status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua status</option>
+                            @foreach ($filterOptions['stockStatuses'] as $value => $label)
+                                <option value="{{ $value }}" @selected(($filters['stock_status'] ?? null) === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
-                <div>
-                    <label for="movement_type" class="block text-sm font-medium text-gray-700">Tipe Movement</label>
-                    <select id="movement_type" name="movement_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua tipe</option>
-                        @foreach ($filterOptions['movementTypes'] as $movementType)
-                            <option value="{{ $movementType }}" @selected(($filters['movement_type'] ?? null) === $movementType)>{{ $movementType }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                @if ($showMovementTypeFilter)
+                    <div>
+                        <label for="movement_type" class="block text-sm font-medium text-gray-700">Tipe Movement</label>
+                        <select id="movement_type" name="movement_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua tipe</option>
+                            @foreach ($filterOptions['movementTypes'] as $movementType)
+                                <option value="{{ $movementType }}" @selected(($filters['movement_type'] ?? null) === $movementType)>{{ $movementType }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
 
-                <input type="hidden" name="report_tab" value="{{ $activeTab }}">
+                <input type="hidden" name="tab" value="{{ $activeTabKebab }}">
 
                 <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
                     <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Terapkan</button>
@@ -114,7 +134,7 @@
         <div class="rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
             <div class="flex flex-wrap gap-2">
                 @foreach ($tabs as $tabKey => $tabLabel)
-                    <a href="{{ route('inventory.reports.index', array_merge(request()->except('page', 'current_stock_page', 'stock_card_page', 'low_stock_page', 'mutation_page', 'valuation_page', 'room_stock_page'), ['report_tab' => $tabKey])) }}"
+                    <a href="{{ route('inventory.reports.index', array_merge($tabQueryParams, ['tab' => \App\Modules\Inventory\Requests\InventoryReportFilterRequest::TAB_TO_KEBAB[$tabKey] ?? $tabKey])) }}"
                        @class([
                            'rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2',
                            'bg-teal-700 text-white' => $activeTab === $tabKey,
@@ -126,7 +146,8 @@
             </div>
         </div>
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'current_stock')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="current-stock">
             <h3 class="text-base font-semibold text-gray-900">Stok Saat Ini</h3>
             <p class="mt-1 text-sm text-gray-500">Ringkasan stok produk dari saldo ledger aktif.</p>
             <div class="mt-3">
@@ -252,8 +273,10 @@
                 </div>
             @endif
         </section>
+        @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'stock_card')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="stock-card">
             <h3 class="text-base font-semibold text-gray-900">Kartu Stok</h3>
             <p class="mt-1 text-sm text-amber-700">Pilih produk dan periode tanggal untuk melihat kartu stok secara detail.</p>
             <div class="mt-3">
@@ -382,8 +405,10 @@
                 @endif
             @endif
         </section>
+        @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'low_stock')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="low-stock">
             <h3 class="text-base font-semibold text-gray-900">Low Stock</h3>
             <p class="mt-1 text-sm text-gray-500">Produk kosong atau di bawah minimum produk, dihitung dari saldo ledger per lokasi.</p>
             <div class="mt-3">
@@ -499,8 +524,10 @@
                 </div>
             @endif
         </section>
+        @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'mutation')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="mutation">
             <h3 class="text-base font-semibold text-gray-900">Mutasi Stok</h3>
             <p class="mt-1 text-sm text-gray-500">Pergerakan masuk dan keluar berdasarkan ledger inventory.</p>
             <div class="mt-3">
@@ -612,8 +639,10 @@
                 </div>
             @endif
         </section>
+        @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'valuation')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="valuation">
             <h3 class="text-base font-semibold text-gray-900">Nilai Persediaan</h3>
             <p class="mt-1 text-sm text-gray-500">Nilai persediaan bersifat estimasi operasional berdasarkan harga/cost produk yang tersedia.</p>
             <div class="mt-3">
@@ -714,8 +743,10 @@
                 </div>
             @endif
         </section>
+        @endif
 
-        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+        @if ($activeTab === 'room_stock')
+        <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="room-stock">
             <h3 class="text-base font-semibold text-gray-900">Stok per Ruangan</h3>
             <p class="mt-1 text-sm text-sky-700">Ruangan menggunakan data Lokasi Inventory.</p>
             <p class="mt-1 text-sm text-gray-500">Minimum/maksimum per ruangan diambil dari konfigurasi Minimum Stok Ruangan. Bila ruangan belum dikonfigurasi, minimum mengikuti minimum produk. Produk dengan ambang per ruangan tetap tampil meski belum ada pergerakan.</p>
@@ -861,5 +892,6 @@
                 </div>
             @endif
         </section>
+        @endif
     </div>
 </x-settings-shell>

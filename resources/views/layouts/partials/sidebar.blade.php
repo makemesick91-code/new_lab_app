@@ -69,7 +69,18 @@
         'inventory.goods-receipts.*',
     ];
 
-    $activeReportTab = request('report_tab', 'current_stock');
+    $tabQuery = request('tab');
+    $tabAliases = [
+        'current-stock' => 'current_stock',
+        'stock-card' => 'stock_card',
+        'low-stock' => 'low_stock',
+        'mutation' => 'mutation',
+        'valuation' => 'valuation',
+        'room-stock' => 'room_stock',
+    ];
+    $activeReportTab = is_string($tabQuery) && isset($tabAliases[$tabQuery])
+        ? $tabAliases[$tabQuery]
+        : request('report_tab', 'current_stock');
 
     $sidebarRouteOpen = [
         'rme' => request()->routeIs('rme.*'),
