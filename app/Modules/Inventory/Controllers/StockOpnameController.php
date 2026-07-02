@@ -94,11 +94,14 @@ class StockOpnameController extends Controller
 
         $actualProductId = $productId === 0 ? (int) $request->input('product_id') : $productId;
 
+        $batchId = $request->filled('inventory_batch_id') ? (int) $request->validated('inventory_batch_id') : null;
+
         $this->opnameService->updateCountedQuantity(
             $stockOpname->id,
             $actualProductId,
             (float) $request->validated('counted_quantity'),
             $request->validated('notes'),
+            $batchId,
         );
 
         return back()->with('status', 'Jumlah terhitung berhasil diperbarui.');

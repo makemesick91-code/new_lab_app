@@ -3,6 +3,7 @@
 namespace App\Modules\Inventory\Requests\Concerns;
 
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
@@ -41,12 +42,14 @@ trait ValidatesStockTransferInput
             }
 
             $branchId = app(BranchContext::class)->requireId();
+            $sourceLocationId = (int) $this->input('source_inventory_location_id');
+            $movements = app(InventoryMovementRepositoryInterface::class);
 
             $this->validateActiveLocationInBranch(
                 $validator,
                 $branchId,
                 'source_inventory_location_id',
-                $this->input('source_inventory_location_id'),
+                $sourceLocationId,
             );
 
             $this->validateActiveLocationInBranch(
@@ -57,20 +60,81 @@ trait ValidatesStockTransferInput
             );
 
             foreach ($this->input('items', []) as $index => $item) {
+                $productId = $item['product_id'] ?? null;
+
                 $this->validateActiveProductInBranch(
                     $validator,
                     $branchId,
                     "items.{$index}.product_id",
-                    $item['product_id'] ?? null,
+                    $productId,
                 );
 
-                $this->validateBatchForTransferItem(
-                    $validator,
-                    $branchId,
-                    "items.{$index}.inventory_batch_id",
-                    $item['inventory_batch_id'] ?? null,
-                    $item['product_id'] ?? null,
-                );
+                if (! is_numeric($productId)) {
+                    continue;
+                }
+
+                $product = Product::query()
+                    ->where('branch_id', $branchId)
+                    ->whereKey((int) $productId)
+                    ->first();
+
+                if ($product === null) {
+                    continue;
+                }
+
+                $batchId = $item['inventory_batch_id'] ?? null;
+                $quantity = (float) ($item['quantity'] ?? 0);
+
+                if ($product->requires_batch_tracking) {
+                    if (! is_numeric($batchId)) {
+                        $validator->errors()->add(
+                            "items.{$index}.inventory_batch_id",
+                            'Batch wajib dipilih untuk produk dengan pelacakan batch.',
+                        );
+
+                        continue;
+                    }
+
+                    $this->validateBatchForTransferItem(
+                        $validator,
+                        $branchId,
+                        "items.{$index}.inventory_batch_id",
+                        $batchId,
+                        $productId,
+                    );
+
+                    if ($validator->errors()->has("items.{$index}.inventory_batch_id")) {
+                        continue;
+                    }
+
+                    $available = $movements->currentStockByBatch(
+                        $branchId,
+                        (int) $productId,
+                        $sourceLocationId,
+                        (int) $batchId,
+                    );
+
+                    if ($available <= 0) {
+                        $validator->errors()->add(
+                            "items.{$index}.inventory_batch_id",
+                            'Batch tidak memiliki stok tersedia di lokasi asal.',
+                        );
+
+                        continue;
+                    }
+
+                    if ($quantity > $available) {
+                        $validator->errors()->add(
+                            "items.{$index}.quantity",
+                            'Jumlah transfer melebihi stok batch yang tersedia di lokasi asal.',
+                        );
+                    }
+                } elseif (is_numeric($batchId)) {
+                    $validator->errors()->add(
+                        "items.{$index}.inventory_batch_id",
+                        'Batch tidak diperlukan untuk produk tanpa pelacakan batch.',
+                    );
+                }
             }
         });
     }

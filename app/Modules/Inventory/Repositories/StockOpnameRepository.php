@@ -59,7 +59,7 @@ class StockOpnameRepository implements StockOpnameRepositoryInterface
 
     public function loadItems(StockOpname $opname): StockOpname
     {
-        return $opname->load(['items.product.unit']);
+        return $opname->load(['items.product.unit', 'items.inventoryBatch']);
     }
 
     public function finalizeLookup(int $branchId, int $id): ?StockOpname

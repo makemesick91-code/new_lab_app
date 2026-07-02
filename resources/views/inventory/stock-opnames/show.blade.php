@@ -106,6 +106,7 @@
                             <thead class="bg-gray-50">
                                 <tr class="text-left text-gray-500">
                                     <th scope="col" class="px-4 py-3 font-medium">Produk</th>
+                                    <th scope="col" class="px-3 py-3 font-medium">Batch</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Qty Sistem</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Qty Terhitung</th>
                                     <th scope="col" class="px-3 py-3 text-right font-medium">Selisih</th>
@@ -122,11 +123,28 @@
                                             <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
                                             <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
                                         </td>
+                                        <td class="px-3 py-3 text-gray-700">
+                                            @if ($item->inventory_batch_id)
+                                                <p class="font-medium text-gray-900">{{ $item->inventoryBatch?->batch_number ?? '-' }}</p>
+                                                <p class="text-xs text-gray-500">
+                                                    @if ($item->inventoryBatch?->expiry_date)
+                                                        Exp {{ format_date_id($item->inventoryBatch->expiry_date) }}
+                                                    @else
+                                                        Tanpa expired
+                                                    @endif
+                                                </p>
+                                            @else
+                                                <span class="text-xs text-gray-500">Tanpa batch</span>
+                                            @endif
+                                        </td>
                                         <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->system_quantity) }}</td>
                                         <td class="px-3 py-3 text-right tabular-nums">
                                             @if (in_array($stockOpname->status, ['DRAFT', 'COUNTING']))
                                                 <form method="POST" action="{{ route('inventory.stock-opnames.update-counted-quantity', [$stockOpname, $item->product_id]) }}" class="flex items-center justify-end gap-2">
                                                     @csrf
+                                                    @if ($item->inventory_batch_id)
+                                                        <input type="hidden" name="inventory_batch_id" value="{{ $item->inventory_batch_id }}">
+                                                    @endif
                                                     <input type="number" step="0.0001" min="0" name="counted_quantity" value="{{ (string) ($item->counted_quantity ?? 0) }}"
                                                            class="w-32 rounded-lg border-gray-300 text-sm text-right focus:border-teal-500 focus:ring-teal-500">
                                                     <input type="text" name="notes" value="{{ $item->notes }}" placeholder="Catatan"
@@ -155,7 +173,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="6" class="px-4 py-12">
+                                        <td colspan="7" class="px-4 py-12">
                                             <div class="mx-auto max-w-sm text-center">
                                                 <div class="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-400">
                                                     <span class="text-lg font-semibold">0</span>

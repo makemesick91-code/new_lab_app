@@ -75,46 +75,27 @@ class InventoryStockService
     public function listBatchesWithStockAtLocation(int $productId, int $locationId): Collection
     {
         $branchId = $this->branchContext->requireId();
-        $this->assertProductInBranch($branchId, $productId);
-        $this->assertLocationInBranch($branchId, $locationId);
 
-        return $this->listActiveBatchesForProduct($productId)
-            ->map(function (InventoryBatch $batch) use ($branchId, $productId, $locationId) {
-                $stock = $this->movements->currentStockByBatch($branchId, $productId, $locationId, $batch->id);
-
-                return [
-                    'id' => $batch->id,
-                    'batch_number' => $batch->batch_number,
-                    'lot_number' => $batch->lot_number,
-                    'expiry_date' => $batch->expiry_date?->format('Y-m-d'),
-                    'stock' => $stock,
-                ];
-            })
-            ->filter(fn (array $batch) => $batch['stock'] > 0)
-            ->values();
+        return app(BatchStockOptionService::class)
+            ->availableForProductLocation($productId, $branchId, $locationId)
+            ->map(fn (array $option) => [
+                'id' => $option['batch_id'],
+                'batch_number' => $option['batch_number'],
+                'lot_number' => $option['lot_number'],
+                'expiry_date' => $option['expiry_date'],
+                'expiry_label' => $option['expiry_label'],
+                'stock' => $option['available_qty'],
+                'label' => $option['label'],
+            ]);
     }
 
     /**
-     * @return array<int, array<int, array<int, array{id: int, batch_number: string, lot_number: string|null, expiry_date: string|null, stock: float}>>>
+     * @return array<int, array<int, array<int, array{id: int, batch_number: string, lot_number: string|null, expiry_date: string|null, expiry_label: string|null, stock: float, label: string}>>>
      */
     public function batchOptionsMatrixForTransfer(): array
     {
-        $branchId = $this->branchContext->requireId();
-        $products = $this->products->listActive($branchId);
-        $locations = $this->locations->listActive($branchId);
-        $matrix = [];
-
-        foreach ($products as $product) {
-            foreach ($locations as $location) {
-                $batches = $this->listBatchesWithStockAtLocation($product->id, $location->id);
-
-                if ($batches->isNotEmpty()) {
-                    $matrix[$product->id][$location->id] = $batches->all();
-                }
-            }
-        }
-
-        return $matrix;
+        return app(BatchStockOptionService::class)
+            ->batchOptionsMatrixForTransfer($this->branchContext->requireId());
     }
 
     public function createOpeningStock(
