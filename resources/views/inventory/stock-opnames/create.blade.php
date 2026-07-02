@@ -33,11 +33,15 @@
 
                 <div class="md:col-span-2">
                     <label for="product-ids" class="block text-sm font-medium text-gray-700">Produk yang Dihitung</label>
-                    <select id="product-ids" name="product_ids[]" multiple class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" size="8">
-                        @foreach ($products as $product)
-                            <option value="{{ $product->id }}" @selected(in_array($product->id, old('product_ids', [])))>{{ $product->code }} - {{ $product->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-inventory.searchable-product-select
+                        id="product-ids"
+                        name="product_ids[]"
+                        :products="$products"
+                        :selected="old('product_ids', [])"
+                        class="mt-1"
+                        multiple
+                        :allow-empty="true"
+                    />
                     <p class="mt-1 text-xs text-gray-500">Biarkan kosong untuk menambahkan produk nanti, atau pilih beberapa produk untuk dihitung.</p>
                     @error('product_ids')
                         <p class="mt-1 text-sm text-red-600">{{ $message }}</p>

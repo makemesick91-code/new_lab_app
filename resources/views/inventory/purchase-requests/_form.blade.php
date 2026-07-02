@@ -47,13 +47,13 @@
                 <div class="grid gap-4 p-4 md:grid-cols-2 lg:grid-cols-5">
                     <div>
                         <label :for="'product-' + index" class="block text-sm font-medium text-gray-700">Produk <span class="text-red-600">*</span></label>
-                        <select :id="'product-' + index" :name="'items[' + index + '][product_id]'" x-model="item.product_id" required
-                                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">Pilih produk</option>
-                            @foreach ($products as $product)
-                                <option value="{{ $product->id }}">{{ $product->name }} ({{ $product->code }})</option>
-                            @endforeach
-                        </select>
+                        <x-inventory.searchable-product-select
+                            :products="$products"
+                            alpine-name="'items[' + index + '][product_id]'"
+                            model="item.product_id"
+                            class="mt-1"
+                            required
+                        />
                     </div>
                     <div>
                         <label :for="'location-' + index" class="block text-sm font-medium text-gray-700">Lokasi Persediaan</label>

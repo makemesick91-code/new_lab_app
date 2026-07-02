@@ -19,15 +19,14 @@
 
     <div>
         <label for="minimum-product" class="block text-sm font-medium text-gray-700">Produk <span class="text-rose-600">*</span></label>
-        <select id="minimum-product" name="product_id" required
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-            <option value="">Pilih produk</option>
-            @foreach ($products as $product)
-                <option value="{{ $product->id }}" @selected((int) old('product_id', $minimum?->product_id) === (int) $product->id)>
-                    {{ $product->name }}{{ $product->code ? ' ('.$product->code.')' : '' }}
-                </option>
-            @endforeach
-        </select>
+        <x-inventory.searchable-product-select
+            id="minimum-product"
+            name="product_id"
+            :products="$products"
+            :selected="old('product_id', $minimum?->product_id)"
+            class="mt-1"
+            required
+        />
         @error('product_id')
             <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
         @enderror

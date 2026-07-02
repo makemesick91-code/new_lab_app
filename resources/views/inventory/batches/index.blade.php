@@ -55,12 +55,14 @@
                 </div>
                 <div>
                     <label for="batch-product" class="text-sm font-medium text-gray-700">Produk</label>
-                    <select id="batch-product" name="product_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Semua produk</option>
-                        @foreach ($products as $product)
-                            <option value="{{ $product->id }}" @selected((int) ($filters['product_id'] ?? 0) === $product->id)>{{ $product->name }}</option>
-                        @endforeach
-                    </select>
+                    <x-inventory.searchable-product-select
+                        id="batch-product"
+                        name="product_id"
+                        :products="$products"
+                        :selected="$filters['product_id'] ?? null"
+                        empty-label="Semua produk"
+                        class="mt-1"
+                    />
                 </div>
                 <div>
                     <label for="batch-supplier" class="text-sm font-medium text-gray-700">Pemasok</label>
