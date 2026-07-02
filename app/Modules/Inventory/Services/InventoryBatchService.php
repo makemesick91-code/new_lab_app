@@ -12,13 +12,12 @@ use Illuminate\Support\Collection;
 
 class InventoryBatchService
 {
-    public const EXPIRING_SOON_DAYS = 30;
-
     public function __construct(
         private readonly InventoryBatchRepositoryInterface $batches,
         private readonly ProductRepositoryInterface $products,
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
+        private readonly BatchExpiryStatusService $expiryStatus,
     ) {}
 
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -44,6 +43,8 @@ class InventoryBatchService
      *     transferReferences: Collection,
      *     isExpired: bool,
      *     isExpiringSoon: bool,
+     *     expiryStatus: string,
+     *     expiryDaysText: string,
      * }
      */
     public function showData(InventoryBatch $batch): array
@@ -58,6 +59,8 @@ class InventoryBatchService
             'transferReferences' => $this->batches->transferReferencesForBatch($branchId, $batch->id),
             'isExpired' => $this->isExpired($batch),
             'isExpiringSoon' => $this->isExpiringSoon($batch),
+            'expiryStatus' => $this->resolveDisplayStatus($batch),
+            'expiryDaysText' => $this->expiryDaysText($batch),
         ];
     }
 
@@ -73,20 +76,12 @@ class InventoryBatchService
 
     public function isExpired(InventoryBatch $batch): bool
     {
-        return $batch->expiry_date !== null
-            && $batch->expiry_date->toDateString() < now()->toDateString();
+        return $this->expiryStatus->isExpired($batch->expiry_date);
     }
 
     public function isExpiringSoon(InventoryBatch $batch): bool
     {
-        if ($batch->expiry_date === null || $this->isExpired($batch)) {
-            return false;
-        }
-
-        $today = now()->startOfDay();
-        $threshold = now()->addDays(self::EXPIRING_SOON_DAYS)->endOfDay();
-
-        return $batch->expiry_date->betweenIncluded($today, $threshold);
+        return $this->expiryStatus->isNearExpiry($batch->expiry_date);
     }
 
     public function resolveDisplayStatus(InventoryBatch $batch): string
@@ -95,14 +90,11 @@ class InventoryBatchService
             return 'inactive';
         }
 
-        if ($this->isExpired($batch)) {
-            return 'expired';
-        }
+        return $this->expiryStatus->status($batch->expiry_date);
+    }
 
-        if ($this->isExpiringSoon($batch)) {
-            return 'expiring_soon';
-        }
-
-        return 'active';
+    public function expiryDaysText(InventoryBatch $batch): string
+    {
+        return $this->expiryStatus->daysText($batch->expiry_date);
     }
 }

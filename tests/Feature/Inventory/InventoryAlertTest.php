@@ -245,7 +245,7 @@ it('allows view_inventory users to view alerts', function () {
         ->assertSee('Stok Kritis')
         ->assertSee('Stok Rendah')
         ->assertSee('Batch Kedaluwarsa')
-        ->assertSee('Segera Kedaluwarsa');
+        ->assertSee('Akan Kedaluwarsa');
 });
 
 it('allows manage_inventory users to view alerts', function () {

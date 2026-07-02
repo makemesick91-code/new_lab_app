@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inventory\Requests;
 
+use App\Modules\Inventory\Services\BatchExpiryStatusService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -18,7 +19,14 @@ class InventoryBatchFilterRequest extends FormRequest
             'search' => ['nullable', 'string', 'max:150'],
             'product_id' => ['nullable', 'integer', 'exists:inv_products,id'],
             'supplier_id' => ['nullable', 'integer', 'exists:inv_suppliers,id'],
-            'expiry_status' => ['nullable', 'string', Rule::in(['expired', 'expiring_soon', 'valid'])],
+            'expiry_status' => ['nullable', 'string', Rule::in([
+                BatchExpiryStatusService::STATUS_EXPIRED,
+                BatchExpiryStatusService::STATUS_NEAR_EXPIRY,
+                BatchExpiryStatusService::STATUS_ACTIVE,
+                BatchExpiryStatusService::STATUS_NO_EXPIRY,
+                'expiring_soon',
+                'valid',
+            ])],
             'is_active' => ['nullable', 'boolean'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ];

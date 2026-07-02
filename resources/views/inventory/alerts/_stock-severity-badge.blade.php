@@ -4,7 +4,7 @@
         'critical' => 'Stok Kritis',
         'low' => 'Stok Rendah',
         'batch_expired' => 'Batch Kedaluwarsa',
-        'batch_expiring_soon' => 'Segera Kedaluwarsa',
+        'batch_expiring_soon' => 'Akan Kedaluwarsa',
     ];
     $styles = [
         'out_of_stock' => 'bg-rose-50 text-rose-700',

@@ -38,7 +38,7 @@
             <p class="mt-1 text-2xl font-semibold tabular-nums text-rose-900">{{ format_number_id((int) $summary['batch_expired_count']) }}</p>
         </div>
         <div class="rounded-lg border border-amber-100 bg-amber-50 p-3">
-            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Segera Kedaluwarsa</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Akan Kedaluwarsa</p>
             <p class="mt-1 text-2xl font-semibold tabular-nums text-amber-900">{{ format_number_id((int) $summary['batch_expiring_soon_count']) }}</p>
         </div>
     </div>

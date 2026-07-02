@@ -30,6 +30,7 @@ class InventoryAlertController extends Controller
 
         return $this->renderInventoryView('inventory.alerts.index', [
             'summary' => $this->alerts->getAlertSummary($locationId),
+            'batchExpiryAlerts' => $this->alerts->getBatchExpiryAlerts($locationId),
             'alerts' => $this->alerts->getUnifiedAlerts($locationId, $request->filters(), $request->perPage()),
             'locations' => $this->locations->listActive(),
             'filters' => array_merge($request->filters(), [

@@ -6,6 +6,7 @@ use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\StockTransferItem;
+use App\Modules\Inventory\Services\BatchExpiryStatusService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 
@@ -14,8 +15,11 @@ class InventoryBatchRepository implements InventoryBatchRepositoryInterface
     public function paginateForBranch(int $branchId, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $today = now()->toDateString();
-        $expiringThreshold = now()->addDays(30)->toDateString();
+        $expiryStatusService = app(BatchExpiryStatusService::class);
+        $nearExpiryThreshold = $expiryStatusService->nearExpiryThresholdDate()->toDateString();
+        $activeThreshold = $expiryStatusService->nearExpiryThresholdDate()->copy()->addDay()->toDateString();
         $search = $filters['search'] ?? null;
+        $expiryStatus = $this->normalizeExpiryStatusFilter($filters['expiry_status'] ?? null);
 
         $stockSub = InventoryMovement::query()
             ->select('inventory_batch_id')
@@ -42,19 +46,20 @@ class InventoryBatchRepository implements InventoryBatchRepositoryInterface
                         ->orWhereRaw('LOWER(inv_inventory_batches.lot_number) LIKE ?', [$term]);
                 });
             })
-            ->when($filters['expiry_status'] ?? null, function ($query, $status) use ($today, $expiringThreshold) {
+            ->when($expiryStatus, function ($query, $status) use ($today, $nearExpiryThreshold, $activeThreshold) {
                 match ($status) {
-                    'expired' => $query
+                    BatchExpiryStatusService::STATUS_EXPIRED => $query
                         ->whereNotNull('inv_inventory_batches.expiry_date')
                         ->whereDate('inv_inventory_batches.expiry_date', '<', $today),
-                    'expiring_soon' => $query
+                    BatchExpiryStatusService::STATUS_NEAR_EXPIRY => $query
                         ->whereNotNull('inv_inventory_batches.expiry_date')
                         ->whereDate('inv_inventory_batches.expiry_date', '>=', $today)
-                        ->whereDate('inv_inventory_batches.expiry_date', '<=', $expiringThreshold),
-                    'valid' => $query->where(function ($q) use ($expiringThreshold) {
-                        $q->whereNull('inv_inventory_batches.expiry_date')
-                            ->orWhereDate('inv_inventory_batches.expiry_date', '>', $expiringThreshold);
-                    }),
+                        ->whereDate('inv_inventory_batches.expiry_date', '<=', $nearExpiryThreshold),
+                    BatchExpiryStatusService::STATUS_ACTIVE => $query
+                        ->whereNotNull('inv_inventory_batches.expiry_date')
+                        ->whereDate('inv_inventory_batches.expiry_date', '>=', $activeThreshold),
+                    BatchExpiryStatusService::STATUS_NO_EXPIRY => $query
+                        ->whereNull('inv_inventory_batches.expiry_date'),
                     default => $query,
                 };
             })
@@ -194,5 +199,18 @@ class InventoryBatchRepository implements InventoryBatchRepositoryInterface
             ->selectRaw('COALESCE(inv_inventory_batches.received_date, first_in.first_in_date) as age_anchor_date')
             ->orderBy('age_anchor_date')
             ->get();
+    }
+
+    private function normalizeExpiryStatusFilter(?string $status): ?string
+    {
+        if ($status === null || $status === '') {
+            return null;
+        }
+
+        return match ($status) {
+            'expiring_soon' => BatchExpiryStatusService::STATUS_NEAR_EXPIRY,
+            'valid' => BatchExpiryStatusService::STATUS_ACTIVE,
+            default => $status,
+        };
     }
 }

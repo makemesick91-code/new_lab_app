@@ -42,7 +42,7 @@
                         <option value="critical" @selected(($filters['severity'] ?? '') === 'critical')>Stok Kritis</option>
                         <option value="low" @selected(($filters['severity'] ?? '') === 'low')>Stok Rendah</option>
                         <option value="batch_expired" @selected(($filters['severity'] ?? '') === 'batch_expired')>Batch Kedaluwarsa</option>
-                        <option value="batch_expiring_soon" @selected(($filters['severity'] ?? '') === 'batch_expiring_soon')>Segera Kedaluwarsa</option>
+                        <option value="batch_expiring_soon" @selected(($filters['severity'] ?? '') === 'batch_expiring_soon')>Akan Kedaluwarsa</option>
                     </select>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -57,6 +57,79 @@
         </form>
 
         <x-inventory.alert-summary-widget :summary="$summary" />
+
+        <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                <div>
+                    <h3 class="text-base font-semibold text-gray-900">Peringatan Kedaluwarsa Batch</h3>
+                    <p class="text-sm text-gray-500">Batch dengan stok positif yang sudah kedaluwarsa atau mendekati kedaluwarsa (≤ 90 hari).</p>
+                </div>
+            </div>
+
+            @if ($batchExpiryAlerts->isEmpty())
+                <div class="px-4 py-10 text-center">
+                    <p class="text-sm font-medium text-gray-900">Tidak ada batch yang kedaluwarsa atau mendekati kedaluwarsa.</p>
+                </div>
+            @else
+                <div class="hidden overflow-x-auto md:block">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead class="bg-gray-50">
+                            <tr class="text-left text-gray-500">
+                                <th scope="col" class="px-4 py-3 font-medium">Status</th>
+                                <th scope="col" class="px-4 py-3 font-medium">Produk</th>
+                                <th scope="col" class="px-4 py-3 font-medium">Batch</th>
+                                <th scope="col" class="px-4 py-3 font-medium">Kedaluwarsa</th>
+                                <th scope="col" class="px-4 py-3 font-medium text-right">Stok Tersedia</th>
+                                <th scope="col" class="px-4 py-3 font-medium">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100 bg-white">
+                            @foreach ($batchExpiryAlerts as $alert)
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-3">@include('inventory.alerts._stock-severity-badge', ['severity' => $alert['severity']])</td>
+                                    <td class="px-4 py-3">
+                                        <div class="font-medium text-gray-900">{{ $alert['product_name'] }}</div>
+                                        <div class="text-xs text-gray-500">{{ $alert['product_code'] ?? '-' }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 font-medium text-gray-900">{{ $alert['batch_number'] }}</td>
+                                    <td class="px-4 py-3">
+                                        <div class="tabular-nums text-gray-700">{{ format_date_id($alert['expiry_date']) }}</div>
+                                        <div class="text-xs text-gray-500">{{ $alert['days_text'] }}</div>
+                                    </td>
+                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id((float) $alert['batch_stock']) }}</td>
+                                    <td class="px-4 py-3">
+                                        <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="divide-y divide-gray-100 md:hidden">
+                    @foreach ($batchExpiryAlerts as $alert)
+                        <article class="p-4">
+                            <div class="flex flex-wrap items-start justify-between gap-2">
+                                @include('inventory.alerts._stock-severity-badge', ['severity' => $alert['severity']])
+                                <span class="text-xs text-gray-500">{{ $alert['days_text'] }}</span>
+                            </div>
+                            <h4 class="mt-2 font-semibold text-gray-900">{{ $alert['batch_number'] }}</h4>
+                            <p class="text-sm text-gray-600">{{ $alert['product_name'] }}</p>
+                            <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                    <dt class="text-gray-500">Kedaluwarsa</dt>
+                                    <dd class="font-medium tabular-nums text-gray-900">{{ format_date_id($alert['expiry_date']) }}</dd>
+                                </div>
+                                <div>
+                                    <dt class="text-gray-500">Stok tersedia</dt>
+                                    <dd class="font-medium tabular-nums text-gray-900">{{ format_quantity_id((float) $alert['batch_stock']) }}</dd>
+                                </div>
+                            </dl>
+                        </article>
+                    @endforeach
+                </div>
+            @endif
+        </section>
 
         <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">

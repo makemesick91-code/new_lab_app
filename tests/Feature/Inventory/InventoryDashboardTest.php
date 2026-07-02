@@ -40,7 +40,7 @@ it('displays alert KPIs on inventory dashboard', function () {
         ->assertSee('Stok Habis')
         ->assertSee('Stok Rendah')
         ->assertSee('Batch Kedaluwarsa')
-        ->assertSee('Segera Kedaluwarsa')
+        ->assertSee('Akan Kedaluwarsa')
         ->assertSee('Peringatan Stok')
         ->assertDontSee('Ringkasan Peringatan');
 });
