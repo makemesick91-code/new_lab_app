@@ -4,8 +4,12 @@
     $stockCardRows = $stockCardReport['rows'] ?? null;
     $stockMutationDateFrom = $filters['date_from'] ?? now()->startOfMonth()->toDateString();
     $stockMutationDateTo = $filters['date_to'] ?? now()->toDateString();
-    $exportFilters = request()->except('page', 'current_stock_page', 'stock_card_page', 'low_stock_page', 'mutation_page', 'valuation_page', 'room_stock_page', 'report_type');
-    $tabQueryParams = request()->except('page', 'current_stock_page', 'stock_card_page', 'low_stock_page', 'mutation_page', 'valuation_page', 'room_stock_page', 'report_tab');
+    $exportFilters = collect($filters)
+        ->except(['per_page', 'report_tab'])
+        ->all();
+    $tabQueryParams = collect($filters)
+        ->except(['per_page', 'report_tab'])
+        ->all();
     $tabs = [
         'current_stock' => 'Stok Saat Ini',
         'stock_card' => 'Kartu Stok',
@@ -20,6 +24,7 @@
     $showLocationFilter = true;
     $showStockStatusFilter = in_array($activeTab, ['current_stock', 'low_stock', 'room_stock'], true);
     $showMovementTypeFilter = $activeTab === 'mutation';
+    $showBatchFilter = $activeTab === 'stock_card' && ! empty($filters['product_id']);
 @endphp
 
 <x-settings-shell title="Laporan Inventory">
@@ -95,6 +100,20 @@
                             <option value="">Semua lokasi</option>
                             @foreach ($filterOptions['locations'] as $location)
                                 <option value="{{ $location->id }}" @selected(($filters['inventory_location_id'] ?? null) == $location->id)>{{ $location->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
+
+                @if ($showBatchFilter)
+                    <div>
+                        <label for="inventory_batch_id" class="block text-sm font-medium text-gray-700">Batch &amp; Lot</label>
+                        <select id="inventory_batch_id" name="inventory_batch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Semua batch</option>
+                            @foreach ($filterOptions['batches'] as $batch)
+                                <option value="{{ $batch->id }}" @selected(($filters['inventory_batch_id'] ?? null) == $batch->id)>
+                                    {{ $batch->batch_number }}{{ $batch->lot_number ? ' / '.$batch->lot_number : '' }}
+                                </option>
                             @endforeach
                         </select>
                     </div>

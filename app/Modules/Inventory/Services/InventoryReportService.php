@@ -6,11 +6,15 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
+use App\Modules\Inventory\Models\InventoryBatch;
+use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\Product;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -30,6 +34,7 @@ class InventoryReportService
         private readonly ProductRepositoryInterface $products,
         private readonly ProductCategoryRepositoryInterface $categories,
         private readonly InventoryLocationRepositoryInterface $locations,
+        private readonly InventoryBatchRepositoryInterface $batches,
     ) {}
 
     public function getCurrentStockReport(array $filters): LengthAwarePaginatorContract
@@ -70,8 +75,9 @@ class InventoryReportService
 
         $productId = (int) $filters['product_id'];
         $locationId = isset($filters['inventory_location_id']) ? (int) $filters['inventory_location_id'] : null;
+        $batchId = isset($filters['inventory_batch_id']) ? (int) $filters['inventory_batch_id'] : null;
         $rows = $this->movements->getStockCardReport($branchId, $filters, $dateFrom, $dateTo, $perPage);
-        $openingBalance = $this->movements->getStockCardOpeningBalance($branchId, $productId, $locationId, $dateFrom);
+        $openingBalance = $this->movements->getStockCardOpeningBalance($branchId, $productId, $locationId, $dateFrom, $batchId);
         $periodBalanceBeforePage = $this->movements->getStockCardPeriodBalanceBeforePage(
             $branchId,
             $filters,
@@ -283,18 +289,107 @@ class InventoryReportService
     }
 
     /**
+     * RME-enabled branch locations for report dependent filters.
+     *
+     * @return Collection<int, InventoryLocation>
+     */
+    public function reportLocationOptions(int $branchId): Collection
+    {
+        return $this->locations->listActive($branchId);
+    }
+
+    /**
+     * Active batches for the selected branch, optionally narrowed to a product.
+     *
+     * @return Collection<int, InventoryBatch>
+     */
+    public function reportBatchOptions(int $branchId, ?int $productId = null): Collection
+    {
+        return $this->batches
+            ->paginateForBranch($branchId, array_filter([
+                'product_id' => $productId,
+                'is_active' => true,
+            ]), 500)
+            ->getCollection();
+    }
+
+    /**
+     * Branch-scoped active products for report filters.
+     *
+     * @return Collection<int, Product>
+     */
+    public function reportProductOptions(int $branchId): Collection
+    {
+        return $this->products->listActive($branchId);
+    }
+
+    /**
+     * Drop dependent filters that do not belong to the validated report branch.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function sanitizeReportFilters(array $filters, ?User $user = null): array
+    {
+        $branchId = $this->resolveReportBranchId($filters, $user);
+        $filters['branch_id'] = $branchId;
+
+        $allowedLocationIds = $this->reportLocationOptions($branchId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (isset($filters['inventory_location_id']) && ! in_array((int) $filters['inventory_location_id'], $allowedLocationIds, true)) {
+            unset($filters['inventory_location_id']);
+        }
+
+        $allowedProductIds = $this->reportProductOptions($branchId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (isset($filters['product_id']) && ! in_array((int) $filters['product_id'], $allowedProductIds, true)) {
+            unset($filters['product_id'], $filters['inventory_batch_id']);
+        }
+
+        $allowedCategoryIds = $this->categories->listActive($branchId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (isset($filters['category_id']) && ! in_array((int) $filters['category_id'], $allowedCategoryIds, true)) {
+            unset($filters['category_id']);
+        }
+
+        if (isset($filters['inventory_batch_id'])) {
+            $productId = isset($filters['product_id']) ? (int) $filters['product_id'] : null;
+            $batch = $this->batches->findForBranch($branchId, (int) $filters['inventory_batch_id']);
+
+            if (! $batch instanceof InventoryBatch
+                || ! $batch->is_active
+                || ($productId !== null && (int) $batch->product_id !== $productId)) {
+                unset($filters['inventory_batch_id']);
+            }
+        }
+
+        return $filters;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function getReportFilterOptions(array $filters, ?Collection $branchOptions = null): array
     {
         $branchId = $this->reportBranchId($filters);
         $branchOptions ??= $this->reportBranchOptions();
+        $productId = isset($filters['product_id']) ? (int) $filters['product_id'] : null;
 
         return [
             'branches' => $branchOptions,
-            'products' => $this->products->listActive($branchId),
+            'products' => $this->reportProductOptions($branchId),
             'categories' => $this->categories->listActive($branchId),
-            'locations' => $this->locations->listActive($branchId),
+            'locations' => $this->reportLocationOptions($branchId),
+            'batches' => $this->reportBatchOptions($branchId, $productId),
             'movementTypes' => InventoryMovement::TYPES,
             'stockStatuses' => [
                 'normal' => 'Normal',
