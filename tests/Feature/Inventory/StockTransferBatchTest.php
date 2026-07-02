@@ -33,7 +33,7 @@ function batchTransferSetup(Branch $branch, float $batchStock = 10): array
 {
     $source = InventoryLocation::factory()->create(['branch_id' => $branch->id, 'name' => 'Gudang Batch Sumber']);
     $destination = InventoryLocation::factory()->create(['branch_id' => $branch->id, 'name' => 'Gudang Batch Tujuan']);
-    $product = Product::factory()->create(['branch_id' => $branch->id, 'name' => 'Produk Batch Transfer']);
+    $product = Product::factory()->requiresBatchTracking()->create(['branch_id' => $branch->id, 'name' => 'Produk Batch Transfer']);
     $batch = InventoryBatch::factory()->create([
         'branch_id' => $branch->id,
         'product_id' => $product->id,
@@ -129,21 +129,12 @@ it('rejects inactive batch when creating a transfer', function () {
     ]))->toThrow(ValidationException::class);
 });
 
-it('validates sufficient batch stock at source location when shipping', function () {
+it('validates sufficient batch stock at source location when creating transfer', function () {
     ['source' => $source, 'destination' => $destination, 'product' => $product, 'batch' => $batch] = batchTransferSetup($this->branch, 5);
 
-    $transfer = $this->service->createTransfer($source->id, $destination->id, [
+    expect(fn () => $this->service->createTransfer($source->id, $destination->id, [
         ['product_id' => $product->id, 'inventory_batch_id' => $batch->id, 'quantity' => 8],
-    ]);
-    $this->service->submitTransfer($transfer->id);
-
-    expect(fn () => $this->service->shipTransfer($transfer->id))
-        ->toThrow(ValidationException::class)
-        ->and($transfer->refresh()->status)->toBe(StockTransfer::STATUS_SUBMITTED)
-        ->and(InventoryMovement::query()
-            ->where('reference_type', 'trx_stock_transfers')
-            ->where('reference_id', $transfer->id)
-            ->count())->toBe(0);
+    ]))->toThrow(ValidationException::class);
 });
 
 it('creates transfer out movements with inventory_batch_id when shipping', function () {
@@ -308,10 +299,9 @@ it('shows batch selector on transfer create form with Indonesian labels', functi
     $this->actingAs($this->user)
         ->get(route('inventory.stock-transfers.create'))
         ->assertOk()
-        ->assertSee('Batch')
-        ->assertSee('Pilih Batch')
-        ->assertSee('Stok Batch')
-        ->assertSee('Batch tidak tersedia')
+        ->assertSee('Batch / Expired')
+        ->assertSee('Pilih batch')
+        ->assertSee('Belum ada batch tersedia untuk produk ini di lokasi asal.')
         ->assertSee($batch->batch_number);
 });
 

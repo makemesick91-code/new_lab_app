@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -31,6 +32,7 @@ class StockOpnameService
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
+        private readonly BatchStockOptionService $batchStockOptions,
     ) {}
 
     /**
@@ -59,6 +61,19 @@ class StockOpnameService
 
             foreach (array_unique($productIds) as $productId) {
                 $product = $this->assertActiveProductInBranch($branchId, (int) $productId);
+
+                if ($product->requires_batch_tracking) {
+                    $batchItems = $this->createBatchSnapshotItems($opname, $product, $location->id);
+
+                    if ($batchItems->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            'product_ids' => 'Belum ada batch tersedia untuk produk ini di lokasi ini.',
+                        ]);
+                    }
+
+                    continue;
+                }
+
                 $this->createSnapshotItem($opname, $product, $location->id);
             }
 
@@ -70,8 +85,13 @@ class StockOpnameService
         return $result;
     }
 
-    public function updateCountedQuantity(int $opnameId, int $productId, float $countedQuantity, ?string $notes = null): StockOpnameItem
-    {
+    public function updateCountedQuantity(
+        int $opnameId,
+        int $productId,
+        float $countedQuantity,
+        ?string $notes = null,
+        ?int $inventoryBatchId = null,
+    ): StockOpnameItem {
         if ($countedQuantity < 0) {
             throw ValidationException::withMessages([
                 'counted_quantity' => 'Jumlah terhitung tidak boleh negatif.',
@@ -82,21 +102,47 @@ class StockOpnameService
         $existing = StockOpname::query()->where('branch_id', $branchId)->find($opnameId);
         $statusFrom = $existing?->status;
 
-        $item = DB::transaction(function () use ($opnameId, $productId, $countedQuantity, $notes) {
+        $item = DB::transaction(function () use ($opnameId, $productId, $countedQuantity, $notes, $inventoryBatchId) {
             $branchId = $this->branchContext->requireId();
             $opname = $this->lockOpnameInBranch($branchId, $opnameId);
             $this->assertEditable($opname);
             $this->assertActiveLocationInBranch($branchId, $opname->inventory_location_id);
             $product = $this->assertActiveProductInBranch($branchId, $productId);
 
-            $item = StockOpnameItem::query()
+            $itemQuery = StockOpnameItem::query()
                 ->where('stock_opname_id', $opname->id)
-                ->where('product_id', $product->id)
-                ->lockForUpdate()
-                ->first();
+                ->where('product_id', $product->id);
+
+            if ($inventoryBatchId !== null) {
+                $itemQuery->where('inventory_batch_id', $inventoryBatchId);
+            } else {
+                $itemQuery->whereNull('inventory_batch_id');
+            }
+
+            $item = $itemQuery->lockForUpdate()->first();
 
             if (! $item) {
-                $item = $this->createSnapshotItem($opname, $product, $opname->inventory_location_id);
+                if ($product->requires_batch_tracking) {
+                    $createdItems = $this->createBatchSnapshotItems($opname, $product, $opname->inventory_location_id);
+
+                    if ($createdItems->isEmpty()) {
+                        throw ValidationException::withMessages([
+                            'product_id' => 'Belum ada batch tersedia untuk produk ini di lokasi ini.',
+                        ]);
+                    }
+
+                    $item = $inventoryBatchId !== null
+                        ? $createdItems->firstWhere('inventory_batch_id', $inventoryBatchId)
+                        : $createdItems->first();
+
+                    if (! $item) {
+                        throw ValidationException::withMessages([
+                            'inventory_batch_id' => 'Batch tidak valid untuk produk ini pada opname ini.',
+                        ]);
+                    }
+                } else {
+                    $item = $this->createSnapshotItem($opname, $product, $opname->inventory_location_id);
+                }
             }
 
             $systemQuantity = (float) $item->system_quantity;
@@ -199,12 +245,25 @@ class StockOpnameService
                 $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $item->product_id);
                 $variance = round((float) $item->variance_quantity, 4);
 
-                if ($variance > 0) {
-                    $createdMovements[] = $this->createAdjustmentMovement($opname, $product, $variance, 0, (float) $item->unit_cost);
-                }
-
                 if ($variance < 0) {
                     $quantityOut = abs($variance);
+                    $batchId = $item->inventory_batch_id ? (int) $item->inventory_batch_id : null;
+
+                    if ($batchId !== null) {
+                        $batchStock = $this->movements->currentStockByBatch(
+                            $branchId,
+                            $product->id,
+                            $opname->inventory_location_id,
+                            $batchId,
+                        );
+
+                        if ($batchStock < $quantityOut) {
+                            throw ValidationException::withMessages([
+                                'counted_quantity' => 'Selisih stok opname melebihi stok batch pada lokasi ini.',
+                            ]);
+                        }
+                    }
+
                     $currentStock = $this->movements->currentStock($branchId, $product->id, $opname->inventory_location_id);
 
                     if ($currentStock < $quantityOut) {
@@ -213,7 +272,27 @@ class StockOpnameService
                         ]);
                     }
 
-                    $createdMovements[] = $this->createAdjustmentMovement($opname, $product, 0, $quantityOut, (float) $item->unit_cost);
+                    $createdMovements[] = $this->createAdjustmentMovement(
+                        $opname,
+                        $product,
+                        0,
+                        $quantityOut,
+                        (float) $item->unit_cost,
+                        $batchId,
+                    );
+
+                    continue;
+                }
+
+                if ($variance > 0) {
+                    $createdMovements[] = $this->createAdjustmentMovement(
+                        $opname,
+                        $product,
+                        $variance,
+                        0,
+                        (float) $item->unit_cost,
+                        $item->inventory_batch_id ? (int) $item->inventory_batch_id : null,
+                    );
                 }
             }
 
@@ -273,11 +352,18 @@ class StockOpnameService
 
     private function createSnapshotItem(StockOpname $opname, Product $product, int $locationId): StockOpnameItem
     {
+        if ($product->requires_batch_tracking) {
+            throw ValidationException::withMessages([
+                'product_id' => 'Gunakan baris batch untuk produk dengan pelacakan batch.',
+            ]);
+        }
+
         $systemQuantity = $this->movements->currentStock($opname->branch_id, $product->id, $locationId);
 
         return StockOpnameItem::create([
             'stock_opname_id' => $opname->id,
             'product_id' => $product->id,
+            'inventory_batch_id' => null,
             'system_quantity' => $systemQuantity,
             'counted_quantity' => $systemQuantity,
             'variance_quantity' => 0,
@@ -286,13 +372,49 @@ class StockOpnameService
         ]);
     }
 
-    private function createAdjustmentMovement(StockOpname $opname, Product $product, float $quantityIn, float $quantityOut, float $unitCost): InventoryMovement
+    /**
+     * @return Collection<int, StockOpnameItem>
+     */
+    private function createBatchSnapshotItems(StockOpname $opname, Product $product, int $locationId): Collection
     {
+        $options = $this->batchStockOptions->availableForProductLocation(
+            $product->id,
+            $opname->branch_id,
+            $locationId,
+        );
+
+        if ($options->isEmpty()) {
+            return collect();
+        }
+
+        return $options->map(function (array $option) use ($opname, $product) {
+            return StockOpnameItem::create([
+                'stock_opname_id' => $opname->id,
+                'product_id' => $product->id,
+                'inventory_batch_id' => $option['batch_id'],
+                'system_quantity' => $option['available_qty'],
+                'counted_quantity' => $option['available_qty'],
+                'variance_quantity' => 0,
+                'unit_cost' => $product->average_cost,
+                'notes' => null,
+            ]);
+        });
+    }
+
+    private function createAdjustmentMovement(
+        StockOpname $opname,
+        Product $product,
+        float $quantityIn,
+        float $quantityOut,
+        float $unitCost,
+        ?int $inventoryBatchId = null,
+    ): InventoryMovement {
         return $this->movements->create([
             'branch_id' => $opname->branch_id,
             'inventory_location_id' => $opname->inventory_location_id,
             'product_id' => $product->id,
             'supplier_id' => null,
+            'inventory_batch_id' => $inventoryBatchId,
             'movement_type' => $quantityIn > 0 ? InventoryMovement::TYPE_ADJUSTMENT_IN : InventoryMovement::TYPE_ADJUSTMENT_OUT,
             'movement_date' => $opname->opname_date->toDateString(),
             'quantity_in' => $quantityIn,

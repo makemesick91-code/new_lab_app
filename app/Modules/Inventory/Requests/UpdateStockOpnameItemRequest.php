@@ -15,6 +15,7 @@ class UpdateStockOpnameItemRequest extends FormRequest
     {
         return [
             'counted_quantity' => ['required', 'numeric', 'min:0'],
+            'inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
             'notes' => ['nullable', 'string', 'max:2000'],
         ];
     }

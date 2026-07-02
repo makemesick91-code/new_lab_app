@@ -1,6 +1,7 @@
 @php
     $stockTransfer = $stockTransfer ?? null;
     $batchOptions = $batchOptions ?? [];
+    $productBatchFlags = $productBatchFlags ?? [];
     $initialItems = old('items', $stockTransfer
         ? $stockTransfer->items->map(fn ($item) => [
             'product_id' => $item->product_id,
@@ -17,8 +18,12 @@
         items: @js($initialItems),
         sourceLocationId: @js($initialSourceLocationId),
         batchOptions: @js($batchOptions),
+        productBatchFlags: @js($productBatchFlags),
+        productRequiresBatch(productId) {
+            return Boolean(this.productBatchFlags[String(productId)] ?? this.productBatchFlags[productId]);
+        },
         batchesForItem(item) {
-            if (! this.sourceLocationId || ! item.product_id) {
+            if (! this.sourceLocationId || ! item.product_id || ! this.productRequiresBatch(item.product_id)) {
                 return [];
             }
 
@@ -26,21 +31,15 @@
             return productBatches[this.sourceLocationId] ?? [];
         },
         batchLabel(batch) {
-            let label = batch.batch_number;
-
-            if (batch.lot_number) {
-                label += ' · Lot ' + batch.lot_number;
-            }
-
-            if (batch.expiry_date) {
-                label += ' · exp ' + batch.expiry_date;
-            }
-
-            label += ' · Stok Batch ' + batch.stock;
-
-            return label;
+            return batch.label ?? batch.batch_number;
         },
         resetBatchIfInvalid(item) {
+            if (! this.productRequiresBatch(item.product_id)) {
+                item.inventory_batch_id = '';
+
+                return;
+            }
+
             const batches = this.batchesForItem(item);
             const stillValid = batches.some((batch) => String(batch.id) === String(item.inventory_batch_id));
 
@@ -138,16 +137,17 @@
                             required
                         />
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Batch</label>
-                        <select :name="`items[${index}][inventory_batch_id]`" x-model="item.inventory_batch_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">Pilih Batch</option>
+                    <div x-show="productRequiresBatch(item.product_id)">
+                        <label class="block text-sm font-medium text-gray-700">Batch / Expired <span class="text-red-600">*</span></label>
+                        <select :name="`items[${index}][inventory_batch_id]`" x-model="item.inventory_batch_id" :required="productRequiresBatch(item.product_id)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <option value="">Pilih batch</option>
                             <template x-for="batch in batchesForItem(item)" :key="batch.id">
                                 <option :value="batch.id" x-text="batchLabel(batch)"></option>
                             </template>
                         </select>
                         <p class="mt-1 text-xs text-gray-500" x-show="!sourceLocationId">Pilih lokasi sumber untuk memuat batch.</p>
-                        <p class="mt-1 text-xs text-amber-700" x-show="sourceLocationId && item.product_id && batchesForItem(item).length === 0">Batch tidak tersedia</p>
+                        <p class="mt-1 text-xs text-gray-500" x-show="sourceLocationId && item.product_id && productRequiresBatch(item.product_id)">Pilih batch dari lokasi asal. Urutan mengikuti expired terdekat.</p>
+                        <p class="mt-1 text-xs text-amber-700" x-show="sourceLocationId && item.product_id && productRequiresBatch(item.product_id) && batchesForItem(item).length === 0">Belum ada batch tersedia untuk produk ini di lokasi asal.</p>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Jumlah <span class="text-red-600">*</span></label>

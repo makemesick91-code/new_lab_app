@@ -66,8 +66,11 @@ class StockTransferController extends Controller
 
         return $this->renderInventoryView('inventory.stock-transfers.create', [
             'locations' => $this->locations->listActive(),
-            'products' => $this->products->listActive($this->branchContext->requireId()),
+            'products' => $products = $this->products->listActive($this->branchContext->requireId()),
             'batchOptions' => $this->stock->batchOptionsMatrixForTransfer(),
+            'productBatchFlags' => $products->mapWithKeys(fn ($product) => [
+                (string) $product->id => (bool) $product->requires_batch_tracking,
+            ])->all(),
         ]);
     }
 
@@ -124,8 +127,11 @@ class StockTransferController extends Controller
         return $this->renderInventoryView('inventory.stock-transfers.edit', [
             'stockTransfer' => $stockTransfer,
             'locations' => $this->locations->listActive(),
-            'products' => $this->products->listActive($this->branchContext->requireId()),
+            'products' => $products = $this->products->listActive($this->branchContext->requireId()),
             'batchOptions' => $this->stock->batchOptionsMatrixForTransfer(),
+            'productBatchFlags' => $products->mapWithKeys(fn ($product) => [
+                (string) $product->id => (bool) $product->requires_batch_tracking,
+            ])->all(),
         ]);
     }
 

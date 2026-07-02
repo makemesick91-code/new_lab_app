@@ -33,6 +33,7 @@ class StockTransferService
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
+        private readonly BatchStockOptionService $batchStockOptions,
     ) {}
 
     /**
@@ -51,7 +52,7 @@ class StockTransferService
             $source = $this->assertActiveLocationInBranch($branchId, $sourceLocationId, 'source_inventory_location_id');
             $destination = $this->assertActiveLocationInBranch($branchId, $destinationLocationId, 'destination_inventory_location_id');
             $this->assertDifferentLocations($source, $destination);
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items);
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $source->id, $items);
 
             $transfer = $this->transfers->create([
                 'branch_id' => $branchId,
@@ -105,7 +106,7 @@ class StockTransferService
             $source = $this->assertActiveLocationInBranch($branchId, $sourceLocationId, 'source_inventory_location_id');
             $destination = $this->assertActiveLocationInBranch($branchId, $destinationLocationId, 'destination_inventory_location_id');
             $this->assertDifferentLocations($source, $destination);
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items);
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $source->id, $items);
 
             $updated = $this->transfers->update($transfer, [
                 'source_inventory_location_id' => $source->id,
@@ -531,11 +532,21 @@ class StockTransferService
         }
 
         foreach ($items as $item) {
-            $this->assertActiveProductInBranch($branchId, (int) $item->product_id);
+            $product = $this->assertActiveProductInBranch($branchId, (int) $item->product_id);
             $this->assertPositiveQuantity((float) $item->quantity);
 
-            if ($item->inventory_batch_id) {
+            if ($product->requires_batch_tracking) {
+                if (! $item->inventory_batch_id) {
+                    throw ValidationException::withMessages([
+                        'inventory_batch_id' => 'Batch wajib dipilih untuk produk dengan pelacakan batch.',
+                    ]);
+                }
+
                 $this->assertBatchForTransferItem($branchId, (int) $item->product_id, (int) $item->inventory_batch_id);
+            } elseif ($item->inventory_batch_id) {
+                throw ValidationException::withMessages([
+                    'inventory_batch_id' => 'Batch tidak diperlukan untuk produk tanpa pelacakan batch.',
+                ]);
             }
         }
     }
@@ -544,7 +555,7 @@ class StockTransferService
      * @param  array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>  $items
      * @return array<int, array{product_id: int, quantity: float, inventory_batch_id?: int|null, notes?: string|null}>
      */
-    private function normalizeAndValidateItems(int $branchId, array $items): array
+    private function normalizeAndValidateItems(int $branchId, int $sourceLocationId, array $items): array
     {
         if ($items === []) {
             throw ValidationException::withMessages([
@@ -558,15 +569,33 @@ class StockTransferService
             $productId = (int) ($item['product_id'] ?? 0);
             $quantity = (float) ($item['quantity'] ?? 0);
             $notes = $item['notes'] ?? null;
+            $product = $this->assertActiveProductInBranch($branchId, $productId);
             $batchId = isset($item['inventory_batch_id']) && $item['inventory_batch_id'] !== '' && $item['inventory_batch_id'] !== null
                 ? (int) $item['inventory_batch_id']
                 : null;
 
-            $this->assertActiveProductInBranch($branchId, $productId);
             $this->assertPositiveQuantity($quantity);
 
-            if ($batchId !== null) {
+            if ($product->requires_batch_tracking) {
+                if ($batchId === null) {
+                    throw ValidationException::withMessages([
+                        'inventory_batch_id' => 'Batch wajib dipilih untuk produk dengan pelacakan batch.',
+                    ]);
+                }
+
                 $this->assertBatchForTransferItem($branchId, $productId, $batchId);
+            } else {
+                $batchId = null;
+            }
+
+            if ($batchId !== null) {
+                $this->batchStockOptions->assertBatchAvailableForProductLocation(
+                    $branchId,
+                    $productId,
+                    $sourceLocationId,
+                    $batchId,
+                    $quantity,
+                );
             }
 
             $lineKey = $productId.':'.($batchId ?? 'none');

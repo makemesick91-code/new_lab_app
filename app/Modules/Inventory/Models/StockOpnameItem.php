@@ -23,6 +23,7 @@ class StockOpnameItem extends Model
     protected $fillable = [
         'stock_opname_id',
         'product_id',
+        'inventory_batch_id',
         'system_quantity',
         'counted_quantity',
         'variance_quantity',
@@ -48,6 +49,11 @@ class StockOpnameItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class, 'product_id');
+    }
+
+    public function inventoryBatch(): BelongsTo
+    {
+        return $this->belongsTo(InventoryBatch::class, 'inventory_batch_id');
     }
 
     protected static function newFactory(): StockOpnameItemFactory
