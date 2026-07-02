@@ -71,6 +71,11 @@ class InventoryBatch extends Model
         return $this->hasMany(InventoryMovement::class, 'inventory_batch_id');
     }
 
+    public function actionLogs(): HasMany
+    {
+        return $this->hasMany(InventoryBatchActionLog::class, 'inventory_batch_id');
+    }
+
     public function scopeForBranch(Builder $query, int $branchId): Builder
     {
         return $query->where('branch_id', $branchId);

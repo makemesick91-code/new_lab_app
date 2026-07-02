@@ -35,6 +35,7 @@ use App\Modules\Doctor\Repositories\DoctorRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryBatchActionLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -78,6 +79,7 @@ use App\Modules\Inventory\Policies\SupplierPolicy;
 use App\Modules\Inventory\Repositories\GoodsReceiptRepository;
 use App\Modules\Inventory\Repositories\InventoryActivityLogRepository;
 use App\Modules\Inventory\Repositories\InventoryAnalyticsRepository;
+use App\Modules\Inventory\Repositories\InventoryBatchActionLogRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -244,6 +246,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 9 — Multi Branch Foundation
         BranchRepositoryInterface::class => BranchRepository::class,
         // Sprint 12 - Inventory Core
+        InventoryBatchActionLogRepositoryInterface::class => InventoryBatchActionLogRepository::class,
         InventoryBatchRepositoryInterface::class => InventoryBatchRepository::class,
         InventoryLocationRepositoryInterface::class => InventoryLocationRepository::class,
         ProductCategoryRepositoryInterface::class => ProductCategoryRepository::class,

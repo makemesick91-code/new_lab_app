@@ -18,6 +18,7 @@ class InventoryBatchService
         private readonly SupplierRepositoryInterface $suppliers,
         private readonly BranchContext $branchContext,
         private readonly BatchExpiryStatusService $expiryStatus,
+        private readonly InventoryBatchActionLogService $actionLogs,
     ) {}
 
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -61,6 +62,8 @@ class InventoryBatchService
             'isExpiringSoon' => $this->isExpiringSoon($batch),
             'expiryStatus' => $this->resolveDisplayStatus($batch),
             'expiryDaysText' => $this->expiryDaysText($batch),
+            'actionLogHistory' => $this->actionLogs->historyForBatch($batch),
+            'latestActionLog' => $this->actionLogs->latestForBatch($batch),
         ];
     }
 

@@ -46,6 +46,20 @@
             </div>
         @endif
 
+        @if ($latestActionLog)
+            <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm">
+                <span class="text-gray-600">Tindakan terakhir:</span>
+                @include('inventory.batches._batch-action-type-badge', ['actionType' => $latestActionLog->action_type])
+                <span class="text-gray-500">· {{ format_datetime_id($latestActionLog->acted_at) }} · {{ $latestActionLog->actor?->name ?? '—' }}</span>
+            </div>
+        @endif
+
+        @if (session('status'))
+            <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" role="status">
+                {{ session('status') }}
+            </div>
+        @endif
+
         <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <h3 class="text-base font-semibold text-gray-900">Identitas Batch</h3>
@@ -108,6 +122,9 @@
                 </table>
             </div>
         </section>
+
+        @include('inventory.batches._batch-action-log-form', ['batch' => $batch])
+        @include('inventory.batches._batch-action-log-history', ['actionLogHistory' => $actionLogHistory])
 
         @if ($transferReferences->isNotEmpty())
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
