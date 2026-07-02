@@ -28,6 +28,10 @@ class InventoryReportService
 {
     private const EXPORT_ROW_CAP = 5000;
 
+    private const MAX_REPORT_PER_PAGE = 100;
+
+    private const DEFAULT_REPORT_PER_PAGE = 15;
+
     public function __construct(
         private readonly BranchContext $branchContext,
         private readonly BranchService $branchService,
@@ -41,7 +45,7 @@ class InventoryReportService
     public function getCurrentStockReport(array $filters): LengthAwarePaginatorContract
     {
         $branchId = $this->reportBranchId($filters);
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
 
         return $this->movements->getCurrentStockReport($branchId, $filters, $perPage);
     }
@@ -61,7 +65,7 @@ class InventoryReportService
         $branchId = $this->reportBranchId($filters);
         $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
         $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
 
         if (empty($filters['product_id'])) {
             return [
@@ -110,7 +114,7 @@ class InventoryReportService
     public function getLowStockReport(array $filters): LengthAwarePaginatorContract
     {
         $branchId = $this->reportBranchId($filters);
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
         $rows = $this->movements->getLowStockReport($branchId, $filters, $perPage);
         $productIds = $rows->getCollection()->pluck('product_id')->unique()->values()->all();
         $stockSources = $this->movements
@@ -136,7 +140,7 @@ class InventoryReportService
         $branchId = $this->reportBranchId($filters);
         $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
         $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
         $rows = $this->movements->getStockMutationReport($branchId, $filters, $dateFrom, $dateTo, $perPage);
 
         $rows->setCollection($rows->getCollection()->map(function ($row) use ($dateFrom, $dateTo) {
@@ -151,7 +155,7 @@ class InventoryReportService
     public function getInventoryValuationReport(array $filters): LengthAwarePaginatorContract
     {
         $branchId = $this->reportBranchId($filters);
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
 
         return $this->movements->getInventoryValuationReport($branchId, $filters, $perPage);
     }
@@ -159,7 +163,7 @@ class InventoryReportService
     public function getRoomStockReport(array $filters): LengthAwarePaginatorContract
     {
         $branchId = $this->reportBranchId($filters);
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
         $rows = $this->movements->getRoomStockReport($branchId, $filters, $perPage);
         $productIds = $rows->getCollection()->pluck('product_id')->unique()->values()->all();
         $stockSources = $this->movements
@@ -376,6 +380,13 @@ class InventoryReportService
         return $filters;
     }
 
+    public function resolveReportPerPage(array $filters): int
+    {
+        $perPage = (int) ($filters['per_page'] ?? self::DEFAULT_REPORT_PER_PAGE);
+
+        return min(max($perPage, 1), self::MAX_REPORT_PER_PAGE);
+    }
+
     /**
      * Normalize report filters for index, export, and print using validated branch context.
      *
@@ -473,7 +484,7 @@ class InventoryReportService
 
     private function emptyPaginator(array $filters, string $pageName): LengthAwarePaginatorContract
     {
-        $perPage = (int) ($filters['per_page'] ?? 15);
+        $perPage = $this->resolveReportPerPage($filters);
 
         return new LengthAwarePaginator(
             items: [],
