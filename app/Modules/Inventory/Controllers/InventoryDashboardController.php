@@ -47,6 +47,7 @@ class InventoryDashboardController extends Controller
             'locations' => $this->locations->listActive($selectedBranchId),
             'stockByLocation' => $this->stock->getStockByLocationSummary($selectedBranchId),
             'recentMovements' => $this->stock->getRecentMovements(branchId: $selectedBranchId),
+            'lastUpdatedAt' => now(),
         ]);
     }
 }
