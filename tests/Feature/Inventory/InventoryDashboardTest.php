@@ -148,7 +148,7 @@ it('shows view quick actions for view_inventory users', function () {
     $html = $this->actingAs($this->user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Aksi Cepat Persediaan')
+        ->assertSee('Aksi Cepat Harian Gudang')
         ->getContent();
 
     $panel = inventoryQuickActionsPanelHtml($html);
@@ -156,12 +156,14 @@ it('shows view quick actions for view_inventory users', function () {
     expect($panel)
         ->toContain('Peringatan Stok')
         ->toContain('Analitik Persediaan')
+        ->toContain('Buka Laporan Inventory')
         ->toContain(route('inventory.alerts.index'))
         ->toContain(route('inventory.analytics.index'))
-        ->not->toContain('Stok Opname')
+        ->toContain(route('inventory.reports.index'))
+        ->not->toContain('Mulai Stok Opname')
         ->not->toContain('Transfer Stok')
-        ->not->toContain(route('inventory.stock-opnames.index'))
-        ->not->toContain(route('inventory.stock-transfers.index'));
+        ->not->toContain(route('inventory.stock-opnames.create'))
+        ->not->toContain(route('inventory.stock-transfers.create'));
 });
 
 it('shows manage quick actions for manage_inventory users', function () {
@@ -170,7 +172,7 @@ it('shows manage quick actions for manage_inventory users', function () {
     $html = $this->actingAs($user)
         ->get(route('inventory.dashboard'))
         ->assertOk()
-        ->assertSee('Aksi Cepat Persediaan')
+        ->assertSee('Aksi Cepat Harian Gudang')
         ->getContent();
 
     $panel = inventoryQuickActionsPanelHtml($html);
@@ -178,10 +180,12 @@ it('shows manage quick actions for manage_inventory users', function () {
     expect($panel)
         ->toContain('Peringatan Stok')
         ->toContain('Analitik Persediaan')
-        ->toContain('Stok Opname')
+        ->toContain('Mulai Stok Opname')
         ->toContain('Transfer Stok')
-        ->toContain(route('inventory.stock-opnames.index'))
-        ->toContain(route('inventory.stock-transfers.index'));
+        ->toContain('Terima Barang')
+        ->toContain(route('inventory.stock-opnames.create'))
+        ->toContain(route('inventory.stock-transfers.create'))
+        ->toContain(route('inventory.goods-receipts.create'));
 });
 
 it('enforces branch isolation on dashboard alert counts', function () {
