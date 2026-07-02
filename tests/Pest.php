@@ -54,6 +54,11 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Inventory\Models\InventoryLocation;
+use App\Modules\Inventory\Models\InventoryMovement;
+use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\ProductCategory;
+use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\Patient\Models\Patient;
@@ -216,6 +221,141 @@ function inventoryQuickActionsPanelHtml(string $html): string
     }
 
     return $matches[0];
+}
+
+if (! function_exists('createReportStockRow')) {
+    /**
+     * Seed a branch-scoped product/location with one ledger movement for inventory report tests.
+     *
+     * @param  array<string, mixed>  $overrides
+     * @return array{0: Product, 1: InventoryLocation, 2: ProductCategory, 3: ProductUnit}
+     */
+    function createReportStockRow(Branch $branch, array $overrides = []): array
+    {
+        $category = isset($overrides['category_id'])
+            ? ProductCategory::findOrFail($overrides['category_id'])
+            : ProductCategory::factory()->create([
+                'branch_id' => $branch->id,
+                'name' => $overrides['category_name'] ?? 'Report Category',
+            ]);
+        $productCode = $overrides['product_code'] ?? 'RPT-'.fake()->unique()->numerify('###');
+        $unit = ProductUnit::factory()->create([
+            'name' => $overrides['unit_name'] ?? 'Report Unit',
+            'symbol' => $overrides['unit_symbol'] ?? strtolower(str_replace('-', '', $productCode)),
+        ]);
+        $product = Product::factory()->create([
+            'branch_id' => $branch->id,
+            'product_category_id' => $category->id,
+            'product_unit_id' => $unit->id,
+            'code' => $productCode,
+            'name' => $overrides['product_name'] ?? 'Report Product '.$productCode,
+            'minimum_stock' => $overrides['minimum_stock'] ?? 1,
+            'average_cost' => $overrides['average_cost'] ?? 100,
+        ]);
+        $location = isset($overrides['location_id'])
+            ? InventoryLocation::findOrFail($overrides['location_id'])
+            : InventoryLocation::factory()->create([
+                'branch_id' => $branch->id,
+                'name' => $overrides['location_name'] ?? 'Report Room '.$productCode,
+            ]);
+
+        createReportMovement(
+            $branch,
+            $product,
+            $location,
+            $overrides['quantity_in'] ?? 5,
+            $overrides['quantity_out'] ?? 0,
+            $overrides['movement_date'] ?? '2026-06-06',
+            $overrides,
+        );
+
+        return [$product, $location, $category, $unit];
+    }
+}
+
+if (! function_exists('createReportMovement')) {
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    function createReportMovement(
+        Branch $branch,
+        Product $product,
+        InventoryLocation $location,
+        float|int $quantityIn,
+        float|int $quantityOut,
+        string $movementDate = '2026-06-06',
+        array $overrides = [],
+    ): InventoryMovement {
+        return InventoryMovement::factory()->create([
+            'branch_id' => $branch->id,
+            'product_id' => $product->id,
+            'inventory_location_id' => $location->id,
+            'supplier_id' => null,
+            'movement_type' => $overrides['movement_type'] ?? ($quantityOut > 0 ? InventoryMovement::TYPE_ADJUSTMENT_OUT : InventoryMovement::TYPE_OPENING),
+            'movement_date' => $movementDate,
+            'quantity_in' => $quantityIn,
+            'quantity_out' => $quantityOut,
+            'reference_type' => $overrides['reference_type'] ?? null,
+            'reference_id' => $overrides['reference_id'] ?? null,
+            'notes' => $overrides['notes'] ?? null,
+            'created_by' => isset($overrides['creator_name'])
+                ? User::factory()->create(['name' => $overrides['creator_name']])->id
+                : ($overrides['created_by'] ?? null),
+        ]);
+    }
+}
+
+if (! function_exists('reportPanelHtml')) {
+    function reportPanelHtml(string $html, string $panel): string
+    {
+        if (! preg_match('/<section[^>]*data-report-panel="'.preg_quote($panel, '/').'"[\s\S]*?<\/section>/', $html, $matches)) {
+            return '';
+        }
+
+        return $matches[0];
+    }
+}
+
+if (! function_exists('currentStockReportSectionHtml')) {
+    function currentStockReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'current-stock');
+    }
+}
+
+if (! function_exists('stockCardReportSectionHtml')) {
+    function stockCardReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'stock-card');
+    }
+}
+
+if (! function_exists('lowStockReportSectionHtml')) {
+    function lowStockReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'low-stock');
+    }
+}
+
+if (! function_exists('stockMutationReportSectionHtml')) {
+    function stockMutationReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'mutation');
+    }
+}
+
+if (! function_exists('inventoryValuationReportSectionHtml')) {
+    function inventoryValuationReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'valuation');
+    }
+}
+
+if (! function_exists('roomStockReportSectionHtml')) {
+    function roomStockReportSectionHtml(string $html): string
+    {
+        return reportPanelHtml($html, 'room-stock');
+    }
 }
 
 /**
