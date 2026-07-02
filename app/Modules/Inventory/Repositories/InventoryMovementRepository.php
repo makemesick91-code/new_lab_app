@@ -580,12 +580,13 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->withQueryString();
     }
 
-    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom): float
+    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom, ?int $batchId = null): float
     {
         $value = InventoryMovement::query()
             ->where('branch_id', $branchId)
             ->where('product_id', $productId)
             ->when($locationId, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($batchId, fn ($q, $v) => $q->where('inventory_batch_id', $v))
             ->whereDate('movement_date', '<', $dateFrom)
             ->selectRaw('COALESCE(SUM(quantity_in) - SUM(quantity_out), 0) as opening_balance')
             ->value('opening_balance');
@@ -841,6 +842,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->where('branch_id', $branchId)
             ->where('product_id', $filters['product_id'])
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('inventory_location_id', $v))
+            ->when($filters['inventory_batch_id'] ?? null, fn ($q, $v) => $q->where('inventory_batch_id', $v))
             ->when($filters['movement_type'] ?? null, fn ($q, $v) => $q->where('movement_type', $v))
             ->whereDate('movement_date', '>=', $dateFrom)
             ->whereDate('movement_date', '<=', $dateTo)

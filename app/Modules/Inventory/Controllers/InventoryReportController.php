@@ -30,9 +30,9 @@ class InventoryReportController extends Controller
 
         $activeTab = $request->resolveActiveTab();
         $branchOptions = $this->reports->reportBranchOptions($request->user());
-        $selectedBranchId = $this->reports->resolveReportBranchId($request->filters(), $request->user());
-        $filters = array_merge($request->filters(), [
-            'branch_id' => $selectedBranchId,
+        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
+        $selectedBranchId = (int) $filters['branch_id'];
+        $filters = array_merge($filters, [
             'per_page' => $request->perPage(),
             'report_tab' => $activeTab,
         ]);
@@ -64,9 +64,7 @@ class InventoryReportController extends Controller
     {
         $this->authorize('viewAny', InventoryMovement::class);
 
-        $filters = array_merge($request->filters(), [
-            'branch_id' => $this->reports->resolveReportBranchId($request->filters(), $request->user()),
-        ]);
+        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
 
         return $this->reports->exportCsv($filters);
     }
@@ -76,10 +74,8 @@ class InventoryReportController extends Controller
         $this->authorize('viewAny', InventoryMovement::class);
 
         $branchOptions = $this->reports->reportBranchOptions($request->user());
-        $selectedBranchId = $this->reports->resolveReportBranchId($request->filters(), $request->user());
-        $filters = array_merge($request->filters(), [
-            'branch_id' => $selectedBranchId,
-        ]);
+        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
+        $selectedBranchId = (int) $filters['branch_id'];
         $selectedBranch = $branchOptions->firstWhere('id', $selectedBranchId) ?? $this->branchContext->branch();
 
         return Pdf::loadView('inventory.reports.room-stock.refill-checklist', [

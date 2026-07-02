@@ -41,7 +41,7 @@ interface InventoryMovementRepositoryInterface
 
     public function getStockCardReport(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage = 15): LengthAwarePaginator;
 
-    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom): float;
+    public function getStockCardOpeningBalance(int $branchId, int $productId, ?int $locationId, string $dateFrom, ?int $batchId = null): float;
 
     public function getStockCardPeriodBalanceBeforePage(int $branchId, array $filters, string $dateFrom, string $dateTo, int $perPage, int $page): float;
 
