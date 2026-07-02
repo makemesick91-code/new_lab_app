@@ -80,11 +80,16 @@
                                 <th scope="col" class="px-4 py-3 font-medium">Batch</th>
                                 <th scope="col" class="px-4 py-3 font-medium">Kedaluwarsa</th>
                                 <th scope="col" class="px-4 py-3 font-medium text-right">Stok Tersedia</th>
+                                <th scope="col" class="px-4 py-3 font-medium">Tindakan Terakhir</th>
                                 <th scope="col" class="px-4 py-3 font-medium">Aksi</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100 bg-white">
                             @foreach ($batchExpiryAlerts as $alert)
+                                @php
+                                    $latestAction = $latestBatchActions[$alert['inventory_batch_id']] ?? null;
+                                    $batchModel = $expiryAlertBatches[$alert['inventory_batch_id']] ?? null;
+                                @endphp
                                 <tr class="hover:bg-gray-50">
                                     <td class="px-4 py-3">@include('inventory.alerts._stock-severity-badge', ['severity' => $alert['severity']])</td>
                                     <td class="px-4 py-3">
@@ -98,7 +103,21 @@
                                     </td>
                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id((float) $alert['batch_stock']) }}</td>
                                     <td class="px-4 py-3">
-                                        <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
+                                        @if ($latestAction)
+                                            @include('inventory.batches._batch-action-type-badge', ['actionType' => $latestAction->action_type])
+                                        @else
+                                            <span class="text-xs text-gray-400">Belum ada</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
+                                            @if ($batchModel)
+                                                @can('recordAction', $batchModel)
+                                                    <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-orange-700 hover:text-orange-600">Catat Tindakan</a>
+                                                @endcan
+                                            @endif
+                                        </div>
                                     </td>
                                 </tr>
                             @endforeach
@@ -108,6 +127,10 @@
 
                 <div class="divide-y divide-gray-100 md:hidden">
                     @foreach ($batchExpiryAlerts as $alert)
+                        @php
+                            $latestAction = $latestBatchActions[$alert['inventory_batch_id']] ?? null;
+                            $batchModel = $expiryAlertBatches[$alert['inventory_batch_id']] ?? null;
+                        @endphp
                         <article class="p-4">
                             <div class="flex flex-wrap items-start justify-between gap-2">
                                 @include('inventory.alerts._stock-severity-badge', ['severity' => $alert['severity']])
@@ -115,6 +138,11 @@
                             </div>
                             <h4 class="mt-2 font-semibold text-gray-900">{{ $alert['batch_number'] }}</h4>
                             <p class="text-sm text-gray-600">{{ $alert['product_name'] }}</p>
+                            @if ($latestAction)
+                                <div class="mt-2">
+                                    @include('inventory.batches._batch-action-type-badge', ['actionType' => $latestAction->action_type])
+                                </div>
+                            @endif
                             <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
                                 <div>
                                     <dt class="text-gray-500">Kedaluwarsa</dt>
@@ -125,6 +153,14 @@
                                     <dd class="font-medium tabular-nums text-gray-900">{{ format_quantity_id((float) $alert['batch_stock']) }}</dd>
                                 </div>
                             </dl>
+                            <div class="mt-3 flex flex-wrap gap-3">
+                                <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-teal-700 hover:text-teal-600">Lihat batch</a>
+                                @if ($batchModel)
+                                    @can('recordAction', $batchModel)
+                                        <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-orange-700 hover:text-orange-600">Catat Tindakan</a>
+                                    @endcan
+                                @endif
+                            </div>
                         </article>
                     @endforeach
                 </div>

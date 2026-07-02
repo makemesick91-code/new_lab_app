@@ -14,6 +14,7 @@ use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
+use App\Modules\Inventory\Controllers\InventoryBatchActionLogController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryExecutiveDashboardController;
@@ -597,6 +598,7 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 
     Route::get('batches', [InventoryBatchController::class, 'index'])->name('batches.index');
     Route::get('batches/{inventoryBatch}', [InventoryBatchController::class, 'show'])->name('batches.show');
+    Route::post('batches/{inventoryBatch}/action-logs', [InventoryBatchActionLogController::class, 'store'])->name('batches.action-logs.store');
 
     Route::get('products/{product}/stock-card', [StockCardController::class, 'show'])->name('products.stock-card');
     Route::get('products/{product}/opening-stock', [InventoryStockController::class, 'openingStock'])->name('products.opening-stock.create');

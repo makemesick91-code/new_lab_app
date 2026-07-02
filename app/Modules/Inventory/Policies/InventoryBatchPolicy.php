@@ -20,4 +20,10 @@ class InventoryBatchPolicy
         return $this->canViewInventoryBatchLot($user)
             && $this->belongsToActiveBranch($inventoryBatch->branch_id);
     }
+
+    public function recordAction(User $user, InventoryBatch $inventoryBatch): bool
+    {
+        return $this->canManageInventoryBatchLot($user)
+            && $this->belongsToActiveBranch($inventoryBatch->branch_id);
+    }
 }
