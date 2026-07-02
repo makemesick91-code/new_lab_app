@@ -6,6 +6,7 @@
     $stockMutationDateTo = $filters['date_to'] ?? now()->toDateString();
     $exportFilters = collect($filters)
         ->except(['per_page', 'report_tab'])
+        ->put('report_type', $activeTab)
         ->all();
     $tabQueryParams = collect($filters)
         ->except(['per_page', 'report_tab'])
@@ -172,7 +173,7 @@
             <h3 class="text-base font-semibold text-gray-900">Stok Saat Ini</h3>
             <p class="mt-1 text-sm text-gray-500">Ringkasan stok produk dari saldo ledger aktif.</p>
             <div class="mt-3">
-                <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'current_stock'])) }}"
+                <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
                 </a>
@@ -304,7 +305,7 @@
                 @if (empty($filters['product_id']))
                     <p class="text-sm font-medium text-amber-700">Export kartu stok membutuhkan filter produk.</p>
                 @else
-                    <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'stock_card'])) }}"
+                    <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                        class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                         Export CSV
                     </a>
@@ -433,7 +434,7 @@
             <h3 class="text-base font-semibold text-gray-900">Low Stock</h3>
             <p class="mt-1 text-sm text-gray-500">Produk kosong atau di bawah minimum produk, dihitung dari saldo ledger per lokasi.</p>
             <div class="mt-3">
-                <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'low_stock'])) }}"
+                <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
                 </a>
@@ -552,7 +553,7 @@
             <h3 class="text-base font-semibold text-gray-900">Mutasi Stok</h3>
             <p class="mt-1 text-sm text-gray-500">Pergerakan masuk dan keluar berdasarkan ledger inventory.</p>
             <div class="mt-3">
-                <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'mutation'])) }}"
+                <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
                 </a>
@@ -667,7 +668,7 @@
             <h3 class="text-base font-semibold text-gray-900">Nilai Persediaan</h3>
             <p class="mt-1 text-sm text-gray-500">Nilai persediaan bersifat estimasi operasional berdasarkan harga/cost produk yang tersedia.</p>
             <div class="mt-3">
-                <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'valuation'])) }}"
+                <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
                 </a>
@@ -772,7 +773,7 @@
             <p class="mt-1 text-sm text-sky-700">Ruangan menggunakan data Lokasi Inventory.</p>
             <p class="mt-1 text-sm text-gray-500">Minimum/maksimum per ruangan diambil dari konfigurasi Minimum Stok Ruangan. Bila ruangan belum dikonfigurasi, minimum mengikuti minimum produk. Produk dengan ambang per ruangan tetap tampil meski belum ada pergerakan.</p>
             <div class="mt-3 flex flex-wrap gap-2">
-                <a href="{{ route('inventory.reports.export', array_merge($exportFilters, ['report_type' => 'room_stock'])) }}"
+                <a href="{{ route('inventory.reports.export', $exportFilters) }}"
                    class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
                     Export CSV
                 </a>

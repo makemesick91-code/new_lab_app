@@ -23,6 +23,11 @@
             collect($filterOptions['categories'] ?? [])->firstWhere('id', (int) $filters['category_id'])
         )->name;
     }
+
+    $stockStatusLabel = null;
+    if (! empty($filters['stock_status'])) {
+        $stockStatusLabel = $filterOptions['stockStatuses'][$filters['stock_status']] ?? $filters['stock_status'];
+    }
 @endphp
 
 <!doctype html>
@@ -155,13 +160,20 @@
                 <div class="value">{{ $productName ?? 'Semua Produk' }}</div>
             </td>
             <td>
+                <div class="label">Status Stok</div>
+                <div class="value">{{ $stockStatusLabel ?? 'Semua Status' }}</div>
+            </td>
+            <td>
                 <div class="label">Dicetak Pada</div>
                 <div class="value">{{ format_datetime_id($printedAt) }}</div>
             </td>
-            <td>
+        </tr>
+        <tr>
+            <td colspan="2">
                 <div class="label">Dicetak Oleh</div>
                 <div class="value">{{ $printedBy?->name ?? '-' }}</div>
             </td>
+            <td></td>
         </tr>
     </table>
 

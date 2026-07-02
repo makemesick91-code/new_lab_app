@@ -30,7 +30,7 @@ class InventoryReportController extends Controller
 
         $activeTab = $request->resolveActiveTab();
         $branchOptions = $this->reports->reportBranchOptions($request->user());
-        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
+        $filters = $this->reports->prepareReportFilters($request->filters(), $request->user(), $activeTab);
         $selectedBranchId = (int) $filters['branch_id'];
         $filters = array_merge($filters, [
             'per_page' => $request->perPage(),
@@ -64,7 +64,7 @@ class InventoryReportController extends Controller
     {
         $this->authorize('viewAny', InventoryMovement::class);
 
-        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
+        $filters = $this->reports->prepareReportFilters($request->filters(), $request->user());
 
         return $this->reports->exportCsv($filters);
     }
@@ -74,7 +74,7 @@ class InventoryReportController extends Controller
         $this->authorize('viewAny', InventoryMovement::class);
 
         $branchOptions = $this->reports->reportBranchOptions($request->user());
-        $filters = $this->reports->sanitizeReportFilters($request->filters(), $request->user());
+        $filters = $this->reports->prepareReportFilters($request->filters(), $request->user(), 'room_stock');
         $selectedBranchId = (int) $filters['branch_id'];
         $selectedBranch = $branchOptions->firstWhere('id', $selectedBranchId) ?? $this->branchContext->branch();
 
