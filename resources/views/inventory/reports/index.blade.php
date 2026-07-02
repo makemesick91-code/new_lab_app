@@ -40,12 +40,14 @@
             <form method="GET" action="{{ route('inventory.reports.index') }}" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
-                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <option value="">Cabang aktif</option>
+                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($filterOptions['branches']->count() <= 1)>
                         @foreach ($filterOptions['branches'] as $branch)
-                            <option value="{{ $branch->id }}" @selected(($filters['branch_id'] ?? null) == $branch->id)>{{ $branch->name }}</option>
+                            <option value="{{ $branch->id }}" @selected(($selectedBranchId ?? $filters['branch_id'] ?? null) == $branch->id)>{{ $branch->name }}</option>
                         @endforeach
                     </select>
+                    @if ($filterOptions['branches']->count() <= 1)
+                        <input type="hidden" name="branch_id" value="{{ $selectedBranchId ?? $filters['branch_id'] }}">
+                    @endif
                 </div>
 
                 @if ($showDateFilters)

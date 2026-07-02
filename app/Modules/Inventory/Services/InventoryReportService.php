@@ -2,7 +2,10 @@
 
 namespace App\Modules\Inventory\Services;
 
+use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Interfaces\ProductCategoryRepositoryInterface;
@@ -12,6 +15,8 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginator
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use RuntimeException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class InventoryReportService
@@ -20,6 +25,7 @@ class InventoryReportService
 
     public function __construct(
         private readonly BranchContext $branchContext,
+        private readonly BranchService $branchService,
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly ProductRepositoryInterface $products,
         private readonly ProductCategoryRepositoryInterface $categories,
@@ -28,7 +34,7 @@ class InventoryReportService
 
     public function getCurrentStockReport(array $filters): LengthAwarePaginatorContract
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return $this->movements->getCurrentStockReport($branchId, $filters, $perPage);
@@ -46,7 +52,7 @@ class InventoryReportService
      */
     public function getStockCardReport(array $filters): array
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
         $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
         $perPage = (int) ($filters['per_page'] ?? 15);
@@ -96,7 +102,7 @@ class InventoryReportService
 
     public function getLowStockReport(array $filters): LengthAwarePaginatorContract
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $perPage = (int) ($filters['per_page'] ?? 15);
         $rows = $this->movements->getLowStockReport($branchId, $filters, $perPage);
         $productIds = $rows->getCollection()->pluck('product_id')->unique()->values()->all();
@@ -120,7 +126,7 @@ class InventoryReportService
 
     public function getStockMutationReport(array $filters): LengthAwarePaginatorContract
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $dateFrom = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
         $dateTo = (string) ($filters['date_to'] ?? now()->toDateString());
         $perPage = (int) ($filters['per_page'] ?? 15);
@@ -137,7 +143,7 @@ class InventoryReportService
 
     public function getInventoryValuationReport(array $filters): LengthAwarePaginatorContract
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $perPage = (int) ($filters['per_page'] ?? 15);
 
         return $this->movements->getInventoryValuationReport($branchId, $filters, $perPage);
@@ -145,7 +151,7 @@ class InventoryReportService
 
     public function getRoomStockReport(array $filters): LengthAwarePaginatorContract
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $this->reportBranchId($filters);
         $perPage = (int) ($filters['per_page'] ?? 15);
         $rows = $this->movements->getRoomStockReport($branchId, $filters, $perPage);
         $productIds = $rows->getCollection()->pluck('product_id')->unique()->values()->all();
@@ -221,15 +227,71 @@ class InventoryReportService
     }
 
     /**
+     * RME-enabled branches the current user may select on Inventory Reports.
+     *
+     * @return Collection<int, Branch>
+     */
+    public function reportBranchOptions(?User $user = null): Collection
+    {
+        $user ??= Auth::user();
+        $rmeBranches = $this->branchService->listRmeEnabled();
+
+        if ($this->userCanSelectCrossBranchReport($user)) {
+            return $rmeBranches;
+        }
+
+        $activeBranchId = $this->branchContext->id();
+        $scoped = $rmeBranches->filter(fn (Branch $branch) => $branch->id === $activeBranchId);
+
+        if ($scoped->isNotEmpty()) {
+            return $scoped->values();
+        }
+
+        return $rmeBranches->take(1)->values();
+    }
+
+    /**
+     * Resolve the validated report branch from request filters and allowed options.
+     *
+     * Unauthorized or missing branch_id falls back to the active branch when allowed,
+     * otherwise the first allowed RME-enabled branch.
+     */
+    public function resolveReportBranchId(array $filters, ?User $user = null): int
+    {
+        $allowedIds = $this->reportBranchOptions($user)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($allowedIds === []) {
+            throw new RuntimeException('No RME-enabled branch is available for inventory reports.');
+        }
+
+        $requested = isset($filters['branch_id']) ? (int) $filters['branch_id'] : null;
+
+        if ($requested !== null && in_array($requested, $allowedIds, true)) {
+            return $requested;
+        }
+
+        $activeBranchId = $this->branchContext->id();
+
+        if ($activeBranchId !== null && in_array($activeBranchId, $allowedIds, true)) {
+            return $activeBranchId;
+        }
+
+        return $allowedIds[0];
+    }
+
+    /**
      * @return array<string, mixed>
      */
-    public function getReportFilterOptions(array $filters): array
+    public function getReportFilterOptions(array $filters, ?Collection $branchOptions = null): array
     {
-        $branchId = $this->branchContext->requireId();
-        $activeBranch = $this->branchContext->branch();
+        $branchId = $this->reportBranchId($filters);
+        $branchOptions ??= $this->reportBranchOptions();
 
         return [
-            'branches' => $activeBranch ? collect([$activeBranch]) : collect(),
+            'branches' => $branchOptions,
             'products' => $this->products->listActive($branchId),
             'categories' => $this->categories->listActive($branchId),
             'locations' => $this->locations->listActive($branchId),
@@ -246,6 +308,22 @@ class InventoryReportService
     /**
      * @param  array<string, mixed>  $filters
      */
+    private function reportBranchId(array $filters): int
+    {
+        return (int) ($filters['branch_id'] ?? $this->branchContext->requireId());
+    }
+
+    private function userCanSelectCrossBranchReport(?User $user): bool
+    {
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        return $user->can('view_inventory_cross_branch_analytics')
+            || $user->can('view_owner_dashboard')
+            || $user->hasRole('Super Admin');
+    }
+
     private function emptyPaginator(array $filters, string $pageName): LengthAwarePaginatorContract
     {
         $perPage = (int) ($filters['per_page'] ?? 15);
