@@ -29,16 +29,22 @@ class InventoryReportController extends Controller
         $this->authorize('viewAny', InventoryMovement::class);
 
         $activeTab = $request->resolveActiveTab();
+        $branchOptions = $this->reports->reportBranchOptions($request->user());
+        $selectedBranchId = $this->reports->resolveReportBranchId($request->filters(), $request->user());
         $filters = array_merge($request->filters(), [
+            'branch_id' => $selectedBranchId,
             'per_page' => $request->perPage(),
             'report_tab' => $activeTab,
         ]);
+        $selectedBranch = $branchOptions->firstWhere('id', $selectedBranchId);
 
         $viewData = [
             'activeTab' => $activeTab,
             'activeTabKebab' => $request->activeTabKebab($activeTab),
             'filters' => $filters,
-            'filterOptions' => $this->reports->getReportFilterOptions($filters),
+            'selectedBranchId' => $selectedBranchId,
+            'selectedBranch' => $selectedBranch,
+            'filterOptions' => $this->reports->getReportFilterOptions($filters, $branchOptions),
         ];
 
         match ($activeTab) {
@@ -58,20 +64,29 @@ class InventoryReportController extends Controller
     {
         $this->authorize('viewAny', InventoryMovement::class);
 
-        return $this->reports->exportCsv($request->filters());
+        $filters = array_merge($request->filters(), [
+            'branch_id' => $this->reports->resolveReportBranchId($request->filters(), $request->user()),
+        ]);
+
+        return $this->reports->exportCsv($filters);
     }
 
     public function downloadRoomStockRefillChecklist(InventoryReportFilterRequest $request): Response
     {
         $this->authorize('viewAny', InventoryMovement::class);
 
-        $filters = $request->filters();
+        $branchOptions = $this->reports->reportBranchOptions($request->user());
+        $selectedBranchId = $this->reports->resolveReportBranchId($request->filters(), $request->user());
+        $filters = array_merge($request->filters(), [
+            'branch_id' => $selectedBranchId,
+        ]);
+        $selectedBranch = $branchOptions->firstWhere('id', $selectedBranchId) ?? $this->branchContext->branch();
 
         return Pdf::loadView('inventory.reports.room-stock.refill-checklist', [
             'rows' => $this->reports->getRoomStockRefillChecklist($filters),
-            'filterOptions' => $this->reports->getReportFilterOptions($filters),
+            'filterOptions' => $this->reports->getReportFilterOptions($filters, $branchOptions),
             'filters' => $filters,
-            'branch' => $this->branchContext->branch(),
+            'branch' => $selectedBranch,
             'printedAt' => now(),
             'printedBy' => $request->user(),
         ])->download('checklist-refill-stok-ruangan-'.now()->toDateString().'.pdf');

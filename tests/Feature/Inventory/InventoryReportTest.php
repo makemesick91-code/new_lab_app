@@ -19,6 +19,7 @@ beforeEach(function () {
     seedAccessControl();
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $this->branch->update(['is_rme_enabled' => true, 'is_inventory_enabled' => true]);
 });
 
 afterEach(function () {
