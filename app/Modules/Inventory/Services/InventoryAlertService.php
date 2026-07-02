@@ -92,9 +92,9 @@ class InventoryAlertService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    public function getStockAlerts(?int $locationId = null, ?string $severityFilter = null, ?int $limit = null): Collection
+    public function getStockAlerts(?int $locationId = null, ?string $severityFilter = null, ?int $limit = null, ?int $branchId = null): Collection
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $branchId ?? $this->branchContext->requireId();
         $this->assertLocationInBranch($branchId, $locationId);
 
         $alerts = $this->movements
@@ -141,9 +141,9 @@ class InventoryAlertService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    public function getBatchExpiryAlerts(?int $locationId = null, ?string $severityFilter = null, ?int $limit = null): Collection
+    public function getBatchExpiryAlerts(?int $locationId = null, ?string $severityFilter = null, ?int $limit = null, ?int $branchId = null): Collection
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $branchId ?? $this->branchContext->requireId();
         $this->assertLocationInBranch($branchId, $locationId);
 
         $today = now()->startOfDay();
@@ -202,10 +202,10 @@ class InventoryAlertService
      *     total_count: int,
      * }
      */
-    public function getAlertSummary(?int $locationId = null): array
+    public function getAlertSummary(?int $locationId = null, ?int $branchId = null): array
     {
-        $stockAlerts = $this->getStockAlerts($locationId);
-        $batchAlerts = $this->getBatchExpiryAlerts($locationId);
+        $stockAlerts = $this->getStockAlerts($locationId, branchId: $branchId);
+        $batchAlerts = $this->getBatchExpiryAlerts($locationId, branchId: $branchId);
 
         $outOfStockCount = $stockAlerts->where('severity', self::SEVERITY_OUT_OF_STOCK)->count();
         $criticalCount = $stockAlerts->where('severity', self::SEVERITY_CRITICAL)->count();
