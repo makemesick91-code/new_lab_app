@@ -8,17 +8,19 @@
     $user = auth()->user();
     // Sprint 58.2: Admin Warehouse main Dashboard points to inventory.dashboard (navigation only).
     $isAdminWarehouse = $user?->hasRole('Admin Warehouse');
-    $showInventoryGroup = $user && (
+    $showInventoryOperationsGroup = $user && (
         $user->can('viewAny', \App\Modules\Inventory\Models\Product::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
-        || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryBatch::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
+        || $user->can('viewAny', \App\Modules\Inventory\Models\LocationProductMinimum::class)
+    );
+
+    $showInventoryReportsGroup = $user && (
+        $user->can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewAlerts', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewAnalytics', \App\Modules\Inventory\Models\InventoryMovement::class)
         || $user->can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
-        || $user->can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
         || $user->can('viewAny', \App\Modules\Inventory\Models\InventoryActivityLog::class)
-        || $user->can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
-        || $user->can('viewAny', \App\Modules\Inventory\Models\ProductUnit::class)
     );
 
     $showProcurementGroup = $user && (
@@ -43,6 +45,32 @@
         'inventory.batches.*',
     ];
 
+    $inventoryOperationsRoutes = [
+        'inventory.stock.*',
+        'inventory.stock-opnames.*',
+        'inventory.stock-transfers.*',
+        'inventory.location-minimums.*',
+        'inventory.products.adjust-in.*',
+        'inventory.products.adjust-out.*',
+    ];
+
+    $inventoryReportsRoutes = [
+        'inventory.dashboard',
+        'inventory.reports.*',
+        'inventory.analytics.*',
+        'inventory.alerts.*',
+        'inventory.executive-dashboard',
+        'inventory.activity-logs.*',
+    ];
+
+    $inventoryProcurementRoutes = [
+        'inventory.purchase-requests.*',
+        'inventory.purchase-orders.*',
+        'inventory.goods-receipts.*',
+    ];
+
+    $activeReportTab = request('report_tab', 'current_stock');
+
     $sidebarRouteOpen = [
         'rme' => request()->routeIs('rme.*'),
         'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*'),
@@ -50,19 +78,10 @@
         'qc' => request()->routeIs('quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
         'delivery' => request()->routeIs('deliveries.*'),
-        'inventory' => request()->routeIs('inventory.*')
-            && ! request()->routeIs(
-                'inventory.purchase-requests.*',
-                'inventory.purchase-orders.*',
-                'inventory.goods-receipts.*',
-                ...$inventoryMasterDataRoutes,
-            ),
+        'inventory' => request()->routeIs(...$inventoryOperationsRoutes),
         'inventory-master-data' => request()->routeIs(...$inventoryMasterDataRoutes),
-        'procurement' => request()->routeIs(
-            'inventory.purchase-requests.*',
-            'inventory.purchase-orders.*',
-            'inventory.goods-receipts.*'
-        ),
+        'inventory-reports-analytics' => request()->routeIs(...$inventoryReportsRoutes),
+        'procurement' => request()->routeIs(...$inventoryProcurementRoutes),
         'finance' => request()->routeIs('invoices.*', 'reports.payments'),
         'reporting' => request()->routeIs('reports.*'),
         'master-data' => request()->routeIs(
@@ -303,11 +322,7 @@
                     <div data-sidebar-panel="inventory-master-data" x-show="isOpen('inventory-master-data')" class="mt-1 space-y-0.5 pl-8">
                         @can('viewAny', \App\Modules\Inventory\Models\Product::class)
                             <a href="{{ route('inventory.products.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.products.*') ? $linkActive : $linkIdle }}">Produk</a>
-                            <a href="{{ route('inventory.locations.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.locations.*') ? $linkActive : $linkIdle }}">Lokasi Persediaan</a>
-                            <a href="{{ route('inventory.suppliers.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.suppliers.*') ? $linkActive : $linkIdle }}">Pemasok</a>
+                               class="menu-subitem {{ request()->routeIs('inventory.products.*') && ! request()->routeIs('inventory.products.adjust-in.*', 'inventory.products.adjust-out.*') ? $linkActive : $linkIdle }}">Produk</a>
                         @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\ProductCategory::class)
                             <a href="{{ route('inventory.product-categories.index') }}"
@@ -317,6 +332,12 @@
                             <a href="{{ route('inventory.product-units.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.product-units.*') ? $linkActive : $linkIdle }}">Satuan Produk</a>
                         @endcan
+                        @can('viewAny', \App\Modules\Inventory\Models\Product::class)
+                            <a href="{{ route('inventory.locations.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.locations.*') ? $linkActive : $linkIdle }}">Lokasi Persediaan</a>
+                            <a href="{{ route('inventory.suppliers.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.suppliers.*') ? $linkActive : $linkIdle }}">Pemasok</a>
+                        @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\InventoryBatch::class)
                             <a href="{{ route('inventory.batches.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.batches.*') ? $linkActive : $linkIdle }}">Batch & Lot</a>
@@ -325,14 +346,14 @@
                 </div>
             @endif
 
-            @if ($showInventoryGroup)
+            @if ($showInventoryOperationsGroup)
                 <div class="pt-2">
                     <button type="button" @click="toggle('inventory')" class="{{ $groupToggle }}" :aria-expanded="isOpen('inventory')">
                         <span class="flex items-center gap-3">
                             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                             </svg>
-                            <span>Persediaan</span>
+                            <span>Operasional Stok</span>
                         </span>
                         <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
@@ -340,25 +361,56 @@
                     </button>
                     <div data-sidebar-panel="inventory" x-show="isOpen('inventory')" class="mt-1 space-y-0.5 pl-8">
                         @can('viewAny', \App\Modules\Inventory\Models\Product::class)
-                            @unless ($isAdminWarehouse)
-                                {{-- Sprint 58.2: hidden for Admin Warehouse to avoid a duplicate /inventory/dashboard entry (main Dashboard already targets it). --}}
-                                <a href="{{ route('inventory.dashboard') }}"
-                                   class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dashboard Inventory</a>
-                            @endunless
                             <a href="{{ route('inventory.stock.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok</a>
+                               class="menu-subitem {{ request()->routeIs('inventory.stock.*') ? $linkActive : $linkIdle }}">Stok Saat Ini</a>
+                        @endcan
+                        @can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
+                            <a href="{{ route('inventory.stock-transfers.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.stock-transfers.*') ? $linkActive : $linkIdle }}">Transfer Stok</a>
+                        @endcan
+                        @can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
+                            <a href="{{ route('inventory.stock-opnames.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.stock-opnames.*') ? $linkActive : $linkIdle }}">Stok Opname</a>
                         @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\LocationProductMinimum::class)
                             <a href="{{ route('inventory.location-minimums.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.location-minimums.*') ? $linkActive : $linkIdle }}">Minimum Stok Ruangan</a>
                         @endcan
-                        @can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
-                            <a href="{{ route('inventory.executive-dashboard') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.executive-dashboard') ? $linkActive : $linkIdle }}">Dasbor Eksekutif</a>
+                    </div>
+                </div>
+            @endif
+
+            @if ($showInventoryReportsGroup)
+                <div class="pt-2">
+                    <button type="button" @click="toggle('inventory-reports-analytics')" class="{{ $groupToggle }}" :aria-expanded="isOpen('inventory-reports-analytics')">
+                        <span class="flex items-center gap-3">
+                            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            <span>Laporan & Analitik</span>
+                        </span>
+                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory-reports-analytics') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <div data-sidebar-panel="inventory-reports-analytics" x-show="isOpen('inventory-reports-analytics')" class="mt-1 space-y-0.5 pl-8">
+                        @can('viewAny', \App\Modules\Inventory\Models\Product::class)
+                            @unless ($isAdminWarehouse)
+                                <a href="{{ route('inventory.dashboard') }}"
+                                   class="menu-subitem {{ request()->routeIs('inventory.dashboard') ? $linkActive : $linkIdle }}">Dashboard Inventory</a>
+                            @endunless
                         @endcan
-                        @can('viewAny', \App\Modules\Inventory\Models\StockOpname::class)
-                            <a href="{{ route('inventory.stock-opnames.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.stock-opnames.*') ? $linkActive : $linkIdle }}">Stok Opname</a>
+                        @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                            <a href="{{ route('inventory.reports.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'current_stock' ? $linkActive : $linkIdle }}">Laporan Inventory</a>
+                            <a href="{{ route('inventory.reports.index', ['report_tab' => 'stock_card']) }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'stock_card' ? $linkActive : $linkIdle }}">Kartu Stok</a>
+                            <a href="{{ route('inventory.reports.index', ['report_tab' => 'low_stock']) }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'low_stock' ? $linkActive : $linkIdle }}">Low Stock</a>
+                            <a href="{{ route('inventory.reports.index', ['report_tab' => 'mutation']) }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'mutation' ? $linkActive : $linkIdle }}">Mutasi Stok</a>
+                            <a href="{{ route('inventory.reports.index', ['report_tab' => 'valuation']) }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'valuation' ? $linkActive : $linkIdle }}">Nilai Persediaan</a>
                         @endcan
                         @can('viewAlerts', \App\Modules\Inventory\Models\InventoryMovement::class)
                             <a href="{{ route('inventory.alerts.index') }}"
@@ -368,17 +420,13 @@
                             <a href="{{ route('inventory.analytics.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.analytics.*') ? $linkActive : $linkIdle }}">Analitik Persediaan</a>
                         @endcan
-                        @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
-                            <a href="{{ route('inventory.reports.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') ? $linkActive : $linkIdle }}">Laporan Inventory</a>
+                        @can('viewExecutiveDashboard', \App\Modules\Inventory\Models\InventoryMovement::class)
+                            <a href="{{ route('inventory.executive-dashboard') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.executive-dashboard') ? $linkActive : $linkIdle }}">Dasbor Eksekutif</a>
                         @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\InventoryActivityLog::class)
                             <a href="{{ route('inventory.activity-logs.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.activity-logs.*') ? $linkActive : $linkIdle }}">Log Aktivitas</a>
-                        @endcan
-                        @can('viewAny', \App\Modules\Inventory\Models\StockTransfer::class)
-                            <a href="{{ route('inventory.stock-transfers.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.stock-transfers.*') ? $linkActive : $linkIdle }}">Transfer Stok</a>
                         @endcan
                     </div>
                 </div>
@@ -391,7 +439,7 @@
                             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
                             </svg>
-                            <span>Pengadaan</span>
+                            <span>Pembelian</span>
                         </span>
                         <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('procurement') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
