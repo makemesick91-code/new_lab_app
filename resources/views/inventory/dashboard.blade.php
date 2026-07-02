@@ -6,8 +6,13 @@
                     <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan Inti</p>
                     <h1 class="mt-1 text-2xl font-semibold text-gray-900">Dashboard Inventory — {{ $selectedBranch?->name ?? 'Cabang' }}</h1>
                     <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                        Stok dihitung dari ledger pergerakan persediaan berdasarkan cabang, lokasi, dan produk. Gunakan dasbor ini untuk melihat stok menipis, memeriksa riwayat pergerakan, dan masuk ke operasi stok dengan aman.
+                        Ringkasan operasional gudang berdasarkan cabang terpilih.
                     </p>
+                    @isset($lastUpdatedAt)
+                        <p class="mt-2 text-xs text-gray-500" data-testid="inventory-dashboard-last-updated">
+                            Terakhir diperbarui: {{ format_datetime_id($lastUpdatedAt) }}
+                        </p>
+                    @endisset
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <x-ui.button variant="neutral" :href="route('inventory.stock.index')">Buka Stok</x-ui.button>
@@ -40,7 +45,7 @@
         <section aria-labelledby="inventory-kpis">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <h3 id="inventory-kpis" class="text-base font-semibold text-gray-900">Kartu KPI Persediaan</h3>
-                <p class="text-xs text-gray-500">Ringkasan cabang berbasis ledger</p>
+                <p class="text-xs text-gray-500">Ringkasan cabang berbasis ledger · Inventory / Dashboard</p>
             </div>
             <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 <x-inventory.kpi-card

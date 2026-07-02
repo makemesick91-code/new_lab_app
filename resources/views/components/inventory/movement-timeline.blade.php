@@ -7,9 +7,8 @@
 
 <x-inventory.dashboard-section title="Pergerakan Terbaru" description="Pergerakan ledger persediaan terbaru di cabang ini, ditampilkan sebagai timeline." :action-href="$href" action-label="Buka stok">
     @if ($movements->isEmpty())
-        <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-            <p class="text-sm font-medium text-gray-900">Belum ada pergerakan terbaru.</p>
-            <p class="mt-1 text-sm text-gray-500">Pergerakan stok awal, penerimaan, dan penyesuaian akan muncul di sini.</p>
+        <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center" data-testid="inventory-dashboard-recent-movements-empty">
+            <p class="text-sm text-slate-600">Belum ada mutasi stok terbaru untuk cabang ini.</p>
         </div>
     @else
         <ol class="relative space-y-4 border-l border-gray-200 pl-4">

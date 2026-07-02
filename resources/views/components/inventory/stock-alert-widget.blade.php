@@ -8,9 +8,8 @@
 
 <x-inventory.dashboard-section title="Peringatan Stok" description="Produk dengan stok habis, kritis, atau rendah untuk cabang ini." :action-href="$href" action-label="Lihat peringatan">
     @if ($items->isEmpty())
-        <div class="rounded-lg border border-dashed border-gray-200 px-4 py-10 text-center">
-            <p class="text-sm font-medium text-gray-900">Tidak ada peringatan stok aktif.</p>
-            <p class="mt-1 text-sm text-gray-500">Stok habis, kritis, dan rendah akan muncul di sini saat perlu perhatian.</p>
+        <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center" data-testid="inventory-dashboard-low-stock-empty">
+            <p class="text-sm text-slate-600">Tidak ada item low stock untuk cabang ini.</p>
         </div>
     @else
         <div class="overflow-hidden rounded-lg border border-gray-200">
