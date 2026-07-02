@@ -88,7 +88,7 @@
             </div>
         </section>
 
-        <x-inventory.quick-actions-panel />
+        <x-inventory.quick-actions-panel :report-query="$reportQuery" />
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
             <x-inventory.dashboard-section
