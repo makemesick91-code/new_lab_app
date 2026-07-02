@@ -38,7 +38,8 @@ it('renders the mandatory batch notice on the create-from-PO page for a batch-tr
 
     $this->get(route('inventory.goods-receipts.create', ['purchase_order_id' => $po->id]))
         ->assertOk()
-        ->assertSee('Produk ini wajib batch. Isi Nomor Batch sebelum Submit/Post Goods Receipt.');
+        ->assertSee('Buat nomor batch otomatis', false)
+        ->assertSee('Nomor batch akan dibuat otomatis dari produk dan tanggal expired.', false);
 });
 
 it('renders the batch/lot input markup on the create-from-PO page', function () {
@@ -97,15 +98,17 @@ it('does not require batch_number for a non-batch-tracked product on submit', fu
     expect($goodsReceipt->items()->first()->batch_number)->toBeNull();
 });
 
-it('cannot submit a batch-tracked product with accepted_qty > 0 and missing batch_number', function () {
+it('cannot submit a batch-tracked product with accepted_qty > 0 and missing expiry date when auto batch is enabled', function () {
     ['sent' => $po, 'poItem' => $poItem, 'product' => $product, 'location' => $location] = createSentPurchaseOrderWithBatchProduct($this);
 
     $payload = grBatchPayload($po->id, $poItem->id, $product->id, $location->id, 5, [
+        'auto_batch' => true,
         'batch_number' => '',
+        'expiry_date' => '',
     ]);
 
     $this->post(route('inventory.goods-receipts.store'), $payload)
-        ->assertSessionHasErrors('items.0.batch_number');
+        ->assertSessionHasErrors('items.0.expiry_date');
 
     expect(GoodsReceipt::query()->count())->toBe(0);
 });

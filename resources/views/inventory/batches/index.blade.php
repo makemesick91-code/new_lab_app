@@ -141,7 +141,12 @@
                                     <p class="font-semibold text-gray-900">{{ $batch->product?->name ?? '-' }}</p>
                                     <p class="mt-0.5 text-xs text-gray-500">{{ $batch->product?->code ?? '-' }}</p>
                                 </td>
-                                <td class="px-3 py-3 font-medium text-gray-900">{{ $batch->batch_number }}</td>
+                                <td class="px-3 py-3 font-medium text-gray-900">
+                                    {{ $batch->batch_number }}
+                                    @if (str_starts_with((string) $batch->batch_number, 'AUTO-'))
+                                        <span class="ml-1 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">Auto</span>
+                                    @endif
+                                </td>
                                 <td class="px-3 py-3 text-gray-600">{{ $batch->lot_number ?? '-' }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ $batch->supplier?->name ?? '-' }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ format_date_id($batch->received_date) }}</td>
@@ -179,7 +184,12 @@
                     ])>
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
-                                <p class="font-semibold text-gray-900">{{ $batch->batch_number }}</p>
+                                <p class="font-semibold text-gray-900">
+                                    {{ $batch->batch_number }}
+                                    @if (str_starts_with((string) $batch->batch_number, 'AUTO-'))
+                                        <span class="ml-1 inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-800">Auto</span>
+                                    @endif
+                                </p>
                                 <p class="mt-0.5 text-sm text-gray-600">{{ $batch->product?->name ?? '-' }}</p>
                             </div>
                             @include('inventory.batches._batch-status-badge', ['status' => $displayStatus])

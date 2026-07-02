@@ -14,6 +14,9 @@
             $rejectedQty = (float) ($item['rejected_qty'] ?? 0);
             $unitCost = (float) ($item['unit_cost'] ?? 0);
             $batchMode = $item['batch_mode'] ?? (filled($item['inventory_batch_id'] ?? null) ? 'existing' : 'new');
+            $autoBatch = array_key_exists('auto_batch', $item)
+                ? filter_var($item['auto_batch'], FILTER_VALIDATE_BOOLEAN)
+                : (! filled($item['batch_number'] ?? null) && (bool) ($item['requires_batch_tracking'] ?? ($item['product']['requires_batch_tracking'] ?? false)));
 
             return [
                 'purchase_order_item_id' => $item['purchase_order_item_id'] ?? '',
@@ -31,6 +34,7 @@
                 'unit_cost' => $unitCost,
                 'notes' => $item['notes'] ?? '',
                 'batch_mode' => $batchMode,
+                'auto_batch' => $autoBatch,
                 'inventory_batch_id' => $item['inventory_batch_id'] ?? '',
                 'batch_number' => $item['batch_number'] ?? '',
                 'lot_number' => $item['lot_number'] ?? '',
@@ -55,6 +59,7 @@
             'unit_cost' => (float) ($item->unit_cost ?? $item->purchaseOrderItem?->unit_price ?? 0),
             'notes' => $item->notes ?? '',
             'batch_mode' => $item->inventory_batch_id ? 'existing' : 'new',
+            'auto_batch' => (bool) ($item->product?->requires_batch_tracking ?? false) && ! filled($item->batch_number),
             'inventory_batch_id' => $item->inventory_batch_id ?? '',
             'batch_number' => $item->batch_number ?? '',
             'lot_number' => $item->lot_number ?? '',
@@ -236,7 +241,7 @@
             <h3 class="text-base font-semibold text-gray-900">Item Penerimaan</h3>
             <p class="mt-1 text-sm text-gray-500">Isi lokasi stok dan jumlah diterima per baris. Kolom sudah diterima (PO) bersifat baca-saja.</p>
             <p class="mt-1 text-sm text-gray-500">Jumlah Diterima dihitung otomatis dari Diterima Baik + Ditolak. Hanya Diterima Baik yang menambah stok saat posting.</p>
-            <p class="mt-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-800">Isi nomor batch/lot dan tanggal kedaluwarsa untuk barang yang dilacak batch atau expired. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch &amp; Lot.</p>
+            <p class="mt-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-800">Untuk barang dilacak batch, centang &quot;Buat nomor batch otomatis&quot; lalu isi tanggal kedaluwarsa. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch &amp; Lot.</p>
         </div>
 
         @error('items')

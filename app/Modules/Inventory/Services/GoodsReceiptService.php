@@ -39,6 +39,7 @@ class GoodsReceiptService
         private readonly ProductRepositoryInterface $products,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly InventoryStockService $inventoryStock,
+        private readonly AutoBatchNumberService $autoBatchNumber,
         private readonly BranchContext $branchContext,
         private readonly InventoryActivityLogService $activityLogger,
     ) {}
@@ -295,12 +296,19 @@ class GoodsReceiptService
                         $locked->receipt_date->toDateString(),
                     );
 
-                    $this->goodsReceipts->updateItem($item, [
+                    $itemUpdates = [
                         'unit_cost' => $costSnapshot['unit_cost'],
                         'line_total' => $costSnapshot['line_total'],
                         'inventory_movement_id' => $movement->id,
                         'inventory_batch_id' => $movement->inventory_batch_id,
-                    ]);
+                    ];
+
+                    if ($movement->inventory_batch_id !== null && ! filled($item->batch_number)) {
+                        $movement->loadMissing('inventoryBatch');
+                        $itemUpdates['batch_number'] = $movement->inventoryBatch?->batch_number;
+                    }
+
+                    $this->goodsReceipts->updateItem($item, $itemUpdates);
 
                     $this->purchaseOrders->incrementItemQuantityReceived(
                         (int) $item->purchase_order_item_id,
@@ -888,6 +896,18 @@ class GoodsReceiptService
             return;
         }
 
+        $autoBatch = AutoBatchNumberService::isAutoBatchRequest($item);
+
+        if ($autoBatch) {
+            if (! filled($item['expiry_date'] ?? null)) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.expiry_date" => 'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
+                ]);
+            }
+
+            return;
+        }
+
         if (! filled($item['batch_number'] ?? null)) {
             throw ValidationException::withMessages([
                 "items.{$index}.batch_number" => 'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
@@ -902,7 +922,13 @@ class GoodsReceiptService
             ]);
         }
 
-        if (filled($item['expiry_date'] ?? null) && $item['expiry_date'] < $batchReceivedDate) {
+        if (! filled($item['expiry_date'] ?? null)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.expiry_date" => 'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
+            ]);
+        }
+
+        if ($item['expiry_date'] < $batchReceivedDate) {
             throw ValidationException::withMessages([
                 "items.{$index}.expiry_date" => 'Tanggal kedaluwarsa tidak boleh sebelum tanggal terima batch.',
             ]);
@@ -926,6 +952,26 @@ class GoodsReceiptService
                 'lot_number' => null,
                 'batch_received_date' => null,
                 'expiry_date' => null,
+            ];
+        }
+
+        if (AutoBatchNumberService::isAutoBatchRequest($item)) {
+            if (! filled($item['expiry_date'] ?? null)) {
+                return [
+                    'inventory_batch_id' => null,
+                    'batch_number' => null,
+                    'lot_number' => null,
+                    'batch_received_date' => null,
+                    'expiry_date' => null,
+                ];
+            }
+
+            return [
+                'inventory_batch_id' => null,
+                'batch_number' => null,
+                'lot_number' => null,
+                'batch_received_date' => $item['batch_received_date'] ?? $receiptDate,
+                'expiry_date' => $item['expiry_date'],
             ];
         }
 
@@ -961,17 +1007,32 @@ class GoodsReceiptService
             return ['inventory_batch_id' => (int) $item->inventory_batch_id];
         }
 
-        if (! filled($item->batch_number)) {
+        if (filled($item->batch_number)) {
+            return [
+                'batch_number' => $item->batch_number,
+                'lot_number' => $item->lot_number,
+                'received_date' => $item->batch_received_date?->toDateString() ?? $receiptDate,
+                'expiry_date' => $item->expiry_date?->toDateString(),
+            ];
+        }
+
+        if ($item->expiry_date === null) {
             throw ValidationException::withMessages([
-                'items' => 'Nomor batch wajib diisi untuk produk dengan pelacakan batch.',
+                'items' => 'Tanggal kedaluwarsa wajib diisi untuk produk dengan pelacakan batch.',
             ]);
         }
 
+        $batchNumber = $this->autoBatchNumber->generateBatchNumber(
+            $this->branchContext->requireId(),
+            $product,
+            $item->expiry_date->toDateString(),
+        );
+
         return [
-            'batch_number' => $item->batch_number,
-            'lot_number' => $item->lot_number,
+            'batch_number' => $batchNumber,
+            'lot_number' => null,
             'received_date' => $item->batch_received_date?->toDateString() ?? $receiptDate,
-            'expiry_date' => $item->expiry_date?->toDateString(),
+            'expiry_date' => $item->expiry_date->toDateString(),
         ];
     }
 
