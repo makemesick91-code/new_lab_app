@@ -19,6 +19,7 @@ class BatchStockOptionService
         private readonly InventoryMovementRepositoryInterface $movements,
         private readonly ProductRepositoryInterface $products,
         private readonly BranchContext $branchContext,
+        private readonly BatchExpiryStatusService $expiryStatus,
     ) {}
 
     /**
@@ -65,11 +66,12 @@ class BatchStockOptionService
             ->orderBy('inv_inventory_batches.batch_number')
             ->get();
 
-        return $rows->map(function ($row) {
+        return $rows->map(function ($row, int $index) {
             $availableQty = round((float) $row->available_qty, 4);
             $expiryLabel = $row->expiry_date !== null
                 ? $this->formatExpiryLabel($row->expiry_date)
                 : null;
+            $isRecommended = $index === 0;
 
             return [
                 'batch_id' => (int) $row->id,
@@ -78,7 +80,15 @@ class BatchStockOptionService
                 'expiry_date' => $row->expiry_date,
                 'expiry_label' => $expiryLabel,
                 'available_qty' => $availableQty,
-                'label' => $this->buildOptionLabel((string) $row->batch_number, $expiryLabel, $availableQty),
+                'is_fefo_recommended' => $isRecommended,
+                'is_expired' => $this->expiryStatus->isExpired($row->expiry_date),
+                'label' => $this->buildOptionLabel(
+                    (string) $row->batch_number,
+                    $expiryLabel,
+                    $availableQty,
+                    $isRecommended,
+                    $row->expiry_date,
+                ),
             ];
         })->values();
     }
@@ -141,8 +151,13 @@ class BatchStockOptionService
         }
     }
 
-    private function buildOptionLabel(string $batchNumber, ?string $expiryLabel, float $availableQty): string
-    {
+    private function buildOptionLabel(
+        string $batchNumber,
+        ?string $expiryLabel,
+        float $availableQty,
+        bool $isRecommended = false,
+        mixed $expiryDate = null,
+    ): string {
         $label = $batchNumber;
 
         if ($expiryLabel !== null) {
@@ -150,6 +165,14 @@ class BatchStockOptionService
         }
 
         $label .= ' — Stok '.format_quantity_id($availableQty);
+
+        if ($isRecommended) {
+            $label .= ' — Disarankan FEFO';
+        }
+
+        if ($this->expiryStatus->isExpired($expiryDate)) {
+            $label .= ' — Kedaluwarsa';
+        }
 
         return $label;
     }

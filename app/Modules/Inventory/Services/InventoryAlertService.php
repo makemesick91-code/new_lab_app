@@ -29,6 +29,7 @@ class InventoryAlertService
         private readonly InventoryBatchRepositoryInterface $batches,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly InventoryBatchService $batchService,
+        private readonly BatchExpiryStatusService $expiryStatus,
         private readonly BranchContext $branchContext,
     ) {}
 
@@ -168,9 +169,13 @@ class InventoryAlertService
                     'batch_number' => $batch->batch_number,
                     'lot_number' => $batch->lot_number,
                     'product_id' => $batch->product_id,
+                    'product_code' => $batch->product?->code,
                     'product_name' => $batch->product?->name ?? '',
                     'expiry_date' => $batch->expiry_date?->format('Y-m-d'),
+                    'expiry_status' => $this->expiryStatus->status($batch->expiry_date),
+                    'expiry_status_label' => $this->expiryStatus->label($batch->expiry_date),
                     'days_until_expiry' => $daysUntilExpiry,
+                    'days_text' => $this->expiryStatus->daysText($batch->expiry_date),
                     'batch_stock' => (float) $batch->derived_stock,
                     'inventory_location_id' => null,
                     'inventory_location_name' => null,

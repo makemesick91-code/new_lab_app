@@ -113,7 +113,7 @@
                             <option value="">Semua batch</option>
                             @foreach ($filterOptions['batches'] as $batch)
                                 <option value="{{ $batch->id }}" @selected(($filters['inventory_batch_id'] ?? null) == $batch->id)>
-                                    {{ $batch->batch_number }}{{ $batch->lot_number ? ' / '.$batch->lot_number : '' }}
+                                    {{ $batch->batch_number }}{{ $batch->lot_number ? ' / '.$batch->lot_number : '' }}{{ $batch->expiry_date ? ' — Exp '.format_date_id($batch->expiry_date) : '' }}
                                 </option>
                             @endforeach
                         </select>

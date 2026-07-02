@@ -313,8 +313,8 @@ it('shows expiring soon warning on show page', function () {
     $this->actingAs($this->viewer)
         ->get(route('inventory.batches.show', $data['batch']))
         ->assertOk()
-        ->assertSee('Peringatan: Segera Kedaluwarsa')
-        ->assertSee('Segera Kedaluwarsa');
+        ->assertSee('Peringatan: Akan Kedaluwarsa')
+        ->assertSee('Akan Kedaluwarsa');
 });
 
 it('does not introduce mutable stock columns on batch table', function () {

@@ -1,7 +1,9 @@
 @php
+    use App\Modules\Inventory\Services\BatchExpiryStatusService;
     use App\Modules\Inventory\Services\InventoryBatchService;
 
     $batchService = app(InventoryBatchService::class);
+    $expiryStatusService = app(BatchExpiryStatusService::class);
 @endphp
 
 <x-settings-shell title="Batch & Lot">
@@ -77,9 +79,10 @@
                     <label for="batch-expiry-status" class="text-sm font-medium text-gray-700">Status kedaluwarsa</label>
                     <select id="batch-expiry-status" name="expiry_status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
                         <option value="">Semua</option>
+                        <option value="active" @selected(($filters['expiry_status'] ?? '') === 'active')>Aktif</option>
+                        <option value="near_expiry" @selected(in_array($filters['expiry_status'] ?? '', ['near_expiry', 'expiring_soon'], true))>Akan Kedaluwarsa</option>
                         <option value="expired" @selected(($filters['expiry_status'] ?? '') === 'expired')>Kedaluwarsa</option>
-                        <option value="expiring_soon" @selected(($filters['expiry_status'] ?? '') === 'expiring_soon')>Segera Kedaluwarsa</option>
-                        <option value="valid" @selected(($filters['expiry_status'] ?? '') === 'valid')>Belum Kedaluwarsa</option>
+                        <option value="no_expiry" @selected(($filters['expiry_status'] ?? '') === 'no_expiry')>Tanpa Expired</option>
                     </select>
                 </div>
                 <div>
@@ -128,14 +131,17 @@
                     <tbody class="divide-y divide-gray-100">
                         @forelse ($batches as $batch)
                             @php
-                                $displayStatus = $batchService->resolveDisplayStatus($batch);
+                                $displayStatus = $batch->is_active
+                                    ? $expiryStatusService->status($batch->expiry_date)
+                                    : 'inactive';
                                 $derivedStock = (float) ($batch->derived_stock ?? 0);
+                                $daysText = $batchService->expiryDaysText($batch);
                             @endphp
                             <tr @class([
                                 'hover:bg-gray-50',
                                 'bg-gray-50/60' => ! $batch->is_active,
-                                'bg-rose-50/40' => $displayStatus === 'expired',
-                                'bg-amber-50/40' => $displayStatus === 'expiring_soon',
+                                'bg-rose-50/40' => $displayStatus === BatchExpiryStatusService::STATUS_EXPIRED,
+                                'bg-amber-50/40' => $displayStatus === BatchExpiryStatusService::STATUS_NEAR_EXPIRY,
                             ])>
                                 <td class="px-4 py-3">
                                     <p class="font-semibold text-gray-900">{{ $batch->product?->name ?? '-' }}</p>
@@ -150,9 +156,22 @@
                                 <td class="px-3 py-3 text-gray-600">{{ $batch->lot_number ?? '-' }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ $batch->supplier?->name ?? '-' }}</td>
                                 <td class="px-3 py-3 text-gray-600">{{ format_date_id($batch->received_date) }}</td>
-                                <td class="px-3 py-3 text-gray-600">{{ $batch->expiry_date ? format_date_id($batch->expiry_date) : '-' }}</td>
+                                <td class="px-3 py-3 text-gray-600">
+                                    @if ($batch->expiry_date)
+                                        <div>{{ format_date_id($batch->expiry_date) }}</div>
+                                        <div class="text-xs text-gray-500">{{ $daysText }}</div>
+                                    @else
+                                        <span>{{ $daysText }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-3 py-3 text-right tabular-nums font-semibold text-gray-900">{{ format_quantity_id($derivedStock) }}</td>
-                                <td class="px-3 py-3">@include('inventory.batches._batch-status-badge', ['status' => $displayStatus])</td>
+                                <td class="px-3 py-3">
+                                    @if ($batch->is_active)
+                                        @include('inventory.batches._batch-expiry-status-badge', ['expiryStatus' => $displayStatus])
+                                    @else
+                                        @include('inventory.batches._batch-status-badge', ['status' => 'inactive'])
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-right">
                                     <a href="{{ route('inventory.batches.show', $batch) }}" class="font-medium text-teal-700 hover:text-teal-600">Lihat</a>
                                 </td>
@@ -174,13 +193,16 @@
             <div class="divide-y divide-gray-100 md:hidden">
                 @forelse ($batches as $batch)
                     @php
-                        $displayStatus = $batchService->resolveDisplayStatus($batch);
+                        $displayStatus = $batch->is_active
+                            ? $expiryStatusService->status($batch->expiry_date)
+                            : 'inactive';
                         $derivedStock = (float) ($batch->derived_stock ?? 0);
+                        $daysText = $batchService->expiryDaysText($batch);
                     @endphp
                     <article @class([
                         'p-4',
-                        'bg-rose-50/40' => $displayStatus === 'expired',
-                        'bg-amber-50/40' => $displayStatus === 'expiring_soon',
+                        'bg-rose-50/40' => $displayStatus === BatchExpiryStatusService::STATUS_EXPIRED,
+                        'bg-amber-50/40' => $displayStatus === BatchExpiryStatusService::STATUS_NEAR_EXPIRY,
                     ])>
                         <div class="flex items-start justify-between gap-3">
                             <div class="min-w-0">
@@ -192,13 +214,18 @@
                                 </p>
                                 <p class="mt-0.5 text-sm text-gray-600">{{ $batch->product?->name ?? '-' }}</p>
                             </div>
-                            @include('inventory.batches._batch-status-badge', ['status' => $displayStatus])
+                            @if ($batch->is_active)
+                                @include('inventory.batches._batch-expiry-status-badge', ['expiryStatus' => $displayStatus])
+                            @else
+                                @include('inventory.batches._batch-status-badge', ['status' => 'inactive'])
+                            @endif
                         </div>
                         <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
                             <div><dt class="text-gray-500">Lot</dt><dd class="font-medium text-gray-900">{{ $batch->lot_number ?? '-' }}</dd></div>
                             <div><dt class="text-gray-500">Pemasok</dt><dd class="font-medium text-gray-900">{{ $batch->supplier?->name ?? '-' }}</dd></div>
                             <div><dt class="text-gray-500">Terima</dt><dd class="font-medium text-gray-900">{{ format_date_id($batch->received_date) }}</dd></div>
-                            <div><dt class="text-gray-500">Kedaluwarsa</dt><dd class="font-medium text-gray-900">{{ $batch->expiry_date ? format_date_id($batch->expiry_date) : '-' }}</dd></div>
+                            <div><dt class="text-gray-500">Kedaluwarsa</dt><dd class="font-medium text-gray-900">{{ $batch->expiry_date ? format_date_id($batch->expiry_date) : $daysText }}</dd></div>
+                            <div class="col-span-2"><dt class="text-gray-500">Sisa waktu</dt><dd class="font-medium text-gray-900">{{ $daysText }}</dd></div>
                             <div class="col-span-2"><dt class="text-gray-500">Stok (ledger)</dt><dd class="font-semibold tabular-nums text-gray-900">{{ format_quantity_id($derivedStock) }}</dd></div>
                         </dl>
                         <div class="mt-3">

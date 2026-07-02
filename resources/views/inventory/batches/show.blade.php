@@ -37,22 +37,23 @@
         @if ($isExpired)
             <div class="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800" role="alert">
                 <p class="font-semibold">Peringatan: Batch Kedaluwarsa</p>
-                <p class="mt-1">Batch ini sudah melewati tanggal kedaluwarsa ({{ format_date_id($batch->expiry_date) }}). Periksa sebelum digunakan.</p>
+                <p class="mt-1">Batch ini sudah melewati tanggal kedaluwarsa ({{ format_date_id($batch->expiry_date) }}). {{ $expiryDaysText }}.</p>
             </div>
         @elseif ($isExpiringSoon)
             <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" role="alert">
-                <p class="font-semibold">Peringatan: Segera Kedaluwarsa</p>
-                <p class="mt-1">Batch ini akan kedaluwarsa pada {{ format_date_id($batch->expiry_date) }} (dalam 30 hari ke depan).</p>
+                <p class="font-semibold">Peringatan: Akan Kedaluwarsa</p>
+                <p class="mt-1">Batch ini akan kedaluwarsa pada {{ format_date_id($batch->expiry_date) }} ({{ $expiryDaysText }}).</p>
             </div>
         @endif
 
         <section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <h3 class="text-base font-semibold text-gray-900">Identitas Batch</h3>
-                @php
-                    $displayStatus = app(\App\Modules\Inventory\Services\InventoryBatchService::class)->resolveDisplayStatus($batch);
-                @endphp
-                @include('inventory.batches._batch-status-badge', ['status' => $displayStatus])
+                @if ($batch->is_active)
+                    @include('inventory.batches._batch-expiry-status-badge', ['expiryStatus' => $expiryStatus])
+                @else
+                    @include('inventory.batches._batch-status-badge', ['status' => 'inactive'])
+                @endif
             </div>
             <dl class="mt-5 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div><dt class="text-gray-500">Nomor Batch</dt><dd class="font-medium text-gray-900">{{ $batch->batch_number }}</dd></div>
@@ -61,7 +62,8 @@
                 <div><dt class="text-gray-500">Pemasok</dt><dd class="font-medium text-gray-900">{{ $batch->supplier?->name ?? '-' }}</dd></div>
                 <div><dt class="text-gray-500">Cabang</dt><dd class="font-medium text-gray-900">{{ $batch->branch?->name ?? '-' }}</dd></div>
                 <div><dt class="text-gray-500">Tanggal Terima</dt><dd class="font-medium text-gray-900">{{ format_date_id($batch->received_date) }}</dd></div>
-                <div><dt class="text-gray-500">Tanggal Kedaluwarsa</dt><dd class="font-medium text-gray-900">{{ $batch->expiry_date ? format_date_id($batch->expiry_date) : '-' }}</dd></div>
+                <div><dt class="text-gray-500">Tanggal Kedaluwarsa</dt><dd class="font-medium text-gray-900">{{ $batch->expiry_date ? format_date_id($batch->expiry_date) : 'Tanpa tanggal kedaluwarsa' }}</dd></div>
+                <div><dt class="text-gray-500">Status Kedaluwarsa</dt><dd class="font-medium text-gray-900">{{ $expiryDaysText }}</dd></div>
                 <div><dt class="text-gray-500">Dibuat Oleh</dt><dd class="font-medium text-gray-900">{{ $batch->createdBy?->name ?? '-' }}</dd></div>
                 @if ($batch->notes)
                     <div class="sm:col-span-2 lg:col-span-3"><dt class="text-gray-500">Catatan</dt><dd class="font-medium text-gray-900">{{ $batch->notes }}</dd></div>

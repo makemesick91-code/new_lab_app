@@ -84,7 +84,7 @@
                     :href="route('inventory.alerts.index', ['severity' => 'batch_expired'])"
                 />
                 <x-inventory.kpi-card
-                    label="Segera Kedaluwarsa"
+                    label="Akan Kedaluwarsa"
                     :value="format_number_id((int) $alertSummary['batch_expiring_soon_count'])"
                     hint="Kedaluwarsa dalam 30 hari"
                     tone="warning"
