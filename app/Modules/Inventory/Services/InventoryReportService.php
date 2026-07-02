@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -373,6 +374,57 @@ class InventoryReportService
         }
 
         return $filters;
+    }
+
+    /**
+     * Normalize report filters for index, export, and print using validated branch context.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function prepareReportFilters(array $filters, ?User $user = null, ?string $activeTab = null): array
+    {
+        $filters = $this->sanitizeReportFilters($filters, $user);
+
+        $reportType = $this->resolveReportType($filters, $activeTab);
+        if ($reportType !== null) {
+            $filters['report_type'] = $reportType;
+        }
+
+        if (in_array($reportType, ['stock_card', 'mutation'], true)) {
+            $filters['date_from'] = (string) ($filters['date_from'] ?? now()->startOfMonth()->toDateString());
+            $filters['date_to'] = (string) ($filters['date_to'] ?? now()->toDateString());
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function resolveReportType(array $filters, ?string $activeTab = null): ?string
+    {
+        $reportType = $filters['report_type'] ?? null;
+
+        if (is_string($reportType) && in_array($reportType, InventoryReportFilterRequest::REPORT_TYPES, true)) {
+            return $reportType;
+        }
+
+        if ($activeTab !== null && in_array($activeTab, InventoryReportFilterRequest::REPORT_TABS, true)) {
+            return $activeTab;
+        }
+
+        $reportTab = $filters['report_tab'] ?? null;
+        if (is_string($reportTab) && in_array($reportTab, InventoryReportFilterRequest::REPORT_TABS, true)) {
+            return $reportTab;
+        }
+
+        $tab = $filters['tab'] ?? null;
+        if (is_string($tab) && isset(InventoryReportFilterRequest::TAB_KEBAB_ALIASES[$tab])) {
+            return InventoryReportFilterRequest::TAB_KEBAB_ALIASES[$tab];
+        }
+
+        return null;
     }
 
     /**

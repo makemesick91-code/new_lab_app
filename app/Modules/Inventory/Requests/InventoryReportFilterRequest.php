@@ -42,6 +42,25 @@ class InventoryReportFilterRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (! $this->routeIs('inventory.reports.export') || $this->filled('report_type')) {
+            return;
+        }
+
+        $tab = $this->query('tab');
+        if (is_string($tab) && isset(self::TAB_KEBAB_ALIASES[$tab])) {
+            $this->merge(['report_type' => self::TAB_KEBAB_ALIASES[$tab]]);
+
+            return;
+        }
+
+        $reportTab = $this->query('report_tab');
+        if (is_string($reportTab) && in_array($reportTab, self::REPORT_TABS, true)) {
+            $this->merge(['report_type' => $reportTab]);
+        }
+    }
+
     public function rules(): array
     {
         return [
