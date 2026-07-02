@@ -58,7 +58,7 @@ class InventoryReportService
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
                 'requires_product' => true,
-                'message' => 'Pilih produk untuk melihat kartu stok.',
+                'message' => 'Pilih produk terlebih dahulu untuk melihat Kartu Stok.',
             ];
         }
 

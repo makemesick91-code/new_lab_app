@@ -28,20 +28,30 @@ class InventoryReportController extends Controller
     {
         $this->authorize('viewAny', InventoryMovement::class);
 
+        $activeTab = $request->resolveActiveTab();
         $filters = array_merge($request->filters(), [
             'per_page' => $request->perPage(),
+            'report_tab' => $activeTab,
         ]);
 
-        return $this->renderInventoryView('inventory.reports.index', [
+        $viewData = [
+            'activeTab' => $activeTab,
+            'activeTabKebab' => $request->activeTabKebab($activeTab),
             'filters' => $filters,
             'filterOptions' => $this->reports->getReportFilterOptions($filters),
-            'currentStockReport' => $this->reports->getCurrentStockReport($filters),
-            'stockCardReport' => $this->reports->getStockCardReport($filters),
-            'lowStockReport' => $this->reports->getLowStockReport($filters),
-            'stockMutationReport' => $this->reports->getStockMutationReport($filters),
-            'inventoryValuationReport' => $this->reports->getInventoryValuationReport($filters),
-            'roomStockReport' => $this->reports->getRoomStockReport($filters),
-        ]);
+        ];
+
+        match ($activeTab) {
+            'current_stock' => $viewData['currentStockReport'] = $this->reports->getCurrentStockReport($filters),
+            'stock_card' => $viewData['stockCardReport'] = $this->reports->getStockCardReport($filters),
+            'low_stock' => $viewData['lowStockReport'] = $this->reports->getLowStockReport($filters),
+            'mutation' => $viewData['stockMutationReport'] = $this->reports->getStockMutationReport($filters),
+            'valuation' => $viewData['inventoryValuationReport'] = $this->reports->getInventoryValuationReport($filters),
+            'room_stock' => $viewData['roomStockReport'] = $this->reports->getRoomStockReport($filters),
+            default => $viewData['currentStockReport'] = $this->reports->getCurrentStockReport($filters),
+        };
+
+        return $this->renderInventoryView('inventory.reports.index', $viewData);
     }
 
     public function export(InventoryReportFilterRequest $request): StreamedResponse
