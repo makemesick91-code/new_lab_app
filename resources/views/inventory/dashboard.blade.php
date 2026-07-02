@@ -4,7 +4,7 @@
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                     <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan Inti</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Visibilitas stok untuk cabang aktif</h1>
+                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Dashboard Inventory — {{ $selectedBranch?->name ?? 'Cabang' }}</h1>
                     <p class="mt-2 max-w-3xl text-sm text-gray-600">
                         Stok dihitung dari ledger pergerakan persediaan berdasarkan cabang, lokasi, dan produk. Gunakan dasbor ini untuk melihat stok menipis, memeriksa riwayat pergerakan, dan masuk ke operasi stok dengan aman.
                     </p>
@@ -13,10 +13,28 @@
                     <x-ui.button variant="neutral" :href="route('inventory.stock.index')">Buka Stok</x-ui.button>
                     <x-ui.button variant="secondary" :href="route('inventory.products.index')">Produk</x-ui.button>
                     @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
+                        <x-ui.button variant="secondary" :href="route('inventory.reports.index', $reportQuery)">Laporan Inventory</x-ui.button>
                         <x-ui.button variant="primary" :href="route('inventory.analytics.index')">Analitik Persediaan</x-ui.button>
                     @endcan
                 </div>
             </div>
+
+            <form method="GET" action="{{ route('inventory.dashboard') }}" class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div>
+                    <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
+                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($branchOptions->count() <= 1)>
+                        @foreach ($branchOptions as $branch)
+                            <option value="{{ $branch->id }}" @selected($selectedBranchId == $branch->id)>{{ $branch->name }}</option>
+                        @endforeach
+                    </select>
+                    @if ($branchOptions->count() <= 1)
+                        <input type="hidden" name="branch_id" value="{{ $selectedBranchId }}">
+                    @endif
+                </div>
+                <div class="flex items-end gap-2">
+                    <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Terapkan</button>
+                </div>
+            </form>
         </x-ui.card>
 
         <section aria-labelledby="inventory-kpis">
@@ -30,28 +48,28 @@
                     :value="format_currency_id($summary['inventory_value'])"
                     hint="Nilai stok cabang saat ini"
                     tone="primary"
-                    :href="route('inventory.stock.index')"
+                    :href="route('inventory.reports.index', array_merge($reportQuery, ['tab' => 'valuation']))"
                 />
                 <x-inventory.kpi-card
                     label="Stok Kritis"
                     :value="format_number_id((int) $alertSummary['critical_stock_count'])"
                     hint="Di bawah stok minimum, di atas nol"
                     tone="warning"
-                    :href="route('inventory.alerts.index', ['severity' => 'critical'])"
+                    :href="route('inventory.reports.index', array_merge($reportQuery, ['tab' => 'low-stock']))"
                 />
                 <x-inventory.kpi-card
                     label="Stok Habis"
                     :value="format_number_id((int) $alertSummary['out_of_stock_count'])"
                     hint="Stok saat ini nol atau kurang"
                     tone="danger"
-                    :href="route('inventory.alerts.index', ['severity' => 'out_of_stock'])"
+                    :href="route('inventory.reports.index', array_merge($reportQuery, ['tab' => 'current-stock', 'stock_status' => 'empty']))"
                 />
                 <x-inventory.kpi-card
                     label="Stok Rendah"
                     :value="format_number_id((int) $alertSummary['low_stock_count'])"
                     hint="Pada atau di bawah titik pesan ulang"
                     tone="warning"
-                    :href="route('inventory.alerts.index', ['severity' => 'low'])"
+                    :href="route('inventory.reports.index', array_merge($reportQuery, ['tab' => 'low-stock']))"
                 />
                 <x-inventory.kpi-card
                     label="Batch Kedaluwarsa"

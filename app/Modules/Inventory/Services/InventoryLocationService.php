@@ -21,9 +21,9 @@ class InventoryLocationService
         return $this->locations->paginate($this->branchContext->requireId(), $filters, $perPage);
     }
 
-    public function listActive(): Collection
+    public function listActive(?int $branchId = null): Collection
     {
-        return $this->locations->listActive($this->branchContext->requireId());
+        return $this->locations->listActive($branchId ?? $this->branchContext->requireId());
     }
 
     public function find(int $id): ?InventoryLocation

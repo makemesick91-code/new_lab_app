@@ -351,9 +351,9 @@ class InventoryStockService
         return $this->movements->lowStockProducts($branchId, $locationId);
     }
 
-    public function getInventoryValue(?int $locationId = null): float
+    public function getInventoryValue(?int $locationId = null, ?int $branchId = null): float
     {
-        $branchId = $this->branchContext->requireId();
+        $branchId = $branchId ?? $this->branchContext->requireId();
 
         if ($locationId !== null) {
             $this->assertLocationInBranch($branchId, $locationId);
@@ -386,23 +386,23 @@ class InventoryStockService
         return $this->movements->stockRows($branchId, $locationId);
     }
 
-    public function getStockByLocationSummary(): Collection
+    public function getStockByLocationSummary(?int $branchId = null): Collection
     {
-        return $this->movements->stockByLocationSummary($this->branchContext->requireId());
+        return $this->movements->stockByLocationSummary($branchId ?? $this->branchContext->requireId());
     }
 
-    public function getRecentMovements(int $limit = 10): Collection
+    public function getRecentMovements(int $limit = 10, ?int $branchId = null): Collection
     {
-        return $this->movements->recentMovements($this->branchContext->requireId(), $limit);
+        return $this->movements->recentMovements($branchId ?? $this->branchContext->requireId(), $limit);
     }
 
     /**
      * @return array{inventory_value: float}
      */
-    public function getBranchSummary(?int $locationId = null): array
+    public function getBranchSummary(?int $locationId = null, ?int $branchId = null): array
     {
         return [
-            'inventory_value' => $this->getInventoryValue($locationId),
+            'inventory_value' => $this->getInventoryValue($locationId, $branchId),
         ];
     }
 
