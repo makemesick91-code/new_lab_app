@@ -16,6 +16,7 @@ use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
 use App\Modules\Inventory\Controllers\InventoryBatchActionLogController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
+use App\Modules\Inventory\Controllers\InventoryBatchDisposalReportController;
 use App\Modules\Inventory\Controllers\InventoryBatchDisposalRequestController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryExecutiveDashboardController;
@@ -593,6 +594,9 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
 
     Route::get('reports', [InventoryReportController::class, 'index'])->name('reports.index');
     Route::get('reports/export', [InventoryReportController::class, 'export'])->name('reports.export');
+    Route::get('reports/batch-disposals', [InventoryBatchDisposalReportController::class, 'index'])->name('reports.batch-disposals.index');
+    Route::get('reports/batch-disposals/export', [InventoryBatchDisposalReportController::class, 'export'])->name('reports.batch-disposals.export');
+    Route::get('reports/batch-disposals/print', [InventoryBatchDisposalReportController::class, 'print'])->name('reports.batch-disposals.print');
     Route::get('reports/room-stock/refill-checklist', [InventoryReportController::class, 'downloadRoomStockRefillChecklist'])->name('reports.room-stock.refill-checklist');
 
     Route::get('stock', [InventoryStockController::class, 'index'])->name('stock.index');

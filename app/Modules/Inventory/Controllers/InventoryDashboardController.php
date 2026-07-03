@@ -7,6 +7,7 @@ use App\Modules\Inventory\Controllers\Concerns\RendersInventoryViews;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Requests\InventoryDashboardFilterRequest;
 use App\Modules\Inventory\Services\InventoryAlertService;
+use App\Modules\Inventory\Services\InventoryBatchDisposalReportService;
 use App\Modules\Inventory\Services\InventoryLocationService;
 use App\Modules\Inventory\Services\InventoryReportService;
 use App\Modules\Inventory\Services\InventoryStockService;
@@ -24,6 +25,7 @@ class InventoryDashboardController extends Controller
         private readonly InventoryAlertService $alerts,
         private readonly InventoryLocationService $locations,
         private readonly InventoryReportService $reports,
+        private readonly InventoryBatchDisposalReportService $batchDisposalReport,
     ) {}
 
     public function index(InventoryDashboardFilterRequest $request): View|Response
@@ -47,6 +49,7 @@ class InventoryDashboardController extends Controller
             'locations' => $this->locations->listActive($selectedBranchId),
             'stockByLocation' => $this->stock->getStockByLocationSummary($selectedBranchId),
             'recentMovements' => $this->stock->getRecentMovements(branchId: $selectedBranchId),
+            'batchDisposalKpis' => $this->batchDisposalReport->getDashboardKpis($selectedBranchId, $request->user()),
             'lastUpdatedAt' => now(),
         ]);
     }
