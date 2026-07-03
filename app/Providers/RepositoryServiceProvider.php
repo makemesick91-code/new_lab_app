@@ -36,6 +36,7 @@ use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchActionLogRepositoryInterface;
+use App\Modules\Inventory\Interfaces\InventoryBatchDisposalRequestRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -51,6 +52,7 @@ use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\GoodsReceipt;
 use App\Modules\Inventory\Models\InventoryActivityLog;
 use App\Modules\Inventory\Models\InventoryBatch;
+use App\Modules\Inventory\Models\InventoryBatchDisposalRequest;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\LocationProductMinimum;
@@ -64,6 +66,7 @@ use App\Modules\Inventory\Models\StockTransfer;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Policies\GoodsReceiptPolicy;
 use App\Modules\Inventory\Policies\InventoryActivityLogPolicy;
+use App\Modules\Inventory\Policies\InventoryBatchDisposalRequestPolicy;
 use App\Modules\Inventory\Policies\InventoryBatchPolicy;
 use App\Modules\Inventory\Policies\InventoryLocationPolicy;
 use App\Modules\Inventory\Policies\InventoryMovementPolicy;
@@ -80,6 +83,7 @@ use App\Modules\Inventory\Repositories\GoodsReceiptRepository;
 use App\Modules\Inventory\Repositories\InventoryActivityLogRepository;
 use App\Modules\Inventory\Repositories\InventoryAnalyticsRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchActionLogRepository;
+use App\Modules\Inventory\Repositories\InventoryBatchDisposalRequestRepository;
 use App\Modules\Inventory\Repositories\InventoryBatchRepository;
 use App\Modules\Inventory\Repositories\InventoryLocationRepository;
 use App\Modules\Inventory\Repositories\InventoryMovementRepository;
@@ -247,6 +251,7 @@ class RepositoryServiceProvider extends ServiceProvider
         BranchRepositoryInterface::class => BranchRepository::class,
         // Sprint 12 - Inventory Core
         InventoryBatchActionLogRepositoryInterface::class => InventoryBatchActionLogRepository::class,
+        InventoryBatchDisposalRequestRepositoryInterface::class => InventoryBatchDisposalRequestRepository::class,
         InventoryBatchRepositoryInterface::class => InventoryBatchRepository::class,
         InventoryLocationRepositoryInterface::class => InventoryLocationRepository::class,
         ProductCategoryRepositoryInterface::class => ProductCategoryRepository::class,
@@ -366,6 +371,7 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 9 — Multi Branch Foundation (skeleton; no routes authorize against it yet)
         Branch::class => BranchPolicy::class,
         InventoryBatch::class => InventoryBatchPolicy::class,
+        InventoryBatchDisposalRequest::class => InventoryBatchDisposalRequestPolicy::class,
         InventoryLocation::class => InventoryLocationPolicy::class,
         Product::class => ProductPolicy::class,
         ProductCategory::class => ProductCategoryPolicy::class,

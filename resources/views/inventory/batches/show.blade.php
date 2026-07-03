@@ -126,6 +126,35 @@
         @include('inventory.batches._batch-action-log-form', ['batch' => $batch])
         @include('inventory.batches._batch-action-log-history', ['actionLogHistory' => $actionLogHistory])
 
+        @if (($disposalRequests ?? collect())->isNotEmpty())
+            <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                <div class="border-b border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                    <h3 class="text-base font-semibold text-gray-900">Permintaan Disposal/Adjustment</h3>
+                    @can('viewAny', \App\Modules\Inventory\Models\InventoryBatchDisposalRequest::class)
+                        <a href="{{ route('inventory.batch-disposal-requests.index') }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Lihat semua</a>
+                    @endcan
+                </div>
+                <div class="divide-y divide-gray-100">
+                    @foreach ($disposalRequests as $disposalReq)
+                        <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                            <div>
+                                @include('inventory.batch-disposal-requests._request-type-badge', ['requestType' => $disposalReq->request_type])
+                                @include('inventory.batch-disposal-requests._status-badge', ['status' => $disposalReq->status])
+                                <p class="mt-1 text-gray-600">{{ $disposalReq->location?->name ?? '—' }} · {{ format_quantity_id((float) $disposalReq->quantity_requested) }}</p>
+                            </div>
+                            <a href="{{ route('inventory.batch-disposal-requests.show', $disposalReq) }}" class="font-medium text-teal-700 hover:text-teal-600">Detail</a>
+                        </div>
+                    @endforeach
+                </div>
+            </section>
+        @endif
+
+        @include('inventory.batches._batch-disposal-request-form', [
+            'batch' => $batch,
+            'stockByLocation' => $stockByLocation,
+            'latestActionLog' => $latestActionLog,
+        ])
+
         @if ($transferReferences->isNotEmpty())
             <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div class="border-b border-gray-200 px-4 py-3">

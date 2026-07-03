@@ -65,6 +65,14 @@ trait ChecksInventoryAccess
         ]);
     }
 
+    protected function canApproveInventoryAdjustment(User $user): bool
+    {
+        return $user->canAny([
+            'manage_inventory',
+            'manage master data',
+        ]);
+    }
+
     protected function canViewStockAlert(User $user): bool
     {
         return $user->canAny([

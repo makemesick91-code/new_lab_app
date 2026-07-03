@@ -16,6 +16,7 @@ use App\Modules\Inventory\Controllers\InventoryAlertController;
 use App\Modules\Inventory\Controllers\InventoryAnalyticsController;
 use App\Modules\Inventory\Controllers\InventoryBatchActionLogController;
 use App\Modules\Inventory\Controllers\InventoryBatchController;
+use App\Modules\Inventory\Controllers\InventoryBatchDisposalRequestController;
 use App\Modules\Inventory\Controllers\InventoryDashboardController;
 use App\Modules\Inventory\Controllers\InventoryExecutiveDashboardController;
 use App\Modules\Inventory\Controllers\InventoryLocationController;
@@ -599,6 +600,14 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::get('batches', [InventoryBatchController::class, 'index'])->name('batches.index');
     Route::get('batches/{inventoryBatch}', [InventoryBatchController::class, 'show'])->name('batches.show');
     Route::post('batches/{inventoryBatch}/action-logs', [InventoryBatchActionLogController::class, 'store'])->name('batches.action-logs.store');
+    Route::post('batches/{inventoryBatch}/disposal-requests', [InventoryBatchDisposalRequestController::class, 'store'])->name('batches.disposal-requests.store');
+
+    Route::get('batch-disposal-requests', [InventoryBatchDisposalRequestController::class, 'index'])->name('batch-disposal-requests.index');
+    Route::get('batch-disposal-requests/{batchDisposalRequest}', [InventoryBatchDisposalRequestController::class, 'show'])->name('batch-disposal-requests.show');
+    Route::post('batch-disposal-requests/{batchDisposalRequest}/approve', [InventoryBatchDisposalRequestController::class, 'approve'])->name('batch-disposal-requests.approve');
+    Route::post('batch-disposal-requests/{batchDisposalRequest}/reject', [InventoryBatchDisposalRequestController::class, 'reject'])->name('batch-disposal-requests.reject');
+    Route::post('batch-disposal-requests/{batchDisposalRequest}/finalize-adjustment', [InventoryBatchDisposalRequestController::class, 'finalizeAdjustment'])->name('batch-disposal-requests.finalize-adjustment');
+    Route::post('batch-disposal-requests/{batchDisposalRequest}/cancel', [InventoryBatchDisposalRequestController::class, 'cancel'])->name('batch-disposal-requests.cancel');
 
     Route::get('products/{product}/stock-card', [StockCardController::class, 'show'])->name('products.stock-card');
     Route::get('products/{product}/opening-stock', [InventoryStockController::class, 'openingStock'])->name('products.opening-stock.create');
