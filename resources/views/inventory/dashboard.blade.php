@@ -90,6 +90,34 @@
                     tone="warning"
                     :href="route('inventory.alerts.index', ['severity' => 'batch_expiring_soon'])"
                 />
+                <x-inventory.kpi-card
+                    label="Disposal Menunggu Approval"
+                    :value="format_number_id((int) ($batchDisposalKpis['pending_disposal_approval'] ?? 0))"
+                    hint="Permintaan disposal diajukan"
+                    tone="warning"
+                    :href="route('inventory.reports.batch-disposals.index', array_merge($reportQuery, ['status' => 'submitted']))"
+                />
+                <x-inventory.kpi-card
+                    label="Adjustment Dicatat (Bulan Ini)"
+                    :value="format_number_id((int) ($batchDisposalKpis['adjustment_recorded_this_month'] ?? 0))"
+                    hint="Finalisasi disposal bulan berjalan"
+                    tone="primary"
+                    :href="route('inventory.reports.batch-disposals.index', $reportQuery)"
+                />
+                <x-inventory.kpi-card
+                    label="Disposal Kedaluwarsa"
+                    :value="format_number_id((int) ($batchDisposalKpis['expired_disposal_requests'] ?? 0))"
+                    hint="Request terkait batch kedaluwarsa"
+                    tone="danger"
+                    :href="route('inventory.reports.batch-disposals.index', array_merge($reportQuery, ['request_type' => 'expired']))"
+                />
+                <x-inventory.kpi-card
+                    label="Movement Tertaut"
+                    :value="format_number_id((int) ($batchDisposalKpis['movement_linked_requests'] ?? 0))"
+                    hint="Sudah punya ADJUSTMENT_OUT"
+                    tone="neutral"
+                    :href="route('inventory.reports.batch-disposals.index', array_merge($reportQuery, ['has_movement' => 'yes']))"
+                />
             </div>
         </section>
 

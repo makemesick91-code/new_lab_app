@@ -417,7 +417,9 @@
                         @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\InventoryMovement::class)
                             <a href="{{ route('inventory.reports.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'current_stock' ? $linkActive : $linkIdle }}">Laporan Inventory</a>
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.index', 'inventory.reports.export', 'inventory.reports.room-stock.*') && ! request()->routeIs('inventory.reports.batch-disposals.*') ? $linkActive : $linkIdle }}">Laporan Inventory</a>
+                            <a href="{{ route('inventory.reports.batch-disposals.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.reports.batch-disposals.*') ? $linkActive : $linkIdle }}">Disposal & Adjustment Batch</a>
                             <a href="{{ route('inventory.reports.index', ['report_tab' => 'stock_card']) }}"
                                class="menu-subitem {{ request()->routeIs('inventory.reports.*') && $activeReportTab === 'stock_card' ? $linkActive : $linkIdle }}">Kartu Stok</a>
                             <a href="{{ route('inventory.reports.index', ['report_tab' => 'low_stock']) }}"
