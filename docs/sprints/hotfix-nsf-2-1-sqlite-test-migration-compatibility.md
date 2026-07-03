@@ -81,3 +81,39 @@ Migration syntax issue **fixed** — no `CREATE INDEX CONCURRENTLY` SQLite failu
 ### GO/NO-GO (Local)
 
 **GO** for hotfix objective — SQLite migration compatibility restored; PostgreSQL behavior preserved.
+
+---
+
+## Post-Deploy Evidence
+
+| Item | Value |
+|------|-------|
+| PR | [#155](https://github.com/makemesick91-code/new_lab_app/pull/155) |
+| Merge commit | `79755883dea63258a85cb0fdfa6e23320b12437d` |
+| GO tag | `hotfix-nsf-2-1-sqlite-test-migration-compatibility-go` |
+| Local HEAD | `79755883dea63258a85cb0fdfa6e23320b12437d` |
+| VPS previous HEAD | `43a61893ecd3d192adf03659b7d79d80efbd6ef9` |
+| VPS deployed HEAD | `79755883dea63258a85cb0fdfa6e23320b12437d` |
+| GO tag exact match | Yes (`git describe --tags --exact-match HEAD` on VPS) |
+| Backup | `storage/app/backups/deploy/pre_nsf2_1_20260703-115754.sql` (547K) |
+| Migration result | Nothing to migrate (guard-only change; indexes already exist) |
+| Composer/npm build | OK |
+| php-fpm/nginx | active (restarted/reloaded) |
+| Performance audit | `storage/app/performance/nsf2-1-vps-evidence.json` (12K) |
+| PostgreSQL indexes | `idx_nsf2_patients_branch_is_active`, `trx_rme_payments_rme_invoice_id_index`, `trx_rme_invoices_active_receivable_order_idx` — all present |
+
+### VPS Smoke (curl -L http://127.0.0.1)
+
+| URL | Status |
+|-----|--------|
+| `/` | 200 |
+| `/login` | 200 |
+| `/inventory/dashboard` | 200 |
+| `/rme/visits` | 200 |
+| `/dashboard` | 200 |
+
+### Final GO/NO-GO
+
+**GO** — Hotfix deployed to VPS pilot; SQLite test migration fixed; PostgreSQL indexes unchanged; smoke green.
+
+> Note: GO tag points to merge commit `7975588`. Post-deploy evidence doc updates may follow on stable base as a separate commit.
