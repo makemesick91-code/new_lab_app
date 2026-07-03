@@ -47,21 +47,24 @@ class SlowQueryAuditService
         'trx_rme_payments_branch_paid_at_idx' => ['module' => 'cashier', 'note' => 'Payment trends by branch/date'],
         'trx_rme_payments_rme_invoice_id_index' => ['module' => 'cashier', 'note' => 'Invoice payment lookup'],
         'trx_inventory_movements_branch_location_product_index' => ['module' => 'inventory', 'note' => 'Branch/location/product stock'],
+        'trx_inv_movements_branch_date_index' => ['module' => 'inventory', 'note' => 'Branch + movement_date mutation window (NSF-2)'],
+        'idx_nsf2_patients_branch_is_active' => ['module' => 'rme', 'note' => 'Branch-scoped active patient lists (NSF-2)'],
     ];
 
-    /** @var array<string, array{module:string, table:string, columns:list<string>, reason:string}> */
-    private const DEFERRED_INDEX_RECOMMENDATIONS = [
-        'trx_inventory_movements_branch_movement_date_idx' => [
+    /** @var array<string, array{module:string, table:string, columns:list<string>, reason:string, aliases?:list<string>}> */
+    private const NSF2_INDEX_CANDIDATES = [
+        'idx_nsf2_inventory_movements_branch_movement_date' => [
             'module' => 'inventory',
             'table' => 'trx_inventory_movements',
             'columns' => ['branch_id', 'movement_date'],
-            'reason' => 'Mutation/stock-card date scans at national scale (deferred NSF-2+)',
+            'reason' => 'Mutation/stock-card date scans at national scale',
+            'aliases' => ['trx_inv_movements_branch_date_index'],
         ],
-        'mst_patients_branch_active_idx' => [
+        'idx_nsf2_patients_branch_is_active' => [
             'module' => 'rme',
             'table' => 'mst_patients',
             'columns' => ['branch_id', 'is_active'],
-            'reason' => 'Branch-scoped patient lists if branch_id filter becomes hot path',
+            'reason' => 'Branch-scoped patient lists and audit filters',
         ],
     ];
 
@@ -89,6 +92,7 @@ class SlowQueryAuditService
             'modules' => [],
             'table_inventory' => [],
             'index_inventory' => [],
+            'nsf2_index_status' => [],
             'deferred_index_recommendations' => [],
             'benchmarks' => [],
             'pg_stat_statements' => ['available' => false, 'top_queries' => []],
@@ -121,6 +125,7 @@ class SlowQueryAuditService
         try {
             $report['table_inventory'] = $this->collectTableInventory($moduleFilter, $warnings);
             $report['index_inventory'] = $this->collectIndexInventory($warnings);
+            $report['nsf2_index_status'] = $this->collectNsf2IndexStatus($moduleFilter);
             $report['deferred_index_recommendations'] = $this->collectDeferredRecommendations($moduleFilter);
             $report['modules'] = $this->summarizeModules($report['table_inventory'], $report['index_inventory']);
 
@@ -267,37 +272,95 @@ class SlowQueryAuditService
      * @param  list<string>|null  $moduleFilter
      * @return list<array<string, mixed>>
      */
-    private function collectDeferredRecommendations(?array $moduleFilter): array
+    /**
+     * @param  list<string>|null  $moduleFilter
+     * @return list<array<string, mixed>>
+     */
+    private function collectNsf2IndexStatus(?array $moduleFilter): array
     {
         $rows = [];
 
-        foreach (self::DEFERRED_INDEX_RECOMMENDATIONS as $name => $meta) {
+        foreach (self::NSF2_INDEX_CANDIDATES as $name => $meta) {
             if ($moduleFilter !== null && ! in_array($meta['module'], $moduleFilter, true)) {
                 continue;
             }
 
-            $exists = false;
+            $resolved = $this->resolveNsf2IndexPresence($meta['table'], $name, $meta['columns'], $meta['aliases'] ?? []);
 
-            if (Schema::hasTable($meta['table'])) {
-                $exists = DB::selectOne(
-                    'SELECT 1 FROM pg_indexes WHERE indexname = ? LIMIT 1',
-                    [$name],
-                ) !== null;
-            }
-
-            if (! $exists) {
-                $rows[] = [
-                    'recommended_index' => $name,
-                    'module' => $meta['module'],
-                    'table' => $meta['table'],
-                    'columns' => $meta['columns'],
-                    'reason' => $meta['reason'],
-                    'status' => 'deferred',
-                ];
-            }
+            $rows[] = [
+                'target_index' => $name,
+                'module' => $meta['module'],
+                'table' => $meta['table'],
+                'columns' => $meta['columns'],
+                'reason' => $meta['reason'],
+                'present' => $resolved['present'],
+                'resolved_index' => $resolved['resolved_index'],
+                'status' => $resolved['present'] ? 'applied' : 'missing',
+            ];
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  list<string>|null  $moduleFilter
+     * @return list<array<string, mixed>>
+     */
+    private function collectDeferredRecommendations(?array $moduleFilter): array
+    {
+        $rows = [];
+
+        foreach ($this->collectNsf2IndexStatus($moduleFilter) as $status) {
+            if ($status['present'] ?? false) {
+                continue;
+            }
+
+            $rows[] = [
+                'recommended_index' => $status['target_index'],
+                'module' => $status['module'],
+                'table' => $status['table'],
+                'columns' => $status['columns'],
+                'reason' => $status['reason'],
+                'status' => 'deferred',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  list<string>  $columns
+     * @param  list<string>  $aliases
+     * @return array{present:bool, resolved_index:?string}
+     */
+    private function resolveNsf2IndexPresence(string $table, string $targetName, array $columns, array $aliases = []): array
+    {
+        if (! Schema::hasTable($table)) {
+            return ['present' => false, 'resolved_index' => null];
+        }
+
+        foreach (array_merge([$targetName], $aliases) as $indexName) {
+            $row = DB::selectOne(
+                'SELECT indexname FROM pg_indexes WHERE indexname = ? LIMIT 1',
+                [$indexName],
+            );
+
+            if ($row !== null) {
+                return ['present' => true, 'resolved_index' => (string) $row->indexname];
+            }
+        }
+
+        $needle = '('.implode(', ', $columns).')';
+        $row = DB::selectOne(
+            'SELECT indexname FROM pg_indexes WHERE tablename = ? AND indexdef ILIKE ? LIMIT 1',
+            [$table, '%'.$needle.'%'],
+        );
+
+        if ($row !== null) {
+            return ['present' => true, 'resolved_index' => (string) $row->indexname];
+        }
+
+        return ['present' => false, 'resolved_index' => null];
     }
 
     /**
@@ -328,13 +391,14 @@ class SlowQueryAuditService
 
     private function resolveBenchmarkBranchId(): ?int
     {
-        foreach (['trx_clinic_visits', 'trx_rme_payments', 'trx_inventory_movements'] as $table) {
-            if (! Schema::hasTable($table)) {
+        foreach (['trx_clinic_visits', 'trx_rme_payments', 'trx_inventory_movements', 'mst_patients'] as $table) {
+            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'branch_id')) {
                 continue;
             }
 
             $row = DB::table($table)
                 ->select('branch_id', DB::raw('COUNT(*) as row_count'))
+                ->whereNotNull('branch_id')
                 ->groupBy('branch_id')
                 ->orderByDesc('row_count')
                 ->first();
@@ -342,6 +406,20 @@ class SlowQueryAuditService
             if ($row !== null) {
                 return (int) $row->branch_id;
             }
+        }
+
+        if (Schema::hasTable('mst_branches')) {
+            $branch = DB::table('mst_branches')
+                ->when(Schema::hasColumn('mst_branches', 'is_active'), fn ($q) => $q->where('is_active', true))
+                ->orderBy('id')
+                ->value('id');
+
+            if ($branch !== null) {
+                return (int) $branch;
+            }
+
+            // Empty local DB: still run EXPLAIN shapes with a synthetic branch id.
+            return 1;
         }
 
         return null;
@@ -409,6 +487,13 @@ class SlowQueryAuditService
                 'bindings' => [$branchId, $fromDate, $toDate],
             ],
             [
+                'id' => 'rme_patients_branch_active',
+                'module' => 'rme',
+                'route_area' => 'settings.patients / patient audit',
+                'sql' => 'SELECT COUNT(*) FROM mst_patients WHERE branch_id = ? AND is_active = true AND deleted_at IS NULL',
+                'bindings' => [$branchId],
+            ],
+            [
                 'id' => 'owner_visits_month',
                 'module' => 'owner',
                 'route_area' => 'dashboard owner KPI',
@@ -440,6 +525,8 @@ class SlowQueryAuditService
                 'status' => $bench['status'],
                 'uses_index_scan' => $bench['uses_index_scan'],
                 'seq_scan_warning' => $bench['seq_scan_warning'],
+                'plan_node_summary' => $bench['plan_node_summary'] ?? null,
+                'index_names_used' => $bench['index_names_used'] ?? [],
                 'reason' => $bench['reason'] ?? null,
             ];
         }
@@ -449,7 +536,7 @@ class SlowQueryAuditService
 
     /**
      * @param  list<mixed>  $bindings
-     * @return array{runtime_ms:?float, status:string, uses_index_scan:bool, seq_scan_warning:bool, reason?:string}
+     * @return array{runtime_ms:?float, status:string, uses_index_scan:bool, seq_scan_warning:bool, plan_node_summary?:array<string,int>, index_names_used?:list<string>, reason?:string}
      */
     private function runExplainAnalyze(string $sql, array $bindings): array
     {
@@ -462,6 +549,8 @@ class SlowQueryAuditService
                 $runtimeMs = $this->parseExecutionTimeMs($plan);
                 $usesIndex = str_contains($plan, 'Index Scan') || str_contains($plan, 'Bitmap Index Scan');
                 $seqScan = str_contains($plan, 'Seq Scan');
+                $planSummary = $this->summarizePlanNodes($plan);
+                $indexNames = $this->extractIndexNamesFromPlan($plan);
 
                 $status = PilotPerformanceSnapshotClassifier::classifySqlRuntimeMs($runtimeMs ?? 0.0);
                 if ($seqScan && ! $usesIndex && ($runtimeMs ?? 0) > 100) {
@@ -473,6 +562,8 @@ class SlowQueryAuditService
                     'status' => $status,
                     'uses_index_scan' => $usesIndex,
                     'seq_scan_warning' => $seqScan && ! $usesIndex,
+                    'plan_node_summary' => $planSummary,
+                    'index_names_used' => $indexNames,
                 ];
             });
         } catch (\Throwable) {
@@ -481,9 +572,48 @@ class SlowQueryAuditService
                 'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
                 'uses_index_scan' => false,
                 'seq_scan_warning' => false,
+                'plan_node_summary' => [],
+                'index_names_used' => [],
                 'reason' => 'benchmark_failed',
             ];
         }
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function summarizePlanNodes(string $plan): array
+    {
+        $summary = [];
+        $patterns = ['Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan', 'Bitmap Index Scan'];
+
+        foreach ($patterns as $pattern) {
+            $count = substr_count($plan, $pattern);
+            if ($count > 0) {
+                $summary[$pattern] = $count;
+            }
+        }
+
+        return $summary;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extractIndexNamesFromPlan(string $plan): array
+    {
+        if (preg_match_all('/using (\w+)/', $plan, $matches) < 1) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($matches[1] as $name) {
+            if (! in_array($name, $names, true)) {
+                $names[] = $name;
+            }
+        }
+
+        return $names;
     }
 
     private function parseExecutionTimeMs(string $plan): ?float
