@@ -277,15 +277,15 @@ class InventoryBatchDisposalReportService
         }
 
         if (! empty($filters['product'])) {
-            $search = '%'.$filters['product'].'%';
+            $search = '%'.mb_strtolower((string) $filters['product']).'%';
             $query->whereHas('product', fn (Builder $q) => $q
-                ->where('name', 'ilike', $search)
-                ->orWhere('code', 'ilike', $search));
+                ->whereRaw('LOWER(name) LIKE ?', [$search])
+                ->orWhereRaw('LOWER(code) LIKE ?', [$search]));
         }
 
         if (! empty($filters['batch'])) {
-            $search = '%'.$filters['batch'].'%';
-            $query->whereHas('batch', fn (Builder $q) => $q->where('batch_number', 'ilike', $search));
+            $search = '%'.mb_strtolower((string) $filters['batch']).'%';
+            $query->whereHas('batch', fn (Builder $q) => $q->whereRaw('LOWER(batch_number) LIKE ?', [$search]));
         }
 
         if (($filters['has_movement'] ?? null) === 'yes') {

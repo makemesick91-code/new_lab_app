@@ -5,7 +5,7 @@ beforeEach(function () {
 });
 
 it('renders the desktop sidebar collapse toggle in the authenticated shell', function () {
-    $response = $this->actingAs(userInRole('Admin Klinik'))
+    $response = $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk();
 
@@ -18,7 +18,7 @@ it('renders the desktop sidebar collapse toggle in the authenticated shell', fun
 });
 
 it('binds main content margin to the expanded state so it reflows when collapsed', function () {
-    $this->actingAs(userInRole('Admin Klinik'))
+    $this->actingAs(userWith(['view dashboard']))
         ->get(route('dashboard'))
         ->assertOk()
         // Conditional margin: full offset when expanded, none when collapsed.

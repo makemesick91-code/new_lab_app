@@ -159,9 +159,13 @@ class StressSeedRmeHistoryCommand extends Command
             ->where('visit_number', 'like', 'TST-VIS-2026-%')
             ->count();
 
+        $maxSeqSql = DB::connection()->getDriverName() === 'pgsql'
+            ? 'COALESCE(MAX(CAST(RIGHT(visit_number, 9) AS INTEGER)), 0) AS max_seq'
+            : 'COALESCE(MAX(CAST(SUBSTR(visit_number, -9) AS INTEGER)), 0) AS max_seq';
+
         $existingMaxSeq = (int) DB::table('trx_clinic_visits')
             ->where('visit_number', 'like', 'TST-VIS-2026-%')
-            ->selectRaw('COALESCE(MAX(CAST(RIGHT(visit_number, 9) AS INTEGER)), 0) AS max_seq')
+            ->selectRaw($maxSeqSql)
             ->value('max_seq');
 
         $remaining = max(0, $target - $existingMaxSeq);

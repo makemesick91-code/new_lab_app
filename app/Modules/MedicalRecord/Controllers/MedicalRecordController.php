@@ -50,8 +50,6 @@ class MedicalRecordController extends Controller
     public function show(Request $request, ClinicVisit $clinicVisit, PatientRmWorkspaceResolver $workspace): View|RedirectResponse
     {
         $clinicVisit->loadMissing('patient');
-        $this->authorize('view', $clinicVisit);
-
         $patientId = $clinicVisit->patient_id;
 
         // Sprint 64.0 — patient-centric redirect. Any visit's RM URL resolves to
@@ -61,8 +59,11 @@ class MedicalRecordController extends Controller
         // source_visit_id so a new sheet defaults to the visit the doctor came
         // from. Deterministic anchor → no redirect loop. Null anchor only when
         // the opened visit is not an eligible RME-branch visit → 404 as before.
+        // Check eligibility before authorize so non-RME visits 404 instead of 403.
         $canonicalVisit = $workspace->resolveCanonicalWorkspaceVisit($patientId);
         abort_if($canonicalVisit === null, 404);
+
+        $this->authorize('view', $clinicVisit);
 
         if ($canonicalVisit->id !== $clinicVisit->id) {
             return redirect()->route('rme.visits.medical-record.show', [

@@ -76,10 +76,12 @@ class InventoryBatchDisposalRequestRepository implements InventoryBatchDisposalR
         }
 
         if (! empty($filters['search'])) {
-            $search = '%'.$filters['search'].'%';
+            $search = '%'.mb_strtolower((string) $filters['search']).'%';
             $query->where(function ($q) use ($search) {
-                $q->whereHas('batch', fn ($b) => $b->where('batch_number', 'ilike', $search))
-                    ->orWhereHas('product', fn ($p) => $p->where('name', 'ilike', $search)->orWhere('code', 'ilike', $search));
+                $q->whereHas('batch', fn ($b) => $b->whereRaw('LOWER(batch_number) LIKE ?', [$search]))
+                    ->orWhereHas('product', fn ($p) => $p
+                        ->whereRaw('LOWER(name) LIKE ?', [$search])
+                        ->orWhereRaw('LOWER(code) LIKE ?', [$search]));
             });
         }
 

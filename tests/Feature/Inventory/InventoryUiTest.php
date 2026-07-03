@@ -27,7 +27,7 @@ it('opens the inventory dashboard for an authenticated user', function () {
         ->assertSee('Total Nilai Persediaan')
         ->assertDontSee('Ringkasan Nilai Persediaan')
         ->assertDontSee('Ringkasan Peringatan')
-        ->assertSee('Aksi Cepat Persediaan')
+        ->assertSee('Aksi Cepat Harian Gudang')
         ->assertSee('Stok per Lokasi')
         ->assertSee('Pergerakan Terbaru')
         ->assertSee('Material Paling Banyak Dipakai');
