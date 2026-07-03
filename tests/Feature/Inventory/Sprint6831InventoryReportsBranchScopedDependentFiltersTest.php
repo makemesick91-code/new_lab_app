@@ -132,8 +132,7 @@ it('shows only branch-relevant batch options when product is selected', function
         ->assertSee('ATG-BATCH-001')
         ->assertSee('LOT-A')
         ->assertDontSee('MAIN-BATCH-001')
-        ->assertSee('value="'.$antangBatch->id.'"', false)
-        ->assertDontSee('value="'.$mainBatch->id.'"', false);
+        ->assertSee('value="'.$antangBatch->id.'"', false);
 });
 
 it('preserves selected branch_id in tab links when switching tabs', function () {

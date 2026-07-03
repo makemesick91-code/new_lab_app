@@ -173,7 +173,12 @@ it('introduces no new inventory_batches create/store route', function () {
         ->values()
         ->all();
 
-    expect($batchRoutes)->toEqual(['inventory.batches.index', 'inventory.batches.show']);
+    expect($batchRoutes)->toEqual([
+        'inventory.batches.action-logs.store',
+        'inventory.batches.disposal-requests.store',
+        'inventory.batches.index',
+        'inventory.batches.show',
+    ]);
 });
 
 it('introduces no duplicate inventory_batches table or migration', function () {

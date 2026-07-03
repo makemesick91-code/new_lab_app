@@ -243,7 +243,7 @@ describe('sidebar visibility with granular permissions', function () {
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Persediaan')
+            ->assertSee('Operasional Stok')
             ->assertSee('Transfer Stok')
             ->assertDontSee('>Produk</a>', false)
             ->assertDontSee('>Dasbor</a>', false);
@@ -255,7 +255,7 @@ describe('sidebar visibility with granular permissions', function () {
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Pengadaan')
+            ->assertSee('Pembelian')
             ->assertSee('Permintaan Pembelian')
             ->assertDontSee('Pesanan Pembelian');
     });
@@ -279,7 +279,7 @@ describe('sidebar visibility with granular permissions', function () {
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Persediaan')
+            ->assertSee('Laporan & Analitik', false)
             ->assertSee('Log Aktivitas')
             ->assertDontSee('>Produk</a>', false);
     });
@@ -290,7 +290,7 @@ describe('sidebar visibility with granular permissions', function () {
 
         $this->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('Persediaan')
+            ->assertSee('Laporan & Analitik', false)
             ->assertSee('Dasbor Eksekutif')
             ->assertDontSee('>Produk</a>', false)
             ->assertDontSee('>Dasbor</a>', false);
