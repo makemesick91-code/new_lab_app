@@ -100,3 +100,41 @@ Raw: `storage/app/performance/nsf2-2-full-suite-after.txt`
 
 - `./vendor/bin/pint --dirty` — passed
 - `npm ci && npm run build` — passed
+
+---
+
+## Post-Deploy Evidence
+
+| Item | Value |
+|------|-------|
+| PR | [#156](https://github.com/makemesick91-code/new_lab_app/pull/156) |
+| Merge commit | `8e51d6a85bca8d9b76074dcc48c9f2938b685d0d` |
+| GO tag | `hotfix-nsf-2-2-full-suite-remaining-failure-burndown-go` |
+| Local HEAD | `8e51d6a85bca8d9b76074dcc48c9f2938b685d0d` |
+| VPS previous HEAD | `79755883dea63258a85cb0fdfa6e23320b12437d` |
+| VPS deployed HEAD | `8e51d6a85bca8d9b76074dcc48c9f2938b685d0d` |
+| GO tag exact match | Yes |
+| Backup | `storage/app/backups/deploy/pre_nsf2_2_20260703-224441.sql` (551K) |
+| Migration result | Nothing to migrate |
+| Composer/npm build | OK |
+| php-fpm/nginx | restarted/reloaded |
+
+### VPS Smoke (curl -L http://127.0.0.1)
+
+| URL | Status |
+|-----|--------|
+| `/` | 200 |
+| `/login` | 200 |
+| `/inventory/dashboard` | 200 |
+| `/rme/visits` | 200 |
+| `/dashboard` | 200 |
+
+### Performance audit
+
+`storage/app/performance/storage/app/performance/nsf2-2-vps-evidence.json` (12K) — NSF-2 indexes present; 9 benchmarks OK.
+
+### Final GO/NO-GO
+
+**GO** — Full suite 0 failed (3590 passed); hotfix deployed to VPS pilot; smoke green.
+
+> GO tag points to merge commit `8e51d6a`. Post-deploy evidence doc updates may follow on stable base as a separate commit.
