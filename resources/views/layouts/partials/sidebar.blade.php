@@ -383,6 +383,10 @@
                             <a href="{{ route('inventory.stock-opnames.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.stock-opnames.*') ? $linkActive : $linkIdle }}">Stok Opname</a>
                         @endcan
+                        @can('viewAny', \App\Modules\Inventory\Models\InventoryBatchDisposalRequest::class)
+                            <a href="{{ route('inventory.batch-disposal-requests.index') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.batch-disposal-requests.*') ? $linkActive : $linkIdle }}">Disposal/Adjustment Batch</a>
+                        @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\LocationProductMinimum::class)
                             <a href="{{ route('inventory.location-minimums.index') }}"
                                class="menu-subitem {{ request()->routeIs('inventory.location-minimums.*') ? $linkActive : $linkIdle }}">Minimum Stok Ruangan</a>

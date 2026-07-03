@@ -256,10 +256,13 @@ class InventoryStockService
         float $qty,
         ?string $notes = null,
         ?int $inventoryBatchId = null,
+        ?string $referenceType = null,
+        ?int $referenceId = null,
+        bool $allowExpiredBatch = false,
     ): InventoryMovement {
         $this->assertPositiveQuantity($qty);
 
-        $movement = DB::transaction(function () use ($productId, $locationId, $qty, $notes, $inventoryBatchId) {
+        $movement = DB::transaction(function () use ($productId, $locationId, $qty, $notes, $inventoryBatchId, $referenceType, $referenceId, $allowExpiredBatch) {
             $branchId = $this->branchContext->requireId();
             $this->lockAndAssertProductInBranch($branchId, $productId);
             $this->lockAndAssertLocationInBranch($branchId, $locationId);
@@ -267,7 +270,7 @@ class InventoryStockService
             $batch = null;
 
             if ($inventoryBatchId !== null) {
-                $batch = $this->lockAndAssertBatchForMovement($branchId, $productId, $inventoryBatchId, forOutbound: true);
+                $batch = $this->lockAndAssertBatchForMovement($branchId, $productId, $inventoryBatchId, forOutbound: true, allowExpired: $allowExpiredBatch);
 
                 $batchStock = $this->movements->currentStockByBatch($branchId, $productId, $locationId, $batch->id);
 
@@ -297,8 +300,8 @@ class InventoryStockService
                 'quantity_in' => 0,
                 'quantity_out' => $qty,
                 'unit_cost' => 0,
-                'reference_type' => null,
-                'reference_id' => null,
+                'reference_type' => $referenceType,
+                'reference_id' => $referenceId,
                 'notes' => $notes,
                 'created_by' => Auth::id(),
             ]);
@@ -525,6 +528,7 @@ class InventoryStockService
         int $productId,
         int $batchId,
         bool $forOutbound = false,
+        bool $allowExpired = false,
     ): InventoryBatch {
         $batch = InventoryBatch::query()
             ->where('branch_id', $branchId)
@@ -550,7 +554,7 @@ class InventoryStockService
             ]);
         }
 
-        if ($forOutbound && $batch->expiry_date !== null && $batch->expiry_date->lt(now()->startOfDay())) {
+        if ($forOutbound && ! $allowExpired && $batch->expiry_date !== null && $batch->expiry_date->lt(now()->startOfDay())) {
             throw ValidationException::withMessages([
                 'inventory_batch_id' => 'Batch ini sudah kedaluwarsa dan tidak dapat dikeluarkan.',
             ]);

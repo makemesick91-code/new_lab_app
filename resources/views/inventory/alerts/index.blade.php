@@ -113,6 +113,9 @@
                                         <div class="flex flex-wrap items-center gap-2">
                                             <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-teal-700 hover:text-teal-600">Batch</a>
                                             @if ($batchModel)
+                                                @can('createForBatch', [\App\Modules\Inventory\Models\InventoryBatchDisposalRequest::class, $batchModel])
+                                                    <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#buat-permintaan-disposal" class="text-sm font-medium text-rose-700 hover:text-rose-600">Buat Disposal</a>
+                                                @endcan
                                                 @can('recordAction', $batchModel)
                                                     <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-orange-700 hover:text-orange-600">Catat Tindakan</a>
                                                 @endcan
@@ -156,6 +159,9 @@
                             <div class="mt-3 flex flex-wrap gap-3">
                                 <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-teal-700 hover:text-teal-600">Lihat batch</a>
                                 @if ($batchModel)
+                                    @can('createForBatch', [\App\Modules\Inventory\Models\InventoryBatchDisposalRequest::class, $batchModel])
+                                        <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#buat-permintaan-disposal" class="text-sm font-medium text-rose-700 hover:text-rose-600">Buat Disposal</a>
+                                    @endcan
                                     @can('recordAction', $batchModel)
                                         <a href="{{ route('inventory.batches.show', $alert['inventory_batch_id']) }}#catat-tindakan-batch" class="text-sm font-medium text-orange-700 hover:text-orange-600">Catat Tindakan</a>
                                     @endcan

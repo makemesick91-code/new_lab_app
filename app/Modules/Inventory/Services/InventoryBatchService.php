@@ -19,6 +19,7 @@ class InventoryBatchService
         private readonly BranchContext $branchContext,
         private readonly BatchExpiryStatusService $expiryStatus,
         private readonly InventoryBatchActionLogService $actionLogs,
+        private readonly InventoryBatchDisposalWorkflowService $disposalWorkflow,
     ) {}
 
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -64,6 +65,8 @@ class InventoryBatchService
             'expiryDaysText' => $this->expiryDaysText($batch),
             'actionLogHistory' => $this->actionLogs->historyForBatch($batch),
             'latestActionLog' => $this->actionLogs->latestForBatch($batch),
+            'disposalRequests' => $this->disposalWorkflow->forBatch($batch),
+            'latestDisposalRequest' => $this->disposalWorkflow->latestForBatch($batch),
         ];
     }
 
