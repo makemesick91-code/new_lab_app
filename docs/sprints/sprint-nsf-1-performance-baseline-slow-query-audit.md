@@ -136,14 +136,47 @@ php artisan route:list | grep performance
 
 ---
 
-## PR / Deploy evidence (filled post-merge)
+## PR / Deploy evidence
 
 | Item | Value |
 | --- | --- |
-| PR | TBD |
-| Merge commit | TBD |
+| PR | [#153](https://github.com/makemesick91-code/new_lab_app/pull/153) |
+| Merge commit | `1bcae6cfa4690189e86a642e8b4fed88335364ba` |
 | GO tag | `sprint-nsf-1-performance-baseline-slow-query-audit-go` |
-| VPS previous HEAD | TBD |
-| VPS deployed HEAD | TBD |
-| Backup path | TBD |
-| Smoke | TBD |
+| Local HEAD | `1bcae6cfa4690189e86a642e8b4fed88335364ba` |
+| VPS previous HEAD | `cd103709eba2e4ca0c7ce0c706e3bb7eb399a2ab` |
+| VPS deployed HEAD | `1bcae6cfa4690189e86a642e8b4fed88335364ba` |
+| GO tag match on VPS | yes (`git describe --tags --exact-match HEAD`) |
+| Backup path | `storage/app/backups/deploy/pre_nsf1_20260703-104106.sql` |
+| Backup size | 543K |
+| Composer | OK (`--no-dev --optimize-autoloader`) |
+| npm build | OK (`app-DdSm4puC.css`, `app-JStlj-rZ.js`) |
+| Migration | Nothing to migrate |
+| php-fpm/nginx | active / reload OK |
+| HTTP login smoke | 200 |
+| VPS audit command | OK — 8 benchmarks, all OK status, 0 warnings |
+| VPS evidence file | `storage/app/performance/nsf1-vps-evidence.json` (9.8K) |
+
+### VPS benchmark hotspots (pilot dataset, small)
+
+| Benchmark | ms | Seq scan |
+| --- | --- | --- |
+| rme_active_visits | 0.016 | yes (small table) |
+| rme_medical_records_join | 0.049 | yes |
+| cashier_active_receivables | 0.02 | yes |
+| cashier_payment_sum_ytd | 0.024 | yes |
+| inv_current_stock_aggregate | 0.023 | no |
+| inv_movements_month_window | 0.015 | no |
+| owner_visits_month | 0.018 | yes |
+| owner_unpaid_invoices | 0.017 | yes |
+
+Seq scans acceptable at pilot volume; monitor at national scale.
+
+### Deferred NSF-2+
+
+1. `trx_inventory_movements_branch_movement_date_idx` — mutation/stock-card date scans
+2. `mst_patients_branch_active_idx` — branch patient list scaling
+
+## Final GO
+
+**GO** — merged, tagged, deployed, smoke green.
