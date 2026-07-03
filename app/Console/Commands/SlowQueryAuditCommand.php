@@ -164,6 +164,21 @@ class SlowQueryAuditCommand extends Command
             $this->table(['ID', 'Module', 'ms', 'Status', 'SeqScan?'], $benchRows);
         }
 
+        if (! empty($report['nsf2_index_status'])) {
+            $this->newLine();
+            $this->info('NSF-2 index pack');
+            $nsf2Rows = [];
+            foreach ($report['nsf2_index_status'] as $row) {
+                $nsf2Rows[] = [
+                    $row['target_index'] ?? '-',
+                    $row['resolved_index'] ?? '-',
+                    ($row['present'] ?? false) ? 'yes' : 'no',
+                    $row['status'] ?? '-',
+                ];
+            }
+            $this->table(['Target', 'Resolved', 'Present', 'Status'], $nsf2Rows);
+        }
+
         if (! empty($report['deferred_index_recommendations'])) {
             $this->newLine();
             $this->warn('Deferred index recommendations (NSF-2+)');
