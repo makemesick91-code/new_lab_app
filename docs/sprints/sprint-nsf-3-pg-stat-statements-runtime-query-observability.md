@@ -90,4 +90,63 @@ php artisan performance:runtime-query-observability --reset-baseline  # pgsql on
 
 ---
 
-*Post-deploy evidence (PR, merge, GO tag, VPS) updated after deployment.*
+## Post-merge evidence
+
+| Item | Value |
+| --- | --- |
+| PR | [#157](https://github.com/makemesick91-code/new_lab_app/pull/157) |
+| Merge commit | `5865a5eaae4b0776c660e76eb5084378b4e9f82f` |
+| Sprint commit | `0367aa1` |
+| GO tag | `sprint-nsf-3-pg-stat-statements-runtime-query-observability-go` → `5865a5e` |
+| Local HEAD (merged) | `5865a5eaae4b0776c660e76eb5084378b4e9f82f` |
+| Full suite | 3600 passed, 0 failed, 7 skipped |
+| RuntimeQuery tests | 10 passed, 2 skipped (pgsql-only) |
+
+## VPS deployment
+
+| Item | Value |
+| --- | --- |
+| Status | **BLOCKED — infrastructure unreachable** |
+| VPS previous HEAD | unknown (SSH unreachable) |
+| VPS deployed HEAD | not deployed |
+
+### Blocker details
+
+**Local SSH (failed):**
+```bash
+ssh -o ConnectTimeout=15 -o BatchMode=yes daengtisiams-vps 'hostname'
+# ssh: connect to host 145.79.13.224 port 22: Connection timed out
+```
+
+**GitHub Actions deploy (failed):**
+- Workflow: `Deploy VPS Pilot` run [28687670723](https://github.com/makemesick91-code/new_lab_app/actions/runs/28687670723)
+- Failed step: `Setup SSH` (exit 1) — SSH secrets/connectivity issue from CI runner
+
+### Manual VPS steps (when connectivity restored)
+
+```bash
+cd /var/www/asia-dental-lab-v2
+# backup DB + postgresql.conf (see runbook above)
+git fetch --all --tags --prune
+git checkout feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+git pull --ff-only origin feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+# verify: git describe --tags --exact-match HEAD
+# enable pg_stat_statements if needed, then:
+bash scripts/deploy-vps.sh
+php artisan performance:runtime-query-observability --json --output=nsf3-vps-runtime-query-observability.json
+php artisan performance:slow-query-audit --json --skip-benchmarks --output=nsf3-vps-slow-query-audit.json
+```
+
+## Final GO/NO-GO
+
+| Area | Decision |
+| --- | --- |
+| Code + tests + PR + merge + GO tag | **GO** |
+| VPS deploy + pg_stat evidence + smoke | **WATCH** — blocked by SSH/network; manual deploy required |
+
+## NSF-4 recommendations (deferred)
+
+- Scheduled weekly `performance:runtime-query-observability` capture on pilot
+- Dashboard panel for top sanitized query summaries (read-only)
+- Alert when `risk_hint` = high_mean_latency on RME/inventory modules
+- pg_stat_statements tuning (`pg_stat_statements.max`, track_io_timing)
