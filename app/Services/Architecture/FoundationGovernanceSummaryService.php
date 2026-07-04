@@ -2,6 +2,7 @@
 
 namespace App\Services\Architecture;
 
+use App\Services\DataQuality\Dq1AuditService;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 
@@ -15,6 +16,7 @@ class FoundationGovernanceSummaryService
         private readonly DmoApplicationRulesService $dmoRules,
         private readonly DmoFoundationService $dmoFoundation,
         private readonly OwnerKpiRegistryService $ownerKpiRegistry,
+        private readonly Dq1AuditService $dq1Audit,
     ) {}
 
     /**
@@ -37,6 +39,7 @@ class FoundationGovernanceSummaryService
         ]);
 
         $ownerKpi = $this->ownerKpiRegistry->collect();
+        $dq1 = $this->dq1Audit->audit();
 
         return [
             'generated_at' => now()->toIso8601String(),
@@ -51,7 +54,7 @@ class FoundationGovernanceSummaryService
             'summary' => [
                 'nsf_decision' => $nsf['summary']['decision'] ?? 'UNKNOWN',
                 'dmo_decision' => $dmo['summary']['decision'] ?? 'UNKNOWN',
-                'combined_decision' => $this->combinedDecision($nsf, $dmo),
+                'combined_decision' => $this->combinedDecision($nsf, $dmo, $dq1),
                 'nsf_rules' => $nsf['summary']['rules'] ?? 0,
                 'nsf_passed' => $nsf['summary']['passed'] ?? 0,
                 'nsf_warnings' => $nsf['summary']['warnings'] ?? 0,
@@ -64,6 +67,11 @@ class FoundationGovernanceSummaryService
                 'owner_kpi_alias_count' => count($ownerKpi['aliases'] ?? []),
                 'dmo_entities' => $foundation['summary']['entities'] ?? 0,
                 'dmo_metrics' => $foundation['summary']['metrics'] ?? 0,
+                'dq1_decision' => $dq1['summary']['decision'] ?? 'UNKNOWN',
+                'dq1_checks' => $dq1['summary']['checks'] ?? 0,
+                'dq1_passed' => $dq1['summary']['passed'] ?? 0,
+                'dq1_warnings' => $dq1['summary']['warnings'] ?? 0,
+                'dq1_errors' => $dq1['summary']['errors'] ?? 0,
             ],
             'nsf_governance' => [
                 'summary' => $nsf['summary'],
@@ -83,11 +91,16 @@ class FoundationGovernanceSummaryService
             'dmo_foundation' => [
                 'summary' => $foundation['summary'] ?? [],
             ],
+            'dq1_governance' => [
+                'summary' => $dq1['summary'] ?? [],
+                'command' => 'data-quality:dq1-audit',
+            ],
             'commands_available' => [
                 'architecture:nsf-governance-check' => array_key_exists('architecture:nsf-governance-check', Artisan::all()),
                 'architecture:dmo-governance-check' => array_key_exists('architecture:dmo-governance-check', Artisan::all()),
                 'architecture:owner-kpi-registry' => array_key_exists('architecture:owner-kpi-registry', Artisan::all()),
                 'architecture:dmo-foundation' => array_key_exists('architecture:dmo-foundation', Artisan::all()),
+                'data-quality:dq1-audit' => array_key_exists('data-quality:dq1-audit', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,
@@ -99,20 +112,23 @@ class FoundationGovernanceSummaryService
     /**
      * @param  array<string, mixed>  $nsf
      * @param  array<string, mixed>  $dmo
+     * @param  array<string, mixed>  $dq1
      */
-    private function combinedDecision(array $nsf, array $dmo): string
+    private function combinedDecision(array $nsf, array $dmo, array $dq1): string
     {
         $nsfErrors = (int) ($nsf['summary']['errors'] ?? 0);
         $dmoErrors = (int) ($dmo['summary']['errors'] ?? 0);
+        $dq1Errors = (int) ($dq1['summary']['errors'] ?? 0);
 
-        if ($nsfErrors > 0 || $dmoErrors > 0) {
+        if ($nsfErrors > 0 || $dmoErrors > 0 || $dq1Errors > 0) {
             return 'NO-GO';
         }
 
         $nsfWarnings = (int) ($nsf['summary']['warnings'] ?? 0);
         $dmoWarnings = (int) ($dmo['summary']['warnings'] ?? 0);
+        $dq1Warnings = (int) ($dq1['summary']['warnings'] ?? 0);
 
-        if ($nsfWarnings > 0 || $dmoWarnings > 0) {
+        if ($nsfWarnings > 0 || $dmoWarnings > 0 || $dq1Warnings > 0) {
             return 'WATCH';
         }
 
