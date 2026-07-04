@@ -1,15 +1,16 @@
 <?php
 
 /**
- * FG-1 foundation governance classifications and deferred backlog metadata.
+ * FG-1 / DMO-3 foundation governance classifications and deferred backlog metadata.
  * Consumed by FoundationGovernanceSummaryService — does not silence real blockers.
  */
 return [
-    'sprint' => 'FG-1',
-    'version' => 'FG-1',
+    'sprint' => 'DMO-3',
+    'version' => 'DMO-3',
 
     'evidence_docs' => [
         'fg-1' => 'docs/sprints/fg-1-foundation-watch-burndown-combined-go-closure-evidence.md',
+        'dmo-3' => 'docs/sprints/dmo-3-deferred-metric-backlog-closure-evidence.md',
         'dq-1' => 'docs/sprints/dq-1-acid-constraint-data-quality-audit-evidence.md',
         'dq-2' => 'docs/sprints/dq-2-batch-tracked-movement-backfill-inventory-batch-governance-evidence.md',
         'dq-3' => 'docs/sprints/dq-3-source-document-batch-linkage-closure-evidence.md',
@@ -22,10 +23,10 @@ return [
         'NSF-R012' => 'evidence_only',
         'NSF-M001' => 'deferred_backlog',
         'NSF-M002' => 'deferred_backlog',
-        'DMO-M001' => 'deferred_backlog',
-        'DMO-M003' => 'deferred_backlog',
-        'DMO-M006' => 'deferred_backlog',
-        'DMO-M007' => 'deferred_backlog',
+        'DMO-M001' => 'resolved_metric',
+        'DMO-M003' => 'resolved_metric',
+        'DMO-M006' => 'resolved_metric',
+        'DMO-M007' => 'resolved_metric',
     ],
 
     'deferred_backlog' => [
@@ -41,29 +42,24 @@ return [
             'target_sprint' => 'NSF-7',
             'summary' => 'pg_stat_statements validated on VPS; local SQLite may be not_applicable',
         ],
+    ],
+
+    'resolved_metrics' => [
         'DMO-M001' => [
-            'owner' => 'Product/Finance',
-            'risk' => 'medium',
-            'target_sprint' => 'DMO-3',
-            'summary' => 'net_revenue blocked — pilot uses paid_amount as revenue KPI',
+            'source' => 'DmoMetricService::netRevenue',
+            'summary' => 'net_revenue = collected RME + Lab payments excluding VOID; no receivable remaining counted',
         ],
         'DMO-M003' => [
-            'owner' => 'Finance',
-            'risk' => 'medium',
-            'target_sprint' => 'DMO-3',
-            'summary' => 'receivable_aging_bucket has no persisted aging table',
+            'source' => 'DmoMetricService::receivableAgingBuckets',
+            'summary' => 'Invoice-remaining aging buckets computed at read time',
         ],
         'DMO-M006' => [
-            'owner' => 'Product',
-            'risk' => 'medium',
-            'target_sprint' => 'DMO-3',
-            'summary' => 'Treatment/tariff multi-branch price boundary',
+            'source' => 'TariffBoundaryService::resolveActiveTariff',
+            'summary' => 'Branch-specific tariff lookup without cross-branch fallback',
         ],
         'DMO-M007' => [
-            'owner' => 'Lab/Delivery',
-            'risk' => 'medium',
-            'target_sprint' => 'DMO-3',
-            'summary' => 'pod_count blocked pending POD field standardization',
+            'source' => 'DmoMetricService::podCount',
+            'summary' => 'POD count from confirmed delivery signature proof on trx_lab_deliveries',
         ],
     ],
 

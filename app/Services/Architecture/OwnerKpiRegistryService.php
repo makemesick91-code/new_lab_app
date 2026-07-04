@@ -10,7 +10,7 @@ use Illuminate\Foundation\Application;
  */
 class OwnerKpiRegistryService
 {
-    /** @var list<string> */
+    /** Metrics defined in DMO-3 but not promoted to Owner KPI cards. */
     private const BLOCKED_METRICS = ['net_revenue', 'pod_count'];
 
     /**
@@ -373,14 +373,14 @@ class OwnerKpiRegistryService
         return [
             [
                 'metric' => 'net_revenue',
-                'reason' => 'No canonical net revenue field in pilot; paid_amount used as revenue KPI',
-                'backlog' => 'DMO-M001',
+                'reason' => 'Canonical metric defined in DMO-3; Owner dashboard continues to use paid_amount/total_revenue',
+                'backlog' => null,
                 'owner_kpi_eligible' => false,
             ],
             [
                 'metric' => 'pod_count',
-                'reason' => 'POD field not standardized for metrics',
-                'backlog' => 'DMO-M007',
+                'reason' => 'Canonical lab delivery POD metric; not an Owner KPI card',
+                'backlog' => null,
                 'owner_kpi_eligible' => false,
             ],
         ];
@@ -395,13 +395,13 @@ class OwnerKpiRegistryService
             [
                 'metric' => 'gross_revenue',
                 'reason' => 'Invoiced amount differs from collected paid_amount in pilot',
-                'backlog' => 'DMO-M001',
+                'backlog' => null,
                 'owner_kpi_eligible' => false,
             ],
             [
                 'metric' => 'receivable_aging_bucket',
-                'reason' => 'No persisted aging table',
-                'backlog' => 'DMO-M003',
+                'reason' => 'Computed aging buckets via DmoMetricService; not a single Owner KPI scalar',
+                'backlog' => null,
                 'owner_kpi_eligible' => false,
             ],
             [

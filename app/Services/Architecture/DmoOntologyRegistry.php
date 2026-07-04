@@ -55,7 +55,7 @@ class DmoOntologyRegistry
             self::dim('warehouse_location', 'Inventory Location', 'inv_inventory_locations', 'Room vs warehouse stock'),
             self::dim('batch', 'Inventory Batch', 'inv_inventory_batches', 'Lot/expiry governance'),
             self::dim('status', 'Domain status', 'varies', 'Visit, invoice, PO, lab, opname status enums'),
-            self::dim('aging_bucket', 'Receivable aging', 'derived', 'Computed — no persisted bucket table (DMO-M003)'),
+            self::dim('aging_bucket', 'Receivable aging', 'derived', 'Computed at read time via DmoMetricService (DMO-3)'),
         ];
     }
 

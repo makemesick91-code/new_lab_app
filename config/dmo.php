@@ -5,7 +5,7 @@
  * Machine-readable governance — validated by architecture:dmo-governance-check.
  */
 return [
-    'sprint' => 'DMO-2',
+    'sprint' => 'DMO-3',
 
     'rules' => [
         [
@@ -145,10 +145,12 @@ return [
         ],
     ],
 
-    'deferred_warnings' => [
-        'DMO-M001' => 'net_revenue blocked — pilot uses paid_amount as revenue KPI',
-        'DMO-M003' => 'receivable_aging_bucket has no persisted aging table',
-        'DMO-M006' => 'Treatment/tariff multi-branch price boundary',
-        'DMO-M007' => 'pod_count blocked pending POD field standardization',
+    'deferred_warnings' => [],
+
+    'resolved_metrics' => [
+        'DMO-M001' => 'net_revenue defined via DmoMetricService — collected payments only',
+        'DMO-M003' => 'receivable_aging_bucket computed at read time via DmoMetricService',
+        'DMO-M006' => 'Treatment/tariff multi-branch boundary enforced via TariffBoundaryService',
+        'DMO-M007' => 'pod_count from trx_lab_deliveries signature proof via DmoMetricService',
     ],
 ];

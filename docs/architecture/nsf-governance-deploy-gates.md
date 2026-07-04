@@ -32,7 +32,7 @@ FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + clas
 | --- | --- |
 | PR merged | Into stable base branch |
 | NSF decision | GO or WATCH (deferred backlog only) |
-| DMO decision | GO or WATCH (deferred backlog only) |
+| DMO decision | GO (DMO-3 resolved M001/M003/M006/M007) or WATCH for new deferred items only |
 | Evidence | `storage/app/architecture/nsf6-governance-check.json` |
 | Rollback plan | Documented in sprint evidence |
 

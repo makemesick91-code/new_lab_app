@@ -4,6 +4,7 @@ namespace App\Modules\Tariff\Interfaces;
 
 use App\Modules\Tariff\Models\Tariff;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 
 interface TariffRepositoryInterface
 {
@@ -13,6 +14,8 @@ interface TariffRepositoryInterface
     public function paginate(int $branchId, array $filters = [], int $perPage = 10): LengthAwarePaginator;
 
     public function findInBranch(int $branchId, int $id): ?Tariff;
+
+    public function findActiveForTreatment(int $branchId, int $treatmentId, ?Carbon $onDate = null): ?Tariff;
 
     /**
      * @param  array<string, mixed>  $data

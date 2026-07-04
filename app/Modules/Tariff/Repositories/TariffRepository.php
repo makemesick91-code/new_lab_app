@@ -5,6 +5,7 @@ namespace App\Modules\Tariff\Repositories;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 
 class TariffRepository implements TariffRepositoryInterface
 {
@@ -38,6 +39,20 @@ class TariffRepository implements TariffRepositoryInterface
         return Tariff::query()
             ->where('branch_id', $branchId)
             ->find($id);
+    }
+
+    public function findActiveForTreatment(int $branchId, int $treatmentId, ?Carbon $onDate = null): ?Tariff
+    {
+        $onDate = ($onDate ?? now())->toDateString();
+
+        return Tariff::query()
+            ->where('branch_id', $branchId)
+            ->where('treatment_id', $treatmentId)
+            ->where('is_active', true)
+            ->whereDate('effective_date', '<=', $onDate)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id')
+            ->first();
     }
 
     public function create(array $data): Tariff

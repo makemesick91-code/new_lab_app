@@ -24,10 +24,11 @@ class DmoApplicationRulesService
         'owner_receivable_invoice_count', 'owner_follow_up_count',
     ];
 
-    private const BLOCKED_METRICS = ['net_revenue', 'pod_count'];
+    private const BLOCKED_METRICS = [];
 
     public function __construct(
         private readonly OwnerKpiRegistryService $ownerKpiRegistry,
+        private readonly DmoDeferredMetricGovernanceService $deferredMetrics,
     ) {}
 
     /**
@@ -55,7 +56,7 @@ class DmoApplicationRulesService
         $results = array_merge($results, $this->validateR013());
         $results = array_merge($results, $this->validateR014());
         $results = array_merge($results, $this->validateR015());
-        $results = array_merge($results, $this->validateDeferredWarnings());
+        $results = array_merge($results, $this->deferredMetrics->collect());
 
         if (! $includeWarnings) {
             $results = array_values(array_filter($results, fn (array $r) => $r['severity'] !== 'warning'));
@@ -82,7 +83,7 @@ class DmoApplicationRulesService
                 'laravel_version' => Application::VERSION,
                 'php_version' => PHP_VERSION,
                 'database_driver' => (string) config('database.default'),
-                'sprint' => 'DMO-2',
+                'sprint' => 'DMO-3',
                 'rules_source' => 'config/dmo.php',
                 'strict' => (bool) ($options['strict'] ?? false),
                 'domain_filter' => $domain,
@@ -391,7 +392,7 @@ class DmoApplicationRulesService
         $violations = array_intersect(self::BLOCKED_METRICS, $ownerSources);
 
         if ($violations === []) {
-            return [$this->result('DMO-R013', 'passed', 'owner_kpis', 'No blocked metrics used as Owner KPI sources', 'Resolve net_revenue/pod_count before promoting to Owner KPI', 'error')];
+            return [$this->result('DMO-R013', 'passed', 'owner_kpis', 'No blocked metrics used as Owner KPI sources', 'Keep net_revenue/pod_count as metric definitions only until promoted', 'error')];
         }
 
         return array_map(fn (string $m) => $this->result(
@@ -435,24 +436,6 @@ class DmoApplicationRulesService
                 'info',
             ),
         ];
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function validateDeferredWarnings(): array
-    {
-        $results = [];
-        foreach (config('dmo.deferred_warnings', []) as $id => $message) {
-            $results[] = $this->result(
-                $id, 'warning', 'backlog',
-                $message,
-                'Track in DMO-3/NDA backlog — not blocking DMO-2 GO',
-                'warning',
-            );
-        }
-
-        return $results;
     }
 
     /**
