@@ -120,3 +120,17 @@ php artisan architecture:nsf-governance-check
   [--include-observability]
   [--include-privacy]
 ```
+
+## ROADMAP-1 Source Lock (2026-07-04)
+
+- The national foundation expansion roadmap is now **source-locked** in
+  [`config/foundation_roadmap.php`](../../config/foundation_roadmap.php) and
+  [`national-foundation-expansion-roadmap.md`](national-foundation-expansion-roadmap.md).
+- Future foundation work **must follow** `config/foundation_roadmap.php`. Cursor/Claude
+  prompts must reference the roadmap before creating any new foundation sprint.
+- Any change to order/scope must be made through a dedicated **ROADMAP update sprint**
+  with an evidence doc — never drift outside the locked sequence.
+- Foundation governance summary now includes a **ROADMAP** section
+  (`architecture:foundation-governance-summary`), and
+  `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
+- Next locked sprint: **NSF-9**.

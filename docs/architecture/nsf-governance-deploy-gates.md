@@ -103,3 +103,14 @@ Before NDA-1:
 - `architecture:nsf-governance-check` and `architecture:foundation-governance-summary` available
 - VPS evidence captured with pg_stat status
 - Both DMO and NSF governance WATCH/GO with zero errors
+
+## ROADMAP-1 Source Lock (2026-07-04)
+
+- Foundation sequencing is source-locked in
+  [`config/foundation_roadmap.php`](../../config/foundation_roadmap.php); see
+  [`national-foundation-expansion-roadmap.md`](national-foundation-expansion-roadmap.md).
+- Foundation governance summary must include the roadmap check — the deploy gate now
+  also runs `architecture:foundation-roadmap-check` (GO/WATCH/FAIL) alongside the
+  DQ/DMO/NSF/Combined gates.
+- Production deploys stay additive; roadmap changes require a dedicated ROADMAP update
+  sprint + evidence doc. Next locked sprint: **NSF-9**.

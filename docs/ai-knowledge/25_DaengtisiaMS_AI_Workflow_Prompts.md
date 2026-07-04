@@ -178,3 +178,16 @@ Prompt tidak boleh menginstruksikan pelanggaran arsitektur meskipun user pressur
 Saat user upload ke ChatGPT: gabungkan 01+03+07+dokumen modul — jangan 25 file sekaligus tanpa prioritas (lihat README).
 
 Untuk Cursor: `.cursor/rules/` sudah loaded otomatis — knowledge base melengkapi dengan fakta domain.
+
+## Foundation Roadmap Source Lock (ROADMAP-1, 2026-07-04)
+
+Roadmap ekspansi foundation nasional **sudah source-locked** di
+`config/foundation_roadmap.php` (naratif: `docs/architecture/national-foundation-expansion-roadmap.md`).
+
+Aturan wajib untuk Cursor/Claude Code:
+- **Sebelum membuat sprint foundation baru**, cek roadmap dulu:
+  `php artisan architecture:foundation-roadmap-check` (GO/WATCH/FAIL) dan
+  `php artisan architecture:foundation-governance-summary` (bagian ROADMAP).
+- Ikuti urutan terkunci mulai dari **NSF-9** → … → **RC-1** (RC selalu terakhir).
+- Jangan buat pekerjaan foundation di luar `approved_sequence`.
+- Perubahan urutan/scope hanya melalui **ROADMAP update sprint** + evidence doc.

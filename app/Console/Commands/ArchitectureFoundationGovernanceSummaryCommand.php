@@ -84,6 +84,18 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
             $s['combined_decision'],
             $combinedReason !== '' ? $combinedReason : 'see watch causes above',
         ));
+
+        $this->newLine();
+        $roadmap = $report['roadmap'] ?? [];
+        $this->line(sprintf(
+            'ROADMAP: %s (effective: %s) — track: %s',
+            $roadmap['decision'] ?? 'UNKNOWN',
+            $roadmap['effective_decision'] ?? 'UNKNOWN',
+            $roadmap['active_track'] ?? 'n/a',
+        ));
+        $this->line(sprintf('  - next recommended sprint: %s', $roadmap['next_recommended_sprint'] ?? 'n/a'));
+        $this->line(sprintf('  - total planned sprints: %d', $roadmap['total_planned_sprints'] ?? 0));
+        $this->line(sprintf('  - RC-1 locked after expansion: %s', ($roadmap['rc_locked_after_expansion'] ?? false) ? 'yes' : 'no'));
     }
 
     /**

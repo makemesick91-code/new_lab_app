@@ -23,6 +23,7 @@ class FoundationGovernanceSummaryService
         private readonly BatchGovernanceAuditService $dq2Audit,
         private readonly SourceDocumentBatchAuditService $dq3Audit,
         private readonly AmbiguousBatchReviewPackService $dq31Review,
+        private readonly FoundationRoadmapService $roadmap,
     ) {}
 
     /**
@@ -54,6 +55,7 @@ class FoundationGovernanceSummaryService
         $dmoWatch = $this->extractWatchCauses($dmo['results'] ?? [], 'dmo');
         $dqChain = $this->buildDqChainSummary($dq1, $dq2, $dq3, $dq31);
         $combined = $this->combinedDecision($nsf, $dmo, $dqChain, $nsfWatch, $dmoWatch);
+        $roadmap = $this->roadmap->collect();
 
         return [
             'generated_at' => now()->toIso8601String(),
@@ -107,6 +109,12 @@ class FoundationGovernanceSummaryService
                 'dq3_total_missing' => $dq3['summary']['total_missing'] ?? 0,
                 'dq31_decision' => $dq31['summary']['decision'] ?? 'UNKNOWN',
                 'dq31_ambiguous_count' => $dq31['summary']['total_ambiguous_count'] ?? 0,
+                'roadmap_decision' => $roadmap['summary']['decision'] ?? 'UNKNOWN',
+                'roadmap_effective_decision' => $roadmap['summary']['decision'] ?? 'UNKNOWN',
+                'roadmap_active_track' => $roadmap['active_track'] ?? null,
+                'roadmap_next_sprint' => $roadmap['next_recommended_sprint'] ?? null,
+                'roadmap_total_planned_sprints' => $roadmap['total_planned_sprints'] ?? 0,
+                'roadmap_rc_locked_after_expansion' => $roadmap['rc_locked_after_expansion'] ?? false,
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -115,6 +123,18 @@ class FoundationGovernanceSummaryService
             ],
             'dq_chain' => $dqChain,
             'combined' => $combined,
+            'roadmap' => [
+                'decision' => $roadmap['summary']['decision'] ?? 'UNKNOWN',
+                'effective_decision' => $roadmap['summary']['decision'] ?? 'UNKNOWN',
+                'roadmap_id' => $roadmap['roadmap_id'] ?? null,
+                'source_locked' => $roadmap['source_locked'] ?? false,
+                'active_track' => $roadmap['active_track'] ?? null,
+                'next_recommended_sprint' => $roadmap['next_recommended_sprint'] ?? null,
+                'total_planned_sprints' => $roadmap['total_planned_sprints'] ?? 0,
+                'rc_locked_after_expansion' => $roadmap['rc_locked_after_expansion'] ?? false,
+                'summary' => $roadmap['summary'] ?? [],
+                'command' => 'architecture:foundation-roadmap-check',
+            ],
             'fg1_checks' => $this->fg1Checks($nsfWatch, $dmoWatch, $dqChain, $combined),
             'evidence_docs' => $this->evidenceDocs(),
             'deferred_backlog' => config('foundation_governance.deferred_backlog', []),
@@ -158,6 +178,7 @@ class FoundationGovernanceSummaryService
                 'repair_command' => 'inventory:repair-ambiguous-batch-links',
             ],
             'commands_available' => [
+                'architecture:foundation-roadmap-check' => array_key_exists('architecture:foundation-roadmap-check', Artisan::all()),
                 'architecture:nsf-governance-check' => array_key_exists('architecture:nsf-governance-check', Artisan::all()),
                 'architecture:dmo-governance-check' => array_key_exists('architecture:dmo-governance-check', Artisan::all()),
                 'architecture:owner-kpi-registry' => array_key_exists('architecture:owner-kpi-registry', Artisan::all()),
