@@ -136,7 +136,12 @@ class InventoryRepairAmbiguousBatchLinksCommand extends Command
 
         $candidate = (string) $raw;
         if (! str_starts_with($candidate, '/')) {
-            $candidate = storage_path('app/reports/dq31/'.ltrim($candidate, '/'));
+            $normalized = ltrim($candidate, '/');
+            if (str_starts_with($normalized, 'storage/app/')) {
+                $candidate = base_path($normalized);
+            } else {
+                $candidate = storage_path('app/reports/dq31/'.$normalized);
+            }
         }
 
         $parent = dirname($candidate);
