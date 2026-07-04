@@ -125,13 +125,53 @@ Revert sprint commit(s). No DB rollback required.
 
 ## Post-Deploy Evidence
 
-_To be filled after VPS deploy._
-
 | Item | Value |
 | --- | --- |
-| PR | _pending_ |
-| Merge commit | _pending_ |
-| GO tag | `dmo-2-canonical-owner-kpi-registry-metric-alias-resolution-go` |
-| VPS previous HEAD | _pending_ |
-| VPS deployed HEAD | _pending_ |
-| Backup path | _pending_ |
+| PR | [#161](https://github.com/makemesick91-code/new_lab_app/pull/161) |
+| Merge commit | `61d52c052509f1ba1a3a02a0a4873ef862dbb9b8` |
+| GO tag | `dmo-2-canonical-owner-kpi-registry-metric-alias-resolution-go` → `61d52c0` |
+| Local HEAD | `61d52c052509f1ba1a3a02a0a4873ef862dbb9b8` |
+| VPS previous HEAD | `f1436283fc4a6987a00e039c7b9feaa401564e80` |
+| VPS deployed GO tag HEAD | `61d52c052509f1ba1a3a02a0a4873ef862dbb9b8` |
+| VPS final stable HEAD | `61d52c052509f1ba1a3a02a0a4873ef862dbb9b8` |
+| Backup | `storage/app/backups/deploy/pre_dmo2_20260704-025718.sql` (567K) |
+| Migration | Nothing to migrate |
+| php-fpm/nginx | restarted/reloaded OK |
+| Build assets (VPS) | `app-DdSm4puC.css`, `app-JStlj-rZ.js` |
+
+### VPS Evidence Paths
+
+| Path | Size |
+| --- | --- |
+| `storage/app/architecture/dmo2-vps-owner-kpi-registry.json` | 30K |
+| `storage/app/architecture/dmo2-vps-governance-check.json` | 144K |
+| `storage/app/architecture/dmo2-vps-foundation-reference.json` | 211K |
+| `storage/app/architecture/dmo2-vps-metric-reconciliation-reference.json` | 147K |
+| `storage/app/architecture/dmo2-vps-entity-inventory-reference.json` | 47K |
+| `storage/app/performance/dmo2-vps-runtime-query-observability.json` | 13K |
+| `storage/app/performance/dmo2-vps-slow-query-audit.json` | 14K |
+
+### VPS Governance / KPI Counts
+
+Same as local: 12 canonical KPIs, 22 aliases, 0 errors, 4 warnings, decision WATCH.
+
+### pg_stat_statements
+
+`available=true`, extension v1.10, `preloaded=true`.
+
+### Smoke
+
+| URL | Status |
+| --- | --- |
+| `/login` | 200 |
+| `/`, `/dashboard`, `/inventory/dashboard`, `/rme/visits` | 302 (unauthenticated) |
+
+### Log review
+
+No new Laravel errors on deploy date.
+
+## Final GO/NO-GO
+
+**GO** — DMO-2 deployed; governance 0 errors; DMO-M005 closed; deferred backlog remains WATCH-only.
+
+> GO tag points to deployed code commit `61d52c0`. Post-deploy evidence doc updates may follow on stable branch without moving the tag.
