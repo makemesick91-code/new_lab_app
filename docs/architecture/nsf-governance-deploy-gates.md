@@ -9,6 +9,7 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | Gate | Command / check |
 | --- | --- |
 | NSF governance | `php artisan architecture:nsf-governance-check --strict --include-dmo` |
+| NSF observability (VPS deploy) | `php artisan architecture:nsf-governance-check --include-observability` |
 | DMO governance | `php artisan architecture:dmo-governance-check --strict` |
 | DQ-1 data quality | `php artisan data-quality:dq1-audit --fail-on=error` |
 | DQ-2 batch governance | `php artisan inventory:batch-governance-audit --fail-on=error` |
@@ -23,6 +24,8 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, environment, or **automated_ci_gate** — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
 
 NSF-7 (CI evidence gates): `.github/workflows/foundation-evidence-gates.yml` automates NSF-R011 (critical + full suite) and NSF-R012 (build/pint). See `docs/architecture/nsf-7-evidence-gate-automation-r011-r012-ci.md`.
+
+NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `architecture:nsf-governance-check --include-observability`. See `docs/architecture/nsf-8-node20-observability-raw-go-closure.md`.
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` (CI: `full_suite_gate` job on schedule/push/dispatch) |
 | Critical regression | CI: `critical_test_gate` job on PR |
@@ -54,6 +57,9 @@ NSF-7 (CI evidence gates): `.github/workflows/foundation-evidence-gates.yml` aut
 | DQ-3.1 repair | Review pack → approved mapping → dry-run → backup → `--execute` only when mapping validates |
 | GO tag checkout | Deploy exact sprint GO tag first |
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
+| Node runtime | Node >=20 required for `npm ci && npm run build` (NSF-8) |
+| NSF observability | `php artisan architecture:nsf-governance-check --include-observability` |
+| Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Cache rebuild | config/route/view/event cache |
 | Services | php8.3-fpm restart, nginx reload |
 

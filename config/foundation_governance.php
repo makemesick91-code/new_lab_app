@@ -5,13 +5,14 @@
  * Consumed by FoundationGovernanceSummaryService — does not silence real blockers.
  */
 return [
-    'sprint' => 'NSF-7',
-    'version' => 'NSF-7',
+    'sprint' => 'NSF-8',
+    'version' => 'NSF-8',
 
     'evidence_docs' => [
         'fg-1' => 'docs/sprints/fg-1-foundation-watch-burndown-combined-go-closure-evidence.md',
         'dmo-3' => 'docs/sprints/dmo-3-deferred-metric-backlog-closure-evidence.md',
         'nsf-7' => 'docs/sprints/nsf-7-evidence-gate-automation-r011-r012-ci-evidence.md',
+        'nsf-8' => 'docs/sprints/nsf-8-node20-observability-raw-go-closure-evidence.md',
         'dq-1' => 'docs/sprints/dq-1-acid-constraint-data-quality-audit-evidence.md',
         'dq-2' => 'docs/sprints/dq-2-batch-tracked-movement-backfill-inventory-batch-governance-evidence.md',
         'dq-3' => 'docs/sprints/dq-3-source-document-batch-linkage-closure-evidence.md',
@@ -70,8 +71,8 @@ return [
             'workflow' => '.github/workflows/foundation-evidence-gates.yml',
         ],
         'NSF-M002' => [
-            'closed_in' => 'NSF-7',
-            'summary' => 'pg_stat_statements guardrail classified environment on non-VPS; VPS deploy evidence validates R009',
+            'closed_in' => 'NSF-8',
+            'summary' => 'NSF-R009 pg_stat observability validated via --include-observability on VPS deploy; pg_stat_database is sufficient for raw GO',
             'reclassified_as' => 'environment',
         ],
     ],
