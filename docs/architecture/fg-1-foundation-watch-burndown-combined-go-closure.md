@@ -19,7 +19,7 @@ Baseline commit: `dba5a2b` — docs: finalize DQ-3.1 approved repair evidence.
 
 | Rule ID | Classification | Cause | Action |
 | --- | --- | --- | --- |
-| NSF-R009 | environment | pg_stat_statements deferred locally; validate on VPS | Run `performance:runtime-query-observability` on VPS |
+| NSF-R009 | environment | pg_stat deep-check skipped without flag; VPS validates with --include-observability | NSF-8 closed via deploy gate |
 | NSF-R011 | evidence_only | Full suite gate requires sprint/CI evidence | Document in sprint evidence; run `php artisan test` |
 | NSF-R012 | evidence_only | Build/pint gate requires sprint evidence | Document in sprint evidence; run `npm run build` + pint |
 | NSF-M001 | deferred_backlog | Meta backlog for R011/R012 | Owner: Engineering; target: NSF-7 |

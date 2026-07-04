@@ -77,7 +77,9 @@ Validator: `App\Services\Architecture\NsfApplicationRulesService`
 ## 9. Observability rules
 
 - `performance:slow-query-audit` and `performance:runtime-query-observability` must remain registered.
-- VPS PostgreSQL should have `pg_stat_statements` preloaded (NSF-R009).
+- VPS PostgreSQL must allow read-only `pg_stat_database` for `current_database()` (NSF-R009).
+- `pg_stat_statements` is optional query-level observability; not required for NSF-R009 raw GO.
+- Deploy gate: `architecture:nsf-governance-check --include-observability` (NSF-8).
 
 ## 10. Privacy/evidence rules
 

@@ -85,9 +85,9 @@ return [
             'rule_id' => 'NSF-R009',
             'title' => 'pg_stat guardrail',
             'severity' => 'warning',
-            'description' => 'On VPS, pg_stat_statements should be available/preloaded for runtime query observability.',
+            'description' => 'On VPS PostgreSQL, pg_stat_database must be readable; pg_stat_statements is optional query-level observability.',
             'applies_to' => ['performance', 'vps'],
-            'validation' => 'pg_stat_statements_guardrail',
+            'validation' => 'pg_stat_observability_guardrail',
             'status' => 'active',
         ],
         [

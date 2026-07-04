@@ -75,7 +75,7 @@ run_critical_governance() {
         fi
         if php artisan list --raw 2>/dev/null | grep -q '^architecture:nsf-governance-check$'; then
             echo ""
-            echo "--- architecture:nsf-governance-check ---"
+            echo "--- architecture:nsf-governance-check (CI-safe; no --include-observability) ---"
             php artisan architecture:nsf-governance-check
         fi
     } 2>&1 | tee "$EVIDENCE_DIR/dq-audits.txt"

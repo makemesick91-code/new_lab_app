@@ -5,6 +5,7 @@ namespace App\Services\Architecture;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 /**
  * NSF-6 application-level governance validation.
@@ -435,10 +436,10 @@ class NsfApplicationRulesService
         if ($driver !== 'pgsql') {
             return [$this->ruleResult(
                 'NSF-R009',
-                'pg_stat_statements guardrail applies on VPS PostgreSQL (not applicable locally)',
+                'pg_stat observability guardrail applies on VPS PostgreSQL (not applicable locally)',
                 'not_applicable',
                 [$driver],
-                'Validate pg_stat_statements on VPS during deploy evidence',
+                'Validate pg_stat observability on VPS with --include-observability during deploy',
                 'warning',
             )];
         }
@@ -446,12 +447,85 @@ class NsfApplicationRulesService
         if (! $deepCheck) {
             return [$this->ruleResult(
                 'NSF-R009',
-                'pg_stat_statements check deferred — use --include-observability on VPS',
+                'pg_stat observability deep-check skipped — rerun with --include-observability on deploy',
+                'skipped',
+                ['include_observability' => false],
+                'Run architecture:nsf-governance-check --include-observability during VPS deploy',
+                'info',
+            )];
+        }
+
+        $databaseStat = $this->inspectPgStatDatabase();
+        $statementsStat = $this->inspectPgStatStatements();
+        $evidence = [
+            'pg_stat_database' => $databaseStat,
+            'pg_stat_statements' => $statementsStat,
+        ];
+
+        if (! ($databaseStat['readable'] ?? false)) {
+            return [$this->ruleResult(
+                'NSF-R009',
+                'pg_stat_database not readable: '.($databaseStat['reason'] ?? 'permission denied'),
                 'warning',
-                ['pg_stat_statements'],
-                'Run performance:runtime-query-observability on VPS for pg_stat evidence',
+                $evidence,
+                'Grant SELECT on pg_stat_database to the application DB role',
                 'warning',
             )];
+        }
+
+        $message = 'pg_stat_database readable for PostgreSQL observability';
+        if ($statementsStat['available'] ?? false) {
+            $message .= '; pg_stat_statements also available';
+        } else {
+            $message .= '; pg_stat_statements optional ('.($statementsStat['reason'] ?? 'not installed').')';
+        }
+
+        return [$this->ruleResult(
+            'NSF-R009',
+            $message,
+            'passed',
+            $evidence,
+            ($statementsStat['available'] ?? false)
+                ? 'Continue periodic runtime observability during deploy evidence'
+                : 'pg_stat_database satisfies NSF-R009; install pg_stat_statements optionally for query-level observability',
+            'warning',
+        )];
+    }
+
+    /**
+     * @return array{readable: bool, view: string, database?: ?string, reason?: string}
+     */
+    private function inspectPgStatDatabase(): array
+    {
+        try {
+            DB::selectOne('SELECT 1 FROM pg_stat_database WHERE datname = current_database() LIMIT 1');
+            DB::selectOne('SELECT numbackends FROM pg_stat_database WHERE datname = current_database() LIMIT 1');
+            $row = DB::selectOne('SELECT current_database() AS name');
+
+            return [
+                'readable' => true,
+                'view' => 'pg_stat_database',
+                'database' => $row !== null ? (string) $row->name : null,
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'readable' => false,
+                'view' => 'pg_stat_database',
+                'reason' => $exception->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * @return array{available: bool, extension_installed?: bool, preloaded?: bool, reason?: ?string}
+     */
+    private function inspectPgStatStatements(): array
+    {
+        if (! $this->commandExists('performance:runtime-query-observability')) {
+            return [
+                'available' => false,
+                'reason' => 'performance:runtime-query-observability command missing',
+            ];
         }
 
         try {
@@ -461,28 +535,20 @@ class NsfApplicationRulesService
                 '--min-calls' => 1,
             ]);
             $payload = json_decode(Artisan::output(), true);
-            $pgStat = $payload['pg_stat_statements'] ?? null;
-            $available = is_array($pgStat) && ($pgStat['available'] ?? false);
+            $pgStat = is_array($payload) ? ($payload['pg_stat_statements'] ?? []) : [];
+            $available = (bool) ($pgStat['available'] ?? false);
 
-            return [$this->ruleResult(
-                'NSF-R009',
-                $available
-                    ? 'pg_stat_statements is available for runtime observability'
-                    : 'pg_stat_statements not available or not preloaded',
-                $available ? 'passed' : 'warning',
-                ['pg_stat_statements'],
-                'Enable and preload pg_stat_statements on VPS PostgreSQL',
-                'warning',
-            )];
-        } catch (\Throwable $e) {
-            return [$this->ruleResult(
-                'NSF-R009',
-                'pg_stat_statements check could not complete',
-                'warning',
-                ['pg_stat_statements'],
-                'Verify pg_stat_statements extension on VPS',
-                'warning',
-            )];
+            return [
+                'available' => $available,
+                'extension_installed' => (bool) ($pgStat['extension_installed'] ?? false),
+                'preloaded' => (bool) ($pgStat['preloaded'] ?? false),
+                'reason' => $available ? null : (string) ($pgStat['setup_instructions'] ?? 'pg_stat_statements not available'),
+            ];
+        } catch (\Throwable $exception) {
+            return [
+                'available' => false,
+                'reason' => $exception->getMessage(),
+            ];
         }
     }
 
@@ -939,17 +1005,10 @@ class NsfApplicationRulesService
             'pg_stat_expected_on_vps' => (string) config('database.default') === 'pgsql',
         ];
 
-        if ($deepCheck && $base['runtime_query_observability_command_available'] && config('database.default') === 'pgsql') {
-            try {
-                Artisan::call('performance:runtime-query-observability', [
-                    '--json' => true,
-                    '--limit' => 1,
-                    '--min-calls' => 1,
-                ]);
-                $payload = json_decode(Artisan::output(), true);
-                $base['pg_stat_statements'] = $payload['pg_stat_statements'] ?? null;
-            } catch (\Throwable) {
-                $base['pg_stat_statements'] = ['available' => false];
+        if ($deepCheck && config('database.default') === 'pgsql') {
+            $base['pg_stat_database'] = $this->inspectPgStatDatabase();
+            if ($base['runtime_query_observability_command_available']) {
+                $base['pg_stat_statements'] = $this->inspectPgStatStatements();
             }
         }
 

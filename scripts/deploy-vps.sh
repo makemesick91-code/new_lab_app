@@ -44,6 +44,15 @@ npm run build
 echo "== Laravel migrate =="
 php artisan migrate --force
 
+echo "== Foundation deploy governance gates =="
+php artisan data-quality:dq1-audit --fail-on=error
+php artisan inventory:batch-governance-audit --fail-on=error
+php artisan inventory:source-document-batch-audit --fail-on=error
+php artisan inventory:ambiguous-batch-review-pack
+php artisan architecture:dmo-governance-check
+php artisan architecture:nsf-governance-check --include-observability
+php artisan architecture:foundation-governance-summary
+
 echo "== Laravel cache rebuild =="
 php artisan optimize:clear
 php artisan config:cache
