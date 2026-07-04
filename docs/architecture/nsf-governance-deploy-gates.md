@@ -10,7 +10,9 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | --- | --- |
 | NSF governance | `php artisan architecture:nsf-governance-check --strict --include-dmo` |
 | DMO governance | `php artisan architecture:dmo-governance-check --strict` |
-| Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `OwnerKpiRegistry` |
+| DQ-1 data quality | `php artisan data-quality:dq1-audit --fail-on=error` |
+| Foundation summary | `php artisan architecture:foundation-governance-summary` |
+| Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` |
 | Style | `./vendor/bin/pint --dirty` |
 | Build | `npm ci && npm run build` |
@@ -29,7 +31,8 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 
 | Gate | Requirement |
 | --- | --- |
-| Pre-deploy backup | `storage/app/backups/deploy/pre_nsf6_*.sql` with recorded size |
+| Pre-deploy backup | `storage/app/backups/deploy/pre_dq1_*.sql` or `pre_nsf6_*.sql` with recorded size |
+| DQ-1 audit | `php artisan data-quality:dq1-audit --fail-on=error` — GO or controlled WATCH |
 | GO tag checkout | Deploy exact sprint GO tag first |
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
 | Cache rebuild | config/route/view/event cache |
@@ -39,6 +42,7 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 
 | Path pattern | Content |
 | --- | --- |
+| `storage/app/architecture/dq1-*.json` | DQ-1 ACID/constraint/data quality evidence |
 | `storage/app/architecture/nsf6-*.json` | NSF/DMO governance evidence |
 | `storage/app/performance/nsf6-*.json` | Runtime observability, slow query audit |
 

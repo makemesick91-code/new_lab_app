@@ -90,12 +90,20 @@ NSF-R021 declares that NDA implementation must not violate branch isolation, led
 ## 13. How future sprints must use these rules
 
 1. Run `architecture:nsf-governance-check --include-dmo --include-observability`
-2. Run `architecture:foundation-governance-summary` before GO tag
-3. Capture evidence under `storage/app/architecture/`
-4. Document rollback in sprint evidence
-5. Pass full suite + build gates before merge
+2. Run `data-quality:dq1-audit --fail-on=error` for database/foundation sprints
+3. Run `architecture:foundation-governance-summary` before GO tag
+4. Capture evidence under `storage/app/architecture/`
+5. Document rollback in sprint evidence
+6. Pass full suite + build gates before merge
+7. Multi-write operations must use `DB::transaction` (see `docs/architecture/dq-1-acid-constraint-data-quality-audit.md`)
+8. Migrations must be additive and production-safe; prefer named constraints after DQ-1 audit confirms clean data
 
 ```bash
+php artisan data-quality:dq1-audit
+  [--json]
+  [--output=storage/app/architecture/dq1-audit.json]
+  [--fail-on=error|warning|any]
+
 php artisan architecture:nsf-governance-check
   [--json]
   [--output=storage/app/architecture/nsf6-governance-check.json]
