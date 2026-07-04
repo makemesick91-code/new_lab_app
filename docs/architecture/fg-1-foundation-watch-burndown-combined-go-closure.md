@@ -85,3 +85,12 @@ php artisan inventory:ambiguous-batch-review-pack
 ## Service
 
 - `App\Services\Architecture\FoundationGovernanceSummaryService` — NSF + DMO + DQ chain + Combined decision with watch cause enumeration.
+- `App\Services\Architecture\FoundationRoadmapService` — ROADMAP-1 source-lock validator; the summary now embeds a **ROADMAP** section (raw/effective GO, active track, next sprint, total planned sprints, RC-1 locked after expansion).
+
+## ROADMAP-1 Source Lock (2026-07-04)
+
+- The foundation expansion roadmap is source-locked in
+  [`config/foundation_roadmap.php`](../../config/foundation_roadmap.php) with narrative
+  [`national-foundation-expansion-roadmap.md`](national-foundation-expansion-roadmap.md).
+- `architecture:foundation-governance-summary` includes the roadmap check; run
+  `architecture:foundation-roadmap-check` for GO/WATCH/FAIL. Next locked sprint: **NSF-9**.

@@ -81,3 +81,13 @@ Document pre-upgrade `node --version` / `npm --version`. Rollback: reinstall pri
 - NSF-R009 raw GO requires `pg_stat_database` readable in production deploy environment.
 - CI evidence gates R011/R012 remain mandatory (NSF-7).
 - GO tag must not be moved for docs-only evidence commits.
+
+## ROADMAP-1 Source Lock (2026-07-04)
+
+- NSF-8 is the locked **baseline** for the national foundation expansion roadmap
+  ([`config/foundation_roadmap.php`](../../config/foundation_roadmap.php),
+  [`national-foundation-expansion-roadmap.md`](national-foundation-expansion-roadmap.md)).
+- All future foundation sprints must follow the locked sequence starting at **NSF-9**.
+  Order/scope changes require a dedicated ROADMAP update sprint + evidence doc.
+- Foundation governance summary + deploy gates now include
+  `architecture:foundation-roadmap-check` (GO/WATCH/FAIL).
