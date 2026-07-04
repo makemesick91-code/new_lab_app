@@ -92,6 +92,10 @@ class SourceDocumentBatchBackfillService
         ];
 
         if (! $execute) {
+            $summary['linked_from_movement'] = $preview['linked_from_movement'] ?? 0;
+            $summary['linked_from_source_batch_fields'] = $preview['linked_from_source_batch_fields'] ?? 0;
+            $summary['linked_legacy_placeholder_from_movement'] = $preview['linked_legacy_placeholder_from_movement'] ?? 0;
+            $summary['ambiguous_skipped'] = $preview['ambiguous_skipped'] ?? 0;
             $summary['items'] = $preview['items'];
 
             return $summary;
@@ -100,46 +104,44 @@ class SourceDocumentBatchBackfillService
         SourceDocumentBatchGuard::$bypassForGovernanceBackfill = true;
 
         try {
-            DB::transaction(function () use ($options, $preview, &$summary) {
-                foreach ($preview['items'] as $plan) {
-                    if ($plan['strategy'] === self::STRATEGY_ALREADY_LINKED) {
-                        $summary['skipped_already_linked']++;
+            foreach ($preview['items'] as $plan) {
+                if ($plan['strategy'] === self::STRATEGY_ALREADY_LINKED) {
+                    $summary['skipped_already_linked']++;
 
-                        continue;
-                    }
-
-                    if ($plan['strategy'] === self::STRATEGY_AMBIGUOUS) {
-                        $summary['ambiguous_skipped']++;
-                        $summary['items'][] = $plan;
-
-                        if ($options['fail_on_ambiguous'] ?? false) {
-                            throw new \RuntimeException(
-                                'Ambiguous source item '.$plan['source_document_type'].'#'.$plan['source_document_item_id'],
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    try {
-                        $result = $this->applyPlan($plan);
-                        $summary['items'][] = $result;
-
-                        match ($result['strategy']) {
-                            self::STRATEGY_LINK_FROM_MOVEMENT => $summary['linked_from_movement']++,
-                            self::STRATEGY_LINK_FROM_SOURCE_FIELDS => $summary['linked_from_source_batch_fields']++,
-                            self::STRATEGY_LEGACY_FROM_MOVEMENT => $summary['linked_legacy_placeholder_from_movement']++,
-                            default => null,
-                        };
-                    } catch (\Throwable $e) {
-                        $summary['errors']++;
-                        $summary['items'][] = array_merge($plan, [
-                            'applied' => false,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+                    continue;
                 }
-            });
+
+                if ($plan['strategy'] === self::STRATEGY_AMBIGUOUS) {
+                    $summary['ambiguous_skipped']++;
+                    $summary['items'][] = $plan;
+
+                    if ($options['fail_on_ambiguous'] ?? false) {
+                        throw new \RuntimeException(
+                            'Ambiguous source item '.$plan['source_document_type'].'#'.$plan['source_document_item_id'],
+                        );
+                    }
+
+                    continue;
+                }
+
+                try {
+                    $result = DB::transaction(fn () => $this->applyPlan($plan));
+                    $summary['items'][] = $result;
+
+                    match ($result['strategy']) {
+                        self::STRATEGY_LINK_FROM_MOVEMENT => $summary['linked_from_movement']++,
+                        self::STRATEGY_LINK_FROM_SOURCE_FIELDS => $summary['linked_from_source_batch_fields']++,
+                        self::STRATEGY_LEGACY_FROM_MOVEMENT => $summary['linked_legacy_placeholder_from_movement']++,
+                        default => null,
+                    };
+                } catch (\Throwable $e) {
+                    $summary['errors']++;
+                    $summary['items'][] = array_merge($plan, [
+                        'applied' => false,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
         } finally {
             SourceDocumentBatchGuard::$bypassForGovernanceBackfill = false;
         }
@@ -499,7 +501,10 @@ class SourceDocumentBatchBackfillService
             throw new \RuntimeException('Source item not updated (already linked or missing): '.$type.'#'.$itemId);
         }
 
-        $movementId = $plan['movement_id'] ?? null;
+        $movementId = isset($plan['movement_id']) ? (int) $plan['movement_id'] : null;
+        if ($movementId !== null && InventoryBatchBackfillLog::query()->where('inventory_movement_id', $movementId)->exists()) {
+            $movementId = null;
+        }
 
         InventoryBatchBackfillLog::query()->create([
             'inventory_movement_id' => $movementId,
