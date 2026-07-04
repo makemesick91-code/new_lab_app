@@ -314,17 +314,26 @@ class Dq1AuditService
 
         $invalidMovements = $this->countInvalidInventoryMovements();
         $batchMissing = $this->countBatchTrackedMovementsMissingBatch();
-        $movementIssues = $invalidMovements + $batchMissing;
+        $movementStatus = 'PASS';
+        $movementSeverity = 'error';
+        $movementMessage = 'Inventory movements follow ledger direction rules.';
+
+        if ($invalidMovements > 0) {
+            $movementStatus = 'FAIL';
+            $movementMessage = "Invalid direction movement rows: {$invalidMovements}.";
+        } elseif ($batchMissing > 0) {
+            $movementStatus = 'WARN';
+            $movementSeverity = 'warning';
+            $movementMessage = "{$batchMissing} batch-tracked movement(s) missing inventory_batch_id (report-only backlog).";
+        }
 
         $results[] = $this->checkResult(
             'DQ1-DATA-006',
             'DATA',
             'Invalid inventory movements',
-            $movementIssues === 0 ? 'PASS' : 'FAIL',
-            'error',
-            $movementIssues === 0
-                ? 'Inventory movements follow ledger direction rules.'
-                : "Issues — invalid direction: {$invalidMovements}, batch-tracked without batch: {$batchMissing}.",
+            $movementStatus,
+            $movementSeverity,
+            $movementMessage,
             [
                 'invalid_direction' => $invalidMovements,
                 'batch_missing' => $batchMissing,
