@@ -18,6 +18,9 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | DQ-3.1 review pack | `php artisan inventory:ambiguous-batch-review-pack` |
 | DQ-3.1 repair (pre-execute) | `php artisan inventory:repair-ambiguous-batch-links --mapping=<approved> --dry-run` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
+| Foundation summary (JSON) | `php artisan architecture:foundation-governance-summary --json` |
+
+FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, or environment — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` |
 | Style | `./vendor/bin/pint --dirty` |

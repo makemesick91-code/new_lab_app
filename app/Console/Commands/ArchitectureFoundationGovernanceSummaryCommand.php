@@ -13,7 +13,7 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         {--json : Output JSON report}
         {--output= : Write report under storage/app/architecture only}';
 
-    protected $description = 'Read-only combined NSF + DMO foundation governance summary.';
+    protected $description = 'Read-only combined NSF + DMO + DQ foundation governance summary.';
 
     public function handle(FoundationGovernanceSummaryService $service): int
     {
@@ -29,15 +29,7 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         if ($this->option('json')) {
             $this->line($payload);
         } else {
-            $s = $report['summary'];
-            $this->info('Foundation Governance Summary');
-            $this->line('Generated: '.$report['generated_at']);
-            $this->line(sprintf(
-                'NSF: %s | DMO: %s | Combined: %s',
-                $s['nsf_decision'],
-                $s['dmo_decision'],
-                $s['combined_decision'],
-            ));
+            $this->renderTextReport($report);
         }
 
         if ($outputPath !== null) {
@@ -45,6 +37,74 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function renderTextReport(array $report): void
+    {
+        $s = $report['summary'];
+        $combinedReason = (string) ($s['combined_reason'] ?? $report['combined']['reason'] ?? '');
+
+        $this->info('Foundation Governance Summary (FG-1)');
+        $this->line('Generated: '.$report['generated_at']);
+        $this->newLine();
+
+        $this->line(sprintf(
+            'NSF: %s (effective: %s) — %d warning(s), %d blocking',
+            $s['nsf_decision'],
+            $s['nsf_effective_decision'],
+            $s['nsf_warnings'],
+            $s['nsf_blocking_warnings'],
+        ));
+        $this->renderWatchCauses($report['watch_causes']['nsf'] ?? []);
+
+        $this->newLine();
+        $this->line(sprintf(
+            'DMO: %s (effective: %s) — %d warning(s), %d blocking',
+            $s['dmo_decision'],
+            $s['dmo_effective_decision'],
+            $s['dmo_warnings'],
+            $s['dmo_blocking_warnings'],
+        ));
+        $this->renderWatchCauses($report['watch_causes']['dmo'] ?? []);
+
+        $this->newLine();
+        $dqChain = $report['dq_chain'] ?? [];
+        $this->line('DQ: '.($dqChain['decision'] ?? $s['dq_decision'] ?? 'UNKNOWN'));
+        foreach ($dqChain['items'] ?? [] as $item) {
+            $this->line(sprintf('  - %s: %s', $item['id'], $item['decision']));
+        }
+        $this->renderWatchCauses($report['watch_causes']['dq'] ?? []);
+
+        $this->newLine();
+        $this->line(sprintf(
+            'Combined: %s — %s',
+            $s['combined_decision'],
+            $combinedReason !== '' ? $combinedReason : 'see watch causes above',
+        ));
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $causes
+     */
+    private function renderWatchCauses(array $causes): void
+    {
+        if ($causes === []) {
+            return;
+        }
+
+        foreach ($causes as $cause) {
+            $blocking = ($cause['blocking'] ?? false) ? 'BLOCKER' : 'non-blocking';
+            $this->line(sprintf(
+                '  - %s [%s/%s]: %s',
+                $cause['rule_id'] ?? 'UNKNOWN',
+                $cause['classification'] ?? 'unknown',
+                $blocking,
+                $cause['message'] ?? '',
+            ));
+        }
     }
 
     private function resolveOutputPath(): ?string
