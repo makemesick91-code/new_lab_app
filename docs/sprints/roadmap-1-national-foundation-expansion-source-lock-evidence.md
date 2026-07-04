@@ -1,14 +1,15 @@
 # ROADMAP-1 — National Foundation Expansion Source Lock (Evidence)
 
-- **Status:** COMPLETE — pending PR merge / GO tag / VPS deploy (updated below after each step)
-- **Feature branch:** `feature/roadmap-1-national-foundation-expansion-source-lock`
+- **Status:** COMPLETE / MERGED / GO TAGGED / DEPLOYED / SMOKE PASS
+- **Feature branch:** `feature/roadmap-1-national-foundation-expansion-source-lock` (deleted after merge)
 - **Base branch:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` (NOT main)
-- **GO tag target:** `roadmap-1-national-foundation-expansion-source-lock-go`
-- **PR number/link:** _TBD_
-- **Merge commit:** _TBD_
-- **GO tag commit:** _TBD_
-- **VPS deployed HEAD:** _TBD_
-- **DB backup path/size:** _TBD_
+- **GO tag:** `roadmap-1-national-foundation-expansion-source-lock-go`
+- **PR:** #171 — https://github.com/makemesick91-code/new_lab_app/pull/171
+- **Merge commit:** `b3b3858`
+- **GO tag commit:** `b3b3858`
+- **VPS deployed HEAD:** `b3b3858` (tag `roadmap-1-national-foundation-expansion-source-lock-go`), path `/var/www/asia-dental-lab-v2`, env `pilot`
+- **DB backup path/size:** `storage/app/backups/deploy/pre_roadmap1_20260704-134335.sql` — 589K
+- **CI gates:** NSF-R011 Critical Test Gate `pass`, NSF-R012 Quality Gate `pass` (Full Suite Gate skipped on PR by design)
 
 ## Objective
 
@@ -104,7 +105,15 @@ $ graphify update .           → graph.json + GRAPH_REPORT.md updated
 
 ## VPS Deploy
 
-_Filled after deploy — additive only, DB backup first, no migrate:fresh/db:wipe._
+- Path: `/var/www/asia-dental-lab-v2`, env `pilot`, Laravel 12.61.0, PHP 8.3.6.
+- DB backup first: `pre_roadmap1_20260704-134335.sql` (589K) — additive only, no migrate:fresh/db:wipe.
+- `git checkout roadmap-1-national-foundation-expansion-source-lock-go` → HEAD `b3b3858`.
+- `composer install --no-dev --optimize-autoloader` (regenerated autoloader for new command/service).
+- `php artisan migrate --force` → **Nothing to migrate** (no schema change).
+- Gates on VPS: roadmap **GO** (12/12), summary ROADMAP **GO** / Combined **GO**, DQ1 **GO**, DQ-2 **GO**, DQ-3 **GO**, DQ-3.1 **GO** (0 ambiguous), DMO **GO** (446/0), NSF+observability **GO** (22/0).
+- `optimize:clear` + config/route/view/event cache rebuilt; storage/bootstrap perms reset (www-data 775/664).
+- `systemctl restart php8.3-fpm`; `nginx -t` OK; `systemctl reload nginx`.
+- Smoke: `curl -I http://127.0.0.1` → **HTTP 302** (redirect to login); `laravel.log` no new ERROR/Exception/CRITICAL.
 
 ## Final Decision
 
