@@ -104,3 +104,35 @@ Not applicable — execute blocked. Pre-repair state unchanged:
 2. Fill `storage/app/backups/deploy/dq31/dq31_approved_mapping.csv` (4 rows) with approval metadata.
 3. Transfer `reason` must mention OUT/IN resolution; opname `reason` must mention manual approval.
 4. Re-run: dry-run → DB backup → execute → post-audit per DQ-3.1 playbook.
+
+
+## Approved Repair Execution — Final GO
+
+Date: 2026-07-04 05:50 UTC  
+VPS path: /var/www/asia-dental-lab-v2  
+VPS HEAD: 765dffe  
+Backup before execute: storage/app/backups/deploy/pre_dq31_approved_repair_20260704-054722.sql, 583K  
+Mapping file: storage/app/backups/deploy/dq31/dq31_approved_mapping.csv
+
+### Repair Result
+- Rows submitted: 4
+- Applied: 4
+- Skipped: 0
+- Errors: 0
+
+### Applied Mapping
+- transfer #2 -> inventory_batch_id 16
+- transfer #12 -> inventory_batch_id 18
+- opname #5 -> inventory_batch_id 2
+- opname #8 -> inventory_batch_id 2
+
+### Post Audit
+- DQ-1: GO, 20 PASS, 0 WARN, 0 FAIL
+- DQ-2: GO, 10 PASS, 0 WARN, 0 FAIL
+- DQ-3: GO, 10 PASS, 0 WARN, 0 FAIL
+- DQ-3.1: GO, 0 ambiguous rows
+- Foundation: NSF WATCH | DMO WATCH | Combined WATCH
+
+### Decision
+DQ chain final decision: GO.
+Foundation remains WATCH due to non-DQ NSF/DMO items.
