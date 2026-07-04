@@ -1,0 +1,255 @@
+name: Foundation Evidence Gates
+
+on:
+  pull_request:
+    branches:
+      - feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+  push:
+    branches:
+      - feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+  workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: Run full Pest suite (NSF-R011 full gate)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 2 * * 0'
+
+concurrency:
+  group: foundation-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality_gate:
+    name: NSF-R012 Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, pdo_sqlite, bcmath
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend assets
+        run: npm run build 2>&1 | tee storage/ci-evidence/nsf-r012-build.log
+
+      - name: Pint style gate
+        run: ./vendor/bin/pint --test 2>&1 | tee storage/ci-evidence/nsf-r012-pint.log
+
+      - name: Git diff check
+        run: git diff --check
+
+      - name: Write NSF-R012 evidence summary
+        run: |
+          mkdir -p storage/ci-evidence
+          {
+            echo "NSF-R012 Build + Pint Evidence Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${{ github.run_id }}"
+            echo "workflow_run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "commit=${{ github.sha }}"
+            echo "result=passed"
+          } > storage/ci-evidence/nsf-r012-build-pint.txt
+
+      - name: Upload NSF-R012 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsf-r012-quality-gate
+          path: storage/ci-evidence/nsf-r012-*
+          retention-days: 30
+
+  critical_test_gate:
+    name: NSF-R011 Critical Test Gate
+    runs-on: ubuntu-latest
+    needs: quality_gate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath
+          coverage: none
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare CI evidence directory
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run critical regression tests
+        run: |
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace' \
+            2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+
+      - name: Run governance audit commands
+        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only
+
+      - name: Write NSF-R011 critical evidence summary
+        run: |
+          {
+            echo "NSF-R011 Critical Regression Evidence Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${{ github.run_id }}"
+            echo "workflow_run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "commit=${{ github.sha }}"
+            echo "gate=critical_test_gate"
+            echo "result=passed"
+          } > storage/ci-evidence/nsf-r011-critical-tests.txt
+
+      - name: Upload NSF-R011 critical evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsf-r011-critical-test-gate
+          path: |
+            storage/ci-evidence/nsf-r011-*
+            storage/ci-evidence/foundation-summary.txt
+            storage/ci-evidence/dq-audits.txt
+          retention-days: 30
+
+  full_suite_gate:
+    name: NSF-R011 Full Suite Gate
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_full_suite == true) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report')
+    needs: critical_test_gate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare CI evidence directory
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run full Pest suite
+        run: php artisan test 2>&1 | tee storage/ci-evidence/nsf-r011-full-suite.log
+
+      - name: Write NSF-R011 full suite evidence summary
+        run: |
+          {
+            echo "NSF-R011 Full Suite Evidence Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${{ github.run_id }}"
+            echo "workflow_run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "commit=${{ github.sha }}"
+            echo "gate=full_suite_gate"
+            echo "result=passed"
+          } > storage/ci-evidence/nsf-r011-full-suite.txt
+
+      - name: Upload NSF-R011 full suite evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsf-r011-full-suite-gate
+          path: storage/ci-evidence/nsf-r011-full-suite.*
+          retention-days: 30

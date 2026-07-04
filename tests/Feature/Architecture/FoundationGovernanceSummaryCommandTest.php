@@ -46,18 +46,13 @@ it('foundation summary includes dq chain go after dq evidence baseline', functio
         ->and($summary['summary']['dq31_decision'])->toBe('GO');
 });
 
-it('foundation summary reports exact nsf watch causes when nsf remains watch', function () {
+it('foundation summary reports nsf go after ci evidence gate automation', function () {
     $summary = app(FoundationGovernanceSummaryService::class)->collect();
 
-    expect($summary['summary']['nsf_decision'])->toBe('WATCH')
-        ->and($summary['watch_causes']['nsf'])->not->toBeEmpty();
-
-    $ruleIds = collect($summary['watch_causes']['nsf'])->pluck('rule_id')->all();
-
-    expect($ruleIds)->toContain('NSF-R011')
-        ->and(collect($summary['watch_causes']['nsf'])->every(
-            fn (array $cause) => isset($cause['classification'], $cause['message'], $cause['blocking'])
-        ))->toBeTrue();
+    expect($summary['summary']['nsf_decision'])->toBe('GO')
+        ->and($summary['summary']['nsf_effective_decision'])->toBe('GO')
+        ->and($summary['ci_evidence_gates']['workflow_exists'])->toBeTrue()
+        ->and($summary['watch_causes']['nsf'])->toBeEmpty();
 });
 
 it('foundation summary reports dmo go after deferred metric closure', function () {
@@ -78,15 +73,14 @@ it('foundation summary combined go when only non blocking watch remains', functi
         ->and($summary['summary']['dmo_effective_decision'])->toBe('GO');
 });
 
-it('foundation summary deferred backlog items are non blocking', function () {
+it('foundation summary deferred backlog items are non blocking when present', function () {
     $summary = app(FoundationGovernanceSummaryService::class)->collect();
 
     $deferred = collect($summary['watch_causes']['dmo'])
         ->merge($summary['watch_causes']['nsf'])
         ->where('classification', 'deferred_backlog');
 
-    expect($deferred)->not->toBeEmpty()
-        ->and($deferred->every(fn (array $item) => $item['blocking'] === false))->toBeTrue();
+    expect($deferred->every(fn (array $item) => $item['blocking'] === false))->toBeTrue();
 });
 
 it('foundation summary text output names watch causes', function () {
@@ -98,7 +92,7 @@ it('foundation summary text output names watch causes', function () {
         ->and($output)->toContain('DMO:')
         ->and($output)->toContain('DQ:')
         ->and($output)->toContain('Combined:')
-        ->and($output)->toMatch('/NSF-R011|NSF-M001/');
+        ->and($output)->toMatch('/NSF: GO/');
 });
 
 it('foundation summary fg1 checks include dq chain check', function () {

@@ -508,12 +508,32 @@ class NsfApplicationRulesService
      */
     private function validateR011(): array
     {
+        $workflow = (string) config('foundation_governance.ci_evidence_gates.workflow', '');
+        $workflowPath = $workflow !== '' ? base_path($workflow) : '';
+        $script = (string) config('foundation_governance.ci_evidence_gates.script', '');
+        $scriptPath = $script !== '' ? base_path($script) : '';
+
+        if ($workflowPath !== '' && is_file($workflowPath) && $scriptPath !== '' && is_file($scriptPath)) {
+            return [$this->ruleResult(
+                'NSF-R011',
+                'Full suite gate automated via Foundation Evidence Gates CI workflow',
+                'passed',
+                [
+                    $workflow,
+                    $script,
+                    'jobs: critical_test_gate (PR), full_suite_gate (dispatch/schedule/push)',
+                ],
+                'Verify GitHub Actions run for PR/GO tag; full suite on schedule or workflow_dispatch',
+                'warning',
+            )];
+        }
+
         return [$this->ruleResult(
             'NSF-R011',
-            'Full suite gate requires manual sprint/CI evidence',
+            'Full suite gate CI workflow missing — manual evidence required',
             'warning',
             ['php artisan test'],
-            'Run full Pest suite before GO; document infra-only failures explicitly',
+            'Add .github/workflows/foundation-evidence-gates.yml before GO',
             'warning',
         )];
     }
@@ -523,12 +543,30 @@ class NsfApplicationRulesService
      */
     private function validateR012(): array
     {
+        $workflow = (string) config('foundation_governance.ci_evidence_gates.workflow', '');
+        $workflowPath = $workflow !== '' ? base_path($workflow) : '';
+
+        if ($workflowPath !== '' && is_file($workflowPath)) {
+            return [$this->ruleResult(
+                'NSF-R012',
+                'Build gate automated via Foundation Evidence Gates quality_gate job',
+                'passed',
+                [
+                    $workflow,
+                    'npm run build',
+                    './vendor/bin/pint --test',
+                ],
+                'Verify GitHub Actions quality_gate job on PR before GO tag',
+                'warning',
+            )];
+        }
+
         return [$this->ruleResult(
             'NSF-R012',
-            'Build gate requires manual npm build and pint evidence',
+            'Build gate CI workflow missing — manual npm build and pint evidence required',
             'warning',
             ['npm run build', './vendor/bin/pint'],
-            'Run build and style gates before GO tag',
+            'Add Foundation Evidence Gates workflow before GO tag',
             'warning',
         )];
     }

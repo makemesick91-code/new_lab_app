@@ -118,6 +118,8 @@ class FoundationGovernanceSummaryService
             'fg1_checks' => $this->fg1Checks($nsfWatch, $dmoWatch, $dqChain, $combined),
             'evidence_docs' => $this->evidenceDocs(),
             'deferred_backlog' => config('foundation_governance.deferred_backlog', []),
+            'ci_evidence_gates' => $this->ciEvidenceGates(),
+            'resolved_ci_gates' => config('foundation_governance.resolved_ci_gates', []),
             'nsf_governance' => [
                 'summary' => $nsf['summary'],
                 'watch_causes' => $nsfWatch['items'],
@@ -387,6 +389,7 @@ class FoundationGovernanceSummaryService
                 'FG1-DQ-001' => ($dqChain['decision'] ?? '') === 'GO' ? 'passed' : 'failed',
                 'FG1-COMBINED-001' => ($combined['reason'] ?? '') !== '' ? 'passed' : 'failed',
                 'FG1-EVIDENCE-001' => collect($evidence)->every(fn (array $doc) => $doc['exists']) ? 'passed' : 'warning',
+                'FG1-CI-001' => $this->ciEvidenceGates()['workflow_exists'] ? 'passed' : 'failed',
                 default => 'unknown',
             };
 
@@ -411,5 +414,31 @@ class FoundationGovernanceSummaryService
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ciEvidenceGates(): array
+    {
+        $config = config('foundation_governance.ci_evidence_gates', []);
+        $workflow = (string) ($config['workflow'] ?? '');
+        $script = (string) ($config['script'] ?? '');
+
+        return [
+            'workflow' => $workflow,
+            'workflow_exists' => $workflow !== '' && is_file(base_path($workflow)),
+            'workflow_name' => (string) ($config['workflow_name'] ?? 'Foundation Evidence Gates'),
+            'script' => $script,
+            'script_exists' => $script !== '' && is_file(base_path($script)),
+            'artifacts_root' => (string) ($config['artifacts_root'] ?? 'storage/ci-evidence'),
+            'github_api_required' => (bool) ($config['github_api_required'] ?? false),
+            'gates' => collect($config['gates'] ?? [])->map(function (array $gate, string $ruleId) {
+                return array_merge($gate, [
+                    'rule_id' => $ruleId,
+                    'classification' => (string) ($gate['classification'] ?? 'automated_ci_gate'),
+                ]);
+            })->all(),
+        ];
     }
 }

@@ -20,11 +20,16 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Foundation summary (JSON) | `php artisan architecture:foundation-governance-summary --json` |
 
-FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, or environment — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
+FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, environment, or **automated_ci_gate** — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
+
+NSF-7 (CI evidence gates): `.github/workflows/foundation-evidence-gates.yml` automates NSF-R011 (critical + full suite) and NSF-R012 (build/pint). See `docs/architecture/nsf-7-evidence-gate-automation-r011-r012-ci.md`.
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
-| Full suite | `php artisan test` |
-| Style | `./vendor/bin/pint --dirty` |
-| Build | `npm ci && npm run build` |
+| Full suite | `php artisan test` (CI: `full_suite_gate` job on schedule/push/dispatch) |
+| Critical regression | CI: `critical_test_gate` job on PR |
+| Style | `./vendor/bin/pint --test` (CI: `quality_gate` job) |
+| Build | `npm ci && npm run build` (CI: `quality_gate` job) |
+| CI workflow | `.github/workflows/foundation-evidence-gates.yml` |
+| Local CI script | `bash scripts/ci/foundation-evidence-gates.sh` |
 
 ## 3. Pre-GO-tag gates
 
