@@ -110,21 +110,30 @@ GO for ontology seed — 54/56 entities ready. Deferred: Patient Document policy
 
 | Item | Value |
 | --- | --- |
-| PR | PENDING |
-| Merge commit | PENDING |
-| GO tag | `sprint-nsf-4-canonical-entity-workflow-inventory-go` |
-| Evidence commit | PENDING |
+| PR | [#158](https://github.com/makemesick91-code/new_lab_app/pull/158) |
+| Merge commit | `800b5a16c2abd33f29cec5eea41380e2bdd3233b` |
+| Sprint commit | `0f283c3` |
+| GO tag | `sprint-nsf-4-canonical-entity-workflow-inventory-go` → `800b5a1` |
+| Local HEAD | `800b5a16c2abd33f29cec5eea41380e2bdd3233b` |
 
 ### VPS deploy
 
 | Item | Value |
 | --- | --- |
 | VPS path | `/var/www/asia-dental-lab-v2` |
-| Previous HEAD | PENDING |
-| Deployed GO tag HEAD | PENDING |
-| Backup | PENDING |
-| Architecture evidence | `storage/app/architecture/nsf4-vps-canonical-entity-inventory.json` |
-| Runtime observability | `storage/app/performance/nsf4-vps-runtime-query-observability.json` |
-| Slow query audit | `storage/app/performance/nsf4-vps-slow-query-audit.json` |
-| Smoke | PENDING |
-| Final GO/NO-GO | PENDING |
+| Previous HEAD | `2c92cab7b0f55eaad015b8a119e130ace9b40cf1` (NSF-3 evidence) |
+| Deployed GO tag HEAD | `800b5a16c2abd33f29cec5eea41380e2bdd3233b` |
+| Final VPS stable HEAD | `800b5a16c2abd33f29cec5eea41380e2bdd3233b` |
+| Backup | `storage/app/backups/deploy/pre_nsf4_20260704-005707.sql` (559 KB) |
+| Migration | Nothing to migrate |
+| Architecture evidence | `storage/app/architecture/nsf4-vps-canonical-entity-inventory.json` (47 KB) |
+| Runtime observability | `storage/app/performance/nsf4-vps-runtime-query-observability.json` (13 KB) |
+| Slow query audit | `storage/app/performance/nsf4-vps-slow-query-audit.json` (14 KB) |
+| pg_stat_statements | available=true, extension=1.10, preloaded=true |
+| Build assets | `app-DdSm4puC.css`, `app-JStlj-rZ.js` |
+| php-fpm/nginx | restarted, nginx -t OK |
+| Smoke | `/login` 200; `/`, `/dashboard`, `/rme/visits`, `/inventory/dashboard` → 302 (unauthenticated) |
+| Logs | No new errors today |
+| Final GO/NO-GO | **GO** |
+
+> GO tag points to deployed code commit `800b5a1`. Post-deploy evidence doc updates are on stable branch after tag.
