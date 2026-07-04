@@ -5,25 +5,37 @@ namespace App\Services\Foundation;
 use Illuminate\Support\Facades\Artisan;
 
 /**
- * NSF-9 — Read-only release safety gate validator.
+ * NSF-9 / NSF-10 — Read-only release safety gate validator.
  *
  * Emits GO / WATCH / FAIL:
  *  - FAIL : release_safety config missing OR a required pre-deploy gate
  *           command does not exist OR a risky feature flag is enabled
- *           without an explicit override reason.
- *  - WATCH: config complete but optional local evidence artifacts are not
- *           present yet (nothing to fail on locally).
+ *           without an explicit override reason OR (NSF-10) the release
+ *           evidence chain / backup verification for the given profile
+ *           reports FAIL.
+ *  - WATCH: config complete but optional evidence for the given profile is
+ *           not present yet (nothing to fail on for that profile).
  *  - GO   : config complete, all required gate commands registered, no
- *           unsafe risky-flag state.
+ *           unsafe risky-flag state, and (NSF-10) the release evidence
+ *           chain for the given profile is GO.
+ *
+ * NSF-10 replaces the NSF-9 "local evidence candidates" file-existence check
+ * with a profile-aware evidence chain consumed from
+ * App\Services\Foundation\ReleaseEvidenceService, so release safety honestly
+ * reflects local vs CI vs VPS evidence instead of always evaluating against
+ * local-only file paths.
  */
 class ReleaseSafetyService
 {
-    public function __construct(private readonly FeatureFlagService $flags) {}
+    public function __construct(
+        private readonly FeatureFlagService $flags,
+        private readonly ReleaseEvidenceService $evidence,
+    ) {}
 
     /**
      * @return array<string, mixed>
      */
-    public function collect(): array
+    public function collect(string $profile = 'local'): array
     {
         $config = config('release_safety');
 
@@ -113,12 +125,33 @@ class ReleaseSafetyService
             ? $this->pass('RELEASE-SAFETY-FLAG-GOVERNANCE', 'Feature flag governance is safe (no unsafe risky flag).')
             : $this->fail('RELEASE-SAFETY-FLAG-GOVERNANCE', 'Feature flag governance reports FAIL — unsafe risky flag default/state.');
 
-        // Local evidence artifacts are advisory only (WATCH), never FAIL.
-        $localEvidence = (array) ($config['local_evidence_candidates'] ?? []);
-        $missingEvidence = array_values(array_filter($localEvidence, fn (string $path) => ! is_file(base_path($path))));
-        $checks[] = $missingEvidence === []
-            ? $this->pass('RELEASE-SAFETY-LOCAL-EVIDENCE', 'All local evidence artifacts present.')
-            : $this->warn('RELEASE-SAFETY-LOCAL-EVIDENCE', 'Local evidence not yet captured (expected on VPS/CI runs): '.implode(', ', $missingEvidence));
+        // NSF-10: profile-aware release evidence chain replaces the NSF-9
+        // "local evidence candidates" file check. local profile has no
+        // required artifacts so it never fails; ci/vps profiles require
+        // their captured artifacts to exist, be safe, and be fresh.
+        $evidenceChain = $this->evidence->check($profile);
+        $evidenceDecision = (string) ($evidenceChain['summary']['decision'] ?? 'FAIL');
+        $checks[] = match ($evidenceDecision) {
+            'GO' => $this->pass('RELEASE-SAFETY-EVIDENCE-CHAIN', "Release evidence chain for profile \"{$profile}\" is GO."),
+            'WATCH' => $this->warn('RELEASE-SAFETY-EVIDENCE-CHAIN', "Release evidence chain for profile \"{$profile}\" is WATCH — optional evidence not yet captured."),
+            default => $this->fail('RELEASE-SAFETY-EVIDENCE-CHAIN', "Release evidence chain for profile \"{$profile}\" is FAIL — required evidence missing/empty/unsafe/stale."),
+        };
+
+        // NSF-10: vps profile must also confirm the captured backup-verify
+        // artifact itself reports GO/WATCH (never FAIL) before release
+        // safety can be GO. Not applicable to local/ci profiles.
+        $backupVerification = null;
+        if ($profile === 'vps') {
+            $backupVerification = $this->readBackupVerificationArtifact($evidenceChain['directory'] ?? null);
+            $backupDecision = $backupVerification['decision'] ?? null;
+
+            $checks[] = match ($backupDecision) {
+                'GO' => $this->pass('RELEASE-SAFETY-BACKUP-VERIFIED', 'Captured backup verification evidence is GO.'),
+                'WATCH' => $this->warn('RELEASE-SAFETY-BACKUP-VERIFIED', 'Captured backup verification evidence is WATCH.'),
+                'FAIL' => $this->fail('RELEASE-SAFETY-BACKUP-VERIFIED', 'Captured backup verification evidence is FAIL.'),
+                default => $this->fail('RELEASE-SAFETY-BACKUP-VERIFIED', 'No backup verification evidence found for vps profile — run release:evidence-capture --profile=vps --backup-path=... first.'),
+            };
+        }
 
         $errors = count(array_filter($checks, fn (array $c) => $c['status'] === 'failed'));
         $warnings = count(array_filter($checks, fn (array $c) => $c['status'] === 'warning'));
@@ -128,6 +161,7 @@ class ReleaseSafetyService
 
         return [
             'generated_at' => now()->toIso8601String(),
+            'profile' => $profile,
             'config_exists' => true,
             'required_pre_deploy_gates' => $requiredGates,
             'required_deploy_evidence' => $requiredEvidence,
@@ -139,6 +173,12 @@ class ReleaseSafetyService
             ])->all(),
             'feature_flag_governance' => $flagGovernance['summary'],
             'risky_enabled_flags' => $flagGovernance['risky_enabled_flags'],
+            'evidence_chain' => [
+                'decision' => $evidenceDecision,
+                'directory' => $evidenceChain['directory'] ?? null,
+                'summary' => $evidenceChain['summary'] ?? [],
+            ],
+            'backup_verification' => $backupVerification,
             'checks' => $checks,
             'summary' => [
                 'decision' => $decision,
@@ -148,6 +188,37 @@ class ReleaseSafetyService
                 'errors' => $errors,
             ],
             'privacy' => ['privacy_safe' => true, 'row_level_data' => false],
+        ];
+    }
+
+    /**
+     * Read the previously captured backup-verify.json artifact (written by
+     * release:evidence-capture --profile=vps). Never re-reads the backup
+     * file itself — only the already-summarized, safe verification result.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function readBackupVerificationArtifact(?string $evidenceDirectory): ?array
+    {
+        if ($evidenceDirectory === null || $evidenceDirectory === '') {
+            return null;
+        }
+
+        $path = base_path($evidenceDirectory.DIRECTORY_SEPARATOR.'backup-verify.json');
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        return [
+            'decision' => $decoded['summary']['decision'] ?? null,
+            'path' => $decoded['path'] ?? null,
+            'size_bytes' => $decoded['size_bytes'] ?? null,
+            'generated_at' => $decoded['generated_at'] ?? null,
         ];
     }
 

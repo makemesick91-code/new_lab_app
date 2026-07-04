@@ -5,6 +5,7 @@ namespace App\Services\Architecture;
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\FeatureFlagService;
+use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
@@ -14,7 +15,8 @@ use Illuminate\Support\Facades\Artisan;
 
 /**
  * Read-only combined foundation governance summary (NSF + DMO + DQ chain +
- * ROADMAP + NSF-9 release safety chain: FEATURE_FLAGS/RELEASE_SAFETY/AUTOMATED_SMOKE).
+ * ROADMAP + NSF-9/NSF-10 release safety chain: FEATURE_FLAGS/RELEASE_SAFETY/
+ * AUTOMATED_SMOKE/RELEASE_EVIDENCE/BACKUP_VERIFICATION).
  */
 class FoundationGovernanceSummaryService
 {
@@ -31,12 +33,13 @@ class FoundationGovernanceSummaryService
         private readonly FeatureFlagService $featureFlags,
         private readonly ReleaseSafetyService $releaseSafety,
         private readonly AutomatedSmokeService $automatedSmoke,
+        private readonly ReleaseEvidenceService $releaseEvidence,
     ) {}
 
     /**
      * @return array<string, mixed>
      */
-    public function collect(): array
+    public function collect(string $releaseSafetyProfile = 'local'): array
     {
         $nsf = $this->nsfRules->collect([
             'include_dmo' => true,
@@ -63,8 +66,10 @@ class FoundationGovernanceSummaryService
         $dqChain = $this->buildDqChainSummary($dq1, $dq2, $dq3, $dq31);
         $roadmap = $this->roadmap->collect();
         $featureFlags = $this->featureFlags->validateGovernance();
-        $releaseSafety = $this->releaseSafety->collect();
+        $releaseSafety = $this->releaseSafety->collect($releaseSafetyProfile);
         $automatedSmoke = $this->automatedSmoke->run();
+        $releaseEvidence = $this->releaseEvidence->check($releaseSafetyProfile);
+        $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
             $dmo,
@@ -139,8 +144,11 @@ class FoundationGovernanceSummaryService
                 'feature_flags_total' => $featureFlags['total_flags'] ?? 0,
                 'feature_flags_risky_enabled' => count($featureFlags['risky_enabled_flags'] ?? []),
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
+                'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
                 'automated_smoke_mode' => $automatedSmoke['mode'] ?? 'command_readiness_only',
+                'release_evidence_decision' => $releaseEvidence['summary']['decision'] ?? 'UNKNOWN',
+                'backup_verification_decision' => $backupVerification['decision'] ?? 'NOT_APPLICABLE',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -171,9 +179,29 @@ class FoundationGovernanceSummaryService
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
+                'profile' => $releaseSafetyProfile,
                 'summary' => $releaseSafety['summary'] ?? [],
                 'checks' => $releaseSafety['checks'] ?? [],
                 'command' => 'foundation:release-safety-check',
+            ],
+            'release_evidence' => [
+                'decision' => $releaseEvidence['summary']['decision'] ?? 'UNKNOWN',
+                'profile' => $releaseSafetyProfile,
+                'directory' => $releaseEvidence['directory'] ?? null,
+                'summary' => $releaseEvidence['summary'] ?? [],
+                'artifacts' => $releaseEvidence['artifacts'] ?? [],
+                'command' => 'release:evidence-check',
+            ],
+            'backup_verification' => [
+                'decision' => $backupVerification['decision'] ?? 'NOT_APPLICABLE',
+                'applicable' => $releaseSafetyProfile === 'vps',
+                'path' => $backupVerification['path'] ?? null,
+                'size_bytes' => $backupVerification['size_bytes'] ?? null,
+                'generated_at' => $backupVerification['generated_at'] ?? null,
+                'command' => 'foundation:backup-verify',
+                'note' => $releaseSafetyProfile === 'vps'
+                    ? null
+                    : 'Backup verification is only evaluated for the vps profile.',
             ],
             'automated_smoke' => [
                 'decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',

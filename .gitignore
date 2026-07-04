@@ -45,3 +45,8 @@ backup_working_changes_*.patch
 /tests/Browser/screenshots/
 /tests/Browser/console/
 /tests/Browser/source/
+
+# NSF-10 — generated release evidence artifacts (uploaded in CI, never committed)
+/storage/ci-evidence/*
+!/storage/ci-evidence/.gitkeep
+/storage/release-evidence/

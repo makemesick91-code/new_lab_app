@@ -11,13 +11,14 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
 
     protected $signature = 'architecture:foundation-governance-summary
         {--json : Output JSON report}
-        {--output= : Write report under storage/app/architecture only}';
+        {--output= : Write report under storage/app/architecture only}
+        {--profile=local : Release safety/evidence profile to evaluate: local|ci|vps}';
 
     protected $description = 'Read-only combined NSF + DMO + DQ foundation governance summary.';
 
     public function handle(FoundationGovernanceSummaryService $service): int
     {
-        $report = $service->collect();
+        $report = $service->collect((string) $this->option('profile'));
 
         $outputPath = $this->resolveOutputPath();
         if ($this->option('output') && $outputPath === null) {
@@ -108,7 +109,18 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
 
         $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
-        $this->line(sprintf('RELEASE_SAFETY: %s', $releaseSafety['decision'] ?? 'UNKNOWN'));
+        $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
+
+        $this->newLine();
+        $releaseEvidence = $report['release_evidence'] ?? [];
+        $this->line(sprintf('RELEASE_EVIDENCE: %s (profile: %s)', $releaseEvidence['decision'] ?? 'UNKNOWN', $releaseEvidence['profile'] ?? 'local'));
+
+        $this->newLine();
+        $backupVerification = $report['backup_verification'] ?? [];
+        $this->line(sprintf('BACKUP_VERIFICATION: %s', $backupVerification['decision'] ?? 'NOT_APPLICABLE'));
+        if (! empty($backupVerification['note'])) {
+            $this->line('  - '.$backupVerification['note']);
+        }
 
         $this->newLine();
         $automatedSmoke = $report['automated_smoke'] ?? [];

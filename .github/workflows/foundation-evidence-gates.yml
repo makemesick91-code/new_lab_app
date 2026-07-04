@@ -259,6 +259,86 @@ jobs:
           path: storage/ci-evidence/nsf-9-*
           retention-days: 30
 
+  nsf10_release_evidence_gate:
+    name: NSF-10 Release Evidence Gate
+    runs-on: ubuntu-latest
+    needs: release_safety_gate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare CI evidence directory
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Capture NSF-10 release evidence (ci profile)
+        run: php artisan release:evidence-capture --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-capture.json
+
+      - name: Check NSF-10 release evidence (ci profile)
+        run: php artisan release:evidence-check --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-check.json
+
+      - name: Release safety check (ci profile)
+        run: php artisan foundation:release-safety-check --profile=ci --json | tee storage/ci-evidence/nsf-10-release-safety-check.json
+
+      - name: Write NSF-10 evidence gate summary
+        run: |
+          {
+            echo "NSF-10 Release Evidence Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${{ github.run_id }}"
+            echo "workflow_run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "commit=${{ github.sha }}"
+            echo "gate=nsf10_release_evidence_gate"
+            echo "result=passed"
+          } > storage/ci-evidence/nsf-10-release-evidence-gate.txt
+
+      - name: Upload NSF-10 release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsf-10-release-evidence
+          path: storage/ci-evidence
+          retention-days: 30
+
   full_suite_gate:
     name: NSF-R011 Full Suite Gate
     runs-on: ubuntu-latest

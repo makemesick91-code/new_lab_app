@@ -21,14 +21,16 @@ set -a
 source .env
 set +a
 
+BACKUP="storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
+
 PGPASSWORD="${DB_PASSWORD}" pg_dump \
   -h "${DB_HOST:-127.0.0.1}" \
   -p "${DB_PORT:-5432}" \
   -U "${DB_USERNAME}" \
   -d "${DB_DATABASE}" \
-  > "storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
+  > "$BACKUP"
 
-test -s "storage/app/backups/deploy/pre_auto_deploy_${STAMP}.sql"
+test -s "$BACKUP"
 
 echo "== Pull approved branch =="
 git checkout "$BRANCH"
@@ -44,6 +46,9 @@ npm run build
 echo "== Laravel migrate =="
 php artisan migrate --force
 
+echo "== NSF-10 backup verify =="
+php artisan foundation:backup-verify --path="$BACKUP"
+
 echo "== Foundation deploy governance gates =="
 php artisan architecture:foundation-roadmap-check
 php artisan data-quality:dq1-audit --fail-on=error
@@ -56,6 +61,11 @@ php artisan foundation:feature-flags
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary
+
+echo "== NSF-10 release evidence capture/check (vps profile) =="
+php artisan release:evidence-capture --profile=vps --base-url=http://127.0.0.1 --backup-path="$BACKUP"
+php artisan release:evidence-check --profile=vps
+php artisan foundation:release-safety-check --profile=vps
 
 echo "== Laravel cache rebuild =="
 php artisan optimize:clear
