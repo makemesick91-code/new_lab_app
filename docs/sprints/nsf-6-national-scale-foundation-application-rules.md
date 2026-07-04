@@ -3,7 +3,7 @@
 **Branch:** `feature/nsf-6-national-scale-foundation-application-rules`  
 **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report`  
 **GO tag:** `nsf-6-national-scale-foundation-application-rules-go`  
-**Status:** Implementation complete — pending PR merge / VPS deploy
+**Status:** **GO** — merged, tagged, VPS deployed
 
 ## Objective
 
@@ -139,15 +139,75 @@ php artisan architecture:foundation-governance-summary [--json] [--output=...]
 
 ## Post-Deploy Evidence
 
-*(Updated after VPS deploy)*
-
 | Item | Value |
 | --- | --- |
-| PR | TBD |
-| Merge commit | TBD |
-| GO tag | `nsf-6-national-scale-foundation-application-rules-go` |
-| VPS previous HEAD | TBD |
-| VPS deployed HEAD | TBD |
-| Backup path | TBD |
-| Smoke | TBD |
-| Final decision | TBD |
+| PR | [#162](https://github.com/makemesick91-code/new_lab_app/pull/162) |
+| Merge commit | `df1f74576dad7dfa2e6fd2d15d3013e019b6fd95` |
+| GO tag | `nsf-6-national-scale-foundation-application-rules-go` → `df1f745` |
+| Local HEAD | `df1f74576dad7dfa2e6fd2d15d3013e019b6fd95` |
+| VPS previous HEAD | `61d52c052509f1ba1a3a02a0a4873ef862dbb9b8` (DMO-2) |
+| VPS deployed GO tag HEAD | `df1f74576dad7dfa2e6fd2d15d3013e019b6fd95` |
+| VPS final stable HEAD | `df1f74576dad7dfa2e6fd2d15d3013e019b6fd95` |
+| Backup | `storage/app/backups/deploy/pre_nsf6_20260704-035830.sql` (569K) |
+| Migration | Nothing to migrate |
+| php-fpm/nginx | restarted/reloaded OK |
+
+### VPS Governance Evidence
+
+| Path | Size |
+| --- | --- |
+| `storage/app/architecture/nsf6-vps-governance-check.json` | 15K |
+| `storage/app/architecture/nsf6-vps-foundation-governance-summary.json` | 3.9K |
+| `storage/app/architecture/nsf6-vps-dmo-governance-reference.json` | 144K |
+| `storage/app/performance/nsf6-vps-runtime-query-observability.json` | 13K |
+| `storage/app/performance/storage/app/performance/nsf6-vps-slow-query-audit.json` | (pre-existing output path quirk) |
+
+### VPS NSF Governance
+
+| Metric | Value |
+| --- | --- |
+| Rules | 21 |
+| Passed | 20 |
+| Warnings | 4 |
+| Errors | 0 |
+| Decision | **WATCH** (manual/deferred gates only) |
+
+### VPS DMO Alignment
+
+| Metric | Value |
+| --- | --- |
+| Errors | 0 |
+| Warnings | 4 |
+| Decision | WATCH |
+
+### VPS pg_stat_statements
+
+| Field | Value |
+| --- | --- |
+| available | true |
+| extension_version | 1.10 |
+| preloaded | true |
+| shared_preload_libraries | pg_stat_statements |
+
+### VPS Smoke
+
+| URL | HTTP |
+| --- | --- |
+| `/` | 302 |
+| `/login` | 200 |
+| `/inventory/dashboard` | 302 |
+| `/rme/visits` | 302 |
+| `/dashboard` | 302 |
+
+No Laravel 500 observed.
+
+### Build Assets (VPS)
+
+- `app-DdSm4puC.css`
+- `app-JStlj-rZ.js`
+
+## Final GO Decision
+
+**GO** — NSF foundation rules are application-level; governance reports 0 errors on VPS; DMO alignment 0 errors; pg_stat active; smoke green. WATCH due to documented manual gates and deferred DMO/NSF backlog warnings only.
+
+> GO tag `nsf-6-national-scale-foundation-application-rules-go` points to merge commit `df1f745`. Post-deploy evidence updates live on stable branch after this doc commit.
