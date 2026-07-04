@@ -6,22 +6,32 @@ use App\Services\Foundation\ReleaseSafetyService;
 use Illuminate\Console\Command;
 
 /**
- * NSF-9 — Read-only release safety gate check.
+ * NSF-9 / NSF-10 — Read-only release safety gate check.
  *
  * Decision → exit code:
  *  - GO    → 0
- *  - WATCH → 0 (optional local evidence not yet captured)
- *  - FAIL  → non-zero (missing required gate/config/unsafe flag state)
+ *  - WATCH → 0 (optional evidence for the given profile not yet captured)
+ *  - FAIL  → non-zero (missing required gate/config/unsafe flag state, or a
+ *            required evidence/backup artifact for the profile is
+ *            missing/empty/unsafe/stale)
+ *
+ * --profile selects which evidence chain to validate against:
+ *  - local (default): no required artifacts, never fails on missing evidence.
+ *  - ci: requires storage/ci-evidence/* artifacts captured by CI.
+ *  - vps: requires storage/release-evidence/latest/* artifacts including
+ *         backup verification, captured by the VPS deploy script.
  */
 class FoundationReleaseSafetyCheckCommand extends Command
 {
-    protected $signature = 'foundation:release-safety-check {--json : Output JSON report}';
+    protected $signature = 'foundation:release-safety-check
+        {--profile=local : Evidence profile to validate against: local|ci|vps}
+        {--json : Output JSON report}';
 
     protected $description = 'Read-only release safety gate validation (pre-deploy gates, evidence, rollback, flags).';
 
     public function handle(ReleaseSafetyService $service): int
     {
-        $report = $service->collect();
+        $report = $service->collect((string) $this->option('profile'));
         $decision = (string) ($report['summary']['decision'] ?? 'FAIL');
 
         if ($this->option('json')) {
@@ -38,8 +48,9 @@ class FoundationReleaseSafetyCheckCommand extends Command
      */
     private function printConsole(array $report): void
     {
-        $this->info('Foundation Release Safety Check (NSF-9)');
+        $this->info('Foundation Release Safety Check (NSF-9/NSF-10)');
         $this->line('Generated: '.($report['generated_at'] ?? ''));
+        $this->line('Profile: '.($report['profile'] ?? 'local'));
         $this->newLine();
 
         $this->line('Required pre-deploy gates:');

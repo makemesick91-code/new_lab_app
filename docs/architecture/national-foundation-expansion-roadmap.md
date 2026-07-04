@@ -69,8 +69,10 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `NSF-10` (NSF-9 completed — see
-[`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)).
+**Next recommended sprint:** `CACHE-1` (NSF-9 and NSF-10 completed — see
+[`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)
+and
+[`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md)).
 
 ---
 
@@ -93,7 +95,10 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
 - **WATCH:** partial smoke coverage or incomplete rollback playbook, documented.
 - **NO-GO:** flags default ON; smoke mutates prod; foundation GO regressed.
 
-### NSF-10 — Observability, Backup & Release Safety Hardening
+### NSF-10 — Observability, Backup & Release Safety Hardening — **COMPLETED**
+- **Status:** Completed. See
+  [`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md)
+  and `docs/sprints/nsf-10-observability-backup-release-safety-hardening-evidence.md`.
 - **Objective:** Harden observability, backup verification, release-safety runbooks.
 - **Why this order:** Detectability + recoverability before stateful infra.
 - **Out of scope:** enabling cache/queue backends; PII/secrets in logs.
@@ -101,6 +106,13 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
 - **GO:** backup+restore drill evidenced; observability expanded (no PII); foundation GO preserved.
 - **WATCH:** restore drill deferred with owner sign-off.
 - **NO-GO:** PII/secrets in logs; no verified backup path.
+- **Delivered:** profile-aware release evidence capture/check
+  (`config/release_evidence.php`, `release:evidence-capture`,
+  `release:evidence-check`), read-only backup verification
+  (`config/backup_governance.php`, `foundation:backup-verify`), and
+  `foundation:release-safety-check`/`architecture:foundation-governance-summary`
+  now consume that evidence per `--profile=local|ci|vps` instead of a static
+  file-existence list. Closes the NSF-9 `RELEASE_SAFETY: WATCH`.
 
 ### CACHE-1 — Cache Strategy, Redis Readiness & Invalidation Governance
 - **Objective:** Cache strategy + Redis readiness with **mandatory invalidation governance**.

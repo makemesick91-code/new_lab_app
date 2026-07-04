@@ -112,7 +112,7 @@ return [
         [
             'id' => 'NSF-10',
             'title' => 'Observability, Backup & Release Safety Hardening',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 2,
             'depends_on' => ['NSF-9'],
             'category' => 'release_safety',

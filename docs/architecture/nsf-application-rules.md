@@ -133,7 +133,7 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- NSF-9 completed this sequence; next locked sprint: **NSF-10**.
+- NSF-9 and NSF-10 completed this sequence; next locked sprint: **CACHE-1**.
 
 ## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
 
@@ -143,4 +143,20 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now also includes **FEATURE_FLAGS**,
   **RELEASE_SAFETY**, and **AUTOMATED_SMOKE** sections.
 - See [`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)
+  for the full policy.
+
+## NSF-10 Observability, Backup & Release Safety Hardening (2026-07-04)
+
+- The NSF rule registry (`config/nsf.php`) has grown beyond R001–R021 to
+  include `NSF-R023` (source-document batch linkage) and `NSF-R024`
+  (ambiguous batch linkage repair) from earlier sprints — 23 rules total.
+  `architecture:nsf-governance-check` reflects the current count.
+- NSF-10 adds `config/backup_governance.php` and `config/release_evidence.php`
+  and closes the NSF-9 `RELEASE_SAFETY: WATCH` with a real profile-aware
+  evidence capture/check chain. No NSF rule numbering changed by NSF-10
+  itself.
+- Foundation governance summary now also includes **RELEASE_EVIDENCE** and
+  **BACKUP_VERIFICATION** sections, and `RELEASE_SAFETY` reports its
+  evaluated `--profile`.
+- See [`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md)
   for the full policy.

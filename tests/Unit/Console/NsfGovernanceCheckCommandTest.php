@@ -1,9 +1,10 @@
 <?php
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
-uses(TestCase::class);
+uses(TestCase::class, RefreshDatabase::class);
 
 it('registers architecture nsf governance check command', function () {
     expect(Artisan::all())->toHaveKey('architecture:nsf-governance-check');
@@ -15,7 +16,7 @@ it('runs and outputs valid JSON with governance summary', function () {
 
     expect($exitCode)->toBe(0)
         ->and($payload)->toHaveKeys(['generated_at', 'environment', 'metadata', 'summary', 'rules', 'privacy'])
-        ->and($payload['summary']['rules'])->toBe(21)
+        ->and($payload['summary']['rules'])->toBe(23)
         ->and($payload['privacy']['privacy_safe'])->toBeTrue();
 });
 
@@ -120,7 +121,7 @@ it('foundation governance summary command runs', function () {
 
     expect($exitCode)->toBe(0)
         ->and($payload)->toHaveKeys(['summary', 'nsf_governance', 'dmo_governance', 'owner_kpi_registry'])
-        ->and($payload['summary']['nsf_rules'])->toBe(21);
+        ->and($payload['summary']['nsf_rules'])->toBe(23);
 });
 
 it('dmo governance command still runs after nsf6 additions', function () {

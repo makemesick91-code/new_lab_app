@@ -1,7 +1,7 @@
 <?php
 
 /**
- * NSF-9 — Release safety gate configuration.
+ * NSF-9 / NSF-10 — Release safety gate configuration.
  *
  * Read-only registry of required pre-deploy gates, required deploy evidence,
  * the rollback checklist, and safety rules. Consumed by:
@@ -11,9 +11,14 @@
  * This config never runs commands itself — it only declares what a safe
  * release must include so the service/command can validate presence and
  * the deploy script/CI workflow can be checked against it.
+ *
+ * NSF-10 closes the previous RELEASE_SAFETY WATCH by having
+ * ReleaseSafetyService consume a real, profile-aware evidence chain
+ * (config/release_evidence.php via App\Services\Foundation\ReleaseEvidenceService)
+ * instead of a static local file-existence list.
  */
 return [
-    'sprint' => 'NSF-9',
+    'sprint' => 'NSF-10',
 
     'required_pre_deploy_gates' => [
         'architecture:foundation-roadmap-check',
@@ -55,15 +60,6 @@ return [
         'no_release_without_smoke',
         'no_release_with_failing_dq_dmo_nsf_roadmap_gate',
         'no_release_with_secrets_or_pii_in_logs_or_artifacts',
-    ],
-
-    // Local evidence file candidates (checked as WATCH — not required to exist
-    // for a GO decision; their absence just means "not run/captured locally yet").
-    'local_evidence_candidates' => [
-        'storage/app/architecture/nsf6-governance-check.json',
-        'storage/app/architecture/foundation-governance-summary.json',
-        'storage/ci-evidence/nsf-r011-critical-tests.txt',
-        'storage/ci-evidence/nsf-r012-build-pint.txt',
     ],
 
     'deploy_gate_files' => [

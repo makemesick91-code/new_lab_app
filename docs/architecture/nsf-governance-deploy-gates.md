@@ -22,8 +22,11 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | Foundation summary (JSON) | `php artisan architecture:foundation-governance-summary --json` |
 | Roadmap check (NSF-9) | `php artisan architecture:foundation-roadmap-check` |
 | Feature flags (NSF-9) | `php artisan foundation:feature-flags` |
-| Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
+| Release safety (NSF-9/NSF-10) | `php artisan foundation:release-safety-check [--profile=local\|ci\|vps]` |
 | Automated smoke (NSF-9) | `php artisan release:automated-smoke` |
+| Backup verify (NSF-10) | `php artisan foundation:backup-verify --path=<backup.sql>` |
+| Release evidence capture (NSF-10) | `php artisan release:evidence-capture --profile=ci\|vps` |
+| Release evidence check (NSF-10) | `php artisan release:evidence-check --profile=ci\|vps` |
 
 FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, environment, or **automated_ci_gate** — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
 
@@ -68,6 +71,10 @@ NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `archite
 | Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
 | Automated smoke (NSF-9) | `php artisan release:automated-smoke --base-url=http://127.0.0.1` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
+| Backup verify (NSF-10) | `php artisan foundation:backup-verify --path="$BACKUP"` — GO/WATCH required, never FAIL |
+| Release evidence capture (NSF-10) | `php artisan release:evidence-capture --profile=vps --base-url=http://127.0.0.1 --backup-path="$BACKUP"` |
+| Release evidence check (NSF-10) | `php artisan release:evidence-check --profile=vps` |
+| Release safety, vps profile (NSF-10) | `php artisan foundation:release-safety-check --profile=vps` — must be GO after evidence capture |
 | Cache rebuild | config/route/view/event cache |
 | Services | php8.3-fpm restart, nginx reload |
 
@@ -143,3 +150,26 @@ Before NDA-1:
 - Deploy: `scripts/deploy-vps.sh` runs `foundation:feature-flags`,
   `foundation:release-safety-check`, and `release:automated-smoke` (twice:
   command-readiness pre-restart, `--base-url=http://127.0.0.1` post-restart).
+
+## NSF-10 Observability, Backup & Release Safety Hardening (2026-07-04)
+
+- New commands: `php artisan foundation:backup-verify {--path=} {--json}`,
+  `php artisan release:evidence-capture {--profile=local|ci|vps} {--base-url=}
+  {--backup-path=} {--json}`, `php artisan release:evidence-check
+  {--profile=local|ci|vps} {--json}`.
+- New configs: `config/backup_governance.php`, `config/release_evidence.php`.
+- `foundation:release-safety-check` and `architecture:foundation-governance-summary`
+  both gain `--profile=local|ci|vps` (default `local`, backward compatible
+  with the NSF-9 no-argument call) and now consume the captured evidence
+  chain instead of a static local file-existence list.
+- Full policy: [`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md).
+- CI: `.github/workflows/foundation-evidence-gates.yml` job
+  `nsf10_release_evidence_gate` (needs `release_safety_gate`) captures/checks
+  CI evidence and uploads `storage/ci-evidence` as artifact
+  `nsf-10-release-evidence`.
+- Deploy: `scripts/deploy-vps.sh` runs `foundation:backup-verify` right after
+  the existing DQ/DMO/NSF/roadmap/flags/smoke/summary gates, then
+  `release:evidence-capture --profile=vps`, `release:evidence-check
+  --profile=vps`, and `foundation:release-safety-check --profile=vps` before
+  cache rebuild/restart. No existing gate was removed.
+- Closes the NSF-9 `RELEASE_SAFETY: WATCH`.

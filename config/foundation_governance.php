@@ -52,6 +52,20 @@ return [
                     './vendor/bin/pint --test',
                 ],
             ],
+            'NSF-10' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'nsf10_release_evidence_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/nsf-10-evidence-capture.json',
+                    'storage/ci-evidence/nsf-10-evidence-check.json',
+                    'storage/ci-evidence/nsf-10-release-safety-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan release:evidence-capture --profile=ci',
+                    'php artisan release:evidence-check --profile=ci',
+                    'php artisan foundation:release-safety-check --profile=ci',
+                ],
+            ],
         ],
     ],
 

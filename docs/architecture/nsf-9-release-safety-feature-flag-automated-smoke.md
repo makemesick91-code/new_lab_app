@@ -129,3 +129,9 @@ deploy.
   Release Safety Hardening**.
 - NSF-10 builds on the NSF-9 flag/smoke foundation to harden backup
   verification and observability coverage before CACHE-1/QUEUE-1/DBPERF-2.
+- **Update (NSF-10 completed):** the `RELEASE_SAFETY: WATCH` this sprint left
+  open (§8 table above — "Local evidence artifacts (CI/VPS-only) not yet
+  captured") is now closed by a real profile-aware evidence capture/check
+  standard. See
+  [`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md).
+  Roadmap next recommended sprint is now **CACHE-1**.
