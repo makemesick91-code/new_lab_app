@@ -198,6 +198,15 @@ return [
             'validation' => 'nda_readiness_boundary',
             'status' => 'active',
         ],
+        [
+            'rule_id' => 'NSF-R023',
+            'title' => 'Source-document batch linkage required',
+            'severity' => 'error',
+            'description' => 'Batch-tracked goods receipt, transfer, and opname items must have inventory_batch_id before finalize/movement creation.',
+            'applies_to' => ['inventory', 'workflows'],
+            'validation' => 'source_document_batch_linkage',
+            'status' => 'active',
+        ],
     ],
 
     'deferred_warnings' => [
@@ -212,6 +221,8 @@ return [
         'architecture:dmo-foundation',
         'architecture:canonical-entity-inventory',
         'architecture:canonical-metric-reconciliation',
+        'inventory:source-document-batch-audit',
+        'inventory:backfill-source-document-batches',
     ],
 
     'observability_commands' => [
@@ -224,6 +235,11 @@ return [
         'composer_install',
         'npm_build',
         'migrate_force',
+        'dq1_audit',
+        'dq2_audit',
+        'dq3_audit',
+        'dq2_backfill_dry_run',
+        'dq3_backfill_dry_run',
         'cache_rebuild',
         'service_restart',
         'smoke_check',

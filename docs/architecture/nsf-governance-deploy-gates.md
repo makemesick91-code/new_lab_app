@@ -12,7 +12,9 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | DMO governance | `php artisan architecture:dmo-governance-check --strict` |
 | DQ-1 data quality | `php artisan data-quality:dq1-audit --fail-on=error` |
 | DQ-2 batch governance | `php artisan inventory:batch-governance-audit --fail-on=error` |
+| DQ-3 source-document batch | `php artisan inventory:source-document-batch-audit --fail-on=error` |
 | DQ-2 backfill (pre-execute) | `php artisan inventory:backfill-missing-batches --dry-run` |
+| DQ-3 backfill (pre-execute) | `php artisan inventory:backfill-source-document-batches --dry-run` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` |
@@ -36,7 +38,9 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | Pre-deploy backup | `storage/app/backups/deploy/pre_dq1_*.sql`, `pre_dq2_*.sql`, or `pre_nsf6_*.sql` with recorded size |
 | DQ-1 audit | `php artisan data-quality:dq1-audit --fail-on=error` — GO or controlled WATCH |
 | DQ-2 audit | `php artisan inventory:batch-governance-audit --fail-on=error` — GO or controlled WATCH |
+| DQ-3 audit | `php artisan inventory:source-document-batch-audit --fail-on=error` — GO or controlled WATCH |
 | DQ-2 backfill | Dry-run first; `--execute` only when deterministic/safe |
+| DQ-3 backfill | Dry-run first; `--execute` only when deterministic/safe |
 | GO tag checkout | Deploy exact sprint GO tag first |
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
 | Cache rebuild | config/route/view/event cache |
