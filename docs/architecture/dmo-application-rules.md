@@ -84,3 +84,11 @@ Governance and registry commands must never emit: patient names, KTP/NIK, phone,
 | `architecture:dmo-foundation` | Full DMO foundation (DMO-1 + extended rules) |
 | `architecture:canonical-metric-reconciliation` | NSF-5 metric inventory |
 | `architecture:canonical-entity-inventory` | NSF-4 entity inventory |
+| `architecture:nsf-governance-check` | NSF-6 foundation guardrails (NSF-6) |
+| `architecture:foundation-governance-summary` | Combined NSF + DMO summary (NSF-6) |
+
+## 11. NSF alignment (NSF-6)
+
+- **DMO rules** govern canonical data, metrics, Owner KPI mapping, and sensitivity.
+- **NSF rules** govern branch isolation, ledger inventory, performance/index governance, migration safety, observability, deploy gates, and NDA boundary.
+- Future NDA sprints must pass **both** `architecture:dmo-governance-check` and `architecture:nsf-governance-check`.
