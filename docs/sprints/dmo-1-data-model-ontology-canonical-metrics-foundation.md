@@ -143,19 +143,45 @@ npm run build
 
 **Decision: GO** — DMO foundation consolidates NSF-4/NSF-5; 2 blocked metrics deferred to DMO-2; no business logic changes.
 
----
-
 ## Post-Deploy Evidence
-
-*(Updated after VPS deploy)*
 
 | Item | Value |
 | --- | --- |
-| PR | TBD |
-| Merge commit | TBD |
+| PR | [#160](https://github.com/makemesick91-code/new_lab_app/pull/160) |
+| Merge commit | `36484d62e34788675e2ca635225a00992bdeeda9` |
 | GO tag | `dmo-1-data-model-ontology-canonical-metrics-foundation-go` |
-| VPS previous HEAD | TBD |
-| VPS deployed HEAD | TBD |
-| Backup path | TBD |
-| Smoke | TBD |
-| pg_stat | TBD |
+| Local HEAD | `36484d62e34788675e2ca635225a00992bdeeda9` |
+| VPS previous HEAD | `4feedfba1e296a97610ba688c7ecc2cd376fe91a` (NSF-5) |
+| VPS deployed GO tag HEAD | `36484d62e34788675e2ca635225a00992bdeeda9` |
+| VPS final stable HEAD | `36484d62e34788675e2ca635225a00992bdeeda9` |
+| Backup path | `storage/app/backups/deploy/pre_dmo1_20260704-021140.sql` (564K) |
+| Migration | Nothing to migrate |
+| DMO foundation evidence | `storage/app/architecture/dmo1-vps-foundation.json` (210K) |
+| Entity reference | `storage/app/architecture/dmo1-vps-entity-inventory-reference.json` (47K) |
+| Metric reference | `storage/app/architecture/dmo1-vps-metric-reconciliation-reference.json` (147K) |
+| Runtime observability | `storage/app/performance/dmo1-vps-runtime-query-observability.json` (13K) |
+| Slow query audit | `storage/app/performance/dmo1-vps-slow-query-audit.json` (14K) |
+| pg_stat_statements | available=true, v1.10, preloaded=true |
+| Build assets | `app-DdSm4puC.css`, `app-JStlj-rZ.js` |
+| php-fpm/nginx | restart OK, nginx -t OK |
+| Smoke | `/login` 200; protected routes 302 |
+| Log review | No new errors on deploy date |
+
+### VPS Summary Counts (from dmo1-vps-foundation.json)
+
+| Count | Value |
+| --- | --- |
+| Domains | 8 |
+| Entities | 56 |
+| Workflows | 9 |
+| Metrics | 71 |
+| Relationships | 26 |
+| Dimensions | 11 |
+| Backlog items | 17 |
+| DMO-ready entities | 54 |
+| DMO-ready metrics | 57 |
+| Blocked metrics | 2 |
+
+## Final GO/NO-GO
+
+**GO** — PR #160 merged, GO tag deployed to VPS pilot, evidence captured, smoke green, no migrations, full suite 3631 passed locally.
