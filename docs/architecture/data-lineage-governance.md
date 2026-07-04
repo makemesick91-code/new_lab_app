@@ -19,6 +19,7 @@ Lineage chains document: **canonical entity → canonical metric → consumer** 
 | Inventory Movement | stock_value | Inventory reports / Owner KPI | inventory |
 | Lab Order | lab_orders_active | Owner Dashboard / lab queue | lab |
 | Performance Runtime Evidence | pg_stat_top_query | NSF-3 observability | system |
+| NSF Foundation Governance | nsf_governance_check | NSF-6 application rules | system |
 | Owner Dashboard KPI | owner_* canonical KPIs | dashboard route | owner |
 
 ## Owner Dashboard Lineage
