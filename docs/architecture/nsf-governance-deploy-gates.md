@@ -15,6 +15,8 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | DQ-3 source-document batch | `php artisan inventory:source-document-batch-audit --fail-on=error` |
 | DQ-2 backfill (pre-execute) | `php artisan inventory:backfill-missing-batches --dry-run` |
 | DQ-3 backfill (pre-execute) | `php artisan inventory:backfill-source-document-batches --dry-run` |
+| DQ-3.1 review pack | `php artisan inventory:ambiguous-batch-review-pack` |
+| DQ-3.1 repair (pre-execute) | `php artisan inventory:repair-ambiguous-batch-links --mapping=<approved> --dry-run` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` |
@@ -41,6 +43,7 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | DQ-3 audit | `php artisan inventory:source-document-batch-audit --fail-on=error` — GO or controlled WATCH |
 | DQ-2 backfill | Dry-run first; `--execute` only when deterministic/safe |
 | DQ-3 backfill | Dry-run first; `--execute` only when deterministic/safe |
+| DQ-3.1 repair | Review pack → approved mapping → dry-run → backup → `--execute` only when mapping validates |
 | GO tag checkout | Deploy exact sprint GO tag first |
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
 | Cache rebuild | config/route/view/event cache |

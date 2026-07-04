@@ -207,6 +207,15 @@ return [
             'validation' => 'source_document_batch_linkage',
             'status' => 'active',
         ],
+        [
+            'rule_id' => 'NSF-R024',
+            'title' => 'Ambiguous inventory batch linkage repair requires approved mapping',
+            'severity' => 'error',
+            'description' => 'Ambiguous transfer/opname source-document batch repair must use inventory:repair-ambiguous-batch-links with approval_reference, approved_by, approved_at, and reason. Dry-run before execute; audit log required.',
+            'applies_to' => ['inventory', 'governance'],
+            'validation' => 'ambiguous_batch_manual_repair',
+            'status' => 'active',
+        ],
     ],
 
     'deferred_warnings' => [
@@ -223,6 +232,8 @@ return [
         'architecture:canonical-metric-reconciliation',
         'inventory:source-document-batch-audit',
         'inventory:backfill-source-document-batches',
+        'inventory:ambiguous-batch-review-pack',
+        'inventory:repair-ambiguous-batch-links',
     ],
 
     'observability_commands' => [

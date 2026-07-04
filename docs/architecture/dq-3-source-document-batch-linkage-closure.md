@@ -47,7 +47,7 @@ php artisan inventory:backfill-source-document-batches --execute
 3. **Source batch fields** — match existing batch by `batch_number`/`lot_number`/`expiry_date` when real.
 4. **Transfer** — preserve OUT/IN batch identity; skip when OUT/IN disagree.
 5. **Opname** — map adjustment movement to counted item when unique.
-6. **Ambiguous** — skip, report WATCH.
+6. **Ambiguous** — skip, report WATCH. **DQ-3.1** is the only approved manual repair path — see `docs/architecture/dq-3-1-manual-review-repair-ambiguous-batch-rows.md`.
 
 ## Permanent Guardrail
 

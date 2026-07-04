@@ -65,7 +65,7 @@ php artisan inventory:backfill-missing-batches --no-legacy-placeholder
 
 DQ-2 backfill updates existing rows directly (no guard bypass on public HTTP flows).
 
-**DQ-3** closes source-document item linkage (DQ2-BATCH-007/008/009). See `docs/architecture/dq-3-source-document-batch-linkage-closure.md`.
+**DQ-3** closes source-document item linkage (DQ2-BATCH-007/008/009). **DQ-3.1** closes remaining ambiguous transfer/opname rows via approved manual repair. See `docs/architecture/dq-3-source-document-batch-linkage-closure.md` and `docs/architecture/dq-3-1-manual-review-repair-ambiguous-batch-rows.md`.
 
 ## 7. Provenance
 

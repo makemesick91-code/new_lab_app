@@ -17,6 +17,12 @@ class InventoryBatchBackfillLog extends Model
         'source_document_type',
         'source_document_item_id',
         'evidence',
+        'approval_reference',
+        'approved_by',
+        'approved_at',
+        'approval_reason',
+        'old_inventory_batch_id',
+        'dry_run',
         'executed_at',
     ];
 
@@ -24,7 +30,9 @@ class InventoryBatchBackfillLog extends Model
     {
         return [
             'evidence' => 'array',
+            'approved_at' => 'datetime',
             'executed_at' => 'datetime',
+            'dry_run' => 'boolean',
         ];
     }
 
