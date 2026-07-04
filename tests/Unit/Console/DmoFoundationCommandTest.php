@@ -130,7 +130,7 @@ it('includes backlog dimensions and governance rules', function () {
 
     expect($payload['summary']['dimensions'])->toBeGreaterThan(5)
         ->and($payload['summary']['backlog_items'])->toBeGreaterThan(5)
-        ->and($payload['governance_rules'])->toHaveCount(10)
+        ->and($payload['governance_rules'])->toHaveCount(15)
         ->and($payload['readiness']['decision'])->toBeIn(['GO', 'WATCH']);
 });
 

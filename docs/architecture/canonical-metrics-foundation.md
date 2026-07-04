@@ -20,7 +20,7 @@
 
 ```text
 {domain}_{concept}     e.g. total_visits, remaining_receivable, current_stock_qty
-owner_{concept}        Owner dashboard aliases (duplicate until DMO-M005)
+owner_{concept}        Owner dashboard aliases (resolved DMO-2 — see canonical-owner-kpi-registry.md)
 ```
 
 Display labels may differ (`active_receivable`, `low_stock_items`) — reconciliation notes capture aliases.
@@ -63,7 +63,7 @@ branch, region (deferred NDA), date, doctor, treatment, payment_method, product,
 ## Owner KPI Alias Rules
 
 - Owner dashboard uses `owner_*` prefixed metrics as **duplicate** aliases
-- DMO-M005: unify to domain canonical names in DMO-2
+- DMO-M005: **closed DMO-2** — see `canonical-owner-kpi-registry.md`
 - 10 duplicate groups documented in NSF-5 conflicts registry
 - New Owner KPIs must reference existing canonical name or register new one
 
@@ -99,7 +99,7 @@ active_patients, gross_revenue, receivable_aging_bucket, expiry_alert_count, pro
 | DMO-M002 | rme | active_patients vs unique_patients |
 | DMO-M003 | cashier | aging buckets not persisted |
 | DMO-M004 | inventory | expiry_alert_count computed only |
-| DMO-M005 | owner | Owner KPI alias duplication |
+| DMO-M005 | owner | Owner KPI alias duplication — **closed DMO-2** |
 | DMO-M006 | foundation | treatment/tariff multi-branch |
 | DMO-M007 | lab | pod_count / production_pending status |
 
