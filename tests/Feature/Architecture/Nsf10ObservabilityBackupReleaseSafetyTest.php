@@ -61,13 +61,13 @@ it('feature flags remain GO with no risky flag enabled', function () {
         ->and($governance['risky_enabled_flags'])->toBe([]);
 });
 
-it('roadmap next recommended sprint is CACHE-1 after NSF-10 completion', function () {
+it('roadmap next recommended sprint is QUEUE-1 after CACHE-1 completion', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('CACHE-1');
+    expect($report['next_recommended_sprint'])->toBe('QUEUE-1');
 
-    $nsf10 = collect($report['approved_sequence'])->firstWhere('id', 'NSF-10');
-    expect($nsf10['status'])->toBe('completed');
+    $cache1 = collect($report['approved_sequence'])->firstWhere('id', 'CACHE-1');
+    expect($cache1['status'])->toBe('completed');
 });
 
 it('NSF-R009 observability evidence is represented safely via nsf governance check', function () {

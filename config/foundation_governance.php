@@ -14,6 +14,8 @@ return [
         'nsf-7' => 'docs/sprints/nsf-7-evidence-gate-automation-r011-r012-ci-evidence.md',
         'nsf-8' => 'docs/sprints/nsf-8-node20-observability-raw-go-closure-evidence.md',
         'nsf-9' => 'docs/sprints/nsf-9-release-safety-feature-flag-automated-smoke-evidence.md',
+        'nsf-10' => 'docs/sprints/nsf-10-observability-backup-release-safety-hardening-evidence.md',
+        'cache-1' => 'docs/sprints/cache-1-cache-strategy-redis-readiness-invalidation-governance-evidence.md',
         'dq-1' => 'docs/sprints/dq-1-acid-constraint-data-quality-audit-evidence.md',
         'dq-2' => 'docs/sprints/dq-2-batch-tracked-movement-backfill-inventory-batch-governance-evidence.md',
         'dq-3' => 'docs/sprints/dq-3-source-document-batch-linkage-closure-evidence.md',
@@ -64,6 +66,17 @@ return [
                     'php artisan release:evidence-capture --profile=ci',
                     'php artisan release:evidence-check --profile=ci',
                     'php artisan foundation:release-safety-check --profile=ci',
+                ],
+            ],
+            'CACHE-1' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/cache-governance-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:cache-governance-check',
+                    'php artisan foundation:cache-governance-check --json',
                 ],
             ],
         ],

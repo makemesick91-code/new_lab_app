@@ -4,6 +4,7 @@ namespace App\Services\Architecture;
 
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
+use App\Services\Foundation\CacheGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
@@ -15,8 +16,9 @@ use Illuminate\Support\Facades\Artisan;
 
 /**
  * Read-only combined foundation governance summary (NSF + DMO + DQ chain +
- * ROADMAP + NSF-9/NSF-10 release safety chain: FEATURE_FLAGS/RELEASE_SAFETY/
- * AUTOMATED_SMOKE/RELEASE_EVIDENCE/BACKUP_VERIFICATION).
+ * ROADMAP + NSF-9/NSF-10/CACHE-1 release safety chain: FEATURE_FLAGS/
+ * CACHE_GOVERNANCE/RELEASE_SAFETY/AUTOMATED_SMOKE/RELEASE_EVIDENCE/
+ * BACKUP_VERIFICATION).
  */
 class FoundationGovernanceSummaryService
 {
@@ -34,6 +36,7 @@ class FoundationGovernanceSummaryService
         private readonly ReleaseSafetyService $releaseSafety,
         private readonly AutomatedSmokeService $automatedSmoke,
         private readonly ReleaseEvidenceService $releaseEvidence,
+        private readonly CacheGovernanceService $cacheGovernance,
     ) {}
 
     /**
@@ -69,6 +72,7 @@ class FoundationGovernanceSummaryService
         $releaseSafety = $this->releaseSafety->collect($releaseSafetyProfile);
         $automatedSmoke = $this->automatedSmoke->run();
         $releaseEvidence = $this->releaseEvidence->check($releaseSafetyProfile);
+        $cacheGovernance = $this->cacheGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -78,6 +82,7 @@ class FoundationGovernanceSummaryService
             $dmoWatch,
             $roadmap,
             $featureFlags,
+            $cacheGovernance,
             $releaseSafety,
             $automatedSmoke,
         );
@@ -143,6 +148,8 @@ class FoundationGovernanceSummaryService
                 'feature_flags_decision' => $featureFlags['summary']['decision'] ?? 'UNKNOWN',
                 'feature_flags_total' => $featureFlags['total_flags'] ?? 0,
                 'feature_flags_risky_enabled' => count($featureFlags['risky_enabled_flags'] ?? []),
+                'cache_governance_decision' => $cacheGovernance['summary']['decision'] ?? 'UNKNOWN',
+                'cache_governance_redis_runtime_enabled' => $cacheGovernance['redis_runtime_enabled'] ?? false,
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
@@ -176,6 +183,16 @@ class FoundationGovernanceSummaryService
                 'summary' => $featureFlags['summary'] ?? [],
                 'checks' => $featureFlags['checks'] ?? [],
                 'command' => 'foundation:feature-flags',
+            ],
+            'cache_governance' => [
+                'decision' => $cacheGovernance['summary']['decision'] ?? 'UNKNOWN',
+                'redis_runtime_enabled' => $cacheGovernance['redis_runtime_enabled'] ?? false,
+                'redis_readiness_status' => $cacheGovernance['redis_readiness']['default_status'] ?? null,
+                'allowed_categories_count' => count($cacheGovernance['allowed_categories'] ?? []),
+                'denied_categories_count' => count($cacheGovernance['denied_categories'] ?? []),
+                'summary' => $cacheGovernance['summary'] ?? [],
+                'checks' => $cacheGovernance['checks'] ?? [],
+                'command' => 'foundation:cache-governance-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
@@ -421,6 +438,7 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $dqChain
      * @param  array<string, mixed>  $roadmap
      * @param  array<string, mixed>  $featureFlags
+     * @param  array<string, mixed>  $cacheGovernance
      * @param  array<string, mixed>  $releaseSafety
      * @param  array<string, mixed>  $automatedSmoke
      * @return array{decision: string, blocking_watch_count: int, reason: string}
@@ -433,6 +451,7 @@ class FoundationGovernanceSummaryService
         array $dmoWatch,
         array $roadmap = [],
         array $featureFlags = [],
+        array $cacheGovernance = [],
         array $releaseSafety = [],
         array $automatedSmoke = [],
     ): array {
@@ -478,6 +497,9 @@ class FoundationGovernanceSummaryService
         if (($automatedSmoke['summary']['decision'] ?? 'GO') === 'FAIL') {
             $nsf9Fails[] = 'AUTOMATED_SMOKE';
         }
+        if (($cacheGovernance['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'CACHE_GOVERNANCE';
+        }
         if ($nsf9Fails !== []) {
             return [
                 'decision' => 'NO-GO',
@@ -495,6 +517,23 @@ class FoundationGovernanceSummaryService
             ($releaseSafety['summary']['decision'] ?? 'GO') === 'WATCH' ? 'RELEASE_SAFETY' : null,
             ($automatedSmoke['summary']['decision'] ?? 'GO') === 'WATCH' ? 'AUTOMATED_SMOKE' : null,
         ]);
+
+        // CACHE-1: WATCH on cache governance (e.g. Redis probe unavailable while
+        // runtime disabled) is non-blocking for combined GO.
+        $cacheGovWatchBlocking = ($cacheGovernance['summary']['decision'] ?? 'GO') === 'WATCH'
+            && ($cacheGovernance['redis_runtime_enabled'] ?? false);
+
+        if ($cacheGovWatchBlocking) {
+            return [
+                'decision' => 'WATCH',
+                'blocking_watch_count' => 1,
+                'reason' => 'CACHE_GOVERNANCE WATCH while Redis runtime is enabled',
+            ];
+        }
+
+        if (($cacheGovernance['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'CACHE_GOVERNANCE';
+        }
 
         $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']) + count($nsf9Watches);
         $reason = $nonBlocking > 0

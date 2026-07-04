@@ -143,7 +143,7 @@ return [
         [
             'id' => 'CACHE-1',
             'title' => 'Cache Strategy, Redis Readiness & Invalidation Governance',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 3,
             'depends_on' => ['NSF-9'],
             'category' => 'cache',

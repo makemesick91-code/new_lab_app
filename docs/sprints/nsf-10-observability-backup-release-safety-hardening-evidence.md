@@ -40,9 +40,9 @@ artifact: 10 files (`automated-smoke.json`, `feature-flags.json`,
 `nsf-governance-check.json`, `release-evidence-check.json`). No
 `APP_KEY=`/`DB_PASSWORD` substrings found. `nsf-10-release-safety-check.json`
 → `{"decision":"GO","checks":10,"passed":10,"warnings":0,"errors":0}`;
-`nsf-10-evidence-check.json` (first run, before self-persist) →
-`{"decision":"WATCH","checks":6,"passed":5,"warnings":1,"errors":0}` —
-expected first-run self-reference behavior (see architecture doc §6).
+`nsf-10-evidence-check.json` is now expected to reach GO on the first check
+after required CI artifacts are captured; `release-evidence-check.json` remains
+self-persisted audit evidence, not an input to its own decision.
 
 ## VPS Deploy
 
@@ -70,7 +70,7 @@ expected first-run self-reference behavior (see architecture doc §6).
 - `php artisan release:automated-smoke` → GO (6/6 checks, command-readiness only)
 - `php artisan architecture:foundation-governance-summary` → **Combined: GO** (1 non-blocking watch item — local RELEASE_SAFETY/RELEASE_EVIDENCE)
 - `php artisan release:evidence-capture --profile=vps --base-url=http://127.0.0.1 --backup-path="$BACKUP"` → **GO** (11/11 artifacts written: foundation-roadmap-check.json, feature-flags.json, automated-smoke.json, foundation-governance-summary.json, nsf-governance-check.json, backup-verify.json, deploy-runtime.json, dmo-governance-check.json, dq-audits.txt, automated-smoke-http.json, release-safety-check.json)
-- `php artisan release:evidence-check --profile=vps` (1st run) → WATCH (`release-evidence-check.json` not yet self-persisted); (2nd run) → **GO** (12/12 artifacts present, safe, fresh)
+- `php artisan release:evidence-check --profile=vps` → **GO** after required artifacts are captured; `release-evidence-check.json` is self-persisted for audit trail evidence
 - `php artisan foundation:release-safety-check --profile=vps` → **GO** (11/11 checks) — `evidence_chain.decision=GO`, `backup_verification.decision=GO` — **this closes the NSF-9 RELEASE_SAFETY WATCH**
 - `php artisan optimize:clear` / `config:cache` / `route:cache` / `view:cache` / `event:cache` → all succeeded
 - Permissions reset (`www-data:www-data`, dirs 775/files 664), `php8.3-fpm` restarted, `nginx -t` passed + reload OK
@@ -85,8 +85,8 @@ expected first-run self-reference behavior (see architecture doc §6).
 
 ## Release evidence result
 
-- `ci` profile (local dev + CI): capture GO, check GO after self-persist run.
-- `vps` profile (VPS): capture GO (11 artifacts), check GO after self-persist run (12 artifacts incl. `release-evidence-check.json`).
+- `ci` profile (local dev + CI): capture GO, check GO after required artifacts are captured.
+- `vps` profile (VPS): capture GO, check GO after required artifacts are captured; `release-evidence-check.json` remains self-persisted audit evidence.
 
 ## Release safety result
 

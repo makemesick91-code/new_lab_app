@@ -260,6 +260,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:feature-flags',
                 'arguments' => ['--json' => true],
             ],
+            'cache-governance-check.json' => [
+                'command' => 'foundation:cache-governance-check',
+                'arguments' => ['--json' => true],
+            ],
             'automated-smoke.json' => [
                 'command' => 'release:automated-smoke',
                 'arguments' => ['--json' => true],

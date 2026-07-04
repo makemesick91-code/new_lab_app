@@ -62,8 +62,9 @@ capture/check pipeline.
   {--base-url=} {--backup-path=} {--json}` and
   `php artisan release:evidence-check {--profile=local} {--json}`.
   `release:evidence-check` also self-persists its own decision as
-  `release-evidence-check.json` (an *optional* artifact) so the check result
-  itself becomes part of the evidence trail.
+  `release-evidence-check.json` so the check result itself becomes part of
+  the evidence trail. This self-written audit artifact is not an input to
+  its own GO/WATCH/FAIL decision.
 - **Implementation note (nested `Artisan::call` output draining):** Laravel's
   `Illuminate\Console\Application` tracks a single shared "last output"
   buffer across nested `Artisan::call()` invocations. Some governed commands
@@ -114,11 +115,10 @@ capture/check pipeline.
   GO tag, commit, backup path + size — no secrets), `dmo-governance-check.json`,
   `dq-audits.txt`, and (when `--base-url` is given) `automated-smoke-http.json`.
 - **Known first-run self-reference note:** because `release-safety-check.json`
-  and `release-evidence-check.json` are themselves required/optional
-  artifacts, the *first* time they are captured/checked in a fresh evidence
-  directory they cannot yet contain themselves, so their own embedded
-  snapshot is conservatively FAIL/WATCH about that one artifact. This is
-  cosmetic — the **authoritative** decision is the standalone
+  is itself a required artifact, the first time it is captured in a fresh
+  evidence directory its own embedded snapshot cannot yet contain itself, so
+  that embedded snapshot can be conservatively FAIL about that one artifact.
+  This is cosmetic — the **authoritative** decision is the standalone
   `release:evidence-check --profile=vps` / `foundation:release-safety-check
   --profile=vps` run executed immediately after capture (exactly what the
   deploy script and CI both do), which reads the now-complete directory and
@@ -162,7 +162,7 @@ capture/check pipeline.
 | Profile | GO | WATCH | FAIL |
 | --- | --- | --- | --- |
 | `local` (default) | n/a — no required artifacts | Optional local artifacts not captured (expected — this is honest, not fake GO) | Structural config/gate problem only |
-| `ci` | All 5 required `storage/ci-evidence/*` artifacts present, safe, fresh | `release-evidence-check.json` (optional) not yet self-persisted | Any required artifact missing/empty/unsafe/stale before capture |
+| `ci` | All required `storage/ci-evidence/*` artifacts present, safe, fresh | n/a unless future optional CI artifacts are configured | Any required artifact missing/empty/unsafe/stale before capture |
 | `vps` | All 8 required `storage/release-evidence/latest/*` artifacts present, safe, fresh, and the backup verification artifact is GO | Backup verification artifact is WATCH (e.g. stale mtime), or an optional artifact missing | Backup verification is FAIL, or a required artifact missing/empty/unsafe/stale |
 
 `foundation:release-safety-check` gains `--profile=local|ci|vps` (default
@@ -236,9 +236,9 @@ behavior. See `tests/Unit/Console/NsfGovernanceCheckCommandTest.php`.
 
 ## 13. Next sprint
 
-Roadmap next recommended sprint after NSF-10: **CACHE-1 — Cache Strategy,
-Redis Readiness & Invalidation Governance** (`config/foundation_roadmap.php`
-marks `NSF-10` `status: completed`, so
-`architecture:foundation-roadmap-check` now reports `CACHE-1` as
+Roadmap next recommended sprint after CACHE-1: **QUEUE-1 — Queue,
+Idempotency & Outbox Foundation** (`config/foundation_roadmap.php`
+marks `CACHE-1` `status: completed`, so
+`architecture:foundation-roadmap-check` now reports `QUEUE-1` as
 `next_recommended_sprint`). RC-1 remains locked as the final item after the
 full expansion track.

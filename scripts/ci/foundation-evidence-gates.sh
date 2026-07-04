@@ -98,6 +98,9 @@ run_release_safety() {
         echo "--- foundation:feature-flags ---"
         php artisan foundation:feature-flags
         echo ""
+        echo "--- foundation:cache-governance-check ---"
+        php artisan foundation:cache-governance-check
+        echo ""
         echo "--- foundation:release-safety-check ---"
         php artisan foundation:release-safety-check
         echo ""

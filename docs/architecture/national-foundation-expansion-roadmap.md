@@ -69,10 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `CACHE-1` (NSF-9 and NSF-10 completed — see
-[`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)
-and
-[`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md)).
+**Next recommended sprint:** `QUEUE-1` (NSF-9, NSF-10, and CACHE-1 completed — see
+[`cache-1-cache-strategy-redis-readiness-invalidation-governance.md`](cache-1-cache-strategy-redis-readiness-invalidation-governance.md)).
 
 ---
 
@@ -114,7 +112,10 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
   now consume that evidence per `--profile=local|ci|vps` instead of a static
   file-existence list. Closes the NSF-9 `RELEASE_SAFETY: WATCH`.
 
-### CACHE-1 — Cache Strategy, Redis Readiness & Invalidation Governance
+### CACHE-1 — Cache Strategy, Redis Readiness & Invalidation Governance — **COMPLETED**
+- **Status:** Completed. See
+  [`cache-1-cache-strategy-redis-readiness-invalidation-governance.md`](cache-1-cache-strategy-redis-readiness-invalidation-governance.md)
+  and `docs/sprints/cache-1-cache-strategy-redis-readiness-invalidation-governance-evidence.md`.
 - **Objective:** Cache strategy + Redis readiness with **mandatory invalidation governance**.
 - **Why this order:** Cache (with invalidation tests) precedes read-replica usefulness.
 - **Out of scope:** caching critical mutable financial/inventory values without invalidation tests.

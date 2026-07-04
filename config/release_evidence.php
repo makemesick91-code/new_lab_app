@@ -43,13 +43,12 @@ return [
             'required_artifacts' => [
                 'foundation-roadmap-check.json',
                 'feature-flags.json',
+                'cache-governance-check.json',
                 'automated-smoke.json',
                 'foundation-governance-summary.json',
                 'nsf-governance-check.json',
             ],
-            'optional_artifacts' => [
-                'release-evidence-check.json',
-            ],
+            'optional_artifacts' => [],
         ],
 
         // VPS / production deploy — full chain including backup + deploy runtime.
@@ -60,6 +59,7 @@ return [
                 'backup-verify.json',
                 'foundation-roadmap-check.json',
                 'feature-flags.json',
+                'cache-governance-check.json',
                 'release-safety-check.json',
                 'automated-smoke.json',
                 'foundation-governance-summary.json',
@@ -70,7 +70,6 @@ return [
                 'automated-smoke-http.json',
                 'dq-audits.txt',
                 'dmo-governance-check.json',
-                'release-evidence-check.json',
             ],
         ],
     ],
