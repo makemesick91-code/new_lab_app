@@ -59,6 +59,7 @@ Validator: `App\Services\Architecture\NsfApplicationRulesService`
 - Procurement, transfer, opname, and batch workflows write movements only.
 - **DQ-2 (NSF-R022):** Batch-tracked products (`requires_batch_tracking = true`) must have `inventory_batch_id` on every new movement. Enforced by `InventoryMovementBatchGuard` on `InventoryMovementRepository::create()`.
 - **DQ-3 (NSF-R023):** Batch-tracked source-document items (GR, transfer, opname) must have `inventory_batch_id` before finalize/movement creation. Enforced by `SourceDocumentBatchGuard`. Audit: `inventory:source-document-batch-audit`. Backfill: `inventory:backfill-source-document-batches` (dry-run default).
+- **DQ-3.1 (NSF-R024):** Ambiguous transfer/opname rows require approved mapping + `inventory:repair-ambiguous-batch-links` (dry-run default). Review: `inventory:ambiguous-batch-review-pack`.
 - Historical missing batch links: WARN via DQ-1/DQ-2 audit; resolve via dry-run → backup → `inventory:backfill-missing-batches --execute`.
 - Legacy placeholder batches use prefix `LEGACY-DQ2` and `backfill_source=dq2_legacy_placeholder` — not manufacturer lots.
 

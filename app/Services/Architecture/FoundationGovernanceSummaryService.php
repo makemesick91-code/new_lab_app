@@ -3,6 +3,7 @@
 namespace App\Services\Architecture;
 
 use App\Services\DataQuality\Dq1AuditService;
+use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
 use Illuminate\Foundation\Application;
@@ -21,6 +22,7 @@ class FoundationGovernanceSummaryService
         private readonly Dq1AuditService $dq1Audit,
         private readonly BatchGovernanceAuditService $dq2Audit,
         private readonly SourceDocumentBatchAuditService $dq3Audit,
+        private readonly AmbiguousBatchReviewPackService $dq31Review,
     ) {}
 
     /**
@@ -46,6 +48,7 @@ class FoundationGovernanceSummaryService
         $dq1 = $this->dq1Audit->audit();
         $dq2 = $this->dq2Audit->audit();
         $dq3 = $this->dq3Audit->audit();
+        $dq31 = $this->dq31Review->generate();
 
         return [
             'generated_at' => now()->toIso8601String(),
@@ -60,7 +63,7 @@ class FoundationGovernanceSummaryService
             'summary' => [
                 'nsf_decision' => $nsf['summary']['decision'] ?? 'UNKNOWN',
                 'dmo_decision' => $dmo['summary']['decision'] ?? 'UNKNOWN',
-                'combined_decision' => $this->combinedDecision($nsf, $dmo, $dq1, $dq2, $dq3),
+                'combined_decision' => $this->combinedDecision($nsf, $dmo, $dq1, $dq2, $dq3, $dq31),
                 'nsf_rules' => $nsf['summary']['rules'] ?? 0,
                 'nsf_passed' => $nsf['summary']['passed'] ?? 0,
                 'nsf_warnings' => $nsf['summary']['warnings'] ?? 0,
@@ -90,6 +93,8 @@ class FoundationGovernanceSummaryService
                 'dq3_warnings' => $dq3['summary']['warnings'] ?? 0,
                 'dq3_errors' => $dq3['summary']['errors'] ?? 0,
                 'dq3_total_missing' => $dq3['summary']['total_missing'] ?? 0,
+                'dq31_decision' => $dq31['summary']['decision'] ?? 'UNKNOWN',
+                'dq31_ambiguous_count' => $dq31['summary']['total_ambiguous_count'] ?? 0,
             ],
             'nsf_governance' => [
                 'summary' => $nsf['summary'],
@@ -121,6 +126,11 @@ class FoundationGovernanceSummaryService
                 'summary' => $dq3['summary'] ?? [],
                 'command' => 'inventory:source-document-batch-audit',
             ],
+            'dq31_governance' => [
+                'summary' => $dq31['summary'] ?? [],
+                'review_command' => 'inventory:ambiguous-batch-review-pack',
+                'repair_command' => 'inventory:repair-ambiguous-batch-links',
+            ],
             'commands_available' => [
                 'architecture:nsf-governance-check' => array_key_exists('architecture:nsf-governance-check', Artisan::all()),
                 'architecture:dmo-governance-check' => array_key_exists('architecture:dmo-governance-check', Artisan::all()),
@@ -131,6 +141,8 @@ class FoundationGovernanceSummaryService
                 'inventory:backfill-missing-batches' => array_key_exists('inventory:backfill-missing-batches', Artisan::all()),
                 'inventory:source-document-batch-audit' => array_key_exists('inventory:source-document-batch-audit', Artisan::all()),
                 'inventory:backfill-source-document-batches' => array_key_exists('inventory:backfill-source-document-batches', Artisan::all()),
+                'inventory:ambiguous-batch-review-pack' => array_key_exists('inventory:ambiguous-batch-review-pack', Artisan::all()),
+                'inventory:repair-ambiguous-batch-links' => array_key_exists('inventory:repair-ambiguous-batch-links', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,
@@ -146,7 +158,7 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $dq2
      * @param  array<string, mixed>  $dq3
      */
-    private function combinedDecision(array $nsf, array $dmo, array $dq1, array $dq2, array $dq3): string
+    private function combinedDecision(array $nsf, array $dmo, array $dq1, array $dq2, array $dq3, array $dq31): string
     {
         $nsfErrors = (int) ($nsf['summary']['errors'] ?? 0);
         $dmoErrors = (int) ($dmo['summary']['errors'] ?? 0);
@@ -163,8 +175,9 @@ class FoundationGovernanceSummaryService
         $dq1Warnings = (int) ($dq1['summary']['warnings'] ?? 0);
         $dq2Warnings = (int) ($dq2['summary']['warnings'] ?? 0);
         $dq3Warnings = (int) ($dq3['summary']['warnings'] ?? 0);
+        $dq31Ambiguous = (int) ($dq31['summary']['total_ambiguous_count'] ?? 0);
 
-        if ($nsfWarnings > 0 || $dmoWarnings > 0 || $dq1Warnings > 0 || $dq2Warnings > 0 || $dq3Warnings > 0) {
+        if ($nsfWarnings > 0 || $dmoWarnings > 0 || $dq1Warnings > 0 || $dq2Warnings > 0 || $dq3Warnings > 0 || $dq31Ambiguous > 0) {
             return 'WATCH';
         }
 

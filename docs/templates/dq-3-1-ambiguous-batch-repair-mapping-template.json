@@ -1,0 +1,17 @@
+{
+  "mappings": [
+    {
+      "source_type": "transfer",
+      "source_item_id": 0,
+      "approved_inventory_batch_id": 0,
+      "approval_reference": "OWNER-TICKET-EXAMPLE",
+      "approved_by": "owner.name",
+      "approved_at": "2026-07-04T12:00:00+08:00",
+      "reason": "Manual OUT/IN resolution approved by owner after review pack DQ-3.1",
+      "expected_product_id": null,
+      "expected_document_id": null,
+      "expected_current_inventory_batch_id": null,
+      "notes": "Replace zeros with real IDs from review pack export only after owner approval."
+    }
+  ]
+}
