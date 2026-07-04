@@ -15,6 +15,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockOpname;
 use App\Modules\Inventory\Models\StockOpnameItem;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
+use App\Modules\Inventory\Support\SourceDocumentBatchGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -244,6 +245,17 @@ class StockOpnameService
             foreach ($opname->items as $item) {
                 $product = $this->lockAndAssertActiveProductInBranch($branchId, (int) $item->product_id);
                 $variance = round((float) $item->variance_quantity, 4);
+
+                if ($variance !== 0.0) {
+                    SourceDocumentBatchGuard::assertItem($product, $item->inventory_batch_id ? (int) $item->inventory_batch_id : null);
+                    if ($item->inventory_batch_id) {
+                        SourceDocumentBatchGuard::assertBatchMatchesProduct(
+                            $branchId,
+                            $product->id,
+                            (int) $item->inventory_batch_id,
+                        );
+                    }
+                }
 
                 if ($variance < 0) {
                     $quantityOut = abs($variance);

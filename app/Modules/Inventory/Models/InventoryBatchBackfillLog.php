@@ -14,6 +14,8 @@ class InventoryBatchBackfillLog extends Model
         'inventory_batch_id',
         'strategy',
         'command',
+        'source_document_type',
+        'source_document_item_id',
         'evidence',
         'executed_at',
     ];

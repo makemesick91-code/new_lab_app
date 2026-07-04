@@ -54,9 +54,9 @@ php artisan inventory:backfill-missing-batches --no-legacy-placeholder
 | DQ2-BATCH-004 | Movement batch branch compatible |
 | DQ2-BATCH-005 | No orphan `inventory_batch_id` |
 | DQ2-BATCH-006 | Quantity direction valid |
-| DQ2-BATCH-007 | Transfer batch linkage |
-| DQ2-BATCH-008 | Goods receipt batch identity |
-| DQ2-BATCH-009 | Stock opname batch identity |
+| DQ2-BATCH-007 | Transfer batch linkage (closed by DQ-3 source-document backfill) |
+| DQ2-BATCH-008 | Goods receipt batch identity (closed by DQ-3 source-document backfill) |
+| DQ2-BATCH-009 | Stock opname batch identity (closed by DQ-3 source-document backfill) |
 | DQ2-BATCH-010 | DQ1-DATA-006 compatibility |
 
 ## 6. Write guardrail
@@ -64,6 +64,8 @@ php artisan inventory:backfill-missing-batches --no-legacy-placeholder
 `InventoryMovementBatchGuard` enforces `inventory_batch_id` when `inv_products.requires_batch_tracking = true` on all `InventoryMovementRepository::create()` calls.
 
 DQ-2 backfill updates existing rows directly (no guard bypass on public HTTP flows).
+
+**DQ-3** closes source-document item linkage (DQ2-BATCH-007/008/009). See `docs/architecture/dq-3-source-document-batch-linkage-closure.md`.
 
 ## 7. Provenance
 
