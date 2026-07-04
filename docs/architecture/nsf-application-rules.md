@@ -133,4 +133,14 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- Next locked sprint: **NSF-9**.
+- NSF-9 completed this sequence; next locked sprint: **NSF-10**.
+
+## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
+
+- NSF-9 adds a release-safety layer **alongside** (not replacing) the
+  NSF-R001–R021 rule registry above: `config/feature_flags.php`,
+  `config/release_safety.php`, `config/automated_smoke.php`.
+- Foundation governance summary now also includes **FEATURE_FLAGS**,
+  **RELEASE_SAFETY**, and **AUTOMATED_SMOKE** sections.
+- See [`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)
+  for the full policy.

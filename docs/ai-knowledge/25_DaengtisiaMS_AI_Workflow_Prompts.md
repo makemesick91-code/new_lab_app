@@ -188,6 +188,6 @@ Aturan wajib untuk Cursor/Claude Code:
 - **Sebelum membuat sprint foundation baru**, cek roadmap dulu:
   `php artisan architecture:foundation-roadmap-check` (GO/WATCH/FAIL) dan
   `php artisan architecture:foundation-governance-summary` (bagian ROADMAP).
-- Ikuti urutan terkunci mulai dari **NSF-9** → … → **RC-1** (RC selalu terakhir).
+- Ikuti urutan terkunci: **NSF-9** (selesai) → **NSF-10** → … → **RC-1** (RC selalu terakhir).
 - Jangan buat pekerjaan foundation di luar `approved_sequence`.
 - Perubahan urutan/scope hanya melalui **ROADMAP update sprint** + evidence doc.

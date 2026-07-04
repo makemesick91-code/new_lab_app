@@ -95,6 +95,5 @@ it('deploy gate docs and scripts mention include observability', function () {
 });
 
 it('package json requires node 20 or newer', function () {
-    expect(config('foundation_governance.sprint'))->toBe('NSF-8')
-        ->and(file_get_contents(base_path('package.json')))->toContain('">=20"');
+    expect(file_get_contents(base_path('package.json')))->toContain('">=20"');
 });

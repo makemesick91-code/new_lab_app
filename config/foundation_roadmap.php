@@ -69,7 +69,7 @@ return [
         [
             'id' => 'NSF-9',
             'title' => 'Release Safety, Feature Flag & Automated Smoke',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 1,
             'depends_on' => ['NSF-8'],
             'category' => 'release_safety',

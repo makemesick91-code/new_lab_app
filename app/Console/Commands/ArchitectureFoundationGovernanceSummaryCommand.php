@@ -96,6 +96,30 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         $this->line(sprintf('  - next recommended sprint: %s', $roadmap['next_recommended_sprint'] ?? 'n/a'));
         $this->line(sprintf('  - total planned sprints: %d', $roadmap['total_planned_sprints'] ?? 0));
         $this->line(sprintf('  - RC-1 locked after expansion: %s', ($roadmap['rc_locked_after_expansion'] ?? false) ? 'yes' : 'no'));
+
+        $this->newLine();
+        $featureFlags = $report['feature_flags'] ?? [];
+        $this->line(sprintf(
+            'FEATURE_FLAGS: %s — %d flag(s) registered, %d risky-enabled',
+            $featureFlags['decision'] ?? 'UNKNOWN',
+            $featureFlags['total_flags'] ?? 0,
+            count($featureFlags['risky_enabled_flags'] ?? []),
+        ));
+
+        $this->newLine();
+        $releaseSafety = $report['release_safety'] ?? [];
+        $this->line(sprintf('RELEASE_SAFETY: %s', $releaseSafety['decision'] ?? 'UNKNOWN'));
+
+        $this->newLine();
+        $automatedSmoke = $report['automated_smoke'] ?? [];
+        $this->line(sprintf(
+            'AUTOMATED_SMOKE: %s (mode: %s)',
+            $automatedSmoke['decision'] ?? 'UNKNOWN',
+            $automatedSmoke['mode'] ?? 'command_readiness_only',
+        ));
+        if (! empty($automatedSmoke['note'])) {
+            $this->line('  - '.$automatedSmoke['note']);
+        }
     }
 
     /**

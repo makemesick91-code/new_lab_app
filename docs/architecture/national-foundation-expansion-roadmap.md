@@ -69,7 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `NSF-9`.
+**Next recommended sprint:** `NSF-10` (NSF-9 completed — see
+[`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)).
 
 ---
 
@@ -79,7 +80,9 @@ Each card below mirrors `config/foundation_roadmap.php`. The config carries the 
 `objective / why_this_order / allowed_scope / out_of_scope / production_safety_rule /
 required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` per sprint.
 
-### NSF-9 — Release Safety, Feature Flag & Automated Smoke
+### NSF-9 — Release Safety, Feature Flag & Automated Smoke — **COMPLETED**
+- **Status:** Completed. See [`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md)
+  and `docs/sprints/nsf-9-release-safety-feature-flag-automated-smoke-evidence.md`.
 - **Objective:** Governed feature-flag layer + automated post-deploy smoke suite.
 - **Why this order:** Flags + smoke must exist before any risky runtime feature.
 - **Allowed scope:** flag registry/resolver (no SaaS), automated smoke command, rollout/rollback docs.
