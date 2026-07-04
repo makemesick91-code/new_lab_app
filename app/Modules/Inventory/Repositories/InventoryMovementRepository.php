@@ -6,6 +6,7 @@ use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\StockTransfer;
+use App\Modules\Inventory\Support\InventoryMovementBatchGuard;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -31,6 +32,8 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
 
     public function create(array $data): InventoryMovement
     {
+        InventoryMovementBatchGuard::assert($data);
+
         return InventoryMovement::create($data);
     }
 

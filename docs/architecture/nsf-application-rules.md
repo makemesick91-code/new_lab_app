@@ -57,6 +57,9 @@ Validator: `App\Services\Architecture\NsfApplicationRulesService`
 - Stock = `SUM(quantity_in) - SUM(quantity_out)` from `trx_inventory_movements`.
 - No mutable `current_stock` / `qty_on_hand` on canonical inventory tables.
 - Procurement, transfer, opname, and batch workflows write movements only.
+- **DQ-2 (NSF-R022):** Batch-tracked products (`requires_batch_tracking = true`) must have `inventory_batch_id` on every new movement. Enforced by `InventoryMovementBatchGuard` on `InventoryMovementRepository::create()`.
+- Historical missing batch links: WARN via DQ-1/DQ-2 audit; resolve via dry-run → backup → `inventory:backfill-missing-batches --execute`.
+- Legacy placeholder batches use prefix `LEGACY-DQ2` and `backfill_source=dq2_legacy_placeholder` — not manufacturer lots.
 
 ## 7. Performance/index rules
 

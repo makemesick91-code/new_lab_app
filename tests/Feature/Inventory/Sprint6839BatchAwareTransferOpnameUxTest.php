@@ -185,8 +185,12 @@ it('includes batch number expiry and available quantity in batch option label', 
 it('rejects batch-tracked transfer without batch id', function () {
     ['source' => $source, 'destination' => $destination] = sprint6839TransferLocations($this->branch);
     $product = Product::factory()->requiresBatchTracking()->create(['branch_id' => $this->branch->id]);
+    $batch = InventoryBatch::factory()->create([
+        'branch_id' => $this->branch->id,
+        'product_id' => $product->id,
+    ]);
 
-    $this->stock->createOpeningStock($product->id, $source->id, 5);
+    sprint6839SeedBatchStock($this, $product, $source, $batch, 5);
 
     $this->post(route('inventory.stock-transfers.store'), [
         'source_inventory_location_id' => $source->id,

@@ -54,7 +54,7 @@ Future migrations **must prefer additive, named constraints** and **must not use
 | DQ1-DATA-003 | No orphan RME invoices/payments/items |
 | DQ1-DATA-004 | Invoice status/remaining consistency |
 | DQ1-DATA-005 | Medical records linked to visits |
-| DQ1-DATA-006 | Valid inventory movement direction / batch tracking |
+| DQ1-DATA-006 | Valid inventory movement direction / batch tracking — extended by DQ-2 backfill (`inventory:backfill-missing-batches`) |
 | DQ1-DATA-007 | Branch-owned rows have `branch_id` |
 | DQ1-DATA-008 | Lab `trx_payments` separate from RME `trx_rme_payments` |
 | DQ1-DATA-009 | Receivable follow-ups reference valid invoices |

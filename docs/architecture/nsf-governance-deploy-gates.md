@@ -11,6 +11,8 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | NSF governance | `php artisan architecture:nsf-governance-check --strict --include-dmo` |
 | DMO governance | `php artisan architecture:dmo-governance-check --strict` |
 | DQ-1 data quality | `php artisan data-quality:dq1-audit --fail-on=error` |
+| DQ-2 batch governance | `php artisan inventory:batch-governance-audit --fail-on=error` |
+| DQ-2 backfill (pre-execute) | `php artisan inventory:backfill-missing-batches --dry-run` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Targeted tests | `--filter=NsfGovernance`, `DmoGovernance`, `Dq1`, `DataQuality`, `OwnerKpiRegistry` |
 | Full suite | `php artisan test` |
@@ -31,8 +33,10 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 
 | Gate | Requirement |
 | --- | --- |
-| Pre-deploy backup | `storage/app/backups/deploy/pre_dq1_*.sql` or `pre_nsf6_*.sql` with recorded size |
+| Pre-deploy backup | `storage/app/backups/deploy/pre_dq1_*.sql`, `pre_dq2_*.sql`, or `pre_nsf6_*.sql` with recorded size |
 | DQ-1 audit | `php artisan data-quality:dq1-audit --fail-on=error` — GO or controlled WATCH |
+| DQ-2 audit | `php artisan inventory:batch-governance-audit --fail-on=error` — GO or controlled WATCH |
+| DQ-2 backfill | Dry-run first; `--execute` only when deterministic/safe |
 | GO tag checkout | Deploy exact sprint GO tag first |
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
 | Cache rebuild | config/route/view/event cache |
@@ -42,7 +46,7 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 
 | Path pattern | Content |
 | --- | --- |
-| `storage/app/architecture/dq1-*.json` | DQ-1 ACID/constraint/data quality evidence |
+| `storage/app/architecture/dq2-*.json` | DQ-2 batch governance / backfill evidence |
 | `storage/app/architecture/nsf6-*.json` | NSF/DMO governance evidence |
 | `storage/app/performance/nsf6-*.json` | Runtime observability, slow query audit |
 

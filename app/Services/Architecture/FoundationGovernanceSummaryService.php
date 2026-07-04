@@ -3,6 +3,7 @@
 namespace App\Services\Architecture;
 
 use App\Services\DataQuality\Dq1AuditService;
+use App\Services\Inventory\BatchGovernanceAuditService;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 
@@ -17,6 +18,7 @@ class FoundationGovernanceSummaryService
         private readonly DmoFoundationService $dmoFoundation,
         private readonly OwnerKpiRegistryService $ownerKpiRegistry,
         private readonly Dq1AuditService $dq1Audit,
+        private readonly BatchGovernanceAuditService $dq2Audit,
     ) {}
 
     /**
@@ -40,6 +42,7 @@ class FoundationGovernanceSummaryService
 
         $ownerKpi = $this->ownerKpiRegistry->collect();
         $dq1 = $this->dq1Audit->audit();
+        $dq2 = $this->dq2Audit->audit();
 
         return [
             'generated_at' => now()->toIso8601String(),
@@ -54,7 +57,7 @@ class FoundationGovernanceSummaryService
             'summary' => [
                 'nsf_decision' => $nsf['summary']['decision'] ?? 'UNKNOWN',
                 'dmo_decision' => $dmo['summary']['decision'] ?? 'UNKNOWN',
-                'combined_decision' => $this->combinedDecision($nsf, $dmo, $dq1),
+                'combined_decision' => $this->combinedDecision($nsf, $dmo, $dq1, $dq2),
                 'nsf_rules' => $nsf['summary']['rules'] ?? 0,
                 'nsf_passed' => $nsf['summary']['passed'] ?? 0,
                 'nsf_warnings' => $nsf['summary']['warnings'] ?? 0,
@@ -72,6 +75,12 @@ class FoundationGovernanceSummaryService
                 'dq1_passed' => $dq1['summary']['passed'] ?? 0,
                 'dq1_warnings' => $dq1['summary']['warnings'] ?? 0,
                 'dq1_errors' => $dq1['summary']['errors'] ?? 0,
+                'dq2_decision' => $dq2['summary']['decision'] ?? 'UNKNOWN',
+                'dq2_checks' => $dq2['summary']['checks'] ?? 0,
+                'dq2_passed' => $dq2['summary']['passed'] ?? 0,
+                'dq2_warnings' => $dq2['summary']['warnings'] ?? 0,
+                'dq2_errors' => $dq2['summary']['errors'] ?? 0,
+                'dq2_missing_batch' => $dq2['summary']['missing_inventory_batch_id'] ?? 0,
             ],
             'nsf_governance' => [
                 'summary' => $nsf['summary'],
@@ -95,12 +104,18 @@ class FoundationGovernanceSummaryService
                 'summary' => $dq1['summary'] ?? [],
                 'command' => 'data-quality:dq1-audit',
             ],
+            'dq2_governance' => [
+                'summary' => $dq2['summary'] ?? [],
+                'command' => 'inventory:batch-governance-audit',
+            ],
             'commands_available' => [
                 'architecture:nsf-governance-check' => array_key_exists('architecture:nsf-governance-check', Artisan::all()),
                 'architecture:dmo-governance-check' => array_key_exists('architecture:dmo-governance-check', Artisan::all()),
                 'architecture:owner-kpi-registry' => array_key_exists('architecture:owner-kpi-registry', Artisan::all()),
                 'architecture:dmo-foundation' => array_key_exists('architecture:dmo-foundation', Artisan::all()),
                 'data-quality:dq1-audit' => array_key_exists('data-quality:dq1-audit', Artisan::all()),
+                'inventory:batch-governance-audit' => array_key_exists('inventory:batch-governance-audit', Artisan::all()),
+                'inventory:backfill-missing-batches' => array_key_exists('inventory:backfill-missing-batches', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,
@@ -113,22 +128,25 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $nsf
      * @param  array<string, mixed>  $dmo
      * @param  array<string, mixed>  $dq1
+     * @param  array<string, mixed>  $dq2
      */
-    private function combinedDecision(array $nsf, array $dmo, array $dq1): string
+    private function combinedDecision(array $nsf, array $dmo, array $dq1, array $dq2): string
     {
         $nsfErrors = (int) ($nsf['summary']['errors'] ?? 0);
         $dmoErrors = (int) ($dmo['summary']['errors'] ?? 0);
         $dq1Errors = (int) ($dq1['summary']['errors'] ?? 0);
+        $dq2Errors = (int) ($dq2['summary']['errors'] ?? 0);
 
-        if ($nsfErrors > 0 || $dmoErrors > 0 || $dq1Errors > 0) {
+        if ($nsfErrors > 0 || $dmoErrors > 0 || $dq1Errors > 0 || $dq2Errors > 0) {
             return 'NO-GO';
         }
 
         $nsfWarnings = (int) ($nsf['summary']['warnings'] ?? 0);
         $dmoWarnings = (int) ($dmo['summary']['warnings'] ?? 0);
         $dq1Warnings = (int) ($dq1['summary']['warnings'] ?? 0);
+        $dq2Warnings = (int) ($dq2['summary']['warnings'] ?? 0);
 
-        if ($nsfWarnings > 0 || $dmoWarnings > 0 || $dq1Warnings > 0) {
+        if ($nsfWarnings > 0 || $dmoWarnings > 0 || $dq1Warnings > 0 || $dq2Warnings > 0) {
             return 'WATCH';
         }
 
