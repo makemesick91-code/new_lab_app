@@ -60,18 +60,11 @@ it('foundation summary reports exact nsf watch causes when nsf remains watch', f
         ))->toBeTrue();
 });
 
-it('foundation summary reports exact dmo watch causes when dmo remains watch', function () {
+it('foundation summary reports dmo go after deferred metric closure', function () {
     $summary = app(FoundationGovernanceSummaryService::class)->collect();
 
-    expect($summary['summary']['dmo_decision'])->toBe('WATCH')
-        ->and($summary['watch_causes']['dmo'])->not->toBeEmpty();
-
-    $ruleIds = collect($summary['watch_causes']['dmo'])->pluck('rule_id')->all();
-
-    expect($ruleIds)->toContain('DMO-M001')
-        ->and(collect($summary['watch_causes']['dmo'])->every(
-            fn (array $cause) => $cause['classification'] === 'deferred_backlog' && $cause['blocking'] === false
-        ))->toBeTrue();
+    expect($summary['summary']['dmo_decision'])->toBe('GO')
+        ->and($summary['watch_causes']['dmo'])->toBeEmpty();
 });
 
 it('foundation summary combined go when only non blocking watch remains', function () {

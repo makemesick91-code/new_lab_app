@@ -27,16 +27,18 @@ Baseline commit: `dba5a2b` — docs: finalize DQ-3.1 approved repair evidence.
 
 **NSF effective decision:** GO (no blocking warnings; raw decision remains WATCH for transparency).
 
-## DMO WATCH causes (deferred backlog)
+## DMO deferred backlog (closed in DMO-3)
 
-| Rule ID | Classification | Cause | Owner | Target |
-| --- | --- | --- | --- | --- |
-| DMO-M001 | deferred_backlog | net_revenue blocked — pilot uses paid_amount | Product/Finance | DMO-3 |
-| DMO-M003 | deferred_backlog | receivable_aging_bucket has no persisted table | Finance | DMO-3 |
-| DMO-M006 | deferred_backlog | Treatment/tariff multi-branch price boundary | Product | DMO-3 |
-| DMO-M007 | deferred_backlog | pod_count blocked pending POD standardization | Lab/Delivery | DMO-3 |
+| Rule ID | Status | Source |
+| --- | --- | --- |
+| DMO-M001 | resolved_metric | `DmoMetricService::netRevenue` |
+| DMO-M003 | resolved_metric | `DmoMetricService::receivableAgingBuckets` |
+| DMO-M006 | resolved_metric | `TariffBoundaryService::resolveActiveTariff` |
+| DMO-M007 | resolved_metric | `DmoMetricService::podCount` |
 
-**DMO effective decision:** GO (deferred backlog only).
+**DMO raw decision after DMO-3:** GO.
+
+See `docs/architecture/dmo-3-deferred-metric-backlog-closure.md`.
 
 ## Combined decision rules
 

@@ -38,7 +38,7 @@ class CanonicalMetricRegistry
 
             // Cashier / Receivable
             self::metric('gross_revenue', ['Pendapatan Kotor'], 'cashier', 'RmeInvoice', ['RME Invoice'], ['trx_rme_invoices'], 'computed', 'SUM(grand_total) for non-VOID non-DRAFT invoices in period', 'per_branch_per_date_range', ['branch', 'date', 'status'], 'financial', 'needs_review', 'needs_review', [], [], 'Pilot uses payment sum as revenue KPI; gross may differ from collected'),
-            self::metric('net_revenue', ['Pendapatan Bersih'], 'cashier', 'RmeInvoice', ['RME Invoice', 'RME Payment'], ['trx_rme_invoices', 'trx_rme_payments'], 'computed', 'Not separately materialized in pilot', 'per_branch_per_date_range', ['branch', 'date'], 'financial', 'needs_review', 'blocked', [], [], 'Deferred to DMO-1 — no canonical net revenue field'),
+            self::metric('net_revenue', ['Pendapatan Bersih'], 'cashier', 'RmePayment', ['RME Payment', 'Lab Payment'], ['trx_rme_payments', 'trx_payments'], 'computed', 'SUM(collected payments in period) excluding VOID invoices; net equals collected until refund fields exist', 'per_branch_per_date_range', ['branch', 'date'], 'financial', 'canonical', 'ready', ['dashboard'], ['Dmo3DeferredMetricBacklogClosureTest'], consumers: ['DmoMetricService::netRevenue']),
             self::metric('invoiced_amount', ['Total Tagihan'], 'cashier', 'RmeInvoice', ['RME Invoice'], ['trx_rme_invoices'], 'source_of_truth', 'SUM(grand_total) in period excluding VOID/DRAFT', 'per_branch_per_date_range', ['branch', 'date', 'status'], 'financial', 'canonical', 'ready', ['rme.cashier.index'], ['RmePaymentTest'], consumers: ['OwnerDashboardKpiService::metrics (billable for collection_rate)']),
             self::metric('paid_amount', ['Pembayaran', 'total_revenue'], 'cashier', 'RmePayment', ['RME Payment'], ['trx_rme_payments'], 'source_of_truth', 'SUM(trx_rme_payments.amount) WHERE paid_at in range', 'per_branch_per_date_range', ['branch', 'date', 'payment_method'], 'financial', 'canonical', 'ready', ['rme.cashier.index', 'dashboard'], ['OwnerKpiDashboardTest', 'RmePaymentTest'], consumers: ['OwnerDashboardKpiService::metrics', 'OwnerDashboardKpiService::dailyPaymentTrend']),
             self::metric('unpaid_amount', ['Belum Dibayar'], 'cashier', 'RmeInvoice', ['Receivable', 'RME Invoice'], ['trx_rme_invoices', 'trx_rme_payments'], 'derived', 'SUM(remaining) for UNPAID/PARTIAL where remaining>0', 'per_branch_snapshot', ['branch', 'status'], 'financial', 'canonical', 'ready', ['rme.cashier.receivables'], ['ReceivableTest']),
@@ -50,7 +50,7 @@ class CanonicalMetricRegistry
             self::metric('unpaid_invoice_count', ['Invoice Belum Lunas'], 'cashier', 'RmeInvoice', ['RME Invoice'], ['trx_rme_invoices'], 'source_of_truth', 'COUNT WHERE status = UNPAID', 'per_branch_snapshot', ['branch', 'status'], 'financial', 'canonical', 'ready', ['rme.cashier.receivables'], ['RmePaymentTest']),
             self::metric('payment_by_method', ['Pembayaran per Metode'], 'cashier', 'RmePayment', ['RME Payment', 'Payment Method'], ['trx_rme_payments', 'mst_payment_methods'], 'computed', 'GROUP BY payment_method_id SUM(amount)', 'per_branch_per_date_range', ['branch', 'date', 'payment_method'], 'financial', 'canonical', 'ready', ['rme.cashier.index'], ['RmePaymentTest']),
             self::metric('payment_trend', ['Tren Pembayaran'], 'cashier', 'RmePayment', ['RME Payment'], ['trx_rme_payments'], 'computed', 'Daily SUM(amount) grouped by paid_at date (PHP portable)', 'per_branch_per_day', ['branch', 'date'], 'financial', 'canonical', 'ready', ['dashboard'], ['OwnerKpiDashboardTest'], consumers: ['OwnerDashboardKpiService::dailyPaymentTrend']),
-            self::metric('receivable_aging_bucket', ['Aging Piutang'], 'cashier', 'RmeInvoice', ['Receivable', 'RME Invoice'], ['trx_rme_invoices'], 'computed', 'Bucket by days since invoice/visit (report-specific)', 'per_branch_snapshot', ['branch', 'aging_bucket'], 'financial', 'needs_review', 'needs_review', ['rme.cashier.receivables'], [], 'No single canonical aging table; DMO-1'),
+            self::metric('receivable_aging_bucket', ['Aging Piutang'], 'cashier', 'RmeInvoice', ['Receivable', 'RME Invoice'], ['trx_rme_invoices', 'trx_rme_payments'], 'computed', 'Bucket invoice remaining by age from created_at (due_date when present)', 'per_branch_snapshot', ['branch', 'aging_bucket'], 'financial', 'canonical', 'ready', ['rme.cashier.receivables'], ['Dmo3DeferredMetricBacklogClosureTest', 'CashierBillingTest'], consumers: ['DmoMetricService::receivableAgingBuckets']),
             self::metric('carry_over_allocation', ['Alokasi Piutang Carry-over'], 'cashier', 'RmePayment', ['RME Payment', 'RME Invoice'], ['trx_rme_payments'], 'source_of_truth', 'Payments linked via payment_batch_uuid across invoices', 'per_payment_batch', ['branch', 'patient', 'visit'], 'financial', 'canonical', 'ready', ['rme.cashier.payment.create'], ['PatientOutstandingReceivableCarryOverTest'], consumers: ['RmePaymentService::allocateVisitPayment']),
             self::metric('collection_rate', ['Tingkat Penagihan'], 'cashier', 'RmePayment', ['RME Payment', 'RME Invoice'], ['trx_rme_payments', 'trx_rme_invoices'], 'computed', 'paid_amount / billable_grand_total * 100 in period', 'per_branch_per_date_range', ['branch', 'date'], 'financial', 'canonical', 'ready', ['dashboard'], ['OwnerKpiDashboardTest'], consumers: ['OwnerDashboardKpiService::metrics']),
 
@@ -83,7 +83,7 @@ class CanonicalMetricRegistry
             self::metric('qc_pass_count', ['QC Lulus'], 'lab', 'LabOrder', ['Quality Control'], ['trx_lab_quality_controls'], 'source_of_truth', 'COUNT QC records result=pass', 'per_branch_per_date_range', ['branch', 'date'], 'internal', 'needs_review', 'needs_review', ['quality-control.index'], [], 'DMO-002 QC entity naming'),
             self::metric('qc_fail_count', ['QC Gagal'], 'lab', 'LabOrder', ['Quality Control'], ['trx_lab_quality_controls'], 'source_of_truth', 'COUNT QC records result=fail', 'per_branch_per_date_range', ['branch', 'date'], 'internal', 'needs_review', 'needs_review', ['quality-control.index'], []),
             self::metric('delivery_count', ['Pengiriman'], 'lab', 'LabOrder', ['Delivery'], ['trx_lab_deliveries'], 'source_of_truth', 'COUNT deliveries by status/date', 'per_branch_per_date_range', ['branch', 'date', 'status'], 'internal', 'canonical', 'ready', ['deliveries.index'], []),
-            self::metric('pod_count', ['POD'], 'lab', 'LabOrder', ['Delivery'], ['trx_lab_deliveries'], 'computed', 'Proof-of-delivery confirmations if captured on delivery row', 'per_branch_per_date_range', ['branch', 'date'], 'internal', 'needs_review', 'blocked', [], [], 'POD field not standardized for metrics yet'),
+            self::metric('pod_count', ['POD'], 'lab', 'Delivery', ['Delivery'], ['trx_lab_deliveries'], 'computed', 'COUNT DELIVERED/COMPLETED deliveries with receiver signature proof in period', 'per_branch_per_date_range', ['branch', 'date'], 'internal', 'canonical', 'ready', ['deliveries.index'], ['Dmo3DeferredMetricBacklogClosureTest', 'DeliveryLifecyclePodTest'], consumers: ['DmoMetricService::podCount']),
 
             // Owner / Dashboard
             self::metric('owner_total_revenue', ['Pendapatan Owner'], 'owner', 'Reporting', ['RME Payment'], ['trx_rme_payments'], 'derived', 'Alias of paid_amount across active branches for period', 'per_branch_per_date_range', ['branch', 'date'], 'financial', 'duplicate', 'ready', ['dashboard'], ['OwnerKpiDashboardTest'], consumers: ['OwnerDashboardKpiService::metrics (total_revenue)']),
@@ -124,13 +124,9 @@ class CanonicalMetricRegistry
     public static function gaps(): array
     {
         return [
-            ['id' => 'DMO-M001', 'area' => 'cashier', 'gap' => 'net_revenue not materialized; pilot uses paid_amount as revenue KPI', 'severity' => 'medium'],
             ['id' => 'DMO-M002', 'area' => 'rme', 'gap' => 'active_patients and unique_patients lack single canonical definition', 'severity' => 'medium'],
-            ['id' => 'DMO-M003', 'area' => 'cashier', 'gap' => 'receivable_aging_bucket has no persisted aging table', 'severity' => 'medium'],
             ['id' => 'DMO-M004', 'area' => 'inventory', 'gap' => 'expiry_alert_count is computed at read time (DMO-004 entity gap)', 'severity' => 'low'],
             ['id' => 'DMO-M005', 'area' => 'owner', 'gap' => 'Owner KPI aliases duplicate domain metrics (DMO-005)', 'severity' => 'medium'],
-            ['id' => 'DMO-M006', 'area' => 'foundation', 'gap' => 'Treatment/tariff metrics need multi-branch price boundary (DMO-006)', 'severity' => 'medium'],
-            ['id' => 'DMO-M007', 'area' => 'lab', 'gap' => 'pod_count and production_pending_count need standardized status fields', 'severity' => 'low'],
         ];
     }
 
@@ -145,7 +141,7 @@ class CanonicalMetricRegistry
             'Owner dashboard metrics must reference domain canonical names, not duplicate aliases',
             'Inventory stock metrics must always trace to trx_inventory_movements ledger',
             'Never emit PHI/PII sample values in metric command output or telemetry JSON',
-            'Resolve net_revenue vs paid_amount before financial reporting DMO pack',
+            'Resolve net_revenue vs paid_amount for Owner KPI promotion only — metric definition closed in DMO-3',
             'Unify date grain (visit_date vs created_at vs paid_at) per metric in DMO-1',
         ];
     }
