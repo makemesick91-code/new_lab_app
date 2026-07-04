@@ -136,9 +136,9 @@ it('foundation governance summary includes roadmap status', function () {
         ->and($summary['summary']['roadmap_active_track'])->toBe('foundation_expansion');
 });
 
-it('next recommended sprint is NSF-9', function () {
+it('next recommended sprint is NSF-10 after NSF-9 completion', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('NSF-9')
+    expect($report['next_recommended_sprint'])->toBe('NSF-10')
         ->and($report['active_track'])->toBe('foundation_expansion');
 });

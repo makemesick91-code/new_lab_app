@@ -86,6 +86,26 @@ run_critical_governance() {
             > "$EVIDENCE_DIR/foundation-summary.txt"
 }
 
+run_release_safety() {
+    section "NSF-9 Feature Flags + Release Safety + Automated Smoke"
+    {
+        echo "NSF-9 release safety gates"
+        echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo ""
+        echo "--- architecture:foundation-roadmap-check ---"
+        php artisan architecture:foundation-roadmap-check
+        echo ""
+        echo "--- foundation:feature-flags ---"
+        php artisan foundation:feature-flags
+        echo ""
+        echo "--- foundation:release-safety-check ---"
+        php artisan foundation:release-safety-check
+        echo ""
+        echo "--- release:automated-smoke (command-readiness only) ---"
+        php artisan release:automated-smoke
+    } 2>&1 | tee "$EVIDENCE_DIR/nsf-9-release-safety.txt"
+}
+
 run_critical_tests() {
     section "NSF-R011 Critical Regression Tests"
     php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace' \
@@ -104,12 +124,14 @@ fi
 
 if [[ "$CRITICAL_ONLY" == true ]]; then
     run_critical_governance
+    run_release_safety
     exit 0
 fi
 
 run_quality_gate
 run_critical_tests
 run_critical_governance
+run_release_safety
 
 if [[ "${RUN_FULL_SUITE:-false}" == "true" ]]; then
     run_full_suite

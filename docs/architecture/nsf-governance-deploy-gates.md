@@ -20,6 +20,10 @@ Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation
 | DQ-3.1 repair (pre-execute) | `php artisan inventory:repair-ambiguous-batch-links --mapping=<approved> --dry-run` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Foundation summary (JSON) | `php artisan architecture:foundation-governance-summary --json` |
+| Roadmap check (NSF-9) | `php artisan architecture:foundation-roadmap-check` |
+| Feature flags (NSF-9) | `php artisan foundation:feature-flags` |
+| Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
+| Automated smoke (NSF-9) | `php artisan release:automated-smoke` |
 
 FG-1 rules: Foundation summary must enumerate exact WATCH causes (rule ID + classification). Combined GO is allowed when DQ chain is GO and remaining NSF/DMO warnings are deferred backlog, evidence-only, environment, or **automated_ci_gate** — see `docs/architecture/fg-1-foundation-watch-burndown-combined-go-closure.md`.
 
@@ -59,6 +63,10 @@ NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `archite
 | Migrate | `php artisan migrate --force` only — never `migrate:fresh` / `db:wipe` |
 | Node runtime | Node >=20 required for `npm ci && npm run build` (NSF-8) |
 | NSF observability | `php artisan architecture:nsf-governance-check --include-observability` |
+| Roadmap check (NSF-9) | `php artisan architecture:foundation-roadmap-check` |
+| Feature flags (NSF-9) | `php artisan foundation:feature-flags` — no risky flag enabled |
+| Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
+| Automated smoke (NSF-9) | `php artisan release:automated-smoke --base-url=http://127.0.0.1` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
 | Cache rebuild | config/route/view/event cache |
 | Services | php8.3-fpm restart, nginx reload |
@@ -113,4 +121,25 @@ Before NDA-1:
   also runs `architecture:foundation-roadmap-check` (GO/WATCH/FAIL) alongside the
   DQ/DMO/NSF/Combined gates.
 - Production deploys stay additive; roadmap changes require a dedicated ROADMAP update
-  sprint + evidence doc. Next locked sprint: **NSF-9**.
+  sprint + evidence doc. NSF-9 completed this sequence; next locked sprint: **NSF-10**.
+
+## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
+
+- New commands: `php artisan foundation:feature-flags [--json]`,
+  `php artisan foundation:release-safety-check [--json]`,
+  `php artisan release:automated-smoke [--base-url=] [--json]`.
+- New configs: `config/feature_flags.php`, `config/release_safety.php`,
+  `config/automated_smoke.php`.
+- Full policy: [`nsf-9-release-safety-feature-flag-automated-smoke.md`](nsf-9-release-safety-feature-flag-automated-smoke.md).
+- Pre-merge/pre-GO-tag/VPS-deploy gate tables below are updated to include the
+  three new NSF-9 commands alongside DQ/DMO/NSF/ROADMAP — see updated rows in
+  §2–§4.
+- Foundation governance summary (`architecture:foundation-governance-summary`)
+  now prints `FEATURE_FLAGS`, `RELEASE_SAFETY`, and `AUTOMATED_SMOKE` sections
+  in addition to `NSF`/`DMO`/`DQ`/`ROADMAP`/`Combined`.
+- CI: `.github/workflows/foundation-evidence-gates.yml` job
+  `release_safety_gate` runs the three NSF-9 commands + roadmap check on every
+  PR/push (needs `critical_test_gate`).
+- Deploy: `scripts/deploy-vps.sh` runs `foundation:feature-flags`,
+  `foundation:release-safety-check`, and `release:automated-smoke` (twice:
+  command-readiness pre-restart, `--base-url=http://127.0.0.1` post-restart).

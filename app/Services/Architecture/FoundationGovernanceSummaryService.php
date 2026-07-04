@@ -3,6 +3,9 @@
 namespace App\Services\Architecture;
 
 use App\Services\DataQuality\Dq1AuditService;
+use App\Services\Foundation\AutomatedSmokeService;
+use App\Services\Foundation\FeatureFlagService;
+use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
@@ -10,7 +13,8 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
 
 /**
- * Read-only combined foundation governance summary (NSF + DMO + DQ chain).
+ * Read-only combined foundation governance summary (NSF + DMO + DQ chain +
+ * ROADMAP + NSF-9 release safety chain: FEATURE_FLAGS/RELEASE_SAFETY/AUTOMATED_SMOKE).
  */
 class FoundationGovernanceSummaryService
 {
@@ -24,6 +28,9 @@ class FoundationGovernanceSummaryService
         private readonly SourceDocumentBatchAuditService $dq3Audit,
         private readonly AmbiguousBatchReviewPackService $dq31Review,
         private readonly FoundationRoadmapService $roadmap,
+        private readonly FeatureFlagService $featureFlags,
+        private readonly ReleaseSafetyService $releaseSafety,
+        private readonly AutomatedSmokeService $automatedSmoke,
     ) {}
 
     /**
@@ -54,8 +61,21 @@ class FoundationGovernanceSummaryService
         $nsfWatch = $this->extractWatchCauses($nsf['rules'] ?? [], 'nsf');
         $dmoWatch = $this->extractWatchCauses($dmo['results'] ?? [], 'dmo');
         $dqChain = $this->buildDqChainSummary($dq1, $dq2, $dq3, $dq31);
-        $combined = $this->combinedDecision($nsf, $dmo, $dqChain, $nsfWatch, $dmoWatch);
         $roadmap = $this->roadmap->collect();
+        $featureFlags = $this->featureFlags->validateGovernance();
+        $releaseSafety = $this->releaseSafety->collect();
+        $automatedSmoke = $this->automatedSmoke->run();
+        $combined = $this->combinedDecision(
+            $nsf,
+            $dmo,
+            $dqChain,
+            $nsfWatch,
+            $dmoWatch,
+            $roadmap,
+            $featureFlags,
+            $releaseSafety,
+            $automatedSmoke,
+        );
 
         return [
             'generated_at' => now()->toIso8601String(),
@@ -115,6 +135,12 @@ class FoundationGovernanceSummaryService
                 'roadmap_next_sprint' => $roadmap['next_recommended_sprint'] ?? null,
                 'roadmap_total_planned_sprints' => $roadmap['total_planned_sprints'] ?? 0,
                 'roadmap_rc_locked_after_expansion' => $roadmap['rc_locked_after_expansion'] ?? false,
+                'feature_flags_decision' => $featureFlags['summary']['decision'] ?? 'UNKNOWN',
+                'feature_flags_total' => $featureFlags['total_flags'] ?? 0,
+                'feature_flags_risky_enabled' => count($featureFlags['risky_enabled_flags'] ?? []),
+                'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
+                'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
+                'automated_smoke_mode' => $automatedSmoke['mode'] ?? 'command_readiness_only',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -134,6 +160,31 @@ class FoundationGovernanceSummaryService
                 'rc_locked_after_expansion' => $roadmap['rc_locked_after_expansion'] ?? false,
                 'summary' => $roadmap['summary'] ?? [],
                 'command' => 'architecture:foundation-roadmap-check',
+            ],
+            'feature_flags' => [
+                'decision' => $featureFlags['summary']['decision'] ?? 'UNKNOWN',
+                'total_flags' => $featureFlags['total_flags'] ?? 0,
+                'risky_enabled_flags' => $featureFlags['risky_enabled_flags'] ?? [],
+                'summary' => $featureFlags['summary'] ?? [],
+                'checks' => $featureFlags['checks'] ?? [],
+                'command' => 'foundation:feature-flags',
+            ],
+            'release_safety' => [
+                'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
+                'summary' => $releaseSafety['summary'] ?? [],
+                'checks' => $releaseSafety['checks'] ?? [],
+                'command' => 'foundation:release-safety-check',
+            ],
+            'automated_smoke' => [
+                'decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
+                'mode' => $automatedSmoke['mode'] ?? 'command_readiness_only',
+                'base_url' => $automatedSmoke['base_url'] ?? null,
+                'summary' => $automatedSmoke['summary'] ?? [],
+                'checks' => $automatedSmoke['checks'] ?? [],
+                'command' => 'release:automated-smoke',
+                'note' => ($automatedSmoke['base_url'] ?? null) === null
+                    ? 'Local-only command-readiness check — not a production HTTP smoke. Run with --base-url on VPS.'
+                    : 'HTTP base-url smoke executed.',
             ],
             'fg1_checks' => $this->fg1Checks($nsfWatch, $dmoWatch, $dqChain, $combined),
             'evidence_docs' => $this->evidenceDocs(),
@@ -340,6 +391,10 @@ class FoundationGovernanceSummaryService
      * @param  array{items: list<array<string, mixed>>, blocking_count: int}  $nsfWatch
      * @param  array{items: list<array<string, mixed>>, blocking_count: int}  $dmoWatch
      * @param  array<string, mixed>  $dqChain
+     * @param  array<string, mixed>  $roadmap
+     * @param  array<string, mixed>  $featureFlags
+     * @param  array<string, mixed>  $releaseSafety
+     * @param  array<string, mixed>  $automatedSmoke
      * @return array{decision: string, blocking_watch_count: int, reason: string}
      */
     private function combinedDecision(
@@ -348,6 +403,10 @@ class FoundationGovernanceSummaryService
         array $dqChain,
         array $nsfWatch,
         array $dmoWatch,
+        array $roadmap = [],
+        array $featureFlags = [],
+        array $releaseSafety = [],
+        array $automatedSmoke = [],
     ): array {
         $errors = (int) ($nsf['summary']['errors'] ?? 0)
             + (int) ($dmo['summary']['errors'] ?? 0);
@@ -377,7 +436,39 @@ class FoundationGovernanceSummaryService
             ];
         }
 
-        $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']);
+        // NSF-9: roadmap / feature-flag / release-safety / automated-smoke FAIL is a hard NO-GO.
+        $nsf9Fails = [];
+        if (($roadmap['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'ROADMAP';
+        }
+        if (($featureFlags['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'FEATURE_FLAGS';
+        }
+        if (($releaseSafety['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'RELEASE_SAFETY';
+        }
+        if (($automatedSmoke['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'AUTOMATED_SMOKE';
+        }
+        if ($nsf9Fails !== []) {
+            return [
+                'decision' => 'NO-GO',
+                'blocking_watch_count' => count($nsf9Fails),
+                'reason' => 'NSF-9 gate(s) reporting FAIL: '.implode(', ', $nsf9Fails),
+            ];
+        }
+
+        // Non-blocking WATCH in the NSF-9 chain (e.g. local-only evidence not yet
+        // captured) is surfaced honestly via feature_flags/release_safety/
+        // automated_smoke sections but does not by itself flip combined to WATCH.
+        $nsf9Watches = array_filter([
+            ($roadmap['summary']['decision'] ?? 'GO') === 'WATCH' ? 'ROADMAP' : null,
+            ($featureFlags['summary']['decision'] ?? 'GO') === 'WATCH' ? 'FEATURE_FLAGS' : null,
+            ($releaseSafety['summary']['decision'] ?? 'GO') === 'WATCH' ? 'RELEASE_SAFETY' : null,
+            ($automatedSmoke['summary']['decision'] ?? 'GO') === 'WATCH' ? 'AUTOMATED_SMOKE' : null,
+        ]);
+
+        $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']) + count($nsf9Watches);
         $reason = $nonBlocking > 0
             ? sprintf('GO — %d deferred/evidence/environment watch items documented; no blockers', $nonBlocking)
             : 'GO — all foundation checks green';

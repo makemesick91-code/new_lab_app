@@ -45,12 +45,16 @@ echo "== Laravel migrate =="
 php artisan migrate --force
 
 echo "== Foundation deploy governance gates =="
+php artisan architecture:foundation-roadmap-check
 php artisan data-quality:dq1-audit --fail-on=error
 php artisan inventory:batch-governance-audit --fail-on=error
 php artisan inventory:source-document-batch-audit --fail-on=error
 php artisan inventory:ambiguous-batch-review-pack
 php artisan architecture:dmo-governance-check
 php artisan architecture:nsf-governance-check --include-observability
+php artisan foundation:feature-flags
+php artisan foundation:release-safety-check
+php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary
 
 echo "== Laravel cache rebuild =="
@@ -73,5 +77,6 @@ systemctl reload nginx
 echo "== Smoke check =="
 php artisan about
 php artisan route:list | grep -E "dashboard|rme|inventory" | head -30 || true
+php artisan release:automated-smoke --base-url=http://127.0.0.1
 
 echo "DEPLOY OK: ${STAMP}"
