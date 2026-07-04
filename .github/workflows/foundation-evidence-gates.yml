@@ -234,6 +234,11 @@ jobs:
       - name: Feature flags governance
         run: php artisan foundation:feature-flags --json 2>&1 | tee storage/ci-evidence/nsf-9-feature-flags.json
 
+      - name: Cache governance check
+        run: |
+          php artisan foundation:cache-governance-check
+          php artisan foundation:cache-governance-check --json > storage/ci-evidence/cache-governance-check.json
+
       - name: Release safety check
         run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
 

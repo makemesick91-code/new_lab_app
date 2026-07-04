@@ -30,6 +30,7 @@ return [
         'architecture:nsf-governance-check --include-observability',
         'architecture:foundation-governance-summary',
         'foundation:feature-flags',
+        'foundation:cache-governance-check',
         'foundation:release-safety-check',
         'release:automated-smoke',
     ],

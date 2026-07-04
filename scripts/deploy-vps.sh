@@ -58,6 +58,8 @@ php artisan inventory:ambiguous-batch-review-pack
 php artisan architecture:dmo-governance-check
 php artisan architecture:nsf-governance-check --include-observability
 php artisan foundation:feature-flags
+php artisan foundation:cache-governance-check
+php artisan foundation:cache-governance-check --json > storage/release-evidence/latest/cache-governance-check.json || true
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary

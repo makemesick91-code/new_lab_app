@@ -108,6 +108,16 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $cacheGovernance = $report['cache_governance'] ?? [];
+        $this->line(sprintf(
+            'CACHE_GOVERNANCE: %s — allowed: %d, denied: %d, redis runtime: %s',
+            $cacheGovernance['decision'] ?? 'UNKNOWN',
+            $cacheGovernance['allowed_categories_count'] ?? 0,
+            $cacheGovernance['denied_categories_count'] ?? 0,
+            ($cacheGovernance['redis_runtime_enabled'] ?? false) ? 'enabled' : 'disabled',
+        ));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 

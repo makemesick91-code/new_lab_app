@@ -133,7 +133,23 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- NSF-9 and NSF-10 completed this sequence; next locked sprint: **CACHE-1**.
+- NSF-9, NSF-10, and CACHE-1 completed this sequence; next locked sprint: **QUEUE-1**.
+
+## CACHE-1 Cache Strategy, Redis Readiness & Invalidation Governance (2026-07-05)
+
+- Cache governance source of truth: `config/cache_governance.php`.
+- Read-only gate: `php artisan foundation:cache-governance-check [--json] [--include-redis-probe]`.
+- Foundation governance summary includes **CACHE_GOVERNANCE**; Combined GO treats CACHE_GOVERNANCE FAIL as NO-GO; WATCH (Redis probe unavailable while runtime disabled) is non-blocking.
+- **Permanent cache rules:**
+  1. No runtime caching of critical mutable financial, inventory, branch context, consent, auth decision, or medical record state without explicit cache governance approval and invalidation tests.
+  2. All branch data cache keys must include branch scope.
+  3. All global cache keys must be explicitly allowlisted.
+  4. No PII/secrets in cache keys or values.
+  5. Redis production enablement requires Redis probe GO and rollback plan.
+  6. Cache invalidation rule is mandatory before runtime cache usage.
+  7. Cache governance command is part of CI, release evidence, deploy gate, and Foundation summary.
+  8. Future caching implementation must reference `config/cache_governance.php`.
+- See [`cache-1-cache-strategy-redis-readiness-invalidation-governance.md`](cache-1-cache-strategy-redis-readiness-invalidation-governance.md).
 
 ## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
 

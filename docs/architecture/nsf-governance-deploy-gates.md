@@ -68,6 +68,7 @@ NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `archite
 | NSF observability | `php artisan architecture:nsf-governance-check --include-observability` |
 | Roadmap check (NSF-9) | `php artisan architecture:foundation-roadmap-check` |
 | Feature flags (NSF-9) | `php artisan foundation:feature-flags` — no risky flag enabled |
+| Cache governance (CACHE-1) | `php artisan foundation:cache-governance-check` — GO required; JSON → `storage/release-evidence/latest/cache-governance-check.json` |
 | Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
 | Automated smoke (NSF-9) | `php artisan release:automated-smoke --base-url=http://127.0.0.1` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |
