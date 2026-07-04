@@ -218,9 +218,12 @@ return [
         ],
     ],
 
-    'deferred_warnings' => [
-        'NSF-M001' => 'Full suite and build gates require manual CI/sprint evidence',
-        'NSF-M002' => 'pg_stat_statements validated on VPS; local SQLite may be not_applicable',
+    'deferred_warnings' => [],
+
+    'ci_evidence_gates' => [
+        'workflow' => '.github/workflows/foundation-evidence-gates.yml',
+        'script' => 'scripts/ci/foundation-evidence-gates.sh',
+        'artifacts_root' => 'storage/ci-evidence',
     ],
 
     'governance_commands' => [

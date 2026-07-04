@@ -1,48 +1,82 @@
 <?php
 
 /**
- * FG-1 / DMO-3 foundation governance classifications and deferred backlog metadata.
+ * NSF-7 / FG-1 foundation governance classifications and CI evidence gate metadata.
  * Consumed by FoundationGovernanceSummaryService — does not silence real blockers.
  */
 return [
-    'sprint' => 'DMO-3',
-    'version' => 'DMO-3',
+    'sprint' => 'NSF-7',
+    'version' => 'NSF-7',
 
     'evidence_docs' => [
         'fg-1' => 'docs/sprints/fg-1-foundation-watch-burndown-combined-go-closure-evidence.md',
         'dmo-3' => 'docs/sprints/dmo-3-deferred-metric-backlog-closure-evidence.md',
+        'nsf-7' => 'docs/sprints/nsf-7-evidence-gate-automation-r011-r012-ci-evidence.md',
         'dq-1' => 'docs/sprints/dq-1-acid-constraint-data-quality-audit-evidence.md',
         'dq-2' => 'docs/sprints/dq-2-batch-tracked-movement-backfill-inventory-batch-governance-evidence.md',
         'dq-3' => 'docs/sprints/dq-3-source-document-batch-linkage-closure-evidence.md',
         'dq-3-1' => 'docs/sprints/dq-3-1-manual-review-repair-ambiguous-batch-rows-evidence.md',
     ],
 
+    'ci_evidence_gates' => [
+        'workflow' => '.github/workflows/foundation-evidence-gates.yml',
+        'workflow_name' => 'Foundation Evidence Gates',
+        'script' => 'scripts/ci/foundation-evidence-gates.sh',
+        'artifacts_root' => 'storage/ci-evidence',
+        'base_branch' => 'feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report',
+        'github_api_required' => false,
+        'gates' => [
+            'NSF-R011' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'critical_test_gate',
+                'full_job' => 'full_suite_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/nsf-r011-critical-tests.txt',
+                    'storage/ci-evidence/nsf-r011-full-suite.txt',
+                ],
+                'local_commands' => [
+                    'php artisan test --filter=FoundationGovernance',
+                    'bash scripts/ci/foundation-evidence-gates.sh --critical-only',
+                ],
+            ],
+            'NSF-R012' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'quality_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/nsf-r012-build-pint.txt',
+                ],
+                'local_commands' => [
+                    'npm run build',
+                    './vendor/bin/pint --test',
+                ],
+            ],
+        ],
+    ],
+
     'rule_classifications' => [
         'NSF-R009' => 'environment',
-        'NSF-R011' => 'evidence_only',
-        'NSF-R012' => 'evidence_only',
-        'NSF-M001' => 'deferred_backlog',
-        'NSF-M002' => 'deferred_backlog',
+        'NSF-R011' => 'automated_ci_gate',
+        'NSF-R012' => 'automated_ci_gate',
         'DMO-M001' => 'resolved_metric',
         'DMO-M003' => 'resolved_metric',
         'DMO-M006' => 'resolved_metric',
         'DMO-M007' => 'resolved_metric',
     ],
 
-    'deferred_backlog' => [
+    'resolved_ci_gates' => [
         'NSF-M001' => [
-            'owner' => 'Engineering',
-            'risk' => 'low',
-            'target_sprint' => 'NSF-7',
-            'summary' => 'Full suite and build gates require manual CI/sprint evidence',
+            'closed_in' => 'NSF-7',
+            'summary' => 'Full suite and build gates automated via Foundation Evidence Gates workflow',
+            'workflow' => '.github/workflows/foundation-evidence-gates.yml',
         ],
         'NSF-M002' => [
-            'owner' => 'Platform',
-            'risk' => 'low',
-            'target_sprint' => 'NSF-7',
-            'summary' => 'pg_stat_statements validated on VPS; local SQLite may be not_applicable',
+            'closed_in' => 'NSF-7',
+            'summary' => 'pg_stat_statements guardrail classified environment on non-VPS; VPS deploy evidence validates R009',
+            'reclassified_as' => 'environment',
         ],
     ],
+
+    'deferred_backlog' => [],
 
     'resolved_metrics' => [
         'DMO-M001' => [
@@ -71,5 +105,6 @@ return [
         'FG1-DQ-001' => 'DQ chain DQ-1/DQ-2/DQ-3/DQ-3.1 is GO',
         'FG1-COMBINED-001' => 'Combined governance decision is explainable',
         'FG1-EVIDENCE-001' => 'Latest sprint evidence documents final state',
+        'FG1-CI-001' => 'NSF-R011/R012 automated CI evidence gates are configured',
     ],
 ];
