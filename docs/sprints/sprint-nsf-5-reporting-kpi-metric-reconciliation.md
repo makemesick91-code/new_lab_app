@@ -137,17 +137,47 @@ npm ci && npm run build     # passed (app-BF9piW1U.css, app-JStlj-rZ.js)
 
 **GO** — read-only inventory, tests green, no schema/business logic changes.
 
----
-
-## Post-deploy evidence (to be filled after VPS deploy)
+## Post-deploy evidence
 
 | Item | Value |
 | --- | --- |
-| PR | TBD |
-| Merge commit | TBD |
-| GO tag | TBD |
-| VPS previous HEAD | TBD |
-| VPS deployed HEAD | TBD |
-| Backup path | TBD |
-| Smoke | TBD |
-| Final decision | TBD |
+| PR | [#159](https://github.com/makemesick91-code/new_lab_app/pull/159) |
+| Merge commit | `4feedfba1e296a97610ba688c7ecc2cd376fe91a` |
+| Sprint commit | `7f01fad` |
+| GO tag | `sprint-nsf-5-reporting-kpi-metric-reconciliation-go` → `4feedfb` |
+| Local HEAD | `4feedfba1e296a97610ba688c7ecc2cd376fe91a` |
+
+### VPS deploy
+
+| Item | Value |
+| --- | --- |
+| VPS path | `/var/www/asia-dental-lab-v2` |
+| Previous HEAD | `800b5a16c2abd33f29cec5eea41380e2bdd3233b` (NSF-4) |
+| Deployed GO tag HEAD | `4feedfba1e296a97610ba688c7ecc2cd376fe91a` |
+| Final VPS stable HEAD | `4feedfba1e296a97610ba688c7ecc2cd376fe91a` |
+| Backup | `storage/app/backups/deploy/pre_nsf5_20260704-013446.sql` (561 KB) |
+| Migration | Nothing to migrate |
+| Metric reconciliation | `storage/app/architecture/nsf5-vps-canonical-metric-reconciliation.json` (147 KB) |
+| Entity reference | `storage/app/architecture/nsf5-vps-entity-inventory-reference.json` (47 KB) |
+| Runtime observability | `storage/app/performance/nsf5-vps-runtime-query-observability.json` (13 KB) |
+| Slow query audit | `storage/app/performance/nsf5-vps-slow-query-audit.json` (14 KB) |
+| pg_stat_statements | available=true, extension=1.10, preloaded=true |
+| Metrics / domains / DMO ready / gaps | 71 / 6 / 57 / 7 |
+| Build assets | `app-DdSm4puC.css`, `app-JStlj-rZ.js` |
+| php-fpm/nginx | restarted, nginx -t OK |
+| Smoke | `/login` 200; `/`, `/dashboard`, `/rme/visits`, `/inventory/dashboard` → 302 (unauthenticated) |
+| Logs | No new errors today |
+| Final GO/NO-GO | **GO** |
+
+> GO tag points to deployed code commit `4feedfb`. This evidence doc update is post-deploy documentation on stable branch.
+
+## Command reference
+
+```bash
+php artisan architecture:canonical-metric-reconciliation --json
+php artisan architecture:canonical-entity-inventory --json
+```
+
+## Architecture doc
+
+`docs/architecture/canonical-metric-reconciliation.md`
