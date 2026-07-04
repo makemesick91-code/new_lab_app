@@ -87,8 +87,13 @@ class DmoOntologyRegistry
             ['id' => 'DMO-R006', 'rule' => 'Every inventory stock metric must be ledger-derived', 'enforcement' => 'source_tables includes trx_inventory_movements'],
             ['id' => 'DMO-R007', 'rule' => 'Every receivable metric must specify derived or persisted source', 'enforcement' => 'Receivable entity marked derived; DMO-M003 for aging'],
             ['id' => 'DMO-R008', 'rule' => 'Every clinical metric must avoid PHI in aggregate reports', 'enforcement' => 'Counts only; no names/notes in command output'],
-            ['id' => 'DMO-R009', 'rule' => 'Every owner dashboard KPI must map to canonical metric alias', 'enforcement' => 'conflict_status duplicate documented until DMO-M005'],
-            ['id' => 'DMO-R010', 'rule' => 'Every report/export must map to canonical entity + canonical metric', 'enforcement' => 'Lineage registry + future automation backlog'],
+            ['id' => 'DMO-R009', 'rule' => 'Every owner dashboard KPI must map to canonical metric alias', 'enforcement' => 'OwnerKpiRegistryService + architecture:owner-kpi-registry'],
+            ['id' => 'DMO-R010', 'rule' => 'Every report/export must map to canonical entity + canonical metric', 'enforcement' => 'Lineage registry + architecture:dmo-governance-check'],
+            ['id' => 'DMO-R011', 'rule' => 'Every canonical entity must declare scope', 'enforcement' => 'CanonicalEntityRegistry scope field'],
+            ['id' => 'DMO-R012', 'rule' => 'Every sensitive entity/metric must declare sensitivity', 'enforcement' => 'sensitivity arrays in entity/metric registries'],
+            ['id' => 'DMO-R013', 'rule' => 'Blocked metrics must not be Owner KPI sources', 'enforcement' => 'OwnerKpiRegistryService blocked list + governance check'],
+            ['id' => 'DMO-R014', 'rule' => 'Duplicate aliases must point to alias_of canonical KPI', 'enforcement' => 'OwnerKpiRegistryService alias_map'],
+            ['id' => 'DMO-R015', 'rule' => 'Future metric changes must update registry, lineage, tests, docs', 'enforcement' => 'docs/architecture/dmo-application-rules.md workflow'],
         ];
     }
 

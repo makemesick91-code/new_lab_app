@@ -68,7 +68,7 @@ Each canonical metric declares:
 - `grain`, `dimensions`, `filters` (branch/date/status/soft_delete/active)
 - `source_type`: source_of_truth | derived | computed | reporting | telemetry
 - `sensitivity`, `conflict_status`, `dmo_readiness`
-- Owner dashboard aliases documented as `duplicate` until DMO-M005
+- Owner dashboard aliases resolved in DMO-2 (`canonical-owner-kpi-registry.md`, DMO-M005 closed)
 
 See `canonical-metrics-foundation.md` for full registry and rules.
 
@@ -113,7 +113,8 @@ Command output never includes patient names, KTP/NIK, diagnosis, phone, address,
 
 ## 12. DMO-2+ Backlog
 
-- DMO-M005: Unified Owner KPI metric registry (10 duplicate aliases)
+- ~~DMO-M005: Unified Owner KPI metric registry~~ **Closed DMO-2** — see `canonical-owner-kpi-registry.md`
+- DMO-2 application rules: `dmo-application-rules.md`, `architecture:dmo-governance-check`
 - net_revenue canonical definition
 - receivable aging persisted buckets (DMO-M003)
 - treatment/tariff multi-branch boundary (DMO-006)
