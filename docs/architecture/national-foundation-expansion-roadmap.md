@@ -69,8 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `QUEUE-1` (NSF-9, NSF-10, and CACHE-1 completed — see
-[`cache-1-cache-strategy-redis-readiness-invalidation-governance.md`](cache-1-cache-strategy-redis-readiness-invalidation-governance.md)).
+**Next recommended sprint:** `DBPERF-1` (NSF-9, NSF-10, CACHE-1, and QUEUE-1 completed — see
+[`queue-1-queue-idempotency-outbox-foundation.md`](queue-1-queue-idempotency-outbox-foundation.md)).
 
 ---
 
@@ -124,13 +124,23 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
 - **WATCH:** non-critical cache candidates deferred.
 - **NO-GO:** critical value cached without invalidation test.
 
-### QUEUE-1 — Queue, Idempotency & Outbox Foundation
+### QUEUE-1 — Queue, Idempotency & Outbox Foundation — **COMPLETED**
+- **Status:** Completed. See
+  [`queue-1-queue-idempotency-outbox-foundation.md`](queue-1-queue-idempotency-outbox-foundation.md)
+  and `docs/sprints/queue-1-queue-idempotency-outbox-foundation-evidence.md`.
 - **Objective:** Queue foundation with **mandatory idempotency keys** + **outbox** pattern.
 - **Why this order:** Queue/outbox before any async integration.
 - **Out of scope:** auto-send WhatsApp; auto-create LabOrder from RME payment; jobs without idempotency/retry policy.
 - **Production safety:** no queue job without idempotency key or retry/failure policy.
 - **GO:** idempotency convention + outbox tested; retry/failure policy defined.
 - **NO-GO:** job without idempotency/retry policy.
+- **Delivered:** `config/queue_governance.php` governance source of truth; additive
+  `sys_idempotency_keys`/`sys_outbox_events` tables (no domain events wired);
+  `App\Services\Foundation\{QueueGovernanceService,IdempotencyService,OutboxService}`;
+  `foundation:queue-governance-check` / `foundation:idempotency-audit` /
+  `foundation:outbox-audit` commands wired into Foundation Summary, release
+  evidence (ci/vps), release safety, CI workflow, and `scripts/deploy-vps.sh`.
+  No long-running worker, no Redis/SQS runtime, no external dispatch enabled.
 
 ### DBPERF-1 — PostgreSQL Index Optimization & Query Plan Audit
 - **Objective:** Query-plan audit + additive index optimization.

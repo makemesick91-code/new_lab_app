@@ -101,6 +101,15 @@ run_release_safety() {
         echo "--- foundation:cache-governance-check ---"
         php artisan foundation:cache-governance-check
         echo ""
+        echo "--- foundation:queue-governance-check ---"
+        php artisan foundation:queue-governance-check
+        echo ""
+        echo "--- foundation:idempotency-audit ---"
+        php artisan foundation:idempotency-audit
+        echo ""
+        echo "--- foundation:outbox-audit ---"
+        php artisan foundation:outbox-audit
+        echo ""
         echo "--- foundation:release-safety-check ---"
         php artisan foundation:release-safety-check
         echo ""

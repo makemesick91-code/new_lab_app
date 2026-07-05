@@ -178,7 +178,7 @@ return [
         [
             'id' => 'QUEUE-1',
             'title' => 'Queue, Idempotency & Outbox Foundation',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 4,
             'depends_on' => ['NSF-9', 'CACHE-1'],
             'category' => 'queue',

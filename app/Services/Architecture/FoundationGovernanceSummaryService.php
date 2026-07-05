@@ -6,6 +6,9 @@ use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\CacheGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
+use App\Services\Foundation\IdempotencyService;
+use App\Services\Foundation\OutboxService;
+use App\Services\Foundation\QueueGovernanceService;
 use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
@@ -13,6 +16,7 @@ use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Read-only combined foundation governance summary (NSF + DMO + DQ chain +
@@ -37,6 +41,9 @@ class FoundationGovernanceSummaryService
         private readonly AutomatedSmokeService $automatedSmoke,
         private readonly ReleaseEvidenceService $releaseEvidence,
         private readonly CacheGovernanceService $cacheGovernance,
+        private readonly QueueGovernanceService $queueGovernance,
+        private readonly IdempotencyService $idempotencyService,
+        private readonly OutboxService $outboxService,
     ) {}
 
     /**
@@ -73,6 +80,13 @@ class FoundationGovernanceSummaryService
         $automatedSmoke = $this->automatedSmoke->run();
         $releaseEvidence = $this->releaseEvidence->check($releaseSafetyProfile);
         $cacheGovernance = $this->cacheGovernance->collect();
+        $queueGovernance = $this->queueGovernance->collect();
+        $idempotencyAudit = Schema::hasTable('sys_idempotency_keys')
+            ? $this->idempotencyService->audit()
+            : ['summary' => ['decision' => 'WATCH'], 'total_records' => 0, 'by_status' => [], 'by_scope' => []];
+        $outboxAudit = Schema::hasTable('sys_outbox_events')
+            ? $this->outboxService->audit()
+            : ['summary' => ['decision' => 'WATCH'], 'total_records' => 0, 'by_status' => [], 'by_payload_classification' => []];
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -85,6 +99,9 @@ class FoundationGovernanceSummaryService
             $cacheGovernance,
             $releaseSafety,
             $automatedSmoke,
+            $queueGovernance,
+            $idempotencyAudit,
+            $outboxAudit,
         );
 
         return [
@@ -150,6 +167,12 @@ class FoundationGovernanceSummaryService
                 'feature_flags_risky_enabled' => count($featureFlags['risky_enabled_flags'] ?? []),
                 'cache_governance_decision' => $cacheGovernance['summary']['decision'] ?? 'UNKNOWN',
                 'cache_governance_redis_runtime_enabled' => $cacheGovernance['redis_runtime_enabled'] ?? false,
+                'queue_governance_decision' => $queueGovernance['summary']['decision'] ?? 'UNKNOWN',
+                'queue_governance_long_running_worker_enabled' => $queueGovernance['long_running_worker_enabled'] ?? false,
+                'idempotency_decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
+                'idempotency_total_records' => $idempotencyAudit['total_records'] ?? 0,
+                'outbox_decision' => $outboxAudit['summary']['decision'] ?? 'UNKNOWN',
+                'outbox_total_records' => $outboxAudit['total_records'] ?? 0,
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
@@ -193,6 +216,35 @@ class FoundationGovernanceSummaryService
                 'summary' => $cacheGovernance['summary'] ?? [],
                 'checks' => $cacheGovernance['checks'] ?? [],
                 'command' => 'foundation:cache-governance-check',
+            ],
+            'queue_governance' => [
+                'decision' => $queueGovernance['summary']['decision'] ?? 'UNKNOWN',
+                'queue_connection' => $queueGovernance['queue_connection'] ?? null,
+                'long_running_worker_enabled' => $queueGovernance['long_running_worker_enabled'] ?? false,
+                'external_dispatch_enabled_flag' => $queueGovernance['external_dispatch_enabled_flag'] ?? false,
+                'idempotency_table_exists' => $queueGovernance['idempotency_table_exists'] ?? false,
+                'outbox_table_exists' => $queueGovernance['outbox_table_exists'] ?? false,
+                'summary' => $queueGovernance['summary'] ?? [],
+                'checks' => $queueGovernance['checks'] ?? [],
+                'command' => 'foundation:queue-governance-check',
+            ],
+            'idempotency' => [
+                'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
+                'total_records' => $idempotencyAudit['total_records'] ?? 0,
+                'by_status' => $idempotencyAudit['by_status'] ?? [],
+                'by_scope' => $idempotencyAudit['by_scope'] ?? [],
+                'summary' => $idempotencyAudit['summary'] ?? [],
+                'command' => 'foundation:idempotency-audit',
+            ],
+            'outbox' => [
+                'decision' => $outboxAudit['summary']['decision'] ?? 'UNKNOWN',
+                'total_records' => $outboxAudit['total_records'] ?? 0,
+                'by_status' => $outboxAudit['by_status'] ?? [],
+                'by_payload_classification' => $outboxAudit['by_payload_classification'] ?? [],
+                'dispatch_enabled' => $outboxAudit['dispatch_enabled'] ?? false,
+                'external_dispatch_enabled' => $outboxAudit['external_dispatch_enabled'] ?? false,
+                'summary' => $outboxAudit['summary'] ?? [],
+                'command' => 'foundation:outbox-audit',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
@@ -441,6 +493,9 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $cacheGovernance
      * @param  array<string, mixed>  $releaseSafety
      * @param  array<string, mixed>  $automatedSmoke
+     * @param  array<string, mixed>  $queueGovernance
+     * @param  array<string, mixed>  $idempotencyAudit
+     * @param  array<string, mixed>  $outboxAudit
      * @return array{decision: string, blocking_watch_count: int, reason: string}
      */
     private function combinedDecision(
@@ -454,6 +509,9 @@ class FoundationGovernanceSummaryService
         array $cacheGovernance = [],
         array $releaseSafety = [],
         array $automatedSmoke = [],
+        array $queueGovernance = [],
+        array $idempotencyAudit = [],
+        array $outboxAudit = [],
     ): array {
         $errors = (int) ($nsf['summary']['errors'] ?? 0)
             + (int) ($dmo['summary']['errors'] ?? 0);
@@ -500,6 +558,15 @@ class FoundationGovernanceSummaryService
         if (($cacheGovernance['summary']['decision'] ?? 'GO') === 'FAIL') {
             $nsf9Fails[] = 'CACHE_GOVERNANCE';
         }
+        if (($queueGovernance['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'QUEUE_GOVERNANCE';
+        }
+        if (($idempotencyAudit['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'IDEMPOTENCY';
+        }
+        if (($outboxAudit['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'OUTBOX';
+        }
         if ($nsf9Fails !== []) {
             return [
                 'decision' => 'NO-GO',
@@ -533,6 +600,30 @@ class FoundationGovernanceSummaryService
 
         if (($cacheGovernance['summary']['decision'] ?? 'GO') === 'WATCH') {
             $nsf9Watches[] = 'CACHE_GOVERNANCE';
+        }
+
+        // QUEUE-1: WATCH on queue governance (e.g. persistence tables not yet
+        // migrated, worker probe not run) is non-blocking as long as the
+        // long-running worker stays disabled, which it always is in QUEUE-1.
+        $queueGovWatchBlocking = ($queueGovernance['summary']['decision'] ?? 'GO') === 'WATCH'
+            && ($queueGovernance['long_running_worker_enabled'] ?? false);
+
+        if ($queueGovWatchBlocking) {
+            return [
+                'decision' => 'WATCH',
+                'blocking_watch_count' => 1,
+                'reason' => 'QUEUE_GOVERNANCE WATCH while a long-running worker is enabled',
+            ];
+        }
+
+        if (($queueGovernance['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'QUEUE_GOVERNANCE';
+        }
+        if (($idempotencyAudit['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'IDEMPOTENCY';
+        }
+        if (($outboxAudit['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'OUTBOX';
         }
 
         $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']) + count($nsf9Watches);

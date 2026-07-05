@@ -133,7 +133,28 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- NSF-9, NSF-10, and CACHE-1 completed this sequence; next locked sprint: **QUEUE-1**.
+- NSF-9, NSF-10, CACHE-1, and QUEUE-1 completed this sequence; next locked sprint: **DBPERF-1**.
+
+## QUEUE-1 Queue, Idempotency & Outbox Foundation (2026-07-05)
+
+- Queue/idempotency/outbox governance source of truth: `config/queue_governance.php`.
+- Read-only gates: `php artisan foundation:queue-governance-check [--json] [--include-worker-probe]`,
+  `php artisan foundation:idempotency-audit [--json]`, `php artisan foundation:outbox-audit [--json]`.
+- Foundation governance summary includes **QUEUE_GOVERNANCE**, **IDEMPOTENCY**, **OUTBOX**;
+  Combined GO treats any of their FAIL as NO-GO; WATCH (persistence tables not yet migrated,
+  worker probe not run) is non-blocking while the long-running worker stays disabled.
+- **Permanent queue/idempotency/outbox rules:**
+  1. No async job ships without an idempotency policy.
+  2. No async job ships without a retry/failure policy.
+  3. No raw idempotency key is ever stored — only its SHA-256 hash.
+  4. No PII/secrets in a queue payload or an outbox payload.
+  5. No external dispatch without both a feature flag and outbox governance GO.
+  6. No long-running queue worker is started by deploy unless a future worker-readiness sprint approves it.
+  7. Every outbox event requires a schema version and a payload classification.
+  8. Queue governance/idempotency/outbox commands are part of CI, release evidence, deploy gate, and Foundation summary.
+  9. Future queue/outbox implementation must reference `config/queue_governance.php`.
+  10. Critical mutable inventory/payment/RME/auth/branch-context async processing requires explicit domain-specific approval and idempotency tests.
+- See [`queue-1-queue-idempotency-outbox-foundation.md`](queue-1-queue-idempotency-outbox-foundation.md).
 
 ## CACHE-1 Cache Strategy, Redis Readiness & Invalidation Governance (2026-07-05)
 

@@ -118,6 +118,23 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $queueGovernance = $report['queue_governance'] ?? [];
+        $this->line(sprintf(
+            'QUEUE_GOVERNANCE: %s — worker: %s, external dispatch flag: %s',
+            $queueGovernance['decision'] ?? 'UNKNOWN',
+            ($queueGovernance['long_running_worker_enabled'] ?? false) ? 'enabled' : 'disabled',
+            ($queueGovernance['external_dispatch_enabled_flag'] ?? false) ? 'enabled' : 'disabled',
+        ));
+
+        $this->newLine();
+        $idempotency = $report['idempotency'] ?? [];
+        $this->line(sprintf('IDEMPOTENCY: %s — %d record(s)', $idempotency['decision'] ?? 'UNKNOWN', $idempotency['total_records'] ?? 0));
+
+        $this->newLine();
+        $outbox = $report['outbox'] ?? [];
+        $this->line(sprintf('OUTBOX: %s — %d record(s)', $outbox['decision'] ?? 'UNKNOWN', $outbox['total_records'] ?? 0));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 
