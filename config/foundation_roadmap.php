@@ -71,6 +71,12 @@ return [
         // ENT-3 — Reporting Materialized Summary Expansion.
         'reporting_materialized_summary_contract_locked' => true,
         'reporting_materialized_summary_contract_doc' => 'docs/architecture/reporting-materialized-summary-contract.md',
+        // ENT-4 — Redis Cache Enterprise Policy.
+        'redis_cache_enterprise_policy_locked' => true,
+        'redis_cache_enterprise_policy_doc' => 'docs/architecture/redis-cache-enterprise-policy.md',
+        'cache_ttl_matrix_doc' => 'docs/architecture/cache-ttl-matrix.md',
+        'cache_invalidation_matrix_doc' => 'docs/architecture/cache-invalidation-matrix.md',
+        'redis_readiness_runbook_doc' => 'docs/architecture/redis-readiness-runbook.md',
     ],
 
     /**
@@ -617,6 +623,7 @@ return [
             'candidate_inventory_doc' => 'docs/architecture/reporting-summary-candidate-inventory.md',
             'go_tag' => 'ent-3-reporting-materialized-summary-expansion-go',
             'go_commit' => '359f884a566c601a48f6ab6461c71a5efa9839ed',
+            'deploy_evidence_commit' => '3c98165',
             'related_shipped_foundations' => ['RPT-1'],
             'objective' => 'Expand the shipped RPT-1 rpt_*/materialized-summary foundation so heavy dashboards/reports read from summaries instead of raw transactions.',
             'why_this_order' => 'Reporting expansion needs the ENT-2 performance contract and precedes load-test baselining of report pages.',
@@ -632,12 +639,17 @@ return [
         [
             'id' => 'ENT-4',
             'title' => 'Redis Cache Enterprise Policy',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 20,
             'depends_on' => ['ENT-1', 'CACHE-1', 'CACHE-1-REDIS-READINESS'],
             'category' => 'cache',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'policy_doc' => 'docs/architecture/redis-cache-enterprise-policy.md',
+            'ttl_matrix_doc' => 'docs/architecture/cache-ttl-matrix.md',
+            'invalidation_matrix_doc' => 'docs/architecture/cache-invalidation-matrix.md',
+            'readiness_runbook_doc' => 'docs/architecture/redis-readiness-runbook.md',
+            'go_tag' => 'ent-4-redis-cache-enterprise-policy-go',
             'related_shipped_foundations' => ['CACHE-1', 'CACHE-1-REDIS-READINESS'],
             'disambiguation_note' => 'Builds on BOTH shipped cache sprints — CACHE-1 (invalidation governance design, cache_governance) and CACHE-1-REDIS-READINESS (Redis runtime readiness, cache_redis_governance) — into one enforced enterprise cache policy. Not a duplicate of either.',
             'objective' => 'Enforce the enterprise Redis cache policy: standard key prefixes (domain/branch/filter/version), explicit TTL, clear invalidation, no raw PII cached, cache as accelerator never source of truth.',
@@ -649,7 +661,7 @@ return [
             'go_criteria' => ['enterprise cache policy enforced + tested', 'foundation GO preserved'],
             'watch_criteria' => ['policy enforced on new caches first, legacy caches backlogged'],
             'no_go_criteria' => ['cache used as source of truth for transactions', 'foundation GO regressed'],
-            'deliverables' => ['enterprise cache policy', 'evidence doc'],
+            'deliverables' => ['enterprise cache policy', 'TTL matrix', 'invalidation matrix', 'Redis readiness runbook', 'evidence doc'],
         ],
         [
             'id' => 'ENT-5',

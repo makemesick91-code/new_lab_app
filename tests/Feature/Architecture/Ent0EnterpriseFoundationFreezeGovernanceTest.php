@@ -28,7 +28,7 @@ it('ships the enterprise foundation freeze rules doc without release-evidence fo
         ->and($doc)->toContain('enterprise-foundation-go');
 });
 
-it('registers ENT-0..ENT-3 completed and ENT-4..ENT-16 planned in the canonical roadmap', function () {
+it('registers ENT-0..ENT-3 completed and ENT-5..ENT-16 planned in the canonical roadmap', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
     $ent0 = $sequence->firstWhere('id', 'ENT-0');
@@ -36,18 +36,18 @@ it('registers ENT-0..ENT-3 completed and ENT-4..ENT-16 planned in the canonical 
         ->and($ent0['status'])->toBe('completed')
         ->and($ent0['category'])->toBe('governance');
 
-    foreach (range(4, 16) as $n) {
+    foreach (range(5, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");
     }
 });
 
-it('next recommended sprint is ENT-4 and is not stale', function () {
+it('next recommended sprint is ENT-5 and is not stale after the cache policy lock', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-4')
+    expect($report['next_recommended_sprint'])->toBe('ENT-5')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['decision'])->toBe('GO');
 });

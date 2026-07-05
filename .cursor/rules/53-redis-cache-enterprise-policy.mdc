@@ -1,0 +1,24 @@
+---
+description: DaengtisiaMS Redis Cache Enterprise Policy (ENT-4)
+globs:
+  - "**/*.php"
+  - "docs/**/*.md"
+alwaysApply: false
+---
+
+# Redis Cache Enterprise Policy (ENT-4)
+
+Follow `docs/architecture/redis-cache-enterprise-policy.md`, `docs/architecture/cache-ttl-matrix.md`, `docs/architecture/cache-invalidation-matrix.md`, and `docs/architecture/redis-readiness-runbook.md`.
+
+Rules:
+
+1. Redis is the preferred shared cache/session backend for future multi-node deployments, but cache is only an accelerator.
+2. Use canonical keys: `dms:{env}:{domain}:{scope}:{identifier}:{version}`.
+3. Branch-owned cached reads require branch scope; cross-branch analytics must be read-only, permission-gated, and PII-masked.
+4. Never cache full KTP/NIK, raw clinical notes, scanned document contents, session secrets, tokens, credentials, or sensitive payloads.
+5. TTL must be explicit and match the ENT-4 TTL matrix.
+6. Server-side writes must trigger or plan invalidation; UI-only invalidation is not sufficient.
+7. Inventory stock remains ledger-derived from `trx_inventory_movements`; cached stock reads must never become mutable stock or source of truth.
+8. RME/payment/lab candidate transactional decisions must not depend on stale cached data.
+9. Report/dashboard caching must align with ENT-2 DB performance and ENT-3 reporting summary contracts.
+10. Do not switch production cache/session/queue drivers without readiness evidence, smoke tests, and rollback.

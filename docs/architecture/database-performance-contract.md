@@ -118,6 +118,13 @@ heavy query, summary, or cache they introduce.
 > `docs/architecture/reporting-summary-candidate-inventory.md`; RPTSUM rules bind every
 > future summary/report to this DBPERF contract (notably DBPERF-R004/R005/R008).
 
+> **ENT-4 fulfilled (2026-07-06):** cache acceleration for DB/report reads is now
+> governed by `docs/architecture/redis-cache-enterprise-policy.md`,
+> `docs/architecture/cache-ttl-matrix.md`, and
+> `docs/architecture/cache-invalidation-matrix.md`. Cache may reduce repeated heavy
+> reads, but PostgreSQL transaction, ledger, invoice, visit, payment, and medical
+> record tables remain authoritative.
+
 ---
 
 ## Enforcement
@@ -138,4 +145,7 @@ heavy query, summary, or cache they introduce.
 - `docs/architecture/dbperf-2-pgbouncer-postgresql-runtime-tuning.md` — shipped pooling/tuning design
 - `docs/architecture/database-performance-hotspot-inventory.md` — hotspot inventory baseline (ENT-2)
 - `docs/architecture/reporting-materialized-summary-contract.md` — reporting summary contract (ENT-3, RPTSUM-R001..RPTSUM-R016)
+- `docs/architecture/redis-cache-enterprise-policy.md` — Redis cache enterprise policy (ENT-4, CACHE-R001..CACHE-R018)
+- `docs/architecture/cache-ttl-matrix.md` — ENT-4 cache TTL matrix
+- `docs/architecture/cache-invalidation-matrix.md` — ENT-4 cache invalidation matrix
 - `docs/architecture/database-scale-governance-rules.md` — database scale governance
