@@ -171,6 +171,40 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $statelessGovernance = $report['stateless_governance'] ?? [];
+        $this->line(sprintf(
+            'STATELESS_GOVERNANCE: %s — readiness: %s, session: %s, cache: %s, queue: %s, %d rule(s)',
+            $statelessGovernance['decision'] ?? 'UNKNOWN',
+            $statelessGovernance['readiness_status'] ?? 'unknown',
+            $statelessGovernance['session_driver'] ?? 'n/a',
+            $statelessGovernance['cache_store'] ?? 'n/a',
+            $statelessGovernance['queue_connection'] ?? 'n/a',
+            count($statelessGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
+        $lbGovernance = $report['lb_governance'] ?? [];
+        $this->line(sprintf(
+            'LB_GOVERNANCE: %s — readiness: %s, trusted proxies: %s, health endpoint: %s, %d rule(s)',
+            $lbGovernance['decision'] ?? 'UNKNOWN',
+            $lbGovernance['readiness_status'] ?? 'unknown',
+            ($lbGovernance['trusted_proxies_configured'] ?? false) ? 'yes' : 'no',
+            ($lbGovernance['health_endpoint_enabled'] ?? false) ? 'enabled' : 'disabled',
+            count($lbGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
+        $databaseReplicaGovernance = $report['database_replica_governance'] ?? [];
+        $this->line(sprintf(
+            'DATABASE_REPLICA_GOVERNANCE: %s — readiness: %s, enabled: %s, expected: %s, %d rule(s)',
+            $databaseReplicaGovernance['decision'] ?? 'UNKNOWN',
+            $databaseReplicaGovernance['readiness_status'] ?? 'unknown',
+            ($databaseReplicaGovernance['replica_enabled'] ?? false) ? 'yes' : 'no',
+            ($databaseReplicaGovernance['replica_expected'] ?? false) ? 'yes' : 'no',
+            count($databaseReplicaGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 

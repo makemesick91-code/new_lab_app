@@ -97,6 +97,24 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        'pgsql_read' => [
+            'driver' => 'pgsql',
+            'url' => env('DB_READ_URL'),
+            'host' => env('DB_READ_HOST'),
+            'port' => env('DB_READ_PORT', '5432'),
+            'database' => env('DB_READ_DATABASE'),
+            'username' => env('DB_READ_USERNAME'),
+            'password' => env('DB_READ_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_READ_SSLMODE', 'prefer'),
+            'options' => extension_loaded('pdo_pgsql') ? array_filter([
+                PDO::ATTR_TIMEOUT => (int) env('DB_REPLICA_CONNECT_TIMEOUT_SECONDS', 2),
+            ]) : [],
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
