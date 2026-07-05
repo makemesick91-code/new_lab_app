@@ -59,13 +59,12 @@ it('ci workflow and deploy script contain reporting summary evidence gates', fun
         ->and($script)->toContain('reporting-summary-refresh-dry-run.json');
 });
 
-it('roadmap marks RPT-1 completed and locks STORAGE-1 as next', function () {
+it('roadmap marks RPT-1 completed', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $rpt1 = collect($report['approved_sequence'])->firstWhere('id', 'RPT-1');
 
     expect($rpt1['status'])->toBe('completed')
-        ->and($rpt1['depends_on'])->toContain('DBPERF-2')
-        ->and($report['next_recommended_sprint'])->toBe('STORAGE-1');
+        ->and($rpt1['depends_on'])->toContain('DBPERF-2');
 });
 
 it('feature flags for RPT-1 exist with risky runtime toggles off', function () {

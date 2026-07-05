@@ -285,7 +285,7 @@ return [
         [
             'id' => 'STORAGE-1',
             'title' => 'Object Storage Readiness',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 8,
             'depends_on' => ['NSF-10'],
             'category' => 'storage',

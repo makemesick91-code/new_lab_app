@@ -63,10 +63,10 @@ it('deploy script contains postgres runtime governance gate', function () {
     expect($script)->toContain('foundation:postgres-runtime-check');
 });
 
-it('roadmap next sprint becomes STORAGE-1 after DBPERF-2 and RPT-1 completion', function () {
+it('roadmap next sprint becomes STATELESS-1 after DBPERF-2, RPT-1, and STORAGE-1 completion', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('STORAGE-1');
+    expect($report['next_recommended_sprint'])->toBe('STATELESS-1');
 
     $dbperf2 = collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-2');
     $rpt1 = collect($report['approved_sequence'])->firstWhere('id', 'RPT-1');
