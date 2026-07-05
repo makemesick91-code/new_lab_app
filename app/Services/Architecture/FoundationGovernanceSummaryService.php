@@ -15,6 +15,7 @@ use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Foundation\ReportingSummaryGovernanceService;
 use App\Services\Foundation\ReportingSummaryRefreshService;
+use App\Services\Foundation\StatelessGovernanceService;
 use App\Services\Foundation\StorageGovernanceService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
@@ -54,6 +55,7 @@ class FoundationGovernanceSummaryService
         private readonly ReportingSummaryGovernanceService $reportingSummaryGovernance,
         private readonly ReportingSummaryRefreshService $reportingSummaryRefresh,
         private readonly StorageGovernanceService $storageGovernance,
+        private readonly StatelessGovernanceService $statelessGovernance,
     ) {}
 
     /**
@@ -102,6 +104,7 @@ class FoundationGovernanceSummaryService
         $reportingSummary = $this->reportingSummaryGovernance->collect();
         $reportingSummaryRefresh = $this->reportingSummaryRefresh->preview();
         $storageGovernance = $this->storageGovernance->collect();
+        $statelessGovernance = $this->statelessGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -318,6 +321,16 @@ class FoundationGovernanceSummaryService
                 'readiness_status' => $storageGovernance['readiness_status'] ?? 'unknown',
                 'rules' => $storageGovernance['rules'] ?? [],
                 'command' => 'storage:object-readiness-check',
+            ],
+            'stateless_governance' => [
+                'decision' => $statelessGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $statelessGovernance['readiness_status'] ?? 'unknown',
+                'session_driver' => $statelessGovernance['session_driver'] ?? null,
+                'cache_store' => $statelessGovernance['cache_store'] ?? null,
+                'queue_connection' => $statelessGovernance['queue_connection'] ?? null,
+                'horizontal_scale_warnings' => $statelessGovernance['horizontal_scale_warnings'] ?? [],
+                'rules' => $statelessGovernance['rules'] ?? [],
+                'command' => 'runtime:stateless-readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
