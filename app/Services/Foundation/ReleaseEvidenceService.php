@@ -282,6 +282,12 @@ class ReleaseEvidenceService
                     ? ['--json' => true, '--include-db-stats' => true]
                     : ['--json' => true],
             ],
+            'postgres-runtime-check.json' => [
+                'command' => 'foundation:postgres-runtime-check',
+                'arguments' => $profile === 'vps'
+                    ? ['--json' => true, '--include-db-stats' => true, '--include-pgbouncer-probe' => true]
+                    : ['--json' => true],
+            ],
             'automated-smoke.json' => [
                 'command' => 'release:automated-smoke',
                 'arguments' => ['--json' => true],

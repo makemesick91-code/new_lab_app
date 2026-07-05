@@ -69,6 +69,10 @@ php artisan foundation:outbox-audit --json > storage/release-evidence/latest/out
 php artisan foundation:db-performance-check
 php artisan foundation:db-performance-check --include-db-stats
 php artisan foundation:db-performance-check --include-db-stats --json > storage/release-evidence/latest/db-performance-check.json || true
+php artisan foundation:postgres-runtime-check
+php artisan foundation:postgres-runtime-check --include-db-stats
+php artisan foundation:postgres-runtime-check --include-db-stats --include-pgbouncer-probe || true
+php artisan foundation:postgres-runtime-check --include-db-stats --json > storage/release-evidence/latest/postgres-runtime-check.json || true
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary

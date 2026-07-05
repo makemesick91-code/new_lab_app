@@ -61,10 +61,8 @@ it('deploy script contains cache governance gate', function () {
         ->and($script)->toContain('cache-governance-check.json');
 });
 
-it('roadmap next sprint becomes DBPERF-2 after CACHE-1, QUEUE-1, and DBPERF-1 completion', function () {
+it('CACHE-1, QUEUE-1, and DBPERF-1 are marked completed in the roadmap', function () {
     $report = app(FoundationRoadmapService::class)->collect();
-
-    expect($report['next_recommended_sprint'])->toBe('DBPERF-2');
 
     $cache1 = collect($report['approved_sequence'])->firstWhere('id', 'CACHE-1');
     expect($cache1['status'])->toBe('completed');

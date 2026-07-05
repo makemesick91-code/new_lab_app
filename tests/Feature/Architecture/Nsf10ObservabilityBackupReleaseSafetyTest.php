@@ -61,10 +61,8 @@ it('feature flags remain GO with no risky flag enabled', function () {
         ->and($governance['risky_enabled_flags'])->toBe([]);
 });
 
-it('roadmap next recommended sprint is DBPERF-2 after QUEUE-1 and DBPERF-1 completion', function () {
+it('QUEUE-1 and DBPERF-1 are marked completed in the roadmap', function () {
     $report = app(FoundationRoadmapService::class)->collect();
-
-    expect($report['next_recommended_sprint'])->toBe('DBPERF-2');
 
     $queue1 = collect($report['approved_sequence'])->firstWhere('id', 'QUEUE-1');
     expect($queue1['status'])->toBe('completed');

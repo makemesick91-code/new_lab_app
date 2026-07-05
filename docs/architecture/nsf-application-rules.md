@@ -133,7 +133,7 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- NSF-9, NSF-10, CACHE-1, QUEUE-1, and DBPERF-1 completed this sequence; next locked sprint: **DBPERF-2**.
+- NSF-9, NSF-10, CACHE-1, QUEUE-1, DBPERF-1, and DBPERF-2 completed this sequence; next locked sprint: **RPT-1**.
 
 ## QUEUE-1 Queue, Idempotency & Outbox Foundation (2026-07-05)
 
@@ -191,6 +191,26 @@ php artisan architecture:nsf-governance-check
   11. Future PgBouncer/runtime-tuning work (DBPERF-2) must reference DBPERF-1 evidence.
   12. Partitioning remains design-only until PART-1.
 - See [`dbperf-1-postgresql-index-optimization-query-plan-audit.md`](dbperf-1-postgresql-index-optimization-query-plan-audit.md).
+
+## DBPERF-2 PgBouncer & PostgreSQL Runtime Tuning (2026-07-05)
+
+- PgBouncer/runtime governance source of truth: `config/postgres_runtime_governance.php`.
+- Read-only gate: `php artisan foundation:postgres-runtime-check [--json] [--include-db-stats] [--include-pgbouncer-probe]`.
+- Feature flags: `foundation.db.pg_bouncer_readiness`, `.pg_bouncer_cutover_enabled`, `.postgres_runtime_tuning_recommendations`, `.postgres_runtime_apply_enabled` — all default `false`.
+- Foundation governance summary includes **POSTGRES_RUNTIME**; Combined GO treats POSTGRES_RUNTIME FAIL as NO-GO; WATCH (PgBouncer not installed/probed while cutover disabled, or a non-pgsql connection) is always non-blocking.
+- **Permanent PgBouncer/runtime tuning rules:**
+  1. PgBouncer production cutover requires explicit approval and a rollback plan (see `docs/architecture/templates/pgbouncer-cutover-checklist.md`).
+  2. `DB_HOST`/`DB_PORT` must not be changed to PgBouncer during a normal deploy without completing the cutover checklist.
+  3. Migrations must bypass the transaction pooler unless proven compatible — `php artisan migrate` always connects directly to PostgreSQL.
+  4. Long-running queue workers require a documented connection-pool policy before enablement.
+  5. PostgreSQL runtime tuning is recommendation-only until an approved maintenance window explicitly enables `foundation.db.postgres_runtime_apply_enabled`.
+  6. PostgreSQL restart requires explicit approval and a rollback plan; no deploy or governance command restarts PostgreSQL.
+  7. No heavy production load test without a safety plan.
+  8. No credentials, `.env` contents, PII, or raw query text in `postgres-runtime-check.json` or any runtime artifact.
+  9. The PgBouncer/runtime-readiness command is part of CI, release evidence, deploy gate, and Foundation summary.
+  10. Future DBPERF-2+ tuning work must reference `config/postgres_runtime_governance.php`.
+  11. RPT-1 reporting summaries must consider connection pool and runtime audit evidence before proposing materialized-view refresh cadences.
+- See [`dbperf-2-pgbouncer-postgresql-runtime-tuning.md`](dbperf-2-pgbouncer-postgresql-runtime-tuning.md).
 
 ## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
 

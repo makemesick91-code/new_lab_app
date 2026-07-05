@@ -62,10 +62,8 @@ it('deploy script contains DB performance governance gate', function () {
     expect($script)->toContain('foundation:db-performance-check');
 });
 
-it('roadmap next sprint becomes DBPERF-2 after DBPERF-1 completion', function () {
+it('DBPERF-1 is marked completed in the roadmap (DBPERF-2 has since completed too)', function () {
     $report = app(FoundationRoadmapService::class)->collect();
-
-    expect($report['next_recommended_sprint'])->toBe('DBPERF-2');
 
     $dbperf1 = collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-1');
     expect($dbperf1['status'])->toBe('completed');

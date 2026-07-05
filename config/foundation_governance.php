@@ -105,6 +105,17 @@ return [
                     'php artisan foundation:db-performance-check --json',
                 ],
             ],
+            'DBPERF-2' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/postgres-runtime-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:postgres-runtime-check',
+                    'php artisan foundation:postgres-runtime-check --json',
+                ],
+            ],
         ],
     ],
 

@@ -1,0 +1,61 @@
+; DBPERF-2 — PgBouncer pilot configuration TEMPLATE.
+;
+; This is a SAFE EXAMPLE ONLY. It is not deployed, not loaded, and not a
+; production configuration. No real password, host, or credential appears
+; here. Copy it to a real environment only after completing
+; docs/architecture/templates/pgbouncer-cutover-checklist.md and receiving
+; explicit owner approval — DBPERF-2 itself does not route production
+; traffic through PgBouncer.
+;
+; Pool mode candidate: transaction (see
+; config/postgres_runtime_governance.php -> pgbouncer_readiness.default_pool_mode_candidate).
+; Transaction pooling is the usual choice for a Laravel app that does not
+; rely on session-scoped SET/temp-table state across requests, but it
+; requires migrations and any session-scoped features to bypass the pooler
+; (see the "migration bypass note" below).
+
+[databases]
+; Replace <db_name> with the real database name. Do not put a password here —
+; PgBouncer authenticates via auth_file (see [pgbouncer] below), never inline.
+; daengtisiams = host=127.0.0.1 port=5432 dbname=<db_name>
+
+[pgbouncer]
+listen_addr = 127.0.0.1
+listen_port = 6432
+
+; Placeholder only — real credentials must live in a userlist/auth_file with
+; correct filesystem permissions (0600), never committed to the repository.
+auth_type = md5
+auth_file = /etc/pgbouncer/userlist.txt.placeholder
+
+pool_mode = transaction
+
+; Placeholders — real values must be sized against an actual connection
+; baseline (see foundation:postgres-runtime-check --include-db-stats) before
+; a pilot, never guessed.
+default_pool_size = <PLACEHOLDER_DEFAULT_POOL_SIZE>
+reserve_pool_size = <PLACEHOLDER_RESERVE_POOL_SIZE>
+max_client_conn = <PLACEHOLDER_MAX_CLIENT_CONN>
+
+; Resets session-level state (SET statements, temp tables) between pooled
+; transactions — required for transaction pooling to be safe.
+server_reset_query = DISCARD ALL
+
+; Only add parameters here that the app sends at connection time and that
+; PgBouncer would otherwise reject under transaction pooling; do not add
+; entries speculatively.
+; ignore_startup_parameters = extra_float_digits
+
+; --- Migration bypass note ---
+; php artisan migrate (and any other DDL) MUST connect directly to
+; PostgreSQL on its normal port (5432), never through this PgBouncer pilot
+; port (6432). Transaction pooling is not safe for long-lived DDL/migration
+; connections. Keep a separate direct-connection config for migrations.
+
+; --- Rollback ---
+; 1. Set the app's DB_HOST/DB_PORT back to the direct PostgreSQL host/port.
+; 2. Restart php-fpm only — never restart PostgreSQL for this rollback.
+; 3. Leave the PgBouncer service running or stop it; either is safe because
+;    the app no longer depends on it once DB_HOST/DB_PORT reverted.
+; 4. Re-run foundation:postgres-runtime-check --include-pgbouncer-probe and
+;    release:automated-smoke to confirm the app is healthy again.
