@@ -264,6 +264,18 @@ class ReleaseEvidenceService
                 'command' => 'foundation:cache-governance-check',
                 'arguments' => ['--json' => true],
             ],
+            'queue-governance-check.json' => [
+                'command' => 'foundation:queue-governance-check',
+                'arguments' => ['--json' => true],
+            ],
+            'idempotency-audit.json' => [
+                'command' => 'foundation:idempotency-audit',
+                'arguments' => ['--json' => true],
+            ],
+            'outbox-audit.json' => [
+                'command' => 'foundation:outbox-audit',
+                'arguments' => ['--json' => true],
+            ],
             'automated-smoke.json' => [
                 'command' => 'release:automated-smoke',
                 'arguments' => ['--json' => true],

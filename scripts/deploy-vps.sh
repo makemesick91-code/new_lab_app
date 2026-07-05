@@ -60,6 +60,12 @@ php artisan architecture:nsf-governance-check --include-observability
 php artisan foundation:feature-flags
 php artisan foundation:cache-governance-check
 php artisan foundation:cache-governance-check --json > storage/release-evidence/latest/cache-governance-check.json || true
+php artisan foundation:queue-governance-check
+php artisan foundation:queue-governance-check --json > storage/release-evidence/latest/queue-governance-check.json || true
+php artisan foundation:idempotency-audit
+php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
+php artisan foundation:outbox-audit
+php artisan foundation:outbox-audit --json > storage/release-evidence/latest/outbox-audit.json || true
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary

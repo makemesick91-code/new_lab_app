@@ -239,6 +239,13 @@ jobs:
           php artisan foundation:cache-governance-check
           php artisan foundation:cache-governance-check --json > storage/ci-evidence/cache-governance-check.json
 
+      - name: Queue/idempotency/outbox governance check (QUEUE-1)
+        run: |
+          php artisan foundation:queue-governance-check
+          php artisan foundation:queue-governance-check --json > storage/ci-evidence/queue-governance-check.json
+          php artisan foundation:idempotency-audit --json > storage/ci-evidence/idempotency-audit.json
+          php artisan foundation:outbox-audit --json > storage/ci-evidence/outbox-audit.json
+
       - name: Release safety check
         run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
 
