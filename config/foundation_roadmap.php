@@ -62,6 +62,9 @@ return [
         // ENT-0 — Enterprise Foundation Freeze Rules & Roadmap Reconciliation.
         'enterprise_foundation_freeze_active' => true,
         'enterprise_freeze_rules_doc' => 'docs/architecture/enterprise-foundation-freeze-rules.md',
+        // ENT-1 — Enterprise Architecture Baseline Lock.
+        'enterprise_architecture_baseline_locked' => true,
+        'enterprise_architecture_baseline_doc' => 'docs/architecture/enterprise-architecture-baseline-lock.md',
     ],
 
     /**
@@ -514,6 +517,8 @@ return [
             'category' => 'governance',
             'may_touch_production_infra' => false,
             'requires_design_first' => false,
+            'go_tag' => 'ent-0-enterprise-foundation-freeze-rules-roadmap-reconciliation-go',
+            'go_commit' => '8b0fa2d3670a8ce6632a9bd76ad7e4d49b512868',
             'related_shipped_foundations' => [
                 'NSF-9', 'NSF-10', 'CACHE-1', 'QUEUE-1', 'DBPERF-1', 'DBPERF-2', 'RPT-1',
                 'STORAGE-1', 'STATELESS-1', 'LB-1', 'REPLICA-1', 'CACHE-1-REDIS-READINESS',
@@ -545,12 +550,14 @@ return [
         [
             'id' => 'ENT-1',
             'title' => 'Enterprise Architecture Baseline Lock',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 17,
             'depends_on' => ['ENT-0'],
             'category' => 'architecture',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'baseline_doc' => 'docs/architecture/enterprise-architecture-baseline-lock.md',
+            'go_tag' => 'ent-1-enterprise-architecture-baseline-lock-go',
             'related_shipped_foundations' => ['STORAGE-1', 'STATELESS-1', 'LB-1', 'ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Lock the enterprise architecture baseline (Controller → FormRequest → Service → RepositoryInterface → Repository → Model, policy-gated, branch-isolated) as an auditable governance check on top of the shipped foundation governance summary.',
             'why_this_order' => 'Every later ENT sprint builds on an explicit, checkable architecture baseline.',

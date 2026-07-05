@@ -1,0 +1,28 @@
+---
+description: DaengtisiaMS Enterprise Architecture Baseline Lock (ENT-1)
+globs:
+  - "**/*.php"
+  - "**/*.blade.php"
+alwaysApply: true
+---
+
+# Enterprise Architecture Baseline Lock (ENT-1)
+
+Canonical doc: `docs/architecture/enterprise-architecture-baseline-lock.md` (ENT1-R001..ENT1-R014).
+Parent freeze doc: `docs/architecture/enterprise-foundation-freeze-rules.md` (Section 2).
+
+## Locked rules
+
+1. Mandatory flow: `HTTP → Controller → FormRequest → Service → RepositoryInterface → Repository → Model` (authorize via Policy).
+2. Controllers stay thin: request handling, authorization, delegation only.
+3. Business logic lives in Services; multi-table writes use `DB::transaction`.
+4. Data access goes through RepositoryInterface bindings — never bypass.
+5. Branch isolation via `BranchContext`; never trust `branch_id` from request.
+6. Authorization is 3-layer: route middleware/permission + Policy/Gate + `@can` UI. Hiding buttons is not authorization.
+7. Migrations are additive only; never `migrate:fresh` / `db:wipe` on VPS.
+8. No mutable inventory stock columns — stock derives from the ledger.
+9. No full KTP/NIK or sensitive PII rendered, exported, logged, or summarized.
+10. No React/Vue; stack is Blade + Alpine + Tailwind (TailAdmin).
+11. No business logic in Blade.
+12. No deploy shortcuts: DB backup first, `migrate --force` only, explicit cache rebuild, post-deploy smoke.
+13. No feature work outside freeze scope until Enterprise Foundation Closure GO.
