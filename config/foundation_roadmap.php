@@ -587,6 +587,7 @@ return [
             'contract_doc' => 'docs/architecture/database-performance-contract.md',
             'hotspot_inventory_doc' => 'docs/architecture/database-performance-hotspot-inventory.md',
             'go_tag' => 'ent-2-database-performance-contract-go',
+            'go_commit' => '89e641d31b43820873d44db196a53da56cc3175b',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2'],
             'objective' => 'Turn the shipped DBPERF-1 index/EXPLAIN audit and DBPERF-2 pooling/tuning design into an enforceable database performance contract (heavy-query audit, additive-only migrations, named indexes).',
             'why_this_order' => 'Performance contract must be locked before reporting expansion and load tests measure against it.',
