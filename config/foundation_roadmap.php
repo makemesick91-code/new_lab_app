@@ -616,6 +616,7 @@ return [
             'contract_doc' => 'docs/architecture/reporting-materialized-summary-contract.md',
             'candidate_inventory_doc' => 'docs/architecture/reporting-summary-candidate-inventory.md',
             'go_tag' => 'ent-3-reporting-materialized-summary-expansion-go',
+            'go_commit' => '359f884a566c601a48f6ab6461c71a5efa9839ed',
             'related_shipped_foundations' => ['RPT-1'],
             'objective' => 'Expand the shipped RPT-1 rpt_*/materialized-summary foundation so heavy dashboards/reports read from summaries instead of raw transactions.',
             'why_this_order' => 'Reporting expansion needs the ENT-2 performance contract and precedes load-test baselining of report pages.',
