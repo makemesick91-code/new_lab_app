@@ -5,6 +5,7 @@ use App\Console\Commands\PatientDocumentsAuditCommand;
 use App\Console\Commands\PatientDocumentsPruneTempCommand;
 use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
+use App\Http\Middleware\AttachRequestCorrelationContext;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
@@ -39,6 +40,12 @@ return Application::configure(basePath: dirname(__DIR__))
         if ($trustedProxies !== []) {
             $middleware->trustProxies(at: $trustedProxies);
         }
+
+        // OBS-1 — attach request/correlation id + safe log context as early
+        // as possible, and set the response header as late as possible.
+        $middleware->web(prepend: [
+            AttachRequestCorrelationContext::class,
+        ]);
 
         $middleware->web(append: [
             TouchOnlineContextLastSeen::class,

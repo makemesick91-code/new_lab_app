@@ -11,6 +11,7 @@ use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
+use App\Services\Foundation\ObservabilityGovernanceService;
 use App\Services\Foundation\OutboxService;
 use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
@@ -62,6 +63,7 @@ class FoundationGovernanceSummaryService
         private readonly LoadBalancerGovernanceService $loadBalancerGovernance,
         private readonly DatabaseReplicaGovernanceService $databaseReplicaGovernance,
         private readonly CacheRedisGovernanceService $cacheRedisGovernance,
+        private readonly ObservabilityGovernanceService $observabilityGovernance,
     ) {}
 
     /**
@@ -114,6 +116,7 @@ class FoundationGovernanceSummaryService
         $loadBalancerGovernance = $this->loadBalancerGovernance->collect();
         $databaseReplicaGovernance = $this->databaseReplicaGovernance->collect();
         $cacheRedisGovernance = $this->cacheRedisGovernance->collect();
+        $observabilityGovernance = $this->observabilityGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -220,6 +223,8 @@ class FoundationGovernanceSummaryService
                 'database_replica_enabled' => $databaseReplicaGovernance['replica_enabled'] ?? false,
                 'release_evidence_decision' => $releaseEvidence['summary']['decision'] ?? 'UNKNOWN',
                 'backup_verification_decision' => $backupVerification['decision'] ?? 'NOT_APPLICABLE',
+                'observability_governance_decision' => $observabilityGovernance['decision'] ?? 'UNKNOWN',
+                'observability_readiness_status' => $observabilityGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -378,6 +383,19 @@ class FoundationGovernanceSummaryService
                 'warnings' => $cacheRedisGovernance['warnings'] ?? [],
                 'rules' => $cacheRedisGovernance['rules'] ?? [],
                 'command' => 'cache:redis-readiness-check',
+            ],
+            'observability_governance' => [
+                'decision' => $observabilityGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $observabilityGovernance['readiness_status'] ?? 'unknown',
+                'observability_enabled' => $observabilityGovernance['observability_enabled'] ?? false,
+                'request_id_enabled' => $observabilityGovernance['request_id_enabled'] ?? false,
+                'middleware_detected' => $observabilityGovernance['middleware_detected'] ?? false,
+                'log_channel' => $observabilityGovernance['log_channel'] ?? null,
+                'trust_inbound_request_id' => $observabilityGovernance['trust_inbound_request_id'] ?? false,
+                'trust_inbound_correlation_id' => $observabilityGovernance['trust_inbound_correlation_id'] ?? false,
+                'warnings' => $observabilityGovernance['warnings'] ?? [],
+                'rules' => $observabilityGovernance['rules'] ?? [],
+                'command' => 'obs:readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
