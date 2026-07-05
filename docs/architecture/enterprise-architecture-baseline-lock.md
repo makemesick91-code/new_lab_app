@@ -106,4 +106,5 @@ membuat pola arsitektur baru sebelum Enterprise Foundation Closure GO.
 
 - `docs/architecture/enterprise-foundation-freeze-rules.md` — dokumen induk freeze (ENT-0).
 - `config/foundation_roadmap.php` — roadmap kanonik + pointer baseline (ENT-1).
+- `docs/architecture/database-performance-contract.md` — kontrak performa database (ENT-2, DBPERF-R001..DBPERF-R014).
 - `.cursor/rules/50-enterprise-architecture-baseline.mdc` — ringkasan rule untuk AI assistant.

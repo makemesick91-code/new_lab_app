@@ -1,0 +1,29 @@
+---
+description: DaengtisiaMS Database Performance Contract (ENT-2)
+globs:
+  - "**/*.php"
+alwaysApply: true
+---
+
+# Database Performance Contract (ENT-2)
+
+Canonical doc: `docs/architecture/database-performance-contract.md` (DBPERF-R001..DBPERF-R014).
+Hotspot baseline: `docs/architecture/database-performance-hotspot-inventory.md`.
+Parent freeze doc: `docs/architecture/enterprise-foundation-freeze-rules.md` (Section 5).
+
+## Locked rules
+
+1. New high-traffic queries must declare their filter/sort/pagination pattern in the spec/PR.
+2. Branch-owned queries always include the branch scope via `BranchContext`/repository — never trust `branch_id` from request.
+3. Cross-branch analytics are read-only and permission-gated.
+4. Heavy reports/dashboards move to `rpt_*`/materialized summary/cached aggregate as volume grows.
+5. No unbounded list queries on `trx_*` tables — paginate or hard-limit at the query level.
+6. No N+1 regressions — eager load (`with`/`withCount`) or aggregate in one query.
+7. No full scan on large transaction tables without a documented reason.
+8. Indexes must match real WHERE/ORDER/GROUP/JOIN patterns — no speculative indexes.
+9. New indexes ship as additive, production-safe, clearly named migrations only (prefer `CREATE INDEX CONCURRENTLY`); never `migrate:fresh`/`db:wipe` on VPS.
+10. No PII (full KTP/NIK, raw clinical notes) in query logs, EXPLAIN evidence, reports, or exports.
+11. Inventory stock stays ledger-derived — never add mutable stock columns for performance.
+12. Capture performance evidence for RME, cashier/receivables, inventory, owner dashboard, lab, and report hotspots.
+13. Triage slow requests by category first: DB, PHP, cache, queue, storage, or network.
+14. ENT-3 (reporting) and ENT-4 (cache) work must reference this contract explicitly.
