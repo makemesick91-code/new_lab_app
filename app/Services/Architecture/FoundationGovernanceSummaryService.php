@@ -5,6 +5,7 @@ namespace App\Services\Architecture;
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\CacheGovernanceService;
+use App\Services\Foundation\CacheRedisGovernanceService;
 use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
@@ -60,6 +61,7 @@ class FoundationGovernanceSummaryService
         private readonly StatelessGovernanceService $statelessGovernance,
         private readonly LoadBalancerGovernanceService $loadBalancerGovernance,
         private readonly DatabaseReplicaGovernanceService $databaseReplicaGovernance,
+        private readonly CacheRedisGovernanceService $cacheRedisGovernance,
     ) {}
 
     /**
@@ -111,6 +113,7 @@ class FoundationGovernanceSummaryService
         $statelessGovernance = $this->statelessGovernance->collect();
         $loadBalancerGovernance = $this->loadBalancerGovernance->collect();
         $databaseReplicaGovernance = $this->databaseReplicaGovernance->collect();
+        $cacheRedisGovernance = $this->cacheRedisGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -364,6 +367,17 @@ class FoundationGovernanceSummaryService
                 'warnings' => $databaseReplicaGovernance['warnings'] ?? [],
                 'rules' => $databaseReplicaGovernance['rules'] ?? [],
                 'command' => 'db:replica-readiness-check',
+            ],
+            'cache_redis_governance' => [
+                'decision' => $cacheRedisGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $cacheRedisGovernance['readiness_status'] ?? 'unknown',
+                'redis_expected' => $cacheRedisGovernance['redis_expected'] ?? false,
+                'cache_store' => $cacheRedisGovernance['cache_store'] ?? null,
+                'session_driver' => $cacheRedisGovernance['session_driver'] ?? null,
+                'redis_client_available' => $cacheRedisGovernance['redis_client_available'] ?? false,
+                'warnings' => $cacheRedisGovernance['warnings'] ?? [],
+                'rules' => $cacheRedisGovernance['rules'] ?? [],
+                'command' => 'cache:redis-readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
