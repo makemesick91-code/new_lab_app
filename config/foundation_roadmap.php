@@ -65,6 +65,9 @@ return [
         // ENT-1 — Enterprise Architecture Baseline Lock.
         'enterprise_architecture_baseline_locked' => true,
         'enterprise_architecture_baseline_doc' => 'docs/architecture/enterprise-architecture-baseline-lock.md',
+        // ENT-2 — Database Performance Contract.
+        'database_performance_contract_locked' => true,
+        'database_performance_contract_doc' => 'docs/architecture/database-performance-contract.md',
     ],
 
     /**
@@ -558,7 +561,8 @@ return [
             'requires_design_first' => true,
             'baseline_doc' => 'docs/architecture/enterprise-architecture-baseline-lock.md',
             'go_tag' => 'ent-1-enterprise-architecture-baseline-lock-go',
-            'go_commit' => '9069bce',
+            'go_commit' => '9069bce8d9f63c7a575a251c997cc2c8d44a83bd',
+            'deploy_evidence_commit' => '62c4ff0',
             'related_shipped_foundations' => ['STORAGE-1', 'STATELESS-1', 'LB-1', 'ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Lock the enterprise architecture baseline (Controller → FormRequest → Service → RepositoryInterface → Repository → Model, policy-gated, branch-isolated) as an auditable governance check on top of the shipped foundation governance summary.',
             'why_this_order' => 'Every later ENT sprint builds on an explicit, checkable architecture baseline.',
@@ -574,12 +578,15 @@ return [
         [
             'id' => 'ENT-2',
             'title' => 'Database Performance Contract',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 18,
             'depends_on' => ['ENT-1', 'DBPERF-1', 'DBPERF-2'],
             'category' => 'db_performance',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'contract_doc' => 'docs/architecture/database-performance-contract.md',
+            'hotspot_inventory_doc' => 'docs/architecture/database-performance-hotspot-inventory.md',
+            'go_tag' => 'ent-2-database-performance-contract-go',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2'],
             'objective' => 'Turn the shipped DBPERF-1 index/EXPLAIN audit and DBPERF-2 pooling/tuning design into an enforceable database performance contract (heavy-query audit, additive-only migrations, named indexes).',
             'why_this_order' => 'Performance contract must be locked before reporting expansion and load tests measure against it.',

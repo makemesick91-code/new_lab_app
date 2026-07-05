@@ -116,6 +116,13 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 
 ## 5. Database Enterprise Rules
 
+> **ENT-2 — Database Performance Contract (2026-07-06):** Bagian ini dikunci sebagai
+> kontrak performa database enterprise yang durable dan dapat diaudit melalui
+> `docs/architecture/database-performance-contract.md` (rule DBPERF-R001..DBPERF-R014),
+> dengan baseline hotspot di `docs/architecture/database-performance-hotspot-inventory.md`,
+> terdaftar di `config/foundation_roadmap.php` (`rules.database_performance_contract_doc`)
+> dan divalidasi oleh `Ent2DatabasePerformanceContractTest`.
+
 1. Semua query berat wajib diaudit dengan index dan EXPLAIN plan.
 2. Dashboard dan laporan berat tidak boleh terus-menerus menghitung dari transaksi mentah jika volume data sudah besar.
 3. Laporan berat wajib diarahkan ke `rpt_*`, summary table, cached aggregate, atau materialized summary.
