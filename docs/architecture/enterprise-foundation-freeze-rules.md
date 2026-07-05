@@ -36,6 +36,12 @@ Selama fase Enterprise Foundation Lock:
 
 ## 2. Architecture Freeze
 
+> **ENT-1 — Enterprise Architecture Baseline Lock (2026-07-05):** Bagian ini dikunci sebagai
+> baseline arsitektur enterprise yang durable dan dapat diaudit melalui
+> `docs/architecture/enterprise-architecture-baseline-lock.md` (rule ENT1-R001..ENT1-R014),
+> terdaftar di `config/foundation_roadmap.php` (`rules.enterprise_architecture_baseline_doc`)
+> dan divalidasi oleh `Ent1EnterpriseArchitectureBaselineLockTest`.
+
 Arsitektur wajib DaengtisiaMS tetap:
 
 ```text
