@@ -558,6 +558,7 @@ return [
             'requires_design_first' => true,
             'baseline_doc' => 'docs/architecture/enterprise-architecture-baseline-lock.md',
             'go_tag' => 'ent-1-enterprise-architecture-baseline-lock-go',
+            'go_commit' => '9069bce',
             'related_shipped_foundations' => ['STORAGE-1', 'STATELESS-1', 'LB-1', 'ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Lock the enterprise architecture baseline (Controller → FormRequest → Service → RepositoryInterface → Repository → Model, policy-gated, branch-isolated) as an auditable governance check on top of the shipped foundation governance summary.',
             'why_this_order' => 'Every later ENT sprint builds on an explicit, checkable architecture baseline.',
