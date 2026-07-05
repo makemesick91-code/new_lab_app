@@ -135,6 +135,15 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         $this->line(sprintf('OUTBOX: %s — %d record(s)', $outbox['decision'] ?? 'UNKNOWN', $outbox['total_records'] ?? 0));
 
         $this->newLine();
+        $dbPerformance = $report['db_performance'] ?? [];
+        $this->line(sprintf(
+            'DB_PERFORMANCE: %s — applied: %d, deferred: %d',
+            $dbPerformance['decision'] ?? 'UNKNOWN',
+            count($dbPerformance['applied_index_candidates'] ?? []),
+            count($dbPerformance['deferred_index_candidates'] ?? []),
+        ));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 

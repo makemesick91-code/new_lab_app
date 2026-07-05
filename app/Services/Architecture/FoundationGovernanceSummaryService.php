@@ -5,6 +5,7 @@ namespace App\Services\Architecture;
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\CacheGovernanceService;
+use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\OutboxService;
@@ -44,6 +45,7 @@ class FoundationGovernanceSummaryService
         private readonly QueueGovernanceService $queueGovernance,
         private readonly IdempotencyService $idempotencyService,
         private readonly OutboxService $outboxService,
+        private readonly DbPerformanceGovernanceService $dbPerformanceGovernance,
     ) {}
 
     /**
@@ -87,6 +89,7 @@ class FoundationGovernanceSummaryService
         $outboxAudit = Schema::hasTable('sys_outbox_events')
             ? $this->outboxService->audit()
             : ['summary' => ['decision' => 'WATCH'], 'total_records' => 0, 'by_status' => [], 'by_payload_classification' => []];
+        $dbPerformance = $this->dbPerformanceGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -102,6 +105,7 @@ class FoundationGovernanceSummaryService
             $queueGovernance,
             $idempotencyAudit,
             $outboxAudit,
+            $dbPerformance,
         );
 
         return [
@@ -173,6 +177,9 @@ class FoundationGovernanceSummaryService
                 'idempotency_total_records' => $idempotencyAudit['total_records'] ?? 0,
                 'outbox_decision' => $outboxAudit['summary']['decision'] ?? 'UNKNOWN',
                 'outbox_total_records' => $outboxAudit['total_records'] ?? 0,
+                'db_performance_decision' => $dbPerformance['summary']['decision'] ?? 'UNKNOWN',
+                'db_performance_applied_index_count' => count($dbPerformance['applied_index_candidates'] ?? []),
+                'db_performance_deferred_index_count' => count($dbPerformance['deferred_index_candidates'] ?? []),
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
@@ -245,6 +252,15 @@ class FoundationGovernanceSummaryService
                 'external_dispatch_enabled' => $outboxAudit['external_dispatch_enabled'] ?? false,
                 'summary' => $outboxAudit['summary'] ?? [],
                 'command' => 'foundation:outbox-audit',
+            ],
+            'db_performance' => [
+                'decision' => $dbPerformance['summary']['decision'] ?? 'UNKNOWN',
+                'db_driver' => $dbPerformance['db_driver'] ?? null,
+                'applied_index_candidates' => $dbPerformance['applied_index_candidates'] ?? [],
+                'deferred_index_candidates' => $dbPerformance['deferred_index_candidates'] ?? [],
+                'summary' => $dbPerformance['summary'] ?? [],
+                'checks' => $dbPerformance['checks'] ?? [],
+                'command' => 'foundation:db-performance-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
@@ -496,6 +512,7 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $queueGovernance
      * @param  array<string, mixed>  $idempotencyAudit
      * @param  array<string, mixed>  $outboxAudit
+     * @param  array<string, mixed>  $dbPerformance
      * @return array{decision: string, blocking_watch_count: int, reason: string}
      */
     private function combinedDecision(
@@ -512,6 +529,7 @@ class FoundationGovernanceSummaryService
         array $queueGovernance = [],
         array $idempotencyAudit = [],
         array $outboxAudit = [],
+        array $dbPerformance = [],
     ): array {
         $errors = (int) ($nsf['summary']['errors'] ?? 0)
             + (int) ($dmo['summary']['errors'] ?? 0);
@@ -566,6 +584,9 @@ class FoundationGovernanceSummaryService
         }
         if (($outboxAudit['summary']['decision'] ?? 'GO') === 'FAIL') {
             $nsf9Fails[] = 'OUTBOX';
+        }
+        if (($dbPerformance['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'DB_PERFORMANCE';
         }
         if ($nsf9Fails !== []) {
             return [
@@ -624,6 +645,13 @@ class FoundationGovernanceSummaryService
         }
         if (($outboxAudit['summary']['decision'] ?? 'GO') === 'WATCH') {
             $nsf9Watches[] = 'OUTBOX';
+        }
+
+        // DBPERF-1: WATCH (optional pg_stat_user_indexes/pg_stat_statements
+        // unavailable, or a non-pgsql connection) is always non-blocking — the
+        // roadmap's own watch_criteria documents this as expected in local/CI.
+        if (($dbPerformance['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'DB_PERFORMANCE';
         }
 
         $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']) + count($nsf9Watches);

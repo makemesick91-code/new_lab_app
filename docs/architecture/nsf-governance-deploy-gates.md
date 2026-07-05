@@ -72,6 +72,7 @@ NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `archite
 | Queue governance (QUEUE-1) | `php artisan foundation:queue-governance-check` — GO/WATCH required; JSON → `storage/release-evidence/latest/queue-governance-check.json` |
 | Idempotency audit (QUEUE-1) | `php artisan foundation:idempotency-audit` — GO/WATCH required; JSON → `storage/release-evidence/latest/idempotency-audit.json` |
 | Outbox audit (QUEUE-1) | `php artisan foundation:outbox-audit` — GO/WATCH required; JSON → `storage/release-evidence/latest/outbox-audit.json` |
+| DB performance governance (DBPERF-1) | `php artisan foundation:db-performance-check --include-db-stats` — GO/WATCH required; JSON → `storage/release-evidence/latest/db-performance-check.json` |
 | Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
 | Automated smoke (NSF-9) | `php artisan release:automated-smoke --base-url=http://127.0.0.1` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |

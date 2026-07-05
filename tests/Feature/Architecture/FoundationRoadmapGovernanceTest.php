@@ -136,10 +136,11 @@ it('foundation governance summary includes roadmap status', function () {
         ->and($summary['summary']['roadmap_active_track'])->toBe('foundation_expansion');
 });
 
-it('next recommended sprint is DBPERF-1 after QUEUE-1 completion', function () {
+it('next recommended sprint is DBPERF-2 after QUEUE-1 and DBPERF-1 completion', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('DBPERF-1')
+    expect($report['next_recommended_sprint'])->toBe('DBPERF-2')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'QUEUE-1')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-1')['status'])->toBe('completed')
         ->and($report['active_track'])->toBe('foundation_expansion');
 });

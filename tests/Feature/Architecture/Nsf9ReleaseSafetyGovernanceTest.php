@@ -34,10 +34,10 @@ it('foundation summary command renders FEATURE_FLAGS RELEASE_SAFETY AUTOMATED_SM
         ->toContain('AUTOMATED_SMOKE:');
 });
 
-it('roadmap next recommended sprint is NSF-9, NSF-10, CACHE-1, QUEUE-1, or DBPERF-1 depending on completion status', function () {
+it('roadmap next recommended sprint is NSF-9, NSF-10, CACHE-1, QUEUE-1, DBPERF-1, or DBPERF-2 depending on completion status', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBeIn(['NSF-9', 'NSF-10', 'CACHE-1', 'QUEUE-1', 'DBPERF-1']);
+    expect($report['next_recommended_sprint'])->toBeIn(['NSF-9', 'NSF-10', 'CACHE-1', 'QUEUE-1', 'DBPERF-1', 'DBPERF-2']);
 });
 
 it('roadmap sequence order is preserved regardless of NSF-9 status', function () {

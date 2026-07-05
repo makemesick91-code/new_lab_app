@@ -133,7 +133,7 @@ php artisan architecture:nsf-governance-check
 - Foundation governance summary now includes a **ROADMAP** section
   (`architecture:foundation-governance-summary`), and
   `architecture:foundation-roadmap-check` returns GO/WATCH/FAIL.
-- NSF-9, NSF-10, CACHE-1, and QUEUE-1 completed this sequence; next locked sprint: **DBPERF-1**.
+- NSF-9, NSF-10, CACHE-1, QUEUE-1, and DBPERF-1 completed this sequence; next locked sprint: **DBPERF-2**.
 
 ## QUEUE-1 Queue, Idempotency & Outbox Foundation (2026-07-05)
 
@@ -171,6 +171,26 @@ php artisan architecture:nsf-governance-check
   7. Cache governance command is part of CI, release evidence, deploy gate, and Foundation summary.
   8. Future caching implementation must reference `config/cache_governance.php`.
 - See [`cache-1-cache-strategy-redis-readiness-invalidation-governance.md`](cache-1-cache-strategy-redis-readiness-invalidation-governance.md).
+
+## DBPERF-1 PostgreSQL Index Optimization & Query Plan Audit (2026-07-05)
+
+- DB performance governance source of truth: `config/db_performance_governance.php`.
+- Read-only gate: `php artisan foundation:db-performance-check [--json] [--include-db-stats] [--include-query-plan-samples]`.
+- Foundation governance summary includes **DB_PERFORMANCE**; Combined GO treats DB_PERFORMANCE FAIL as NO-GO; WATCH (optional `pg_stat_user_indexes`/`pg_stat_statements` unavailable, or a non-pgsql connection) is always non-blocking.
+- **Permanent DB performance rules:**
+  1. No index change without query-plan evidence.
+  2. No destructive index changes in a normal sprint.
+  3. Additive index only unless an explicit DBA-approved rollback sprint says otherwise.
+  4. PostgreSQL concurrent index migrations must run outside a transaction (`withinTransaction = false`).
+  5. No heavy production `EXPLAIN ANALYZE` without safety approval — the DB performance gate only ever runs `EXPLAIN` (never `ANALYZE`).
+  6. No PII/secrets/raw row data in query plan artifacts.
+  7. Branch-scoped queries must preserve branch filters and branch-safe indexes.
+  8. Inventory current stock must remain a ledger `SUM` from `trx_inventory_movements`.
+  9. Reporting/index optimization must not alter financial/RME/inventory semantics.
+  10. The DB performance command is part of CI, release evidence, deploy gate, and Foundation summary.
+  11. Future PgBouncer/runtime-tuning work (DBPERF-2) must reference DBPERF-1 evidence.
+  12. Partitioning remains design-only until PART-1.
+- See [`dbperf-1-postgresql-index-optimization-query-plan-audit.md`](dbperf-1-postgresql-index-optimization-query-plan-audit.md).
 
 ## NSF-9 Release Safety, Feature Flag & Automated Smoke (2026-07-04)
 

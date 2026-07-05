@@ -276,6 +276,12 @@ class ReleaseEvidenceService
                 'command' => 'foundation:outbox-audit',
                 'arguments' => ['--json' => true],
             ],
+            'db-performance-check.json' => [
+                'command' => 'foundation:db-performance-check',
+                'arguments' => $profile === 'vps'
+                    ? ['--json' => true, '--include-db-stats' => true]
+                    : ['--json' => true],
+            ],
             'automated-smoke.json' => [
                 'command' => 'release:automated-smoke',
                 'arguments' => ['--json' => true],

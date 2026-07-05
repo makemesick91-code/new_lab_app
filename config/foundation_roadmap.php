@@ -212,7 +212,7 @@ return [
         [
             'id' => 'DBPERF-1',
             'title' => 'PostgreSQL Index Optimization & Query Plan Audit',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 5,
             'depends_on' => ['NSF-9'],
             'category' => 'db_performance',

@@ -34,6 +34,7 @@ return [
         'foundation:queue-governance-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
+        'foundation:db-performance-check',
         'foundation:release-safety-check',
         'release:automated-smoke',
     ],
