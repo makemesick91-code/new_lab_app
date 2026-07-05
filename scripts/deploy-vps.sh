@@ -66,6 +66,9 @@ php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit
 php artisan foundation:outbox-audit --json > storage/release-evidence/latest/outbox-audit.json || true
+php artisan foundation:db-performance-check
+php artisan foundation:db-performance-check --include-db-stats
+php artisan foundation:db-performance-check --include-db-stats --json > storage/release-evidence/latest/db-performance-check.json || true
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary

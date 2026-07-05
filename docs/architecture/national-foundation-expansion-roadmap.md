@@ -69,8 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `DBPERF-1` (NSF-9, NSF-10, CACHE-1, and QUEUE-1 completed — see
-[`queue-1-queue-idempotency-outbox-foundation.md`](queue-1-queue-idempotency-outbox-foundation.md)).
+**Next recommended sprint:** `DBPERF-2` (NSF-9, NSF-10, CACHE-1, QUEUE-1, and DBPERF-1 completed — see
+[`dbperf-1-postgresql-index-optimization-query-plan-audit.md`](dbperf-1-postgresql-index-optimization-query-plan-audit.md)).
 
 ---
 
@@ -142,11 +142,28 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
   evidence (ci/vps), release safety, CI workflow, and `scripts/deploy-vps.sh`.
   No long-running worker, no Redis/SQS runtime, no external dispatch enabled.
 
-### DBPERF-1 — PostgreSQL Index Optimization & Query Plan Audit
+### DBPERF-1 — PostgreSQL Index Optimization & Query Plan Audit — **COMPLETED**
+- **Status:** Completed. See
+  [`dbperf-1-postgresql-index-optimization-query-plan-audit.md`](dbperf-1-postgresql-index-optimization-query-plan-audit.md)
+  and `docs/sprints/dbperf-1-postgresql-index-optimization-query-plan-audit-evidence.md`.
 - **Objective:** Query-plan audit + additive index optimization.
 - **Why this order:** Optimize workload before pooling/tuning.
 - **Out of scope:** destructive schema rewrites; partitioning production migration.
 - **Production safety:** additive indexes only; no migrate:fresh/db:wipe; large builds in low-traffic window.
+- **Delivered:** `config/db_performance_governance.php` governance source of
+  truth (global rules, denied actions, target query families, index
+  candidate inventory); `App\Services\Foundation\DbPerformanceGovernanceService`
+  / `foundation:db-performance-check` (read-only; optional `--include-db-stats`
+  reads `pg_indexes`/`pg_stat_user_tables`/`pg_stat_user_indexes`/
+  `pg_stat_statements` availability; optional `--include-query-plan-samples`
+  runs sanitized `EXPLAIN`-only, never `ANALYZE`, plan summaries). Audit found
+  almost every target query family already covered by the pre-existing NSF-2
+  safe index pack and Sprint 68.1/68.2 read-path indexes; the one
+  evidence-backed gap found (`sys_idempotency_keys` expiry sweep) was closed
+  additively via `CREATE INDEX CONCURRENTLY IF NOT EXISTS`. Wired into
+  Foundation Summary, release evidence (ci/vps), release safety, CI workflow,
+  and `scripts/deploy-vps.sh`. No PgBouncer, no partitioning, no read-replica
+  routing, no runtime tuning.
 
 ### DBPERF-2 — PgBouncer & PostgreSQL Runtime Tuning
 - **Objective:** PgBouncer pooling + PostgreSQL tuning with **connection-pool rollback plan**.

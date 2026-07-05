@@ -246,6 +246,11 @@ jobs:
           php artisan foundation:idempotency-audit --json > storage/ci-evidence/idempotency-audit.json
           php artisan foundation:outbox-audit --json > storage/ci-evidence/outbox-audit.json
 
+      - name: DB performance governance check (DBPERF-1)
+        run: |
+          php artisan foundation:db-performance-check
+          php artisan foundation:db-performance-check --json > storage/ci-evidence/db-performance-check.json
+
       - name: Release safety check
         run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
 

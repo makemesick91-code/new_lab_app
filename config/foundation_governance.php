@@ -94,6 +94,17 @@ return [
                     'php artisan foundation:outbox-audit',
                 ],
             ],
+            'DBPERF-1' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/db-performance-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:db-performance-check',
+                    'php artisan foundation:db-performance-check --json',
+                ],
+            ],
         ],
     ],
 
