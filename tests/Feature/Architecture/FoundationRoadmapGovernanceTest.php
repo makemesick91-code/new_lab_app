@@ -136,10 +136,10 @@ it('foundation governance summary includes roadmap status', function () {
         ->and($summary['summary']['roadmap_active_track'])->toBe('foundation_expansion');
 });
 
-it('next recommended sprint is REPLICA-1 after LB-1 completion', function () {
+it('next recommended sprint is MON-1 after ROADMAP-1 canonicalization', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('REPLICA-1')
+    expect($report['next_recommended_sprint'])->toBe('MON-1')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'QUEUE-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-2')['status'])->toBe('completed')
@@ -147,6 +147,11 @@ it('next recommended sprint is REPLICA-1 after LB-1 completion', function () {
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'STORAGE-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'LB-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'STATELESS-1')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'REPLICA-1')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'CACHE-1-REDIS-READINESS')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'OBS-1')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'OBS-2')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'ROADMAP-1-CANONICALIZATION')['status'])->toBe('completed')
         ->and($report['active_track'])->toBe('foundation_expansion');
 });
 

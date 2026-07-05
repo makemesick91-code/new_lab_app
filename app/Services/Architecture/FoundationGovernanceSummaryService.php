@@ -9,6 +9,7 @@ use App\Services\Foundation\CacheRedisGovernanceService;
 use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
+use App\Services\Foundation\FoundationRoadmapGovernanceService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
 use App\Services\Foundation\ObservabilityGovernanceService;
@@ -66,6 +67,7 @@ class FoundationGovernanceSummaryService
         private readonly CacheRedisGovernanceService $cacheRedisGovernance,
         private readonly ObservabilityGovernanceService $observabilityGovernance,
         private readonly ObservabilityPipelineGovernanceService $observabilityPipelineGovernance,
+        private readonly FoundationRoadmapGovernanceService $roadmapGovernance,
     ) {}
 
     /**
@@ -120,6 +122,7 @@ class FoundationGovernanceSummaryService
         $cacheRedisGovernance = $this->cacheRedisGovernance->collect();
         $observabilityGovernance = $this->observabilityGovernance->collect();
         $observabilityPipelineGovernance = $this->observabilityPipelineGovernance->collect();
+        $roadmapGovernance = $this->roadmapGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -415,6 +418,16 @@ class FoundationGovernanceSummaryService
                 'warnings' => $observabilityPipelineGovernance['warnings'] ?? [],
                 'rules' => $observabilityPipelineGovernance['rules'] ?? [],
                 'command' => 'obs:pipeline-readiness-check',
+            ],
+            'roadmap_governance' => [
+                'decision' => $roadmapGovernance['decision'] ?? 'UNKNOWN',
+                'next_recommended_sprint' => $roadmapGovernance['next_recommended_sprint'] ?? null,
+                'stale_next_detected' => $roadmapGovernance['stale_next_detected'] ?? false,
+                'completed_count' => $roadmapGovernance['completed_count'] ?? 0,
+                'missing_metadata' => $roadmapGovernance['missing_metadata'] ?? [],
+                'total_planned_sprints' => $roadmapGovernance['total_planned_sprints'] ?? 0,
+                'rules' => $roadmapGovernance['rules'] ?? [],
+                'command' => 'foundation:roadmap-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
