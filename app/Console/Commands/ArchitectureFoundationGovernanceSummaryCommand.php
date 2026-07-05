@@ -161,6 +161,16 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $storageGovernance = $report['storage_governance'] ?? [];
+        $this->line(sprintf(
+            'STORAGE_GOVERNANCE: %s — object storage: %s, readiness: %s, %d rule(s)',
+            $storageGovernance['decision'] ?? 'UNKNOWN',
+            ($storageGovernance['object_storage_enabled'] ?? false) ? 'enabled' : 'disabled',
+            $storageGovernance['readiness_status'] ?? 'unknown',
+            count($storageGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 

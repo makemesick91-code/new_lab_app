@@ -60,6 +60,23 @@ return [
             'report' => false,
         ],
 
+        // STORAGE-1 — object storage readiness (S3-compatible / MinIO / AWS S3).
+        // OFF by default; only used when OBJECT_STORAGE_ENABLED=true (see config/object_storage.php).
+        // No existing file is moved here; this disk is additive foundation only.
+        'object' => [
+            'driver' => env('OBJECT_STORAGE_DRIVER', 's3'),
+            'key' => env('OBJECT_STORAGE_ACCESS_KEY_ID'),
+            'secret' => env('OBJECT_STORAGE_SECRET_ACCESS_KEY'),
+            'region' => env('OBJECT_STORAGE_REGION', 'auto'),
+            'bucket' => env('OBJECT_STORAGE_BUCKET'),
+            'url' => env('OBJECT_STORAGE_URL'),
+            'endpoint' => env('OBJECT_STORAGE_ENDPOINT'),
+            'use_path_style_endpoint' => env('OBJECT_STORAGE_USE_PATH_STYLE_ENDPOINT', true),
+            'throw' => env('OBJECT_STORAGE_THROW', true),
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
     ],
 
     /*

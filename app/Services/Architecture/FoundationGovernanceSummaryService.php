@@ -15,6 +15,7 @@ use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Foundation\ReportingSummaryGovernanceService;
 use App\Services\Foundation\ReportingSummaryRefreshService;
+use App\Services\Foundation\StorageGovernanceService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
@@ -52,6 +53,7 @@ class FoundationGovernanceSummaryService
         private readonly PostgresRuntimeGovernanceService $postgresRuntimeGovernance,
         private readonly ReportingSummaryGovernanceService $reportingSummaryGovernance,
         private readonly ReportingSummaryRefreshService $reportingSummaryRefresh,
+        private readonly StorageGovernanceService $storageGovernance,
     ) {}
 
     /**
@@ -99,6 +101,7 @@ class FoundationGovernanceSummaryService
         $postgresRuntime = $this->postgresRuntimeGovernance->collect();
         $reportingSummary = $this->reportingSummaryGovernance->collect();
         $reportingSummaryRefresh = $this->reportingSummaryRefresh->preview();
+        $storageGovernance = $this->storageGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -307,6 +310,14 @@ class FoundationGovernanceSummaryService
                 'physical_summary_exists' => $reportingSummaryRefresh['physical_summary_exists'] ?? false,
                 'summary' => $reportingSummaryRefresh['summary'] ?? [],
                 'command' => 'foundation:reporting-summary-refresh --dry-run',
+            ],
+            'storage_governance' => [
+                'decision' => $storageGovernance['decision'] ?? 'UNKNOWN',
+                'object_storage_enabled' => $storageGovernance['object_storage_enabled'] ?? false,
+                'disk' => $storageGovernance['disk'] ?? 'object',
+                'readiness_status' => $storageGovernance['readiness_status'] ?? 'unknown',
+                'rules' => $storageGovernance['rules'] ?? [],
+                'command' => 'storage:object-readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
