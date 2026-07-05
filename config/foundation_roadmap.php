@@ -313,7 +313,7 @@ return [
         [
             'id' => 'STATELESS-1',
             'title' => 'Stateless App Readiness',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 9,
             'depends_on' => ['STORAGE-1'],
             'category' => 'scaling',
