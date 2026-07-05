@@ -108,4 +108,5 @@ membuat pola arsitektur baru sebelum Enterprise Foundation Closure GO.
 - `config/foundation_roadmap.php` — roadmap kanonik + pointer baseline (ENT-1).
 - `docs/architecture/database-performance-contract.md` — kontrak performa database (ENT-2, DBPERF-R001..DBPERF-R014).
 - `docs/architecture/reporting-materialized-summary-contract.md` — kontrak reporting summary (ENT-3, RPTSUM-R001..RPTSUM-R016).
+- `docs/architecture/redis-cache-enterprise-policy.md` — policy Redis/cache enterprise (ENT-4, CACHE-R001..CACHE-R018).
 - `.cursor/rules/50-enterprise-architecture-baseline.mdc` — ringkasan rule untuk AI assistant.

@@ -112,6 +112,11 @@ Cache layer acceleration on top of summaries must be compatible with the ENT-4
 Redis Cache Enterprise Policy (standard key prefixes, explicit TTL, clear
 invalidation, no raw PII cached).
 
+> **ENT-4 fulfilled (2026-07-06):** summary/report cache acceleration must now follow
+> `docs/architecture/redis-cache-enterprise-policy.md`,
+> `docs/architecture/cache-ttl-matrix.md`, and
+> `docs/architecture/cache-invalidation-matrix.md`.
+
 ### RPTSUM-R015 — Queue compatibility rule
 
 Queue-heavy refresh must be compatible with the ENT-5/ENT-6 queue, retry,
@@ -144,5 +149,8 @@ indexes matching its access pattern, a rebuild procedure, a validation
 - `docs/architecture/enterprise-foundation-freeze-rules.md` — parent freeze rules (Sections 5, 6, 14)
 - `docs/architecture/database-performance-contract.md` — ENT-2 database performance contract
 - `docs/architecture/reporting-summary-candidate-inventory.md` — ENT-3 candidate baseline
+- `docs/architecture/redis-cache-enterprise-policy.md` — ENT-4 cache key, TTL, invalidation, branch-scope, and PII safety policy
+- `docs/architecture/cache-ttl-matrix.md` — ENT-4 cache TTL matrix
+- `docs/architecture/cache-invalidation-matrix.md` — ENT-4 cache invalidation matrix
 - `docs/architecture/rpt-1-materialized-view-rpt-summary-foundation.md` — shipped RPT-1 foundation
 - `.cursor/rules/52-reporting-materialized-summary.mdc` — AI-assistant mirror rule

@@ -138,16 +138,25 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 
 ## 6. Cache Enterprise Rules
 
+> **ENT-4 — Redis Cache Enterprise Policy (2026-07-06):** Bagian ini dikunci sebagai
+> policy cache enterprise yang durable dan dapat diaudit melalui
+> `docs/architecture/redis-cache-enterprise-policy.md` (rule CACHE-R001..CACHE-R018),
+> TTL matrix `docs/architecture/cache-ttl-matrix.md`, invalidation matrix
+> `docs/architecture/cache-invalidation-matrix.md`, dan Redis readiness runbook
+> `docs/architecture/redis-readiness-runbook.md`. ENT-4 tidak mengubah runtime
+> cache/session/queue driver.
+
 1. Redis adalah shared cache utama untuk data yang aman dicache.
-2. Cache key wajib menggunakan prefix standar: domain, branch, filter, versi.
+2. Cache key wajib menggunakan struktur kanonik `dms:{env}:{domain}:{scope}:{identifier}:{version}`.
 3. Cache tidak boleh menyimpan data PII mentah.
 4. TTL wajib eksplisit.
 5. Invalidation wajib jelas.
 6. Data transaksi penting tidak boleh bergantung pada cache sebagai source of truth.
 7. Cache hanya akselerator, bukan pengganti database.
-8. Dashboard/report boleh cache, tetapi harus punya stale policy — akselerasi cache di atas summary mengikuti kontrak ENT-3 (`docs/architecture/reporting-materialized-summary-contract.md`, RPTSUM-R014).
-9. Cache governance command wajib bisa membaca status konfigurasi cache.
-10. Perubahan cache wajib punya test atau smoke evidence.
+8. Dashboard/report boleh cache, tetapi harus punya stale policy — akselerasi cache di atas summary mengikuti kontrak ENT-3 (`docs/architecture/reporting-materialized-summary-contract.md`, RPTSUM-R014) dan TTL/invalidation matrix ENT-4.
+9. Cache/readiness status wajib masuk observability/health check ENT-7/ENT-8.
+10. Cache governance command wajib bisa membaca status konfigurasi cache.
+11. Perubahan cache wajib punya test atau smoke evidence untuk key format, TTL, invalidation, branch scope, dan PII safety.
 
 ---
 
@@ -182,6 +191,9 @@ Minimal harus bisa membaca:
 8. Storage permission status.
 9. DB/Redis/queue health.
 10. Disk usage dan backup status.
+
+Redis/cache health mengikuti runbook ENT-4 dan tidak boleh menampilkan secret, session payload,
+atau isi file environment.
 
 Aturan keamanan:
 
