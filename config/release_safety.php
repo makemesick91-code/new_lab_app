@@ -35,6 +35,7 @@ return [
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',
+        'foundation:postgres-runtime-check',
         'foundation:release-safety-check',
         'release:automated-smoke',
     ],

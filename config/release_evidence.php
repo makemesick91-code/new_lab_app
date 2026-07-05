@@ -33,6 +33,7 @@ return [
                 'automated-smoke.json',
                 'foundation-governance-summary.json',
                 'nsf-governance-check.json',
+                'postgres-runtime-check.json',
             ],
         ],
 
@@ -48,6 +49,7 @@ return [
                 'idempotency-audit.json',
                 'outbox-audit.json',
                 'db-performance-check.json',
+                'postgres-runtime-check.json',
                 'automated-smoke.json',
                 'foundation-governance-summary.json',
                 'nsf-governance-check.json',
@@ -68,6 +70,7 @@ return [
                 'idempotency-audit.json',
                 'outbox-audit.json',
                 'db-performance-check.json',
+                'postgres-runtime-check.json',
                 'release-safety-check.json',
                 'automated-smoke.json',
                 'foundation-governance-summary.json',

@@ -69,8 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `DBPERF-2` (NSF-9, NSF-10, CACHE-1, QUEUE-1, and DBPERF-1 completed — see
-[`dbperf-1-postgresql-index-optimization-query-plan-audit.md`](dbperf-1-postgresql-index-optimization-query-plan-audit.md)).
+**Next recommended sprint:** `RPT-1` (NSF-9, NSF-10, CACHE-1, QUEUE-1, DBPERF-1, and DBPERF-2 completed — see
+[`dbperf-2-pgbouncer-postgresql-runtime-tuning.md`](dbperf-2-pgbouncer-postgresql-runtime-tuning.md)).
 
 ---
 
@@ -165,10 +165,31 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
   and `scripts/deploy-vps.sh`. No PgBouncer, no partitioning, no read-replica
   routing, no runtime tuning.
 
-### DBPERF-2 — PgBouncer & PostgreSQL Runtime Tuning
+### DBPERF-2 — PgBouncer & PostgreSQL Runtime Tuning — **COMPLETED**
+- **Status:** Completed. See
+  [`dbperf-2-pgbouncer-postgresql-runtime-tuning.md`](dbperf-2-pgbouncer-postgresql-runtime-tuning.md)
+  and `docs/sprints/dbperf-2-pgbouncer-postgresql-runtime-tuning-evidence.md`.
 - **Objective:** PgBouncer pooling + PostgreSQL tuning with **connection-pool rollback plan**.
 - **Why this order:** After index audit; readiness-first with rollback.
+- **Out of scope:** production PgBouncer routing without rollback plan.
 - **Production safety:** no PgBouncer production routing without rollback plan.
+- **Delivered:** `config/postgres_runtime_governance.php` governance source of
+  truth (global rules, PgBouncer readiness policy, app compatibility audit
+  findings, runtime audit setting list, tuning recommendation policy, denied
+  actions); `App\Services\Foundation\PostgresRuntimeGovernanceService` /
+  `foundation:postgres-runtime-check` (read-only; optional
+  `--include-db-stats` reads safe `SHOW <setting>` values + sanitized
+  `pg_stat_activity` connection counts; optional `--include-pgbouncer-probe`
+  detects a local PgBouncer binary/service/listener without requiring one);
+  four feature flags (`foundation.db.pg_bouncer_readiness`,
+  `.pg_bouncer_cutover_enabled`, `.postgres_runtime_tuning_recommendations`,
+  `.postgres_runtime_apply_enabled`), all default `false`; PgBouncer pilot
+  template + cutover checklist
+  (`docs/architecture/templates/pgbouncer.ini.example`,
+  `pgbouncer-cutover-checklist.md`). Wired into Foundation Summary, release
+  evidence (ci/vps), release safety, CI workflow, and `scripts/deploy-vps.sh`.
+  No production cutover, no `DB_HOST`/`DB_PORT` change, no `postgresql.conf`
+  edit, no PostgreSQL restart, no runtime tuning applied.
 
 ### RPT-1 — Materialized View + rpt_* Summary Foundation
 - **Objective:** `rpt_*` summary tables first, then materialized views.

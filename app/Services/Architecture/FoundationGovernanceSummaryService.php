@@ -9,6 +9,7 @@ use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\OutboxService;
+use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
 use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
@@ -46,6 +47,7 @@ class FoundationGovernanceSummaryService
         private readonly IdempotencyService $idempotencyService,
         private readonly OutboxService $outboxService,
         private readonly DbPerformanceGovernanceService $dbPerformanceGovernance,
+        private readonly PostgresRuntimeGovernanceService $postgresRuntimeGovernance,
     ) {}
 
     /**
@@ -90,6 +92,7 @@ class FoundationGovernanceSummaryService
             ? $this->outboxService->audit()
             : ['summary' => ['decision' => 'WATCH'], 'total_records' => 0, 'by_status' => [], 'by_payload_classification' => []];
         $dbPerformance = $this->dbPerformanceGovernance->collect();
+        $postgresRuntime = $this->postgresRuntimeGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -106,6 +109,7 @@ class FoundationGovernanceSummaryService
             $idempotencyAudit,
             $outboxAudit,
             $dbPerformance,
+            $postgresRuntime,
         );
 
         return [
@@ -180,6 +184,8 @@ class FoundationGovernanceSummaryService
                 'db_performance_decision' => $dbPerformance['summary']['decision'] ?? 'UNKNOWN',
                 'db_performance_applied_index_count' => count($dbPerformance['applied_index_candidates'] ?? []),
                 'db_performance_deferred_index_count' => count($dbPerformance['deferred_index_candidates'] ?? []),
+                'postgres_runtime_decision' => $postgresRuntime['summary']['decision'] ?? 'UNKNOWN',
+                'postgres_runtime_app_potential_cutover' => $postgresRuntime['app_cutover_detection']['potential_cutover'] ?? false,
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
@@ -261,6 +267,16 @@ class FoundationGovernanceSummaryService
                 'summary' => $dbPerformance['summary'] ?? [],
                 'checks' => $dbPerformance['checks'] ?? [],
                 'command' => 'foundation:db-performance-check',
+            ],
+            'postgres_runtime' => [
+                'decision' => $postgresRuntime['summary']['decision'] ?? 'UNKNOWN',
+                'db_driver' => $postgresRuntime['db_driver'] ?? null,
+                'app_cutover_detection' => $postgresRuntime['app_cutover_detection'] ?? null,
+                'flags' => $postgresRuntime['flags'] ?? [],
+                'recommendations_count' => count($postgresRuntime['recommendations'] ?? []),
+                'summary' => $postgresRuntime['summary'] ?? [],
+                'checks' => $postgresRuntime['checks'] ?? [],
+                'command' => 'foundation:postgres-runtime-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
@@ -513,6 +529,7 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $idempotencyAudit
      * @param  array<string, mixed>  $outboxAudit
      * @param  array<string, mixed>  $dbPerformance
+     * @param  array<string, mixed>  $postgresRuntime
      * @return array{decision: string, blocking_watch_count: int, reason: string}
      */
     private function combinedDecision(
@@ -530,6 +547,7 @@ class FoundationGovernanceSummaryService
         array $idempotencyAudit = [],
         array $outboxAudit = [],
         array $dbPerformance = [],
+        array $postgresRuntime = [],
     ): array {
         $errors = (int) ($nsf['summary']['errors'] ?? 0)
             + (int) ($dmo['summary']['errors'] ?? 0);
@@ -587,6 +605,9 @@ class FoundationGovernanceSummaryService
         }
         if (($dbPerformance['summary']['decision'] ?? 'GO') === 'FAIL') {
             $nsf9Fails[] = 'DB_PERFORMANCE';
+        }
+        if (($postgresRuntime['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'POSTGRES_RUNTIME';
         }
         if ($nsf9Fails !== []) {
             return [
@@ -652,6 +673,13 @@ class FoundationGovernanceSummaryService
         // roadmap's own watch_criteria documents this as expected in local/CI.
         if (($dbPerformance['summary']['decision'] ?? 'GO') === 'WATCH') {
             $nsf9Watches[] = 'DB_PERFORMANCE';
+        }
+
+        // DBPERF-2: WATCH (PgBouncer not installed/probed while cutover is
+        // disabled, or a non-pgsql connection) is always non-blocking — the
+        // roadmap's own watch_criteria documents this as expected in local/CI.
+        if (($postgresRuntime['summary']['decision'] ?? 'GO') === 'WATCH') {
+            $nsf9Watches[] = 'POSTGRES_RUNTIME';
         }
 
         $nonBlocking = count($nsfWatch['items']) + count($dmoWatch['items']) + count($nsf9Watches);

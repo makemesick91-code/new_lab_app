@@ -251,6 +251,11 @@ jobs:
           php artisan foundation:db-performance-check
           php artisan foundation:db-performance-check --json > storage/ci-evidence/db-performance-check.json
 
+      - name: PgBouncer readiness & PostgreSQL runtime tuning check (DBPERF-2)
+        run: |
+          php artisan foundation:postgres-runtime-check
+          php artisan foundation:postgres-runtime-check --json > storage/ci-evidence/postgres-runtime-check.json
+
       - name: Release safety check
         run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
 

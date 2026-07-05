@@ -236,7 +236,7 @@ return [
         [
             'id' => 'DBPERF-2',
             'title' => 'PgBouncer & PostgreSQL Runtime Tuning',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 6,
             'depends_on' => ['DBPERF-1'],
             'category' => 'db_performance',
