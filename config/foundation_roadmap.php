@@ -337,7 +337,7 @@ return [
         [
             'id' => 'LB-1',
             'title' => 'Load Balancer Pilot',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 10,
             'depends_on' => ['STATELESS-1'],
             'category' => 'scaling',

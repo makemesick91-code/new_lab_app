@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\HomeDashboardController;
+use App\Http\Controllers\LoadBalancerHealthController;
 use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
@@ -77,6 +78,12 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect()->route('login');
 });
+
+// LB-1 — minimal, unauthenticated health endpoint for load balancer checks.
+if (config('load_balancer.health_endpoint_enabled')) {
+    Route::get(config('load_balancer.health_endpoint_path', '/health/lb'), LoadBalancerHealthController::class)
+        ->name('health.lb');
+}
 
 Route::get('/dashboard', [HomeDashboardController::class, 'index'])
     ->middleware(['auth', 'verified', 'permission:view dashboard|view_owner_dashboard'])
