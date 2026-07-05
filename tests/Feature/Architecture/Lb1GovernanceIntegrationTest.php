@@ -52,12 +52,12 @@ it('lb governance watches when forwarded headers are expected without trusted pr
         ->and($result['warnings'])->not->toBeEmpty();
 });
 
-it('roadmap marks LB-1 completed (next recommended sprint is now MON-1 after ROADMAP-1 canonicalization)', function () {
+it('roadmap marks LB-1 completed (next recommended sprint is now ENT-1 after ENT-0 reconciliation)', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $lb1 = collect($report['approved_sequence'])->firstWhere('id', 'LB-1');
 
     expect($lb1['status'])->toBe('completed')
-        ->and($report['next_recommended_sprint'])->toBe('MON-1');
+        ->and($report['next_recommended_sprint'])->toBe('ENT-1');
 });
 
 it('.env.example ships LB readiness keys without real secret values', function () {

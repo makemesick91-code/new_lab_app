@@ -32,7 +32,7 @@ it('storage governance watches when object storage is enabled but misconfigured'
         ->and($result['readiness_status'])->toBe('misconfigured');
 });
 
-it('roadmap marks STORAGE-1 completed and next recommended sprint is REPLICA-1', function () {
+it('roadmap marks STORAGE-1 completed (next recommended sprint is now ENT-1 after ENT-0 reconciliation)', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $storage1 = collect($report['approved_sequence'])->firstWhere('id', 'STORAGE-1');
 
@@ -40,7 +40,7 @@ it('roadmap marks STORAGE-1 completed and next recommended sprint is REPLICA-1',
 
     expect($storage1['status'])->toBe('completed')
         ->and($rawStorage1['requires_rollback_plan'])->toBeTrue()
-        ->and($report['next_recommended_sprint'])->toBe('MON-1');
+        ->and($report['next_recommended_sprint'])->toBe('ENT-1');
 });
 
 it('.env.example ships object storage keys without real secret values', function () {
