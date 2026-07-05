@@ -12,6 +12,7 @@ use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
 use App\Services\Foundation\ObservabilityGovernanceService;
+use App\Services\Foundation\ObservabilityPipelineGovernanceService;
 use App\Services\Foundation\OutboxService;
 use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
@@ -64,6 +65,7 @@ class FoundationGovernanceSummaryService
         private readonly DatabaseReplicaGovernanceService $databaseReplicaGovernance,
         private readonly CacheRedisGovernanceService $cacheRedisGovernance,
         private readonly ObservabilityGovernanceService $observabilityGovernance,
+        private readonly ObservabilityPipelineGovernanceService $observabilityPipelineGovernance,
     ) {}
 
     /**
@@ -117,6 +119,7 @@ class FoundationGovernanceSummaryService
         $databaseReplicaGovernance = $this->databaseReplicaGovernance->collect();
         $cacheRedisGovernance = $this->cacheRedisGovernance->collect();
         $observabilityGovernance = $this->observabilityGovernance->collect();
+        $observabilityPipelineGovernance = $this->observabilityPipelineGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -225,6 +228,10 @@ class FoundationGovernanceSummaryService
                 'backup_verification_decision' => $backupVerification['decision'] ?? 'NOT_APPLICABLE',
                 'observability_governance_decision' => $observabilityGovernance['decision'] ?? 'UNKNOWN',
                 'observability_readiness_status' => $observabilityGovernance['readiness_status'] ?? 'unknown',
+                'observability_pipeline_governance_decision' => $observabilityPipelineGovernance['decision'] ?? 'UNKNOWN',
+                'observability_pipeline_readiness_status' => $observabilityPipelineGovernance['readiness_status'] ?? 'unknown',
+                'central_logging_enabled' => $observabilityPipelineGovernance['central_logging_enabled'] ?? false,
+                'error_tracking_enabled' => $observabilityPipelineGovernance['error_tracking_enabled'] ?? false,
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -396,6 +403,18 @@ class FoundationGovernanceSummaryService
                 'warnings' => $observabilityGovernance['warnings'] ?? [],
                 'rules' => $observabilityGovernance['rules'] ?? [],
                 'command' => 'obs:readiness-check',
+            ],
+            'observability_pipeline_governance' => [
+                'decision' => $observabilityPipelineGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $observabilityPipelineGovernance['readiness_status'] ?? 'unknown',
+                'central_logging_enabled' => $observabilityPipelineGovernance['central_logging_enabled'] ?? false,
+                'central_logging_driver' => $observabilityPipelineGovernance['central_logging_driver'] ?? 'none',
+                'error_tracking_enabled' => $observabilityPipelineGovernance['error_tracking_enabled'] ?? false,
+                'error_tracking_driver' => $observabilityPipelineGovernance['error_tracking_driver'] ?? 'none',
+                'request_id_enabled' => $observabilityPipelineGovernance['request_id_enabled'] ?? false,
+                'warnings' => $observabilityPipelineGovernance['warnings'] ?? [],
+                'rules' => $observabilityPipelineGovernance['rules'] ?? [],
+                'command' => 'obs:pipeline-readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
