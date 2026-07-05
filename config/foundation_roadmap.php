@@ -68,6 +68,9 @@ return [
         // ENT-2 — Database Performance Contract.
         'database_performance_contract_locked' => true,
         'database_performance_contract_doc' => 'docs/architecture/database-performance-contract.md',
+        // ENT-3 — Reporting Materialized Summary Expansion.
+        'reporting_materialized_summary_contract_locked' => true,
+        'reporting_materialized_summary_contract_doc' => 'docs/architecture/reporting-materialized-summary-contract.md',
     ],
 
     /**
@@ -588,6 +591,7 @@ return [
             'hotspot_inventory_doc' => 'docs/architecture/database-performance-hotspot-inventory.md',
             'go_tag' => 'ent-2-database-performance-contract-go',
             'go_commit' => '89e641d31b43820873d44db196a53da56cc3175b',
+            'deploy_evidence_commit' => '22a411d',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2'],
             'objective' => 'Turn the shipped DBPERF-1 index/EXPLAIN audit and DBPERF-2 pooling/tuning design into an enforceable database performance contract (heavy-query audit, additive-only migrations, named indexes).',
             'why_this_order' => 'Performance contract must be locked before reporting expansion and load tests measure against it.',
@@ -603,12 +607,15 @@ return [
         [
             'id' => 'ENT-3',
             'title' => 'Reporting Materialized Summary Expansion',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 19,
             'depends_on' => ['ENT-2', 'RPT-1'],
             'category' => 'reporting',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'contract_doc' => 'docs/architecture/reporting-materialized-summary-contract.md',
+            'candidate_inventory_doc' => 'docs/architecture/reporting-summary-candidate-inventory.md',
+            'go_tag' => 'ent-3-reporting-materialized-summary-expansion-go',
             'related_shipped_foundations' => ['RPT-1'],
             'objective' => 'Expand the shipped RPT-1 rpt_*/materialized-summary foundation so heavy dashboards/reports read from summaries instead of raw transactions.',
             'why_this_order' => 'Reporting expansion needs the ENT-2 performance contract and precedes load-test baselining of report pages.',

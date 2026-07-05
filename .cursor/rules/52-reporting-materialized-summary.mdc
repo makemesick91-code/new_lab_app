@@ -1,0 +1,32 @@
+---
+description: DaengtisiaMS Reporting Materialized Summary Contract (ENT-3)
+globs:
+  - "**/*.php"
+alwaysApply: true
+---
+
+# Reporting Materialized Summary Contract (ENT-3)
+
+Canonical doc: `docs/architecture/reporting-materialized-summary-contract.md` (RPTSUM-R001..RPTSUM-R016).
+Candidate baseline: `docs/architecture/reporting-summary-candidate-inventory.md`.
+Shipped foundation: RPT-1 (`config/reporting_summary_governance.php`, `foundation:reporting-summary-check`).
+Parent freeze doc: `docs/architecture/enterprise-foundation-freeze-rules.md` (Sections 5, 6, 14).
+
+## Locked rules
+
+1. Heavy reports/dashboards must not repeatedly scan raw `trx_*` tables as volume grows — move to a declared summary/cache strategy.
+2. Every report/dashboard declares: source tables, branch scope, date filter, grouping, sort/pagination, PII exposure, freshness, summary/cache eligibility.
+3. Canonical prefixes: `rpt_*` report summaries, `sys_*` system metadata, `stg_*` staging/import only.
+4. Refresh strategy is explicit: synchronous (small/safe only), queued job (heavy), scheduled command (periodic), manual rebuild (recovery).
+5. Freshness is documented: real-time / near-real-time / hourly / daily / manual-rebuild.
+6. Summary data is never the source of truth for transactional decisions.
+7. Source of truth stays transactional/ledger tables, invoices, visits, payments.
+8. Inventory stock stays ledger-derived from `trx_inventory_movements` — summaries accelerate reads, never become mutable stock.
+9. Summary queries enforce branch isolation or explicit permission-gated read-only cross-branch analytics.
+10. Summaries/reports/exports mask PII — never full KTP/NIK, raw notes, or scans.
+11. Summary refresh is idempotent.
+12. Refresh failure never corrupts source transaction data.
+13. Refresh plans observability hooks for ENT-7/ENT-8.
+14. Cache acceleration must comply with the ENT-4 Redis cache policy.
+15. Queue-heavy refresh must comply with ENT-5/ENT-6 queue/idempotency/outbox foundations.
+16. Every new summary object ships with owner module, refresh command/job, matching indexes, rebuild procedure, validation query, tests, and rollback/safe-disable plan.

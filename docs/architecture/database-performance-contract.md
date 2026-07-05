@@ -112,6 +112,12 @@ Future **ENT-3 (reporting/RPT expansion)** and **ENT-4 (enterprise cache policy)
 must explicitly reference this contract and state which DBPERF rules apply to each new
 heavy query, summary, or cache they introduce.
 
+> **ENT-3 fulfilled (2026-07-06):** the reporting materialized summary expansion is now
+> locked at `docs/architecture/reporting-materialized-summary-contract.md`
+> (RPTSUM-R001..RPTSUM-R016) with its candidate baseline at
+> `docs/architecture/reporting-summary-candidate-inventory.md`; RPTSUM rules bind every
+> future summary/report to this DBPERF contract (notably DBPERF-R004/R005/R008).
+
 ---
 
 ## Enforcement
@@ -131,4 +137,5 @@ heavy query, summary, or cache they introduce.
 - `docs/architecture/dbperf-1-postgresql-index-optimization-query-plan-audit.md` — shipped index/EXPLAIN audit
 - `docs/architecture/dbperf-2-pgbouncer-postgresql-runtime-tuning.md` — shipped pooling/tuning design
 - `docs/architecture/database-performance-hotspot-inventory.md` — hotspot inventory baseline (ENT-2)
+- `docs/architecture/reporting-materialized-summary-contract.md` — reporting summary contract (ENT-3, RPTSUM-R001..RPTSUM-R016)
 - `docs/architecture/database-scale-governance-rules.md` — database scale governance
