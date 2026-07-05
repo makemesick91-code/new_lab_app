@@ -256,6 +256,12 @@ jobs:
           php artisan foundation:postgres-runtime-check
           php artisan foundation:postgres-runtime-check --json > storage/ci-evidence/postgres-runtime-check.json
 
+      - name: Reporting summary governance check (RPT-1)
+        run: |
+          php artisan foundation:reporting-summary-check
+          php artisan foundation:reporting-summary-check --json > storage/ci-evidence/reporting-summary-check.json
+          php artisan foundation:reporting-summary-refresh --dry-run --json > storage/ci-evidence/reporting-summary-refresh-dry-run.json
+
       - name: Release safety check
         run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
 

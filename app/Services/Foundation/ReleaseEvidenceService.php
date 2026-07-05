@@ -288,6 +288,16 @@ class ReleaseEvidenceService
                     ? ['--json' => true, '--include-db-stats' => true, '--include-pgbouncer-probe' => true]
                     : ['--json' => true],
             ],
+            'reporting-summary-check.json' => [
+                'command' => 'foundation:reporting-summary-check',
+                'arguments' => $profile === 'vps'
+                    ? ['--json' => true, '--include-db-inventory' => true]
+                    : ['--json' => true],
+            ],
+            'reporting-summary-refresh-dry-run.json' => [
+                'command' => 'foundation:reporting-summary-refresh',
+                'arguments' => ['--json' => true, '--dry-run' => true],
+            ],
             'automated-smoke.json' => [
                 'command' => 'release:automated-smoke',
                 'arguments' => ['--json' => true],

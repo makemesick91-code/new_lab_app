@@ -36,6 +36,8 @@ return [
         'foundation:outbox-audit',
         'foundation:db-performance-check',
         'foundation:postgres-runtime-check',
+        'foundation:reporting-summary-check',
+        'foundation:reporting-summary-refresh --dry-run',
         'foundation:release-safety-check',
         'release:automated-smoke',
     ],

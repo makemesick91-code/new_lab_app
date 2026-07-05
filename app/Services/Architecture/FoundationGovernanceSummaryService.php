@@ -13,6 +13,8 @@ use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
 use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
+use App\Services\Foundation\ReportingSummaryGovernanceService;
+use App\Services\Foundation\ReportingSummaryRefreshService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
 use App\Services\Inventory\BatchGovernanceAuditService;
 use App\Services\Inventory\SourceDocumentBatchAuditService;
@@ -48,6 +50,8 @@ class FoundationGovernanceSummaryService
         private readonly OutboxService $outboxService,
         private readonly DbPerformanceGovernanceService $dbPerformanceGovernance,
         private readonly PostgresRuntimeGovernanceService $postgresRuntimeGovernance,
+        private readonly ReportingSummaryGovernanceService $reportingSummaryGovernance,
+        private readonly ReportingSummaryRefreshService $reportingSummaryRefresh,
     ) {}
 
     /**
@@ -93,6 +97,8 @@ class FoundationGovernanceSummaryService
             : ['summary' => ['decision' => 'WATCH'], 'total_records' => 0, 'by_status' => [], 'by_payload_classification' => []];
         $dbPerformance = $this->dbPerformanceGovernance->collect();
         $postgresRuntime = $this->postgresRuntimeGovernance->collect();
+        $reportingSummary = $this->reportingSummaryGovernance->collect();
+        $reportingSummaryRefresh = $this->reportingSummaryRefresh->preview();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -110,6 +116,7 @@ class FoundationGovernanceSummaryService
             $outboxAudit,
             $dbPerformance,
             $postgresRuntime,
+            $reportingSummary,
         );
 
         return [
@@ -186,6 +193,9 @@ class FoundationGovernanceSummaryService
                 'db_performance_deferred_index_count' => count($dbPerformance['deferred_index_candidates'] ?? []),
                 'postgres_runtime_decision' => $postgresRuntime['summary']['decision'] ?? 'UNKNOWN',
                 'postgres_runtime_app_potential_cutover' => $postgresRuntime['app_cutover_detection']['potential_cutover'] ?? false,
+                'reporting_summary_decision' => $reportingSummary['summary']['decision'] ?? 'UNKNOWN',
+                'reporting_summary_runtime_reads_enabled' => $reportingSummary['runtime_reads_from_summary_enabled'] ?? false,
+                'reporting_summary_auto_refresh_enabled' => $reportingSummary['auto_refresh_enabled'] ?? false,
                 'release_safety_decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
@@ -277,6 +287,26 @@ class FoundationGovernanceSummaryService
                 'summary' => $postgresRuntime['summary'] ?? [],
                 'checks' => $postgresRuntime['checks'] ?? [],
                 'command' => 'foundation:postgres-runtime-check',
+            ],
+            'reporting_summary' => [
+                'decision' => $reportingSummary['summary']['decision'] ?? 'UNKNOWN',
+                'runtime_reads_from_summary_enabled' => $reportingSummary['runtime_reads_from_summary_enabled'] ?? false,
+                'auto_refresh_enabled' => $reportingSummary['auto_refresh_enabled'] ?? false,
+                'allowed_categories' => $reportingSummary['allowed_categories'] ?? [],
+                'denied_categories' => $reportingSummary['denied_categories'] ?? [],
+                'deferred_candidates' => $reportingSummary['deferred_candidates'] ?? [],
+                'materialized_views_required' => $reportingSummary['summary']['materialized_views_required'] ?? false,
+                'summary' => $reportingSummary['summary'] ?? [],
+                'checks' => $reportingSummary['checks'] ?? [],
+                'command' => 'foundation:reporting-summary-check',
+            ],
+            'reporting_summary_refresh' => [
+                'decision' => $reportingSummaryRefresh['summary']['decision'] ?? 'UNKNOWN',
+                'mode' => $reportingSummaryRefresh['mode'] ?? 'dry_run',
+                'writes_performed' => $reportingSummaryRefresh['writes_performed'] ?? false,
+                'physical_summary_exists' => $reportingSummaryRefresh['physical_summary_exists'] ?? false,
+                'summary' => $reportingSummaryRefresh['summary'] ?? [],
+                'command' => 'foundation:reporting-summary-refresh --dry-run',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
@@ -370,6 +400,8 @@ class FoundationGovernanceSummaryService
                 'inventory:backfill-source-document-batches' => array_key_exists('inventory:backfill-source-document-batches', Artisan::all()),
                 'inventory:ambiguous-batch-review-pack' => array_key_exists('inventory:ambiguous-batch-review-pack', Artisan::all()),
                 'inventory:repair-ambiguous-batch-links' => array_key_exists('inventory:repair-ambiguous-batch-links', Artisan::all()),
+                'foundation:reporting-summary-check' => array_key_exists('foundation:reporting-summary-check', Artisan::all()),
+                'foundation:reporting-summary-refresh' => array_key_exists('foundation:reporting-summary-refresh', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,
@@ -530,6 +562,7 @@ class FoundationGovernanceSummaryService
      * @param  array<string, mixed>  $outboxAudit
      * @param  array<string, mixed>  $dbPerformance
      * @param  array<string, mixed>  $postgresRuntime
+     * @param  array<string, mixed>  $reportingSummary
      * @return array{decision: string, blocking_watch_count: int, reason: string}
      */
     private function combinedDecision(
@@ -548,6 +581,7 @@ class FoundationGovernanceSummaryService
         array $outboxAudit = [],
         array $dbPerformance = [],
         array $postgresRuntime = [],
+        array $reportingSummary = [],
     ): array {
         $errors = (int) ($nsf['summary']['errors'] ?? 0)
             + (int) ($dmo['summary']['errors'] ?? 0);
@@ -608,6 +642,9 @@ class FoundationGovernanceSummaryService
         }
         if (($postgresRuntime['summary']['decision'] ?? 'GO') === 'FAIL') {
             $nsf9Fails[] = 'POSTGRES_RUNTIME';
+        }
+        if (($reportingSummary['summary']['decision'] ?? 'GO') === 'FAIL') {
+            $nsf9Fails[] = 'REPORTING_SUMMARY';
         }
         if ($nsf9Fails !== []) {
             return [

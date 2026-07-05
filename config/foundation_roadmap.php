@@ -261,9 +261,9 @@ return [
         [
             'id' => 'RPT-1',
             'title' => 'Materialized View + rpt_* Summary Foundation',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 7,
-            'depends_on' => ['DBPERF-1'],
+            'depends_on' => ['DBPERF-2'],
             'category' => 'reporting',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
@@ -271,8 +271,8 @@ return [
             'why_this_order' => 'rpt_* summary must precede materialized view expansion; follows index audit for efficient refresh.',
             'allowed_scope' => [
                 'rpt_* summary table design + refresh strategy',
-                'materialized view design (additive)',
-                'read-path routing for reports',
+                'materialized view design/readiness (additive, evidence-based)',
+                'feature-flag gated future read-path routing for reports',
             ],
             'out_of_scope' => ['destructive replacement of transactional tables', 'exposing KTP/NIK in summaries'],
             'production_safety_rule' => 'Additive rpt_* only; no KTP/NIK in summaries; refresh must not lock hot tables.',
@@ -280,7 +280,7 @@ return [
             'go_criteria' => ['rpt_* summary foundation documented + tested', 'materialized view design locked', 'foundation GO preserved'],
             'watch_criteria' => ['materialized view rollout phased'],
             'no_go_criteria' => ['PII in summaries', 'foundation GO regressed'],
-            'deliverables' => ['rpt_* design', 'materialized view design', 'evidence doc'],
+            'deliverables' => ['rpt_* governance config', 'materialized view readiness policy', 'dry-run refresh command', 'evidence doc'],
         ],
         [
             'id' => 'STORAGE-1',
