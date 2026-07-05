@@ -11,6 +11,7 @@ alwaysApply: true
 
 Read in order; stop and report if unavailable:
 
+0. `docs/architecture/foundation-first-sprint-lock-governance.md` — Foundation-First Sprint Lock
 1. `docs/architecture_rules.md` — architecture constitution
 2. `docs/ai_development_guide.md` — operating manual
 3. `docs/inventory_rules.md` — ledger-only inventory
@@ -23,6 +24,7 @@ Also read the target module under `app/Modules/<Module>`, relevant routes, polic
 
 ```text
 Controller → Request → Service → Repository → Model
+FOUNDATION-FIRST LOCK ACTIVE: non-foundation work is POST-FOUNDATION BACKLOG until FOUNDATION GO.
 ```
 
 - Modules live under `app/Modules/<Module>`; wire bindings/policies in `RepositoryServiceProvider`.

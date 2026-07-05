@@ -17,7 +17,11 @@ Mandatory rule:
 No future sprint may bypass Controller -> Request -> Service -> Repository -> Model.
 No future sprint may bypass BranchContext for branch-owned data.
 No future sprint may create mutable inventory stock columns.
+Foundation-first sprint lock is active; non-foundation work is POST-FOUNDATION BACKLOG until FOUNDATION GO.
 ```
+
+See [`docs/architecture/foundation-first-sprint-lock-governance.md`](architecture/foundation-first-sprint-lock-governance.md)
+for the canonical Foundation-First Sprint Lock. AI agents must apply that lock before planning new sprint work.
 
 ## Architectural Principles
 

@@ -5,6 +5,10 @@
 **Governance command:** `php artisan architecture:foundation-roadmap-check`
 **Integrated into:** `php artisan architecture:foundation-governance-summary` (ROADMAP section)
 
+**Foundation-First Lock:** ACTIVE. See
+[`foundation-first-sprint-lock-governance.md`](foundation-first-sprint-lock-governance.md).
+All non-foundation work is POST-FOUNDATION BACKLOG and blocked until FOUNDATION GO.
+
 > This document is the canonical narrative roadmap. Where this doc and
 > `config/foundation_roadmap.php` differ, **the config is authoritative** and this
 > doc must be corrected. Any change to order/scope requires an explicit **ROADMAP

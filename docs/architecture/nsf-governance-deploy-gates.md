@@ -4,6 +4,11 @@
 
 Define pre-merge, pre-GO-tag, and VPS deploy gates for National Scale Foundation sprints.
 
+Foundation-first sprint lock is active. These gates apply only to approved
+foundation, hotfix, security, deployment, operations, backup/restore/monitoring,
+CI-CD, or foundation documentation work before FOUNDATION GO. See
+[`foundation-first-sprint-lock-governance.md`](foundation-first-sprint-lock-governance.md).
+
 ## 2. Pre-merge gates
 
 | Gate | Command / check |

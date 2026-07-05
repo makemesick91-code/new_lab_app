@@ -27,6 +27,7 @@ You are working on Asia Dental Lab Management System (ADLMS), a Laravel modular 
 
 Before making architecture decisions, inspect relevant docs when present:
 
+- docs/architecture/foundation-first-sprint-lock-governance.md
 - docs/project_rules.md
 - docs/system_architecture.md
 - docs/database_schema.md
@@ -40,6 +41,8 @@ Do not invent missing rules. If a document is missing, continue using existing c
 
 ## Architecture Rules
 
+- Foundation-first sprint lock is active; do not implement non-foundation work before FOUNDATION GO.
+- Non-foundation ideas must be recorded as POST-FOUNDATION BACKLOG.
 - Preserve modular monolith boundaries.
 - Follow existing `app/Modules/*` conventions.
 - Do not create random global services when a module service should own the behavior.

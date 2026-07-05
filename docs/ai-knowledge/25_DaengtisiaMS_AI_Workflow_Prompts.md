@@ -6,6 +6,10 @@ Master prompt dan template kerja untuk ChatGPT, Claude, dan Cursor saat mengemba
 ## Ringkasan
 Ikuti arsitektur modular monolith, branch isolation, ledger inventory, dan test Pest. Dokumentasi knowledge base di `docs/ai-knowledge/` adalah context primer.
 
+Foundation-first sprint lock is active. Non-foundation work is POST-FOUNDATION
+BACKLOG and blocked until FOUNDATION GO; see
+`docs/architecture/foundation-first-sprint-lock-governance.md`.
+
 ## Konteks DaengtisiaMS
 File ini menggantikan prompt ad-hoc. Gabungkan dengan `.cursor/snippets/adlms_master_workflow.md` di Cursor.
 
@@ -29,6 +33,7 @@ File ini menggantikan prompt ad-hoc. Gabungkan dengan `.cursor/snippets/adlms_ma
 8. Jangan commit/push/deploy tanpa permintaan eksplisit user
 9. Jangan mengarang table/route/permission yang tidak ada di repo
 10. Jangan target branch `main` jika baseline project bilang otherwise
+11. Jangan implement POST-FOUNDATION BACKLOG sebelum FOUNDATION GO
 
 ### Definition of Done
 - [ ] Patch minimal, scoped
@@ -53,11 +58,13 @@ Arsitektur: modular monolith app/Modules — Controller → Request → Service 
 
 WAJIB baca sebelum coding:
 1. docs/ai-knowledge/01_DaengtisiaMS_Master_Context.md
-2. docs/architecture_rules.md
-3. docs/inventory_rules.md (jika sentuh inventory)
-4. Dokumen ai-knowledge spesifik modul task
+2. docs/architecture/foundation-first-sprint-lock-governance.md
+3. docs/architecture_rules.md
+4. docs/inventory_rules.md (jika sentuh inventory)
+5. Dokumen ai-knowledge spesifik modul task
 
 Aturan:
+- Foundation-first sprint lock aktif; non-foundation work = POST-FOUNDATION BACKLOG sampai FOUNDATION GO
 - BranchContext::requireId() untuk data branch-owned
 - Stock ledger-only — tidak ada mutable stock column
 - RME: handwriting wajib sebelum finalize; doctor tidak boleh complete visit langsung

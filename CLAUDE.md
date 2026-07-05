@@ -1,3 +1,7 @@
+## Foundation-First Sprint Lock
+
+Status: **FOUNDATION-FIRST LOCK ACTIVE**. All non-foundation work is POST-FOUNDATION BACKLOG and blocked until FOUNDATION GO. Read `docs/architecture/foundation-first-sprint-lock-governance.md` before planning or implementing sprint work.
+
 ## RME Module (Sprint 20)
 
 **Modules:** `ClinicVisit`, `MedicalRecord`, `Odontogram`, `RmeInvoice` under `app/Modules/`.

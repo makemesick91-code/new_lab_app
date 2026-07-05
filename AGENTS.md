@@ -15,6 +15,7 @@ Always use these internal modes when relevant:
 ## context-mode
 
 Before coding:
+- Read docs/architecture/foundation-first-sprint-lock-governance.md
 - Read docs/project_rules.md
 - Read docs/system_architecture.md
 - Read docs/inventory_rules.md
@@ -22,6 +23,7 @@ Before coding:
 - Read docs/ai_bootstrap_prompt.md
 - Understand current sprint status before modifying files.
 - Do not break completed sprint contracts.
+- Foundation-first sprint lock is active: non-foundation work is POST-FOUNDATION BACKLOG until FOUNDATION GO.
 
 ## claude-mem
 

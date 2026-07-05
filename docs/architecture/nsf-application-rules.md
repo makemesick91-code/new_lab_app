@@ -4,6 +4,10 @@
 
 Encode National Scale Foundation (NSF-1 through NSF-5) as **application-level** guardrails — branch isolation, ledger inventory, performance/index governance, migration safety, observability, privacy-safe evidence, deploy gates, and DMO alignment.
 
+Foundation-first sprint lock is active. Non-foundation work is POST-FOUNDATION
+BACKLOG and blocked until FOUNDATION GO; see
+[`foundation-first-sprint-lock-governance.md`](foundation-first-sprint-lock-governance.md).
+
 ## 2. Why application-level
 
 NSF foundation must be machine-readable and validated before NDA (national distributed architecture) work begins. Rules live in `config/nsf.php`, validated by `architecture:nsf-governance-check`, covered by tests, and referenced by sprint evidence.

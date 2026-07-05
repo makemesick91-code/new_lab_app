@@ -12,6 +12,11 @@ Semua dokumen:
 
 **Jangan mengubah logic aplikasi** — folder ini hanya dokumentasi konteks AI.
 
+**Foundation-first sprint lock:** ACTIVE. Baca
+`docs/architecture/foundation-first-sprint-lock-governance.md`; pekerjaan
+non-foundation adalah POST-FOUNDATION BACKLOG dan tidak boleh dieksekusi sebelum
+FOUNDATION GO.
+
 ---
 
 ## Daftar 25 sumber
@@ -54,9 +59,10 @@ Tambahan Cursor: [`.cursor/snippets/adlms_master_workflow.md`](../.cursor/snippe
 
 ### Batch 1 — Wajib (setiap sesi baru)
 1. `01_DaengtisiaMS_Master_Context.md`
-2. `03_DaengtisiaMS_Tech_Stack_Architecture.md`
-3. `07_DaengtisiaMS_Branch_Context_Rules.md`
-4. `25_DaengtisiaMS_AI_Workflow_Prompts.md`
+2. `docs/architecture/foundation-first-sprint-lock-governance.md`
+3. `03_DaengtisiaMS_Tech_Stack_Architecture.md`
+4. `07_DaengtisiaMS_Branch_Context_Rules.md`
+5. `25_DaengtisiaMS_AI_Workflow_Prompts.md`
 
 ### Batch 2 — Sesuai domain task
 | Task | Upload tambahan |

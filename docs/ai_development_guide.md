@@ -7,6 +7,11 @@ This document is the permanent operating manual for AI agents working on the Asi
 
 Use it before proposing, generating, reviewing, or merging any change. Its purpose is to preserve the architecture completed through Sprint 12, prevent branch data leakage, protect the ledger-based inventory model, and keep future work consistent with the existing Laravel modular monolith.
 
+Foundation-first sprint lock is active. Read
+[`docs/architecture/foundation-first-sprint-lock-governance.md`](architecture/foundation-first-sprint-lock-governance.md)
+before planning or implementing work. Non-foundation work is POST-FOUNDATION
+BACKLOG and blocked until FOUNDATION GO.
+
 ## Project Overview
 
 ### Business Purpose

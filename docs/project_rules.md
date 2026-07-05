@@ -10,6 +10,14 @@ Last Updated: June 2026
 
 ---
 
+# FOUNDATION-FIRST SPRINT LOCK
+
+Status: **FOUNDATION-FIRST LOCK ACTIVE**.
+
+All non-foundation sprint work is POST-FOUNDATION BACKLOG and is blocked until
+FOUNDATION GO. Canonical governance lives at
+[`docs/architecture/foundation-first-sprint-lock-governance.md`](architecture/foundation-first-sprint-lock-governance.md).
+
 # 1. PURPOSE
 
 Dokumen ini mendefinisikan standar teknis, aturan pengembangan, struktur kode, dan praktik implementasi yang wajib diikuti oleh seluruh developer, AI assistant, Cursor, Claude Code, ChatGPT, maupun contributor proyek.

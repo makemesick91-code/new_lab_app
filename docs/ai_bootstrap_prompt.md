@@ -7,6 +7,13 @@ on the Asia Dental Lab Management System (ADLMS).
 
 ---
 
+# Foundation-First Sprint Lock
+
+Foundation-first sprint lock is active. Read
+[`docs/architecture/foundation-first-sprint-lock-governance.md`](architecture/foundation-first-sprint-lock-governance.md)
+before planning or implementing work. Non-foundation work must be recorded as
+POST-FOUNDATION BACKLOG and must not execute until FOUNDATION GO is complete.
+
 # Purpose
 
 This document is the **single mandatory startup procedure** for any AI agent (Claude Code, Solo

@@ -18,6 +18,10 @@ Cursor/Claude Code work cannot drift outside the approved plan. Docs/config/gove
 only — no foundation feature implemented, no domain behavior change, no destructive
 migration.
 
+Current governance overlay: Foundation-first sprint lock is active. Non-foundation
+work is POST-FOUNDATION BACKLOG and blocked until FOUNDATION GO; see
+`docs/architecture/foundation-first-sprint-lock-governance.md`.
+
 ## Roadmap Sequence (source-locked)
 
 `config/foundation_roadmap.php` → `approved_sequence`:

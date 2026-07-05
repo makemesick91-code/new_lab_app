@@ -4,6 +4,10 @@
 
 This backlog carries forward the unresolved evidence work from Sprint 26 stabilization closure.
 
+Foundation-first sprint lock is active. These items are retained as POST-FOUNDATION
+BACKLOG unless explicitly reclassified as FOUNDATION, HOTFIX, SECURITY,
+DEPLOYMENT, OPERATIONS, or FOUNDATION-DOCS by the project owner.
+
 ## Recommended Sprint 27 Goal
 
 Execute real pilot evidence collection to determine whether the pilot can move from WATCH to GO.
@@ -12,13 +16,13 @@ Execute real pilot evidence collection to determine whether the pilot can move f
 
 | ID | Priority | Item | Reason | Suggested Phase |
 |---|---|---|---|---|
-| S27-BL-001 | P1 | Execute receivable validation with real samples | Required before GO | Sprint 27.1 |
-| S27-BL-002 | P1 | Execute branch receivable sample audit | Required before GO | Sprint 27.2 |
-| S27-BL-003 | P1 | Execute non-production backup restore rehearsal | Proves backup readiness | Sprint 27.3 |
-| S27-BL-004 | P1 | Conduct Owner KPI confirmation session | Required owner sign-off | Sprint 27.4 |
-| S27-BL-005 | P2 | Capture RME follow-up monitoring evidence | Confirms follow-up consistency | Sprint 27.5 |
-| S27-BL-006 | P2 | Capture SOP adoption evidence | Confirms operational discipline | Sprint 27.6 |
-| S27-BL-007 | P2 | Prepare final pilot GO package | Consolidates Sprint 27 evidence | Sprint 27.7 |
+| S27-BL-001 | P1 | POST-FOUNDATION BACKLOG: Execute receivable validation with real samples | Required before GO. This item is intentionally deferred by Foundation-First Sprint Lock. | Not scheduled before Foundation GO |
+| S27-BL-002 | P1 | POST-FOUNDATION BACKLOG: Execute branch receivable sample audit | Required before GO. This item is intentionally deferred by Foundation-First Sprint Lock. | Not scheduled before Foundation GO |
+| S27-BL-003 | P1 | DEPLOYMENT / OPERATIONS candidate: Execute non-production backup restore rehearsal | Proves backup readiness; may execute only if approved as foundation operations. This item is intentionally deferred by Foundation-First Sprint Lock unless reclassified. | Foundation operations approval required |
+| S27-BL-004 | P1 | POST-FOUNDATION BACKLOG: Conduct Owner KPI confirmation session | Required owner sign-off. This item is intentionally deferred by Foundation-First Sprint Lock. | Not scheduled before Foundation GO |
+| S27-BL-005 | P2 | POST-FOUNDATION BACKLOG: Capture RME follow-up monitoring evidence | Confirms follow-up consistency. This item is intentionally deferred by Foundation-First Sprint Lock. | Not scheduled before Foundation GO |
+| S27-BL-006 | P2 | OPERATIONS candidate: Capture SOP adoption evidence | Confirms operational discipline; may execute only if approved as foundation operations. This item is intentionally deferred by Foundation-First Sprint Lock unless reclassified. | Foundation operations approval required |
+| S27-BL-007 | P2 | POST-FOUNDATION BACKLOG: Prepare final pilot GO package | Consolidates Sprint 27 evidence. This item is intentionally deferred by Foundation-First Sprint Lock. | Not scheduled before Foundation GO |
 
 ## Sprint 27 Safety Notes
 

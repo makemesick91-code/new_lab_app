@@ -80,22 +80,31 @@ Final inventory/procurement UI closure (commit `0dd4729`):
 - product CSV import UI; decimal(18,4) quantity column migration
 - roles/permissions grouping UI (`PermissionGroupingService`)
 
-## Sprint 17 — PLANNED
+## Sprint 17 — POST-FOUNDATION BACKLOG
 
 Production Material Usage integration.
 
-## Sprint 18 — PLANNED
+This item is intentionally deferred by Foundation-First Sprint Lock.
+
+## Sprint 18 — POST-FOUNDATION BACKLOG
 
 Inventory notification channels, owner cross-branch rollup, valuation/audit export enhancements (as scoped).
 
-## Sprint 19 — PLANNED
+This item is intentionally deferred by Foundation-First Sprint Lock.
+
+## Sprint 19 — POST-FOUNDATION BACKLOG
 
 HR Core: employee records, attendance foundation, roles.
 
-## Sprint 20 — PLANNED
+This item is intentionally deferred by Foundation-First Sprint Lock.
+
+## Sprint 20 — POST-FOUNDATION BACKLOG
 
 UX/UI Modernization and Dashboard Hardening.
 
+This item is intentionally deferred by Foundation-First Sprint Lock.
+
 ## Rule
 
+Foundation-first sprint lock is active. Non-foundation items remain POST-FOUNDATION BACKLOG until FOUNDATION GO.
 Each sprint must preserve completed sprint contracts and include tests, docs, and quality gates. Do not mark unbuilt features as complete.

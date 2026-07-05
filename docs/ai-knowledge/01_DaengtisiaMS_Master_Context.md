@@ -9,6 +9,9 @@ DaengtisiaMS (sebelumnya ADLMS — Asia Dental Lab Management System) adalah apl
 ## Konteks DaengtisiaMS
 Dokumen ini adalah pintu masuk knowledge base. Baca sebelum dokumen modul-spesifik (08–20). Semua modul mematuhi arsitektur Controller → Request → Service → Repository → Model dan isolasi cabang via `BranchContext`.
 
+**Foundation-first sprint lock:** ACTIVE. Baca `docs/architecture/foundation-first-sprint-lock-governance.md`.
+Semua pekerjaan non-foundation adalah POST-FOUNDATION BACKLOG dan tidak boleh dieksekusi sebelum FOUNDATION GO.
+
 ## File / Area Repo Terkait
 - `composer.json` — Laravel 12, PHP ^8.2, Spatie Permission, dompdf
 - `package.json` — Vite, Tailwind, Alpine
@@ -43,6 +46,7 @@ Dokumen ini adalah pintu masuk knowledge base. Baca sebelum dokumen modul-spesif
 2. Jangan bypass sprint contract yang sudah selesai.
 3. Jangan `migrate:fresh` / `db:wipe` di VPS.
 4. Dokumentasi konstitusi (`architecture_rules`, `inventory_rules`) mengalahkan preferensi implementasi.
+5. Foundation-first sprint lock mengalahkan backlog non-foundation sampai FOUNDATION GO.
 
 ## Workflow / Alur
 1. Baca dokumen konstitusi (`docs/architecture_rules.md`, `docs/inventory_rules.md`, `docs/sprint_history.md`).

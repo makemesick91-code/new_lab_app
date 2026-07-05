@@ -13,6 +13,10 @@ Use this rule when planning Sprint 13–20 or documenting completed work.
 
 ## Sprint Documentation Rules
 
+- Foundation-first sprint lock is active; read
+  `docs/architecture/foundation-first-sprint-lock-governance.md` before planning.
+- Non-foundation items are POST-FOUNDATION BACKLOG and must not be scheduled before FOUNDATION GO.
+- Add "This item is intentionally deferred by Foundation-First Sprint Lock." to deferred backlog items.
 - Preserve completed sprint history.
 - Use sequential sprint numbering.
 - Do not overwrite older sprint records.
@@ -38,10 +42,7 @@ Each sprint should include:
 
 Suggested order after Sprint 13:
 
-- Sprint 14: Inventory Stock Transfer
-- Sprint 15: Purchase/Receiving Workflow
-- Sprint 16: Production Material Usage
-- Sprint 17: Low Stock/Reorder Alerts
-- Sprint 18: Inventory Reporting & Valuation
-- Sprint 19: HR Core
-- Sprint 20: UX/UI Modernization & Dashboard Hardening
+- POST-FOUNDATION BACKLOG: Production Material Usage integration. This item is intentionally deferred by Foundation-First Sprint Lock.
+- POST-FOUNDATION BACKLOG: Inventory notification channels, owner cross-branch rollup, valuation/audit export enhancements. This item is intentionally deferred by Foundation-First Sprint Lock.
+- POST-FOUNDATION BACKLOG: HR Core. This item is intentionally deferred by Foundation-First Sprint Lock.
+- POST-FOUNDATION BACKLOG: UX/UI Modernization and Dashboard Hardening outside foundation scope. This item is intentionally deferred by Foundation-First Sprint Lock.

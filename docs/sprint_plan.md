@@ -10,6 +10,16 @@ Last Updated: June 2026
 
 ---
 
+# FOUNDATION-FIRST SPRINT LOCK
+
+Status: **FOUNDATION-FIRST LOCK ACTIVE**.
+
+This legacy sprint plan is historical unless a future item is explicitly approved
+as FOUNDATION, HOTFIX, SECURITY, DEPLOYMENT, OPERATIONS, or FOUNDATION-DOCS.
+All non-foundation planning is POST-FOUNDATION BACKLOG and blocked until
+FOUNDATION GO. See
+[`docs/architecture/foundation-first-sprint-lock-governance.md`](architecture/foundation-first-sprint-lock-governance.md).
+
 # 1. Sprint Strategy
 
 Metode pengembangan menggunakan:
