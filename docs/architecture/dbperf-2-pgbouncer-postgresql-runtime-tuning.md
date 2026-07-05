@@ -184,6 +184,7 @@ See `config/postgres_runtime_governance.php` → `go_criteria` /
 
 ## Next sprint
 
-`config/foundation_roadmap.php` marks `DBPERF-2` as `completed`; the next
-`planned` item in priority order is **RPT-1 — Materialized View + rpt_*
-Summary Foundation**.
+`config/foundation_roadmap.php` marks `DBPERF-2` and RPT-1 as `completed`;
+the next `planned` item in priority order is **STORAGE-1 — Object Storage
+Readiness**. RPT-1 completed as governance/readiness only: no auto refresh,
+no report source switch, and no heavy materialized view refresh was introduced.

@@ -74,6 +74,8 @@ NSF-8 (VPS Node 20+ & observability): VPS deploy must use Node >=20 and `archite
 | Outbox audit (QUEUE-1) | `php artisan foundation:outbox-audit` — GO/WATCH required; JSON → `storage/release-evidence/latest/outbox-audit.json` |
 | DB performance governance (DBPERF-1) | `php artisan foundation:db-performance-check --include-db-stats` — GO/WATCH required; JSON → `storage/release-evidence/latest/db-performance-check.json` |
 | PgBouncer/PostgreSQL runtime governance (DBPERF-2) | `php artisan foundation:postgres-runtime-check --include-db-stats --include-pgbouncer-probe` — GO/WATCH required (PgBouncer install not required); JSON → `storage/release-evidence/latest/postgres-runtime-check.json` |
+| Reporting summary governance (RPT-1) | `php artisan foundation:reporting-summary-check --include-db-inventory` — GO required; JSON → `storage/release-evidence/latest/reporting-summary-check.json` |
+| Reporting summary refresh dry-run (RPT-1) | `php artisan foundation:reporting-summary-refresh --dry-run` — GO/WATCH required; JSON → `storage/release-evidence/latest/reporting-summary-refresh-dry-run.json`; no writes |
 | Release safety (NSF-9) | `php artisan foundation:release-safety-check` |
 | Automated smoke (NSF-9) | `php artisan release:automated-smoke --base-url=http://127.0.0.1` |
 | Foundation summary | `php artisan architecture:foundation-governance-summary` |

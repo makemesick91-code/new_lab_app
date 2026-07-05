@@ -144,6 +144,23 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $postgresRuntime = $report['postgres_runtime'] ?? [];
+        $this->line(sprintf(
+            'POSTGRES_RUNTIME: %s — app cutover: %s',
+            $postgresRuntime['decision'] ?? 'UNKNOWN',
+            ($postgresRuntime['app_cutover_detection']['potential_cutover'] ?? false) ? 'possible' : 'direct',
+        ));
+
+        $this->newLine();
+        $reportingSummary = $report['reporting_summary'] ?? [];
+        $this->line(sprintf(
+            'REPORTING_SUMMARY: %s — runtime reads: %s, auto refresh: %s',
+            $reportingSummary['decision'] ?? 'UNKNOWN',
+            ($reportingSummary['runtime_reads_from_summary_enabled'] ?? false) ? 'enabled' : 'disabled',
+            ($reportingSummary['auto_refresh_enabled'] ?? false) ? 'enabled' : 'disabled',
+        ));
+
+        $this->newLine();
         $releaseSafety = $report['release_safety'] ?? [];
         $this->line(sprintf('RELEASE_SAFETY: %s (profile: %s)', $releaseSafety['decision'] ?? 'UNKNOWN', $releaseSafety['profile'] ?? 'local'));
 

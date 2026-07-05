@@ -237,3 +237,24 @@ php artisan architecture:nsf-governance-check
   evaluated `--profile`.
 - See [`nsf-10-observability-backup-release-safety-hardening.md`](nsf-10-observability-backup-release-safety-hardening.md)
   for the full policy.
+
+## RPT-1 Reporting Summary + Materialized View Governance (2026-07-05)
+
+- Reporting summary governance source of truth: `config/reporting_summary_governance.php`.
+- Read-only gate: `php artisan foundation:reporting-summary-check [--json] [--include-db-inventory]`.
+- Refresh readiness gate: `php artisan foundation:reporting-summary-refresh --dry-run [--json]`.
+- Foundation governance summary includes **REPORTING_SUMMARY**; Combined GO treats REPORTING_SUMMARY FAIL as NO-GO. Optional materialized views are not required for GO in RPT-1.
+- **Permanent reporting summary rules:**
+  1. No reporting summary without a source-of-truth definition.
+  2. No reporting summary without refresh and staleness policy.
+  3. No materialized view concurrent refresh without a valid unique index.
+  4. No heavy refresh during clinic operating hours without approval.
+  5. No auto schedule or queue refresh before a dedicated refresh sprint.
+  6. No report source switch to a summary without feature flag and reconciliation tests.
+  7. No PII, secrets, raw patient/RME/payment payloads, or private document payloads in summary artifacts.
+  8. Branch-scoped summaries must define and preserve branch isolation.
+  9. Financial summaries must reconcile to source transaction totals.
+  10. Inventory summaries must not replace ledger `SUM(quantity_in) - SUM(quantity_out)` source of truth.
+  11. RPT governance is part of CI, release evidence, deploy gate, release safety, and Foundation Summary.
+  12. Future RPT/materialized view work must reference `config/reporting_summary_governance.php`.
+- See [`rpt-1-materialized-view-rpt-summary-foundation.md`](rpt-1-materialized-view-rpt-summary-foundation.md).

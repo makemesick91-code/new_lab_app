@@ -136,12 +136,20 @@ it('foundation governance summary includes roadmap status', function () {
         ->and($summary['summary']['roadmap_active_track'])->toBe('foundation_expansion');
 });
 
-it('next recommended sprint is RPT-1 after QUEUE-1, DBPERF-1, and DBPERF-2 completion', function () {
+it('next recommended sprint is STORAGE-1 after RPT-1 completion', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('RPT-1')
+    expect($report['next_recommended_sprint'])->toBe('STORAGE-1')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'QUEUE-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-2')['status'])->toBe('completed')
+        ->and(collect($report['approved_sequence'])->firstWhere('id', 'RPT-1')['status'])->toBe('completed')
         ->and($report['active_track'])->toBe('foundation_expansion');
+});
+
+it('DBPERF-2 depends on DBPERF-1 and RPT-1 depends on DBPERF-2', function () {
+    $sequence = collect(config('foundation_roadmap.approved_sequence'));
+
+    expect($sequence->firstWhere('id', 'DBPERF-2')['depends_on'])->toContain('DBPERF-1')
+        ->and($sequence->firstWhere('id', 'RPT-1')['depends_on'])->toContain('DBPERF-2');
 });

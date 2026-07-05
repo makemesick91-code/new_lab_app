@@ -116,6 +116,19 @@ return [
                     'php artisan foundation:postgres-runtime-check --json',
                 ],
             ],
+            'RPT-1' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/reporting-summary-check.json',
+                    'storage/ci-evidence/reporting-summary-refresh-dry-run.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:reporting-summary-check',
+                    'php artisan foundation:reporting-summary-check --json',
+                    'php artisan foundation:reporting-summary-refresh --dry-run --json',
+                ],
+            ],
         ],
     ],
 

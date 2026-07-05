@@ -69,8 +69,8 @@ Execution order is fixed (ascending priority). RC-1 is always last.
 | 14 | **NDA-1** | National Distributed Architecture Plan |
 | 15 | **RC-1** | Foundation Green Release Candidate Consolidation |
 
-**Next recommended sprint:** `RPT-1` (NSF-9, NSF-10, CACHE-1, QUEUE-1, DBPERF-1, and DBPERF-2 completed — see
-[`dbperf-2-pgbouncer-postgresql-runtime-tuning.md`](dbperf-2-pgbouncer-postgresql-runtime-tuning.md)).
+**Next recommended sprint:** `STORAGE-1` (NSF-9, NSF-10, CACHE-1, QUEUE-1, DBPERF-1, DBPERF-2, and RPT-1 completed — see
+[`rpt-1-materialized-view-rpt-summary-foundation.md`](rpt-1-materialized-view-rpt-summary-foundation.md)).
 
 ---
 
@@ -191,10 +191,12 @@ required_gates / go_criteria / watch_criteria / no_go_criteria / deliverables` p
   No production cutover, no `DB_HOST`/`DB_PORT` change, no `postgresql.conf`
   edit, no PostgreSQL restart, no runtime tuning applied.
 
-### RPT-1 — Materialized View + rpt_* Summary Foundation
-- **Objective:** `rpt_*` summary tables first, then materialized views.
-- **Why this order:** rpt_* summary before materialized view expansion.
-- **Out of scope:** destructive replacement of transactional tables; KTP/NIK in summaries.
+### RPT-1 — Materialized View + rpt_* Summary Foundation — **COMPLETED**
+- **Status:** Completed. See [`rpt-1-materialized-view-rpt-summary-foundation.md`](rpt-1-materialized-view-rpt-summary-foundation.md)
+  and `docs/sprints/rpt-1-materialized-view-rpt-summary-foundation-evidence.md`.
+- **Objective:** `rpt_*` governance, materialized-view readiness, refresh policy, feature flags, release evidence, deploy gates, and Foundation Summary integration.
+- **Why this order:** rpt_* summary governance must precede any materialized view expansion or report read-path switch.
+- **Out of scope:** destructive replacement of transactional tables; KTP/NIK/PII in summaries; runtime report source switch; auto refresh scheduling.
 
 ### STORAGE-1 — Object Storage Readiness
 - **Objective:** S3-compatible object storage readiness for uploaded assets.

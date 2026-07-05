@@ -129,8 +129,10 @@ per-table decision + reason), except:
 
 - `reporting.owner_dashboard` daily payment trend aggregate (~118ms at
   500K-payment scale per the Sprint 68.13 closure report) — **deferred to
-  RPT-1** (materialized view / `rpt_*` summary foundation), not an indexing
-  gap.
+  RPT-1** governance and remains a future physical summary candidate, not an
+  indexing gap. RPT-1 intentionally did not switch the owner dashboard source
+  or create a heavy materialized view; it locked policy, dry-run command, and
+  reconciliation requirements first.
 
 ## EXPLAIN / EXPLAIN ANALYZE safety rules
 

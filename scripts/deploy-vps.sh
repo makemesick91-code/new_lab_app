@@ -73,6 +73,11 @@ php artisan foundation:postgres-runtime-check
 php artisan foundation:postgres-runtime-check --include-db-stats
 php artisan foundation:postgres-runtime-check --include-db-stats --include-pgbouncer-probe || true
 php artisan foundation:postgres-runtime-check --include-db-stats --json > storage/release-evidence/latest/postgres-runtime-check.json || true
+php artisan foundation:reporting-summary-check
+php artisan foundation:reporting-summary-check --include-db-inventory
+php artisan foundation:reporting-summary-check --include-db-inventory --json > storage/release-evidence/latest/reporting-summary-check.json || true
+php artisan foundation:reporting-summary-refresh --dry-run
+php artisan foundation:reporting-summary-refresh --dry-run --json > storage/release-evidence/latest/reporting-summary-refresh-dry-run.json || true
 php artisan foundation:release-safety-check
 php artisan release:automated-smoke
 php artisan architecture:foundation-governance-summary
