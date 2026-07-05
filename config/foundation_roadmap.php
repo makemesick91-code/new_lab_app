@@ -650,6 +650,7 @@ return [
             'invalidation_matrix_doc' => 'docs/architecture/cache-invalidation-matrix.md',
             'readiness_runbook_doc' => 'docs/architecture/redis-readiness-runbook.md',
             'go_tag' => 'ent-4-redis-cache-enterprise-policy-go',
+            'go_commit' => '9c15db2d9777d0d91243c8737fb5f4963200634d',
             'related_shipped_foundations' => ['CACHE-1', 'CACHE-1-REDIS-READINESS'],
             'disambiguation_note' => 'Builds on BOTH shipped cache sprints — CACHE-1 (invalidation governance design, cache_governance) and CACHE-1-REDIS-READINESS (Redis runtime readiness, cache_redis_governance) — into one enforced enterprise cache policy. Not a duplicate of either.',
             'objective' => 'Enforce the enterprise Redis cache policy: standard key prefixes (domain/branch/filter/version), explicit TTL, clear invalidation, no raw PII cached, cache as accelerator never source of truth.',
