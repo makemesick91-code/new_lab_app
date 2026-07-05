@@ -5,6 +5,7 @@ namespace App\Services\Architecture;
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\CacheGovernanceService;
+use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
@@ -58,6 +59,7 @@ class FoundationGovernanceSummaryService
         private readonly StorageGovernanceService $storageGovernance,
         private readonly StatelessGovernanceService $statelessGovernance,
         private readonly LoadBalancerGovernanceService $loadBalancerGovernance,
+        private readonly DatabaseReplicaGovernanceService $databaseReplicaGovernance,
     ) {}
 
     /**
@@ -108,6 +110,7 @@ class FoundationGovernanceSummaryService
         $storageGovernance = $this->storageGovernance->collect();
         $statelessGovernance = $this->statelessGovernance->collect();
         $loadBalancerGovernance = $this->loadBalancerGovernance->collect();
+        $databaseReplicaGovernance = $this->databaseReplicaGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -209,6 +212,9 @@ class FoundationGovernanceSummaryService
                 'release_safety_profile' => $releaseSafetyProfile,
                 'automated_smoke_decision' => $automatedSmoke['summary']['decision'] ?? 'UNKNOWN',
                 'automated_smoke_mode' => $automatedSmoke['mode'] ?? 'command_readiness_only',
+                'database_replica_governance_decision' => $databaseReplicaGovernance['decision'] ?? 'UNKNOWN',
+                'database_replica_readiness_status' => $databaseReplicaGovernance['readiness_status'] ?? 'unknown',
+                'database_replica_enabled' => $databaseReplicaGovernance['replica_enabled'] ?? false,
                 'release_evidence_decision' => $releaseEvidence['summary']['decision'] ?? 'UNKNOWN',
                 'backup_verification_decision' => $backupVerification['decision'] ?? 'NOT_APPLICABLE',
             ],
@@ -345,6 +351,20 @@ class FoundationGovernanceSummaryService
                 'rules' => $loadBalancerGovernance['rules'] ?? [],
                 'command' => 'lb:readiness-check',
             ],
+            'database_replica_governance' => [
+                'decision' => $databaseReplicaGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $databaseReplicaGovernance['readiness_status'] ?? 'unknown',
+                'replica_enabled' => $databaseReplicaGovernance['replica_enabled'] ?? false,
+                'replica_expected' => $databaseReplicaGovernance['replica_expected'] ?? false,
+                'replica_connection' => $databaseReplicaGovernance['replica_connection'] ?? null,
+                'replica_host_configured' => $databaseReplicaGovernance['replica_host_configured'] ?? false,
+                'replica_database_configured' => $databaseReplicaGovernance['replica_database_configured'] ?? false,
+                'replica_username_configured' => $databaseReplicaGovernance['replica_username_configured'] ?? false,
+                'replica_password_configured_as_boolean_only' => $databaseReplicaGovernance['replica_password_configured_as_boolean_only'] ?? false,
+                'warnings' => $databaseReplicaGovernance['warnings'] ?? [],
+                'rules' => $databaseReplicaGovernance['rules'] ?? [],
+                'command' => 'db:replica-readiness-check',
+            ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',
                 'profile' => $releaseSafetyProfile,
@@ -439,6 +459,7 @@ class FoundationGovernanceSummaryService
                 'inventory:repair-ambiguous-batch-links' => array_key_exists('inventory:repair-ambiguous-batch-links', Artisan::all()),
                 'foundation:reporting-summary-check' => array_key_exists('foundation:reporting-summary-check', Artisan::all()),
                 'foundation:reporting-summary-refresh' => array_key_exists('foundation:reporting-summary-refresh', Artisan::all()),
+                'db:replica-readiness-check' => array_key_exists('db:replica-readiness-check', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,
