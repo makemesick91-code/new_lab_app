@@ -46,12 +46,12 @@ it('stateless governance watches when a risky driver is active', function () {
         ->and($result['horizontal_scale_warnings'])->not->toBeEmpty();
 });
 
-it('roadmap marks STATELESS-1 completed and next recommended sprint is LB-1', function () {
+it('roadmap marks STATELESS-1 completed and next recommended sprint is REPLICA-1', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $stateless1 = collect($report['approved_sequence'])->firstWhere('id', 'STATELESS-1');
 
     expect($stateless1['status'])->toBe('completed')
-        ->and($report['next_recommended_sprint'])->toBe('LB-1');
+        ->and($report['next_recommended_sprint'])->toBe('REPLICA-1');
 });
 
 it('.env.example ships stateless readiness keys without real secret values', function () {

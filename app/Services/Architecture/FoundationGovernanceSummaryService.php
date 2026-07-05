@@ -8,6 +8,7 @@ use App\Services\Foundation\CacheGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\IdempotencyService;
+use App\Services\Foundation\LoadBalancerGovernanceService;
 use App\Services\Foundation\OutboxService;
 use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
@@ -56,6 +57,7 @@ class FoundationGovernanceSummaryService
         private readonly ReportingSummaryRefreshService $reportingSummaryRefresh,
         private readonly StorageGovernanceService $storageGovernance,
         private readonly StatelessGovernanceService $statelessGovernance,
+        private readonly LoadBalancerGovernanceService $loadBalancerGovernance,
     ) {}
 
     /**
@@ -105,6 +107,7 @@ class FoundationGovernanceSummaryService
         $reportingSummaryRefresh = $this->reportingSummaryRefresh->preview();
         $storageGovernance = $this->storageGovernance->collect();
         $statelessGovernance = $this->statelessGovernance->collect();
+        $loadBalancerGovernance = $this->loadBalancerGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -331,6 +334,16 @@ class FoundationGovernanceSummaryService
                 'horizontal_scale_warnings' => $statelessGovernance['horizontal_scale_warnings'] ?? [],
                 'rules' => $statelessGovernance['rules'] ?? [],
                 'command' => 'runtime:stateless-readiness-check',
+            ],
+            'lb_governance' => [
+                'decision' => $loadBalancerGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $loadBalancerGovernance['readiness_status'] ?? 'unknown',
+                'trusted_proxies_configured' => $loadBalancerGovernance['trusted_proxies_configured'] ?? false,
+                'health_endpoint_enabled' => $loadBalancerGovernance['health_endpoint_enabled'] ?? false,
+                'expect_forwarded_headers' => $loadBalancerGovernance['expect_forwarded_headers'] ?? false,
+                'warnings' => $loadBalancerGovernance['warnings'] ?? [],
+                'rules' => $loadBalancerGovernance['rules'] ?? [],
+                'command' => 'lb:readiness-check',
             ],
             'release_safety' => [
                 'decision' => $releaseSafety['summary']['decision'] ?? 'UNKNOWN',

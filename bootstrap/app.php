@@ -29,6 +29,17 @@ return Application::configure(basePath: dirname(__DIR__))
         RefreshInventoryAnalyticsSummaryCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware) {
+        // LB-1 — trusted proxies are opt-in via LB_TRUSTED_PROXIES; empty
+        // (default) leaves Laravel's stock TrustProxies behavior untouched
+        // (trusts nothing), which is safe for a single VPS pilot.
+        $trustedProxies = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('LB_TRUSTED_PROXIES', ''))
+        )));
+        if ($trustedProxies !== []) {
+            $middleware->trustProxies(at: $trustedProxies);
+        }
+
         $middleware->web(append: [
             TouchOnlineContextLastSeen::class,
             EnsureRmeOnlineContext::class,
