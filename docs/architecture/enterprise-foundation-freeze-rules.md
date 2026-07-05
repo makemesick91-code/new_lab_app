@@ -125,7 +125,7 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 
 1. Semua query berat wajib diaudit dengan index dan EXPLAIN plan.
 2. Dashboard dan laporan berat tidak boleh terus-menerus menghitung dari transaksi mentah jika volume data sudah besar.
-3. Laporan berat wajib diarahkan ke `rpt_*`, summary table, cached aggregate, atau materialized summary.
+3. Laporan berat wajib diarahkan ke `rpt_*`, summary table, cached aggregate, atau materialized summary — detail strateginya dikunci ENT-3 di `docs/architecture/reporting-materialized-summary-contract.md` (RPTSUM-R001..R016).
 4. Migration production wajib additive.
 5. Tidak boleh `migrate:fresh`, `db:wipe`, atau destructive migration di VPS.
 6. Kolom baru harus nullable/default-safe jika menyentuh tabel production.
@@ -145,7 +145,7 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 5. Invalidation wajib jelas.
 6. Data transaksi penting tidak boleh bergantung pada cache sebagai source of truth.
 7. Cache hanya akselerator, bukan pengganti database.
-8. Dashboard/report boleh cache, tetapi harus punya stale policy.
+8. Dashboard/report boleh cache, tetapi harus punya stale policy — akselerasi cache di atas summary mengikuti kontrak ENT-3 (`docs/architecture/reporting-materialized-summary-contract.md`, RPTSUM-R014).
 9. Cache governance command wajib bisa membaca status konfigurasi cache.
 10. Perubahan cache wajib punya test atau smoke evidence.
 
@@ -267,6 +267,14 @@ Aturan keamanan:
 ---
 
 ## 14. Reporting & Owner Dashboard Rules
+
+> **ENT-3 — Reporting Materialized Summary Expansion (2026-07-06):** Strategi
+> summary/materialized summary untuk semua dashboard/report berat dikunci sebagai
+> kontrak durable di `docs/architecture/reporting-materialized-summary-contract.md`
+> (rule RPTSUM-R001..RPTSUM-R016), dengan baseline kandidat di
+> `docs/architecture/reporting-summary-candidate-inventory.md`, terdaftar di
+> `config/foundation_roadmap.php` (`rules.reporting_materialized_summary_contract_doc`)
+> dan divalidasi oleh `Ent3ReportingMaterializedSummaryExpansionTest`.
 
 1. Dashboard owner wajib read-only.
 2. Report/export wajib mask PII.

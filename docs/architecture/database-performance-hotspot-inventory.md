@@ -6,6 +6,8 @@
 - Status: governance baseline — **no business logic changed by this document**
 - Date: 2026-07-06
 - Contract: `docs/architecture/database-performance-contract.md` (DBPERF-R001..R014)
+- Reporting summary candidates (ENT-3): `docs/architecture/reporting-summary-candidate-inventory.md`
+  maps which of these hotspots move to a `rpt_*`/materialized summary/cache strategy.
 - Purpose: living inventory of the known query hotspot domains, their expected
   filter/sort/branch/pagination patterns, and the index verification status.
   Entries marked **TODO** mean the exact index/query match has not been verified
