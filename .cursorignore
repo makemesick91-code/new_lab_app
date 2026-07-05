@@ -1,0 +1,9 @@
+node_modules/
+vendor/
+storage/
+bootstrap/cache/
+public/build/
+.git/
+coverage/
+.env
+*.log
