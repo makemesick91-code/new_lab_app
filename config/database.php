@@ -187,6 +187,18 @@ return [
             'database' => env('REDIS_CACHE_DB', '1'),
         ],
 
+        // CACHE-1 — readiness-only connection for a future shared session
+        // store. Not used by config/session.php unless SESSION_DRIVER/
+        // SESSION_CONNECTION are explicitly changed in a separate sprint.
+        'session' => [
+            'url' => env('REDIS_URL'),
+            'host' => env('REDIS_HOST', '127.0.0.1'),
+            'username' => env('REDIS_USERNAME'),
+            'password' => env('REDIS_PASSWORD'),
+            'port' => env('REDIS_PORT', '6379'),
+            'database' => env('REDIS_SESSION_DB', '2'),
+        ],
+
     ],
 
 ];
