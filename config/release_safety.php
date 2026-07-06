@@ -40,6 +40,7 @@ return [
         'foundation:deployment-rollback-check',
         'foundation:backup-dr-check',
         'foundation:load-test-baseline-check',
+        'foundation:load-test-scale-projection-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

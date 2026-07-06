@@ -131,6 +131,9 @@ run_release_safety() {
         echo "--- foundation:load-test-baseline-check (ENT-13) ---"
         php artisan foundation:load-test-baseline-check
         echo ""
+        echo "--- foundation:load-test-scale-projection-check (ENT-14) ---"
+        php artisan foundation:load-test-scale-projection-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

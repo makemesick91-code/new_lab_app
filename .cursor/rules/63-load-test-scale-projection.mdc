@@ -1,0 +1,35 @@
+---
+description: ENT-14 Load Test Scale Projection governance (analysis-only, modeled).
+globs:
+  - "config/load_test_scale_projection.php"
+  - "app/Support/LoadTest/**"
+  - "app/Services/Foundation/LoadTestScaleProjectionGovernanceService.php"
+  - "app/Console/Commands/LoadTestScaleProjectionRunCommand.php"
+  - "scripts/load-test-scale-projection.sh"
+alwaysApply: false
+---
+
+# ENT-14 — Load Test Scale Projection
+
+Durable lock: `docs/architecture/load-test-scale-projection-governance.md`.
+
+- The projection extrapolates the ENT-13 5-branch measured baseline to the
+  20-branch target and national tiers. It is **analysis-only**: it never
+  activates replica read routing or multi-node traffic and never changes
+  production topology.
+- The projection is driven by `scripts/load-test-scale-projection.sh` →
+  `loadtest:scale-projection-run` (guarded, non-production, read-only). Every
+  projected number is labeled modeled/estimated — never a measured production
+  benchmark.
+- Tiers are monotonic-increasing (5 / 10 / 20 / 50 cabang), the lowest tier
+  matches the baseline, and higher tiers tie to the shipped LB-1 (horizontal
+  scale) and REPLICA-1 (read routing) readiness foundations.
+- Bottlenecks are classified against db/cache/queue/php/network/frontend/storage.
+- Evidence pack is non-sensitive (tiers + modeled counts + risks + next actions
+  — never PII).
+- Any new tier / scale-factor / mitigation change must extend
+  `config/load_test_scale_projection.php` + tests and stay green under:
+  `php artisan foundation:load-test-scale-projection-check --strict`.
+- Preserve ENT-5..13: this gate re-verifies queue-retry, idempotency/outbox,
+  developer-console, health-check, security-compliance, CI/CD gate,
+  deploy/rollback, backup/DR, and load-test-baseline governance.

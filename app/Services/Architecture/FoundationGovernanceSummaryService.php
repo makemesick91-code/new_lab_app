@@ -19,6 +19,7 @@ use App\Services\Foundation\IdempotencyOutboxGovernanceService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
 use App\Services\Foundation\LoadTestBaselineGovernanceService;
+use App\Services\Foundation\LoadTestScaleProjectionGovernanceService;
 use App\Services\Foundation\ObservabilityGovernanceService;
 use App\Services\Foundation\ObservabilityPipelineGovernanceService;
 use App\Services\Foundation\OutboxService;
@@ -86,6 +87,7 @@ class FoundationGovernanceSummaryService
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
         private readonly BackupDrGovernanceService $backupDrGovernance,
         private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
+        private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
     ) {}
 
     /**
@@ -150,6 +152,7 @@ class FoundationGovernanceSummaryService
         $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
         $backupDrGovernance = $this->backupDrGovernance->collect();
         $loadTestBaselineGovernance = $this->loadTestBaselineGovernance->collect();
+        $loadTestScaleProjectionGovernance = $this->loadTestScaleProjectionGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -278,6 +281,8 @@ class FoundationGovernanceSummaryService
                 'backup_dr_readiness_status' => $backupDrGovernance['readiness_status'] ?? 'unknown',
                 'load_test_baseline_governance_decision' => $loadTestBaselineGovernance['decision'] ?? 'UNKNOWN',
                 'load_test_baseline_readiness_status' => $loadTestBaselineGovernance['readiness_status'] ?? 'unknown',
+                'load_test_scale_projection_governance_decision' => $loadTestScaleProjectionGovernance['decision'] ?? 'UNKNOWN',
+                'load_test_scale_projection_readiness_status' => $loadTestScaleProjectionGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -507,6 +512,29 @@ class FoundationGovernanceSummaryService
                 'checks' => $loadTestBaselineGovernance['checks'] ?? [],
                 'rules' => $loadTestBaselineGovernance['rules'] ?? [],
                 'command' => 'foundation:load-test-baseline-check',
+            ],
+            'load_test_scale_projection_governance' => [
+                'decision' => $loadTestScaleProjectionGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $loadTestScaleProjectionGovernance['readiness_status'] ?? 'unknown',
+                'load_test_scale_projection_enabled' => $loadTestScaleProjectionGovernance['load_test_scale_projection_enabled'] ?? false,
+                'harness_script_ok' => $loadTestScaleProjectionGovernance['harness_script_ok'] ?? false,
+                'harness_non_production_guard' => $loadTestScaleProjectionGovernance['harness_non_production_guard'] ?? false,
+                'harness_no_destructive_command' => $loadTestScaleProjectionGovernance['harness_no_destructive_command'] ?? false,
+                'runner_registered' => $loadTestScaleProjectionGovernance['runner_registered'] ?? false,
+                'tiers_ok' => $loadTestScaleProjectionGovernance['tiers_ok'] ?? false,
+                'tier_count' => $loadTestScaleProjectionGovernance['tier_count'] ?? 0,
+                'tier_branch_counts' => $loadTestScaleProjectionGovernance['tier_branch_counts'] ?? [],
+                'baseline_linkage_ok' => $loadTestScaleProjectionGovernance['baseline_linkage_ok'] ?? false,
+                'bottlenecks_ok' => $loadTestScaleProjectionGovernance['bottlenecks_ok'] ?? false,
+                'foundation_linkage_ok' => $loadTestScaleProjectionGovernance['foundation_linkage_ok'] ?? false,
+                'related_shipped_foundations' => $loadTestScaleProjectionGovernance['related_shipped_foundations'] ?? [],
+                'evidence_profiles_ok' => $loadTestScaleProjectionGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $loadTestScaleProjectionGovernance['release_safety_ok'] ?? false,
+                'load_test_baseline_decision' => $loadTestScaleProjectionGovernance['load_test_baseline_decision'] ?? 'UNKNOWN',
+                'summary' => $loadTestScaleProjectionGovernance['summary'] ?? [],
+                'checks' => $loadTestScaleProjectionGovernance['checks'] ?? [],
+                'rules' => $loadTestScaleProjectionGovernance['rules'] ?? [],
+                'command' => 'foundation:load-test-scale-projection-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

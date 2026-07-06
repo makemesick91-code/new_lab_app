@@ -104,6 +104,9 @@ return [
         // ENT-13 — Load Test 5 Cabang Baseline.
         'load_test_baseline_governance_locked' => true,
         'load_test_baseline_governance_doc' => 'docs/architecture/load-test-5-cabang-baseline-governance.md',
+        // ENT-14 — Load Test Scale Projection.
+        'load_test_scale_projection_governance_locked' => true,
+        'load_test_scale_projection_governance_doc' => 'docs/architecture/load-test-scale-projection-governance.md',
     ],
 
     /**
@@ -925,6 +928,7 @@ return [
             'policy_doc' => 'docs/architecture/load-test-5-cabang-baseline-governance.md',
             'go_tag' => 'ent-13-load-test-5-cabang-baseline-go',
             'go_commit' => 'dda9b873bc47c53b9fccba7934a5999cc7e28cde',
+            'deploy_evidence_commit' => 'c7f39f0',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2', 'RPT-1'],
             'objective' => 'Run the 5-branch baseline load test (25 clinic + 2 lab + 2 inventory users, 60k–70k patients) across RME, cashier, owner dashboard, inventory, reports, and RM lookup pages.',
             'why_this_order' => 'Baseline load test validates the ENT performance/cache/DR foundations before scale projection.',
@@ -940,12 +944,16 @@ return [
         [
             'id' => 'ENT-14',
             'title' => 'Load Test Scale Projection',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 30,
             'depends_on' => ['ENT-13'],
             'category' => 'performance',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'load_test_scale_projection_governance',
+            'readiness_command' => 'foundation:load-test-scale-projection-check',
+            'policy_doc' => 'docs/architecture/load-test-scale-projection-governance.md',
+            'go_tag' => 'ent-14-load-test-scale-projection-go',
             'related_shipped_foundations' => ['REPLICA-1', 'LB-1'],
             'objective' => 'Project 20-branch and national scale from the ENT-13 baseline, tying results to the shipped LB/replica readiness foundations.',
             'why_this_order' => 'Scale projection needs the measured baseline and precedes documentation/closure.',

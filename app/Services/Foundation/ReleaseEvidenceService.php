@@ -300,6 +300,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:load-test-baseline-check',
                 'arguments' => ['--json' => true],
             ],
+            'load-test-scale-projection-check.json' => [
+                'command' => 'foundation:load-test-scale-projection-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],
