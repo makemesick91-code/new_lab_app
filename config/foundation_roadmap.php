@@ -835,6 +835,7 @@ return [
             'readiness_command' => 'foundation:cicd-enterprise-gate-check',
             'policy_doc' => 'docs/architecture/cicd-enterprise-gate-governance.md',
             'go_tag' => 'ent-10-cicd-enterprise-gate-go',
+            'go_commit' => 'cbf4d12f790fe1788dbb0928fb9f96f050139b06',
             'related_shipped_foundations' => ['NSF-9', 'NSF-10'],
             'objective' => 'Extend the shipped NSF-9/NSF-10 flag/smoke/evidence gates into a full CI/CD enterprise gate: critical tests, migration safety, route/config sanity, smoke commands.',
             'why_this_order' => 'CI/CD gate must encode the earlier ENT contracts before deploy/rollback automation relies on it.',
