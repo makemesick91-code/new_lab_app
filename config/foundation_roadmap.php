@@ -774,6 +774,7 @@ return [
             'readiness_command' => 'foundation:health-check',
             'policy_doc' => 'docs/architecture/observability-health-check-pack-governance.md',
             'go_tag' => 'ent-8-observability-health-check-pack-go',
+            'go_commit' => '8f259bcd0bc0511b016492cd977cbe1aa347838a',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2', 'LB-1'],
             'disambiguation_note' => 'Overlaps the older planned MON-1 (Health Monitoring, Alerting & Uptime Readiness, now queued after the ENT sequence). MON-1 may be consolidated into ENT-8 via a later governance sprint; until then both stay registered and distinct.',
             'objective' => 'Ship the enterprise health-check pack: DB/Redis/queue/storage health, uptime/alerting readiness, building on OBS-1/OBS-2 and the LB-1 /health/lb endpoint.',
