@@ -1019,6 +1019,7 @@ return [
             'readiness_command' => 'foundation:enterprise-closure-check',
             'policy_doc' => 'docs/architecture/enterprise-foundation-closure-go-no-go.md',
             'go_tag' => 'ent-16-enterprise-foundation-closure-go-no-go-go',
+            'go_commit' => 'd0c472ec215bf709980f9f88f35bf49b34d2205d',
             'final_closure_tag' => 'enterprise-foundation-go',
             'objective' => 'Run the Enterprise Foundation Closure GO/NO-GO against the 13 closure criteria and, on GO, create the final enterprise-foundation-go tag ending the initial freeze.',
             'why_this_order' => 'Closure must be last in the ENT sequence; the national RC-1 consolidation remains the final roadmap item after it.',
