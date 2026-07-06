@@ -93,11 +93,9 @@ it('registers ENT-10 completed with ENT-12 as the eventual next after ENT-11 shi
 it('keeps ENT-15 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(16, 16) as $n) {
-        $entry = $sequence->firstWhere('id', "ENT-{$n}");
-        expect($entry)->not->toBeNull()
-            ->and($entry['status'])->toBe('planned');
-    }
+    $entry = $sequence->firstWhere('id', 'MON-1');
+    expect($entry)->not->toBeNull()
+        ->and($entry['status'])->toBe('planned');
 });
 
 it('publishes ENT10 rules through the governance service and foundation summary', function () {

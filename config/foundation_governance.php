@@ -203,6 +203,17 @@ return [
                     'php artisan foundation:enterprise-documentation-check --json',
                 ],
             ],
+            'ENT-16' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/enterprise-closure-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:enterprise-closure-check',
+                    'php artisan foundation:enterprise-closure-check --json',
+                ],
+            ],
         ],
     ],
 

@@ -1,0 +1,44 @@
+---
+description: ENT-16 Enterprise Foundation Closure GO/NO-GO governance (enforced, read-only).
+globs:
+  - "config/enterprise_foundation_closure.php"
+  - "app/Support/Foundation/**"
+  - "app/Services/Foundation/EnterpriseFoundationClosureGovernanceService.php"
+  - "app/Console/Commands/FoundationEnterpriseClosureCheckCommand.php"
+  - "docs/architecture/enterprise-foundation-closure-go-no-go.md"
+  - "docs/runbooks/enterprise-foundation-closure-runbook.md"
+alwaysApply: false
+---
+
+# ENT-16 — Enterprise Foundation Closure GO/NO-GO
+
+Durable lock: `docs/architecture/enterprise-foundation-closure-go-no-go.md`.
+
+- ENT-16 is the **closure** of the ENT-1..ENT-16 enterprise foundation sequence.
+  It adds a real, testable GO/NO-GO gate — not docs-only. Enforced by
+  `foundation:enterprise-closure-check --strict`.
+- Closure is **read-only**: it aggregates the sibling ENT-5..15 governance
+  decisions and static config/file postures. It never runs a deploy, backup,
+  restore, load test, or migration, and never weakens a sibling gate to reach GO.
+- Decision is explicit **GO / WATCH / NO-GO**. GO only when every mandatory
+  ENT-5..15 gate is GO, ENT-1..ENT-16 are completed with GO tags, all 13 closure
+  criteria are met, evidence/safety/CI wiring + scripts + runbooks are present,
+  the final `enterprise-foundation-go` tag is declared, and next sprint is not
+  stale. NO-GO on any failing gate, unmet criterion, missing wiring, destructive
+  drift, or secret/PII. WATCH only for a configured non-blocking condition;
+  `--strict` blocks on WATCH.
+- After ENT-16, `next_recommended_sprint` is **MON-1** (never a completed ENT-16).
+  There is no ENT-17. On GO, the final `enterprise-foundation-go` tag ends the
+  initial Enterprise Foundation Freeze.
+- All later work inherits ENT-5..16: queue retry/idempotency, developer console
+  read-only + audit, minimal health endpoints, PII/KTP/NIK masking, CI/CD +
+  release-evidence + release-safety gates, backup-first deploy, rollback without
+  auto data restore, restore rehearsal non-production only, load test
+  non-production only, scale projection modeled/estimated, mandatory docs/runbooks;
+  queue worker stays not-enabled unless a later approved sprint rolls it out.
+- Destructive literals (`migrate:fresh`, `db:wipe`, `schema:drop`,
+  `migrate:reset`) live in `config/enterprise_foundation_closure.php`, not scanner
+  code. Docs never contain secrets, credentials, the environment file, or unmasked
+  KTP/NIK; every closure doc passes the release-evidence forbidden scan.
+- Evidence `enterprise-closure-check.json` is required in ci/vps profiles and as a
+  release-safety pre-deploy gate; not committed to git.

@@ -137,6 +137,9 @@ run_release_safety() {
         echo "--- foundation:enterprise-documentation-check (ENT-15) ---"
         php artisan foundation:enterprise-documentation-check
         echo ""
+        echo "--- foundation:enterprise-closure-check (ENT-16) ---"
+        php artisan foundation:enterprise-closure-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""
