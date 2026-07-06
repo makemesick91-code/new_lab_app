@@ -128,6 +128,9 @@ run_release_safety() {
         echo "--- foundation:backup-dr-check (ENT-12) ---"
         php artisan foundation:backup-dr-check
         echo ""
+        echo "--- foundation:load-test-baseline-check (ENT-13) ---"
+        php artisan foundation:load-test-baseline-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

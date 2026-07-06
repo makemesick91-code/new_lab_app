@@ -296,6 +296,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:backup-dr-check',
                 'arguments' => ['--json' => true],
             ],
+            'load-test-baseline-check.json' => [
+                'command' => 'foundation:load-test-baseline-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

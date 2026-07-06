@@ -39,6 +39,7 @@ return [
         'foundation:cicd-enterprise-gate-check',
         'foundation:deployment-rollback-check',
         'foundation:backup-dr-check',
+        'foundation:load-test-baseline-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

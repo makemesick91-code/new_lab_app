@@ -266,6 +266,11 @@ jobs:
           php artisan foundation:backup-dr-check
           php artisan foundation:backup-dr-check --json > storage/ci-evidence/backup-dr-check.json
 
+      - name: Load test 5 cabang baseline check (ENT-13)
+        run: |
+          php artisan foundation:load-test-baseline-check
+          php artisan foundation:load-test-baseline-check --json > storage/ci-evidence/load-test-baseline-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check

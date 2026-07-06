@@ -18,6 +18,7 @@ use App\Services\Foundation\HealthCheckGovernanceService;
 use App\Services\Foundation\IdempotencyOutboxGovernanceService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
+use App\Services\Foundation\LoadTestBaselineGovernanceService;
 use App\Services\Foundation\ObservabilityGovernanceService;
 use App\Services\Foundation\ObservabilityPipelineGovernanceService;
 use App\Services\Foundation\OutboxService;
@@ -84,6 +85,7 @@ class FoundationGovernanceSummaryService
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
         private readonly BackupDrGovernanceService $backupDrGovernance,
+        private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
     ) {}
 
     /**
@@ -147,6 +149,7 @@ class FoundationGovernanceSummaryService
         $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
         $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
         $backupDrGovernance = $this->backupDrGovernance->collect();
+        $loadTestBaselineGovernance = $this->loadTestBaselineGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -273,6 +276,8 @@ class FoundationGovernanceSummaryService
                 'deployment_rollback_readiness_status' => $deploymentRollbackGovernance['readiness_status'] ?? 'unknown',
                 'backup_dr_governance_decision' => $backupDrGovernance['decision'] ?? 'UNKNOWN',
                 'backup_dr_readiness_status' => $backupDrGovernance['readiness_status'] ?? 'unknown',
+                'load_test_baseline_governance_decision' => $loadTestBaselineGovernance['decision'] ?? 'UNKNOWN',
+                'load_test_baseline_readiness_status' => $loadTestBaselineGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -479,6 +484,29 @@ class FoundationGovernanceSummaryService
                 'checks' => $backupDrGovernance['checks'] ?? [],
                 'rules' => $backupDrGovernance['rules'] ?? [],
                 'command' => 'foundation:backup-dr-check',
+            ],
+            'load_test_baseline_governance' => [
+                'decision' => $loadTestBaselineGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $loadTestBaselineGovernance['readiness_status'] ?? 'unknown',
+                'load_test_baseline_enabled' => $loadTestBaselineGovernance['load_test_baseline_enabled'] ?? false,
+                'harness_script_ok' => $loadTestBaselineGovernance['harness_script_ok'] ?? false,
+                'harness_non_production_guard' => $loadTestBaselineGovernance['harness_non_production_guard'] ?? false,
+                'harness_no_destructive_command' => $loadTestBaselineGovernance['harness_no_destructive_command'] ?? false,
+                'runner_registered' => $loadTestBaselineGovernance['runner_registered'] ?? false,
+                'dataset_ok' => $loadTestBaselineGovernance['dataset_ok'] ?? false,
+                'scenarios_ok' => $loadTestBaselineGovernance['scenarios_ok'] ?? false,
+                'bottlenecks_ok' => $loadTestBaselineGovernance['bottlenecks_ok'] ?? false,
+                'objectives_ok' => $loadTestBaselineGovernance['objectives_ok'] ?? false,
+                'p50_target_ms' => $loadTestBaselineGovernance['p50_target_ms'] ?? 0,
+                'p95_target_ms' => $loadTestBaselineGovernance['p95_target_ms'] ?? 0,
+                'branch_count' => $loadTestBaselineGovernance['branch_count'] ?? 0,
+                'evidence_profiles_ok' => $loadTestBaselineGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $loadTestBaselineGovernance['release_safety_ok'] ?? false,
+                'backup_dr_decision' => $loadTestBaselineGovernance['backup_dr_decision'] ?? 'UNKNOWN',
+                'summary' => $loadTestBaselineGovernance['summary'] ?? [],
+                'checks' => $loadTestBaselineGovernance['checks'] ?? [],
+                'rules' => $loadTestBaselineGovernance['rules'] ?? [],
+                'command' => 'foundation:load-test-baseline-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
