@@ -110,6 +110,9 @@ run_release_safety() {
         echo "--- foundation:developer-console-check ---"
         php artisan foundation:developer-console-check
         echo ""
+        echo "--- foundation:health-check ---"
+        php artisan foundation:health-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

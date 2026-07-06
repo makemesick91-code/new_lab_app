@@ -72,7 +72,7 @@ it('registers the ENT-7 governance pointers in roadmap and console config', func
         ->and(config('developer_console.permission'))->toBe('view_developer_console');
 });
 
-it('registers ENT-7 completed and moves next recommended sprint to ENT-8', function () {
+it('registers ENT-7 completed and moves next recommended sprint to ENT-9', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
     $ent7 = $sequence->firstWhere('id', 'ENT-7');
 
@@ -91,16 +91,16 @@ it('registers ENT-7 completed and moves next recommended sprint to ENT-8', funct
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-8')
+    expect($report['next_recommended_sprint'])->toBe('ENT-9')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['missing_metadata'])->toBe([])
         ->and($governance['decision'])->toBe('GO');
 });
 
-it('keeps ENT-8 through ENT-16 planned until they earn their own GO evidence', function () {
+it('keeps ENT-9 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(8, 16) as $n) {
+    foreach (range(9, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");

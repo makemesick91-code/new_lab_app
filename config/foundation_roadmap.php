@@ -87,6 +87,9 @@ return [
         // ENT-7 — Developer Assistance Console.
         'developer_console_governance_locked' => true,
         'developer_console_governance_doc' => 'docs/architecture/developer-assistance-console-governance.md',
+        // ENT-8 — Observability & Health Check Pack.
+        'health_check_governance_locked' => true,
+        'health_check_governance_doc' => 'docs/architecture/observability-health-check-pack-governance.md',
     ],
 
     /**
@@ -744,6 +747,7 @@ return [
             'policy_doc' => 'docs/architecture/developer-assistance-console-governance.md',
             'go_tag' => 'ent-7-developer-assistance-console-go',
             'go_commit' => 'a02da9f5a37d69feeae6d03ebbc77ebec9239237',
+            'deploy_evidence_commit' => '0250ef4',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2'],
             'disambiguation_note' => 'Read-only Super-Admin console consuming OBS-1/OBS-2, ENT-5, and ENT-6 surfaces. It adds no runtime driver change and does not replace the ENT-8 health pack.',
             'objective' => 'Provide a Super-Admin-only Developer Assistance console reading app/error logs, failed jobs, audit events, slow-query summary, deploy evidence, storage permission status, DB/Redis/queue health, and disk/backup status — all PII-masked.',
@@ -760,12 +764,16 @@ return [
         [
             'id' => 'ENT-8',
             'title' => 'Observability & Health Check Pack',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 24,
             'depends_on' => ['ENT-7', 'OBS-2', 'LB-1'],
             'category' => 'observability',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'health_check_governance',
+            'readiness_command' => 'foundation:health-check',
+            'policy_doc' => 'docs/architecture/observability-health-check-pack-governance.md',
+            'go_tag' => 'ent-8-observability-health-check-pack-go',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2', 'LB-1'],
             'disambiguation_note' => 'Overlaps the older planned MON-1 (Health Monitoring, Alerting & Uptime Readiness, now queued after the ENT sequence). MON-1 may be consolidated into ENT-8 via a later governance sprint; until then both stay registered and distinct.',
             'objective' => 'Ship the enterprise health-check pack: DB/Redis/queue/storage health, uptime/alerting readiness, building on OBS-1/OBS-2 and the LB-1 /health/lb endpoint.',

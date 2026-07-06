@@ -156,6 +156,19 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $healthCheckGovernance = $report['health_check_governance'] ?? [];
+        $this->line(sprintf(
+            'HEALTH_CHECK_GOVERNANCE: %s — readiness: %s, live route: %s, ready route: %s, alerting: %s, external channel: %s, %d rule(s)',
+            $healthCheckGovernance['decision'] ?? 'UNKNOWN',
+            $healthCheckGovernance['readiness_status'] ?? 'unknown',
+            ($healthCheckGovernance['liveness_route_registered'] ?? false) ? 'yes' : 'no',
+            ($healthCheckGovernance['readiness_route_registered'] ?? false) ? 'yes' : 'no',
+            $healthCheckGovernance['alerting_status'] ?? 'unknown',
+            ($healthCheckGovernance['external_alert_channel_enabled'] ?? false) ? 'ENABLED' : 'disabled',
+            count($healthCheckGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $dbPerformance = $report['db_performance'] ?? [];
         $this->line(sprintf(
             'DB_PERFORMANCE: %s — applied: %d, deferred: %d',

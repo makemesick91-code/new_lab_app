@@ -11,6 +11,7 @@ use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
+use App\Services\Foundation\HealthCheckGovernanceService;
 use App\Services\Foundation\IdempotencyOutboxGovernanceService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
@@ -74,6 +75,7 @@ class FoundationGovernanceSummaryService
         private readonly QueueRetryFailedJobGovernanceService $queueRetryGovernance,
         private readonly IdempotencyOutboxGovernanceService $idempotencyOutboxGovernance,
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
+        private readonly HealthCheckGovernanceService $healthCheckGovernance,
     ) {}
 
     /**
@@ -132,6 +134,7 @@ class FoundationGovernanceSummaryService
         $queueRetryGovernance = $this->queueRetryGovernance->collect();
         $idempotencyOutboxGovernance = $this->idempotencyOutboxGovernance->collect();
         $developerConsoleGovernance = $this->developerConsoleGovernance->collect();
+        $healthCheckGovernance = $this->healthCheckGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -248,6 +251,8 @@ class FoundationGovernanceSummaryService
                 'idempotency_outbox_readiness_status' => $idempotencyOutboxGovernance['readiness_status'] ?? 'unknown',
                 'developer_console_governance_decision' => $developerConsoleGovernance['decision'] ?? 'UNKNOWN',
                 'developer_console_readiness_status' => $developerConsoleGovernance['readiness_status'] ?? 'unknown',
+                'health_check_governance_decision' => $healthCheckGovernance['decision'] ?? 'UNKNOWN',
+                'health_check_readiness_status' => $healthCheckGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -339,6 +344,25 @@ class FoundationGovernanceSummaryService
                 'checks' => $developerConsoleGovernance['checks'] ?? [],
                 'rules' => $developerConsoleGovernance['rules'] ?? [],
                 'command' => 'foundation:developer-console-check',
+            ],
+            'health_check_governance' => [
+                'decision' => $healthCheckGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $healthCheckGovernance['readiness_status'] ?? 'unknown',
+                'health_check_enabled' => $healthCheckGovernance['health_check_enabled'] ?? false,
+                'liveness_route_registered' => $healthCheckGovernance['liveness_route_registered'] ?? false,
+                'readiness_route_registered' => $healthCheckGovernance['readiness_route_registered'] ?? false,
+                'components' => $healthCheckGovernance['components'] ?? [],
+                'readiness_overall_status' => $healthCheckGovernance['readiness_overall_status'] ?? 'unknown',
+                'alerting_status' => $healthCheckGovernance['alerting_status'] ?? 'unknown',
+                'external_alert_channel_enabled' => $healthCheckGovernance['external_alert_channel_enabled'] ?? false,
+                'lb_health_endpoint_registered' => $healthCheckGovernance['lb_health_endpoint_registered'] ?? false,
+                'queue_retry_decision' => $healthCheckGovernance['queue_retry_decision'] ?? 'UNKNOWN',
+                'idempotency_outbox_decision' => $healthCheckGovernance['idempotency_outbox_decision'] ?? 'UNKNOWN',
+                'developer_console_decision' => $healthCheckGovernance['developer_console_decision'] ?? 'UNKNOWN',
+                'summary' => $healthCheckGovernance['summary'] ?? [],
+                'checks' => $healthCheckGovernance['checks'] ?? [],
+                'rules' => $healthCheckGovernance['rules'] ?? [],
+                'command' => 'foundation:health-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
