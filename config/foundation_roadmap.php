@@ -101,6 +101,9 @@ return [
         // ENT-12 — Backup & Disaster Recovery Automation.
         'backup_dr_governance_locked' => true,
         'backup_dr_governance_doc' => 'docs/architecture/backup-disaster-recovery-automation-governance.md',
+        // ENT-13 — Load Test 5 Cabang Baseline.
+        'load_test_baseline_governance_locked' => true,
+        'load_test_baseline_governance_doc' => 'docs/architecture/load-test-5-cabang-baseline-governance.md',
     ],
 
     /**
@@ -895,6 +898,7 @@ return [
             'policy_doc' => 'docs/architecture/backup-disaster-recovery-automation-governance.md',
             'go_tag' => 'ent-12-backup-disaster-recovery-automation-go',
             'go_commit' => 'b6a0e6536f764de9eef0b48e8e8d3498ff939516',
+            'deploy_evidence_commit' => 'c8fad61',
             'related_shipped_foundations' => ['NSF-10'],
             'objective' => 'Automate DB + storage backup with retention, periodic restore rehearsal with evidence, and RTO/RPO targets.',
             'why_this_order' => 'DR readiness is a hard prerequisite of Enterprise Foundation Closure GO and must precede load-test phases that certify scale.',
@@ -910,12 +914,16 @@ return [
         [
             'id' => 'ENT-13',
             'title' => 'Load Test 5 Cabang Baseline',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 29,
             'depends_on' => ['ENT-2', 'ENT-4', 'ENT-12'],
             'category' => 'performance',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'load_test_baseline_governance',
+            'readiness_command' => 'foundation:load-test-baseline-check',
+            'policy_doc' => 'docs/architecture/load-test-5-cabang-baseline-governance.md',
+            'go_tag' => 'ent-13-load-test-5-cabang-baseline-go',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2', 'RPT-1'],
             'objective' => 'Run the 5-branch baseline load test (25 clinic + 2 lab + 2 inventory users, 60k–70k patients) across RME, cashier, owner dashboard, inventory, reports, and RM lookup pages.',
             'why_this_order' => 'Baseline load test validates the ENT performance/cache/DR foundations before scale projection.',

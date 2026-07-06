@@ -170,6 +170,17 @@ return [
                     'php artisan foundation:backup-dr-check --json',
                 ],
             ],
+            'ENT-13' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/load-test-baseline-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:load-test-baseline-check',
+                    'php artisan foundation:load-test-baseline-check --json',
+                ],
+            ],
         ],
     ],
 

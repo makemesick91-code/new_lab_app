@@ -51,7 +51,7 @@ it('roadmap marks STATELESS-1 completed (next recommended sprint is now ENT-1 af
     $stateless1 = collect($report['approved_sequence'])->firstWhere('id', 'STATELESS-1');
 
     expect($stateless1['status'])->toBe('completed')
-        ->and($report['next_recommended_sprint'])->toBe('ENT-13');
+        ->and($report['next_recommended_sprint'])->toBe('ENT-14');
 });
 
 it('.env.example ships stateless readiness keys without real secret values', function () {

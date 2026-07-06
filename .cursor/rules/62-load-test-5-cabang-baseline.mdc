@@ -1,0 +1,29 @@
+---
+description: ENT-13 Load Test 5 Cabang Baseline governance (non-production only).
+globs:
+  - "config/load_test_baseline.php"
+  - "app/Support/LoadTest/**"
+  - "app/Services/Foundation/LoadTestBaselineGovernanceService.php"
+  - "app/Console/Commands/LoadTestBaselineRunCommand.php"
+  - "scripts/load-test-baseline.sh"
+alwaysApply: false
+---
+
+# ENT-13 — Load Test 5 Cabang Baseline
+
+Durable lock: `docs/architecture/load-test-5-cabang-baseline-governance.md`.
+
+- The 5-branch baseline (25 clinic + 2 lab + 2 inventory users, 60k–70k patients)
+  runs on **non-production** environments only. Load testing against the
+  production VPS pilot database is out of scope.
+- The baseline is driven by `scripts/load-test-baseline.sh` → `loadtest:baseline-run`
+  (guarded, read-only). Dataset comes from the `stress:seed-*` harness only.
+- Latency targets are the documented 200–300ms band (p50 200ms / p95 300ms);
+  slow scenarios are classified against db/cache/queue/php/network/frontend/storage.
+- Evidence pack is non-sensitive (timings + counts + labels — never PII).
+- Any new scenario / dataset / latency-target change must extend
+  `config/load_test_baseline.php` + tests and stay green under:
+  `php artisan foundation:load-test-baseline-check --strict`.
+- Preserve ENT-5..12: this gate re-verifies queue-retry, idempotency/outbox,
+  developer-console, health-check, security-compliance, CI/CD gate,
+  deploy/rollback, and backup/DR governance.

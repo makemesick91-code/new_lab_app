@@ -36,7 +36,7 @@ it('registers ENT-0..ENT-3 completed and ENT-9..ENT-16 planned in the canonical 
         ->and($ent0['status'])->toBe('completed')
         ->and($ent0['category'])->toBe('governance');
 
-    foreach (range(13, 16) as $n) {
+    foreach (range(14, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");
@@ -47,7 +47,7 @@ it('next recommended sprint is ENT-9 and is not stale after the cache policy loc
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-13')
+    expect($report['next_recommended_sprint'])->toBe('ENT-14')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['decision'])->toBe('GO');
 });

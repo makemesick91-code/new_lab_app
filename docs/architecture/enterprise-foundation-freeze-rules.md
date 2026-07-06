@@ -281,6 +281,18 @@ Aturan keamanan:
 > `backup-dr-check.json` wajib di profil ci/vps dan tetap non-sensitif.
 > ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11 tetap wajib GO.
 
+> Durable lock (ENT-13): aturan Load Test 5 Cabang Baseline dikunci di
+> `docs/architecture/load-test-5-cabang-baseline-governance.md`
+> (ENT13-LT001..ENT13-LT012) dan diverifikasi oleh `foundation:load-test-baseline-check`.
+> Baseline 5 cabang (25 klinik + 2 lab + 2 inventory user, 60k–70k pasien) hanya
+> berjalan di lingkungan non-produksi lewat `scripts/load-test-baseline.sh` →
+> `loadtest:baseline-run` (guarded, read-only); dataset dari harness `stress:seed-*`.
+> Target latensi 200–300ms (p50 200ms / p95 300ms), bottleneck diklasifikasikan ke
+> db/cache/queue/php/network/frontend/storage. Load test ke database VPS pilot
+> produksi di luar scope. Artefak evidence `load-test-baseline-check.json` wajib di
+> profil ci/vps dan tetap non-sensitif.
+> ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11/ENT-12 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules
