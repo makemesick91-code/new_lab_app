@@ -743,6 +743,7 @@ return [
             'readiness_command' => 'foundation:developer-console-check',
             'policy_doc' => 'docs/architecture/developer-assistance-console-governance.md',
             'go_tag' => 'ent-7-developer-assistance-console-go',
+            'go_commit' => 'a02da9f5a37d69feeae6d03ebbc77ebec9239237',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2'],
             'disambiguation_note' => 'Read-only Super-Admin console consuming OBS-1/OBS-2, ENT-5, and ENT-6 surfaces. It adds no runtime driver change and does not replace the ENT-8 health pack.',
             'objective' => 'Provide a Super-Admin-only Developer Assistance console reading app/error logs, failed jobs, audit events, slow-query summary, deploy evidence, storage permission status, DB/Redis/queue health, and disk/backup status — all PII-masked.',

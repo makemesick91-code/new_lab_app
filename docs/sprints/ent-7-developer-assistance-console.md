@@ -60,3 +60,12 @@ runtime, tanpa vendor baru, tanpa perubahan alur RME/pembayaran/inventory.
 - `tests/Feature/Architecture/Ent7DeveloperAssistanceConsoleTest.php`
 - `tests/Feature/Foundation/DeveloperConsoleGovernanceCommandTest.php`
 - `tests/Feature/DeveloperConsole/DeveloperConsoleTest.php`
+
+## Deploy Evidence (2026-07-06)
+
+- PR #194 squash-merged sebagai `a02da9f5a37d69feeae6d03ebbc77ebec9239237`.
+- GO tag `ent-7-developer-assistance-console-go` @ `a02da9f` (annotated); exact-match di VPS HEAD.
+- CI run `28767054401`: semua required gates pass (full-suite gate skipped; full suite lokal 4216 passed / 11 skipped / 19843 assertions).
+- VPS deploy via `scripts/deploy-vps.sh`: backup `pre_auto_deploy_20260706-041440.sql` (621K), `Nothing to migrate.`, semua governance gates GO (termasuk `foundation:developer-console-check` GO 8/8), release evidence vps 21/21 GO (`developer-console-check.json` present), automated smoke 7/7 GO incl. HTTP 200 login.
+- Post-deploy: `db:seed --class=PermissionSeeder --force` (idempotent) mendaftarkan `view_developer_console`; `/dev-console` guest → 302 login; env pilot, debug OFF, maintenance OFF; `queue:failed` kosong; tidak ada ERROR log baru.
+- Catatan operasional: deploy pertama gagal di gate ENT-7 karena route cache deploy sebelumnya masih aktif saat fase gates (script baru rebuild cache setelah gates); solusi `php artisan route:clear && php artisan config:clear` lalu jalankan ulang script penuh.
