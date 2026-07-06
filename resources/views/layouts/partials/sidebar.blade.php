@@ -637,6 +637,19 @@
                     </div>
                 </div>
             @endcanany
+
+            {{-- ENT-7 — Developer Assistance Console (read-only, audited) --}}
+            @if (config('developer_console.enabled', true))
+                @can('view_developer_console')
+                    <a href="{{ route('developer-console.index') }}"
+                       class="menu-item {{ request()->routeIs('developer-console.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                        <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M8 9l3 3-3 3m5 0h3M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                        </svg>
+                        <span>Developer Console</span>
+                    </a>
+                @endcan
+            @endif
         </div>
 
         <script>

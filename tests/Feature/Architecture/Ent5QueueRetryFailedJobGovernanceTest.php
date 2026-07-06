@@ -136,20 +136,20 @@ it('includes the queue_retry_governance section in the foundation governance sum
         ->and($summary['queue_governance']['command'])->toBe('foundation:queue-governance-check');
 });
 
-it('moves next recommended sprint to ENT-7 without staleness', function () {
+it('moves next recommended sprint to ENT-8 without staleness', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-7')
+    expect($report['next_recommended_sprint'])->toBe('ENT-8')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['missing_metadata'])->toBe([])
         ->and($governance['decision'])->toBe('GO');
 });
 
-it('keeps ENT-7..ENT-16 planned until they earn their own GO evidence', function () {
+it('keeps ENT-8..ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(7, 16) as $n) {
+    foreach (range(8, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");

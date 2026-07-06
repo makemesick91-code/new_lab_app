@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DeveloperConsoleController;
 use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\LoadBalancerHealthController;
 use App\Http\Controllers\ProfileController;
@@ -683,5 +684,18 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('goods-receipts/{goodsReceipt}/cancel', [GoodsReceiptController::class, 'cancel'])->name('goods-receipts.cancel');
     Route::post('goods-receipts/{goodsReceipt}/void', [GoodsReceiptController::class, 'void'])->name('goods-receipts.void');
 });
+
+/*
+|--------------------------------------------------------------------------
+| ENT-7 — Developer Assistance Console
+|--------------------------------------------------------------------------
+| Read-only, Super-Admin/permission-gated, audited, PII-masked. GET only —
+| the console must never expose a mutating route (ENT7-DC001).
+*/
+if (config('developer_console.enabled', true)) {
+    Route::middleware(['auth', 'permission:view_developer_console'])
+        ->get('/dev-console', [DeveloperConsoleController::class, 'index'])
+        ->name('developer-console.index');
+}
 
 require __DIR__.'/auth.php';

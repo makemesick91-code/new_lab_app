@@ -216,6 +216,13 @@ Aturan keamanan:
 4. Password, token, session, cookie, API key, dan isi file environment tidak boleh ditampilkan.
 5. Semua akses ke Developer Assistance harus diaudit.
 
+> Durable lock (ENT-7): aturan Developer Assistance Console enterprise dikunci di
+> `docs/architecture/developer-assistance-console-governance.md`
+> (ENT7-DC001..ENT7-DC010) dan diverifikasi oleh
+> `foundation:developer-console-check`. Console tetap read-only, digating
+> permission `view_developer_console`, semua akses diaudit ke `sys_audit_logs`,
+> dan seluruh excerpt melewati masking PII/secret.
+
 ---
 
 ## 9. Security & PII Rules

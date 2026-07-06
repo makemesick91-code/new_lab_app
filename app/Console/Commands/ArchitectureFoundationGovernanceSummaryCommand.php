@@ -145,6 +145,17 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $developerConsoleGovernance = $report['developer_console_governance'] ?? [];
+        $this->line(sprintf(
+            'DEVELOPER_CONSOLE_GOVERNANCE: %s — readiness: %s, read-only: %s, audited: %s, %d rule(s)',
+            $developerConsoleGovernance['decision'] ?? 'UNKNOWN',
+            $developerConsoleGovernance['readiness_status'] ?? 'unknown',
+            ($developerConsoleGovernance['read_only'] ?? false) ? 'yes' : 'no',
+            ($developerConsoleGovernance['audit_access_enabled'] ?? false) ? 'yes' : 'no',
+            count($developerConsoleGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $dbPerformance = $report['db_performance'] ?? [];
         $this->line(sprintf(
             'DB_PERFORMANCE: %s — applied: %d, deferred: %d',

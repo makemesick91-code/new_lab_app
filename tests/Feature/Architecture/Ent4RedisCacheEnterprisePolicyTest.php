@@ -178,19 +178,19 @@ it('records ENT-3 deploy evidence and registers ENT-4 completed with doc pointer
         ->and($ent4['related_shipped_foundations'])->toContain('CACHE-1-REDIS-READINESS');
 });
 
-it('moves next recommended sprint to ENT-7 without staleness', function () {
+it('moves next recommended sprint to ENT-8 without staleness', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-7')
+    expect($report['next_recommended_sprint'])->toBe('ENT-8')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['decision'])->toBe('GO');
 });
 
-it('keeps ENT-7..ENT-16 planned until they earn their own GO evidence', function () {
+it('keeps ENT-8..ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(7, 16) as $n) {
+    foreach (range(8, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");
