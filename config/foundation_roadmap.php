@@ -924,6 +924,7 @@ return [
             'readiness_command' => 'foundation:load-test-baseline-check',
             'policy_doc' => 'docs/architecture/load-test-5-cabang-baseline-governance.md',
             'go_tag' => 'ent-13-load-test-5-cabang-baseline-go',
+            'go_commit' => 'dda9b873bc47c53b9fccba7934a5999cc7e28cde',
             'related_shipped_foundations' => ['DBPERF-1', 'DBPERF-2', 'RPT-1'],
             'objective' => 'Run the 5-branch baseline load test (25 clinic + 2 lab + 2 inventory users, 60k–70k patients) across RME, cashier, owner dashboard, inventory, reports, and RM lookup pages.',
             'why_this_order' => 'Baseline load test validates the ENT performance/cache/DR foundations before scale projection.',
