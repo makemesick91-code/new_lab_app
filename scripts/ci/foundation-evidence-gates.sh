@@ -113,6 +113,9 @@ run_release_safety() {
         echo "--- foundation:health-check ---"
         php artisan foundation:health-check
         echo ""
+        echo "--- foundation:security-compliance-check ---"
+        php artisan foundation:security-compliance-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

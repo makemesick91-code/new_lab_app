@@ -77,6 +77,8 @@ php artisan foundation:developer-console-check
 php artisan foundation:developer-console-check --json > storage/release-evidence/latest/developer-console-check.json || true
 php artisan foundation:health-check
 php artisan foundation:health-check --json > storage/release-evidence/latest/health-check-check.json || true
+php artisan foundation:security-compliance-check
+php artisan foundation:security-compliance-check --json > storage/release-evidence/latest/security-compliance-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

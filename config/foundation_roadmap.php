@@ -90,6 +90,9 @@ return [
         // ENT-8 — Observability & Health Check Pack.
         'health_check_governance_locked' => true,
         'health_check_governance_doc' => 'docs/architecture/observability-health-check-pack-governance.md',
+        // ENT-9 — Security & PII Compliance Hardening.
+        'security_compliance_governance_locked' => true,
+        'security_compliance_governance_doc' => 'docs/architecture/security-pii-compliance-hardening-governance.md',
     ],
 
     /**
@@ -775,6 +778,7 @@ return [
             'policy_doc' => 'docs/architecture/observability-health-check-pack-governance.md',
             'go_tag' => 'ent-8-observability-health-check-pack-go',
             'go_commit' => '8f259bcd0bc0511b016492cd977cbe1aa347838a',
+            'deploy_evidence_commit' => '982ac44',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2', 'LB-1'],
             'disambiguation_note' => 'Overlaps the older planned MON-1 (Health Monitoring, Alerting & Uptime Readiness, now queued after the ENT sequence). MON-1 may be consolidated into ENT-8 via a later governance sprint; until then both stay registered and distinct.',
             'objective' => 'Ship the enterprise health-check pack: DB/Redis/queue/storage health, uptime/alerting readiness, building on OBS-1/OBS-2 and the LB-1 /health/lb endpoint.',
@@ -791,12 +795,16 @@ return [
         [
             'id' => 'ENT-9',
             'title' => 'Security & PII Compliance Hardening',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 25,
             'depends_on' => ['ENT-1'],
             'category' => 'security',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'security_compliance_governance',
+            'readiness_command' => 'foundation:security-compliance-check',
+            'policy_doc' => 'docs/architecture/security-pii-compliance-hardening-governance.md',
+            'go_tag' => 'ent-9-security-pii-compliance-hardening-go',
             'related_shipped_foundations' => ['NSF-10'],
             'objective' => 'Harden KTP/NIK masking, audit coverage, export gating, and branch isolation across all modules to the enterprise standard.',
             'why_this_order' => 'Security/PII hardening must be locked before CI/CD gates encode it and before load tests run on realistic data.',

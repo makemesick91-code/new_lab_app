@@ -25,6 +25,7 @@ use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Foundation\ReportingSummaryGovernanceService;
 use App\Services\Foundation\ReportingSummaryRefreshService;
+use App\Services\Foundation\SecurityComplianceGovernanceService;
 use App\Services\Foundation\StatelessGovernanceService;
 use App\Services\Foundation\StorageGovernanceService;
 use App\Services\Inventory\AmbiguousBatchReviewPackService;
@@ -76,6 +77,7 @@ class FoundationGovernanceSummaryService
         private readonly IdempotencyOutboxGovernanceService $idempotencyOutboxGovernance,
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
+        private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
     ) {}
 
     /**
@@ -135,6 +137,7 @@ class FoundationGovernanceSummaryService
         $idempotencyOutboxGovernance = $this->idempotencyOutboxGovernance->collect();
         $developerConsoleGovernance = $this->developerConsoleGovernance->collect();
         $healthCheckGovernance = $this->healthCheckGovernance->collect();
+        $securityComplianceGovernance = $this->securityComplianceGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -253,6 +256,8 @@ class FoundationGovernanceSummaryService
                 'developer_console_readiness_status' => $developerConsoleGovernance['readiness_status'] ?? 'unknown',
                 'health_check_governance_decision' => $healthCheckGovernance['decision'] ?? 'UNKNOWN',
                 'health_check_readiness_status' => $healthCheckGovernance['readiness_status'] ?? 'unknown',
+                'security_compliance_governance_decision' => $securityComplianceGovernance['decision'] ?? 'UNKNOWN',
+                'security_compliance_readiness_status' => $securityComplianceGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -363,6 +368,28 @@ class FoundationGovernanceSummaryService
                 'checks' => $healthCheckGovernance['checks'] ?? [],
                 'rules' => $healthCheckGovernance['rules'] ?? [],
                 'command' => 'foundation:health-check',
+            ],
+            'security_compliance_governance' => [
+                'decision' => $securityComplianceGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $securityComplianceGovernance['readiness_status'] ?? 'unknown',
+                'security_compliance_enabled' => $securityComplianceGovernance['security_compliance_enabled'] ?? false,
+                'masking_helpers_ok' => $securityComplianceGovernance['masking_helpers_ok'] ?? false,
+                'view_scan_ok' => $securityComplianceGovernance['view_scan_ok'] ?? false,
+                'views_scanned' => $securityComplianceGovernance['views_scanned'] ?? 0,
+                'export_gating_ok' => $securityComplianceGovernance['export_gating_ok'] ?? false,
+                'export_routes_total' => $securityComplianceGovernance['export_routes_total'] ?? 0,
+                'ungated_export_routes' => $securityComplianceGovernance['ungated_export_routes'] ?? [],
+                'audit_table_exists' => $securityComplianceGovernance['audit_table_exists'] ?? false,
+                'branch_context_exists' => $securityComplianceGovernance['branch_context_exists'] ?? false,
+                'never_trust_request_branch_id' => $securityComplianceGovernance['never_trust_request_branch_id'] ?? false,
+                'queue_retry_decision' => $securityComplianceGovernance['queue_retry_decision'] ?? 'UNKNOWN',
+                'idempotency_outbox_decision' => $securityComplianceGovernance['idempotency_outbox_decision'] ?? 'UNKNOWN',
+                'developer_console_decision' => $securityComplianceGovernance['developer_console_decision'] ?? 'UNKNOWN',
+                'health_check_decision' => $securityComplianceGovernance['health_check_decision'] ?? 'UNKNOWN',
+                'summary' => $securityComplianceGovernance['summary'] ?? [],
+                'checks' => $securityComplianceGovernance['checks'] ?? [],
+                'rules' => $securityComplianceGovernance['rules'] ?? [],
+                'command' => 'foundation:security-compliance-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

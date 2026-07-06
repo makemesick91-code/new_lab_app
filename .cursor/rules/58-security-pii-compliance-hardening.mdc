@@ -1,0 +1,25 @@
+---
+description: DaengtisiaMS Security & PII Compliance Hardening (ENT-9)
+globs:
+  - "**/*.php"
+  - "config/**/*.php"
+  - "routes/**/*.php"
+  - "resources/views/**/*.blade.php"
+  - "docs/**/*.md"
+---
+
+# Security & PII Compliance Hardening (ENT-9)
+
+ENT-9 is locked as completed foundation governance. Verify with
+`php artisan foundation:security-compliance-check --strict`.
+
+1. Full KTP/NIK is server-side only. Never render, export, or log a full identifier — UI/reports/exports/logs expose masked values only. The sidebar is never a security boundary; enforce every gate server-side.
+2. Keep the masking helpers present and enabled (`PatientDataCompletenessService::maskKtp`, `SensitiveValueMasker::mask`, `developer_console.masking.enabled`). Removing/renaming one fails governance.
+3. Never add an unmasked KTP/NIK display echo (`{{ ... }}`) in a Blade view. Form inputs / value bindings are excluded by the scanner but display echoes must stay masked.
+4. Every data-export route must carry an auth/permission gate in its fully resolved middleware stack (group middleware included).
+5. `sys_audit_logs` stays immutable; sensitive access writes an audit row and never mutates history.
+6. Branch-owned queries scope through `BranchContext::requireId()`. Never trust a request-supplied `branch_id`. No cross-branch patient search by name/KTP.
+7. PII field names and scan regexes live in `config/security_compliance.php`, never inline in app code.
+8. New PII fields, export routes, or audited surfaces extend `config/security_compliance.php` with coverage + tests and pass `foundation:security-compliance-check` first.
+9. ENT-5/ENT-6/ENT-7/ENT-8 stay mandatory and surfaced: their strict checks must stay GO for ENT-9 to be GO.
+10. Preserve the `security_compliance_governance` summary section; route/config cache is cleared before route-dependent deploy gates (`scripts/deploy-vps.sh`) — do not reorder.
