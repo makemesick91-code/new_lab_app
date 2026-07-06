@@ -107,6 +107,9 @@ return [
         // ENT-14 — Load Test Scale Projection.
         'load_test_scale_projection_governance_locked' => true,
         'load_test_scale_projection_governance_doc' => 'docs/architecture/load-test-scale-projection-governance.md',
+        // ENT-15 — Enterprise Documentation & Runbook.
+        'enterprise_documentation_governance_locked' => true,
+        'enterprise_documentation_governance_doc' => 'docs/architecture/enterprise-documentation-runbook-governance.md',
     ],
 
     /**
@@ -955,6 +958,7 @@ return [
             'policy_doc' => 'docs/architecture/load-test-scale-projection-governance.md',
             'go_tag' => 'ent-14-load-test-scale-projection-go',
             'go_commit' => '7fe8a36f2afcaba53dd3c6134b792af0a34fbea8',
+            'deploy_evidence_commit' => '86ef921',
             'related_shipped_foundations' => ['REPLICA-1', 'LB-1'],
             'objective' => 'Project 20-branch and national scale from the ENT-13 baseline, tying results to the shipped LB/replica readiness foundations.',
             'why_this_order' => 'Scale projection needs the measured baseline and precedes documentation/closure.',
@@ -970,12 +974,16 @@ return [
         [
             'id' => 'ENT-15',
             'title' => 'Enterprise Documentation & Runbook',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 31,
             'depends_on' => ['ENT-14'],
             'category' => 'documentation',
             'may_touch_production_infra' => false,
             'requires_design_first' => false,
+            'governance_section' => 'enterprise_documentation_governance',
+            'readiness_command' => 'foundation:enterprise-documentation-check',
+            'policy_doc' => 'docs/architecture/enterprise-documentation-runbook-governance.md',
+            'go_tag' => 'ent-15-enterprise-documentation-runbook-go',
             'related_shipped_foundations' => ['ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Consolidate enterprise documentation: runbooks, SOP incident, SOP deploy, architecture docs, and operator guides.',
             'why_this_order' => 'Documentation consolidates all prior ENT outputs right before closure GO/NO-GO.',

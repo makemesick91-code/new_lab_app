@@ -276,6 +276,11 @@ jobs:
           php artisan foundation:load-test-scale-projection-check
           php artisan foundation:load-test-scale-projection-check --json > storage/ci-evidence/load-test-scale-projection-check.json
 
+      - name: Enterprise documentation & runbook check (ENT-15)
+        run: |
+          php artisan foundation:enterprise-documentation-check
+          php artisan foundation:enterprise-documentation-check --json > storage/ci-evidence/enterprise-documentation-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check

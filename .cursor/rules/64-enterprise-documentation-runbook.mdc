@@ -1,0 +1,37 @@
+---
+description: ENT-15 Enterprise Documentation & Runbook governance (enforced, non-sensitive).
+globs:
+  - "config/enterprise_documentation.php"
+  - "app/Support/Documentation/**"
+  - "app/Services/Foundation/EnterpriseDocumentationGovernanceService.php"
+  - "app/Console/Commands/FoundationEnterpriseDocumentationCheckCommand.php"
+  - "app/Console/Commands/EnterpriseRunbookSummaryCommand.php"
+  - "docs/runbooks/**"
+alwaysApply: false
+---
+
+# ENT-15 — Enterprise Documentation & Runbook
+
+Durable lock: `docs/architecture/enterprise-documentation-runbook-governance.md`.
+
+- The mandatory runbook set lives under `docs/runbooks/` and is declared in
+  `config/enterprise_documentation.php`. It is **enforced**, not docs-only, by
+  `scripts`/`config` + `foundation:enterprise-documentation-check --strict`.
+- Every runbook must be actionable: purpose, when to use, prerequisites, safe
+  commands, forbidden commands, evidence, rollback/fallback, troubleshooting,
+  smoke verification, security/PII notes, owner/reviewer, review cadence.
+- Destructive commands (`migrate:fresh`, `db:wipe`, `schema:drop`,
+  `migrate:reset`) may appear **only** inside a runbook forbidden/warning section
+  and are documented as forbidden. Those literals live in config, not scanner code.
+- Docs never contain secrets, credentials, the environment file, or unmasked
+  KTP/NIK; every doc passes the release-evidence forbidden-pattern/regex scan.
+- The runbook set collectively references every ENT-5..15 foundation readiness
+  command; `docs:enterprise-runbook-summary` renders the registry read-only.
+- Evidence `enterprise-documentation-check.json` is required in ci/vps profiles and
+  as a release-safety pre-deploy gate; not committed to git.
+- Any new runbook / section / topic / command reference must extend
+  `config/enterprise_documentation.php` + tests and stay green under:
+  `php artisan foundation:enterprise-documentation-check --strict`.
+- Preserve ENT-5..14: this gate re-verifies queue-retry, idempotency/outbox,
+  developer-console, health-check, security-compliance, CI/CD gate, deploy/rollback,
+  backup/DR, load-test-baseline, and scale-projection governance.
