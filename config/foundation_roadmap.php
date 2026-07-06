@@ -683,6 +683,7 @@ return [
             'policy_doc' => 'docs/architecture/queue-retry-failed-job-governance.md',
             'worker_runbook_doc' => 'docs/architecture/queue-worker-operations-runbook.md',
             'go_tag' => 'ent-5-queue-retry-failed-job-governance-go',
+            'go_commit' => 'b83d62ed02eec098da7f229afda898527a328f44',
             'related_shipped_foundations' => ['QUEUE-1'],
             'disambiguation_note' => 'Operationalizes the shipped QUEUE-1 foundation (queue_governance section, foundation:queue-governance-check) with an enforced retry/backoff/timeout standard, failed-job storage governance, and a ShouldQueue convention scan (queue_retry_governance section). Not a duplicate of QUEUE-1.',
             'objective' => 'Operationalize the shipped QUEUE-1 design: heavy work moved to queue, retry policies mandatory, failed jobs visible and actionable, queue health in observability.',
