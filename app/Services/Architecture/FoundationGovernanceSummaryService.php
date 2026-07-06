@@ -10,6 +10,7 @@ use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
+use App\Services\Foundation\IdempotencyOutboxGovernanceService;
 use App\Services\Foundation\IdempotencyService;
 use App\Services\Foundation\LoadBalancerGovernanceService;
 use App\Services\Foundation\ObservabilityGovernanceService;
@@ -70,6 +71,7 @@ class FoundationGovernanceSummaryService
         private readonly ObservabilityPipelineGovernanceService $observabilityPipelineGovernance,
         private readonly FoundationRoadmapGovernanceService $roadmapGovernance,
         private readonly QueueRetryFailedJobGovernanceService $queueRetryGovernance,
+        private readonly IdempotencyOutboxGovernanceService $idempotencyOutboxGovernance,
     ) {}
 
     /**
@@ -126,6 +128,7 @@ class FoundationGovernanceSummaryService
         $observabilityPipelineGovernance = $this->observabilityPipelineGovernance->collect();
         $roadmapGovernance = $this->roadmapGovernance->collect();
         $queueRetryGovernance = $this->queueRetryGovernance->collect();
+        $idempotencyOutboxGovernance = $this->idempotencyOutboxGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -238,6 +241,8 @@ class FoundationGovernanceSummaryService
                 'observability_pipeline_readiness_status' => $observabilityPipelineGovernance['readiness_status'] ?? 'unknown',
                 'central_logging_enabled' => $observabilityPipelineGovernance['central_logging_enabled'] ?? false,
                 'error_tracking_enabled' => $observabilityPipelineGovernance['error_tracking_enabled'] ?? false,
+                'idempotency_outbox_governance_decision' => $idempotencyOutboxGovernance['decision'] ?? 'UNKNOWN',
+                'idempotency_outbox_readiness_status' => $idempotencyOutboxGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -298,6 +303,21 @@ class FoundationGovernanceSummaryService
                 'warnings' => $queueRetryGovernance['warnings'] ?? [],
                 'rules' => $queueRetryGovernance['rules'] ?? [],
                 'command' => 'foundation:queue-retry-failed-job-check',
+            ],
+            'idempotency_outbox_governance' => [
+                'decision' => $idempotencyOutboxGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $idempotencyOutboxGovernance['readiness_status'] ?? 'unknown',
+                'idempotency_table_exists' => $idempotencyOutboxGovernance['idempotency_table_exists'] ?? false,
+                'outbox_table_exists' => $idempotencyOutboxGovernance['outbox_table_exists'] ?? false,
+                'external_dispatch_enabled' => $idempotencyOutboxGovernance['external_dispatch_enabled'] ?? false,
+                'queue_governance_decision' => $idempotencyOutboxGovernance['queue_governance_decision'] ?? 'UNKNOWN',
+                'idempotency_decision' => $idempotencyOutboxGovernance['idempotency_decision'] ?? 'UNKNOWN',
+                'outbox_decision' => $idempotencyOutboxGovernance['outbox_decision'] ?? 'UNKNOWN',
+                'queue_retry_decision' => $idempotencyOutboxGovernance['queue_retry_decision'] ?? 'UNKNOWN',
+                'summary' => $idempotencyOutboxGovernance['summary'] ?? [],
+                'checks' => $idempotencyOutboxGovernance['checks'] ?? [],
+                'rules' => $idempotencyOutboxGovernance['rules'] ?? [],
+                'command' => 'foundation:idempotency-outbox-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
@@ -539,6 +559,7 @@ class FoundationGovernanceSummaryService
                 'foundation:reporting-summary-check' => array_key_exists('foundation:reporting-summary-check', Artisan::all()),
                 'foundation:reporting-summary-refresh' => array_key_exists('foundation:reporting-summary-refresh', Artisan::all()),
                 'db:replica-readiness-check' => array_key_exists('db:replica-readiness-check', Artisan::all()),
+                'foundation:idempotency-outbox-check' => array_key_exists('foundation:idempotency-outbox-check', Artisan::all()),
             ],
             'privacy' => [
                 'privacy_safe' => true,

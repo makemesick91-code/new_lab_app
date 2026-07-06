@@ -135,6 +135,16 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         $this->line(sprintf('OUTBOX: %s — %d record(s)', $outbox['decision'] ?? 'UNKNOWN', $outbox['total_records'] ?? 0));
 
         $this->newLine();
+        $idempotencyOutboxGovernance = $report['idempotency_outbox_governance'] ?? [];
+        $this->line(sprintf(
+            'IDEMPOTENCY_OUTBOX_GOVERNANCE: %s — readiness: %s, external dispatch: %s, %d rule(s)',
+            $idempotencyOutboxGovernance['decision'] ?? 'UNKNOWN',
+            $idempotencyOutboxGovernance['readiness_status'] ?? 'unknown',
+            ($idempotencyOutboxGovernance['external_dispatch_enabled'] ?? false) ? 'enabled' : 'disabled',
+            count($idempotencyOutboxGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $dbPerformance = $report['db_performance'] ?? [];
         $this->line(sprintf(
             'DB_PERFORMANCE: %s — applied: %d, deferred: %d',

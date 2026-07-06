@@ -121,6 +121,55 @@ return [
         'foundation GO preserved',
     ],
 
+    /*
+     * ENT-6 — Idempotency & Outbox Foundation.
+     *
+     * Hardens the shipped QUEUE-1 idempotency/outbox runtime primitives with
+     * an enterprise governance section and readiness command. This does not
+     * enable external dispatch, auto-send WhatsApp, or auto-create LabOrder.
+     */
+    'ent6_idempotency_outbox' => [
+        'metadata' => [
+            'sprint' => 'ENT-6',
+            'status' => 'implemented',
+            'policy_doc' => 'docs/architecture/idempotency-outbox-foundation-governance.md',
+        ],
+        'governance_section' => 'idempotency_outbox_governance',
+        'readiness_command' => 'foundation:idempotency-outbox-check',
+        'external_dispatch_enabled' => false,
+        'required_commands' => [
+            'foundation:idempotency-outbox-check',
+            'foundation:idempotency-audit',
+            'foundation:outbox-audit',
+            'foundation:queue-governance-check',
+            'foundation:queue-retry-failed-job-check',
+        ],
+        'critical_integration_domains' => [
+            'payments',
+            'invoices',
+            'inventory',
+            'lab_candidate_generation',
+            'notifications',
+        ],
+        'denied_runtime_behaviors' => [
+            'direct external send from request path',
+            'auto-create LabOrder from RME payment',
+            'raw idempotency key storage',
+            'PII or secret in outbox payload',
+            'external outbox dispatch before later approved sprint',
+        ],
+    ],
+
+    'go_criteria_ent6' => [
+        'idempotency/outbox governance command passes',
+        'QUEUE-1 queue governance remains GO',
+        'ENT-5 queue retry governance remains GO',
+        'raw idempotency key storage remains banned',
+        'outbox payload classification and schema version remain required',
+        'external dispatch remains disabled',
+        'foundation GO preserved',
+    ],
+
     'watch_criteria' => [
         'worker readiness probe not run / no worker configured (non-blocking while worker stays disabled)',
         'idempotency/outbox tables not yet migrated on this environment',

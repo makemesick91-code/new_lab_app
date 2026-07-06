@@ -268,6 +268,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:queue-governance-check',
                 'arguments' => ['--json' => true],
             ],
+            'idempotency-outbox-check.json' => [
+                'command' => 'foundation:idempotency-outbox-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

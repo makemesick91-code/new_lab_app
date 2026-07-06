@@ -243,6 +243,7 @@ jobs:
         run: |
           php artisan foundation:queue-governance-check
           php artisan foundation:queue-governance-check --json > storage/ci-evidence/queue-governance-check.json
+          php artisan foundation:idempotency-outbox-check --json > storage/ci-evidence/idempotency-outbox-check.json
           php artisan foundation:idempotency-audit --json > storage/ci-evidence/idempotency-audit.json
           php artisan foundation:outbox-audit --json > storage/ci-evidence/outbox-audit.json
 

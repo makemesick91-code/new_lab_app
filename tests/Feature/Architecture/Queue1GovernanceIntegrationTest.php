@@ -40,7 +40,7 @@ it('release evidence capture includes queue idempotency and outbox artifacts for
     $capture = app(ReleaseEvidenceService::class)->capture('ci');
     $filenames = array_column($capture['captured'] ?? [], 'artifact');
 
-    expect($filenames)->toContain('queue-governance-check.json', 'idempotency-audit.json', 'outbox-audit.json');
+    expect($filenames)->toContain('queue-governance-check.json', 'idempotency-outbox-check.json', 'idempotency-audit.json', 'outbox-audit.json');
 });
 
 it('release evidence check expects queue idempotency and outbox artifacts after QUEUE-1', function () {
@@ -48,7 +48,7 @@ it('release evidence check expects queue idempotency and outbox artifacts after 
     $check = app(ReleaseEvidenceService::class)->check('ci');
     $artifacts = array_column($check['artifacts'] ?? [], 'artifact');
 
-    expect($artifacts)->toContain('queue-governance-check.json', 'idempotency-audit.json', 'outbox-audit.json')
+    expect($artifacts)->toContain('queue-governance-check.json', 'idempotency-outbox-check.json', 'idempotency-audit.json', 'outbox-audit.json')
         ->and($check['summary']['decision'])->toBe('GO');
 });
 
@@ -56,6 +56,7 @@ it('ci workflow contains queue idempotency and outbox evidence steps', function 
     $workflow = file_get_contents(base_path('.github/workflows/foundation-evidence-gates.yml'));
 
     expect($workflow)->toContain('foundation:queue-governance-check')
+        ->and($workflow)->toContain('foundation:idempotency-outbox-check')
         ->and($workflow)->toContain('foundation:idempotency-audit')
         ->and($workflow)->toContain('foundation:outbox-audit')
         ->and($workflow)->toContain('queue-governance-check.json');
@@ -65,6 +66,7 @@ it('deploy script contains queue idempotency and outbox gates', function () {
     $script = file_get_contents(base_path('scripts/deploy-vps.sh'));
 
     expect($script)->toContain('foundation:queue-governance-check')
+        ->and($script)->toContain('foundation:idempotency-outbox-check')
         ->and($script)->toContain('foundation:idempotency-audit')
         ->and($script)->toContain('foundation:outbox-audit');
 });
@@ -79,20 +81,22 @@ it('QUEUE-1 and DBPERF-1 are marked completed in the roadmap', function () {
 it('release safety config lists queue idempotency and outbox gate commands', function () {
     $gates = config('release_safety.required_pre_deploy_gates');
 
-    expect($gates)->toContain('foundation:queue-governance-check', 'foundation:idempotency-audit', 'foundation:outbox-audit');
+    expect($gates)->toContain('foundation:queue-governance-check', 'foundation:idempotency-outbox-check', 'foundation:idempotency-audit', 'foundation:outbox-audit');
 });
 
 it('foundation governance config registers QUEUE-1 ci evidence gate', function () {
     $gates = config('foundation_governance.ci_evidence_gates.gates');
 
     expect($gates)->toHaveKey('QUEUE-1')
-        ->and($gates['QUEUE-1']['artifacts'])->toContain('storage/ci-evidence/queue-governance-check.json');
+        ->and($gates['QUEUE-1']['artifacts'])->toContain('storage/ci-evidence/queue-governance-check.json')
+        ->and($gates['QUEUE-1']['artifacts'])->toContain('storage/ci-evidence/idempotency-outbox-check.json');
 });
 
 it('no queue worker process is started by tests', function () {
     // Governance commands are read-only and must never invoke queue:work/queue:listen.
     $commandFiles = [
         base_path('app/Console/Commands/FoundationQueueGovernanceCheckCommand.php'),
+        base_path('app/Console/Commands/FoundationIdempotencyOutboxCheckCommand.php'),
         base_path('app/Console/Commands/FoundationIdempotencyAuditCommand.php'),
         base_path('app/Console/Commands/FoundationOutboxAuditCommand.php'),
     ];
