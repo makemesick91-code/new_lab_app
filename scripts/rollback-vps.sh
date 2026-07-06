@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# ENT-11 — Deployment & Rollback Automation: rehearsable VPS rollback.
+#
+# Rolls the application back to a prior GO tag or commit safely:
+#   record current ref -> backup DB -> checkout target ref -> rebuild deps ->
+#   clear caches -> re-verify foundation gates -> rebuild caches ->
+#   reset permissions -> restart runtime -> smoke.
+#
+# SAFETY (mirrors scripts/deploy-vps.sh):
+#   - Fail-fast: any error stops the rollback (set -euo pipefail).
+#   - A verified DB backup is taken BEFORE the code is switched; backup failure
+#     stops the rollback.
+#   - Code rollback keeps the current additive (backward-compatible) schema and
+#     NEVER runs a destructive database command or a schema-destroying migration.
+#     A data rollback is a separate, explicit step using
+#     scripts/restore_postgres.sh <backup_file> — never automatic here.
+#   - ENT-8 cache-order hardening is preserved: route/config cache is cleared
+#     before the route-dependent governance gates, then rebuilt after.
+#
+# Usage:
+#   bash scripts/rollback-vps.sh <target-tag-or-commit>
+# Example:
+#   bash scripts/rollback-vps.sh ent-10-cicd-enterprise-gate-go
+set -euo pipefail
+
+APP_DIR="/var/www/asia-dental-lab-v2"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+TARGET_REF="${1:-}"
+
+if [ -z "$TARGET_REF" ]; then
+  echo "Usage: bash scripts/rollback-vps.sh <target-tag-or-commit>"
+  echo "Refusing to roll back without an explicit target ref."
+  exit 1
+fi
+
+cd "$APP_DIR"
+
+echo "== Record current ref (pre-rollback state) =="
+CURRENT_HEAD="$(git rev-parse HEAD)"
+CURRENT_REF_DESC="$(git describe --tags --always 2>/dev/null || echo "$CURRENT_HEAD")"
+echo "Current HEAD: ${CURRENT_HEAD}"
+echo "Current ref:  ${CURRENT_REF_DESC}"
+echo "Target ref:   ${TARGET_REF}"
+git status -sb
+
+echo "== Backup DB before rollback =="
+mkdir -p storage/app/backups/rollback
+
+set -a
+source .env
+set +a
+
+BACKUP="storage/app/backups/rollback/pre_rollback_${STAMP}.sql"
+
+PGPASSWORD="${DB_PASSWORD}" pg_dump \
+  -h "${DB_HOST:-127.0.0.1}" \
+  -p "${DB_PORT:-5432}" \
+  -U "${DB_USERNAME}" \
+  -d "${DB_DATABASE}" \
+  > "$BACKUP"
+
+test -s "$BACKUP"
+echo "Backup written: ${BACKUP}"
+
+echo "== Fetch tags/refs =="
+git fetch --tags --prune origin
+
+echo "== Checkout target ref =="
+git checkout "$TARGET_REF"
+
+echo "== Composer install =="
+composer install --no-dev --optimize-autoloader
+
+echo "== NPM build =="
+npm ci
+npm run build
+
+echo "== NSF-10 backup verify =="
+php artisan foundation:backup-verify --path="$BACKUP"
+
+echo "== Clear stale route/config cache before route-dependent gates (ENT-8) =="
+# Route-dependent governance gates (foundation:developer-console-check,
+# foundation:health-check) inspect the live route table. Clearing here — before
+# the gates, well before the cache-rebuild block below — makes those gates see
+# the routes of the rolled-back code.
+php artisan route:clear
+php artisan config:clear
+
+echo "== Foundation rollback governance gates (re-verify ENT-5..11) =="
+php artisan architecture:foundation-roadmap-check
+php artisan foundation:queue-retry-failed-job-check
+php artisan foundation:idempotency-outbox-check
+php artisan foundation:developer-console-check
+php artisan foundation:health-check
+php artisan foundation:security-compliance-check
+php artisan foundation:cicd-enterprise-gate-check
+php artisan foundation:deployment-rollback-check
+php artisan foundation:release-safety-check
+php artisan architecture:foundation-governance-summary
+
+echo "== Laravel cache rebuild =="
+php artisan optimize:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+php artisan event:cache
+
+echo "== Permissions =="
+chown -R www-data:www-data storage bootstrap/cache
+find storage bootstrap/cache -type d -exec chmod 775 {} \;
+find storage bootstrap/cache -type f -exec chmod 664 {} \;
+
+echo "== Restart services =="
+systemctl restart php8.3-fpm
+nginx -t
+systemctl reload nginx
+
+echo "== Smoke check =="
+php artisan about
+php artisan release:automated-smoke --base-url=http://127.0.0.1
+
+echo "ROLLBACK OK: rolled back to ${TARGET_REF} (from ${CURRENT_REF_DESC}) at ${STAMP}"
+echo "Pre-rollback backup: ${BACKUP}"
+echo "To restore data (only if required, and explicitly): bash scripts/restore_postgres.sh <backup_file>"

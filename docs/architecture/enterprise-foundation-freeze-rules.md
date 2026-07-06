@@ -252,6 +252,20 @@ Aturan keamanan:
 > Artefak evidence `cicd-enterprise-gate-check.json` wajib di profil ci/vps dan
 > tetap non-sensitif. ENT-5/ENT-6/ENT-7/ENT-8/ENT-9 tetap wajib GO.
 
+> Durable lock (ENT-11): aturan Deployment & Rollback Automation dikunci di
+> `docs/architecture/deployment-rollback-automation-governance.md`
+> (ENT11-DR001..ENT11-DR012) dan diverifikasi oleh
+> `foundation:deployment-rollback-check`. Deploy VPS otomatis lewat
+> `scripts/deploy-vps.sh` (backup terverifikasi sebelum migrate, `migrate --force`
+> saja tanpa perintah destruktif, urutan cache ENT-8 dipertahankan, reset
+> permission, dan smoke). Setiap deploy wajib punya rollback plan teruji:
+> `scripts/rollback-vps.sh <tag/commit>` mencatat ref saat ini, backup DB sebelum
+> checkout, kembali ke GO tag/commit lama, rebuild, re-verify gate ENT-5..11,
+> restart, dan smoke — tanpa perintah database destruktif (restore data hanya via
+> `scripts/restore_postgres.sh` secara eksplisit). Artefak evidence
+> `deployment-rollback-check.json` wajib di profil ci/vps dan tetap non-sensitif.
+> ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

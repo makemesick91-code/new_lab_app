@@ -288,6 +288,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:cicd-enterprise-gate-check',
                 'arguments' => ['--json' => true],
             ],
+            'deployment-rollback-check.json' => [
+                'command' => 'foundation:deployment-rollback-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

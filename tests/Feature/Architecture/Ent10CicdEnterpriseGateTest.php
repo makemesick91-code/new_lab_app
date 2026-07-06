@@ -1,7 +1,6 @@
 <?php
 
 use App\Services\Architecture\FoundationGovernanceSummaryService;
-use App\Services\Architecture\FoundationRoadmapService;
 use App\Services\Foundation\CicdEnterpriseGateGovernanceService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
 use Illuminate\Support\Facades\Artisan;
@@ -68,7 +67,7 @@ it('registers the ENT-10 governance pointers in roadmap and cicd config', functi
         ->and(config('cicd_enterprise_gate.required_foundation_commands'))->toContain('foundation:cicd-enterprise-gate-check');
 });
 
-it('registers ENT-10 completed and moves next recommended sprint to ENT-11', function () {
+it('registers ENT-10 completed with ENT-12 as the eventual next after ENT-11 ships', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
     $ent10 = $sequence->firstWhere('id', 'ENT-10');
 
@@ -84,19 +83,17 @@ it('registers ENT-10 completed and moves next recommended sprint to ENT-11', fun
     $ent9 = $sequence->firstWhere('id', 'ENT-9');
     expect($ent9['deploy_evidence_commit'])->toBe('8915c17');
 
-    $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-11')
-        ->and($governance['stale_next_detected'])->toBeFalse()
+    expect($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['missing_metadata'])->toBe([])
         ->and($governance['decision'])->toBe('GO');
 });
 
-it('keeps ENT-11 through ENT-16 planned until they earn their own GO evidence', function () {
+it('keeps ENT-12 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(11, 16) as $n) {
+    foreach (range(12, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned');

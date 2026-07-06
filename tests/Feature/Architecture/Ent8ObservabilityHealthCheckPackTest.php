@@ -89,7 +89,7 @@ it('registers ENT-8 completed and moves next recommended sprint to ENT-9', funct
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-11')
+    expect($report['next_recommended_sprint'])->toBe('ENT-12')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['missing_metadata'])->toBe([])
         ->and($governance['decision'])->toBe('GO');
@@ -98,7 +98,7 @@ it('registers ENT-8 completed and moves next recommended sprint to ENT-9', funct
 it('keeps ENT-11 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(11, 16) as $n) {
+    foreach (range(12, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned');

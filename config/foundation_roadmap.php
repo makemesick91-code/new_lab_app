@@ -96,6 +96,8 @@ return [
         // ENT-10 — CI/CD Enterprise Gate.
         'cicd_enterprise_gate_governance_locked' => true,
         'cicd_enterprise_gate_governance_doc' => 'docs/architecture/cicd-enterprise-gate-governance.md',
+        'deployment_rollback_governance_locked' => true,
+        'deployment_rollback_governance_doc' => 'docs/architecture/deployment-rollback-automation-governance.md',
     ],
 
     /**
@@ -836,6 +838,7 @@ return [
             'policy_doc' => 'docs/architecture/cicd-enterprise-gate-governance.md',
             'go_tag' => 'ent-10-cicd-enterprise-gate-go',
             'go_commit' => 'cbf4d12f790fe1788dbb0928fb9f96f050139b06',
+            'deploy_evidence_commit' => '858f457',
             'related_shipped_foundations' => ['NSF-9', 'NSF-10'],
             'objective' => 'Extend the shipped NSF-9/NSF-10 flag/smoke/evidence gates into a full CI/CD enterprise gate: critical tests, migration safety, route/config sanity, smoke commands.',
             'why_this_order' => 'CI/CD gate must encode the earlier ENT contracts before deploy/rollback automation relies on it.',
@@ -851,12 +854,16 @@ return [
         [
             'id' => 'ENT-11',
             'title' => 'Deployment & Rollback Automation',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 27,
             'depends_on' => ['ENT-10'],
             'category' => 'release_safety',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'deployment_rollback_governance',
+            'readiness_command' => 'foundation:deployment-rollback-check',
+            'policy_doc' => 'docs/architecture/deployment-rollback-automation-governance.md',
+            'go_tag' => 'ent-11-deployment-rollback-automation-go',
             'related_shipped_foundations' => ['NSF-10', 'LB-1'],
             'objective' => 'Automate the VPS deploy path (backup → deploy → cache rebuild → permission reset → smoke) and a tested rollback path, building on the existing deploy script.',
             'why_this_order' => 'Deploy/rollback automation requires the CI gate and precedes backup/DR automation drills.',

@@ -122,6 +122,9 @@ run_release_safety() {
         echo "--- foundation:cicd-enterprise-gate-check (ENT-10) ---"
         php artisan foundation:cicd-enterprise-gate-check
         echo ""
+        echo "--- foundation:deployment-rollback-check (ENT-11) ---"
+        php artisan foundation:deployment-rollback-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

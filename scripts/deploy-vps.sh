@@ -82,6 +82,8 @@ php artisan foundation:security-compliance-check
 php artisan foundation:security-compliance-check --json > storage/release-evidence/latest/security-compliance-check.json || true
 php artisan foundation:cicd-enterprise-gate-check
 php artisan foundation:cicd-enterprise-gate-check --json > storage/release-evidence/latest/cicd-enterprise-gate-check.json || true
+php artisan foundation:deployment-rollback-check
+php artisan foundation:deployment-rollback-check --json > storage/release-evidence/latest/deployment-rollback-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

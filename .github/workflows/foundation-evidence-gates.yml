@@ -256,6 +256,11 @@ jobs:
           php artisan foundation:cicd-enterprise-gate-check
           php artisan foundation:cicd-enterprise-gate-check --json > storage/ci-evidence/cicd-enterprise-gate-check.json
 
+      - name: Deployment & rollback automation check (ENT-11)
+        run: |
+          php artisan foundation:deployment-rollback-check
+          php artisan foundation:deployment-rollback-check --json > storage/ci-evidence/deployment-rollback-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check
