@@ -241,6 +241,17 @@ Aturan keamanan:
 > `BranchContext::requireId()` (branch_id dari request tidak pernah dipercaya).
 > ENT-5/ENT-6/ENT-7/ENT-8 tetap wajib GO.
 
+> Durable lock (ENT-10): aturan CI/CD Enterprise Gate dikunci di
+> `docs/architecture/cicd-enterprise-gate-governance.md`
+> (ENT10-CICD001..ENT10-CICD012) dan diverifikasi oleh
+> `foundation:cicd-enterprise-gate-check`. CI gate berjalan di setiap pull
+> request ke base branch; gate gagal memblok merge dan tidak boleh dilewati
+> diam-diam. Deploy/CI wajib menjalankan stack ENT-5..9, `migrate --force` saja
+> (tanpa perintah destruktif), backup DB sebelum migrate, dan mempertahankan
+> urutan cache ENT-8 (route/config di-clear sebelum gate route-dependent).
+> Artefak evidence `cicd-enterprise-gate-check.json` wajib di profil ci/vps dan
+> tetap non-sensitif. ENT-5/ENT-6/ENT-7/ENT-8/ENT-9 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

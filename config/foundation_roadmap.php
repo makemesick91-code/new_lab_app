@@ -93,6 +93,9 @@ return [
         // ENT-9 — Security & PII Compliance Hardening.
         'security_compliance_governance_locked' => true,
         'security_compliance_governance_doc' => 'docs/architecture/security-pii-compliance-hardening-governance.md',
+        // ENT-10 — CI/CD Enterprise Gate.
+        'cicd_enterprise_gate_governance_locked' => true,
+        'cicd_enterprise_gate_governance_doc' => 'docs/architecture/cicd-enterprise-gate-governance.md',
     ],
 
     /**
@@ -806,6 +809,7 @@ return [
             'policy_doc' => 'docs/architecture/security-pii-compliance-hardening-governance.md',
             'go_tag' => 'ent-9-security-pii-compliance-hardening-go',
             'go_commit' => '467b0ffc1f4a17740d17dc788c6db5e3fd67b3ab',
+            'deploy_evidence_commit' => '8915c17',
             'related_shipped_foundations' => ['NSF-10'],
             'objective' => 'Harden KTP/NIK masking, audit coverage, export gating, and branch isolation across all modules to the enterprise standard.',
             'why_this_order' => 'Security/PII hardening must be locked before CI/CD gates encode it and before load tests run on realistic data.',
@@ -821,12 +825,16 @@ return [
         [
             'id' => 'ENT-10',
             'title' => 'CI/CD Enterprise Gate',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 26,
             'depends_on' => ['ENT-1', 'NSF-9', 'NSF-10'],
             'category' => 'release_safety',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'cicd_enterprise_gate_governance',
+            'readiness_command' => 'foundation:cicd-enterprise-gate-check',
+            'policy_doc' => 'docs/architecture/cicd-enterprise-gate-governance.md',
+            'go_tag' => 'ent-10-cicd-enterprise-gate-go',
             'related_shipped_foundations' => ['NSF-9', 'NSF-10'],
             'objective' => 'Extend the shipped NSF-9/NSF-10 flag/smoke/evidence gates into a full CI/CD enterprise gate: critical tests, migration safety, route/config sanity, smoke commands.',
             'why_this_order' => 'CI/CD gate must encode the earlier ENT contracts before deploy/rollback automation relies on it.',

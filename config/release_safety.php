@@ -36,6 +36,7 @@ return [
         'foundation:developer-console-check',
         'foundation:health-check',
         'foundation:security-compliance-check',
+        'foundation:cicd-enterprise-gate-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

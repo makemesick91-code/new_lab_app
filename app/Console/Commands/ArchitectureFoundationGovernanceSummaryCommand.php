@@ -182,6 +182,19 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $cicdEnterpriseGate = $report['cicd_enterprise_gate_governance'] ?? [];
+        $this->line(sprintf(
+            'CICD_ENTERPRISE_GATE_GOVERNANCE: %s — readiness: %s, deploy: %s, CI: %s, evidence: %s, pre-deploy gate: %s, %d rule(s)',
+            $cicdEnterpriseGate['decision'] ?? 'UNKNOWN',
+            $cicdEnterpriseGate['readiness_status'] ?? 'unknown',
+            ($cicdEnterpriseGate['deploy_script_ok'] ?? false) ? 'safe' : 'unsafe',
+            ($cicdEnterpriseGate['ci_ok'] ?? false) ? 'ok' : 'fail',
+            ($cicdEnterpriseGate['evidence_profiles_ok'] ?? false) ? 'ok' : 'fail',
+            ($cicdEnterpriseGate['pre_deploy_gate_ok'] ?? false) ? 'ok' : 'fail',
+            count($cicdEnterpriseGate['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $dbPerformance = $report['db_performance'] ?? [];
         $this->line(sprintf(
             'DB_PERFORMANCE: %s — applied: %d, deferred: %d',
