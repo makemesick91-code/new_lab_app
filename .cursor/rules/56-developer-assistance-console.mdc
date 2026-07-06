@@ -1,0 +1,22 @@
+---
+description: DaengtisiaMS Developer Assistance Console (ENT-7)
+globs:
+  - "**/*.php"
+  - "resources/views/**/*.blade.php"
+  - "config/**/*.php"
+  - "docs/**/*.md"
+---
+
+# Developer Assistance Console (ENT-7)
+
+ENT-7 is locked as completed foundation governance.
+
+1. The console (`GET /dev-console`, route `developer-console.index`) is strictly read-only — never add a non-GET console route.
+2. Access is gated by the `view_developer_console` permission; only Super Admin holds it by default.
+3. Every console page view must stay audited via `sys_audit_logs` (`DeveloperConsoleService::recordAccess`).
+4. All free-text excerpts must pass `SensitiveValueMasker` — never render full KTP/NIK digit runs, credentials, tokens, or environment file contents.
+5. Audit payload columns (old/new values) are never rendered in the console.
+6. New console panels/exports require masking coverage, permission/audit tests, and a passing `foundation:developer-console-check` first.
+7. ENT-5 and ENT-6 stay mandatory: run `php artisan foundation:queue-retry-failed-job-check --strict` and `php artisan foundation:idempotency-outbox-check --strict`.
+8. Before later ENT work, run `php artisan foundation:developer-console-check --strict`.
+9. Preserve the `queue_retry_governance`, `idempotency_outbox_governance`, and `developer_console_governance` summary sections.

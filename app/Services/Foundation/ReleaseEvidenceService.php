@@ -272,6 +272,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:idempotency-outbox-check',
                 'arguments' => ['--json' => true],
             ],
+            'developer-console-check.json' => [
+                'command' => 'foundation:developer-console-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

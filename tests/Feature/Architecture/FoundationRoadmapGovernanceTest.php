@@ -139,7 +139,7 @@ it('foundation governance summary includes roadmap status', function () {
 it('next recommended sprint is ENT-1 after ENT-0 enterprise freeze reconciliation', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-7')
+    expect($report['next_recommended_sprint'])->toBe('ENT-8')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'QUEUE-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-1')['status'])->toBe('completed')
         ->and(collect($report['approved_sequence'])->firstWhere('id', 'DBPERF-2')['status'])->toBe('completed')

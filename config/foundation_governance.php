@@ -86,12 +86,14 @@ return [
                 'artifacts' => [
                     'storage/ci-evidence/queue-governance-check.json',
                     'storage/ci-evidence/idempotency-outbox-check.json',
+                    'storage/ci-evidence/developer-console-check.json',
                     'storage/ci-evidence/idempotency-audit.json',
                     'storage/ci-evidence/outbox-audit.json',
                 ],
                 'local_commands' => [
                     'php artisan foundation:queue-governance-check',
                     'php artisan foundation:idempotency-outbox-check',
+                    'php artisan foundation:developer-console-check',
                     'php artisan foundation:idempotency-audit',
                     'php artisan foundation:outbox-audit',
                 ],

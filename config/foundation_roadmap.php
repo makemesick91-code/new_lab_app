@@ -84,6 +84,9 @@ return [
         // ENT-6 — Idempotency & Outbox Foundation.
         'idempotency_outbox_governance_locked' => true,
         'idempotency_outbox_governance_doc' => 'docs/architecture/idempotency-outbox-foundation-governance.md',
+        // ENT-7 — Developer Assistance Console.
+        'developer_console_governance_locked' => true,
+        'developer_console_governance_doc' => 'docs/architecture/developer-assistance-console-governance.md',
     ],
 
     /**
@@ -713,6 +716,7 @@ return [
             'readiness_command' => 'foundation:idempotency-outbox-check',
             'policy_doc' => 'docs/architecture/idempotency-outbox-foundation-governance.md',
             'go_tag' => 'ent-6-idempotency-outbox-foundation-go',
+            'go_commit' => '46f41e8893a1892b9c725daefbf43d41ced967cd',
             'related_shipped_foundations' => ['QUEUE-1'],
             'disambiguation_note' => 'Hardens and enterprise-locks the shipped QUEUE-1 idempotency/outbox primitives. This keeps QUEUE-1 commands/services intact and adds ENT-6 governance without enabling external dispatch.',
             'objective' => 'Implement the QUEUE-1 idempotency-key convention and outbox pattern for important cross-module events ahead of any external (WA/API) integration.',
@@ -729,13 +733,18 @@ return [
         [
             'id' => 'ENT-7',
             'title' => 'Developer Assistance Console',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 23,
             'depends_on' => ['ENT-1', 'OBS-1', 'OBS-2'],
             'category' => 'observability',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'developer_console_governance',
+            'readiness_command' => 'foundation:developer-console-check',
+            'policy_doc' => 'docs/architecture/developer-assistance-console-governance.md',
+            'go_tag' => 'ent-7-developer-assistance-console-go',
             'related_shipped_foundations' => ['OBS-1', 'OBS-2'],
+            'disambiguation_note' => 'Read-only Super-Admin console consuming OBS-1/OBS-2, ENT-5, and ENT-6 surfaces. It adds no runtime driver change and does not replace the ENT-8 health pack.',
             'objective' => 'Provide a Super-Admin-only Developer Assistance console reading app/error logs, failed jobs, audit events, slow-query summary, deploy evidence, storage permission status, DB/Redis/queue health, and disk/backup status — all PII-masked.',
             'why_this_order' => 'Console consumes the OBS-1/OBS-2 correlation + pipeline readiness foundations and feeds ENT-8 health packs.',
             'allowed_scope' => ['read-only console surfaces', 'permission-gated + audited access', 'PII/secret masking'],

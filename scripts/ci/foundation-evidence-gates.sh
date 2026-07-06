@@ -107,6 +107,9 @@ run_release_safety() {
         echo "--- foundation:idempotency-outbox-check ---"
         php artisan foundation:idempotency-outbox-check
         echo ""
+        echo "--- foundation:developer-console-check ---"
+        php artisan foundation:developer-console-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

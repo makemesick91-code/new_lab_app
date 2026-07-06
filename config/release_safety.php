@@ -33,6 +33,7 @@ return [
         'foundation:cache-governance-check',
         'foundation:queue-governance-check',
         'foundation:idempotency-outbox-check',
+        'foundation:developer-console-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

@@ -133,6 +133,8 @@ class PermissionSeeder extends Seeder
         'manage invoices',
         'manage payments',
         'view reports',
+        // ENT-7 — Developer Assistance Console (Super Admin only by default)
+        'view_developer_console',
     ];
 
     public function run(): void
