@@ -17,6 +17,7 @@ use App\Services\Foundation\ObservabilityPipelineGovernanceService;
 use App\Services\Foundation\OutboxService;
 use App\Services\Foundation\PostgresRuntimeGovernanceService;
 use App\Services\Foundation\QueueGovernanceService;
+use App\Services\Foundation\QueueRetryFailedJobGovernanceService;
 use App\Services\Foundation\ReleaseEvidenceService;
 use App\Services\Foundation\ReleaseSafetyService;
 use App\Services\Foundation\ReportingSummaryGovernanceService;
@@ -68,6 +69,7 @@ class FoundationGovernanceSummaryService
         private readonly ObservabilityGovernanceService $observabilityGovernance,
         private readonly ObservabilityPipelineGovernanceService $observabilityPipelineGovernance,
         private readonly FoundationRoadmapGovernanceService $roadmapGovernance,
+        private readonly QueueRetryFailedJobGovernanceService $queueRetryGovernance,
     ) {}
 
     /**
@@ -123,6 +125,7 @@ class FoundationGovernanceSummaryService
         $observabilityGovernance = $this->observabilityGovernance->collect();
         $observabilityPipelineGovernance = $this->observabilityPipelineGovernance->collect();
         $roadmapGovernance = $this->roadmapGovernance->collect();
+        $queueRetryGovernance = $this->queueRetryGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -283,6 +286,18 @@ class FoundationGovernanceSummaryService
                 'summary' => $queueGovernance['summary'] ?? [],
                 'checks' => $queueGovernance['checks'] ?? [],
                 'command' => 'foundation:queue-governance-check',
+            ],
+            'queue_retry_governance' => [
+                'decision' => $queueRetryGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $queueRetryGovernance['readiness_status'] ?? 'unknown',
+                'queue_connection' => $queueRetryGovernance['queue_connection'] ?? null,
+                'failed_driver' => $queueRetryGovernance['failed_driver'] ?? null,
+                'failed_jobs_table_exists' => $queueRetryGovernance['failed_jobs_table_exists'] ?? false,
+                'queued_classes_total' => $queueRetryGovernance['queued_classes_total'] ?? 0,
+                'queued_classes_non_compliant' => $queueRetryGovernance['queued_classes_non_compliant'] ?? [],
+                'warnings' => $queueRetryGovernance['warnings'] ?? [],
+                'rules' => $queueRetryGovernance['rules'] ?? [],
+                'command' => 'foundation:queue-retry-failed-job-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

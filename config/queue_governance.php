@@ -134,4 +134,89 @@ return [
         'pii or secrets permitted in queue/outbox payload',
         'foundation GO regressed',
     ],
+
+    /*
+     * ENT-5 — Queue, Retry & Failed Job Governance.
+     *
+     * Operationalizes the QUEUE-1 design: central retry/backoff/timeout
+     * standard, failed-job storage requirements, per-environment queue
+     * connection policy, and static conventions every future ShouldQueue
+     * class must follow. Consumed by
+     * App\Support\Queue\QueueRetryFailedJobReadinessService via
+     * foundation:queue-retry-failed-job-check.
+     */
+    'ent5_retry_failed_job' => [
+        'metadata' => [
+            'sprint' => 'ENT-5',
+            'status' => 'implemented',
+            'policy_doc' => 'docs/architecture/queue-retry-failed-job-governance.md',
+        ],
+
+        'retry_standards' => [
+            'default_tries' => 3,
+            'max_tries' => 5,
+            'default_backoff_seconds' => [10, 60, 180],
+            'default_timeout_seconds' => 120,
+            'max_timeout_seconds' => 600,
+        ],
+
+        'allowed_queue_names' => [
+            'default',
+            'reports',
+            'notifications',
+            'maintenance',
+        ],
+
+        // Per-environment queue connection policy. sync is a local/testing
+        // convenience only; pilot/production must use a real broker-backed
+        // connection so retries and failed jobs actually exist.
+        'environment_connection_policy' => [
+            'local' => ['sync', 'database'],
+            'testing' => ['sync', 'database'],
+            'pilot' => ['database', 'redis'],
+            'staging' => ['database', 'redis'],
+            'production' => ['database', 'redis'],
+        ],
+        'fallback_allowed_connections' => ['database'],
+
+        'failed_jobs' => [
+            'required_driver' => 'database-uuids',
+            'required_table' => 'failed_jobs',
+        ],
+
+        'job_scan' => [
+            'paths' => ['app'],
+            'approved_base_class' => 'App\\Support\\Queue\\EnterpriseQueueJob',
+            'approved_trait' => 'App\\Support\\Queue\\EnterpriseQueueRetryDefaults',
+        ],
+
+        // Destructive queue commands must never be automated inside app
+        // code — they stay manual, operator-run, and documented in the
+        // worker runbook. Patterns live here (config) so app/ source never
+        // has to contain the literal strings the scanner looks for.
+        'unsafe_command_scan' => [
+            'paths' => ['app'],
+            'patterns' => [
+                'queue:flush',
+                'queue:clear',
+                'flushFailed(',
+            ],
+        ],
+
+        'worker' => [
+            'runbook_doc' => 'docs/architecture/queue-worker-operations-runbook.md',
+            'supervisor_required_in' => ['pilot', 'staging', 'production'],
+            'started_by_deploy' => false,
+        ],
+
+        // Jobs in these domains must be idempotent (QUEUE-1 idempotency
+        // foundation) before they may be queued.
+        'critical_idempotency_domains' => [
+            'payments',
+            'invoices',
+            'inventory',
+            'lab_candidate_generation',
+            'notifications',
+        ],
+    ],
 ];
