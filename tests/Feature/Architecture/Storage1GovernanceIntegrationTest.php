@@ -40,7 +40,7 @@ it('roadmap marks STORAGE-1 completed (next recommended sprint is now ENT-1 afte
 
     expect($storage1['status'])->toBe('completed')
         ->and($rawStorage1['requires_rollback_plan'])->toBeTrue()
-        ->and($report['next_recommended_sprint'])->toBe('ENT-14');
+        ->and($report['next_recommended_sprint'])->toBe('ENT-15');
 });
 
 it('.env.example ships object storage keys without real secret values', function () {

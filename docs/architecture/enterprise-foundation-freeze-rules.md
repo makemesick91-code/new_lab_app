@@ -293,6 +293,20 @@ Aturan keamanan:
 > profil ci/vps dan tetap non-sensitif.
 > ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11/ENT-12 tetap wajib GO.
 
+> Durable lock (ENT-14): aturan Load Test Scale Projection dikunci di
+> `docs/architecture/load-test-scale-projection-governance.md`
+> (ENT14-SP001..ENT14-SP012) dan diverifikasi oleh
+> `foundation:load-test-scale-projection-check`. Proyeksi bersifat analysis-only:
+> mengekstrapolasi baseline terukur ENT-13 (5 cabang) ke tier 20 cabang dan
+> nasional lewat `scripts/load-test-scale-projection.sh` →
+> `loadtest:scale-projection-run` (guarded, non-produksi, read-only). Semua angka
+> berlabel modeled/estimated — bukan benchmark produksi. Tier tinggi menautkan ke
+> foundation LB-1 (horizontal scale) dan REPLICA-1 (read routing); proyeksi tidak
+> pernah mengaktifkan replica read routing / multi-node traffic atau mengubah
+> topologi produksi. Artefak evidence `load-test-scale-projection-check.json` wajib
+> di profil ci/vps dan tetap non-sensitif.
+> ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11/ENT-12/ENT-13 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

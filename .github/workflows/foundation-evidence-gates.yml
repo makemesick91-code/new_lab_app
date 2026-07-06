@@ -271,6 +271,11 @@ jobs:
           php artisan foundation:load-test-baseline-check
           php artisan foundation:load-test-baseline-check --json > storage/ci-evidence/load-test-baseline-check.json
 
+      - name: Load test scale projection check (ENT-14)
+        run: |
+          php artisan foundation:load-test-scale-projection-check
+          php artisan foundation:load-test-scale-projection-check --json > storage/ci-evidence/load-test-scale-projection-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check

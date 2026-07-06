@@ -88,6 +88,8 @@ php artisan foundation:backup-dr-check
 php artisan foundation:backup-dr-check --json > storage/release-evidence/latest/backup-dr-check.json || true
 php artisan foundation:load-test-baseline-check
 php artisan foundation:load-test-baseline-check --json > storage/release-evidence/latest/load-test-baseline-check.json || true
+php artisan foundation:load-test-scale-projection-check
+php artisan foundation:load-test-scale-projection-check --json > storage/release-evidence/latest/load-test-scale-projection-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

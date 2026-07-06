@@ -181,6 +181,17 @@ return [
                     'php artisan foundation:load-test-baseline-check --json',
                 ],
             ],
+            'ENT-14' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/load-test-scale-projection-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:load-test-scale-projection-check',
+                    'php artisan foundation:load-test-scale-projection-check --json',
+                ],
+            ],
         ],
     ],
 
