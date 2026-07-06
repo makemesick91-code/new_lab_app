@@ -864,6 +864,7 @@ return [
             'readiness_command' => 'foundation:deployment-rollback-check',
             'policy_doc' => 'docs/architecture/deployment-rollback-automation-governance.md',
             'go_tag' => 'ent-11-deployment-rollback-automation-go',
+            'go_commit' => '85ca36b7ea257a8fe5dba1031672b367954605d0',
             'related_shipped_foundations' => ['NSF-10', 'LB-1'],
             'objective' => 'Automate the VPS deploy path (backup → deploy → cache rebuild → permission reset → smoke) and a tested rollback path, building on the existing deploy script.',
             'why_this_order' => 'Deploy/rollback automation requires the CI gate and precedes backup/DR automation drills.',
