@@ -159,6 +159,17 @@ return [
                     'php artisan foundation:deployment-rollback-check --json',
                 ],
             ],
+            'ENT-12' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/backup-dr-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:backup-dr-check',
+                    'php artisan foundation:backup-dr-check --json',
+                ],
+            ],
         ],
     ],
 

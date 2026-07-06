@@ -50,7 +50,7 @@ it('next recommended sprint is not any completed sprint', function () {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
     expect($payload['completed_sprints'])->not->toContain($payload['next_recommended_sprint'])
-        ->and($payload['next_recommended_sprint'])->toBe('ENT-12')
+        ->and($payload['next_recommended_sprint'])->toBe('ENT-13')
         ->and($payload['stale_next_detected'])->toBeFalse();
 });
 

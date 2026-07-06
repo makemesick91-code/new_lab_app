@@ -92,7 +92,7 @@ it('moves next recommended sprint past ENT-1 without staleness', function () {
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-12')
+    expect($report['next_recommended_sprint'])->toBe('ENT-13')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['decision'])->toBe('GO');
 });
@@ -100,7 +100,7 @@ it('moves next recommended sprint past ENT-1 without staleness', function () {
 it('keeps ENT-9..ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(12, 16) as $n) {
+    foreach (range(13, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");

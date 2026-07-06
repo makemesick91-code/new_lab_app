@@ -266,6 +266,21 @@ Aturan keamanan:
 > `deployment-rollback-check.json` wajib di profil ci/vps dan tetap non-sensitif.
 > ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10 tetap wajib GO.
 
+> Durable lock (ENT-12): aturan Backup & Disaster Recovery Automation dikunci di
+> `docs/architecture/backup-disaster-recovery-automation-governance.md`
+> (ENT12-BDR001..ENT12-BDR012) dan diverifikasi oleh `foundation:backup-dr-check`.
+> Backup DB otomatis lewat `scripts/backup-vps.sh` (fail-fast `pg_dump` →
+> `foundation:backup-verify` → prune retensi `BACKUP_DR_RETENTION_DAYS` dengan
+> floor minimum, tanpa perintah destruktif). Restore rehearsal lewat
+> `scripts/restore-rehearsal.sh` WAJIB ke database scratch non-produksi
+> (`REHEARSAL_DB` harus berbeda dari database produksi; abort bila sama), verify
+> jumlah tabel, drop hanya scratch DB, dan mencatat evidence non-sensitif
+> (path/size, RTO/RPO). Restore data produksi hanya via `scripts/restore_postgres.sh`
+> secara eksplisit — tidak pernah otomatis. Target RTO/RPO + retensi
+> didokumentasikan di `config/backup_dr.php`. Artefak evidence
+> `backup-dr-check.json` wajib di profil ci/vps dan tetap non-sensitif.
+> ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

@@ -4,6 +4,7 @@ namespace App\Services\Architecture;
 
 use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
+use App\Services\Foundation\BackupDrGovernanceService;
 use App\Services\Foundation\CacheGovernanceService;
 use App\Services\Foundation\CacheRedisGovernanceService;
 use App\Services\Foundation\CicdEnterpriseGateGovernanceService;
@@ -82,6 +83,7 @@ class FoundationGovernanceSummaryService
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
+        private readonly BackupDrGovernanceService $backupDrGovernance,
     ) {}
 
     /**
@@ -144,6 +146,7 @@ class FoundationGovernanceSummaryService
         $securityComplianceGovernance = $this->securityComplianceGovernance->collect();
         $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
         $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
+        $backupDrGovernance = $this->backupDrGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -268,6 +271,8 @@ class FoundationGovernanceSummaryService
                 'cicd_enterprise_gate_readiness_status' => $cicdEnterpriseGateGovernance['readiness_status'] ?? 'unknown',
                 'deployment_rollback_governance_decision' => $deploymentRollbackGovernance['decision'] ?? 'UNKNOWN',
                 'deployment_rollback_readiness_status' => $deploymentRollbackGovernance['readiness_status'] ?? 'unknown',
+                'backup_dr_governance_decision' => $backupDrGovernance['decision'] ?? 'UNKNOWN',
+                'backup_dr_readiness_status' => $backupDrGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -450,6 +455,30 @@ class FoundationGovernanceSummaryService
                 'checks' => $deploymentRollbackGovernance['checks'] ?? [],
                 'rules' => $deploymentRollbackGovernance['rules'] ?? [],
                 'command' => 'foundation:deployment-rollback-check',
+            ],
+            'backup_dr_governance' => [
+                'decision' => $backupDrGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $backupDrGovernance['readiness_status'] ?? 'unknown',
+                'backup_dr_enabled' => $backupDrGovernance['backup_dr_enabled'] ?? false,
+                'backup_script_ok' => $backupDrGovernance['backup_script_ok'] ?? false,
+                'backup_verify_present' => $backupDrGovernance['backup_verify_present'] ?? false,
+                'backup_retention_present' => $backupDrGovernance['backup_retention_present'] ?? false,
+                'backup_no_destructive_command' => $backupDrGovernance['backup_no_destructive_command'] ?? false,
+                'restore_rehearsal_ok' => $backupDrGovernance['restore_rehearsal_ok'] ?? false,
+                'restore_rehearsal_non_production_guard' => $backupDrGovernance['restore_rehearsal_non_production_guard'] ?? false,
+                'restore_rehearsal_no_production_restore' => $backupDrGovernance['restore_rehearsal_no_production_restore'] ?? false,
+                'objectives_ok' => $backupDrGovernance['objectives_ok'] ?? false,
+                'rto_minutes' => $backupDrGovernance['rto_minutes'] ?? 0,
+                'rpo_minutes' => $backupDrGovernance['rpo_minutes'] ?? 0,
+                'retention_days' => $backupDrGovernance['retention_days'] ?? 0,
+                'evidence_profiles_ok' => $backupDrGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $backupDrGovernance['release_safety_ok'] ?? false,
+                'deployment_rollback_decision' => $backupDrGovernance['deployment_rollback_decision'] ?? 'UNKNOWN',
+                'cicd_enterprise_gate_decision' => $backupDrGovernance['cicd_enterprise_gate_decision'] ?? 'UNKNOWN',
+                'summary' => $backupDrGovernance['summary'] ?? [],
+                'checks' => $backupDrGovernance['checks'] ?? [],
+                'rules' => $backupDrGovernance['rules'] ?? [],
+                'command' => 'foundation:backup-dr-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

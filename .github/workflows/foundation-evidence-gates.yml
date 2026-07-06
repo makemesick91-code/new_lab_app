@@ -261,6 +261,11 @@ jobs:
           php artisan foundation:deployment-rollback-check
           php artisan foundation:deployment-rollback-check --json > storage/ci-evidence/deployment-rollback-check.json
 
+      - name: Backup & disaster recovery automation check (ENT-12)
+        run: |
+          php artisan foundation:backup-dr-check
+          php artisan foundation:backup-dr-check --json > storage/ci-evidence/backup-dr-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check
