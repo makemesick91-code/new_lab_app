@@ -805,6 +805,7 @@ return [
             'readiness_command' => 'foundation:security-compliance-check',
             'policy_doc' => 'docs/architecture/security-pii-compliance-hardening-governance.md',
             'go_tag' => 'ent-9-security-pii-compliance-hardening-go',
+            'go_commit' => '467b0ffc1f4a17740d17dc788c6db5e3fd67b3ab',
             'related_shipped_foundations' => ['NSF-10'],
             'objective' => 'Harden KTP/NIK masking, audit coverage, export gating, and branch isolation across all modules to the enterprise standard.',
             'why_this_order' => 'Security/PII hardening must be locked before CI/CD gates encode it and before load tests run on realistic data.',
