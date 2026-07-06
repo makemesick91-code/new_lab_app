@@ -1,0 +1,33 @@
+---
+description: ENT-5 queue, retry & failed job governance — mandatory for any queued job/listener/worker work
+globs:
+alwaysApply: true
+---
+
+# ENT-5 — Queue, Retry & Failed Job Governance (LOCKED)
+
+Durable lock: `docs/architecture/queue-retry-failed-job-governance.md`.
+Runbook: `docs/architecture/queue-worker-operations-runbook.md`.
+Gate: `php artisan foundation:queue-retry-failed-job-check --strict`.
+
+- Queue, retry, failed job, and worker behavior must follow ENT-5. Any new
+  `ShouldQueue` job/listener must define or inherit approved
+  timeout/retry/backoff/idempotency behavior and must be covered by the
+  governance check.
+- New queued jobs extend `App\Support\Queue\EnterpriseQueueJob` (preferred),
+  use `App\Support\Queue\EnterpriseQueueRetryDefaults`, or explicitly declare
+  `$tries`, `$backoff`/`backoff()`, and `$timeout` within the caps in
+  `config/queue_governance.php` → `ent5_retry_failed_job.retry_standards`
+  (defaults tries=3, backoff=[10,60,180], timeout=120; caps tries≤5, timeout≤600).
+- `sync` queue connection is local/testing only; pilot/staging/production use
+  `database` (or `redis` after readiness GO). Failed jobs stay on
+  `database-uuids` + `failed_jobs` table — never disabled.
+- Allowed queue names: `default`, `reports`, `notifications`, `maintenance`.
+- Jobs touching payments, invoices, inventory, lab candidate generation, or
+  notifications must be idempotent (QUEUE-1 IdempotencyService); a committed
+  payment is never rolled back because a secondary job failed; no job
+  auto-sends WhatsApp; no auto LabOrder from RME payment; no PII/KTP/NIK or
+  secrets in queue payloads.
+- Never automate destructive queue commands (flush/clear/bulk failed-job
+  deletion) in app code, schedulers, or deploy scripts — operator-run per the
+  runbook only. Deploys never start queue workers.

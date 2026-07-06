@@ -173,6 +173,12 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 9. Future WA/API integration wajib melewati queue/outbox, bukan direct send dari request.
 10. Queue health wajib masuk observability/health check.
 
+> Durable lock (ENT-5): aturan retry/backoff/timeout, failed job storage,
+> kebijakan koneksi per environment, dan konvensi `ShouldQueue` dikunci di
+> `docs/architecture/queue-retry-failed-job-governance.md` (ENT5-Q001..Q008)
+> dengan runbook operasional `docs/architecture/queue-worker-operations-runbook.md`
+> dan gate `foundation:queue-retry-failed-job-check`.
+
 ---
 
 ## 8. Observability & Developer Assistance Rules
