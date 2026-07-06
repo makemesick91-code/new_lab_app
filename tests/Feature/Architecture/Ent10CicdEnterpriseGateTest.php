@@ -93,7 +93,7 @@ it('registers ENT-10 completed with ENT-12 as the eventual next after ENT-11 shi
 it('keeps ENT-15 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(15, 16) as $n) {
+    foreach (range(16, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned');

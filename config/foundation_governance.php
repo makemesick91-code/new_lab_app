@@ -192,6 +192,17 @@ return [
                     'php artisan foundation:load-test-scale-projection-check --json',
                 ],
             ],
+            'ENT-15' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/enterprise-documentation-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:enterprise-documentation-check',
+                    'php artisan foundation:enterprise-documentation-check --json',
+                ],
+            ],
         ],
     ],
 

@@ -307,6 +307,23 @@ Aturan keamanan:
 > di profil ci/vps dan tetap non-sensitif.
 > ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11/ENT-12/ENT-13 tetap wajib GO.
 
+> Durable lock (ENT-15): aturan Enterprise Documentation & Runbook dikunci di
+> `docs/architecture/enterprise-documentation-runbook-governance.md`
+> (ENT15-DOC001..ENT15-DOC012) dan diverifikasi oleh
+> `foundation:enterprise-documentation-check`. Set runbook wajib di
+> `docs/runbooks/` dideklarasikan di `config/enterprise_documentation.php` dan
+> ditegakkan (bukan docs-only): setiap runbook harus actionable (purpose, safe
+> commands, forbidden commands, evidence, rollback, smoke, security, owner,
+> review cadence). Perintah destruktif (`migrate:fresh`, `db:wipe`, `schema:drop`,
+> `migrate:reset`) hanya boleh muncul di seksi forbidden/warning; literalnya
+> disimpan di config, bukan di kode scanner. Dokumen tidak pernah memuat rahasia,
+> kredensial, file environment, atau KTP/NIK tanpa masking. Set runbook menautkan
+> setiap perintah readiness ENT-5..15; `docs:enterprise-runbook-summary`
+> menampilkan registry read-only. Artefak evidence
+> `enterprise-documentation-check.json` wajib di profil ci/vps dan tetap
+> non-sensitif.
+> ENT-5/ENT-6/ENT-7/ENT-8/ENT-9/ENT-10/ENT-11/ENT-12/ENT-13/ENT-14 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

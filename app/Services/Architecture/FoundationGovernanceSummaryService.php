@@ -12,6 +12,7 @@ use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
+use App\Services\Foundation\EnterpriseDocumentationGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
 use App\Services\Foundation\HealthCheckGovernanceService;
@@ -88,6 +89,7 @@ class FoundationGovernanceSummaryService
         private readonly BackupDrGovernanceService $backupDrGovernance,
         private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
         private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
+        private readonly EnterpriseDocumentationGovernanceService $enterpriseDocumentationGovernance,
     ) {}
 
     /**
@@ -153,6 +155,7 @@ class FoundationGovernanceSummaryService
         $backupDrGovernance = $this->backupDrGovernance->collect();
         $loadTestBaselineGovernance = $this->loadTestBaselineGovernance->collect();
         $loadTestScaleProjectionGovernance = $this->loadTestScaleProjectionGovernance->collect();
+        $enterpriseDocumentationGovernance = $this->enterpriseDocumentationGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -283,6 +286,8 @@ class FoundationGovernanceSummaryService
                 'load_test_baseline_readiness_status' => $loadTestBaselineGovernance['readiness_status'] ?? 'unknown',
                 'load_test_scale_projection_governance_decision' => $loadTestScaleProjectionGovernance['decision'] ?? 'UNKNOWN',
                 'load_test_scale_projection_readiness_status' => $loadTestScaleProjectionGovernance['readiness_status'] ?? 'unknown',
+                'enterprise_documentation_governance_decision' => $enterpriseDocumentationGovernance['decision'] ?? 'UNKNOWN',
+                'enterprise_documentation_readiness_status' => $enterpriseDocumentationGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -535,6 +540,28 @@ class FoundationGovernanceSummaryService
                 'checks' => $loadTestScaleProjectionGovernance['checks'] ?? [],
                 'rules' => $loadTestScaleProjectionGovernance['rules'] ?? [],
                 'command' => 'foundation:load-test-scale-projection-check',
+            ],
+            'enterprise_documentation_governance' => [
+                'decision' => $enterpriseDocumentationGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $enterpriseDocumentationGovernance['readiness_status'] ?? 'unknown',
+                'enterprise_documentation_enabled' => $enterpriseDocumentationGovernance['enterprise_documentation_enabled'] ?? false,
+                'registry_ok' => $enterpriseDocumentationGovernance['registry_ok'] ?? false,
+                'runbook_count' => $enterpriseDocumentationGovernance['runbook_count'] ?? 0,
+                'covered_topics' => $enterpriseDocumentationGovernance['covered_topics'] ?? [],
+                'runbook_files_ok' => $enterpriseDocumentationGovernance['runbook_files_ok'] ?? false,
+                'required_sections_ok' => $enterpriseDocumentationGovernance['required_sections_ok'] ?? false,
+                'forbidden_declaration_ok' => $enterpriseDocumentationGovernance['forbidden_declaration_ok'] ?? false,
+                'destructive_safety_ok' => $enterpriseDocumentationGovernance['destructive_safety_ok'] ?? false,
+                'sensitive_content_ok' => $enterpriseDocumentationGovernance['sensitive_content_ok'] ?? false,
+                'foundation_linkage_ok' => $enterpriseDocumentationGovernance['foundation_linkage_ok'] ?? false,
+                'summary_command_registered' => $enterpriseDocumentationGovernance['summary_command_registered'] ?? false,
+                'evidence_profiles_ok' => $enterpriseDocumentationGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $enterpriseDocumentationGovernance['release_safety_ok'] ?? false,
+                'load_test_scale_projection_decision' => $enterpriseDocumentationGovernance['load_test_scale_projection_decision'] ?? 'UNKNOWN',
+                'summary' => $enterpriseDocumentationGovernance['summary'] ?? [],
+                'checks' => $enterpriseDocumentationGovernance['checks'] ?? [],
+                'rules' => $enterpriseDocumentationGovernance['rules'] ?? [],
+                'command' => 'foundation:enterprise-documentation-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
