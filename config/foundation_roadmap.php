@@ -984,6 +984,7 @@ return [
             'readiness_command' => 'foundation:enterprise-documentation-check',
             'policy_doc' => 'docs/architecture/enterprise-documentation-runbook-governance.md',
             'go_tag' => 'ent-15-enterprise-documentation-runbook-go',
+            'go_commit' => '41fedc79c03780b24d5e39f5aa50f706bb4d7a73',
             'related_shipped_foundations' => ['ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Consolidate enterprise documentation: runbooks, SOP incident, SOP deploy, architecture docs, and operator guides.',
             'why_this_order' => 'Documentation consolidates all prior ENT outputs right before closure GO/NO-GO.',
