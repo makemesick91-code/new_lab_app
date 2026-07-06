@@ -281,6 +281,11 @@ jobs:
           php artisan foundation:enterprise-documentation-check
           php artisan foundation:enterprise-documentation-check --json > storage/ci-evidence/enterprise-documentation-check.json
 
+      - name: Enterprise foundation closure GO/NO-GO check (ENT-16)
+        run: |
+          php artisan foundation:enterprise-closure-check
+          php artisan foundation:enterprise-closure-check --json > storage/ci-evidence/enterprise-closure-check.json
+
       - name: DB performance governance check (DBPERF-1)
         run: |
           php artisan foundation:db-performance-check

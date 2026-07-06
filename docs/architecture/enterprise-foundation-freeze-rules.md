@@ -546,6 +546,12 @@ Fondasi enterprise dianggap selesai hanya jika ENT-1 sampai ENT-16 memenuhi:
 12. Final GO/NO-GO evidence pack tersedia.
 13. GO tag final dibuat: `enterprise-foundation-go`.
 
+Kriteria closure ini dikunci sebagai governance yang dapat diuji di
+`docs/architecture/enterprise-foundation-closure-go-no-go.md` dan ditegakkan oleh
+`foundation:enterprise-closure-check` (GO / WATCH / NO-GO). Closure GO menandai
+`next_recommended_sprint` = `MON-1` dan mewajibkan seluruh pekerjaan berikutnya
+mewarisi aturan ENT-5..ENT-16.
+
 Sampai tag `enterprise-foundation-go` dibuat, seluruh perubahan aplikasi tetap tunduk pada Enterprise Foundation Freeze Rules ini.
 
 ---

@@ -308,6 +308,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:enterprise-documentation-check',
                 'arguments' => ['--json' => true],
             ],
+            'enterprise-closure-check.json' => [
+                'command' => 'foundation:enterprise-closure-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

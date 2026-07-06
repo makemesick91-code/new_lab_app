@@ -110,6 +110,11 @@ return [
         // ENT-15 — Enterprise Documentation & Runbook.
         'enterprise_documentation_governance_locked' => true,
         'enterprise_documentation_governance_doc' => 'docs/architecture/enterprise-documentation-runbook-governance.md',
+        // ENT-16 — Enterprise Foundation Closure GO/NO-GO.
+        'enterprise_foundation_closure_governance_locked' => true,
+        'enterprise_foundation_closure_governance_doc' => 'docs/architecture/enterprise-foundation-closure-go-no-go.md',
+        'enterprise_foundation_baseline_locked_ent_5_to_16' => true,
+        'enterprise_foundation_final_closure_tag' => 'enterprise-foundation-go',
     ],
 
     /**
@@ -985,6 +990,7 @@ return [
             'policy_doc' => 'docs/architecture/enterprise-documentation-runbook-governance.md',
             'go_tag' => 'ent-15-enterprise-documentation-runbook-go',
             'go_commit' => '41fedc79c03780b24d5e39f5aa50f706bb4d7a73',
+            'deploy_evidence_commit' => '9c82638',
             'related_shipped_foundations' => ['ROADMAP-1-CANONICALIZATION'],
             'objective' => 'Consolidate enterprise documentation: runbooks, SOP incident, SOP deploy, architecture docs, and operator guides.',
             'why_this_order' => 'Documentation consolidates all prior ENT outputs right before closure GO/NO-GO.',
@@ -1000,7 +1006,7 @@ return [
         [
             'id' => 'ENT-16',
             'title' => 'Enterprise Foundation Closure GO/NO-GO',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 32,
             'depends_on' => [
                 'ENT-1', 'ENT-2', 'ENT-3', 'ENT-4', 'ENT-5', 'ENT-6', 'ENT-7', 'ENT-8',
@@ -1009,6 +1015,11 @@ return [
             'category' => 'governance',
             'may_touch_production_infra' => false,
             'requires_design_first' => false,
+            'governance_section' => 'enterprise_foundation_closure_governance',
+            'readiness_command' => 'foundation:enterprise-closure-check',
+            'policy_doc' => 'docs/architecture/enterprise-foundation-closure-go-no-go.md',
+            'go_tag' => 'ent-16-enterprise-foundation-closure-go-no-go-go',
+            'final_closure_tag' => 'enterprise-foundation-go',
             'objective' => 'Run the Enterprise Foundation Closure GO/NO-GO against the 13 closure criteria and, on GO, create the final enterprise-foundation-go tag ending the initial freeze.',
             'why_this_order' => 'Closure must be last in the ENT sequence; the national RC-1 consolidation remains the final roadmap item after it.',
             'allowed_scope' => ['closure evidence pack', 'GO/NO-GO decision record', 'final enterprise-foundation-go tag on GO'],

@@ -13,6 +13,7 @@ use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
 use App\Services\Foundation\EnterpriseDocumentationGovernanceService;
+use App\Services\Foundation\EnterpriseFoundationClosureGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
 use App\Services\Foundation\HealthCheckGovernanceService;
@@ -90,6 +91,7 @@ class FoundationGovernanceSummaryService
         private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
         private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
         private readonly EnterpriseDocumentationGovernanceService $enterpriseDocumentationGovernance,
+        private readonly EnterpriseFoundationClosureGovernanceService $enterpriseFoundationClosureGovernance,
     ) {}
 
     /**
@@ -156,6 +158,7 @@ class FoundationGovernanceSummaryService
         $loadTestBaselineGovernance = $this->loadTestBaselineGovernance->collect();
         $loadTestScaleProjectionGovernance = $this->loadTestScaleProjectionGovernance->collect();
         $enterpriseDocumentationGovernance = $this->enterpriseDocumentationGovernance->collect();
+        $enterpriseFoundationClosureGovernance = $this->enterpriseFoundationClosureGovernance->collect($enterpriseDocumentationGovernance);
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -288,6 +291,8 @@ class FoundationGovernanceSummaryService
                 'load_test_scale_projection_readiness_status' => $loadTestScaleProjectionGovernance['readiness_status'] ?? 'unknown',
                 'enterprise_documentation_governance_decision' => $enterpriseDocumentationGovernance['decision'] ?? 'UNKNOWN',
                 'enterprise_documentation_readiness_status' => $enterpriseDocumentationGovernance['readiness_status'] ?? 'unknown',
+                'enterprise_foundation_closure_governance_decision' => $enterpriseFoundationClosureGovernance['decision'] ?? 'UNKNOWN',
+                'enterprise_foundation_closure_readiness_status' => $enterpriseFoundationClosureGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -562,6 +567,32 @@ class FoundationGovernanceSummaryService
                 'checks' => $enterpriseDocumentationGovernance['checks'] ?? [],
                 'rules' => $enterpriseDocumentationGovernance['rules'] ?? [],
                 'command' => 'foundation:enterprise-documentation-check',
+            ],
+            'enterprise_foundation_closure_governance' => [
+                'decision' => $enterpriseFoundationClosureGovernance['decision'] ?? 'UNKNOWN',
+                'closure_decision' => $enterpriseFoundationClosureGovernance['closure_decision'] ?? 'UNKNOWN',
+                'readiness_status' => $enterpriseFoundationClosureGovernance['readiness_status'] ?? 'unknown',
+                'enterprise_foundation_closure_enabled' => $enterpriseFoundationClosureGovernance['enterprise_foundation_closure_enabled'] ?? false,
+                'final_closure_tag' => $enterpriseFoundationClosureGovernance['final_closure_tag'] ?? null,
+                'roadmap_ok' => $enterpriseFoundationClosureGovernance['roadmap_ok'] ?? false,
+                'roadmap_completed_count' => $enterpriseFoundationClosureGovernance['roadmap_completed_count'] ?? 0,
+                'mandatory_gates_config_ok' => $enterpriseFoundationClosureGovernance['mandatory_gates_config_ok'] ?? false,
+                'mandatory_gate_decisions' => $enterpriseFoundationClosureGovernance['mandatory_gate_decisions'] ?? [],
+                'next_recommended_sprint' => $enterpriseFoundationClosureGovernance['next_recommended_sprint'] ?? null,
+                'stale_next_detected' => $enterpriseFoundationClosureGovernance['stale_next_detected'] ?? false,
+                'evidence_profiles_ok' => $enterpriseFoundationClosureGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $enterpriseFoundationClosureGovernance['release_safety_ok'] ?? false,
+                'ci_gate_registry_ok' => $enterpriseFoundationClosureGovernance['ci_gate_registry_ok'] ?? false,
+                'scripts_ok' => $enterpriseFoundationClosureGovernance['scripts_ok'] ?? false,
+                'runbooks_ok' => $enterpriseFoundationClosureGovernance['runbooks_ok'] ?? false,
+                'final_tag_ok' => $enterpriseFoundationClosureGovernance['final_tag_ok'] ?? false,
+                'sensitive_content_ok' => $enterpriseFoundationClosureGovernance['sensitive_content_ok'] ?? false,
+                'closure_criteria_total' => $enterpriseFoundationClosureGovernance['closure_criteria_total'] ?? 0,
+                'closure_criteria_met' => $enterpriseFoundationClosureGovernance['closure_criteria_met'] ?? 0,
+                'summary' => $enterpriseFoundationClosureGovernance['summary'] ?? [],
+                'checks' => $enterpriseFoundationClosureGovernance['checks'] ?? [],
+                'rules' => $enterpriseFoundationClosureGovernance['rules'] ?? [],
+                'command' => 'foundation:enterprise-closure-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

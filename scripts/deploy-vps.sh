@@ -92,6 +92,8 @@ php artisan foundation:load-test-scale-projection-check
 php artisan foundation:load-test-scale-projection-check --json > storage/release-evidence/latest/load-test-scale-projection-check.json || true
 php artisan foundation:enterprise-documentation-check
 php artisan foundation:enterprise-documentation-check --json > storage/release-evidence/latest/enterprise-documentation-check.json || true
+php artisan foundation:enterprise-closure-check
+php artisan foundation:enterprise-closure-check --json > storage/release-evidence/latest/enterprise-closure-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

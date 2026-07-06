@@ -42,6 +42,7 @@ return [
         'foundation:load-test-baseline-check',
         'foundation:load-test-scale-projection-check',
         'foundation:enterprise-documentation-check',
+        'foundation:enterprise-closure-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

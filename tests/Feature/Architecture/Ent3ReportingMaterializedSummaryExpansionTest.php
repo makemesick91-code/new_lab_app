@@ -155,7 +155,7 @@ it('moves next recommended sprint to ENT-9 after the cache policy lock', functio
     $report = app(FoundationRoadmapService::class)->collect();
     $governance = app(FoundationRoadmapGovernanceService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBe('ENT-16')
+    expect($report['next_recommended_sprint'])->toBe('MON-1')
         ->and($governance['stale_next_detected'])->toBeFalse()
         ->and($governance['decision'])->toBe('GO');
 });
@@ -163,11 +163,9 @@ it('moves next recommended sprint to ENT-9 after the cache policy lock', functio
 it('keeps ENT-9..ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(16, 16) as $n) {
-        $entry = $sequence->firstWhere('id', "ENT-{$n}");
-        expect($entry)->not->toBeNull()
-            ->and($entry['status'])->toBe('planned', "ENT-{$n} must stay planned until it has its own evidence + GO tag");
-    }
+    $entry = $sequence->firstWhere('id', 'MON-1');
+    expect($entry)->not->toBeNull()
+        ->and($entry['status'])->toBe('planned', 'MON-1 must stay planned until it earns its own evidence + GO tag');
 });
 
 it('adds no physical summary migration in ENT-3', function () {
