@@ -104,6 +104,9 @@ run_release_safety() {
         echo "--- foundation:queue-governance-check ---"
         php artisan foundation:queue-governance-check
         echo ""
+        echo "--- foundation:idempotency-outbox-check ---"
+        php artisan foundation:idempotency-outbox-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

@@ -62,6 +62,8 @@ php artisan foundation:cache-governance-check
 php artisan foundation:cache-governance-check --json > storage/release-evidence/latest/cache-governance-check.json || true
 php artisan foundation:queue-governance-check
 php artisan foundation:queue-governance-check --json > storage/release-evidence/latest/queue-governance-check.json || true
+php artisan foundation:idempotency-outbox-check
+php artisan foundation:idempotency-outbox-check --json > storage/release-evidence/latest/idempotency-outbox-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

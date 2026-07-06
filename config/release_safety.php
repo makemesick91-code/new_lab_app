@@ -32,6 +32,7 @@ return [
         'foundation:feature-flags',
         'foundation:cache-governance-check',
         'foundation:queue-governance-check',
+        'foundation:idempotency-outbox-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',

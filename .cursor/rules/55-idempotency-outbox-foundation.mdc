@@ -1,0 +1,21 @@
+---
+description: DaengtisiaMS Idempotency & Outbox Foundation (ENT-6)
+globs:
+  - "**/*.php"
+  - "config/**/*.php"
+  - "docs/**/*.md"
+---
+
+# Idempotency & Outbox Foundation (ENT-6)
+
+ENT-6 is locked as completed foundation governance.
+
+1. Use `IdempotencyService` for replay-safe reservations; never store raw idempotency keys.
+2. Use `OutboxService` for future cross-module/external side effects; payloads must be PII/secret safe.
+3. Outbox events require schema version and payload classification.
+4. External dispatch remains disabled unless a later approved sprint explicitly enables it.
+5. Never auto-send WhatsApp from a request path.
+6. Never auto-create LabOrder from RME payment.
+7. Future queued outbox dispatchers must also pass ENT-5 queue retry/failed-job governance.
+8. Before later ENT work, run `php artisan foundation:idempotency-outbox-check --strict`.
+9. Preserve `queue_governance`, `idempotency`, `outbox`, `queue_retry_governance`, and `idempotency_outbox_governance` summary sections.

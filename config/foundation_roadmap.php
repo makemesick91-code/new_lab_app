@@ -81,6 +81,9 @@ return [
         'queue_retry_failed_job_governance_locked' => true,
         'queue_retry_failed_job_governance_doc' => 'docs/architecture/queue-retry-failed-job-governance.md',
         'queue_worker_operations_runbook_doc' => 'docs/architecture/queue-worker-operations-runbook.md',
+        // ENT-6 — Idempotency & Outbox Foundation.
+        'idempotency_outbox_governance_locked' => true,
+        'idempotency_outbox_governance_doc' => 'docs/architecture/idempotency-outbox-foundation-governance.md',
     ],
 
     /**
@@ -700,13 +703,18 @@ return [
         [
             'id' => 'ENT-6',
             'title' => 'Idempotency & Outbox Foundation',
-            'status' => 'planned',
+            'status' => 'completed',
             'priority' => 22,
             'depends_on' => ['ENT-5', 'QUEUE-1'],
             'category' => 'queue',
             'may_touch_production_infra' => false,
             'requires_design_first' => true,
+            'governance_section' => 'idempotency_outbox_governance',
+            'readiness_command' => 'foundation:idempotency-outbox-check',
+            'policy_doc' => 'docs/architecture/idempotency-outbox-foundation-governance.md',
+            'go_tag' => 'ent-6-idempotency-outbox-foundation-go',
             'related_shipped_foundations' => ['QUEUE-1'],
+            'disambiguation_note' => 'Hardens and enterprise-locks the shipped QUEUE-1 idempotency/outbox primitives. This keeps QUEUE-1 commands/services intact and adds ENT-6 governance without enabling external dispatch.',
             'objective' => 'Implement the QUEUE-1 idempotency-key convention and outbox pattern for important cross-module events ahead of any external (WA/API) integration.',
             'why_this_order' => 'Idempotency/outbox must exist before external integrations; depends on ENT-5 queue governance.',
             'allowed_scope' => ['idempotency key enforcement', 'outbox dispatch for cross-module events'],

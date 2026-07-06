@@ -179,6 +179,13 @@ Urutan boleh disesuaikan hanya jika ada alasan teknis kuat, tetapi scope enterpr
 > dengan runbook operasional `docs/architecture/queue-worker-operations-runbook.md`
 > dan gate `foundation:queue-retry-failed-job-check`.
 
+> Durable lock (ENT-6): aturan idempotency/outbox enterprise dikunci di
+> `docs/architecture/idempotency-outbox-foundation-governance.md`
+> (ENT6-IO001..ENT6-IO008) dan gate
+> `foundation:idempotency-outbox-check`. External dispatch tetap nonaktif,
+> WhatsApp tidak boleh auto-send dari request path, dan RME payment tidak boleh
+> auto-create LabOrder.
+
 ---
 
 ## 8. Observability & Developer Assistance Rules
