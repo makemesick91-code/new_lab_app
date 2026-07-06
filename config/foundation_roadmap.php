@@ -954,6 +954,7 @@ return [
             'readiness_command' => 'foundation:load-test-scale-projection-check',
             'policy_doc' => 'docs/architecture/load-test-scale-projection-governance.md',
             'go_tag' => 'ent-14-load-test-scale-projection-go',
+            'go_commit' => '7fe8a36f2afcaba53dd3c6134b792af0a34fbea8',
             'related_shipped_foundations' => ['REPLICA-1', 'LB-1'],
             'objective' => 'Project 20-branch and national scale from the ENT-13 baseline, tying results to the shipped LB/replica readiness foundations.',
             'why_this_order' => 'Scale projection needs the measured baseline and precedes documentation/closure.',
