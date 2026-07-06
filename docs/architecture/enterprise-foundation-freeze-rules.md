@@ -223,6 +223,14 @@ Aturan keamanan:
 > permission `view_developer_console`, semua akses diaudit ke `sys_audit_logs`,
 > dan seluruh excerpt melewati masking PII/secret.
 
+> Durable lock (ENT-8): aturan Observability & Health Check Pack dikunci di
+> `docs/architecture/observability-health-check-pack-governance.md`
+> (ENT8-HC001..ENT8-HC010) dan diverifikasi oleh `foundation:health-check`.
+> Endpoint `GET /health/live` dan `GET /health/ready` tetap read-only, GET-only,
+> minimal, dan non-sensitif (status + state komponen saja). Alerting hanya
+> readiness — tanpa vendor paging eksternal sebelum review privasi. LB-1
+> `/health/lb` tetap utuh. ENT-5/ENT-6/ENT-7 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

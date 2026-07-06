@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DeveloperConsoleController;
+use App\Http\Controllers\HealthCheckController;
 use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\LoadBalancerHealthController;
 use App\Http\Controllers\ProfileController;
@@ -84,6 +85,20 @@ Route::get('/', function () {
 if (config('load_balancer.health_endpoint_enabled')) {
     Route::get(config('load_balancer.health_endpoint_path', '/health/lb'), LoadBalancerHealthController::class)
         ->name('health.lb');
+}
+
+// ENT-8 — Observability & Health Check Pack: minimal, unauthenticated,
+// non-sensitive liveness/readiness endpoints. GET only; no PII/secret output.
+if (config('health_check.enabled', true)) {
+    if (config('health_check.liveness.enabled', true)) {
+        Route::get(config('health_check.liveness.path', '/health/live'), [HealthCheckController::class, 'live'])
+            ->name('health.live');
+    }
+
+    if (config('health_check.readiness.enabled', true)) {
+        Route::get(config('health_check.readiness.path', '/health/ready'), [HealthCheckController::class, 'ready'])
+            ->name('health.ready');
+    }
 }
 
 Route::get('/dashboard', [HomeDashboardController::class, 'index'])

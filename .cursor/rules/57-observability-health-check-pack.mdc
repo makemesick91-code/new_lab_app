@@ -1,0 +1,23 @@
+---
+description: DaengtisiaMS Observability & Health Check Pack (ENT-8)
+globs:
+  - "**/*.php"
+  - "config/**/*.php"
+  - "routes/**/*.php"
+  - "docs/**/*.md"
+---
+
+# Observability & Health Check Pack (ENT-8)
+
+ENT-8 is locked as completed foundation governance.
+
+1. Health endpoints (`GET /health/live` = `health.live`, `GET /health/ready` = `health.ready`) are strictly read-only and GET-only — never add a non-GET health route.
+2. Health output stays minimal and non-sensitive: overall status + per-component `ok|degraded|down` only. Never render APP_KEY, DB host/credentials, env values, route list, user/branch/patient data, secrets, or stack traces.
+3. Readiness aggregates DB (critical) + cache/queue/storage/object-storage via `App\Support\Health\HealthCheckService`; probe exceptions are swallowed, never echoed.
+4. Alerting thresholds are readiness-only. Keep the external paging/alerting channel disabled — no external vendor without a privacy review.
+5. Health output must never leak PII/KTP/NIK; the governance check runs a live non-sensitivity scan.
+6. New health surfaces (endpoints, exported metrics) require non-sensitivity coverage, endpoint tests, and a passing `foundation:health-check` first.
+7. ENT-5/ENT-6/ENT-7 stay mandatory and surfaced: `foundation:queue-retry-failed-job-check --strict`, `foundation:idempotency-outbox-check --strict`, `foundation:developer-console-check --strict` must stay GO.
+8. Before later ENT work, run `php artisan foundation:health-check --strict`.
+9. Preserve the `health_check_governance` summary section alongside the ENT-5/6/7 sections; keep the LB-1 `/health/lb` endpoint intact.
+10. Route-adding deploys clear route/config cache before route-dependent gates (`scripts/deploy-vps.sh`) — do not reorder gates ahead of the cache clear.

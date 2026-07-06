@@ -49,6 +49,15 @@ php artisan migrate --force
 echo "== NSF-10 backup verify =="
 php artisan foundation:backup-verify --path="$BACKUP"
 
+echo "== Clear stale route/config cache before route-dependent gates (ENT-8) =="
+# Route-dependent governance gates (foundation:developer-console-check,
+# foundation:health-check) inspect the live route table. A stale route cache
+# from a prior deploy can hide newly added routes during the gate phase (the
+# ENT-7 deploy hiccup). Clearing here — before the gates, well before the
+# cache-rebuild block below — makes those gates see the freshly deployed routes.
+php artisan route:clear
+php artisan config:clear
+
 echo "== Foundation deploy governance gates =="
 php artisan architecture:foundation-roadmap-check
 php artisan data-quality:dq1-audit --fail-on=error
@@ -66,6 +75,8 @@ php artisan foundation:idempotency-outbox-check
 php artisan foundation:idempotency-outbox-check --json > storage/release-evidence/latest/idempotency-outbox-check.json || true
 php artisan foundation:developer-console-check
 php artisan foundation:developer-console-check --json > storage/release-evidence/latest/developer-console-check.json || true
+php artisan foundation:health-check
+php artisan foundation:health-check --json > storage/release-evidence/latest/health-check-check.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

@@ -276,6 +276,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:developer-console-check',
                 'arguments' => ['--json' => true],
             ],
+            'health-check-check.json' => [
+                'command' => 'foundation:health-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

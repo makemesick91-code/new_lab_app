@@ -37,7 +37,7 @@ it('foundation summary command renders FEATURE_FLAGS RELEASE_SAFETY AUTOMATED_SM
 it('roadmap next recommended sprint follows the foundation expansion completion status', function () {
     $report = app(FoundationRoadmapService::class)->collect();
 
-    expect($report['next_recommended_sprint'])->toBeIn(['NSF-9', 'NSF-10', 'CACHE-1', 'QUEUE-1', 'DBPERF-1', 'DBPERF-2', 'RPT-1', 'STORAGE-1', 'STATELESS-1', 'LB-1', 'REPLICA-1', 'CACHE-1-REDIS-READINESS', 'OBS-1', 'OBS-2', 'ROADMAP-1-CANONICALIZATION', 'ENT-0', 'ENT-1', 'ENT-2', 'ENT-3', 'ENT-4', 'ENT-5', 'ENT-6', 'ENT-7', 'ENT-8', 'MON-1']);
+    expect($report['next_recommended_sprint'])->toBeIn(['NSF-9', 'NSF-10', 'CACHE-1', 'QUEUE-1', 'DBPERF-1', 'DBPERF-2', 'RPT-1', 'STORAGE-1', 'STATELESS-1', 'LB-1', 'REPLICA-1', 'CACHE-1-REDIS-READINESS', 'OBS-1', 'OBS-2', 'ROADMAP-1-CANONICALIZATION', 'ENT-0', 'ENT-1', 'ENT-2', 'ENT-3', 'ENT-4', 'ENT-5', 'ENT-6', 'ENT-7', 'ENT-8', 'ENT-9', 'MON-1']);
 });
 
 it('roadmap sequence order is preserved regardless of NSF-9 status', function () {
