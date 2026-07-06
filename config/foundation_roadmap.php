@@ -894,6 +894,7 @@ return [
             'readiness_command' => 'foundation:backup-dr-check',
             'policy_doc' => 'docs/architecture/backup-disaster-recovery-automation-governance.md',
             'go_tag' => 'ent-12-backup-disaster-recovery-automation-go',
+            'go_commit' => 'b6a0e6536f764de9eef0b48e8e8d3498ff939516',
             'related_shipped_foundations' => ['NSF-10'],
             'objective' => 'Automate DB + storage backup with retention, periodic restore rehearsal with evidence, and RTO/RPO targets.',
             'why_this_order' => 'DR readiness is a hard prerequisite of Enterprise Foundation Closure GO and must precede load-test phases that certify scale.',
