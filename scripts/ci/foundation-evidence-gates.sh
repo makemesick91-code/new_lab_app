@@ -104,6 +104,9 @@ run_release_safety() {
         echo "--- foundation:queue-governance-check ---"
         php artisan foundation:queue-governance-check
         echo ""
+        echo "--- foundation:queue-retry-failed-job-check ---"
+        php artisan foundation:queue-retry-failed-job-check
+        echo ""
         echo "--- foundation:idempotency-outbox-check ---"
         php artisan foundation:idempotency-outbox-check
         echo ""
@@ -115,6 +118,9 @@ run_release_safety() {
         echo ""
         echo "--- foundation:security-compliance-check ---"
         php artisan foundation:security-compliance-check
+        echo ""
+        echo "--- foundation:cicd-enterprise-gate-check (ENT-10) ---"
+        php artisan foundation:cicd-enterprise-gate-check
         echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit

@@ -137,6 +137,17 @@ return [
                     'php artisan foundation:reporting-summary-refresh --dry-run --json',
                 ],
             ],
+            'ENT-10' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/cicd-enterprise-gate-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:cicd-enterprise-gate-check',
+                    'php artisan foundation:cicd-enterprise-gate-check --json',
+                ],
+            ],
         ],
     ],
 

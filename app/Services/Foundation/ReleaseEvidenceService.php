@@ -284,6 +284,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:security-compliance-check',
                 'arguments' => ['--json' => true],
             ],
+            'cicd-enterprise-gate-check.json' => [
+                'command' => 'foundation:cicd-enterprise-gate-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

@@ -6,6 +6,7 @@ use App\Services\DataQuality\Dq1AuditService;
 use App\Services\Foundation\AutomatedSmokeService;
 use App\Services\Foundation\CacheGovernanceService;
 use App\Services\Foundation\CacheRedisGovernanceService;
+use App\Services\Foundation\CicdEnterpriseGateGovernanceService;
 use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
@@ -78,6 +79,7 @@ class FoundationGovernanceSummaryService
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
+        private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
     ) {}
 
     /**
@@ -138,6 +140,7 @@ class FoundationGovernanceSummaryService
         $developerConsoleGovernance = $this->developerConsoleGovernance->collect();
         $healthCheckGovernance = $this->healthCheckGovernance->collect();
         $securityComplianceGovernance = $this->securityComplianceGovernance->collect();
+        $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -258,6 +261,8 @@ class FoundationGovernanceSummaryService
                 'health_check_readiness_status' => $healthCheckGovernance['readiness_status'] ?? 'unknown',
                 'security_compliance_governance_decision' => $securityComplianceGovernance['decision'] ?? 'UNKNOWN',
                 'security_compliance_readiness_status' => $securityComplianceGovernance['readiness_status'] ?? 'unknown',
+                'cicd_enterprise_gate_governance_decision' => $cicdEnterpriseGateGovernance['decision'] ?? 'UNKNOWN',
+                'cicd_enterprise_gate_readiness_status' => $cicdEnterpriseGateGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -390,6 +395,32 @@ class FoundationGovernanceSummaryService
                 'checks' => $securityComplianceGovernance['checks'] ?? [],
                 'rules' => $securityComplianceGovernance['rules'] ?? [],
                 'command' => 'foundation:security-compliance-check',
+            ],
+            'cicd_enterprise_gate_governance' => [
+                'decision' => $cicdEnterpriseGateGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $cicdEnterpriseGateGovernance['readiness_status'] ?? 'unknown',
+                'cicd_enterprise_gate_enabled' => $cicdEnterpriseGateGovernance['cicd_enterprise_gate_enabled'] ?? false,
+                'deploy_script_ok' => $cicdEnterpriseGateGovernance['deploy_script_ok'] ?? false,
+                'deploy_no_destructive_command' => $cicdEnterpriseGateGovernance['deploy_no_destructive_command'] ?? false,
+                'deploy_migrate_force_present' => $cicdEnterpriseGateGovernance['deploy_migrate_force_present'] ?? false,
+                'deploy_backup_before_migrate' => $cicdEnterpriseGateGovernance['deploy_backup_before_migrate'] ?? false,
+                'deploy_cache_order_preserved' => $cicdEnterpriseGateGovernance['deploy_cache_order_preserved'] ?? false,
+                'deploy_cache_rebuild_present' => $cicdEnterpriseGateGovernance['deploy_cache_rebuild_present'] ?? false,
+                'ci_ok' => $cicdEnterpriseGateGovernance['ci_ok'] ?? false,
+                'ci_pull_request_trigger' => $cicdEnterpriseGateGovernance['ci_pull_request_trigger'] ?? false,
+                'ci_fail_fast' => $cicdEnterpriseGateGovernance['ci_fail_fast'] ?? false,
+                'ci_no_destructive_command' => $cicdEnterpriseGateGovernance['ci_no_destructive_command'] ?? false,
+                'evidence_profiles_ok' => $cicdEnterpriseGateGovernance['evidence_profiles_ok'] ?? false,
+                'pre_deploy_gate_ok' => $cicdEnterpriseGateGovernance['pre_deploy_gate_ok'] ?? false,
+                'queue_retry_decision' => $cicdEnterpriseGateGovernance['queue_retry_decision'] ?? 'UNKNOWN',
+                'idempotency_outbox_decision' => $cicdEnterpriseGateGovernance['idempotency_outbox_decision'] ?? 'UNKNOWN',
+                'developer_console_decision' => $cicdEnterpriseGateGovernance['developer_console_decision'] ?? 'UNKNOWN',
+                'health_check_decision' => $cicdEnterpriseGateGovernance['health_check_decision'] ?? 'UNKNOWN',
+                'security_compliance_decision' => $cicdEnterpriseGateGovernance['security_compliance_decision'] ?? 'UNKNOWN',
+                'summary' => $cicdEnterpriseGateGovernance['summary'] ?? [],
+                'checks' => $cicdEnterpriseGateGovernance['checks'] ?? [],
+                'rules' => $cicdEnterpriseGateGovernance['rules'] ?? [],
+                'command' => 'foundation:cicd-enterprise-gate-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

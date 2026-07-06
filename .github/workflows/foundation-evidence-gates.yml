@@ -243,12 +243,18 @@ jobs:
         run: |
           php artisan foundation:queue-governance-check
           php artisan foundation:queue-governance-check --json > storage/ci-evidence/queue-governance-check.json
+          php artisan foundation:queue-retry-failed-job-check --json > storage/ci-evidence/queue-retry-failed-job-check.json
           php artisan foundation:idempotency-outbox-check --json > storage/ci-evidence/idempotency-outbox-check.json
           php artisan foundation:developer-console-check --json > storage/ci-evidence/developer-console-check.json
           php artisan foundation:health-check --json > storage/ci-evidence/health-check-check.json
           php artisan foundation:security-compliance-check --json > storage/ci-evidence/security-compliance-check.json
           php artisan foundation:idempotency-audit --json > storage/ci-evidence/idempotency-audit.json
           php artisan foundation:outbox-audit --json > storage/ci-evidence/outbox-audit.json
+
+      - name: CI/CD enterprise gate check (ENT-10)
+        run: |
+          php artisan foundation:cicd-enterprise-gate-check
+          php artisan foundation:cicd-enterprise-gate-check --json > storage/ci-evidence/cicd-enterprise-gate-check.json
 
       - name: DB performance governance check (DBPERF-1)
         run: |

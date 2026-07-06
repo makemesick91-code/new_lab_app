@@ -1,0 +1,25 @@
+---
+description: DaengtisiaMS CI/CD Enterprise Gate (ENT-10)
+globs:
+  - "**/*.php"
+  - "config/**/*.php"
+  - "scripts/**/*.sh"
+  - ".github/workflows/**/*.yml"
+  - "docs/**/*.md"
+---
+
+# CI/CD Enterprise Gate (ENT-10)
+
+ENT-10 is locked as completed foundation governance. Verify with
+`php artisan foundation:cicd-enterprise-gate-check --strict`.
+
+1. The enterprise CI gate runs on every pull request to the base branch; a failed gate blocks merge. Never target `main`; never bypass or silence a failing gate.
+2. CI + deploy must run the ENT-5..9 foundation stack (`foundation:queue-retry-failed-job-check`, `foundation:idempotency-outbox-check`, `foundation:developer-console-check`, `foundation:health-check`, `foundation:security-compliance-check`) and those strict checks must stay GO.
+3. Migration safety: `php artisan migrate --force` only. Never add `migrate:fresh`, `migrate:reset`, `db:wipe`, `schema:drop`, `DROP DATABASE`, or `TRUNCATE` to any deploy/CI script.
+4. The deploy script must back up the DB (`pg_dump`) before pull/migrate; backup failure stops the deploy.
+5. Preserve the ENT-8 cache-order hardening: `php artisan route:clear`/`config:clear` run before the route-dependent governance gates in `scripts/deploy-vps.sh`. Do not reorder.
+6. Route/config sanity: rebuild `config:cache`/`route:cache`/`view:cache` after the gate phase.
+7. Destructive-command patterns and required-command lists live in `config/cicd_enterprise_gate.php` — never inline them in app/CI/deploy source.
+8. The `ci`/`vps` release-evidence profiles require `cicd-enterprise-gate-check.json` plus the ENT-5..9 siblings; evidence artifacts stay non-sensitive (no secret/PII).
+9. `config/release_safety.php` lists `foundation:cicd-enterprise-gate-check` as a required pre-deploy gate; keep it registered.
+10. Preserve the `cicd_enterprise_gate_governance` summary section. Any new CI/deploy gate registers here with tests and passes `foundation:cicd-enterprise-gate-check --strict` first.
