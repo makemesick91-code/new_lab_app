@@ -38,6 +38,7 @@ return [
         'foundation:security-compliance-check',
         'foundation:cicd-enterprise-gate-check',
         'foundation:deployment-rollback-check',
+        'foundation:backup-dr-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',
@@ -79,6 +80,8 @@ return [
     'deploy_gate_files' => [
         'deploy_script' => 'scripts/deploy-vps.sh',
         'rollback_script' => 'scripts/rollback-vps.sh',
+        'backup_script' => 'scripts/backup-vps.sh',
+        'restore_rehearsal_script' => 'scripts/restore-rehearsal.sh',
         'ci_workflow' => '.github/workflows/foundation-evidence-gates.yml',
         'smoke_script' => 'scripts/release/automated-smoke.sh',
     ],

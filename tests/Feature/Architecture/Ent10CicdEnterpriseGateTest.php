@@ -90,10 +90,10 @@ it('registers ENT-10 completed with ENT-12 as the eventual next after ENT-11 shi
         ->and($governance['decision'])->toBe('GO');
 });
 
-it('keeps ENT-12 through ENT-16 planned until they earn their own GO evidence', function () {
+it('keeps ENT-13 through ENT-16 planned until they earn their own GO evidence', function () {
     $sequence = collect(config('foundation_roadmap.approved_sequence'));
 
-    foreach (range(12, 16) as $n) {
+    foreach (range(13, 16) as $n) {
         $entry = $sequence->firstWhere('id', "ENT-{$n}");
         expect($entry)->not->toBeNull()
             ->and($entry['status'])->toBe('planned');

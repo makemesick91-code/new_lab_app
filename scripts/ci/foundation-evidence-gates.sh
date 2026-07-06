@@ -125,6 +125,9 @@ run_release_safety() {
         echo "--- foundation:deployment-rollback-check (ENT-11) ---"
         php artisan foundation:deployment-rollback-check
         echo ""
+        echo "--- foundation:backup-dr-check (ENT-12) ---"
+        php artisan foundation:backup-dr-check
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

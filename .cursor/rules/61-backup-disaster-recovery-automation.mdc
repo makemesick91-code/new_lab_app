@@ -1,0 +1,26 @@
+---
+description: ENT-12 Backup & Disaster Recovery Automation durable rule
+globs:
+alwaysApply: true
+---
+
+# ENT-12 — Backup & Disaster Recovery Automation
+
+Durable lock: `docs/architecture/backup-disaster-recovery-automation-governance.md`.
+Governance section `backup_dr_governance`; readiness `foundation:backup-dr-check --strict`.
+
+- Automated DB backup runs through `scripts/backup-vps.sh`: fail-fast `pg_dump`
+  → `foundation:backup-verify` → prune by `BACKUP_DR_RETENTION_DAYS` (keep a
+  minimum floor). No destructive DB command.
+- Restore rehearsal runs through `scripts/restore-rehearsal.sh` into a scratch
+  database that MUST differ from the production database; it aborts otherwise,
+  drops only the scratch DB, and never restores over the pilot.
+- Production data restore is the separate, explicit
+  `scripts/restore_postgres.sh` step — never automatic.
+- RTO/RPO objectives and retention are documented in `config/backup_dr.php`.
+- `backup-dr-check.json` is required in the ci/vps release-evidence profiles and
+  `foundation:backup-dr-check` is a pre-deploy gate; evidence stays non-sensitive
+  (path/size/counts only, no secret/PII/KTP/NIK).
+- Any new backup/DR automation must extend the ENT-12 contract with tests and
+  pass `foundation:backup-dr-check` before shipping.
+- Never `migrate:fresh` / `db:wipe` on the VPS; `migrate --force` only.
