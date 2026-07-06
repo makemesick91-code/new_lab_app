@@ -169,6 +169,19 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
         ));
 
         $this->newLine();
+        $securityComplianceGovernance = $report['security_compliance_governance'] ?? [];
+        $this->line(sprintf(
+            'SECURITY_COMPLIANCE_GOVERNANCE: %s — readiness: %s, masking: %s, view scan: %s, export gating: %s (%d routes), %d rule(s)',
+            $securityComplianceGovernance['decision'] ?? 'UNKNOWN',
+            $securityComplianceGovernance['readiness_status'] ?? 'unknown',
+            ($securityComplianceGovernance['masking_helpers_ok'] ?? false) ? 'ok' : 'missing',
+            ($securityComplianceGovernance['view_scan_ok'] ?? false) ? 'clean' : 'leak',
+            ($securityComplianceGovernance['export_gating_ok'] ?? false) ? 'gated' : 'ungated',
+            $securityComplianceGovernance['export_routes_total'] ?? 0,
+            count($securityComplianceGovernance['rules'] ?? []),
+        ));
+
+        $this->newLine();
         $dbPerformance = $report['db_performance'] ?? [];
         $this->line(sprintf(
             'DB_PERFORMANCE: %s — applied: %d, deferred: %d',

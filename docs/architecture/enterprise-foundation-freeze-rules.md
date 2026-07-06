@@ -231,6 +231,16 @@ Aturan keamanan:
 > readiness — tanpa vendor paging eksternal sebelum review privasi. LB-1
 > `/health/lb` tetap utuh. ENT-5/ENT-6/ENT-7 tetap wajib GO.
 
+> Durable lock (ENT-9): aturan Security & PII Compliance Hardening dikunci di
+> `docs/architecture/security-pii-compliance-hardening-governance.md`
+> (ENT9-SEC001..ENT9-SEC012) dan diverifikasi oleh
+> `foundation:security-compliance-check`. Full KTP/NIK server-side only — UI,
+> report, export, dan log hanya nilai tersamar; sidebar bukan boundary keamanan.
+> Masking helper wajib ada, setiap route export wajib digating auth/permission,
+> `sys_audit_logs` tetap immutable, dan scope cabang selalu lewat
+> `BranchContext::requireId()` (branch_id dari request tidak pernah dipercaya).
+> ENT-5/ENT-6/ENT-7/ENT-8 tetap wajib GO.
+
 ---
 
 ## 9. Security & PII Rules

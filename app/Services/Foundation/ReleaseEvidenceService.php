@@ -280,6 +280,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:health-check',
                 'arguments' => ['--json' => true],
             ],
+            'security-compliance-check.json' => [
+                'command' => 'foundation:security-compliance-check',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],

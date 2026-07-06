@@ -35,6 +35,7 @@ return [
         'foundation:idempotency-outbox-check',
         'foundation:developer-console-check',
         'foundation:health-check',
+        'foundation:security-compliance-check',
         'foundation:idempotency-audit',
         'foundation:outbox-audit',
         'foundation:db-performance-check',
