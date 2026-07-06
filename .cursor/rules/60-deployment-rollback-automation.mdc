@@ -1,0 +1,25 @@
+---
+description: DaengtisiaMS Deployment & Rollback Automation (ENT-11)
+globs:
+  - "**/*.php"
+  - "config/**/*.php"
+  - "scripts/**/*.sh"
+  - ".github/workflows/**/*.yml"
+  - "docs/**/*.md"
+---
+
+# Deployment & Rollback Automation (ENT-11)
+
+ENT-11 is locked as completed foundation governance. Verify with
+`php artisan foundation:deployment-rollback-check --strict`.
+
+1. The VPS deploy runs through `scripts/deploy-vps.sh` (backup → deploy → `migrate --force` → gates → cache rebuild → permission reset → smoke). It is the mandatory, idempotent baseline; keep it fail-fast (`set -euo pipefail`).
+2. Every deploy takes a verified DB backup (`pg_dump` + `foundation:backup-verify`) before pull/migrate; backup failure stops the deploy.
+3. Every deploy has a rehearsable rollback: `scripts/rollback-vps.sh <tag/commit>` records the current ref, backs up the DB before checkout, rolls back to a prior GO tag/commit, rebuilds, re-verifies ENT-5..11 gates, restarts, and re-runs smoke.
+4. Migration safety: `php artisan migrate --force` only. Never add `migrate:fresh`, `migrate:reset`, `migrate:rollback`, `db:wipe`, `schema:drop`, `DROP DATABASE`, or `TRUNCATE` to any deploy/rollback script.
+5. Rollback never performs a destructive DB command. Schema stays additive/backward-compatible; a data restore is a separate explicit step (`scripts/restore_postgres.sh <backup>`), never automatic.
+6. Preserve the ENT-8 cache-order hardening in both scripts: `route:clear`/`config:clear` before the route-dependent governance gates, then rebuild `config:cache`/`route:cache`/`view:cache` after.
+7. Destructive-command patterns and required markers live in `config/deployment_rollback.php` — never inline them in app/deploy/rollback source.
+8. The `ci`/`vps` release-evidence profiles require `deployment-rollback-check.json` plus the ENT-8..10 siblings; evidence artifacts stay non-sensitive (no secret/PII/backup contents).
+9. `config/release_safety.php` lists `foundation:deployment-rollback-check` as a required pre-deploy gate and declares the rollback checklist; keep them registered.
+10. Preserve the `deployment_rollback_governance` summary section. ENT-5..ENT-10 governance stays required GO. Any new deploy/rollback step registers here with tests and passes `foundation:deployment-rollback-check --strict` first.

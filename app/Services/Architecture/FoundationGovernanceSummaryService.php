@@ -9,6 +9,7 @@ use App\Services\Foundation\CacheRedisGovernanceService;
 use App\Services\Foundation\CicdEnterpriseGateGovernanceService;
 use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
+use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
@@ -80,6 +81,7 @@ class FoundationGovernanceSummaryService
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
+        private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
     ) {}
 
     /**
@@ -141,6 +143,7 @@ class FoundationGovernanceSummaryService
         $healthCheckGovernance = $this->healthCheckGovernance->collect();
         $securityComplianceGovernance = $this->securityComplianceGovernance->collect();
         $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
+        $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -263,6 +266,8 @@ class FoundationGovernanceSummaryService
                 'security_compliance_readiness_status' => $securityComplianceGovernance['readiness_status'] ?? 'unknown',
                 'cicd_enterprise_gate_governance_decision' => $cicdEnterpriseGateGovernance['decision'] ?? 'UNKNOWN',
                 'cicd_enterprise_gate_readiness_status' => $cicdEnterpriseGateGovernance['readiness_status'] ?? 'unknown',
+                'deployment_rollback_governance_decision' => $deploymentRollbackGovernance['decision'] ?? 'UNKNOWN',
+                'deployment_rollback_readiness_status' => $deploymentRollbackGovernance['readiness_status'] ?? 'unknown',
             ],
             'watch_causes' => [
                 'nsf' => $nsfWatch['items'],
@@ -421,6 +426,30 @@ class FoundationGovernanceSummaryService
                 'checks' => $cicdEnterpriseGateGovernance['checks'] ?? [],
                 'rules' => $cicdEnterpriseGateGovernance['rules'] ?? [],
                 'command' => 'foundation:cicd-enterprise-gate-check',
+            ],
+            'deployment_rollback_governance' => [
+                'decision' => $deploymentRollbackGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $deploymentRollbackGovernance['readiness_status'] ?? 'unknown',
+                'deployment_rollback_enabled' => $deploymentRollbackGovernance['deployment_rollback_enabled'] ?? false,
+                'deploy_script_ok' => $deploymentRollbackGovernance['deploy_script_ok'] ?? false,
+                'deploy_backup_before_migrate' => $deploymentRollbackGovernance['deploy_backup_before_migrate'] ?? false,
+                'deploy_no_destructive_command' => $deploymentRollbackGovernance['deploy_no_destructive_command'] ?? false,
+                'rollback_script_ok' => $deploymentRollbackGovernance['rollback_script_ok'] ?? false,
+                'rollback_present' => $deploymentRollbackGovernance['rollback_present'] ?? false,
+                'rollback_fail_fast' => $deploymentRollbackGovernance['rollback_fail_fast'] ?? false,
+                'rollback_records_current_ref' => $deploymentRollbackGovernance['rollback_records_current_ref'] ?? false,
+                'rollback_backup_before_checkout' => $deploymentRollbackGovernance['rollback_backup_before_checkout'] ?? false,
+                'rollback_no_destructive_command' => $deploymentRollbackGovernance['rollback_no_destructive_command'] ?? false,
+                'rollback_reverifies_foundation_gates' => $deploymentRollbackGovernance['rollback_reverifies_foundation_gates'] ?? false,
+                'evidence_profiles_ok' => $deploymentRollbackGovernance['evidence_profiles_ok'] ?? false,
+                'release_safety_ok' => $deploymentRollbackGovernance['release_safety_ok'] ?? false,
+                'cicd_enterprise_gate_decision' => $deploymentRollbackGovernance['cicd_enterprise_gate_decision'] ?? 'UNKNOWN',
+                'security_compliance_decision' => $deploymentRollbackGovernance['security_compliance_decision'] ?? 'UNKNOWN',
+                'health_check_decision' => $deploymentRollbackGovernance['health_check_decision'] ?? 'UNKNOWN',
+                'summary' => $deploymentRollbackGovernance['summary'] ?? [],
+                'checks' => $deploymentRollbackGovernance['checks'] ?? [],
+                'rules' => $deploymentRollbackGovernance['rules'] ?? [],
+                'command' => 'foundation:deployment-rollback-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',

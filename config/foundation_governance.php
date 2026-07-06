@@ -148,6 +148,17 @@ return [
                     'php artisan foundation:cicd-enterprise-gate-check --json',
                 ],
             ],
+            'ENT-11' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/deployment-rollback-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:deployment-rollback-check',
+                    'php artisan foundation:deployment-rollback-check --json',
+                ],
+            ],
         ],
     ],
 
