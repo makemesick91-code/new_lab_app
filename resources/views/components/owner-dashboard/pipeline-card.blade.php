@@ -7,20 +7,20 @@
 @php
     $stages = collect($stages);
     $severityClasses = [
-        'critical' => 'border-rose-200 bg-rose-50 text-rose-800',
-        'danger' => 'border-rose-200 bg-rose-50 text-rose-800',
-        'warning' => 'border-amber-200 bg-amber-50 text-amber-800',
-        'success' => 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        'info' => 'border-sky-200 bg-sky-50 text-sky-800',
-        'neutral' => 'border-gray-200 bg-gray-50 text-gray-800',
+        'critical' => 'border-danger-100 bg-danger-50 text-danger-700',
+        'danger' => 'border-danger-100 bg-danger-50 text-danger-700',
+        'warning' => 'border-warning-100 bg-warning-50 text-warning-700',
+        'success' => 'border-success-100 bg-success-50 text-success-700',
+        'info' => 'border-info-100 bg-info-50 text-info-700',
+        'neutral' => 'border-hairline bg-navy-50 text-ink',
     ];
 @endphp
 
 <x-owner-dashboard.dashboard-section :title="$title" :description="$periodLabel">
     @if ($stages->isEmpty())
-        <div class="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center">
-            <p class="text-sm font-medium text-gray-900">Belum ada data pipeline</p>
-            <p class="mt-1 text-sm text-gray-500">Tahap operasional akan tampil saat data dasbor terhubung.</p>
+        <div class="rounded-lg border border-dashed border-hairline px-4 py-8 text-center">
+            <p class="text-sm font-medium text-navy">Belum ada data pipeline</p>
+            <p class="mt-1 text-sm text-ink-soft">Tahap operasional akan tampil saat data dasbor terhubung.</p>
         </div>
     @else
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
@@ -41,7 +41,7 @@
                     <p class="mt-1 text-xs opacity-80">{{ format_percent_id(data_get($stage, 'percent', 0)) }} dari pipeline</p>
                     <p class="mt-2 text-xs opacity-80">{{ data_get($stage, 'oldestAge', 'Belum ada data umur') }}</p>
                     @if ($href)
-                        <a href="{{ $href }}" class="mt-2 inline-flex text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        <a href="{{ $href }}" class="mt-2 inline-flex text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                             Lihat
                         </a>
                     @endif

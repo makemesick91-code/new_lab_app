@@ -20,6 +20,14 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - `architecture:ui-governance-check` (non-brittle): memverifikasi dokumen UI ada, komponen kunci `x-ui.*` ada, dokumen token ada, dan tidak ada penyalahgunaan gold sebagai CTA yang jelas pada komponen UI foundation.
 - Gunakan bersama gate governance foundation lain; check ini informational, tidak memblokir `combinedDecision`.
 
+### UIX-2 — Owner Dashboard (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk halaman Dashboard Owner:
+- View owner dashboard ada (`resources/views/dashboard.blade.php`, `resources/views/dashboards/owner-kpi.blade.php`).
+- Owner KPI block memakai komponen `x-ui.kpi-card`.
+- **Tidak ada** class brand legacy `teal-*` yang diperkenalkan kembali di file dashboard owner (UIX-1 memigrasikan brand teal → biru).
+- Gold tetap accent-only di owner KPI view (dilarang `variant="gold"` sebagai CTA). Aksen gold owner dashboard **hanya** untuk KPI Total Pendapatan (revenue).
+- Dokumen evidence sprint `docs/sprints/uix-2-dashboard-owner-polish.md` ada (soft signal).
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.
