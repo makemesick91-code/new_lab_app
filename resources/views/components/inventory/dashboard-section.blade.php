@@ -18,7 +18,7 @@
         </div>
 
         @if ($actionLabel && $actionHref)
-            <a href="{{ $actionHref }}" class="text-sm font-medium text-teal-700 hover:text-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+            <a href="{{ $actionHref }}" class="text-sm font-medium text-brand-700 hover:text-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                 {{ $actionLabel }}
             </a>
         @endif

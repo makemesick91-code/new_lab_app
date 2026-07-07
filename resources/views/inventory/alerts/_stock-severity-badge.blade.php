@@ -7,11 +7,11 @@
         'batch_expiring_soon' => 'Akan Kedaluwarsa',
     ];
     $styles = [
-        'out_of_stock' => 'bg-rose-50 text-rose-700',
+        'out_of_stock' => 'bg-danger-50 text-danger-700',
         'critical' => 'bg-orange-50 text-orange-700',
-        'low' => 'bg-amber-50 text-amber-700',
-        'batch_expired' => 'bg-rose-50 text-rose-700',
-        'batch_expiring_soon' => 'bg-amber-50 text-amber-700',
+        'low' => 'bg-warning-50 text-warning-700',
+        'batch_expired' => 'bg-danger-50 text-danger-700',
+        'batch_expiring_soon' => 'bg-warning-50 text-warning-700',
     ];
     $severity = $severity ?? 'low';
 @endphp

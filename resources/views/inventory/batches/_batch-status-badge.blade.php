@@ -7,10 +7,10 @@
         'expiring_soon' => 'Segera Kedaluwarsa',
     ];
     $styles = [
-        'active' => 'bg-emerald-50 text-emerald-700',
+        'active' => 'bg-success-50 text-success-700',
         'inactive' => 'bg-gray-100 text-gray-600',
-        'expired' => 'bg-rose-50 text-rose-700',
-        'expiring_soon' => 'bg-amber-50 text-amber-700',
+        'expired' => 'bg-danger-50 text-danger-700',
+        'expiring_soon' => 'bg-warning-50 text-warning-700',
     ];
 @endphp
 

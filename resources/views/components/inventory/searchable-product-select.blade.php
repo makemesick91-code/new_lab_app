@@ -95,7 +95,7 @@
             @focus="openDropdown()"
             @keydown="onKeydown($event)"
             :disabled="disabled"
-            class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500 disabled:bg-gray-50 disabled:text-gray-500"
+            class="block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500 disabled:bg-gray-50 disabled:text-gray-500"
             @if ($required && ! $multiple) :required="required && !selectedId" @endif
         >
         @if ($allowEmpty && ! $multiple)
@@ -115,9 +115,9 @@
     <template x-if="multiple && selectedTags().length">
         <div class="mt-2 flex flex-wrap gap-2">
             <template x-for="selectedTag in selectedTags()" :key="'tag-' + selectedTag.id">
-                <span class="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800">
+                <span class="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-800">
                     <span x-text="selectedTag.label"></span>
-                    <button type="button" class="text-teal-600 hover:text-teal-800" @click="removeSelected(selectedTag.id)" :disabled="disabled">&times;</button>
+                    <button type="button" class="text-brand-600 hover:text-brand-800" @click="removeSelected(selectedTag.id)" :disabled="disabled">&times;</button>
                 </span>
             </template>
         </div>
@@ -132,8 +132,8 @@
         <template x-for="(product, index) in filtered()" :key="product.id">
             <button
                 type="button"
-                class="block w-full px-3 py-2 text-left text-sm hover:bg-teal-50"
-                :class="{ 'bg-teal-50 text-teal-900': index === activeIndex }"
+                class="block w-full px-3 py-2 text-left text-sm hover:bg-brand-50"
+                :class="{ 'bg-brand-50 text-brand-800': index === activeIndex }"
                 @mousedown.prevent="select(product)"
                 @mouseenter="activeIndex = index"
                 x-text="product.label"
