@@ -10,9 +10,9 @@
         'inactive' => 'Nonaktif',
     ];
     $styles = [
-        BatchExpiryStatusService::STATUS_EXPIRED => 'bg-rose-50 text-rose-700',
-        BatchExpiryStatusService::STATUS_NEAR_EXPIRY => 'bg-amber-50 text-amber-700',
-        BatchExpiryStatusService::STATUS_ACTIVE => 'bg-emerald-50 text-emerald-700',
+        BatchExpiryStatusService::STATUS_EXPIRED => 'bg-danger-50 text-danger-700',
+        BatchExpiryStatusService::STATUS_NEAR_EXPIRY => 'bg-warning-50 text-warning-700',
+        BatchExpiryStatusService::STATUS_ACTIVE => 'bg-success-50 text-success-700',
         BatchExpiryStatusService::STATUS_NO_EXPIRY => 'bg-gray-100 text-gray-600',
         'inactive' => 'bg-gray-100 text-gray-600',
     ];

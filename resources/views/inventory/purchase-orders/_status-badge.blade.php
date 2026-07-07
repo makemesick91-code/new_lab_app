@@ -15,12 +15,12 @@
 <span @class([
     'inline-flex rounded-full px-3 py-1 text-xs font-medium',
     'bg-gray-100 text-gray-600' => $status === PurchaseOrder::STATUS_DRAFT,
-    'bg-amber-50 text-amber-700' => $status === PurchaseOrder::STATUS_SUBMITTED,
-    'bg-emerald-50 text-emerald-700' => $status === PurchaseOrder::STATUS_APPROVED,
-    'bg-sky-50 text-sky-700' => $status === PurchaseOrder::STATUS_SENT,
-    'bg-amber-50 text-amber-700' => $status === PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
-    'bg-emerald-50 text-emerald-700' => $status === PurchaseOrder::STATUS_FULLY_RECEIVED,
-    'bg-rose-50 text-rose-700' => $status === PurchaseOrder::STATUS_CANCELLED,
+    'bg-warning-50 text-warning-700' => $status === PurchaseOrder::STATUS_SUBMITTED,
+    'bg-success-50 text-success-700' => $status === PurchaseOrder::STATUS_APPROVED,
+    'bg-info-50 text-info-700' => $status === PurchaseOrder::STATUS_SENT,
+    'bg-warning-50 text-warning-700' => $status === PurchaseOrder::STATUS_PARTIALLY_RECEIVED,
+    'bg-success-50 text-success-700' => $status === PurchaseOrder::STATUS_FULLY_RECEIVED,
+    'bg-danger-50 text-danger-700' => $status === PurchaseOrder::STATUS_CANCELLED,
 ])>
     {{ $statusLabels[$status] ?? $status }}
 </span>

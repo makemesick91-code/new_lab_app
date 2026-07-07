@@ -10,12 +10,13 @@
     ];
 @endphp
 
-<span @class([
-    'inline-flex rounded-full px-3 py-1 text-xs font-medium',
-    'bg-blue-100 text-blue-800' => $status === PurchaseRequest::STATUS_DRAFT,
-    'bg-yellow-100 text-yellow-800' => $status === PurchaseRequest::STATUS_SUBMITTED,
-    'bg-green-100 text-green-800' => $status === PurchaseRequest::STATUS_APPROVED,
-    'bg-red-100 text-red-800' => in_array($status, [PurchaseRequest::STATUS_REJECTED, PurchaseRequest::STATUS_CANCELLED], true),
-])>
-    {{ $statusLabels[$status] ?? $status }}
-</span>
+@php
+    $tone = match (true) {
+        $status === PurchaseRequest::STATUS_SUBMITTED => 'info',
+        $status === PurchaseRequest::STATUS_APPROVED => 'success',
+        in_array($status, [PurchaseRequest::STATUS_REJECTED, PurchaseRequest::STATUS_CANCELLED], true) => 'danger',
+        default => 'neutral',
+    };
+@endphp
+
+<x-ui.badge :tone="$tone">{{ $statusLabels[$status] ?? $status }}</x-ui.badge>

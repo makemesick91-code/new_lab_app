@@ -74,6 +74,23 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - print/kwitansi dicek ulang setelah perubahan UI Kasir;
 - **tanpa** perubahan logic pembayaran/consent/receivable/partial-payment/invoice-status/transition, dan **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema — presentation-only.
 
+### UIX-6 — Inventory = reference warehouse/operator pages (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk halaman Inventory sebagai **reference implementation seluruh permukaan gudang/persediaan**:
+- Daftar produk (`resources/views/inventory/products/index.blade.php`) sebagai **reference inventory list** memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` + `x-ui.button` + `x-ui.empty-state` (list-page standard UIX-3).
+- Kartu stok (`resources/views/inventory/stock/card.blade.php`) sebagai **reference detail berbasis ledger** memakai `x-ui.page-header` + `x-ui.card` + `x-ui.badge` + `x-ui.table`.
+- **Tidak ada** class brand legacy `teal-*`, **tidak ada** `variant="gold"` (gold bukan CTA/status/warning/danger persediaan), dan **tidak ada** penulisan atribut stok mutable (`->current_stock =`, `->derived_stock =`, `->stock_quantity =`, dst.) di 11 view Inventory yang dipoles (stok tetap ledger-derived).
+- Dokumen evidence sprint `docs/sprints/uix-6-inventory-polish.md` ada (soft signal).
+
+**Rule permanen — inventory-page standard:** setiap halaman Inventory (dashboard, daftar item, current stock, kartu stok, low stock, movement/mutasi, procurement PR/PO/GR, transfer, stok opname, batch/lot/expiry) **wajib**:
+- memakai semantic token (navy/ink/hairline/brand/surface/status) — dilarang teal legacy & hex hardcoded;
+- daftar/list mengikuti list-page standard UIX-3 (`x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` + `x-ui.button` + `x-ui.empty-state`);
+- status stok/batch/procurement/transfer/opname memakai `x-ui.badge` (low_stock/expired_soon → **warning**, out_of_stock/expired/void/rejected → **danger**, received/posted/approved/completed → **success**, submitted/in_transit/neutral → **info/brand**);
+- tombol aksi memakai `x-ui.button` (brand blue / status semantik), gold **dilarang** untuk aksi/status/warning/danger persediaan (accent-only);
+- KPI/summary memakai `x-ui.card`/`x-ui.kpi-card` bila aman; tabel besar `overflow-x-auto` + `x-ui.table`;
+- **dilarang** memperkenalkan kolom/atribut stok mutable — stok tetap SUM movements (ledger-only);
+- print/export Inventory dicek ulang setelah perubahan komponen bersama;
+- **tanpa** perubahan ledger/stock-calc/valuation/procurement/transfer/opname/batch logic, dan **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema — presentation-only.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.

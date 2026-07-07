@@ -285,6 +285,79 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-5 sprint evidence doc is missing (docs/sprints/uix-5-kasir-payment-polish.md).';
         }
 
+        // --- UIX-6 — Inventory pages adopt the shared design system. ---
+        // Presentation-only governance: inventory scan surfaces must stay on
+        // x-ui.* + semantic tokens, must not reintroduce legacy teal, must never
+        // use gold as a CTA/status, and must never introduce a mutable stock
+        // attribute assignment (stock stays ledger-derived). No ledger, stock,
+        // procurement, transfer, or opname business logic is asserted here.
+        $inventoryProductsIndex = 'resources/views/inventory/products/index.blade.php';
+        $inventoryStockCard = 'resources/views/inventory/stock/card.blade.php';
+
+        foreach ([$inventoryProductsIndex, $inventoryStockCard] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing inventory view: {$file}";
+            }
+        }
+
+        // Product list is the reference inventory list page (UIX-3 list standard).
+        $inventoryProducts = @file_get_contents($base.'/'.$inventoryProductsIndex) ?: '';
+        if ($inventoryProducts !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($inventoryProducts, $component)) {
+                    $errors[] = "Inventory product list view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Stock card is the reference ledger-derived detail page.
+        $inventoryCard = @file_get_contents($base.'/'.$inventoryStockCard) ?: '';
+        if ($inventoryCard !== '') {
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.table'] as $component) {
+                if (! str_contains($inventoryCard, $component)) {
+                    $errors[] = "Inventory stock card view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // No legacy teal / gold-CTA / mutable-stock assignment across the polished
+        // inventory scan surfaces.
+        $inventoryFiles = [
+            'resources/views/inventory/dashboard.blade.php',
+            'resources/views/inventory/products/index.blade.php',
+            'resources/views/inventory/stock/index.blade.php',
+            'resources/views/inventory/stock/card.blade.php',
+            'resources/views/inventory/alerts/index.blade.php',
+            'resources/views/inventory/batches/index.blade.php',
+            'resources/views/inventory/purchase-requests/index.blade.php',
+            'resources/views/inventory/purchase-orders/index.blade.php',
+            'resources/views/inventory/goods-receipts/index.blade.php',
+            'resources/views/inventory/stock-transfers/index.blade.php',
+            'resources/views/inventory/stock-opnames/index.blade.php',
+        ];
+        foreach ($inventoryFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never an inventory action or status).";
+            }
+            // Stock must remain ledger-derived — no mutable stock attribute write
+            // in a presentation view.
+            if (preg_match('/->(?:current_stock|derived_stock|stock_quantity|quantity_on_hand|stock_on_hand)\s*=(?!=)/', $contents)) {
+                $errors[] = "Mutable stock attribute assignment found in {$file} (stock stays ledger-derived).";
+            }
+        }
+
+        // UIX-6 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-6-inventory-polish.md')) {
+            $warnings[] = 'UIX-6 sprint evidence doc is missing (docs/sprints/uix-6-inventory-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

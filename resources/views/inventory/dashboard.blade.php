@@ -3,9 +3,9 @@
         <x-ui.card padding="p-5">
             <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan Inti</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Dashboard Inventory — {{ $selectedBranch?->name ?? 'Cabang' }}</h1>
-                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                    <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Persediaan Inti</p>
+                    <h1 class="mt-1 text-2xl font-semibold text-navy">Dashboard Inventory — {{ $selectedBranch?->name ?? 'Cabang' }}</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-ink-soft">
                         Ringkasan operasional gudang berdasarkan cabang terpilih.
                     </p>
                     @isset($lastUpdatedAt)
@@ -26,8 +26,8 @@
 
             <form method="GET" action="{{ route('inventory.dashboard') }}" class="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                    <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
-                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($branchOptions->count() <= 1)>
+                    <label for="branch_id" class="block text-sm font-medium text-navy">Cabang</label>
+                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-hairline bg-surface text-sm text-navy focus:border-brand-500 focus:ring-brand-500" @disabled($branchOptions->count() <= 1)>
                         @foreach ($branchOptions as $branch)
                             <option value="{{ $branch->id }}" @selected($selectedBranchId == $branch->id)>{{ $branch->name }}</option>
                         @endforeach
@@ -37,7 +37,7 @@
                     @endif
                 </div>
                 <div class="flex items-end gap-2">
-                    <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Terapkan</button>
+                    <x-ui.button type="submit" variant="primary">Terapkan</x-ui.button>
                 </div>
             </form>
         </x-ui.card>

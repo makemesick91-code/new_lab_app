@@ -16,7 +16,7 @@
                 @php($delta = (float) $movement->quantity_in - (float) $movement->quantity_out)
                 @php($isInbound = $delta >= 0)
                 <li class="relative">
-                    <span class="absolute -left-[1.3125rem] mt-1.5 h-2.5 w-2.5 rounded-full {{ $isInbound ? 'bg-emerald-500' : 'bg-amber-500' }}"></span>
+                    <span class="absolute -left-[1.3125rem] mt-1.5 h-2.5 w-2.5 rounded-full {{ $isInbound ? 'bg-success-700' : 'bg-warning-700' }}"></span>
                     <div class="rounded-lg border border-gray-200 p-3">
                         <div class="flex flex-wrap items-start justify-between gap-3">
                             <div>
@@ -24,7 +24,7 @@
                                 <p class="mt-1 text-xs text-gray-500">{{ format_date_id($movement->movement_date) }} · {{ $movement->inventoryLocation?->name ?? '-' }}</p>
                             </div>
                             <div class="text-right">
-                                <p class="text-sm font-semibold tabular-nums {{ $isInbound ? 'text-emerald-700' : 'text-amber-700' }}">
+                                <p class="text-sm font-semibold tabular-nums {{ $isInbound ? 'text-success-700' : 'text-warning-700' }}">
                                     {{ $delta >= 0 ? '+' : '' }}{{ format_quantity_id($delta) }}
                                 </p>
                                 <p class="text-xs text-gray-500">{{ str_replace('_', ' ', $movement->movement_type) }}</p>

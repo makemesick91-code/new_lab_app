@@ -76,11 +76,28 @@ Setiap halaman klinis (RME detail, Odontogram, Rekam Medis, Resep, turunannya) *
 ## Cashier/payment-page standard (wajib untuk semua halaman finansial berikutnya)
 Setiap halaman Kasir/Pembayaran/Invoice/Piutang **wajib**: semantic token · `x-ui.button` (aksi pembayaran, **tidak pernah** gold) · `x-ui.badge` (status pembayaran/invoice) · `x-ui.card` (billing/invoice, bila aman) · list/table standard UIX-3 · consent gate pola `x-ui.alert`/`x-ui.card`/`x-ui.badge` **tanpa** ubah field/validasi · **tanpa** render KTP/NIK · print/kwitansi dicek ulang · **tanpa** perubahan logic pembayaran/consent/receivable/partial/invoice-status/transition/controller/service/query/permission/BranchContext/route/schema.
 
+## UIX-6 — Inventory polish (selesai 2026-07-07)
+- [x] Dashboard (`inventory/dashboard.blade.php`) → eyebrow/select/CTA token + `x-ui.button` (UIX-2 dashboard standard); `x-inventory.kpi-card` tone dipetakan ke token status yang benar (50/100/700).
+- [x] Daftar produk (`inventory/products/index.blade.php`) → **reference inventory list**: `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.input`/`x-ui.select` + `x-ui.table` + `x-ui.badge` + `x-ui.button` + `x-ui.empty-state`; param GET (`search`,`is_active`) & rute tidak berubah.
+- [x] Current stock (`inventory/stock/index.blade.php`) → page-header + filter-bar + `x-ui.kpi-card` + tabel token.
+- [x] Kartu stok (`inventory/stock/card.blade.php`) → **reference detail ledger**: page-header + card + table; **urutan movement, tanda `quantity_in`/`quantity_out`, `running_balance` dipertahankan** (tanpa perubahan kalkulasi).
+- [x] Low stock/expiry (`inventory/alerts/index.blade.php`) → page-header + filter-bar + card + table + empty-state; `orange`→`warning` token; badge severity via `_stock-severity-badge`.
+- [x] Batch/lot (`inventory/batches/index.blade.php`) → page-header + `x-ui.alert` (nota) + filter-bar + card + table + empty-state; `searchable-product-select` dipertahankan.
+- [x] PR/PO/GR/Transfer/Opname index → header `x-ui.page-header` + `x-ui.button`; chrome gray → token; status badge (PR/GR) via `x-ui.badge`.
+- [x] Komponen bersama `x-inventory.*` + partial badge (teal/emerald/amber/rose/sky) → semantic token.
+- [x] Tidak ada teal legacy / gold-CTA / atribut stok mutable di 11 view Inventory yang dipoles.
+- [x] **Tanpa** perubahan ledger/stock-calc/valuation/procurement/transfer/opname/batch logic; **tanpa** perubahan controller/service/query/route/permission/BranchContext/schema/migration.
+- [x] `architecture:ui-governance-check` diperkuat dengan rule inventory (non-brittle).
+- [x] Evidence: `docs/sprints/uix-6-inventory-polish.md`; test `tests/Feature/Ui/InventoryUixTest.php`.
+
+## Inventory-page standard (wajib untuk semua halaman persediaan berikutnya)
+Setiap halaman Inventory **wajib**: semantic token · list mengikuti standard UIX-3 · status via `x-ui.badge` (low_stock/expired_soon=warning, out_of_stock/expired/void=danger, received/posted/approved=success, submitted/in_transit=info/brand) · aksi via `x-ui.button` (**tidak pernah** gold) · KPI via `x-ui.card`/`x-ui.kpi-card` · tabel besar `overflow-x-auto` + `x-ui.table` · **dilarang** kolom/atribut stok mutable (ledger-only) · print/export dicek ulang · **tanpa** perubahan ledger/stock/procurement/transfer/opname logic atau controller/service/query/permission/BranchContext/route/schema.
+
 ## Migration order
 1. [x] UIX-2 Dashboard Owner polish
 2. [x] UIX-3 Kunjungan list polish
 3. [x] UIX-4 RME + Odontogram polish
 4. [x] UIX-5 Kasir/payment polish
-5. UIX-6 Inventory table/dashboard polish
+5. [x] UIX-6 Inventory table/dashboard polish
 6. UIX-7 Lab pipeline polish
 7. UIX-8 Reports/print/PDF polish
