@@ -28,18 +28,20 @@
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                     @foreach ($patientVisitHistory as $historyVisit)
-                        <tr @class(['bg-teal-50/60' => (int) $historyVisit->id === (int) $currentVisitId])>
+                        <tr @class(['bg-brand-50/60' => (int) $historyVisit->id === (int) $currentVisitId])>
                             <td class="px-3 py-2 font-mono text-gray-900">{{ $historyVisit->visit_number }}</td>
                             <td class="px-3 py-2 text-gray-700">{{ $historyVisit->visit_date?->format('d/m/Y') }}</td>
                             <td class="px-3 py-2 text-gray-700">{{ $historyVisit->visitTypeLabel() }}</td>
                             <td class="px-3 py-2 text-gray-700">{{ $historyVisit->doctor?->name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-700">{{ $statusLabels[$historyVisit->status] ?? $historyVisit->status }}</td>
+                            <td class="px-3 py-2">
+                                <x-ui.badge :status="$historyVisit->status">{{ $statusLabels[$historyVisit->status] ?? $historyVisit->status }}</x-ui.badge>
+                            </td>
                             <td class="px-3 py-2 text-right">
                                 @if ((int) $historyVisit->id === (int) $currentVisitId)
-                                    <span class="text-xs font-medium text-teal-700">Kunjungan ini</span>
+                                    <span class="text-xs font-medium text-brand-700">Kunjungan ini</span>
                                 @else
                                     @can('view', $historyVisit)
-                                        <a href="{{ route('rme.visits.show', $historyVisit) }}" class="text-teal-700 hover:text-teal-900 text-xs font-medium">Detail</a>
+                                        <a href="{{ route('rme.visits.show', $historyVisit) }}" class="text-brand-700 hover:text-brand-800 text-xs font-medium">Detail</a>
                                     @endcan
                                 @endif
                             </td>

@@ -111,7 +111,7 @@
         {{-- Header --}}
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Rekam Medis Elektronik</p>
                 <div class="mt-1 flex flex-wrap items-center gap-3">
                     <h2 class="text-xl font-semibold text-gray-900">Odontogram</h2>
                     @if ($isFinalized)
@@ -187,7 +187,7 @@
             <x-ui.card title="Odontogram Kunjungan Sebelumnya">
                 <p class="text-sm text-gray-600 mb-3">
                     Referensi dari kunjungan
-                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $clinicVisit->followUpOf?->visit_number }}</a>.
+                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $clinicVisit->followUpOf?->visit_number }}</a>.
                     Odontogram kunjungan kontrol tetap terpisah dan tidak menimpa data lama.
                 </p>
                 <div class="flex flex-wrap items-center gap-3">
@@ -237,7 +237,7 @@
                         <div>
                             <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500">Gigi</label>
                             <select x-model="newTooth"
-                                    class="mt-1 block w-28 rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                    class="mt-1 block w-28 rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm">
                                 <option value="">— Pilih gigi —</option>
                                 @foreach ($allTeeth as $tooth)
                                     <option value="{{ $tooth }}">{{ $tooth }}</option>
@@ -247,14 +247,14 @@
                         <div>
                             <label class="block text-[11px] font-medium uppercase tracking-wide text-gray-500">Diagnosa</label>
                             <select x-model="newStatus"
-                                    class="mt-1 block w-40 rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                    class="mt-1 block w-40 rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm">
                                 @foreach ($diagnosaOptions as $value => $label)
                                     <option value="{{ $value }}">{{ $label }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <button type="button" @click="addRow()"
-                                class="inline-flex items-center rounded-lg bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700">
+                                class="inline-flex items-center rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
                             + Tambah Baris
                         </button>
                     </div>
@@ -278,7 +278,7 @@
                                             <select
                                                 :value="row.status"
                                                 @change="setStatus(row.tooth, $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm">
                                                 @foreach ($diagnosaOptions as $value => $label)
                                                     <option value="{{ $value }}">{{ $label }}</option>
                                                 @endforeach
@@ -289,7 +289,7 @@
                                                 placeholder="Detail diagnosa (opsional)…"
                                                 :value="row.additional_condition"
                                                 @input="setAdditional(row.tooth, 'additional_condition', $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm">
                                         </td>
                                         <td class="px-3 py-2">
                                             <textarea
@@ -298,7 +298,7 @@
                                                 placeholder="Perawatan…"
                                                 :value="row.additional_note"
                                                 @input="setAdditional(row.tooth, 'additional_note', $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm"></textarea>
                                         </td>
                                         <td class="px-3 py-2">
                                             <input
@@ -307,7 +307,7 @@
                                                 placeholder="Dokter…"
                                                 :value="row.dokter"
                                                 @input="setAdditional(row.tooth, 'dokter', $event.target.value)"
-                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                                                class="block w-full rounded-lg border-gray-300 shadow-sm focus:border-brand-500 focus:ring-brand-500 text-sm">
                                         </td>
                                         <td class="px-3 py-2 text-right">
                                             <button type="button" @click="removeRow(row.tooth)"
@@ -390,9 +390,9 @@
                         <div class="text-[11px] font-medium uppercase tracking-wide text-blue-700">Jumlah F</div>
                         <div class="text-lg font-bold text-blue-900">{{ $dmft['F'] }}</div>
                     </div>
-                    <div class="rounded-lg bg-teal-50 px-3 py-2 ring-1 ring-teal-200">
-                        <div class="text-[11px] font-medium uppercase tracking-wide text-teal-700">Jumlah DMF-T</div>
-                        <div class="text-lg font-bold text-teal-900">{{ $dmft['DMFT'] }}</div>
+                    <div class="rounded-lg bg-brand-50 px-3 py-2 ring-1 ring-brand-200">
+                        <div class="text-[11px] font-medium uppercase tracking-wide text-brand-700">Jumlah DMF-T</div>
+                        <div class="text-lg font-bold text-brand-800">{{ $dmft['DMFT'] }}</div>
                     </div>
                 </div>
 

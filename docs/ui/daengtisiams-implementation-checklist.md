@@ -44,10 +44,25 @@ Setiap komponen `x-ui.*` harus mendukung (bila relevan): default · hover · foc
 ## List-page standard (wajib untuk semua list page berikutnya)
 Setiap halaman list/index (RME, Kasir, Inventory, Procurement, Lab, Report) **wajib**: `x-ui.page-header` · `x-ui.filter-bar` · `x-ui.table` · `x-ui.badge` (`:status` untuk status domain) · `x-ui.button` · `x-ui.empty-state` · semantic token. Dilarang membuat table/badge/button dari nol, hardcode warna, atau memakai teal legacy.
 
+## Acceptance — UIX-4 RME + Odontogram polish (2026-07-07)
+- [x] RME detail (`rme/visits/show.blade.php`) memakai `x-ui.page-header`/`x-ui.card`/`x-ui.badge`/`x-ui.button`/`x-ui.alert`; status kunjungan memakai `:status`.
+- [x] Transisi status (Check-in/Mulai/Selesai Pemeriksaan/Batalkan) memakai `x-ui.button` variant (warning/primary/success/danger) — bukan tombol raw hardcoded.
+- [x] Banner room-gate & alert selesai/batal memakai `x-ui.alert`; chip consent memakai `x-ui.badge`.
+- [x] Odontogram (`odontogram/show.blade.php`) chrome teal → brand; focus ring, tombol tambah baris, kartu DMF-T total memakai token brand.
+- [x] **Warna status klinis Odontogram** (karies=merah/hilang=gelap/tambalan=biru/crown=amber/PSA=sky/normal=hijau) **dipertahankan** demi distinguishability & paritas cetak/PDF.
+- [x] Riwayat kunjungan partial: highlight & link teal → brand, status memakai `x-ui.badge :status`.
+- [x] Tidak ada teal legacy / hex hardcoded / gold-CTA di view klinis; KTP/NIK tidak dirender.
+- [x] Tidak ada perubahan controller/service/query/route/permission/BranchContext/schema/print-logic.
+- [x] `architecture:ui-governance-check` diperkuat dengan rule clinical-page (non-brittle).
+- [x] Evidence: `docs/sprints/uix-4-rme-odontogram-polish.md`.
+
+## Clinical-page standard (wajib untuk semua halaman klinis berikutnya)
+Setiap halaman klinis (RME detail, Odontogram, Rekam Medis, Resep, turunannya) **wajib**: semantic token · `x-ui.button` (aksi) · `x-ui.badge` (`:status` status domain) · `x-ui.card` (bila aman) · **tanpa** render KTP/NIK/scan/catatan sensitif mentah baru · gold **bukan** warning/danger/aksi · warna status klinis Odontogram tetap distinguishable & paritas cetak/PDF · print/PDF dicek ulang · **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema.
+
 ## Migration order
 1. [x] UIX-2 Dashboard Owner polish
 2. [x] UIX-3 Kunjungan list polish
-3. UIX-4 RME + Odontogram polish
+3. [x] UIX-4 RME + Odontogram polish
 4. UIX-5 Kasir/payment polish
 5. UIX-6 Inventory table/dashboard polish
 6. UIX-7 Lab pipeline polish

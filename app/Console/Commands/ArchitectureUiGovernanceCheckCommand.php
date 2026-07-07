@@ -162,6 +162,59 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-3 sprint evidence doc is missing (docs/sprints/uix-3-kunjungan-list-polish.md).';
         }
 
+        // --- UIX-4 — RME + Odontogram are the reference clinical pages. ---
+        // Clinical detail/odontogram pages must stay on x-ui.* + semantic tokens,
+        // must not reintroduce legacy teal or hardcoded hex, must not use gold as a
+        // CTA, and must never render KTP/NIK on the clinical detail surface.
+        $rmeDetailView = 'resources/views/rme/visits/show.blade.php';
+        $odontogramView = 'resources/views/rme/visits/odontogram/show.blade.php';
+
+        foreach ([$rmeDetailView, $odontogramView] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing clinical view: {$file}";
+            }
+        }
+
+        $rmeDetail = @file_get_contents($base.'/'.$rmeDetailView) ?: '';
+        if ($rmeDetail !== '') {
+            // RME detail must be built on the adopted foundation components.
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button', 'x-ui.alert'] as $component) {
+                if (! str_contains($rmeDetail, $component)) {
+                    $errors[] = "RME detail view does not use the {$component} component.";
+                }
+            }
+            // Status badge must resolve tone via the design-system :status map.
+            if (! str_contains($rmeDetail, ':status')) {
+                $errors[] = 'RME detail status badge does not use the x-ui.badge :status map.';
+            }
+        }
+
+        // No legacy teal / hardcoded hex / gold-CTA in the clinical pages, and no
+        // KTP/NIK field ever echoed on the clinical detail surface (privacy).
+        foreach ([$rmeDetailView, $odontogramView] as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (preg_match('/#[0-9a-fA-F]{3,6}\b/', $contents)) {
+                $errors[] = "Hardcoded hex color found in {$file} (use semantic tokens).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never a clinical action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Sensitive KTP/NIK field rendered in {$file} (forbidden on clinical detail surface).";
+            }
+        }
+
+        // UIX-4 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-4-rme-odontogram-polish.md')) {
+            $warnings[] = 'UIX-4 sprint evidence doc is missing (docs/sprints/uix-4-rme-odontogram-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

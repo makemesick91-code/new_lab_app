@@ -8,14 +8,8 @@
             'completed'       => 'Selesai Visit',
             'cancelled'       => 'Dibatalkan',
         ];
-        $statusTone = [
-            'registered'      => 'info',
-            'waiting'         => 'warning',
-            'in_progress'     => 'primary',
-            'cashier_pending' => 'warning',
-            'completed'       => 'success',
-            'cancelled'       => 'danger',
-        ];
+        // Status badge tone is resolved by x-ui.badge :status (UIX design-system
+        // status map) — no local tone map needed (UIX-4).
         // Sprint 62.1 — the doctor/front office can advance examination to the
         // cashier ("Selesai Pemeriksaan" = cashier_pending) but never to
         // `completed`; "Selesai Visit" is reached only after the cashier settles
@@ -26,11 +20,13 @@
             'cashier_pending' => 'Selesai Pemeriksaan',
             'cancelled'       => 'Batalkan',
         ];
-        $transitionStyle = [
-            'waiting'         => 'bg-amber-600 hover:bg-amber-500 focus:ring-amber-500',
-            'in_progress'     => 'bg-teal-700 hover:bg-teal-600 focus:ring-teal-500',
-            'cashier_pending' => 'bg-emerald-600 hover:bg-emerald-500 focus:ring-emerald-500',
-            'cancelled'       => 'bg-rose-600 hover:bg-rose-500 focus:ring-rose-500',
+        // UIX-4 — transition CTAs map to design-system x-ui.button variants.
+        // Gold is never used here (accent-only, never a clinical action colour).
+        $transitionVariant = [
+            'waiting'         => 'warning',
+            'in_progress'     => 'primary',
+            'cashier_pending' => 'success',
+            'cancelled'       => 'danger',
         ];
         $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
@@ -38,27 +34,24 @@
     @endphp
 
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-                <div class="mt-1 flex flex-wrap items-center gap-3">
-                    <h2 class="text-xl font-semibold text-gray-900">{{ $visit->visit_number }}</h2>
-                    <x-ui.badge :tone="$statusTone[$visit->status] ?? 'neutral'">
-                        {{ $statusLabels[$visit->status] ?? $visit->status }}
-                    </x-ui.badge>
-                </div>
-                <p class="mt-1 text-sm text-gray-500">Antrian #{{ $visit->queue_number }} &mdash; {{ $visit->visit_date?->format('d/m/Y') }}</p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
+        <x-ui.page-header
+            title="Detail Kunjungan"
+            :subtitle="'Antrian #' . $visit->queue_number . ' · ' . ($visit->visit_date?->format('d/m/Y') ?? '—')">
+            <x-slot:breadcrumb>
+                <a href="{{ route('rme.visits.index') }}" class="font-medium text-brand-700 hover:text-brand-800">Kunjungan</a>
+                <span class="px-1 text-ink-muted">/</span>
+                <span class="font-mono text-ink">{{ $visit->visit_number }}</span>
+            </x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.badge :status="$visit->status">{{ $statusLabels[$visit->status] ?? $visit->status }}</x-ui.badge>
                 @can('transition', $visit)
                     @foreach ($validNextStatuses as $nextStatus)
                         <form method="POST" action="{{ route('rme.visits.transition', $visit) }}">
                             @csrf
                             <input type="hidden" name="status" value="{{ $nextStatus }}">
-                            <button type="submit"
-                                    class="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 {{ $transitionStyle[$nextStatus] ?? 'bg-gray-600 hover:bg-gray-500 focus:ring-gray-500' }}">
+                            <x-ui.button type="submit" :variant="$transitionVariant[$nextStatus] ?? 'neutral'">
                                 {{ $transitionLabels[$nextStatus] ?? $nextStatus }}
-                            </button>
+                            </x-ui.button>
                         </form>
                     @endforeach
                 @endcan
@@ -78,31 +71,28 @@
                         'branch_id' => $visit->branch_id,
                     ])">Buat Kontrol</x-ui.button>
                 @endcan
-            </div>
-        </div>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
-            <div class="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <x-ui.alert variant="success">
                 Kunjungan telah selesai, tidak ada aksi perubahan status tersedia.
-            </div>
+            </x-ui.alert>
         @elseif ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED)
-            <div class="rounded-lg border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <x-ui.alert variant="danger">
                 Kunjungan telah dibatalkan, tidak ada aksi perubahan status tersedia.
-            </div>
+            </x-ui.alert>
         @endif
 
         {{-- Hotfix Sprint 60.8 — room-assignment gate. An active visit must be
              placed into a treatment room before the doctor can examine. --}}
         @if ($visit->requiresRoomBeforeExam())
-            <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <x-ui.alert variant="warning" title="Menunggu Penempatan Ruangan">
                 <div class="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                        <p class="text-sm font-semibold text-amber-800">Menunggu Penempatan Ruangan</p>
-                        <p class="mt-0.5 text-sm text-amber-700">
-                            Pasien belum ditempatkan ke ruangan perawatan. Dokter belum dapat memulai pemeriksaan
-                            sebelum ruangan dipilih.
-                        </p>
-                    </div>
+                    <p class="max-w-xl text-sm">
+                        Pasien belum ditempatkan ke ruangan perawatan. Dokter belum dapat memulai pemeriksaan
+                        sebelum ruangan dipilih.
+                    </p>
                     @can('update', $visit)
                         @if (($rooms ?? collect())->isNotEmpty())
                             <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
@@ -110,23 +100,20 @@
                                 @csrf
                                 @method('PATCH')
                                 <select name="clinic_room_id"
-                                        class="min-w-[10rem] rounded-lg border-amber-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                        class="min-w-[10rem] rounded-lg border-hairline text-sm text-ink focus:border-brand-500 focus:ring-brand-500">
                                     <option value="">- Pilih ruangan -</option>
                                     @foreach ($rooms as $room)
                                         <option value="{{ $room->id }}">{{ $room->name }}</option>
                                     @endforeach
                                 </select>
-                                <button type="submit"
-                                        class="rounded-lg bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">
-                                    Tempatkan Ruangan
-                                </button>
+                                <x-ui.button type="submit" variant="warning" size="sm">Tempatkan Ruangan</x-ui.button>
                             </form>
                         @else
-                            <span class="text-xs text-amber-700">Belum ada ruangan aktif pada cabang ini.</span>
+                            <span class="text-xs">Belum ada ruangan aktif pada cabang ini.</span>
                         @endif
                     @endcan
                 </div>
-            </div>
+            </x-ui.alert>
         @endif
 
         <x-ui.card title="Informasi Kunjungan">
@@ -151,9 +138,9 @@
                     <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Persetujuan Tindakan</dt>
                     <dd class="mt-1 text-sm">
                         @if ($visit->hasVerifiedConsent())
-                            <span class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">TTD Surat Persetujuan Tindakan terverifikasi</span>
+                            <x-ui.badge tone="success">TTD Surat Persetujuan Tindakan terverifikasi</x-ui.badge>
                         @else
-                            <span class="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">TTD Surat Persetujuan Tindakan belum diverifikasi kasir</span>
+                            <x-ui.badge tone="warning">TTD Surat Persetujuan Tindakan belum diverifikasi kasir</x-ui.badge>
                         @endif
                     </dd>
                     <dd class="mt-1 text-xs text-gray-500">Checklist verifikasi fisik dikonfirmasi kasir saat pembayaran. Tidak ada tanda tangan digital.</dd>
@@ -190,7 +177,7 @@
                     <div class="sm:col-span-2">
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Kontrol dari</dt>
                         <dd class="mt-1 text-sm">
-                            <a href="{{ route('rme.visits.show', $visit->followUpOf) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $visit->followUpOf->visit_number }}</a>
+                            <a href="{{ route('rme.visits.show', $visit->followUpOf) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $visit->followUpOf->visit_number }}</a>
                             <span class="text-gray-500"> — {{ $visit->followUpOf->visit_date?->format('d/m/Y') }}</span>
                         </dd>
                     </div>
@@ -202,7 +189,7 @@
                             <ul class="list-disc pl-5 space-y-1">
                                 @foreach ($visit->followUpVisits as $followUpVisit)
                                     <li>
-                                        <a href="{{ route('rme.visits.show', $followUpVisit) }}" class="font-mono text-teal-700 hover:text-teal-900">{{ $followUpVisit->visit_number }}</a>
+                                        <a href="{{ route('rme.visits.show', $followUpVisit) }}" class="font-mono text-brand-700 hover:text-brand-800">{{ $followUpVisit->visit_number }}</a>
                                         <span class="text-gray-500"> — {{ $followUpVisit->visitTypeLabel() }} ({{ $followUpVisit->visit_date?->format('d/m/Y') }})</span>
                                     </li>
                                 @endforeach
@@ -258,7 +245,7 @@
         @php $medicalRecord = $visit->medicalRecord; @endphp
         <x-ui.card title="Rekam Medis">
             @if ($visit->requiresRoomBeforeExam())
-                <p class="text-sm text-amber-700">
+                <p class="text-sm text-warning-700">
                     Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
                 </p>
             @elseif ($medicalRecord)
@@ -287,7 +274,7 @@
         @can('create', [\App\Modules\Odontogram\Models\Odontogram::class, $visit])
             <x-ui.card title="Odontogram">
                 @if ($visit->requiresRoomBeforeExam())
-                    <p class="text-sm text-amber-700">
+                    <p class="text-sm text-warning-700">
                         Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
                     </p>
                 @else
@@ -303,7 +290,7 @@
         @can('viewForVisit', [\App\Modules\Prescription\Models\RmePrescription::class, $visit])
             <x-ui.card title="Resep Dokter">
                 @if ($visit->requiresRoomBeforeExam())
-                    <p class="text-sm text-amber-700">
+                    <p class="text-sm text-warning-700">
                         Pemeriksaan terkunci — pasien belum ditempatkan ke ruangan perawatan.
                     </p>
                 @else

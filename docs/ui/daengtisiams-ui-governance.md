@@ -38,6 +38,25 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 
 **Rule permanen — list-page standard:** setiap halaman list/index baru atau yang di-polish (RME, Kasir, Inventory, Procurement, Lab, Report) **wajib** memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` (`:status`) + `x-ui.button` + `x-ui.empty-state` + semantic token; dilarang table/badge/button dari nol, hardcode warna, atau teal legacy.
 
+### UIX-4 — RME + Odontogram = reference clinical pages (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk halaman klinis RME detail (`resources/views/rme/visits/show.blade.php`) dan Odontogram (`resources/views/rme/visits/odontogram/show.blade.php`) sebagai **reference implementation seluruh halaman klinis**:
+- RME detail memakai `x-ui.page-header`, `x-ui.card`, `x-ui.badge`, `x-ui.button`, `x-ui.alert`.
+- Status kunjungan memakai `:status` (design-system status→tone map).
+- **Tidak ada** class brand legacy `teal-*` di kedua view.
+- **Tidak ada** warna hex hardcoded di kedua view.
+- Gold **tidak** dipakai sebagai CTA klinis (`variant="gold"` dilarang) — gold accent-only, bukan warna aksi/warning/danger.
+- **Tidak ada** field KTP/NIK (`->ktp`/`->nik`/`->identity_number`) yang dirender di permukaan detail klinis (privacy).
+- Dokumen evidence sprint `docs/sprints/uix-4-rme-odontogram-polish.md` ada (soft signal).
+
+**Rule permanen — clinical-page standard:** setiap halaman klinis (RME detail, Odontogram, Rekam Medis, Resep, dan turunannya) **wajib**:
+- memakai semantic token (navy/ink/hairline/brand/surface/status) — dilarang teal legacy & hex hardcoded;
+- tombol aksi klinis memakai `x-ui.button`, status klinis memakai `x-ui.badge` (`:status` bila status domain), kartu memakai `x-ui.card` bila aman;
+- **tidak** menampilkan KTP/NIK/scan dokumen/catatan sensitif mentah yang sebelumnya tidak tampil;
+- gold **dilarang** untuk warning/danger/aksi klinis (accent-only);
+- **warna status klinis Odontogram** (karies/hilang/tambalan/crown/PSA/normal) tetap dipertahankan agar tetap distinguishable & paritas dengan cetak/PDF — bukan diganti brand;
+- print/PDF **wajib** dicek ulang setelah perubahan UI RME;
+- **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema untuk sprint poles presentation-only.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.
