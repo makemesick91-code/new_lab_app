@@ -1,12 +1,16 @@
 <x-settings-shell title="Tambah Order Lab">
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <form method="POST" action="{{ route('lab-orders.store') }}" class="p-6 space-y-6">
+    <x-ui.page-header title="Tambah Order Lab">
+        <x-slot:breadcrumb>Lab / Order Lab / Tambah</x-slot:breadcrumb>
+    </x-ui.page-header>
+
+    <x-ui.card>
+        <form method="POST" action="{{ route('lab-orders.store') }}" class="space-y-6">
             @csrf
             @include('lab-orders._form', ['order' => null])
             <div class="flex items-center gap-3">
-                <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Simpan Order</button>
-                <a href="{{ route('lab-orders.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Batal</a>
+                <x-ui.button type="submit">Simpan Order</x-ui.button>
+                <x-ui.button variant="secondary" :href="route('lab-orders.index')">Batal</x-ui.button>
             </div>
         </form>
-    </div>
+    </x-ui.card>
 </x-settings-shell>

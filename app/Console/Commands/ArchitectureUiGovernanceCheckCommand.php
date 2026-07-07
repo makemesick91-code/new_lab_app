@@ -358,6 +358,87 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-6 sprint evidence doc is missing (docs/sprints/uix-6-inventory-polish.md).';
         }
 
+        // --- UIX-7 — Lab pipeline pages adopt the shared design system. ---
+        // Presentation-only governance: the Lab pipeline scan surfaces (order list/
+        // detail, RME case candidates, production, QC, delivery) must stay on
+        // x-ui.* + the shared x-lab.status-badge + semantic tokens, must not
+        // reintroduce legacy teal, must never use gold as a CTA, and must never
+        // render full KTP/NIK. No LabOrder lifecycle, RME→Lab candidate generation,
+        // payment, or invoice business logic is asserted here.
+        $labStatusBadge = 'resources/views/components/lab/status-badge.blade.php';
+        if (! is_file($base.'/'.$labStatusBadge)) {
+            $errors[] = "Missing shared lab status badge component: {$labStatusBadge}";
+        }
+
+        $labOrderIndex = 'resources/views/lab-orders/index.blade.php';
+        $labOrderShow = 'resources/views/lab-orders/show.blade.php';
+
+        foreach ([$labOrderIndex, $labOrderShow] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing lab view: {$file}";
+            }
+        }
+
+        // Lab order list is the reference lab list page (UIX-3 list standard).
+        $labIndexContents = @file_get_contents($base.'/'.$labOrderIndex) ?: '';
+        if ($labIndexContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-lab.status-badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($labIndexContents, $component)) {
+                    $errors[] = "Lab order list view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Lab order detail is the reference lab detail page.
+        $labShowContents = @file_get_contents($base.'/'.$labOrderShow) ?: '';
+        if ($labShowContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.button', 'x-lab.status-badge'] as $component) {
+                if (! str_contains($labShowContents, $component)) {
+                    $errors[] = "Lab order detail view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // No legacy teal / gold-CTA / rendered KTP across the polished lab surfaces.
+        // (Hex is intentionally not scanned — the delivery signature pad keeps a JS
+        // canvas ink color; the UIX-5 precedent also skips hex for the same reason.)
+        $labFiles = [
+            'resources/views/lab-orders/index.blade.php',
+            'resources/views/lab-orders/show.blade.php',
+            'resources/views/lab-orders/create.blade.php',
+            'resources/views/lab-orders/edit.blade.php',
+            'resources/views/lab-orders/_form.blade.php',
+            'resources/views/lab/case-candidates/index.blade.php',
+            'resources/views/lab/case-candidates/show.blade.php',
+            'resources/views/production/board.blade.php',
+            'resources/views/production/show.blade.php',
+            'resources/views/production/work-logs.blade.php',
+            'resources/views/quality-control/queue.blade.php',
+            'resources/views/quality-control/show.blade.php',
+            'resources/views/deliveries/index.blade.php',
+            'resources/views/deliveries/show.blade.php',
+        ];
+        foreach ($labFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never a lab action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Full KTP/NIK rendered in {$file} (identity numbers must never be shown in lab views).";
+            }
+        }
+
+        // UIX-7 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-7-lab-pipeline-polish.md')) {
+            $warnings[] = 'UIX-7 sprint evidence doc is missing (docs/sprints/uix-7-lab-pipeline-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

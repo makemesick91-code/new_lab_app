@@ -91,6 +91,21 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - print/export Inventory dicek ulang setelah perubahan komponen bersama;
 - **tanpa** perubahan ledger/stock-calc/valuation/procurement/transfer/opname/batch logic, dan **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema — presentation-only.
 
+### UIX-7 — Lab pipeline = reference lab workflow pages (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk permukaan Lab pipeline sebagai **reference implementation seluruh alur lab**:
+- Komponen bersama baru `x-lab.status-badge` (`resources/views/components/lab/status-badge.blade.php`) memetakan kode status lab uppercase (lifecycle/priority/QC/delivery) ke tone semantik UIX-1 + label Indonesia, dirender lewat `x-ui.badge`. Ini komponen `x-lab.*` pertama.
+- Daftar order lab (`resources/views/lab-orders/index.blade.php`) sebagai **reference lab list** memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-lab.status-badge` + `x-ui.button` + `x-ui.empty-state` (list-page standard UIX-3).
+- Detail order lab (`resources/views/lab-orders/show.blade.php`) sebagai **reference lab detail** memakai `x-ui.page-header` + `x-ui.button` + `x-lab.status-badge`.
+- **Tidak ada** class brand legacy `teal-*`, **tidak ada** `variant="gold"` (gold bukan CTA lab), dan **tidak ada** render `->ktp/nik/identity_number` di 14 view lab yang dipoles. Hex **tidak** dipindai (signature pad delivery menyimpan warna tinta kanvas di JS — presedennya sama dengan UIX-5 yang melewati hex untuk struk).
+- Dokumen evidence sprint `docs/sprints/uix-7-lab-pipeline-polish.md` ada (soft signal).
+
+**Rule permanen — lab-page standard:** setiap halaman Lab (order list/detail, kandidat RME, produksi, QC, pengiriman/POD) **wajib**:
+- memakai semantic token (navy/ink/hairline/brand/surface/status) — dilarang teal legacy;
+- daftar/list mengikuti list-page standard UIX-3;
+- status lifecycle/priority/QC/delivery memakai `x-lab.status-badge` (bukan badge dari nol) → tone semantik (QC_PASSED/DELIVERED/COMPLETED → **success**, ON_HOLD/QC_PENDING/URGENT/REVISION → **warning**, CANCELLED/REJECTED/FAIL/SUPER_URGENT → **danger**, RECEIVED/ASSIGNED/IN_PRODUCTION/IN_DELIVERY → **info**, DRAFT/NORMAL → **neutral**);
+- tombol aksi memakai `x-ui.button` dengan hirarki jelas (primary/secondary/success/warning/danger); gold **dilarang** untuk aksi lab (accent-only);
+- **tanpa** perubahan LabOrder lifecycle / RME→Lab candidate generation / invoice / payment, dan **tanpa** perubahan controller/service/query/permission/policy/BranchContext/route/schema — presentation-only; **tanpa** render KTP/NIK penuh.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.

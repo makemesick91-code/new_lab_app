@@ -14,27 +14,24 @@
         ];
     @endphp
 
-    <div class="space-y-6">
+    <x-ui.page-header title="Detail Kandidat Pekerjaan Lab" subtitle="Kandidat dihasilkan otomatis dari item invoice RME yang lunas.">
+        <x-slot:breadcrumb>RME → Lab</x-slot:breadcrumb>
+        <x-slot:actions>
+            <x-ui.button variant="secondary" :href="route('lab-case-candidates.index')">&larr; Kembali</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
 
-        {{-- Page header --}}
-        <div class="flex items-start justify-between">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">RME → Lab</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">Detail Kandidat Pekerjaan Lab</h2>
-                <p class="mt-1 text-sm text-gray-500">Kandidat dihasilkan otomatis dari item invoice RME yang lunas.</p>
-            </div>
-            <x-ui.button variant="neutral" :href="route('lab-case-candidates.index')">&larr; Kembali</x-ui.button>
-        </div>
+    <div class="space-y-6">
 
         {{-- ID + Status --}}
         <x-ui.card>
             <div class="flex items-center justify-between">
                 <div>
-                    <p class="text-xs text-gray-500">ID Kandidat</p>
-                    <p class="font-mono text-lg font-semibold text-gray-900">#{{ $candidate->id }}</p>
-                    <p class="mt-1 text-xs text-gray-500">Dibuat: {{ $candidate->created_at?->format('d/m/Y H:i') }}</p>
+                    <p class="text-xs text-ink-soft">ID Kandidat</p>
+                    <p class="font-mono text-lg font-semibold text-navy">#{{ $candidate->id }}</p>
+                    <p class="mt-1 text-xs text-ink-soft">Dibuat: {{ $candidate->created_at?->format('d/m/Y H:i') }}</p>
                 </div>
-                <x-ui.badge :tone="$statusTones[$candidate->status] ?? 'neutral'" class="text-sm px-3 py-1">
+                <x-ui.badge :tone="$statusTones[$candidate->status] ?? 'neutral'" class="px-3 py-1 text-sm">
                     {{ $statusLabels[$candidate->status] ?? $candidate->status }}
                 </x-ui.badge>
             </div>
@@ -44,29 +41,29 @@
         <x-ui.card title="Pasien &amp; Kunjungan">
             <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 <div>
-                    <dt class="text-gray-500">Nama Pasien</dt>
-                    <dd class="font-medium text-gray-900">{{ $candidate->patient?->name ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Nama Pasien</dt>
+                    <dd class="font-medium text-navy">{{ $candidate->patient?->name ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">No. Rekam Medis</dt>
-                    <dd class="font-mono font-medium text-gray-900">{{ $candidate->patient?->medical_record_number ?? '—' }}</dd>
+                    <dt class="text-ink-soft">No. Rekam Medis</dt>
+                    <dd class="font-mono font-medium text-navy">{{ $candidate->patient?->medical_record_number ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">Dokter</dt>
-                    <dd class="text-gray-900">{{ $candidate->doctor?->name ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Dokter</dt>
+                    <dd class="text-navy">{{ $candidate->doctor?->name ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">Cabang</dt>
-                    <dd class="text-gray-900">{{ $candidate->branch?->name ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Cabang</dt>
+                    <dd class="text-navy">{{ $candidate->branch?->name ?? '—' }}</dd>
                 </div>
                 @if ($candidate->clinicVisit)
                     <div>
-                        <dt class="text-gray-500">No. Kunjungan</dt>
-                        <dd class="font-mono font-medium text-gray-900">{{ $candidate->clinicVisit->visit_number ?? '—' }}</dd>
+                        <dt class="text-ink-soft">No. Kunjungan</dt>
+                        <dd class="font-mono font-medium text-navy">{{ $candidate->clinicVisit->visit_number ?? '—' }}</dd>
                     </div>
                     <div>
-                        <dt class="text-gray-500">Tanggal Kunjungan</dt>
-                        <dd class="text-gray-900">{{ $candidate->clinicVisit->created_at?->format('d/m/Y') ?? '—' }}</dd>
+                        <dt class="text-ink-soft">Tanggal Kunjungan</dt>
+                        <dd class="text-navy">{{ $candidate->clinicVisit->created_at?->format('d/m/Y') ?? '—' }}</dd>
                     </div>
                 @endif
             </dl>
@@ -76,12 +73,12 @@
         <x-ui.card title="Invoice RME">
             <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 <div>
-                    <dt class="text-gray-500">No. Invoice</dt>
-                    <dd class="font-mono font-medium text-gray-900">
+                    <dt class="text-ink-soft">No. Invoice</dt>
+                    <dd class="font-mono font-medium text-navy">
                         @if ($candidate->rmeInvoice && $candidate->clinicVisit)
                             @can('view', $candidate->rmeInvoice)
                                 <a href="{{ route('rme.cashier.show', [$candidate->clinicVisit, $candidate->rmeInvoice]) }}"
-                                   class="text-teal-700 hover:text-teal-900 hover:underline">
+                                   class="text-brand-700 hover:text-brand-800 hover:underline">
                                     {{ $candidate->rmeInvoice->invoice_number }}
                                 </a>
                             @else
@@ -93,18 +90,18 @@
                     </dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">Status Invoice</dt>
-                    <dd class="text-gray-900">{{ $candidate->rmeInvoice?->status ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Status Invoice</dt>
+                    <dd class="text-navy">{{ $candidate->rmeInvoice?->status ?? '—' }}</dd>
                 </div>
                 @if ($candidate->clinicVisit)
                     <div>
-                        <dt class="text-gray-500">No. Kunjungan</dt>
-                        <dd class="font-mono font-medium text-gray-900">{{ $candidate->clinicVisit->visit_number }}</dd>
+                        <dt class="text-ink-soft">No. Kunjungan</dt>
+                        <dd class="font-mono font-medium text-navy">{{ $candidate->clinicVisit->visit_number }}</dd>
                     </div>
                 @endif
                 <div class="col-span-2">
-                    <dt class="text-gray-500">Deskripsi Item</dt>
-                    <dd class="text-gray-900">{{ $candidate->source_description ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Deskripsi Item</dt>
+                    <dd class="text-navy">{{ $candidate->source_description ?? '—' }}</dd>
                 </div>
             </dl>
         </x-ui.card>
@@ -113,16 +110,16 @@
         <x-ui.card title="Tindakan &amp; Estimasi">
             <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 <div>
-                    <dt class="text-gray-500">Tindakan</dt>
-                    <dd class="text-gray-900">{{ $candidate->treatment?->name ?? $candidate->source_description ?? '—' }}</dd>
+                    <dt class="text-ink-soft">Tindakan</dt>
+                    <dd class="text-navy">{{ $candidate->treatment?->name ?? $candidate->source_description ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">Qty</dt>
-                    <dd class="text-gray-900">{{ $candidate->quantity }}</dd>
+                    <dt class="text-ink-soft">Qty</dt>
+                    <dd class="text-navy">{{ $candidate->quantity }}</dd>
                 </div>
                 <div>
-                    <dt class="text-gray-500">Estimasi Harga</dt>
-                    <dd class="font-semibold text-gray-900">
+                    <dt class="text-ink-soft">Estimasi Harga</dt>
+                    <dd class="font-semibold text-navy">
                         Rp {{ number_format((float) $candidate->estimated_price, 0, ',', '.') }}
                     </dd>
                 </div>
@@ -134,73 +131,57 @@
             @if ($candidate->isConverted() && $candidate->convertedLabOrder)
                 <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     <div>
-                        <dt class="text-gray-500">Lab Order</dt>
+                        <dt class="text-ink-soft">Lab Order</dt>
                         <dd>
                             @can('view', $candidate->convertedLabOrder)
                                 <a href="{{ route('lab-orders.show', $candidate->convertedLabOrder) }}"
-                                   class="font-mono font-medium text-teal-700 hover:text-teal-900 hover:underline">
+                                   class="font-mono font-medium text-brand-700 hover:text-brand-800 hover:underline">
                                     {{ $candidate->convertedLabOrder->order_number }}
                                 </a>
                             @else
-                                <span class="font-mono font-medium text-gray-900">{{ $candidate->convertedLabOrder->order_number }}</span>
+                                <span class="font-mono font-medium text-navy">{{ $candidate->convertedLabOrder->order_number }}</span>
                             @endcan
                         </dd>
                     </div>
                     @if ($candidate->reviewed_at)
                         <div>
-                            <dt class="text-gray-500">Dikonversi Pada</dt>
-                            <dd class="text-gray-900">{{ $candidate->reviewed_at->format('d/m/Y H:i') }}</dd>
+                            <dt class="text-ink-soft">Dikonversi Pada</dt>
+                            <dd class="text-navy">{{ $candidate->reviewed_at->format('d/m/Y H:i') }}</dd>
                         </div>
                     @endif
                     @if ($candidate->reviewedBy)
                         <div>
-                            <dt class="text-gray-500">Direview Oleh</dt>
-                            <dd class="text-gray-900">{{ $candidate->reviewedBy->name }}</dd>
+                            <dt class="text-ink-soft">Direview Oleh</dt>
+                            <dd class="text-navy">{{ $candidate->reviewedBy->name }}</dd>
                         </div>
                     @endif
                 </dl>
             @else
-                <p class="text-sm text-amber-800 bg-amber-50 rounded-md px-3 py-2">
+                <x-ui.alert variant="warning">
                     Belum dikonversi — kandidat masih menunggu review dan pemilihan layanan lab.
-                </p>
+                </x-ui.alert>
             @endif
         </x-ui.card>
 
         {{-- Conversion form (Phase 21.4) --}}
         @can('convert', $candidate)
             <x-ui.card title="Konversi ke Lab Order">
-                <p class="mb-4 text-sm text-gray-600">
+                <p class="mb-4 text-sm text-ink-soft">
                     Pilih layanan lab secara eksplisit. Tindakan RME tidak dipetakan otomatis ke layanan lab.
                 </p>
                 <form method="POST" action="{{ route('lab-case-candidates.convert', $candidate) }}" class="space-y-4">
                     @csrf
-                    <div>
-                        <label for="lab_service_id" class="block text-sm font-medium text-gray-700">Layanan Lab</label>
-                        <select id="lab_service_id" name="lab_service_id" required
-                                class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">— Pilih layanan —</option>
-                            @foreach ($labServices as $service)
-                                <option value="{{ $service->id }}" @selected(old('lab_service_id') == $service->id)>
-                                    {{ $service->name }} (Rp {{ number_format((float) $service->price, 0, ',', '.') }})
-                                </option>
-                            @endforeach
-                        </select>
-                        @error('lab_service_id')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label for="due_date" class="block text-sm font-medium text-gray-700">Tenggat</label>
-                        <input type="date" id="due_date" name="due_date" required
-                               value="{{ old('due_date', now()->addDays(7)->toDateString()) }}"
-                               min="{{ now()->toDateString() }}"
-                               class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
-                        @error('due_date')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
-                    </div>
-                    <div>
-                        <label for="notes" class="block text-sm font-medium text-gray-700">Catatan (opsional)</label>
-                        <textarea id="notes" name="notes" rows="3"
-                                  class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes') }}</textarea>
-                        @error('notes')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
-                    </div>
+                    <x-ui.select id="lab_service_id" name="lab_service_id" label="Layanan Lab" required>
+                        <option value="">— Pilih layanan —</option>
+                        @foreach ($labServices as $service)
+                            <option value="{{ $service->id }}" @selected(old('lab_service_id') == $service->id)>
+                                {{ $service->name }} (Rp {{ number_format((float) $service->price, 0, ',', '.') }})
+                            </option>
+                        @endforeach
+                    </x-ui.select>
+                    <x-ui.input type="date" id="due_date" name="due_date" label="Tenggat" required
+                                :value="old('due_date', now()->addDays(7)->toDateString())" min="{{ now()->toDateString() }}" />
+                    <x-ui.textarea id="notes" name="notes" label="Catatan (opsional)" rows="3">{{ old('notes') }}</x-ui.textarea>
                     <div class="flex justify-end">
                         <x-ui.button type="submit" variant="primary">Konversi ke Lab Order</x-ui.button>
                     </div>
@@ -211,7 +192,7 @@
         {{-- Notes --}}
         @if ($candidate->notes)
             <x-ui.card title="Catatan">
-                <p class="text-sm text-gray-700">{{ $candidate->notes }}</p>
+                <p class="text-sm text-ink">{{ $candidate->notes }}</p>
             </x-ui.card>
         @endif
 

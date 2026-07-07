@@ -32,200 +32,200 @@
 @endphp
 
 <x-settings-shell title="Detail Produksi">
+    <x-ui.page-header title="Detail Produksi">
+        <x-slot:breadcrumb>Lab / Papan Produksi / {{ $order->order_number }}</x-slot:breadcrumb>
+        <x-slot:actions>
+            <x-ui.button variant="secondary" :href="route('production.board')">&larr; Kembali ke papan</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
+
     <div class="space-y-6">
         {{-- Header + summary --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
+        <x-ui.card>
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <p class="text-sm text-gray-500">Nomor Order</p>
-                    <p class="text-lg font-semibold text-gray-900">{{ $order->order_number }}</p>
-                    <span class="mt-1 inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">{{ $statusLabels[$order->status] ?? $order->status }}</span>
+                    <p class="text-sm text-ink-soft">Nomor Order</p>
+                    <p class="text-lg font-semibold text-navy">{{ $order->order_number }}</p>
+                    <div class="mt-1"><x-lab.status-badge :status="$order->status" /></div>
                 </div>
-                <a href="{{ route('production.board') }}" class="text-sm text-gray-500 hover:text-gray-700">Kembali ke papan</a>
             </div>
             <dl class="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                <div><dt class="text-gray-500">Klinik</dt><dd class="font-medium">{{ $order->clinic?->name }}</dd></div>
-                <div><dt class="text-gray-500">Dokter</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
-                <div><dt class="text-gray-500">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
-                <div><dt class="text-gray-500">Prioritas</dt><dd class="font-medium">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
-                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
-                <div><dt class="text-gray-500">Teknisi Aktif</dt><dd class="font-medium">{{ $activeAssignment?->technician?->name ?? 'Belum ditugaskan' }}</dd></div>
+                <div><dt class="text-ink-soft">Klinik</dt><dd class="font-medium text-navy">{{ $order->clinic?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Dokter</dt><dd class="font-medium text-navy">{{ $order->doctor?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Pasien</dt><dd class="font-medium text-navy">{{ $order->patient?->name ?? '—' }}</dd></div>
+                <div><dt class="text-ink-soft">Prioritas</dt><dd class="font-medium text-navy">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
+                <div><dt class="text-ink-soft">Tenggat</dt><dd class="font-medium text-navy">{{ format_date_id($order->due_date, '—') }}</dd></div>
+                <div><dt class="text-ink-soft">Teknisi Aktif</dt><dd class="font-medium text-navy">{{ $activeAssignment?->technician?->name ?? 'Belum ditugaskan' }}</dd></div>
             </dl>
-        </div>
+        </x-ui.card>
 
         {{-- Action panel --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
-            <h3 class="font-semibold text-gray-800">Aksi</h3>
+        <x-ui.card title="Aksi">
             <div class="flex flex-wrap gap-4">
                 @can('production.assign', $order)
-                    <form method="POST" action="{{ route('production.assign', $order) }}" class="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
+                    <form method="POST" action="{{ route('production.assign', $order) }}" class="flex flex-wrap items-end gap-2 rounded-lg border border-hairline p-3">
                         @csrf
                         <div>
-                            <label class="block text-xs text-gray-500">Tugaskan Teknisi</label>
-                            <select name="technician_id" class="mt-1 rounded-md border-gray-300 text-sm">
+                            <label class="block text-xs text-ink-soft">Tugaskan Teknisi</label>
+                            <select name="technician_id" class="mt-1 rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                                 @foreach ($technicians as $t)<option value="{{ $t->id }}">{{ $t->name }}</option>@endforeach
                             </select>
                         </div>
-                        <input type="text" name="notes" placeholder="Catatan (opsional)" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Tugaskan</button>
+                        <input type="text" name="notes" placeholder="Catatan (opsional)" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" size="sm">Tugaskan</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.reassign', $order)
-                    <form method="POST" action="{{ route('production.reassign', $order) }}" class="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
+                    <form method="POST" action="{{ route('production.reassign', $order) }}" class="flex flex-wrap items-end gap-2 rounded-lg border border-hairline p-3">
                         @csrf
                         <div>
-                            <label class="block text-xs text-gray-500">Ganti ke Teknisi</label>
-                            <select name="technician_id" class="mt-1 rounded-md border-gray-300 text-sm">
+                            <label class="block text-xs text-ink-soft">Ganti ke Teknisi</label>
+                            <select name="technician_id" class="mt-1 rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                                 @foreach ($technicians as $t)<option value="{{ $t->id }}">{{ $t->name }}</option>@endforeach
                             </select>
                         </div>
-                        <input type="text" name="reason" placeholder="Alasan (minimal 5 karakter)" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Ganti Teknisi</button>
+                        <input type="text" name="reason" placeholder="Alasan (minimal 5 karakter)" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" variant="warning" size="sm">Ganti Teknisi</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.start', $order)
                     <form method="POST" action="{{ route('production.start', $order) }}" class="flex items-end gap-2">
-                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Mulai Pekerjaan</button>
+                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" variant="success" size="sm">Mulai Pekerjaan</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.pause', $order)
-                    <form method="POST" action="{{ route('production.pause', $order) }}" class="flex flex-wrap items-end gap-2 rounded-md border border-gray-200 p-3">
+                    <form method="POST" action="{{ route('production.pause', $order) }}" class="flex flex-wrap items-end gap-2 rounded-lg border border-hairline p-3">
                         @csrf
-                        <select name="hold_reason" class="rounded-md border-gray-300 text-sm">
+                        <select name="hold_reason" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Alasan jeda</option>
                             @foreach ($holdReasons as $hr)<option value="{{ $hr }}">{{ $hr }}</option>@endforeach
                         </select>
-                        <input type="text" name="reason" placeholder="Alasan (minimal 5)" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-500">Jeda</button>
+                        <input type="text" name="reason" placeholder="Alasan (minimal 5)" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" variant="warning" size="sm">Jeda</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.resume', $order)
                     <form method="POST" action="{{ route('production.resume', $order) }}" class="flex items-end gap-2">
-                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-500">Lanjutkan</button>
+                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" variant="success" size="sm">Lanjutkan</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.complete', $order)
                     <form method="POST" action="{{ route('production.complete', $order) }}" class="flex items-end gap-2">
-                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Selesaikan Pekerjaan</button>
+                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" size="sm">Selesaikan Pekerjaan</x-ui.button>
                     </form>
                 @endcan
 
                 @can('production.sendToQc', $order)
                     <form method="POST" action="{{ route('production.send-to-qc', $order) }}" class="flex items-end gap-2">
-                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-sm" />
-                        <button class="rounded-md bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-500">Kirim ke QC</button>
+                        @csrf<input type="text" name="notes" placeholder="Catatan" class="rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <x-ui.button type="submit" variant="neutral" size="sm">Kirim ke QC</x-ui.button>
                     </form>
                 @endcan
             </div>
-        </div>
+        </x-ui.card>
 
         {{-- Production steps --}}
-        <div class="bg-white shadow-sm sm:rounded-lg p-6">
-            <h3 class="font-semibold text-gray-800">Tahap Produksi</h3>
-            <table class="mt-3 min-w-full divide-y divide-gray-200 text-sm">
-                <thead><tr class="text-left text-gray-500">
-                    <th class="px-3 py-2 font-medium">Tahap</th>
-                    <th class="px-3 py-2 font-medium">Status</th>
-                    <th class="px-3 py-2 font-medium">Perbarui</th>
+        <x-ui.card title="Tahap Produksi">
+            <x-ui.table class="mt-1">
+                <thead class="bg-navy-50 text-ink"><tr>
+                    <th class="px-3 py-2 text-left font-medium">Tahap</th>
+                    <th class="px-3 py-2 text-left font-medium">Status</th>
+                    <th class="px-3 py-2 text-left font-medium">Perbarui</th>
                 </tr></thead>
-                <tbody class="divide-y divide-gray-100">
+                <tbody class="divide-y divide-hairline">
                     @foreach ($steps as $step)
                         <tr>
-                            <td class="px-3 py-2 font-medium text-gray-900">{{ $step->step_name }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $statusLabels[$step->status] ?? $step->status }}</td>
+                            <td class="px-3 py-2 font-medium text-navy">{{ $step->step_name }}</td>
+                            <td class="px-3 py-2"><x-lab.status-badge :status="$step->status" /></td>
                             <td class="px-3 py-2">
                                 @can('production.steps.update', $order)
                                     <form method="POST" action="{{ route('production.steps.update', [$order, $step]) }}" class="flex items-center gap-2">
                                         @csrf @method('PATCH')
-                                        <select name="status" class="rounded-md border-gray-300 text-xs">
+                                        <select name="status" class="rounded-lg border-hairline text-xs focus:border-brand-500 focus:ring-brand-500">
                                             @foreach ($stepStatuses as $s)<option value="{{ $s }}" @selected($step->status === $s)>{{ $statusLabels[$s] ?? $s }}</option>@endforeach
                                         </select>
-                                        <input type="text" name="notes" placeholder="Catatan" class="rounded-md border-gray-300 text-xs" />
-                                        <button class="text-indigo-600 hover:text-indigo-500 text-xs">Simpan</button>
+                                        <input type="text" name="notes" placeholder="Catatan" class="rounded-lg border-hairline text-xs focus:border-brand-500 focus:ring-brand-500" />
+                                        <x-ui.button type="submit" size="sm" variant="ghost">Simpan</x-ui.button>
                                     </form>
                                 @else
-                                    <span class="text-gray-400 text-xs">—</span>
+                                    <span class="text-xs text-ink-muted">—</span>
                                 @endcan
                             </td>
                         </tr>
                     @endforeach
                 </tbody>
-            </table>
-        </div>
+            </x-ui.table>
+        </x-ui.card>
 
         {{-- Assignment history + Work log timeline --}}
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-800">Riwayat Penugasan</h3>
-                <ul class="mt-3 space-y-2 text-sm">
+            <x-ui.card title="Riwayat Penugasan">
+                <ul class="space-y-2 text-sm">
                     @forelse ($assignmentHistory as $a)
-                        <li class="flex items-center justify-between border-b border-gray-100 pb-2">
-                            <span class="font-medium text-gray-900">{{ $a->technician?->name }}</span>
-                            <span class="text-gray-500">{{ $statusLabels[$a->status] ?? $a->status }} · {{ format_datetime_id($a->assigned_at) }}</span>
+                        <li class="flex items-center justify-between border-b border-hairline pb-2">
+                            <span class="font-medium text-navy">{{ $a->technician?->name }}</span>
+                            <span class="text-ink-soft">{{ $statusLabels[$a->status] ?? $a->status }} · {{ format_datetime_id($a->assigned_at) }}</span>
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada penugasan.</li>
+                        <li class="text-ink-muted">Belum ada penugasan.</li>
                     @endforelse
                 </ul>
-            </div>
+            </x-ui.card>
 
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-gray-800">Timeline Log Pekerjaan</h3>
-                    <a href="{{ route('production.work-logs.index', $order) }}" class="text-xs text-indigo-600 hover:text-indigo-500">Lihat semua</a>
-                </div>
-                <ul class="mt-3 space-y-2 text-sm">
+            <x-ui.card title="Timeline Log Pekerjaan">
+                <x-slot:actions>
+                    <a href="{{ route('production.work-logs.index', $order) }}" class="text-xs text-brand-600 hover:text-brand-700">Lihat semua</a>
+                </x-slot:actions>
+                <ul class="space-y-2 text-sm">
                     @forelse ($workLogs as $log)
-                        <li class="border-b border-gray-100 pb-2">
-                            <p class="font-medium text-gray-900">{{ $workLogLabels[$log->event_type] ?? $log->event_type }} <span class="text-xs text-gray-400">({{ $log->duration_minutes }} menit)</span></p>
-                            <p class="text-gray-500">{{ format_datetime_id($log->created_at) }} · {{ $log->performedBy?->name }}</p>
-                            @if ($log->notes)<p class="text-gray-600">{{ $log->notes }}</p>@endif
+                        <li class="border-b border-hairline pb-2">
+                            <p class="font-medium text-navy">{{ $workLogLabels[$log->event_type] ?? $log->event_type }} <span class="text-xs text-ink-muted">({{ $log->duration_minutes }} menit)</span></p>
+                            <p class="text-ink-soft">{{ format_datetime_id($log->created_at) }} · {{ $log->performedBy?->name }}</p>
+                            @if ($log->notes)<p class="text-ink-soft">{{ $log->notes }}</p>@endif
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada log pekerjaan.</li>
+                        <li class="text-ink-muted">Belum ada log pekerjaan.</li>
                     @endforelse
                 </ul>
-            </div>
+            </x-ui.card>
         </div>
 
         {{-- Status timeline + Audit log --}}
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-800">Timeline Status</h3>
-                <ul class="mt-3 space-y-2 text-sm">
+            <x-ui.card title="Timeline Status">
+                <ul class="space-y-2 text-sm">
                     @forelse ($order->statusLogs->sortByDesc('changed_at') as $log)
-                        <li class="border-b border-gray-100 pb-2">
-                            <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                        <li class="border-b border-hairline pb-2">
+                            <p class="font-medium text-navy">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
+                            <p class="text-ink-soft">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada riwayat status.</li>
+                        <li class="text-ink-muted">Belum ada riwayat status.</li>
                     @endforelse
                 </ul>
-            </div>
+            </x-ui.card>
 
-            <div class="bg-white shadow-sm sm:rounded-lg p-6">
-                <h3 class="font-semibold text-gray-800">Log Audit</h3>
-                <ul class="mt-3 space-y-2 text-sm">
+            <x-ui.card title="Log Audit">
+                <ul class="space-y-2 text-sm">
                     @forelse ($auditLogs as $log)
-                        <li class="border-b border-gray-100 pb-2">
-                            <p class="font-medium text-gray-900">{{ $log->action }}</p>
-                            <p class="text-gray-500">{{ format_datetime_id($log->performed_at) }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
+                        <li class="border-b border-hairline pb-2">
+                            <p class="font-medium text-navy">{{ $log->action }}</p>
+                            <p class="text-ink-soft">{{ format_datetime_id($log->performed_at) }} · {{ $log->performer?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada catatan audit.</li>
+                        <li class="text-ink-muted">Belum ada catatan audit.</li>
                     @endforelse
                 </ul>
                 <div class="mt-3">{{ $auditLogs->links() }}</div>
-            </div>
+            </x-ui.card>
         </div>
     </div>
 </x-settings-shell>

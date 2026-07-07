@@ -4,10 +4,10 @@
 ])
 
 <div class="signature-pad space-y-2" data-signature-pad>
-    <label class="block text-sm font-medium text-gray-700" for="{{ $inputName }}-canvas">
-        Tanda Tangan Penerima <span class="text-rose-600">*</span>
+    <label class="block text-sm font-medium text-ink" for="{{ $inputName }}-canvas">
+        Tanda Tangan Penerima <span class="text-danger">*</span>
     </label>
-    <div class="rounded-lg border border-gray-300 bg-white shadow-inner">
+    <div class="rounded-lg border border-hairline bg-surface shadow-inner">
         <canvas
             id="{{ $inputName }}-canvas"
             data-signature-canvas
@@ -19,11 +19,11 @@
         <button
             type="button"
             data-signature-clear
-            class="inline-flex items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+            class="inline-flex items-center rounded-lg border border-hairline bg-surface px-3 py-1.5 text-sm font-medium text-ink shadow-sm hover:bg-navy-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
         >
             Bersihkan Tanda Tangan
         </button>
-        <p class="text-xs text-gray-500">Gunakan jari atau stylus pada perangkat sentuh.</p>
+        <p class="text-xs text-ink-soft">Gunakan jari atau stylus pada perangkat sentuh.</p>
     </div>
     <input
         type="hidden"
@@ -32,7 +32,7 @@
         data-signature-input
     >
     @error($inputName)
-        <p class="text-sm text-rose-600">{{ $message }}</p>
+        <p class="text-sm text-danger">{{ $message }}</p>
     @enderror
 </div>
 
