@@ -1,0 +1,43 @@
+---
+description: POST-ENT Enterprise Foundation Runtime Hardening (queue worker, deploy evidence timeout, ENT-1..4 audit). Read-only governance; not ENT-17.
+globs:
+  - "config/enterprise_foundation_runtime_hardening.php"
+  - "app/Support/Foundation/EntFoundationRuntimeHardeningScanner.php"
+  - "app/Services/Foundation/EntFoundationRuntimeHardeningGovernanceService.php"
+  - "app/Console/Commands/FoundationRuntimeHardeningCheckCommand.php"
+  - "app/Console/Commands/FoundationEnt14AuditCheckCommand.php"
+  - "app/Console/Commands/FoundationQueueWorkerRuntimeCheckCommand.php"
+  - "app/Jobs/Foundation/QueueWorkerSmokeJob.php"
+  - "deploy/systemd/daengtisiams-queue-worker.service"
+  - "scripts/deploy-vps-runner.sh"
+  - "docs/architecture/post-enterprise-foundation-runtime-hardening-governance.md"
+  - "docs/runbooks/queue-worker-activation-runbook.md"
+  - "docs/runbooks/vps-deploy-evidence-timeout-recovery-runbook.md"
+alwaysApply: false
+---
+
+# POST-ENT — Enterprise Foundation Runtime Hardening
+
+Durable lock: `docs/architecture/post-enterprise-foundation-runtime-hardening-governance.md`.
+Enforced by `foundation:runtime-hardening-check --strict` (+ `foundation:ent-1-4-audit-check`,
+`foundation:queue-worker-runtime-check`).
+
+- This is a **post-closure hardening sprint, NOT ENT-17**. ENT-16 already closed
+  ENT-1..ENT-16 with the final tag `enterprise-foundation-go`. Never move an ENT
+  GO tag or the closure tag; `next_recommended_sprint` stays **MON-1**.
+- **ENT-1..ENT-4** are governance/config/docs **locks** — audited (completed +
+  GO-tagged + doc-backed), never retrofitted into runtime modules.
+- **Queue worker**: conservative single-process systemd unit
+  (`daengtisiams-queue-worker.service`), `queue:work` only (never `queue:listen`/
+  `--daemon`), ENT-5 tries/backoff/timeout, broker connection (never `sync`),
+  approved queues ⊆ ENT-5. The deploy script NEVER starts the worker — operator
+  activates it after green gates (`queue-worker-activation-runbook.md`).
+- **Deploy evidence timeout**: run the long deploy+evidence phase through
+  `scripts/deploy-vps-runner.sh` (setsid/nohup + log + status file) so a dropped
+  SSH pipe cannot tear down or falsely pass a deploy. GO only on `exit=0`.
+- Deploy safety preserved: backup-first, `migrate --force` only, ENT-8 cache
+  order; never `migrate:fresh`/`db:wipe`/`schema:drop`/`migrate:reset` on VPS.
+- Destructive/sensitive literals live in config only. Evidence is non-sensitive
+  (no secret/credential/backup contents/environment value/KTP/NIK). The
+  `enterprise_foundation_runtime_hardening_governance` summary section is
+  informational, not in the blocking combined decision. Re-verifies ENT-5..16 GO.

@@ -140,6 +140,14 @@ run_release_safety() {
         echo "--- foundation:enterprise-closure-check (ENT-16) ---"
         php artisan foundation:enterprise-closure-check
         echo ""
+        echo "--- POST-ENT runtime hardening gates ---"
+        php artisan foundation:ent-1-4-audit-check
+        php artisan foundation:queue-worker-runtime-check
+        php artisan foundation:runtime-hardening-check
+        php artisan foundation:ent-1-4-audit-check --json > "$EVIDENCE_DIR/ent-1-4-audit-check.json" || true
+        php artisan foundation:queue-worker-runtime-check --json > "$EVIDENCE_DIR/queue-worker-runtime-check.json" || true
+        php artisan foundation:runtime-hardening-check --json > "$EVIDENCE_DIR/runtime-hardening-check.json" || true
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""
