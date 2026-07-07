@@ -215,6 +215,76 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-4 sprint evidence doc is missing (docs/sprints/uix-4-rme-odontogram-polish.md).';
         }
 
+        // --- UIX-5 — Kasir / Payment is the reference financial workflow page. ---
+        // Cashier/payment pages must stay on x-ui.* + semantic tokens, must not
+        // reintroduce legacy teal, must never use gold as a CTA, and must never
+        // render KTP/NIK on a cashier/payment surface (privacy). This is
+        // presentation-only governance — no payment/consent/receivable logic here.
+        $cashierIndexView = 'resources/views/rme/cashier/index.blade.php';
+        $cashierPaymentView = 'resources/views/rme/cashier/payment/create.blade.php';
+
+        foreach ([$cashierIndexView, $cashierPaymentView] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing cashier/payment view: {$file}";
+            }
+        }
+
+        // Cashier list is a reference list page (UIX-3 list standard).
+        $cashierIndex = @file_get_contents($base.'/'.$cashierIndexView) ?: '';
+        if ($cashierIndex !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($cashierIndex, $component)) {
+                    $errors[] = "Cashier list view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Payment detail must be built on the adopted foundation components,
+        // including the consent-gate alert.
+        $cashierPayment = @file_get_contents($base.'/'.$cashierPaymentView) ?: '';
+        if ($cashierPayment !== '') {
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button', 'x-ui.alert'] as $component) {
+                if (! str_contains($cashierPayment, $component)) {
+                    $errors[] = "Cashier payment view does not use the {$component} component.";
+                }
+            }
+        }
+
+        // No legacy teal / gold-CTA / KTP-NIK across the polished cashier surfaces.
+        // (The shared clinical-summary partial is intentionally excluded; it keeps
+        // neutral gray clinical labels per the UIX-4 precedent. Hex is not scanned
+        // because the receipt requires print-only `background: #fff`.)
+        $cashierFiles = [
+            'resources/views/rme/cashier/index.blade.php',
+            'resources/views/rme/cashier/show.blade.php',
+            'resources/views/rme/cashier/create.blade.php',
+            'resources/views/rme/cashier/payment/create.blade.php',
+            'resources/views/rme/cashier/receipt/show.blade.php',
+            'resources/views/rme/cashier/receivables.blade.php',
+            'resources/views/rme/cashier/handoff.blade.php',
+            'resources/views/rme/cashier/follow-ups/create.blade.php',
+        ];
+        foreach ($cashierFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never a payment action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Sensitive KTP/NIK field rendered in {$file} (forbidden on cashier/payment surface).";
+            }
+        }
+
+        // UIX-5 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-5-kasir-payment-polish.md')) {
+            $warnings[] = 'UIX-5 sprint evidence doc is missing (docs/sprints/uix-5-kasir-payment-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

@@ -57,6 +57,23 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - print/PDF **wajib** dicek ulang setelah perubahan UI RME;
 - **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema untuk sprint poles presentation-only.
 
+### UIX-5 — Kasir / Payment = reference financial workflow pages (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk halaman Kasir/Pembayaran sebagai **reference implementation seluruh alur finansial**:
+- Kasir list (`resources/views/rme/cashier/index.blade.php`) memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` + `x-ui.button` + `x-ui.empty-state` (list-page standard UIX-3).
+- Halaman Pembayaran (`resources/views/rme/cashier/payment/create.blade.php`) memakai `x-ui.page-header` + `x-ui.card` + `x-ui.badge` + `x-ui.button` + `x-ui.alert` (consent-gate memakai `x-ui.alert`).
+- **Tidak ada** class brand legacy `teal-*`, **tidak ada** `variant="gold"` (gold bukan CTA/status/warning/danger pembayaran), dan **tidak ada** field KTP/NIK (`->ktp`/`->nik`/`->identity_number`) yang dirender di seluruh permukaan Kasir (`index`, `show`, `create`, `payment/create`, `receipt/show`, `receivables`, `handoff`, `follow-ups/create`).
+- Hex **tidak** discan pada permukaan Kasir karena kwitansi (`receipt/show.blade.php`) memakai `background: #fff` khusus cetak.
+- Dokumen evidence sprint `docs/sprints/uix-5-kasir-payment-polish.md` ada (soft signal).
+
+**Rule permanen — cashier/payment-page standard:** setiap halaman Kasir/Pembayaran/Invoice/Piutang **wajib**:
+- memakai semantic token — dilarang teal legacy;
+- tombol aksi pembayaran memakai `x-ui.button` (brand blue / status semantik), **tidak pernah** gold;
+- status pembayaran/invoice memakai `x-ui.badge`, kartu billing/invoice memakai `x-ui.card` bila aman, tabel mengikuti list/table standard UIX-3;
+- consent gate memakai pola `x-ui.alert`/`x-ui.card`/`x-ui.badge` — **tanpa** mengubah field/validasi consent;
+- **tidak** menampilkan KTP/NIK/identitas sensitif di permukaan Kasir;
+- print/kwitansi dicek ulang setelah perubahan UI Kasir;
+- **tanpa** perubahan logic pembayaran/consent/receivable/partial-payment/invoice-status/transition, dan **tanpa** perubahan controller/service/query/permission/BranchContext/route/schema — presentation-only.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.
