@@ -45,12 +45,12 @@
         }
         h1, h2, h3, p { margin: 0; }
         .header {
-            border-bottom: 2px solid #0f766e;
+            border-bottom: 2px solid #1D4ED8;
             padding-bottom: 12px;
             margin-bottom: 14px;
         }
         .brand {
-            color: #0f766e;
+            color: #1D4ED8;
             font-size: 13px;
             font-weight: 700;
             text-transform: uppercase;
@@ -111,9 +111,9 @@
             width: 11px;
         }
         .footer-note {
-            background: #ecfdf5;
-            border: 1px solid #99f6e4;
-            color: #134e4a;
+            background: #EFF4FF;
+            border: 1px solid #BFD7FE;
+            color: #1E40AF;
             margin-top: 14px;
             padding: 8px;
         }

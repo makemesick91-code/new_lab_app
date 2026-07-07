@@ -6,37 +6,30 @@
 
 <x-settings-shell title="Laporan Disposal & Adjustment Batch">
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Audit Gudang</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">Laporan Disposal & Adjustment Batch</h2>
-                <p class="mt-1 text-sm text-gray-500">Audit batch dari action log, permintaan disposal, approval, hingga movement ADJUSTMENT_OUT.</p>
-                <p class="mt-1 text-xs text-gray-400">Laporan read-only — tidak membuat atau mengubah stok.</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-                <a href="{{ route('inventory.reports.batch-disposals.export', $filters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Export CSV</a>
-                <a href="{{ route('inventory.reports.batch-disposals.print', $filters) }}" target="_blank" rel="noopener"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Cetak</a>
-                <a href="{{ route('inventory.batch-disposal-requests.index') }}"
-                   class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">Workflow Disposal</a>
-            </div>
-        </div>
+        <x-ui.page-header title="Laporan Disposal & Adjustment Batch"
+            subtitle="Audit batch dari action log, permintaan disposal, approval, hingga movement ADJUSTMENT_OUT. Laporan read-only — tidak membuat atau mengubah stok.">
+            <x-slot:breadcrumb>Inventory · Laporan · Disposal Batch</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.button variant="secondary" size="sm" :href="route('inventory.reports.batch-disposals.export', $filters)">Export CSV</x-ui.button>
+                <x-ui.button variant="secondary" size="sm" :href="route('inventory.reports.batch-disposals.print', $filters)" target="_blank" rel="noopener">Cetak</x-ui.button>
+                <x-ui.button variant="primary" size="sm" :href="route('inventory.batch-disposal-requests.index')">Workflow Disposal</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         <form method="GET" action="{{ route('inventory.reports.batch-disposals.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label for="date_from" class="block text-sm font-medium text-gray-700">Periode Dari</label>
-                    <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="date_to" class="block text-sm font-medium text-gray-700">Periode Sampai</label>
-                    <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 @if ($branchOptions->count() > 1)
                     <div>
                         <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
-                        <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             @if ($scope['cross_branch'] ?? false)
                                 <option value="" @selected($selectedBranchId === null)>Semua Cabang</option>
                             @endif
@@ -50,7 +43,7 @@
                 @endif
                 <div>
                     <label for="status" class="block text-sm font-medium text-gray-700">Status</label>
-                    <select id="status" name="status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="status" name="status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua</option>
                         @foreach (InventoryBatchDisposalRequestStatus::values() as $status)
                             <option value="{{ $status }}" @selected(($filters['status'] ?? '') === $status)>{{ InventoryBatchDisposalRequestStatus::label($status) }}</option>
@@ -59,7 +52,7 @@
                 </div>
                 <div>
                     <label for="request_type" class="block text-sm font-medium text-gray-700">Jenis Request</label>
-                    <select id="request_type" name="request_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="request_type" name="request_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua</option>
                         @foreach (InventoryBatchDisposalRequestType::values() as $type)
                             <option value="{{ $type }}" @selected(($filters['request_type'] ?? '') === $type)>{{ InventoryBatchDisposalRequestType::label($type) }}</option>
@@ -68,15 +61,15 @@
                 </div>
                 <div>
                     <label for="product" class="block text-sm font-medium text-gray-700">Produk</label>
-                    <input id="product" name="product" type="search" value="{{ $filters['product'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" placeholder="Nama atau kode">
+                    <input id="product" name="product" type="search" value="{{ $filters['product'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" placeholder="Nama atau kode">
                 </div>
                 <div>
                     <label for="batch" class="block text-sm font-medium text-gray-700">Nomor Batch</label>
-                    <input id="batch" name="batch" type="search" value="{{ $filters['batch'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <input id="batch" name="batch" type="search" value="{{ $filters['batch'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="location_id" class="block text-sm font-medium text-gray-700">Lokasi</label>
-                    <select id="location_id" name="location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="location_id" name="location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua</option>
                         @foreach ($filterOptions['locations'] as $location)
                             <option value="{{ $location->id }}" @selected((int) ($filters['location_id'] ?? 0) === $location->id)>{{ $location->name }}</option>
@@ -85,7 +78,7 @@
                 </div>
                 <div>
                     <label for="has_movement" class="block text-sm font-medium text-gray-700">Movement</label>
-                    <select id="has_movement" name="has_movement" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="has_movement" name="has_movement" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         @foreach ($filterOptions['hasMovementOptions'] as $value => $label)
                             <option value="{{ $value }}" @selected(($filters['has_movement'] ?? '') === $value)>{{ $label }}</option>
                         @endforeach
@@ -93,7 +86,7 @@
                 </div>
                 <div>
                     <label for="action_type" class="block text-sm font-medium text-gray-700">Action Log</label>
-                    <select id="action_type" name="action_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="action_type" name="action_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua</option>
                         @foreach (InventoryBatchActionType::values() as $actionType)
                             <option value="{{ $actionType }}" @selected(($filters['action_type'] ?? '') === $actionType)>{{ InventoryBatchActionType::label($actionType) }}</option>
@@ -101,7 +94,7 @@
                     </select>
                 </div>
                 <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
-                    <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">Terapkan Filter</button>
+                    <button type="submit" class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600">Terapkan Filter</button>
                     <a href="{{ route('inventory.reports.batch-disposals.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Reset</a>
                 </div>
             </div>
@@ -182,7 +175,7 @@
                                         <span class="block font-medium text-gray-800">{{ $item->movement->movement_type }}</span>
                                         <span class="text-xs tabular-nums">OUT {{ format_quantity_id((float) $item->movement->quantity_out) }}</span>
                                         @if ($item->product)
-                                            <a href="{{ route('inventory.products.stock-card', ['product' => $item->product, 'inventory_location_id' => $item->inventory_location_id, 'inventory_batch_id' => $item->inventory_batch_id]) }}" class="block text-xs text-teal-700 hover:text-teal-600">Kartu Stok</a>
+                                            <a href="{{ route('inventory.products.stock-card', ['product' => $item->product, 'inventory_location_id' => $item->inventory_location_id, 'inventory_batch_id' => $item->inventory_batch_id]) }}" class="block text-xs text-brand-700 hover:text-brand-600">Kartu Stok</a>
                                         @endif
                                     @else
                                         —
@@ -204,7 +197,7 @@
                                     @endif
                                 </td>
                                 <td class="px-3 py-3">
-                                    <a href="{{ route('inventory.batch-disposal-requests.show', $item) }}" class="font-medium text-teal-700 hover:text-teal-600">Detail</a>
+                                    <a href="{{ route('inventory.batch-disposal-requests.show', $item) }}" class="font-medium text-brand-700 hover:text-brand-600">Detail</a>
                                 </td>
                             </tr>
                         @empty

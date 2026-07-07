@@ -6,32 +6,25 @@
 
 <x-settings-shell title="Closing Bulanan Governance Batch">
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Governance Gudang</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">Closing Bulanan Governance Batch</h2>
-                <p class="mt-1 text-sm text-gray-500">Paket review bulanan untuk expiry, action log, disposal, return supplier, dan adjustment ledger batch.</p>
-                <p class="mt-1 text-xs text-amber-700">Closing pack ini bersifat audit/read-only. Tidak mengubah stok. Pengurangan stok tetap hanya melalui movement ledger resmi.</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-                <a href="{{ route('inventory.reports.batch-monthly-closing.export', $filters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Export CSV</a>
-                <a href="{{ route('inventory.reports.batch-monthly-closing.print', $filters) }}" target="_blank" rel="noopener"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Print Pack</a>
-                <a href="{{ route('inventory.reports.batch-disposals.index', $filters) }}"
-                   class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">Laporan Disposal</a>
-            </div>
-        </div>
+        <x-ui.page-header title="Closing Bulanan Governance Batch"
+            subtitle="Paket review bulanan untuk expiry, action log, disposal, return supplier, dan adjustment ledger batch. Closing pack ini bersifat audit/read-only — tidak mengubah stok.">
+            <x-slot:breadcrumb>Inventory · Laporan · Closing Bulanan</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.button variant="secondary" size="sm" :href="route('inventory.reports.batch-monthly-closing.export', $filters)">Export CSV</x-ui.button>
+                <x-ui.button variant="secondary" size="sm" :href="route('inventory.reports.batch-monthly-closing.print', $filters)" target="_blank" rel="noopener">Print Pack</x-ui.button>
+                <x-ui.button variant="primary" size="sm" :href="route('inventory.reports.batch-disposals.index', $filters)">Laporan Disposal</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         <form method="GET" action="{{ route('inventory.reports.batch-monthly-closing.index') }}" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label for="year" class="block text-sm font-medium text-gray-700">Tahun</label>
-                    <input id="year" name="year" type="number" min="2020" value="{{ $filters['year'] ?? now()->year }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <input id="year" name="year" type="number" min="2020" value="{{ $filters['year'] ?? now()->year }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="month" class="block text-sm font-medium text-gray-700">Bulan</label>
-                    <select id="month" name="month" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="month" name="month" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         @foreach ($filterOptions['months'] as $monthValue => $monthLabel)
                             <option value="{{ $monthValue }}" @selected((int) ($filters['month'] ?? now()->month) === $monthValue)>{{ $monthLabel }}</option>
                         @endforeach
@@ -40,7 +33,7 @@
                 @if ($branchOptions->count() > 1)
                     <div>
                         <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
-                        <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             @if ($scope['cross_branch'] ?? false)
                                 <option value="" @selected($selectedBranchId === null)>Semua Cabang</option>
                             @endif
@@ -52,7 +45,7 @@
                     @if ($scope['cross_branch'] ?? false)
                         <div class="flex items-end">
                             <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                                <input type="checkbox" name="include_all_branches" value="1" @checked(! empty($filters['include_all_branches']) || $selectedBranchId === null) class="rounded border-gray-300 text-teal-600 focus:ring-teal-500">
+                                <input type="checkbox" name="include_all_branches" value="1" @checked(! empty($filters['include_all_branches']) || $selectedBranchId === null) class="rounded border-gray-300 text-brand-600 focus:ring-brand-500">
                                 Semua cabang diizinkan
                             </label>
                         </div>
@@ -62,15 +55,15 @@
                 @endif
                 <div>
                     <label for="product" class="block text-sm font-medium text-gray-700">Produk</label>
-                    <input id="product" name="product" type="search" value="{{ $filters['product'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" placeholder="Nama atau kode">
+                    <input id="product" name="product" type="search" value="{{ $filters['product'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" placeholder="Nama atau kode">
                 </div>
                 <div>
                     <label for="batch" class="block text-sm font-medium text-gray-700">Nomor Batch</label>
-                    <input id="batch" name="batch" type="search" value="{{ $filters['batch'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <input id="batch" name="batch" type="search" value="{{ $filters['batch'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="location_id" class="block text-sm font-medium text-gray-700">Lokasi</label>
-                    <select id="location_id" name="location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="location_id" name="location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua</option>
                         @foreach ($filterOptions['locations'] as $location)
                             <option value="{{ $location->id }}" @selected((int) ($filters['location_id'] ?? 0) === $location->id)>{{ $location->name }}</option>
@@ -78,7 +71,7 @@
                     </select>
                 </div>
                 <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
-                    <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600">Terapkan</button>
+                    <button type="submit" class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600">Terapkan</button>
                     <a href="{{ route('inventory.reports.batch-monthly-closing.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">Reset</a>
                 </div>
             </div>
@@ -132,7 +125,7 @@
                                 <td class="px-3 py-2">{{ $row['latest_action']?->actionTypeLabel() ?? '—' }}</td>
                                 <td class="px-3 py-2">
                                     @if ($row['batch'])
-                                        <a href="{{ route('inventory.batches.show', $row['batch']) }}" class="text-teal-700 hover:underline">Batch</a>
+                                        <a href="{{ route('inventory.batches.show', $row['batch']) }}" class="text-brand-700 hover:underline">Batch</a>
                                     @endif
                                 </td>
                             </tr>
@@ -211,7 +204,7 @@
                                 <td class="px-3 py-2">{{ $request->evidence_reference ?? '—' }}</td>
                                 <td class="px-3 py-2">{{ $request->movement?->movement_type ?? '—' }}</td>
                                 <td class="px-3 py-2">
-                                    <a href="{{ route('inventory.batch-disposal-requests.show', $request) }}" class="text-teal-700 hover:underline">Request</a>
+                                    <a href="{{ route('inventory.batch-disposal-requests.show', $request) }}" class="text-brand-700 hover:underline">Request</a>
                                 </td>
                             </tr>
                         @empty
@@ -253,7 +246,7 @@
                                 <td class="px-3 py-2">{{ $movement->reference_number ?? '—' }}</td>
                                 <td class="px-3 py-2">
                                     @if ($row['product'])
-                                        <a href="{{ route('inventory.products.stock-card', $row['product']) }}" class="text-teal-700 hover:underline">Kartu Stok</a>
+                                        <a href="{{ route('inventory.products.stock-card', $row['product']) }}" class="text-brand-700 hover:underline">Kartu Stok</a>
                                     @endif
                                 </td>
                             </tr>

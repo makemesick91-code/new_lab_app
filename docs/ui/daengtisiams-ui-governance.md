@@ -106,6 +106,16 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - tombol aksi memakai `x-ui.button` dengan hirarki jelas (primary/secondary/success/warning/danger); gold **dilarang** untuk aksi lab (accent-only);
 - **tanpa** perubahan LabOrder lifecycle / RME→Lab candidate generation / invoice / payment, dan **tanpa** perubahan controller/service/query/permission/policy/BranchContext/route/schema — presentation-only; **tanpa** render KTP/NIK penuh.
 
+### UIX-8 — Reports / print / PDF = reference report pages (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk permukaan laporan/cetak/PDF:
+- Laporan RME (`resources/views/rme/reports/patients.blade.php` + `payments.blade.php`) sebagai **reference report list** memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` + `x-ui.button` + `x-ui.empty-state` (list-page standard UIX-3); total nominal/revenue memakai `x-ui.kpi-card accent` (gold accent-only, khusus revenue).
+- Hub laporan inventory (`resources/views/inventory/reports/index.blade.php`) + index batch memakai `x-ui.page-header`; warna **status stok semantik** (empty/low/overstock/normal, masuk/keluar) dipertahankan (bukan brand) sesuai preseden UIX-6.
+- Template cetak/PDF (browser `window.print()` & dompdf) di-retint teal→brand blue, tetap **berbasis `<table>`** untuk grid data (bukan flexbox), zebra rows untuk keterbacaan.
+- **Tidak ada** class brand legacy `teal-*`, **tidak ada** `variant="gold"` CTA, dan **tidak ada** render `->ktp/nik/identity_number` di permukaan laporan/cetak yang dipoles. Hex **tidak** dipindai (template cetak menyimpan brand hex inline — preseden sama dengan struk UIX-5).
+- Dokumen evidence sprint `docs/sprints/uix-8-reports-print-pdf-polish.md` ada (soft signal).
+
+**Rule permanen — report/print-page standard:** setiap halaman laporan **wajib** memakai list-page standard UIX-3 (page-header/filter-bar/table/badge/button/empty-state) + semantic token; total ringkasan boleh `x-ui.kpi-card` (gold accent hanya untuk revenue); template cetak/PDF **wajib** table-based (dompdf-safe, hindari flexbox untuk grid data) dan memakai brand hex; **tanpa** perubahan kalkulasi laporan / receivable / payment / stock valuation / KPI, **tanpa** perubahan kolom export, dan **tanpa** render KTP/NIK penuh.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.

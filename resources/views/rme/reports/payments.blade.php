@@ -1,82 +1,70 @@
 <x-settings-shell title="Dashboard RME">
-    <div class="bg-white shadow-sm sm:rounded-lg p-6 space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <h2 class="text-lg font-semibold text-gray-900">Laporan Pembayaran RME</h2>
-            <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('rme.reports.payments.export', request()->query()) }}"
-                   class="rounded-md border border-teal-700 px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50">Export Excel</a>
-                <a href="{{ route('rme.reports.payments.print', request()->query()) }}"
-                   target="_blank"
-                   class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cetak/PDF</a>
-            </div>
+    <x-ui.page-header title="Laporan Pembayaran RME">
+        <x-slot:breadcrumb>RME · Laporan · Pembayaran</x-slot:breadcrumb>
+        <x-slot:actions>
+            <x-ui.button variant="secondary" size="sm" :href="route('rme.reports.payments.export', request()->query())">Export Excel</x-ui.button>
+            <x-ui.button variant="primary" size="sm" :href="route('rme.reports.payments.print', request()->query())" target="_blank">Cetak / PDF</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
+
+    <x-ui.filter-bar :action="route('rme.reports.payments')">
+        <div class="w-full md:w-44">
+            <x-ui.select name="branch_id" label="Cabang">
+                <option value="">Semua cabang RME</option>
+                @foreach ($branches as $b)
+                    <option value="{{ $b->id }}" @selected($selectedBranchId == $b->id)>{{ $b->name }}</option>
+                @endforeach
+            </x-ui.select>
         </div>
-
-        <form method="GET" action="{{ route('rme.reports.payments') }}" class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-                <div>
-                    <label for="branch_id" class="block text-xs text-gray-500">Cabang</label>
-                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                        <option value="">Semua cabang RME</option>
-                        @foreach ($branches as $b)
-                            <option value="{{ $b->id }}" @selected($selectedBranchId == $b->id)>{{ $b->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="date_from" class="block text-xs text-gray-500">Tanggal Kunjungan Dari</label>
-                    <input id="date_from" type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-md border-gray-300 text-sm" />
-                </div>
-                <div>
-                    <label for="date_to" class="block text-xs text-gray-500">Tanggal Kunjungan Sampai</label>
-                    <input id="date_to" type="date" name="date_to" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-md border-gray-300 text-sm" />
-                </div>
-                <div>
-                    <label for="payment_method_id" class="block text-xs text-gray-500">Metode Pembayaran</label>
-                    <select id="payment_method_id" name="payment_method_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                        <option value="">Semua metode</option>
-                        @foreach ($paymentMethods as $method)
-                            <option value="{{ $method->id }}" @selected(($filters['payment_method_id'] ?? null) == $method->id)>{{ $method->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="treatment_id" class="block text-xs text-gray-500">Treatment</label>
-                    <select id="treatment_id" name="treatment_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                        <option value="">Semua treatment</option>
-                        @foreach ($treatments as $treatment)
-                            <option value="{{ $treatment->id }}" @selected(($filters['treatment_id'] ?? null) == $treatment->id)>{{ $treatment->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div>
-                    <label for="doctor_id" class="block text-xs text-gray-500">Dokter</label>
-                    <select id="doctor_id" name="doctor_id" class="mt-1 w-full rounded-md border-gray-300 text-sm">
-                        <option value="">Semua dokter</option>
-                        @foreach ($doctors as $doctor)
-                            <option value="{{ $doctor->id }}" @selected(($filters['doctor_id'] ?? null) == $doctor->id)>{{ $doctor->name }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="sm:col-span-2">
-                    <label for="q" class="block text-xs text-gray-500">Search ID / Nama Pasien</label>
-                    <input id="q" type="search" name="q" value="{{ $filters['q'] ?? '' }}" placeholder="ID, RM, atau nama pasien" class="mt-1 w-full rounded-md border-gray-300 text-sm" />
-                </div>
-            </div>
-            <div class="mt-3 flex flex-wrap items-center gap-2">
-                <button type="submit" class="rounded-md bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-600">Filter</button>
-                <a href="{{ route('rme.reports.payments') }}" class="text-sm text-gray-500 hover:text-gray-700">Reset</a>
-            </div>
-        </form>
-
-        <div class="flex flex-wrap gap-3 text-sm">
-            <span class="rounded-md bg-blue-50 px-3 py-1 text-blue-700">Total Pasien Hasil Filter: <strong>{{ number_format($totalFilteredPatients ?? 0) }} pasien</strong></span>
-            <span class="rounded-md bg-gray-50 px-3 py-1 text-gray-700">Total Baris Transaksi Ditampilkan: <strong>{{ number_format($payments->count()) }} transaksi</strong></span>
-            <span class="rounded-md bg-green-50 px-3 py-1 text-green-700">Total Pembayaran Hasil Filter: <strong>{{ format_currency_id($totalPaymentAmount ?? 0) }}</strong></span>
+        <div class="w-full md:w-40">
+            <x-ui.input type="date" name="date_from" label="Tanggal Kunjungan Dari" :value="$filters['date_from'] ?? ''" />
         </div>
+        <div class="w-full md:w-40">
+            <x-ui.input type="date" name="date_to" label="Tanggal Kunjungan Sampai" :value="$filters['date_to'] ?? ''" />
+        </div>
+        <div class="w-full md:w-44">
+            <x-ui.select name="payment_method_id" label="Metode Pembayaran">
+                <option value="">Semua metode</option>
+                @foreach ($paymentMethods as $method)
+                    <option value="{{ $method->id }}" @selected(($filters['payment_method_id'] ?? null) == $method->id)>{{ $method->name }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <div class="w-full md:w-44">
+            <x-ui.select name="treatment_id" label="Treatment">
+                <option value="">Semua treatment</option>
+                @foreach ($treatments as $treatment)
+                    <option value="{{ $treatment->id }}" @selected(($filters['treatment_id'] ?? null) == $treatment->id)>{{ $treatment->name }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <div class="w-full md:w-44">
+            <x-ui.select name="doctor_id" label="Dokter">
+                <option value="">Semua dokter</option>
+                @foreach ($doctors as $doctor)
+                    <option value="{{ $doctor->id }}" @selected(($filters['doctor_id'] ?? null) == $doctor->id)>{{ $doctor->name }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <div class="w-full md:w-64">
+            <x-ui.input type="search" name="q" label="Cari ID / Nama Pasien" :value="$filters['q'] ?? ''" placeholder="ID, RM, atau nama pasien" />
+        </div>
+        <x-slot:actions>
+            <x-ui.button type="submit" variant="primary">Filter</x-ui.button>
+            <x-ui.button variant="secondary" :href="route('rme.reports.payments')">Atur Ulang</x-ui.button>
+        </x-slot:actions>
+    </x-ui.filter-bar>
 
-        <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead><tr class="text-left text-gray-500">
+    <div class="mb-4 grid gap-4 sm:grid-cols-3">
+        <x-ui.kpi-card label="Total Pasien Hasil Filter" value="{{ number_format($totalFilteredPatients ?? 0) }} pasien" />
+        <x-ui.kpi-card label="Total Baris Transaksi Ditampilkan" value="{{ number_format($payments->count()) }} transaksi" />
+        <x-ui.kpi-card label="Total Pembayaran Hasil Filter" value="{{ format_currency_id($totalPaymentAmount ?? 0) }}" accent />
+    </div>
+
+    <x-ui.card>
+        <x-ui.table>
+            <thead>
+                <tr class="bg-navy-50 text-left text-ink-soft">
                     <th class="px-3 py-2 font-medium">No</th>
                     <th class="px-3 py-2 font-medium">No. Invoice</th>
                     <th class="px-3 py-2 font-medium">ID / RM Pasien</th>
@@ -88,39 +76,49 @@
                     <th class="px-3 py-2 font-medium">Tanggal</th>
                     <th class="px-3 py-2 font-medium">Status</th>
                     <th class="px-3 py-2 font-medium text-right">Jumlah</th>
-                </tr></thead>
-                <tbody class="divide-y divide-gray-100">
-                    @forelse ($payments as $p)
-                        @php
-                            $treatmentNames = $p->rmeInvoice?->items
-                                ?->pluck('treatment.name')
-                                ->filter()
-                                ->unique()
-                                ->values();
-                            $doctorNames = collect([$p->clinicVisit?->doctor?->name])
-                                ->merge($p->rmeInvoice?->items?->pluck('doctor.name') ?? [])
-                                ->filter()
-                                ->unique()
-                                ->values();
-                        @endphp
-                        <tr>
-                            <td class="px-3 py-2 text-gray-600">{{ $loop->iteration }}</td>
-                            <td class="px-3 py-2 font-medium text-gray-900">{{ $p->rmeInvoice?->invoice_number ?? '—' }}</td>
-                            <td class="px-3 py-2 font-mono text-xs text-gray-600">{{ $p->patient?->medical_record_number ?? ('#'.$p->patient_id) }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $p->patient?->name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $p->paymentMethod?->name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $treatmentNames?->isNotEmpty() ? $treatmentNames->join(', ') : '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $doctorNames->isNotEmpty() ? $doctorNames->join(', ') : '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $p->branch?->name ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $p->paid_at?->format('d/m/Y H:i') ?? '—' }}</td>
-                            <td class="px-3 py-2 text-gray-600">{{ $p->rmeInvoice?->status ?? '—' }}</td>
-                            <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($p->amount) }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="11" class="px-3 py-6 text-center text-gray-400">Belum ada pembayaran RME.</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-    </div>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-hairline">
+                @forelse ($payments as $p)
+                    @php
+                        $treatmentNames = $p->rmeInvoice?->items
+                            ?->pluck('treatment.name')
+                            ->filter()
+                            ->unique()
+                            ->values();
+                        $doctorNames = collect([$p->clinicVisit?->doctor?->name])
+                            ->merge($p->rmeInvoice?->items?->pluck('doctor.name') ?? [])
+                            ->filter()
+                            ->unique()
+                            ->values();
+                    @endphp
+                    <tr>
+                        <td class="px-3 py-2 text-ink-soft">{{ $loop->iteration }}</td>
+                        <td class="px-3 py-2 font-medium text-navy">{{ $p->rmeInvoice?->invoice_number ?? '—' }}</td>
+                        <td class="px-3 py-2 font-mono text-xs text-ink-soft">{{ $p->patient?->medical_record_number ?? ('#'.$p->patient_id) }}</td>
+                        <td class="px-3 py-2 text-ink">{{ $p->patient?->name ?? '—' }}</td>
+                        <td class="px-3 py-2 text-ink-soft">{{ $p->paymentMethod?->name ?? '—' }}</td>
+                        <td class="px-3 py-2 text-ink-soft">{{ $treatmentNames?->isNotEmpty() ? $treatmentNames->join(', ') : '—' }}</td>
+                        <td class="px-3 py-2 text-ink-soft">{{ $doctorNames->isNotEmpty() ? $doctorNames->join(', ') : '—' }}</td>
+                        <td class="px-3 py-2 text-ink-soft">{{ $p->branch?->name ?? '—' }}</td>
+                        <td class="px-3 py-2 text-ink-soft">{{ $p->paid_at?->format('d/m/Y H:i') ?? '—' }}</td>
+                        <td class="px-3 py-2">
+                            @if ($p->rmeInvoice?->status)
+                                <x-ui.badge :status="strtolower($p->rmeInvoice->status)">{{ $p->rmeInvoice->status }}</x-ui.badge>
+                            @else
+                                <span class="text-ink-soft">—</span>
+                            @endif
+                        </td>
+                        <td class="px-3 py-2 text-right font-medium text-navy">{{ format_currency_id($p->amount) }}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="11" class="px-3 py-6">
+                            <x-ui.empty-state title="Belum ada pembayaran RME" description="Tidak ada data yang cocok dengan filter saat ini." />
+                        </td>
+                    </tr>
+                @endforelse
+            </tbody>
+        </x-ui.table>
+    </x-ui.card>
 </x-settings-shell>

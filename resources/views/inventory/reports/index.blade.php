@@ -30,23 +30,19 @@
 
 <x-settings-shell title="Laporan Inventory">
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Persediaan</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">Laporan Inventory</h2>
-                <p class="mt-1 text-sm text-gray-500">Semua laporan persediaan berbasis ledger dari pergerakan stok, bukan kolom stok mutable.</p>
-            </div>
-            <a href="{{ route('inventory.dashboard') }}"
-               class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                Kembali ke Dasbor
-            </a>
-        </div>
+        <x-ui.page-header title="Laporan Inventory"
+            subtitle="Semua laporan persediaan berbasis ledger dari pergerakan stok, bukan kolom stok mutable.">
+            <x-slot:breadcrumb>Inventory · Laporan</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.button variant="secondary" size="sm" :href="route('inventory.dashboard')">Kembali ke Dasbor</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <form method="GET" action="{{ route('inventory.reports.index') }}" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
                     <label for="branch_id" class="block text-sm font-medium text-gray-700">Cabang</label>
-                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($filterOptions['branches']->count() <= 1)>
+                    <select id="branch_id" name="branch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" @disabled($filterOptions['branches']->count() <= 1)>
                         @foreach ($filterOptions['branches'] as $branch)
                             <option value="{{ $branch->id }}" @selected(($selectedBranchId ?? $filters['branch_id'] ?? null) == $branch->id)>{{ $branch->name }}</option>
                         @endforeach
@@ -59,12 +55,12 @@
                 @if ($showDateFilters)
                     <div>
                         <label for="date_from" class="block text-sm font-medium text-gray-700">Tanggal Dari</label>
-                        <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <input id="date_from" name="date_from" type="date" value="{{ $filters['date_from'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     </div>
 
                     <div>
                         <label for="date_to" class="block text-sm font-medium text-gray-700">Tanggal Sampai</label>
-                        <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <input id="date_to" name="date_to" type="date" value="{{ $filters['date_to'] ?? '' }}" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     </div>
                 @endif
 
@@ -85,7 +81,7 @@
                 @if ($showCategoryFilter)
                     <div>
                         <label for="category_id" class="block text-sm font-medium text-gray-700">Kategori</label>
-                        <select id="category_id" name="category_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="category_id" name="category_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua kategori</option>
                             @foreach ($filterOptions['categories'] as $category)
                                 <option value="{{ $category->id }}" @selected(($filters['category_id'] ?? null) == $category->id)>{{ $category->name }}</option>
@@ -97,7 +93,7 @@
                 @if ($showLocationFilter)
                     <div>
                         <label for="inventory_location_id" class="block text-sm font-medium text-gray-700">Lokasi/Ruangan</label>
-                        <select id="inventory_location_id" name="inventory_location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="inventory_location_id" name="inventory_location_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua lokasi</option>
                             @foreach ($filterOptions['locations'] as $location)
                                 <option value="{{ $location->id }}" @selected(($filters['inventory_location_id'] ?? null) == $location->id)>{{ $location->name }}</option>
@@ -109,7 +105,7 @@
                 @if ($showBatchFilter)
                     <div>
                         <label for="inventory_batch_id" class="block text-sm font-medium text-gray-700">Batch &amp; Lot</label>
-                        <select id="inventory_batch_id" name="inventory_batch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="inventory_batch_id" name="inventory_batch_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua batch</option>
                             @foreach ($filterOptions['batches'] as $batch)
                                 <option value="{{ $batch->id }}" @selected(($filters['inventory_batch_id'] ?? null) == $batch->id)>
@@ -123,7 +119,7 @@
                 @if ($showStockStatusFilter)
                     <div>
                         <label for="stock_status" class="block text-sm font-medium text-gray-700">Status Stok</label>
-                        <select id="stock_status" name="stock_status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="stock_status" name="stock_status" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua status</option>
                             @foreach ($filterOptions['stockStatuses'] as $value => $label)
                                 <option value="{{ $value }}" @selected(($filters['stock_status'] ?? null) === $value)>{{ $label }}</option>
@@ -135,7 +131,7 @@
                 @if ($showMovementTypeFilter)
                     <div>
                         <label for="movement_type" class="block text-sm font-medium text-gray-700">Tipe Movement</label>
-                        <select id="movement_type" name="movement_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select id="movement_type" name="movement_type" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua tipe</option>
                             @foreach ($filterOptions['movementTypes'] as $movementType)
                                 <option value="{{ $movementType }}" @selected(($filters['movement_type'] ?? null) === $movementType)>{{ $movementType }}</option>
@@ -147,8 +143,8 @@
                 <input type="hidden" name="tab" value="{{ $activeTabKebab }}">
 
                 <div class="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
-                    <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Terapkan</button>
-                    <a href="{{ route('inventory.reports.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Atur Ulang</a>
+                    <button type="submit" class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Terapkan</button>
+                    <a href="{{ route('inventory.reports.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Atur Ulang</a>
                 </div>
             </form>
         </div>
@@ -158,8 +154,8 @@
                 @foreach ($tabs as $tabKey => $tabLabel)
                     <a href="{{ route('inventory.reports.index', array_merge($tabQueryParams, ['tab' => \App\Modules\Inventory\Requests\InventoryReportFilterRequest::TAB_TO_KEBAB[$tabKey] ?? $tabKey])) }}"
                        @class([
-                           'rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2',
-                           'bg-teal-700 text-white' => $activeTab === $tabKey,
+                           'rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2',
+                           'bg-brand-700 text-white' => $activeTab === $tabKey,
                            'text-gray-600 hover:bg-gray-50 hover:text-gray-900' => $activeTab !== $tabKey,
                        ])>
                         {{ $tabLabel }}
@@ -174,7 +170,7 @@
             <p class="mt-1 text-sm text-gray-500">Ringkasan stok produk dari saldo ledger aktif.</p>
             <div class="mt-3">
                 <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Export CSV
                 </a>
             </div>
@@ -306,7 +302,7 @@
                     <p class="text-sm font-medium text-amber-700">Export kartu stok membutuhkan filter produk.</p>
                 @else
                     <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                       class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                       class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                         Export CSV
                     </a>
                 @endif
@@ -435,7 +431,7 @@
             <p class="mt-1 text-sm text-gray-500">Produk kosong atau di bawah minimum produk, dihitung dari saldo ledger per lokasi.</p>
             <div class="mt-3">
                 <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Export CSV
                 </a>
             </div>
@@ -554,7 +550,7 @@
             <p class="mt-1 text-sm text-gray-500">Pergerakan masuk dan keluar berdasarkan ledger inventory.</p>
             <div class="mt-3">
                 <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Export CSV
                 </a>
             </div>
@@ -669,7 +665,7 @@
             <p class="mt-1 text-sm text-gray-500">Nilai persediaan bersifat estimasi operasional berdasarkan harga/cost produk yang tersedia.</p>
             <div class="mt-3">
                 <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Export CSV
                 </a>
             </div>
@@ -774,11 +770,11 @@
             <p class="mt-1 text-sm text-gray-500">Minimum/maksimum per ruangan diambil dari konfigurasi Minimum Stok Ruangan. Bila ruangan belum dikonfigurasi, minimum mengikuti minimum produk. Produk dengan ambang per ruangan tetap tampil meski belum ada pergerakan.</p>
             <div class="mt-3 flex flex-wrap gap-2">
                 <a href="{{ route('inventory.reports.export', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Export CSV
                 </a>
                 <a href="{{ route('inventory.reports.room-stock.refill-checklist', $exportFilters) }}"
-                   class="inline-flex items-center rounded-lg border border-teal-600 bg-teal-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                   class="inline-flex items-center rounded-lg border border-brand-600 bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Cetak Checklist Refill
                 </a>
             </div>
