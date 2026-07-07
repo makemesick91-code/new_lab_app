@@ -115,6 +115,13 @@ return [
         'enterprise_foundation_closure_governance_doc' => 'docs/architecture/enterprise-foundation-closure-go-no-go.md',
         'enterprise_foundation_baseline_locked_ent_5_to_16' => true,
         'enterprise_foundation_final_closure_tag' => 'enterprise-foundation-go',
+        // POST-ENT — Enterprise Foundation Runtime Hardening (post-closure follow-up,
+        // NOT ENT-17; does not alter the closed ENT-1..16 sequence or next=MON-1).
+        'post_enterprise_foundation_hardening_governance_locked' => true,
+        'post_enterprise_foundation_hardening_governance_doc' => 'docs/architecture/post-enterprise-foundation-runtime-hardening-governance.md',
+        'queue_worker_runtime_governance_locked' => true,
+        'deploy_evidence_timeout_governance_locked' => true,
+        'ent_1_4_foundation_audit_governance_locked' => true,
     ],
 
     /**

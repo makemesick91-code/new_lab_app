@@ -67,7 +67,13 @@ return [
                 'foundation-governance-summary.json',
                 'nsf-governance-check.json',
             ],
-            'optional_artifacts' => [],
+            // POST-ENT runtime hardening artifacts — captured for auditability,
+            // optional so a missing artifact never breaks the required chain.
+            'optional_artifacts' => [
+                'ent-1-4-audit-check.json',
+                'queue-worker-runtime-check.json',
+                'runtime-hardening-check.json',
+            ],
         ],
 
         // VPS / production deploy — full chain including backup + deploy runtime.
@@ -107,6 +113,10 @@ return [
                 'automated-smoke-http.json',
                 'dq-audits.txt',
                 'dmo-governance-check.json',
+                // POST-ENT runtime hardening artifacts (auditability, non-blocking).
+                'ent-1-4-audit-check.json',
+                'queue-worker-runtime-check.json',
+                'runtime-hardening-check.json',
             ],
         ],
     ],

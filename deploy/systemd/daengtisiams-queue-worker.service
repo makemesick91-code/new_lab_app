@@ -1,0 +1,52 @@
+[Unit]
+# DaengtisiaMS — conservative single-process Laravel queue worker.
+#
+# POST-ENT Enterprise Foundation Runtime Hardening. Builds on ENT-5 Queue,
+# Retry & Failed Job Governance. Worker-READY posture: this unit is installed
+# and enabled by an operator AFTER a successful deploy + green governance gates,
+# NEVER started by the deploy script itself (ENT-5:
+# no_long_running_worker_started_by_deploy).
+#
+# Conservative by design: ONE worker process, low concurrency, approved queues
+# only, graceful timeout, bounded lifetime (--max-time) so PHP memory is
+# recycled. Uses the worker command only (no long-poll listener, no legacy daemon
+# flag, no destructive queue command).
+Description=DaengtisiaMS Laravel queue worker (conservative, single process)
+After=network.target postgresql.service php8.3-fpm.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/asia-dental-lab-v2
+
+# Worker command only. Approved queues only (subset of ENT-5
+# allowed_queue_names). tries/backoff/timeout match the ENT-5 retry standard.
+# --max-time recycles the process hourly; --rest keeps it gentle.
+ExecStart=/usr/bin/php /var/www/asia-dental-lab-v2/artisan queue:work database \
+    --queue=default,reports,notifications,maintenance \
+    --sleep=3 \
+    --tries=3 \
+    --backoff=10,60,180 \
+    --timeout=120 \
+    --memory=256 \
+    --max-time=3600 \
+    --rest=1
+
+# Graceful restart: `php artisan queue:restart` sets a cache flag; the worker
+# finishes its current job then exits, and systemd restarts it cleanly.
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=0
+
+# Send SIGTERM and allow the current job to finish before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=150
+
+# Non-sensitive stdout/stderr to the journal only (no PII, no secrets).
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=daengtisiams-queue-worker
+
+[Install]
+WantedBy=multi-user.target

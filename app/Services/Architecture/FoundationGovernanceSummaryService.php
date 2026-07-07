@@ -14,6 +14,7 @@ use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
 use App\Services\Foundation\EnterpriseDocumentationGovernanceService;
 use App\Services\Foundation\EnterpriseFoundationClosureGovernanceService;
+use App\Services\Foundation\EntFoundationRuntimeHardeningGovernanceService;
 use App\Services\Foundation\FeatureFlagService;
 use App\Services\Foundation\FoundationRoadmapGovernanceService;
 use App\Services\Foundation\HealthCheckGovernanceService;
@@ -92,6 +93,7 @@ class FoundationGovernanceSummaryService
         private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
         private readonly EnterpriseDocumentationGovernanceService $enterpriseDocumentationGovernance,
         private readonly EnterpriseFoundationClosureGovernanceService $enterpriseFoundationClosureGovernance,
+        private readonly EntFoundationRuntimeHardeningGovernanceService $entRuntimeHardeningGovernance,
     ) {}
 
     /**
@@ -159,6 +161,7 @@ class FoundationGovernanceSummaryService
         $loadTestScaleProjectionGovernance = $this->loadTestScaleProjectionGovernance->collect();
         $enterpriseDocumentationGovernance = $this->enterpriseDocumentationGovernance->collect();
         $enterpriseFoundationClosureGovernance = $this->enterpriseFoundationClosureGovernance->collect($enterpriseDocumentationGovernance);
+        $entRuntimeHardeningGovernance = $this->entRuntimeHardeningGovernance->collect($enterpriseFoundationClosureGovernance);
         $backupVerification = $releaseSafety['backup_verification'] ?? null;
         $combined = $this->combinedDecision(
             $nsf,
@@ -593,6 +596,25 @@ class FoundationGovernanceSummaryService
                 'checks' => $enterpriseFoundationClosureGovernance['checks'] ?? [],
                 'rules' => $enterpriseFoundationClosureGovernance['rules'] ?? [],
                 'command' => 'foundation:enterprise-closure-check',
+            ],
+            'enterprise_foundation_runtime_hardening_governance' => [
+                'decision' => $entRuntimeHardeningGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $entRuntimeHardeningGovernance['readiness_status'] ?? 'unknown',
+                'ent_1_4_audit_ok' => $entRuntimeHardeningGovernance['ent_1_4_audit_ok'] ?? false,
+                'audited_sprints' => $entRuntimeHardeningGovernance['audited_sprints'] ?? [],
+                'queue_worker_ok' => $entRuntimeHardeningGovernance['queue_worker_ok'] ?? false,
+                'queue_worker_service_name' => $entRuntimeHardeningGovernance['queue_worker_service_name'] ?? '',
+                'queue_connection' => $entRuntimeHardeningGovernance['queue_connection'] ?? 'unknown',
+                'deploy_evidence_timeout_ok' => $entRuntimeHardeningGovernance['deploy_evidence_timeout_ok'] ?? false,
+                'evidence_profiles_ok' => $entRuntimeHardeningGovernance['evidence_profiles_ok'] ?? false,
+                'closed_baseline_decision' => $entRuntimeHardeningGovernance['closed_baseline_decision'] ?? 'UNKNOWN',
+                'final_closure_tag' => $entRuntimeHardeningGovernance['final_closure_tag'] ?? null,
+                'next_recommended_sprint' => $entRuntimeHardeningGovernance['next_recommended_sprint'] ?? null,
+                'is_ent_17' => $entRuntimeHardeningGovernance['is_ent_17'] ?? false,
+                'summary' => $entRuntimeHardeningGovernance['summary'] ?? [],
+                'checks' => $entRuntimeHardeningGovernance['checks'] ?? [],
+                'rules' => $entRuntimeHardeningGovernance['rules'] ?? [],
+                'command' => 'foundation:runtime-hardening-check',
             ],
             'idempotency' => [
                 'decision' => $idempotencyAudit['summary']['decision'] ?? 'UNKNOWN',
