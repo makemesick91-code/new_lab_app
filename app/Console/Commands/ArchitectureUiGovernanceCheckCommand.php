@@ -439,6 +439,76 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-7 sprint evidence doc is missing (docs/sprints/uix-7-lab-pipeline-polish.md).';
         }
 
+        // --- UIX-8 — Reports, print & PDF surfaces adopt the shared design system. ---
+        // Presentation-only governance: the polished report screens must stay on
+        // x-ui.* + semantic tokens, must not reintroduce legacy teal, must never use
+        // gold as a CTA, and must never render full KTP/NIK anywhere in a report,
+        // print, or export view. No report calculation, receivable, payment, stock
+        // valuation, or KPI business logic is asserted here.
+        $rmePatientsReport = 'resources/views/rme/reports/patients.blade.php';
+        $rmePaymentsReport = 'resources/views/rme/reports/payments.blade.php';
+        $inventoryReportsIndex = 'resources/views/inventory/reports/index.blade.php';
+
+        foreach ([$rmePatientsReport, $rmePaymentsReport, $inventoryReportsIndex] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing report view: {$file}";
+            }
+        }
+
+        // RME report screens are the reference report list pages (UIX-3 list standard).
+        foreach ([$rmePatientsReport, $rmePaymentsReport] as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($contents, $component)) {
+                    $errors[] = "RME report view {$file} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Inventory reports hub is the reference inventory report page.
+        $inventoryReports = @file_get_contents($base.'/'.$inventoryReportsIndex) ?: '';
+        if ($inventoryReports !== '' && ! str_contains($inventoryReports, 'x-ui.page-header')) {
+            $errors[] = 'Inventory reports view does not use the x-ui.page-header component.';
+        }
+
+        // No legacy teal / gold-CTA / rendered KTP across the polished report and
+        // print surfaces. (Hex is intentionally not scanned — the print/PDF templates
+        // keep inline brand hex; the UIX-5 receipt precedent skips hex the same way.)
+        $reportFiles = [
+            'resources/views/rme/reports/patients.blade.php',
+            'resources/views/rme/reports/payments.blade.php',
+            'resources/views/rme/reports/print/patients.blade.php',
+            'resources/views/rme/reports/print/payments.blade.php',
+            'resources/views/inventory/reports/index.blade.php',
+            'resources/views/inventory/reports/batch-disposals/index.blade.php',
+            'resources/views/inventory/reports/batch-monthly-closing/index.blade.php',
+            'resources/views/inventory/reports/room-stock/refill-checklist.blade.php',
+            'resources/views/reports/payments.blade.php',
+        ];
+        foreach ($reportFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never a report action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Full KTP/NIK rendered in {$file} (identity numbers must never be shown in report/print/export views).";
+            }
+        }
+
+        // UIX-8 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-8-reports-print-pdf-polish.md')) {
+            $warnings[] = 'UIX-8 sprint evidence doc is missing (docs/sprints/uix-8-reports-print-pdf-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

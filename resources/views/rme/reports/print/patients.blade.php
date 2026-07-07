@@ -7,18 +7,19 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 20px 24px; }
-        .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #0f766e; padding-bottom: 10px; margin-bottom: 14px; }
+        .header { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #1D4ED8; padding-bottom: 10px; margin-bottom: 14px; }
         .header .clinic-logo { height: 44px; width: auto; max-width: 150px; flex-shrink: 0; }
-        .header h1 { font-size: 18px; font-weight: 700; color: #0f766e; }
+        .header h1 { font-size: 18px; font-weight: 700; color: #1D4ED8; }
         .meta { font-size: 11px; color: #6b7280; margin-bottom: 12px; }
         .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-        .summary span { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 4px; padding: 4px 10px; font-size: 11px; }
+        .summary span { background: #EFF4FF; border: 1px solid #DBEAFE; border-radius: 4px; padding: 4px 10px; font-size: 11px; color: #0F2540; }
         .filters { margin-bottom: 14px; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 11px; color: #374151; }
         table { width: 100%; border-collapse: collapse; font-size: 11px; }
         th, td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
-        th { background: #f3f4f6; font-weight: 600; }
+        th { background: #f3f4f6; font-weight: 600; color: #0F2540; }
+        tbody tr:nth-child(even) td { background: #f9fafb; }
         .no-print { margin-bottom: 16px; }
-        .btn { background: #0f766e; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
+        .btn { background: #1D4ED8; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; cursor: pointer; }
         @media print {
             .no-print { display: none !important; }
             body { padding: 0; }
