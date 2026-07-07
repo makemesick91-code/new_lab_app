@@ -28,6 +28,16 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 - Gold tetap accent-only di owner KPI view (dilarang `variant="gold"` sebagai CTA). Aksen gold owner dashboard **hanya** untuk KPI Total Pendapatan (revenue).
 - Dokumen evidence sprint `docs/sprints/uix-2-dashboard-owner-polish.md` ada (soft signal).
 
+### UIX-3 — Kunjungan list = reference list page (ditambahkan 2026-07-07)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) untuk halaman Kunjungan (`resources/views/rme/visits/index.blade.php`) sebagai **reference implementation seluruh list page**:
+- Memakai `x-ui.page-header`, `x-ui.filter-bar`, `x-ui.table`, `x-ui.badge`, `x-ui.button`, `x-ui.empty-state`.
+- Status badge memakai `:status` (design-system status→tone map).
+- **Tidak ada** class brand legacy `teal-*`.
+- **Tidak ada** warna hex hardcoded.
+- Dokumen evidence sprint `docs/sprints/uix-3-kunjungan-list-polish.md` ada (soft signal).
+
+**Rule permanen — list-page standard:** setiap halaman list/index baru atau yang di-polish (RME, Kasir, Inventory, Procurement, Lab, Report) **wajib** memakai `x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` (`:status`) + `x-ui.button` + `x-ui.empty-state` + semantic token; dilarang table/badge/button dari nol, hardcode warna, atau teal legacy.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.

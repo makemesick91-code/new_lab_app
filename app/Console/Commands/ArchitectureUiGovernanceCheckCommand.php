@@ -122,6 +122,46 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-2 sprint evidence doc is missing (docs/sprints/uix-2-dashboard-owner-polish.md).';
         }
 
+        // --- UIX-3 — Kunjungan list is the reference list page (lightweight). ---
+        // Standard list pages must be built on x-ui.* foundation components and
+        // semantic tokens (no legacy teal brand color, no hardcoded hex color).
+        $visitsIndex = 'resources/views/rme/visits/index.blade.php';
+        if (! is_file($base.'/'.$visitsIndex)) {
+            $errors[] = "Missing Kunjungan list view: {$visitsIndex}";
+        } else {
+            $view = @file_get_contents($base.'/'.$visitsIndex) ?: '';
+
+            $requiredListComponents = [
+                'x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table',
+                'x-ui.badge', 'x-ui.button', 'x-ui.empty-state',
+            ];
+            foreach ($requiredListComponents as $component) {
+                if (! str_contains($view, $component)) {
+                    $errors[] = "Kunjungan list view does not use the {$component} component.";
+                }
+            }
+
+            // Status badges must resolve tone via the design-system :status map.
+            if (! str_contains($view, ':status')) {
+                $errors[] = 'Kunjungan list status badge does not use the x-ui.badge :status map.';
+            }
+
+            // No legacy teal brand color (UIX-1 migrated teal → blue).
+            if (preg_match('/\b(?:bg|text|border|ring)-teal-\d/', $view)) {
+                $errors[] = "Legacy teal brand class found in {$visitsIndex} (use brand/token classes).";
+            }
+
+            // No hardcoded hex colors in the reference list page.
+            if (preg_match('/#[0-9a-fA-F]{3,6}\b/', $view)) {
+                $errors[] = "Hardcoded hex color found in {$visitsIndex} (use semantic tokens).";
+            }
+        }
+
+        // UIX-3 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-3-kunjungan-list-polish.md')) {
+            $warnings[] = 'UIX-3 sprint evidence doc is missing (docs/sprints/uix-3-kunjungan-list-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
