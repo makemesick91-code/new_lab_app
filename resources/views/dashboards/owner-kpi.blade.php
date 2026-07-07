@@ -1,6 +1,9 @@
 @php
     /**
      * Sprint 62.0 — Executive Owner KPI Dashboard block.
+     * UIX-2 — Polished with the DaengtisiaMS Luxury Healthcare Design System
+     * (x-ui.* components + semantic tokens). Presentation only; KPI logic and
+     * data source are unchanged (Sprint 62.0 OwnerDashboardKpiService).
      * Privacy: never renders KTP/NIK, scanned documents, or raw medical notes.
      */
     $ownerKpi = $ownerKpi ?? [];
@@ -26,10 +29,11 @@
         ? format_number_id($metrics['low_stock_items'] ?? 0)
         : 'Belum tersedia';
 
+    // `accent` = gold premium rail — reserved for the revenue KPI only (governance).
     $kpiCards = [
         ['key' => 'total_visits', 'label' => 'Total Kunjungan', 'value' => format_number_id($metrics['total_visits'] ?? 0)],
         ['key' => 'new_patients', 'label' => 'Pasien Baru', 'value' => format_number_id($metrics['new_patients'] ?? 0)],
-        ['key' => 'total_revenue', 'label' => 'Total Pendapatan', 'value' => format_currency_id($metrics['total_revenue'] ?? 0)],
+        ['key' => 'total_revenue', 'label' => 'Total Pendapatan', 'value' => format_currency_id($metrics['total_revenue'] ?? 0), 'accent' => true],
         ['key' => 'active_receivable', 'label' => 'Piutang Aktif', 'value' => format_currency_id($metrics['active_receivable'] ?? 0)],
         ['key' => 'unpaid_invoices', 'label' => 'Invoice Belum Lunas', 'value' => format_number_id($metrics['unpaid_invoices'] ?? 0)],
         ['key' => 'follow_up_due', 'label' => 'Follow-up Jatuh Tempo', 'value' => format_number_id($metrics['follow_up_due'] ?? 0)],
@@ -54,6 +58,17 @@
         ['label' => 'Lab order aktif', 'count' => $metrics['lab_orders_active'] ?? 0, 'text' => format_number_id($metrics['lab_orders_active'] ?? 0).' lab order belum selesai.', 'severity' => 'info'],
     ])->filter(fn ($a) => $a['count'] > 0)->values();
 
+    $alertToneClasses = [
+        'warning' => ['wrap' => 'border-warning-100 bg-warning-50', 'chip' => 'bg-warning text-white'],
+        'info' => ['wrap' => 'border-info-100 bg-info-50', 'chip' => 'bg-info text-white'],
+    ];
+
+    $receivableTone = fn (?string $status): string => match (strtoupper((string) $status)) {
+        'PARTIAL' => 'info',
+        'UNPAID' => 'warning',
+        default => 'neutral',
+    };
+
     $rangeButtons = [
         'today' => 'Hari ini',
         '7d' => '7 hari',
@@ -63,13 +78,13 @@
 @endphp
 
 <section aria-labelledby="owner-kpi-heading" class="space-y-6">
-    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+    <x-ui.card>
         <div class="flex flex-wrap items-start justify-between gap-4">
             <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Dashboard KPI Owner</p>
-                <h3 id="owner-kpi-heading" class="mt-1 text-lg font-semibold text-gray-900">Kesehatan klinik &amp; performa bisnis</h3>
-                <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                    Ringkasan eksekutif lintas cabang. Periode: <span class="font-semibold">{{ $period['label'] ?? 'Bulan ini' }}</span>.
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Dashboard KPI Owner</p>
+                <h3 id="owner-kpi-heading" class="mt-1 text-lg font-semibold text-navy">Kesehatan klinik &amp; performa bisnis</h3>
+                <p class="mt-2 max-w-3xl text-sm text-ink-soft">
+                    Ringkasan eksekutif lintas cabang. Periode: <span class="font-semibold text-navy">{{ $period['label'] ?? 'Bulan ini' }}</span>.
                     Data agregat read-only; tidak menampilkan KTP/NIK, dokumen scan, atau catatan medis mentah.
                 </p>
             </div>
@@ -79,180 +94,163 @@
             <div class="flex flex-wrap gap-2">
                 @foreach ($rangeButtons as $value => $label)
                     <a href="{{ route('dashboard', array_filter(['range' => $value, 'branch_id' => $selectedBranchId])) }}"
-                       class="rounded-md border px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 {{ $currentRange === $value ? 'border-teal-600 bg-teal-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50' }}">
+                       @class([
+                           'rounded-lg border px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2',
+                           'border-brand-600 bg-brand-600 text-white' => $currentRange === $value,
+                           'border-hairline bg-surface text-ink-soft hover:bg-navy-50' => $currentRange !== $value,
+                       ])>
                         {{ $label }}
                     </a>
                 @endforeach
             </div>
 
-            <div>
-                <label for="owner-kpi-branch" class="block text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</label>
-                <select id="owner-kpi-branch" name="branch_id" onchange="this.form.submit()"
-                        class="mt-1 rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
-                    <option value="">Semua cabang</option>
-                    @foreach ($activeBranches as $branch)
-                        <option value="{{ $branch->id }}" @selected($selectedBranchId === $branch->id)>{{ $branch->name }}</option>
-                    @endforeach
-                </select>
-            </div>
+            <x-ui.select label="Cabang" name="branch_id" id="owner-kpi-branch" onchange="this.form.submit()" class="min-w-[12rem]">
+                <option value="">Semua cabang</option>
+                @foreach ($activeBranches as $branch)
+                    <option value="{{ $branch->id }}" @selected($selectedBranchId === $branch->id)>{{ $branch->name }}</option>
+                @endforeach
+            </x-ui.select>
 
             <input type="hidden" name="range" value="custom">
-            <div>
-                <label for="owner-kpi-from" class="block text-xs font-semibold uppercase tracking-wide text-gray-500">Dari</label>
-                <input type="date" id="owner-kpi-from" name="date_from" value="{{ optional($period['from'] ?? null)->toDateString() }}"
-                       class="mt-1 rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
-            </div>
-            <div>
-                <label for="owner-kpi-to" class="block text-xs font-semibold uppercase tracking-wide text-gray-500">Sampai</label>
-                <input type="date" id="owner-kpi-to" name="date_to" value="{{ optional($period['to'] ?? null)->toDateString() }}"
-                       class="mt-1 rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">
-            </div>
-            <button type="submit" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                Terapkan rentang
-            </button>
+            <x-ui.input type="date" label="Dari" name="date_from" id="owner-kpi-from" :value="optional($period['from'] ?? null)->toDateString()" />
+            <x-ui.input type="date" label="Sampai" name="date_to" id="owner-kpi-to" :value="optional($period['to'] ?? null)->toDateString()" />
+            <x-ui.button type="submit" variant="primary">Terapkan rentang</x-ui.button>
         </form>
-    </div>
+    </x-ui.card>
 
     @unless ($hasAnyData)
-        <div class="rounded-lg border border-dashed border-gray-300 bg-white p-6 text-center text-sm text-gray-500">
-            Belum ada data pada periode ini.
-        </div>
+        <x-ui.empty-state title="Belum ada data pada periode ini." description="Ubah rentang periode atau cabang untuk melihat ringkasan KPI." />
     @endunless
 
     {{-- KPI cards --}}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         @foreach ($kpiCards as $card)
             @php $href = $links[$card['key']] ?? null; @endphp
-            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <div class="flex items-start justify-between gap-2">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">{{ $card['label'] }}</p>
-                    @if ($href)
-                        <a href="{{ $href }}" class="text-xs font-medium text-teal-700 hover:text-teal-900">Lihat</a>
-                    @endif
-                </div>
-                <p class="mt-2 text-2xl font-semibold text-gray-900">{{ $card['value'] }}</p>
-            </div>
+            @if ($href)
+                <a href="{{ $href }}" class="group block rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+                    <x-ui.kpi-card
+                        :label="$card['label']"
+                        :value="$card['value']"
+                        :accent="$card['accent'] ?? false"
+                        class="h-full transition-shadow group-hover:shadow-md group-hover:ring-1 group-hover:ring-brand-100"
+                    />
+                </a>
+            @else
+                <x-ui.kpi-card :label="$card['label']" :value="$card['value']" :accent="$card['accent'] ?? false" class="h-full" />
+            @endif
         @endforeach
     </div>
 
     {{-- Trends --}}
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <h4 class="text-base font-semibold text-gray-900">Tren Kunjungan</h4>
+        <x-ui.card title="Tren Kunjungan">
             @if (count($visitTrend))
-                <div class="mt-4 flex items-end gap-1" style="height: 120px;">
+                <div class="mt-2 flex items-end gap-1" style="height: 120px;">
                     @foreach ($visitTrend as $point)
                         <div class="flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_number_id($point['count']) }}">
-                            <div class="w-full rounded-t bg-teal-500" style="height: {{ max(2, (int) round(($point['count'] / $visitTrendMax) * 100)) }}%"></div>
+                            <div class="w-full rounded-t bg-brand-500" style="height: {{ max(2, (int) round(($point['count'] / $visitTrendMax) * 100)) }}%"></div>
                         </div>
                     @endforeach
                 </div>
             @else
-                <p class="mt-4 text-sm text-gray-500">Belum ada data pada periode ini.</p>
+                <p class="mt-2 text-sm text-ink-soft">Belum ada data pada periode ini.</p>
             @endif
-        </div>
+        </x-ui.card>
 
-        <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <h4 class="text-base font-semibold text-gray-900">Tren Pembayaran</h4>
+        <x-ui.card title="Tren Pembayaran">
             @if (count($paymentTrend))
-                <div class="mt-4 flex items-end gap-1" style="height: 120px;">
+                <div class="mt-2 flex items-end gap-1" style="height: 120px;">
                     @foreach ($paymentTrend as $point)
                         <div class="flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_currency_id($point['count']) }}">
-                            <div class="w-full rounded-t bg-emerald-500" style="height: {{ max(2, (int) round(($point['count'] / $paymentTrendMax) * 100)) }}%"></div>
+                            <div class="w-full rounded-t bg-success" style="height: {{ max(2, (int) round(($point['count'] / $paymentTrendMax) * 100)) }}%"></div>
                         </div>
                     @endforeach
                 </div>
             @else
-                <p class="mt-4 text-sm text-gray-500">Belum ada data pada periode ini.</p>
+                <p class="mt-2 text-sm text-ink-soft">Belum ada data pada periode ini.</p>
             @endif
-        </div>
+        </x-ui.card>
     </div>
 
     {{-- Branch performance --}}
-    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-        <h4 class="text-base font-semibold text-gray-900">Performa Cabang</h4>
-        <div class="mt-4 overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200 text-sm">
-                <thead>
-                    <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        <th class="px-3 py-2">Cabang</th>
-                        <th class="px-3 py-2 text-right">Kunjungan</th>
-                        <th class="px-3 py-2 text-right">Pasien Baru</th>
-                        <th class="px-3 py-2 text-right">Pendapatan</th>
-                        <th class="px-3 py-2 text-right">Piutang</th>
-                        <th class="px-3 py-2 text-right">Follow-up Due</th>
+    <x-ui.card title="Performa Cabang">
+        <x-ui.table>
+            <thead class="bg-navy-50">
+                <tr class="text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                    <th class="px-3 py-2">Cabang</th>
+                    <th class="px-3 py-2 text-right">Kunjungan</th>
+                    <th class="px-3 py-2 text-right">Pasien Baru</th>
+                    <th class="px-3 py-2 text-right">Pendapatan</th>
+                    <th class="px-3 py-2 text-right">Piutang</th>
+                    <th class="px-3 py-2 text-right">Follow-up Due</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @forelse ($branchPerformance as $row)
+                    <tr class="hover:bg-navy-50">
+                        <td class="px-3 py-2 font-medium text-navy">{{ $row['branch_name'] }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['visits']) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['new_patients']) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums font-medium text-navy">{{ format_currency_id($row['revenue']) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_currency_id($row['receivable']) }}</td>
+                        <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($row['follow_up_due']) }}</td>
                     </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @forelse ($branchPerformance as $row)
-                        <tr>
-                            <td class="px-3 py-2 font-medium text-gray-900">{{ $row['branch_name'] }}</td>
-                            <td class="px-3 py-2 text-right text-gray-700">{{ format_number_id($row['visits']) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-700">{{ format_number_id($row['new_patients']) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($row['revenue']) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-700">{{ format_currency_id($row['receivable']) }}</td>
-                            <td class="px-3 py-2 text-right text-gray-700">{{ format_number_id($row['follow_up_due']) }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="6" class="px-3 py-4 text-center text-gray-500">Belum ada data pada periode ini.</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-    </div>
+                @empty
+                    <tr><td colspan="6" class="px-3 py-4 text-center text-ink-soft">Belum ada data pada periode ini.</td></tr>
+                @endforelse
+            </tbody>
+        </x-ui.table>
+    </x-ui.card>
 
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {{-- Latest receivables (privacy-safe: no KTP/NIK) --}}
-        <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <h4 class="text-base font-semibold text-gray-900">Piutang Terbaru</h4>
-            <div class="mt-4 overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                            <th class="px-3 py-2">Pasien</th>
-                            <th class="px-3 py-2">Cabang</th>
-                            <th class="px-3 py-2">Tgl Kunjungan</th>
-                            <th class="px-3 py-2 text-right">Sisa</th>
-                            <th class="px-3 py-2">Status</th>
+        <x-ui.card title="Piutang Terbaru">
+            <x-ui.table>
+                <thead class="bg-navy-50">
+                    <tr class="text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                        <th class="px-3 py-2">Pasien</th>
+                        <th class="px-3 py-2">Cabang</th>
+                        <th class="px-3 py-2">Tgl Kunjungan</th>
+                        <th class="px-3 py-2 text-right">Sisa</th>
+                        <th class="px-3 py-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse ($topUnpaid as $row)
+                        <tr class="hover:bg-navy-50">
+                            <td class="px-3 py-2 font-medium text-navy">{{ $row['patient_name'] }}</td>
+                            <td class="px-3 py-2 text-ink">{{ $row['branch_name'] }}</td>
+                            <td class="px-3 py-2 text-ink">{{ optional($row['visit_date'])->translatedFormat('d M Y') ?? '-' }}</td>
+                            <td class="px-3 py-2 text-right tabular-nums font-medium text-navy">{{ format_currency_id($row['remaining']) }}</td>
+                            <td class="px-3 py-2"><x-ui.badge :tone="$receivableTone($row['status'])">{{ $row['status'] }}</x-ui.badge></td>
                         </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($topUnpaid as $row)
-                            <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $row['patient_name'] }}</td>
-                                <td class="px-3 py-2 text-gray-700">{{ $row['branch_name'] }}</td>
-                                <td class="px-3 py-2 text-gray-700">{{ optional($row['visit_date'])->translatedFormat('d M Y') ?? '-' }}</td>
-                                <td class="px-3 py-2 text-right text-gray-900">{{ format_currency_id($row['remaining']) }}</td>
-                                <td class="px-3 py-2 text-gray-700">{{ $row['status'] }}</td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="5" class="px-3 py-4 text-center text-gray-500">Belum ada data pada periode ini.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-        </div>
+                    @empty
+                        <tr><td colspan="5" class="px-3 py-4 text-center text-ink-soft">Belum ada data pada periode ini.</td></tr>
+                    @endforelse
+                </tbody>
+            </x-ui.table>
+        </x-ui.card>
 
         {{-- Operational alerts --}}
-        <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <h4 class="text-base font-semibold text-gray-900">Peringatan Operasional</h4>
-            <ul class="mt-4 space-y-3">
+        <x-ui.card title="Peringatan Operasional">
+            <ul class="space-y-3">
                 @forelse ($alerts as $alert)
-                    <li class="flex items-start gap-3 rounded-md border p-3 {{ $alert['severity'] === 'warning' ? 'border-amber-200 bg-amber-50' : 'border-sky-200 bg-sky-50' }}">
-                        <span class="mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-semibold {{ $alert['severity'] === 'warning' ? 'bg-amber-500 text-white' : 'bg-sky-500 text-white' }}">
+                    @php $tone = $alertToneClasses[$alert['severity']] ?? $alertToneClasses['info']; @endphp
+                    <li class="flex items-start gap-3 rounded-lg border p-3 {{ $tone['wrap'] }}">
+                        <span class="mt-0.5 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-2 text-xs font-semibold {{ $tone['chip'] }}">
                             {{ format_number_id($alert['count']) }}
                         </span>
                         <div>
-                            <p class="text-sm font-semibold text-gray-900">{{ $alert['label'] }}</p>
-                            <p class="text-xs text-gray-600">{{ $alert['text'] }}</p>
+                            <p class="text-sm font-semibold text-navy">{{ $alert['label'] }}</p>
+                            <p class="text-xs text-ink-soft">{{ $alert['text'] }}</p>
                         </div>
                     </li>
                 @empty
-                    <li class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+                    <li class="rounded-lg border border-success-100 bg-success-50 p-3 text-sm text-success-700">
                         Tidak ada peringatan operasional pada periode ini.
                     </li>
                 @endforelse
             </ul>
-        </div>
+        </x-ui.card>
     </div>
 </section>

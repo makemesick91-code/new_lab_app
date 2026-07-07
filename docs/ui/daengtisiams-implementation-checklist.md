@@ -21,8 +21,18 @@ Referensi: [design canvas](./daengtisiams-design-canvas.html) · [developer guid
 ## Per-component checklist (untuk sprint UIX berikutnya)
 Setiap komponen `x-ui.*` harus mendukung (bila relevan): default · hover · focus · disabled · loading · variant error/warning/success/info · atribut aksesibilitas · slot/prop API jelas · Alpine minimal.
 
-## Migration order (deferred)
-1. UIX-2 Dashboard Owner polish
+## Acceptance — UIX-2 Owner Dashboard polish (2026-07-07)
+- [x] Owner KPI block (`dashboards/owner-kpi.blade.php`) memakai `x-ui.card`/`x-ui.kpi-card`/`x-ui.table`/`x-ui.badge`/`x-ui.button`/`x-ui.input`/`x-ui.select`/`x-ui.empty-state`.
+- [x] Owner section `dashboard.blade.php` + komponen `x-owner-dashboard.*` retheme token (teal → brand biru; amber/emerald/sky/rose → warning/success/info/danger).
+- [x] Gold accent **hanya** untuk KPI Total Pendapatan (revenue) via `:accent`; tidak ada gold sebagai CTA.
+- [x] Warning tetap orange, danger merah, success hijau, info biru.
+- [x] Tidak ada perubahan logic KPI / controller / service / route / permission / BranchContext.
+- [x] String kunci test dipertahankan (`Dashboard KPI Owner`, `Low Stock`).
+- [x] `architecture:ui-governance-check` diperkuat dengan rule owner-dashboard (non-brittle).
+- [x] Evidence: `docs/sprints/uix-2-dashboard-owner-polish.md`.
+
+## Migration order
+1. [x] UIX-2 Dashboard Owner polish
 2. UIX-3 Kunjungan list polish
 3. UIX-4 RME + Odontogram polish
 4. UIX-5 Kasir/payment polish

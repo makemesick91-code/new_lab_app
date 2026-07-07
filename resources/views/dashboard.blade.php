@@ -404,29 +404,25 @@
                 @if ($showBranchAdminDashboard)
                     @include('dashboards.branch-admin')
                 @elseif ($showOwnerDashboard)
-                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <x-ui.card accent>
                     <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
-                            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Ringkasan Owner</p>
-                            <h1 class="mt-1 text-2xl font-semibold text-gray-900">Kondisi bisnis secara ringkas</h1>
-                            <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Ringkasan Owner</p>
+                            <h1 class="mt-1 text-2xl font-semibold text-navy">Kondisi bisnis secara ringkas</h1>
+                            <p class="mt-2 max-w-3xl text-sm text-ink-soft">
                                 Dasbor ini menggunakan tujuan Daengtisia Management System yang sudah tersedia dan empty state yang aman. Metrik live terperinci tetap tersedia melalui Laporan, Persediaan, dan modul operasional sampai layanan data owner khusus terhubung.
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2">
                             @canany(['view_dashboard', 'manage_report'])
-                                <a href="{{ route('reports.dashboard') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
-                                    Buka Laporan
-                                </a>
+                                <x-ui.button :href="route('reports.dashboard')" variant="primary">Buka Laporan</x-ui.button>
                             @endcanany
                             @canany(['view_inventory', 'manage_inventory', 'manage master data'])
-                                <a href="{{ route('inventory.dashboard') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                                    Buka Persediaan
-                                </a>
+                                <x-ui.button :href="route('inventory.dashboard')" variant="secondary">Buka Persediaan</x-ui.button>
                             @endcanany
                         </div>
                     </div>
-                </section>
+                </x-ui.card>
 
                 @if (is_array($ownerKpi ?? null))
                     @include('dashboards.owner-kpi', ['ownerKpi' => $ownerKpi])
@@ -434,12 +430,12 @@
 
                 @if (is_array($ownerRmeLabPilot))
                     <section aria-labelledby="rme-lab-pilot-monitoring" class="space-y-6">
-                        <div class="rounded-lg border border-teal-100 bg-teal-50/40 p-5 shadow-sm">
+                        <div class="rounded-xl border border-brand-100 bg-brand-50/60 p-5 shadow-card">
                             <div class="flex flex-wrap items-start justify-between gap-4">
                                 <div class="min-w-0 flex-1">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Monitoring Pilot RME &amp; Lab</p>
-                                    <h3 id="rme-lab-pilot-monitoring" class="mt-1 text-lg font-semibold text-gray-900">Ringkasan operasional klinik pilot</h3>
-                                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Monitoring Pilot RME &amp; Lab</p>
+                                    <h3 id="rme-lab-pilot-monitoring" class="mt-1 text-lg font-semibold text-navy">Ringkasan operasional klinik pilot</h3>
+                                    <p class="mt-2 max-w-3xl text-sm text-ink-soft">
                                         Data bersifat monitoring pilot dan dihitung dari transaksi RME/Lab saat ini.
                                         @if ($ownerRmeLabSelectedBranchId)
                                             Menampilkan cabang: {{ $ownerRmeLabPilot['scope_label'] ?? 'Cabang aktif' }}.
@@ -459,7 +455,7 @@
                                     <select
                                         id="owner-rme-lab-branch-filter"
                                         name="branch_id"
-                                        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500"
+                                        class="mt-1 block w-full rounded-lg border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
                                         onchange="this.form.submit()"
                                     >
                                         <option value="" @selected($ownerRmeLabSelectedBranchId === null)>Semua Cabang</option>
@@ -492,7 +488,7 @@
                             @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
                                 <div class="mt-4">
                                     <a href="{{ $ownerRmeLabDrilldowns['rme_receivables'] }}"
-                                       class="inline-flex items-center rounded-md border border-teal-300 bg-white px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                       class="inline-flex items-center rounded-md border border-brand-200 bg-surface px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                         Piutang RME
                                     </a>
                                 </div>
@@ -575,7 +571,7 @@
                                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['partial_count'] ?? 0) }}</td>
                                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['unpaid_count'] ?? 0) }}</td>
                                                     <td class="px-4 py-3 text-xs text-gray-600">
-                                                        <span class="font-medium text-amber-700">{{ format_number_id($row['follow_up_overdue_count'] ?? 0) }}</span> jatuh tempo;
+                                                        <span class="font-medium text-warning-700">{{ format_number_id($row['follow_up_overdue_count'] ?? 0) }}</span> jatuh tempo;
                                                         {{ format_number_id($row['follow_up_today_count'] ?? 0) }} hari ini;
                                                         {{ format_number_id($row['follow_up_scheduled_count'] ?? 0) }} terjadwal;
                                                         {{ format_number_id($row['never_followed_up_count'] ?? 0) }} belum pernah
@@ -583,7 +579,7 @@
                                                     <td class="px-4 py-3 text-right">
                                                         @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
                                                             <a href="{{ route('rme.cashier.receivables', ['branch_id' => $row['branch_id']]) }}"
-                                                               class="inline-flex items-center rounded-md border border-teal-300 bg-white px-2.5 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                                               class="inline-flex items-center rounded-md border border-brand-200 bg-surface px-2.5 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                                                 Lihat Piutang
                                                             </a>
                                                         @else
@@ -676,22 +672,22 @@
                 <x-owner-dashboard.dashboard-section title="Akses Detail Tersedia" description="Gunakan modul DaengtisiaMS yang sudah ada untuk detail operasional live." density="compact">
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         @canany(['view_order_report', 'manage_report'])
-                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Laporan Order</a>
+                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan Order</a>
                         @endcanany
                         @canany(['view_qc_report', 'manage_report'])
-                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Laporan QC</a>
+                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan QC</a>
                         @endcanany
                         @canany(['view_invoice_report', 'manage_report'])
-                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Invoice Tertunggak</a>
+                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Invoice Tertunggak</a>
                         @endcanany
                         @canany(['view_inventory', 'manage_inventory', 'manage master data'])
-                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">Stok Persediaan</a>
+                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Stok Persediaan</a>
                         @endcanany
                     </div>
                 </x-owner-dashboard.dashboard-section>
                 @else
                 <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Dasbor Operasional</p>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Dasbor Operasional</p>
                     <h1 class="mt-1 text-2xl font-semibold text-gray-900">Mulai dari menu modul Anda</h1>
                     <p class="mt-2 max-w-3xl text-sm text-gray-600">
                         Peran ini tidak memiliki ringkasan eksekutif atau operasional cabang penuh. Gunakan menu samping untuk kunjungan klinik, kasir RME, atau modul lain yang diizinkan.
@@ -699,18 +695,18 @@
                     <div class="mt-4 flex flex-wrap gap-2">
                         @canany(['view_clinic_visits', 'manage_clinic_visits'])
                             @if($user?->hasRole('Doctor'))
-                                <a href="{{ route('rme.treatment-room-worklist.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                                <a href="{{ route('rme.treatment-room-worklist.index') }}" class="rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-navy-700 focus:outline-none focus:ring-2 focus:ring-navy focus:ring-offset-2">
                                     Buka Ruang Perawatan
                                 </a>
                             @elseif(! $user?->hasRole('Kasir'))
-                                <a href="{{ route('rme.visits.index') }}" class="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2">
+                                <a href="{{ route('rme.visits.index') }}" class="rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-navy-700 focus:outline-none focus:ring-2 focus:ring-navy focus:ring-offset-2">
                                     Buka Kunjungan
                                 </a>
                             @endif
                         @endcanany
                         @can('manage_rme_billing')
                             @unless($user?->hasRole('Admin Klinik'))
-                                <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                     Buka Kasir RME
                                 </a>
                             @endunless

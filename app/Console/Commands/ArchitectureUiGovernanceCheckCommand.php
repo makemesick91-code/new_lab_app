@@ -82,6 +82,46 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UI governance doc does not mention gold usage rules.';
         }
 
+        // --- UIX-2 — Owner Dashboard polish rules (lightweight, non-brittle). ---
+        // These files must exist and stay on the design system (no legacy teal
+        // brand color, x-ui.kpi-card adopted, gold reserved as accent only).
+        $ownerDashboardFiles = [
+            'resources/views/dashboard.blade.php',
+            'resources/views/dashboards/owner-kpi.blade.php',
+        ];
+
+        foreach ($ownerDashboardFiles as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing owner dashboard view: {$file}";
+            }
+        }
+
+        $ownerKpiView = @file_get_contents($base.'/resources/views/dashboards/owner-kpi.blade.php') ?: '';
+
+        // Owner KPI block must use the x-ui.kpi-card foundation component.
+        if ($ownerKpiView !== '' && ! str_contains($ownerKpiView, 'x-ui.kpi-card')) {
+            $errors[] = 'Owner KPI dashboard does not use the x-ui.kpi-card component.';
+        }
+
+        // No legacy teal brand color may be reintroduced in owner dashboard files
+        // (UIX-1 migrated the brand color teal → blue).
+        foreach ($ownerDashboardFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents !== '' && preg_match('/\b(?:bg|text|border|ring)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+        }
+
+        // Gold must stay an accent, never a button/CTA variant, in the owner KPI view.
+        if ($ownerKpiView !== '' && str_contains($ownerKpiView, 'variant="gold"')) {
+            $errors[] = 'Gold used as a button/CTA in owner-kpi.blade.php (gold is accent-only).';
+        }
+
+        // UIX-2 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-2-dashboard-owner-polish.md')) {
+            $warnings[] = 'UIX-2 sprint evidence doc is missing (docs/sprints/uix-2-dashboard-owner-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
