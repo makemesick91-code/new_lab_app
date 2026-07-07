@@ -25,40 +25,44 @@
 @endphp
 
 <x-settings-shell title="Detail Order Lab">
-    <div class="bg-white shadow-sm sm:rounded-lg" x-data="{ tab: 'overview' }">
+    <x-ui.page-header title="Detail Order Lab">
+        <x-slot:breadcrumb>Lab / Order Lab / {{ $order->order_number }}</x-slot:breadcrumb>
+        <x-slot:actions>
+            @can('update', $order)
+                <x-ui.button variant="secondary" :href="route('lab-orders.edit', $order)">Ubah</x-ui.button>
+            @endcan
+            @can('cancel', $order)
+                <form method="POST" action="{{ route('lab-orders.cancel', $order) }}"
+                      onsubmit="var r=prompt('Alasan pembatalan (minimal 5 karakter):'); if(!r||r.length<5){return false;} this.reason.value=r;">
+                    @csrf
+                    <input type="hidden" name="reason" />
+                    <x-ui.button variant="danger" type="submit">Batalkan Order</x-ui.button>
+                </form>
+            @endcan
+        </x-slot:actions>
+    </x-ui.page-header>
+
+    <div class="ui-card" x-data="{ tab: 'overview' }">
         {{-- Header --}}
-        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-hairline p-6">
             <div>
-                <p class="text-sm text-gray-500">Nomor Order</p>
-                <p class="text-lg font-semibold text-gray-900">{{ $order->order_number }}</p>
-                <span class="mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $order->status === 'CANCELLED' ? 'bg-gray-100 text-gray-600' : 'bg-blue-50 text-blue-700' }}">{{ $statusLabels[$order->status] ?? $order->status }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-                @can('update', $order)
-                    <a href="{{ route('lab-orders.edit', $order) }}" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Ubah</a>
-                @endcan
-                @can('cancel', $order)
-                    <form method="POST" action="{{ route('lab-orders.cancel', $order) }}"
-                          onsubmit="var r=prompt('Alasan pembatalan (minimal 5 karakter):'); if(!r||r.length<5){return false;} this.reason.value=r;">
-                        @csrf
-                        <input type="hidden" name="reason" />
-                        <button type="submit" class="inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500">Batalkan Order</button>
-                    </form>
-                @endcan
+                <p class="text-sm text-ink-soft">Nomor Order</p>
+                <p class="text-lg font-semibold text-navy">{{ $order->order_number }}</p>
+                <div class="mt-1"><x-lab.status-badge :status="$order->status" /></div>
             </div>
         </div>
 
         {{-- Tabs --}}
         @php($tabs = ['overview' => 'Ringkasan', 'items' => 'Item', 'attachments' => 'Lampiran', 'timeline' => 'Timeline', 'audit' => 'Log Audit'])
         @php($placeholderTabs = ['Penugasan', 'Produksi', 'QC', 'Pengiriman', 'Invoice'])
-        <div class="flex flex-wrap gap-1 border-b border-gray-100 px-4">
+        <div class="flex flex-wrap gap-1 border-b border-hairline px-4">
             @foreach ($tabs as $key => $label)
                 <button type="button" @click="tab = '{{ $key }}'"
-                        :class="tab === '{{ $key }}' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        :class="tab === '{{ $key }}' ? 'border-brand-600 text-brand-600' : 'border-transparent text-ink-soft hover:text-ink'"
                         class="border-b-2 px-3 py-2 text-sm font-medium">{{ $label }}</button>
             @endforeach
             @foreach ($placeholderTabs as $label)
-                <button type="button" disabled class="cursor-not-allowed border-b-2 border-transparent px-3 py-2 text-sm font-medium text-gray-300" title="Akan tersedia pada sprint berikutnya">{{ $label }}</button>
+                <button type="button" disabled class="cursor-not-allowed border-b-2 border-transparent px-3 py-2 text-sm font-medium text-ink-muted/60" title="Akan tersedia pada sprint berikutnya">{{ $label }}</button>
             @endforeach
         </div>
 
@@ -66,16 +70,16 @@
             {{-- Overview --}}
             <div x-show="tab === 'overview'" class="space-y-6">
             @if ($rmeSourceCandidate)
-                <div class="rounded-lg border border-teal-200 bg-teal-50/50 p-4">
-                    <h3 class="text-sm font-semibold text-teal-900">Sumber RME</h3>
-                    <p class="mt-1 text-xs text-teal-800">Lab order ini dibuat dari kandidat pekerjaan lab RME.</p>
+                <div class="rounded-lg border border-brand-200 bg-brand-50/50 p-4">
+                    <h3 class="text-sm font-semibold text-brand-800">Sumber RME</h3>
+                    <p class="mt-1 text-xs text-brand-700">Lab order ini dibuat dari kandidat pekerjaan lab RME.</p>
                     <dl class="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                         <div>
-                            <dt class="text-teal-700">Kandidat</dt>
-                            <dd class="font-medium text-gray-900">
+                            <dt class="text-brand-700">Kandidat</dt>
+                            <dd class="font-medium text-navy">
                                 @can('view', $rmeSourceCandidate)
                                     <a href="{{ route('lab-case-candidates.show', $rmeSourceCandidate) }}"
-                                       class="text-teal-700 hover:text-teal-900 hover:underline">
+                                       class="text-brand-700 hover:text-brand-800 hover:underline">
                                         Kandidat #{{ $rmeSourceCandidate->id }}
                                     </a>
                                 @else
@@ -84,12 +88,12 @@
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-teal-700">Invoice RME</dt>
-                            <dd class="font-mono font-medium text-gray-900">
+                            <dt class="text-brand-700">Invoice RME</dt>
+                            <dd class="font-mono font-medium text-navy">
                                 @if ($rmeSourceCandidate->rmeInvoice && $rmeSourceCandidate->clinicVisit)
                                     @can('view', $rmeSourceCandidate->rmeInvoice)
                                         <a href="{{ route('rme.cashier.show', [$rmeSourceCandidate->clinicVisit, $rmeSourceCandidate->rmeInvoice]) }}"
-                                           class="text-teal-700 hover:text-teal-900 hover:underline">
+                                           class="text-brand-700 hover:text-brand-800 hover:underline">
                                             {{ $rmeSourceCandidate->rmeInvoice->invoice_number }}
                                         </a>
                                     @else
@@ -101,37 +105,37 @@
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-teal-700">Pasien</dt>
-                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->patient?->name ?? '—' }}</dd>
+                            <dt class="text-brand-700">Pasien</dt>
+                            <dd class="font-medium text-navy">{{ $rmeSourceCandidate->patient?->name ?? '—' }}</dd>
                         </div>
                         <div>
-                            <dt class="text-teal-700">Dokter</dt>
-                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->doctor?->name ?? '—' }}</dd>
+                            <dt class="text-brand-700">Dokter</dt>
+                            <dd class="font-medium text-navy">{{ $rmeSourceCandidate->doctor?->name ?? '—' }}</dd>
                         </div>
                         <div class="sm:col-span-2">
-                            <dt class="text-teal-700">Tindakan Sumber</dt>
-                            <dd class="font-medium text-gray-900">{{ $rmeSourceCandidate->source_description ?? $rmeSourceCandidate->treatment?->name ?? '—' }}</dd>
+                            <dt class="text-brand-700">Tindakan Sumber</dt>
+                            <dd class="font-medium text-navy">{{ $rmeSourceCandidate->source_description ?? $rmeSourceCandidate->treatment?->name ?? '—' }}</dd>
                         </div>
                     </dl>
                 </div>
             @endif
             <div class="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                <div><dt class="text-gray-500">Klinik</dt><dd class="font-medium">{{ $order->clinic?->name }}</dd></div>
-                <div><dt class="text-gray-500">Dokter</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
-                <div><dt class="text-gray-500">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
-                <div><dt class="text-gray-500">Nomor RM</dt><dd class="font-medium">{{ $order->medical_record_number ?? '-' }}</dd></div>
-                <div><dt class="text-gray-500">Prioritas</dt><dd class="font-medium">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
-                <div><dt class="text-gray-500">Tanggal Order</dt><dd class="font-medium">{{ format_date_id($order->order_date) }}</dd></div>
-                <div><dt class="text-gray-500">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
-                <div class="sm:col-span-2"><dt class="text-gray-500">Catatan</dt><dd class="font-medium">{{ $order->notes ?? '—' }}</dd></div>
-                <div><dt class="text-gray-500">Dibuat Oleh</dt><dd class="font-medium">{{ $order->creator?->name ?? '—' }}</dd></div>
+                <div><dt class="text-ink-soft">Klinik</dt><dd class="font-medium">{{ $order->clinic?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Dokter</dt><dd class="font-medium">{{ $order->doctor?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Pasien</dt><dd class="font-medium">{{ $order->patient?->name ?? '—' }}</dd></div>
+                <div><dt class="text-ink-soft">Nomor RM</dt><dd class="font-medium">{{ $order->medical_record_number ?? '-' }}</dd></div>
+                <div><dt class="text-ink-soft">Prioritas</dt><dd class="font-medium">{{ $priorityLabels[$order->priority] ?? $order->priority }}</dd></div>
+                <div><dt class="text-ink-soft">Tanggal Order</dt><dd class="font-medium">{{ format_date_id($order->order_date) }}</dd></div>
+                <div><dt class="text-ink-soft">Tenggat</dt><dd class="font-medium">{{ format_date_id($order->due_date, '—') }}</dd></div>
+                <div class="sm:col-span-2"><dt class="text-ink-soft">Catatan</dt><dd class="font-medium">{{ $order->notes ?? '—' }}</dd></div>
+                <div><dt class="text-ink-soft">Dibuat Oleh</dt><dd class="font-medium">{{ $order->creator?->name ?? '—' }}</dd></div>
             </div>
             </div>
 
             {{-- Items --}}
             <div x-show="tab === 'items'" style="display:none;" class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead><tr class="text-left text-gray-500">
+                <table class="min-w-full divide-y divide-hairline text-sm">
+                    <thead><tr class="text-left text-ink-soft">
                         <th class="px-3 py-2 font-medium">Layanan</th>
                         <th class="px-3 py-2 font-medium">Gigi</th>
                         <th class="px-3 py-2 font-medium">Warna Gigi</th>
@@ -140,16 +144,16 @@
                         <th class="px-3 py-2 font-medium text-right">Harga Satuan</th>
                         <th class="px-3 py-2 font-medium text-right">Subtotal</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-hairline">
                         @foreach ($order->items as $item)
                             <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $item->labService?->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $item->tooth_number ?? '—' }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $item->shade_color_text ?? '—' }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $item->material_text ?? '—' }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ format_quantity_id($item->quantity) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->unit_price) }}</td>
-                                <td class="px-3 py-2 text-right text-gray-600">{{ format_currency_id($item->subtotal) }}</td>
+                                <td class="px-3 py-2 font-medium text-navy">{{ $item->labService?->name }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $item->tooth_number ?? '—' }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $item->shade_color_text ?? '—' }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $item->material_text ?? '—' }}</td>
+                                <td class="px-3 py-2 text-right text-ink-soft">{{ format_quantity_id($item->quantity) }}</td>
+                                <td class="px-3 py-2 text-right text-ink-soft">{{ format_currency_id($item->unit_price) }}</td>
+                                <td class="px-3 py-2 text-right text-ink-soft">{{ format_currency_id($item->subtotal) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -159,51 +163,51 @@
             {{-- Attachments --}}
             <div x-show="tab === 'attachments'" style="display:none;" class="space-y-4">
                 @can('uploadAttachment', $order)
-                    <form method="POST" action="{{ route('lab-orders.attachments.upload', $order) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-3 rounded-md border border-gray-200 p-3">
+                    <form method="POST" action="{{ route('lab-orders.attachments.upload', $order) }}" enctype="multipart/form-data" class="flex flex-wrap items-end gap-3 rounded-md border border-hairline p-3">
                         @csrf
                         <div>
-                            <label class="block text-xs text-gray-500">Kategori</label>
-                            <select name="category" class="mt-1 rounded-md border-gray-300 text-sm">
+                            <label class="block text-xs text-ink-soft">Kategori</label>
+                            <select name="category" class="mt-1 rounded-md border-hairline text-sm">
                                 @foreach (App\Modules\LabOrder\Models\Attachment::CATEGORIES as $cat)
                                     <option value="{{ $cat }}">{{ $cat }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs text-gray-500">File (jpg, jpeg, png, pdf, stl - maksimal 10MB)</label>
+                            <label class="block text-xs text-ink-soft">File (jpg, jpeg, png, pdf, stl - maksimal 10MB)</label>
                             <input type="file" name="file" class="mt-1 block text-sm" />
                         </div>
-                        <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500">Unggah</button>
+                        <x-ui.button type="submit" size="sm">Unggah</x-ui.button>
                     </form>
                 @endcan
 
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead><tr class="text-left text-gray-500">
+                <table class="min-w-full divide-y divide-hairline text-sm">
+                    <thead><tr class="text-left text-ink-soft">
                         <th class="px-3 py-2 font-medium">File</th>
                         <th class="px-3 py-2 font-medium">Kategori</th>
                         <th class="px-3 py-2 font-medium">Diunggah Oleh</th>
                         <th class="px-3 py-2 font-medium text-right">Aksi</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-hairline">
                         @forelse ($order->attachments as $attachment)
                             <tr>
-                                <td class="px-3 py-2 text-gray-900">{{ $attachment->file_name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $attachment->category }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $attachment->uploader?->name ?? '—' }}</td>
+                                <td class="px-3 py-2 text-navy">{{ $attachment->file_name }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $attachment->category }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $attachment->uploader?->name ?? '—' }}</td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="text-indigo-600 hover:text-indigo-500">Unduh</a>
+                                        <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="text-brand-600 hover:text-brand-700">Unduh</a>
                                         @can('deleteAttachment', $order)
                                             <form method="POST" action="{{ route('lab-orders.attachments.destroy', [$order, $attachment]) }}" onsubmit="return confirm('Hapus lampiran ini?');">
                                                 @csrf @method('DELETE')
-                                                <button type="submit" class="text-red-600 hover:text-red-500">Hapus</button>
+                                                <button type="submit" class="text-danger hover:text-danger-700">Hapus</button>
                                             </form>
                                         @endcan
                                     </div>
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="4" class="px-3 py-6 text-center text-gray-400">Belum ada lampiran.</td></tr>
+                            <tr><td colspan="4" class="px-3 py-6 text-center text-ink-muted">Belum ada lampiran.</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -213,35 +217,35 @@
             <div x-show="tab === 'timeline'" style="display:none;" class="space-y-3">
                 @forelse ($order->statusLogs->sortByDesc('changed_at') as $log)
                     <div class="flex items-start gap-3 text-sm">
-                        <div class="mt-1 h-2 w-2 rounded-full bg-indigo-500"></div>
+                        <div class="mt-1 h-2 w-2 rounded-full bg-brand-500"></div>
                         <div>
-                            <p class="font-medium text-gray-900">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
-                            @if ($log->notes)<p class="text-gray-600">{{ $noteLabels[$log->notes] ?? $log->notes }}</p>@endif
+                            <p class="font-medium text-navy">{{ $log->old_status ? ($statusLabels[$log->old_status] ?? $log->old_status).' -> ' : '' }}{{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
+                            <p class="text-ink-soft">{{ format_datetime_id($log->changed_at) }} · {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                            @if ($log->notes)<p class="text-ink-soft">{{ $noteLabels[$log->notes] ?? $log->notes }}</p>@endif
                         </div>
                     </div>
                 @empty
-                    <p class="text-gray-400">Belum ada riwayat status.</p>
+                    <p class="text-ink-muted">Belum ada riwayat status.</p>
                 @endforelse
             </div>
 
             {{-- Audit Log --}}
             <div x-show="tab === 'audit'" style="display:none;" class="space-y-3">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead><tr class="text-left text-gray-500">
+                <table class="min-w-full divide-y divide-hairline text-sm">
+                    <thead><tr class="text-left text-ink-soft">
                         <th class="px-3 py-2 font-medium">Aksi</th>
                         <th class="px-3 py-2 font-medium">Oleh</th>
                         <th class="px-3 py-2 font-medium">Waktu</th>
                     </tr></thead>
-                    <tbody class="divide-y divide-gray-100">
+                    <tbody class="divide-y divide-hairline">
                         @forelse ($auditLogs as $log)
                             <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $log->action }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $log->performer?->name ?? 'Sistem' }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ format_datetime_id($log->performed_at) }}</td>
+                                <td class="px-3 py-2 font-medium text-navy">{{ $log->action }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ $log->performer?->name ?? 'Sistem' }}</td>
+                                <td class="px-3 py-2 text-ink-soft">{{ format_datetime_id($log->performed_at) }}</td>
                             </tr>
                         @empty
-                            <tr><td colspan="3" class="px-3 py-6 text-center text-gray-400">Belum ada catatan audit.</td></tr>
+                            <tr><td colspan="3" class="px-3 py-6 text-center text-ink-muted">Belum ada catatan audit.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

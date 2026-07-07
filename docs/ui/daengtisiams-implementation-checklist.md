@@ -93,11 +93,28 @@ Setiap halaman Kasir/Pembayaran/Invoice/Piutang **wajib**: semantic token · `x-
 ## Inventory-page standard (wajib untuk semua halaman persediaan berikutnya)
 Setiap halaman Inventory **wajib**: semantic token · list mengikuti standard UIX-3 · status via `x-ui.badge` (low_stock/expired_soon=warning, out_of_stock/expired/void=danger, received/posted/approved=success, submitted/in_transit=info/brand) · aksi via `x-ui.button` (**tidak pernah** gold) · KPI via `x-ui.card`/`x-ui.kpi-card` · tabel besar `overflow-x-auto` + `x-ui.table` · **dilarang** kolom/atribut stok mutable (ledger-only) · print/export dicek ulang · **tanpa** perubahan ledger/stock/procurement/transfer/opname logic atau controller/service/query/permission/BranchContext/route/schema.
 
+## UIX-7 — Lab pipeline polish (selesai 2026-07-07)
+- [x] Komponen bersama baru `x-lab.status-badge` (`components/lab/status-badge.blade.php`) → peta kode status lab uppercase → tone semantik + label ID via `x-ui.badge`.
+- [x] Order lab list (`lab-orders/index.blade.php`) → **reference lab list**: page-header + filter-bar + input/select + table + `x-lab.status-badge` + button + empty-state; param GET & rute tidak berubah.
+- [x] Order lab detail (`lab-orders/show.blade.php`) → **reference lab detail**: page-header + card + `x-lab.status-badge` + button; tab Alpine dipertahankan.
+- [x] Order lab create/edit/`_form` → page-header + `x-ui.card` + `x-ui.button`; item-row Alpine & field name dipertahankan.
+- [x] Kandidat RME (`lab/case-candidates/index.blade.php`, `show.blade.php`) → list standard + form konversi (`x-ui.select`/`input`/`textarea`); `statusTone()/statusLabel()` model dipertahankan.
+- [x] Produksi (`production/board.blade.php`, `show.blade.php`, `work-logs.blade.php`) → list standard + card + hirarki aksi (assign=primary, reassign/pause=warning, start/resume=success, complete=primary, sendToQc=neutral); tiap `@can` dipertahankan.
+- [x] QC (`quality-control/queue.blade.php`, `show.blade.php`) → list standard + card; pass=success, reject=danger, remake=warning; checklist result via `x-lab.status-badge`.
+- [x] Pengiriman (`deliveries/index.blade.php`, `show.blade.php`, `_pod-form.blade.php`, `_signature-pad.blade.php`) → list standard + card + POD; `_pod-form` `buttonClass`→`buttonVariant` via `x-ui.button`; signature-pad JS tetap.
+- [x] Tidak ada teal legacy / gold-CTA / render KTP/NIK di 14 view lab yang dipoles.
+- [x] **Tanpa** perubahan LabOrder lifecycle / RME→Lab candidate / invoice / payment; **tanpa** perubahan controller/service/query/permission/policy/BranchContext/route/schema/migration.
+- [x] `architecture:ui-governance-check` diperkuat dengan rule lab (non-brittle).
+- [x] Evidence: `docs/sprints/uix-7-lab-pipeline-polish.md`; test `tests/Feature/Ui/LabPipelineUixTest.php`.
+
+## Lab-page standard (wajib untuk semua halaman lab berikutnya)
+Setiap halaman Lab **wajib**: semantic token (dilarang teal legacy) · list mengikuti standard UIX-3 · status lifecycle/priority/QC/delivery via `x-lab.status-badge` (bukan badge dari nol) · aksi via `x-ui.button` hirarki jelas (**tidak pernah** gold) · **tanpa** perubahan LabOrder lifecycle / RME→Lab candidate / invoice / payment logic atau controller/service/query/permission/policy/BranchContext/route/schema · **tanpa** render KTP/NIK penuh.
+
 ## Migration order
 1. [x] UIX-2 Dashboard Owner polish
 2. [x] UIX-3 Kunjungan list polish
 3. [x] UIX-4 RME + Odontogram polish
 4. [x] UIX-5 Kasir/payment polish
 5. [x] UIX-6 Inventory table/dashboard polish
-6. UIX-7 Lab pipeline polish
+6. [x] UIX-7 Lab pipeline polish
 7. UIX-8 Reports/print/PDF polish

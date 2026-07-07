@@ -9,38 +9,39 @@
 @endphp
 
 <x-settings-shell title="Log Pekerjaan">
-    <div class="bg-white shadow-sm sm:rounded-lg p-6">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-sm text-gray-500">Nomor Order</p>
-                <p class="font-semibold text-gray-900">{{ $order->order_number }}</p>
-            </div>
-            <a href="{{ route('production.show', $order) }}" class="text-sm text-gray-500 hover:text-gray-700">Kembali ke detail</a>
-        </div>
+    <x-ui.page-header title="Log Pekerjaan" :subtitle="'Nomor Order: '.$order->order_number">
+        <x-slot:breadcrumb>Lab / Papan Produksi / {{ $order->order_number }}</x-slot:breadcrumb>
+        <x-slot:actions>
+            <x-ui.button variant="secondary" :href="route('production.show', $order)">&larr; Kembali ke detail</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
 
-        <table class="mt-4 min-w-full divide-y divide-gray-200 text-sm">
-            <thead><tr class="text-left text-gray-500">
-                <th class="px-3 py-2 font-medium">Aktivitas</th>
-                <th class="px-3 py-2 font-medium">Teknisi</th>
-                <th class="px-3 py-2 font-medium text-right">Durasi (menit)</th>
-                <th class="px-3 py-2 font-medium">Oleh</th>
-                <th class="px-3 py-2 font-medium">Waktu</th>
-                <th class="px-3 py-2 font-medium">Catatan</th>
-            </tr></thead>
-            <tbody class="divide-y divide-gray-100">
-                @forelse ($workLogs as $log)
-                    <tr>
-                        <td class="px-3 py-2 font-medium text-gray-900">{{ $workLogLabels[$log->event_type] ?? $log->event_type }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ $log->assignment?->technician?->name ?? '—' }}</td>
-                        <td class="px-3 py-2 text-right text-gray-600">{{ $log->duration_minutes }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ $log->performedBy?->name ?? 'Sistem' }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ format_datetime_id($log->created_at) }}</td>
-                        <td class="px-3 py-2 text-gray-600">{{ $log->notes ?? '—' }}</td>
-                    </tr>
-                @empty
-                    <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada log pekerjaan.</td></tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
+    <x-ui.table>
+        <thead class="bg-navy-50 text-ink"><tr>
+            <th class="px-3 py-2 text-left font-medium">Aktivitas</th>
+            <th class="px-3 py-2 text-left font-medium">Teknisi</th>
+            <th class="px-3 py-2 text-right font-medium">Durasi (menit)</th>
+            <th class="px-3 py-2 text-left font-medium">Oleh</th>
+            <th class="px-3 py-2 text-left font-medium">Waktu</th>
+            <th class="px-3 py-2 text-left font-medium">Catatan</th>
+        </tr></thead>
+        <tbody class="divide-y divide-hairline">
+            @forelse ($workLogs as $log)
+                <tr class="transition-colors hover:bg-navy-50">
+                    <td class="px-3 py-2 font-medium text-navy">{{ $workLogLabels[$log->event_type] ?? $log->event_type }}</td>
+                    <td class="px-3 py-2 text-ink-soft">{{ $log->assignment?->technician?->name ?? '—' }}</td>
+                    <td class="px-3 py-2 text-right text-ink-soft">{{ $log->duration_minutes }}</td>
+                    <td class="px-3 py-2 text-ink-soft">{{ $log->performedBy?->name ?? 'Sistem' }}</td>
+                    <td class="px-3 py-2 text-ink-soft">{{ format_datetime_id($log->created_at) }}</td>
+                    <td class="px-3 py-2 text-ink-soft">{{ $log->notes ?? '—' }}</td>
+                </tr>
+            @empty
+                <tr>
+                    <td colspan="6" class="px-3 py-6">
+                        <x-ui.empty-state title="Belum ada log pekerjaan" description="Aktivitas produksi teknisi akan tercatat di sini." />
+                    </td>
+                </tr>
+            @endforelse
+        </tbody>
+    </x-ui.table>
 </x-settings-shell>

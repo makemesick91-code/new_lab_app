@@ -1,16 +1,16 @@
 <x-settings-shell title="Ubah Order Lab">
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <div class="px-6 pt-6">
-            <p class="text-sm text-gray-500">Nomor Order</p>
-            <p class="font-semibold text-gray-900">{{ $order->order_number }}</p>
-        </div>
-        <form method="POST" action="{{ route('lab-orders.update', $order) }}" class="p-6 space-y-6">
+    <x-ui.page-header title="Ubah Order Lab" :subtitle="'Nomor Order: '.$order->order_number">
+        <x-slot:breadcrumb>Lab / Order Lab / {{ $order->order_number }} / Ubah</x-slot:breadcrumb>
+    </x-ui.page-header>
+
+    <x-ui.card>
+        <form method="POST" action="{{ route('lab-orders.update', $order) }}" class="space-y-6">
             @csrf @method('PUT')
             @include('lab-orders._form', ['order' => $order])
             <div class="flex items-center gap-3">
-                <button type="submit" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">Perbarui Order</button>
-                <a href="{{ route('lab-orders.show', $order) }}" class="text-sm text-gray-500 hover:text-gray-700">Batal</a>
+                <x-ui.button type="submit">Perbarui Order</x-ui.button>
+                <x-ui.button variant="secondary" :href="route('lab-orders.show', $order)">Batal</x-ui.button>
             </div>
         </form>
-    </div>
+    </x-ui.card>
 </x-settings-shell>

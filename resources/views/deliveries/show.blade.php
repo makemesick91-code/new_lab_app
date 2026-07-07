@@ -11,94 +11,78 @@
         'URGENT' => 'Mendesak',
         'SUPER_URGENT' => 'Sangat Mendesak',
     ];
-    $statusBadgeClasses = [
-        'READY_FOR_DELIVERY' => 'bg-gray-100 text-gray-700 ring-gray-200',
-        'IN_DELIVERY' => 'bg-teal-50 text-teal-800 ring-teal-200',
-        'DELIVERED' => 'bg-emerald-50 text-emerald-800 ring-emerald-200',
-        'COMPLETED' => 'bg-teal-100 text-teal-900 ring-teal-300',
-        'CANCELLED' => 'bg-rose-50 text-rose-800 ring-rose-200',
-    ];
 @endphp
 
 <x-settings-shell title="Detail Pengiriman">
+    <x-ui.page-header :title="$delivery->delivery_number">
+        <x-slot:breadcrumb>Lab / Pengiriman / {{ $delivery->delivery_number }}</x-slot:breadcrumb>
+        <x-slot:actions>
+            <x-lab.status-badge :status="$delivery->status" />
+            <x-ui.button variant="secondary" :href="route('deliveries.index')">&larr; Kembali ke antrean</x-ui.button>
+        </x-slot:actions>
+    </x-ui.page-header>
+
     <div class="space-y-6">
-        <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <div class="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Pengiriman</p>
-                    <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $delivery->delivery_number }}</h2>
-                    <span class="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset {{ $statusBadgeClasses[$delivery->status] ?? 'bg-gray-100 text-gray-700 ring-gray-200' }}">
-                        {{ $statusLabels[$delivery->status] ?? $delivery->status }}
-                    </span>
-                </div>
-                <a href="{{ route('deliveries.index') }}" class="text-sm font-medium text-gray-500 hover:text-teal-700">Kembali ke antrean</a>
-            </div>
-            <dl class="mt-5 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                <div><dt class="text-gray-500">Order</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->labOrder?->order_number }}</dd></div>
-                <div><dt class="text-gray-500">Klinik</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->labOrder?->clinic?->name }}</dd></div>
-                <div><dt class="text-gray-500">Dokter</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->labOrder?->doctor?->name }}</dd></div>
-                <div><dt class="text-gray-500">Pasien</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->labOrder?->patient?->name ?? '-' }}</dd></div>
-                <div><dt class="text-gray-500">Prioritas</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $priorityLabels[$delivery->labOrder?->priority] ?? $delivery->labOrder?->priority }}</dd></div>
-                <div><dt class="text-gray-500">Kurir</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->courier?->name ?? '-' }}</dd></div>
+        <x-ui.card>
+            <dl class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
+                <div><dt class="text-ink-soft">Order</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->labOrder?->order_number }}</dd></div>
+                <div><dt class="text-ink-soft">Klinik</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->labOrder?->clinic?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Dokter</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->labOrder?->doctor?->name }}</dd></div>
+                <div><dt class="text-ink-soft">Pasien</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->labOrder?->patient?->name ?? '-' }}</dd></div>
+                <div><dt class="text-ink-soft">Prioritas</dt><dd class="mt-0.5 font-medium text-navy">{{ $priorityLabels[$delivery->labOrder?->priority] ?? $delivery->labOrder?->priority }}</dd></div>
+                <div><dt class="text-ink-soft">Kurir</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->courier?->name ?? '-' }}</dd></div>
             </dl>
-        </div>
+        </x-ui.card>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-3">
-                <h3 class="text-sm font-semibold text-gray-900">Penugasan Kurir</h3>
+            <x-ui.card title="Penugasan Kurir">
                 @can('assignCourier', $delivery)
                     <form method="POST" action="{{ route($delivery->courier_id ? 'deliveries.reassign-courier' : 'deliveries.assign-courier', $delivery) }}" class="space-y-3">
                         @csrf
-                        <select name="courier_id" class="w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select name="courier_id" class="w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                             @foreach ($couriers as $courier)
                                 <option value="{{ $courier->id }}" @selected($delivery->courier_id === $courier->id)>{{ $courier->name }}</option>
                             @endforeach
                         </select>
-                        <input type="text" name="notes" placeholder="{{ $delivery->courier_id ? 'Catatan pergantian wajib diisi' : 'Catatan penugasan' }}" class="w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                        <button class="rounded-lg bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">{{ $delivery->courier_id ? 'Ganti Kurir' : 'Tugaskan Kurir' }}</button>
+                        <input type="text" name="notes" placeholder="{{ $delivery->courier_id ? 'Catatan pergantian wajib diisi' : 'Catatan penugasan' }}" class="w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
+                        <x-ui.button type="submit" size="sm" :variant="$delivery->courier_id ? 'warning' : 'primary'">{{ $delivery->courier_id ? 'Ganti Kurir' : 'Tugaskan Kurir' }}</x-ui.button>
                     </form>
                 @else
-                    <p class="text-sm text-gray-400">Tidak ada aksi penugasan tersedia.</p>
+                    <p class="text-sm text-ink-muted">Tidak ada aksi penugasan tersedia.</p>
                 @endcan
-            </div>
+            </x-ui.card>
 
-            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-3">
-                <h3 class="text-sm font-semibold text-gray-900">Lifecycle Pengiriman</h3>
+            <x-ui.card title="Lifecycle Pengiriman">
                 <div class="flex flex-wrap gap-2">
                     @can('startDelivery', $delivery)
                         <form method="POST" action="{{ route('deliveries.start', $delivery) }}">
                             @csrf
-                            <button class="rounded-lg bg-teal-700 px-3 py-2 text-sm font-medium text-white hover:bg-teal-600">Mulai Pengiriman</button>
+                            <x-ui.button type="submit" size="sm">Mulai Pengiriman</x-ui.button>
                         </form>
                     @endcan
                     @can('completeDelivery', $delivery)
                         <form method="POST" action="{{ route('deliveries.complete', $delivery) }}">
                             @csrf
-                            <button class="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">Selesaikan Pengiriman</button>
+                            <x-ui.button type="submit" size="sm" variant="success">Selesaikan Pengiriman</x-ui.button>
                         </form>
                     @endcan
                 </div>
-                <p class="text-sm text-gray-500">Dimulai: {{ format_datetime_id($delivery->started_at) }}</p>
-                <p class="text-sm text-gray-500">Diselesaikan: {{ format_datetime_id($delivery->completed_at) }}</p>
-            </div>
+                <p class="mt-3 text-sm text-ink-soft">Dimulai: {{ format_datetime_id($delivery->started_at) }}</p>
+                <p class="text-sm text-ink-soft">Diselesaikan: {{ format_datetime_id($delivery->completed_at) }}</p>
+            </x-ui.card>
         </div>
 
-        <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm space-y-4">
-            <div>
-                <h3 class="text-sm font-semibold text-gray-900">Panel POD</h3>
-                <p class="mt-1 text-sm text-gray-500">Bukti penerimaan dengan tanda tangan manual penerima.</p>
-            </div>
-
+        <x-ui.card title="Panel POD" description="Bukti penerimaan dengan tanda tangan manual penerima.">
             <dl class="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
-                <div><dt class="text-gray-500">Penerima</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->receiver_name ?? '-' }}</dd></div>
-                <div><dt class="text-gray-500">Diterima Pada</dt><dd class="mt-0.5 font-medium text-gray-900">{{ format_datetime_id($delivery->received_at) }}</dd></div>
-                <div><dt class="text-gray-500">Catatan</dt><dd class="mt-0.5 font-medium text-gray-900">{{ $delivery->delivery_notes ?? '-' }}</dd></div>
+                <div><dt class="text-ink-soft">Penerima</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->receiver_name ?? '-' }}</dd></div>
+                <div><dt class="text-ink-soft">Diterima Pada</dt><dd class="mt-0.5 font-medium text-navy">{{ format_datetime_id($delivery->received_at) }}</dd></div>
+                <div><dt class="text-ink-soft">Catatan</dt><dd class="mt-0.5 font-medium text-navy">{{ $delivery->delivery_notes ?? '-' }}</dd></div>
             </dl>
 
             @if ($delivery->hasSignature())
-                <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                    <p class="text-sm font-medium text-gray-700">Tanda Tangan Penerima</p>
-                    <div class="mt-2 inline-block rounded-lg border border-gray-200 bg-white p-2">
+                <div class="mt-4 rounded-lg border border-hairline bg-navy-50 p-4">
+                    <p class="text-sm font-medium text-ink">Tanda Tangan Penerima</p>
+                    <div class="mt-2 inline-block rounded-lg border border-hairline bg-surface p-2">
                         @if ($delivery->receiver_signature_data)
                             <img src="{{ $delivery->receiver_signature_data }}" alt="Tanda tangan penerima" class="max-h-32 max-w-full">
                         @elseif ($delivery->receiver_signature_path)
@@ -109,69 +93,66 @@
             @endif
 
             @can('uploadPod', $delivery)
-                <form method="POST" action="{{ route('deliveries.pod', $delivery) }}">
+                <form method="POST" action="{{ route('deliveries.pod', $delivery) }}" class="mt-4">
                     @csrf
                     @include('deliveries._pod-form', [
                         'delivery' => $delivery,
                         'submitLabel' => 'Unggah POD',
-                        'buttonClass' => 'bg-teal-700 hover:bg-teal-600 focus:ring-teal-500',
+                        'buttonVariant' => 'primary',
                     ])
                 </form>
             @endcan
 
             @can('markDelivered', $delivery)
-                <form method="POST" action="{{ route('deliveries.mark-delivered', $delivery) }}">
+                <form method="POST" action="{{ route('deliveries.mark-delivered', $delivery) }}" class="mt-4">
                     @csrf
                     @include('deliveries._pod-form', [
                         'delivery' => $delivery,
                         'submitLabel' => 'Tandai Terkirim',
-                        'buttonClass' => 'bg-emerald-600 hover:bg-emerald-500 focus:ring-emerald-500',
+                        'buttonVariant' => 'success',
                     ])
                 </form>
             @endcan
-        </div>
+        </x-ui.card>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                <h3 class="text-sm font-semibold text-gray-900">Panel Bukti</h3>
-                <ul class="mt-3 space-y-2 text-sm">
+            <x-ui.card title="Panel Bukti">
+                <ul class="space-y-2 text-sm">
                     @forelse ($delivery->attachments as $attachment)
-                        <li class="flex items-center justify-between border-b border-gray-100 pb-2">
-                            <span>{{ $attachment->file_name }} <span class="text-xs text-gray-400">({{ $attachment->category }})</span></span>
-                            <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="font-medium text-teal-700 hover:text-teal-600">Buka</a>
+                        <li class="flex items-center justify-between border-b border-hairline pb-2">
+                            <span class="text-navy">{{ $attachment->file_name }} <span class="text-xs text-ink-muted">({{ $attachment->category }})</span></span>
+                            <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="font-medium text-brand-700 hover:text-brand-800">Buka</a>
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada bukti yang diunggah.</li>
+                        <li class="text-ink-muted">Belum ada bukti yang diunggah.</li>
                     @endforelse
                 </ul>
-            </div>
-            <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                <h3 class="text-sm font-semibold text-gray-900">Riwayat Status</h3>
-                <ul class="mt-3 space-y-2 text-sm">
+            </x-ui.card>
+            <x-ui.card title="Riwayat Status">
+                <ul class="space-y-2 text-sm">
                     @forelse ($delivery->labOrder?->statusLogs->sortByDesc('changed_at') ?? [] as $log)
-                        <li class="border-b border-gray-100 pb-2">
-                            <p class="font-medium">{{ $statusLabels[$log->old_status] ?? $log->old_status }} -> {{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
-                            <p class="text-gray-500">{{ format_datetime_id($log->changed_at) }} oleh {{ $log->changedBy?->name ?? 'Sistem' }}</p>
+                        <li class="border-b border-hairline pb-2">
+                            <p class="font-medium text-navy">{{ $statusLabels[$log->old_status] ?? $log->old_status }} -> {{ $statusLabels[$log->new_status] ?? $log->new_status }}</p>
+                            <p class="text-ink-soft">{{ format_datetime_id($log->changed_at) }} oleh {{ $log->changedBy?->name ?? 'Sistem' }}</p>
                         </li>
                     @empty
-                        <li class="text-gray-400">Belum ada riwayat status.</li>
+                        <li class="text-ink-muted">Belum ada riwayat status.</li>
                     @endforelse
                 </ul>
-            </div>
+            </x-ui.card>
         </div>
 
-        <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h3 class="text-sm font-semibold text-gray-900">Riwayat Audit</h3>
-            <ul class="mt-3 space-y-2 text-sm">
+        <x-ui.card title="Riwayat Audit">
+            <ul class="space-y-2 text-sm">
                 @forelse ($delivery->auditLogs->sortByDesc('performed_at') as $log)
-                    <li class="border-b border-gray-100 pb-2">
-                        <p class="font-medium">{{ $log->action }}</p>
-                        <p class="text-gray-500">{{ format_datetime_id($log->performed_at) }} oleh {{ $log->performer?->name ?? 'Sistem' }}</p>
+                    <li class="border-b border-hairline pb-2">
+                        <p class="font-medium text-navy">{{ $log->action }}</p>
+                        <p class="text-ink-soft">{{ format_datetime_id($log->performed_at) }} oleh {{ $log->performer?->name ?? 'Sistem' }}</p>
                     </li>
                 @empty
-                    <li class="text-gray-400">Belum ada catatan audit.</li>
+                    <li class="text-ink-muted">Belum ada catatan audit.</li>
                 @endforelse
             </ul>
-        </div>
+        </x-ui.card>
     </div>
 </x-settings-shell>
