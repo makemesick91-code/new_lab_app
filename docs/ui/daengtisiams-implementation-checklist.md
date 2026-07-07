@@ -31,9 +31,22 @@ Setiap komponen `x-ui.*` harus mendukung (bila relevan): default · hover · foc
 - [x] `architecture:ui-governance-check` diperkuat dengan rule owner-dashboard (non-brittle).
 - [x] Evidence: `docs/sprints/uix-2-dashboard-owner-polish.md`.
 
+## Acceptance — UIX-3 Kunjungan list polish (2026-07-07)
+- [x] Kunjungan list (`rme/visits/index.blade.php`) memakai `x-ui.page-header`/`x-ui.filter-bar`/`x-ui.input`/`x-ui.select`/`x-ui.kpi-card`/`x-ui.card`/`x-ui.table`/`x-ui.badge`/`x-ui.button`/`x-ui.empty-state`.
+- [x] Status badge memakai `:status` (design-system status→tone map), label Indonesia sebagai slot.
+- [x] Semua warna via semantic token (navy/ink/hairline/brand/surface); tidak ada teal legacy; tidak ada hex hardcoded.
+- [x] Filter bar (search/tanggal/status/cabang) + quick status tabs presentation-only memakai param `status` yang sudah ada.
+- [x] Tidak ada perubahan controller/service/query/route/permission/BranchContext; nama param GET dipertahankan.
+- [x] Halaman ini menjadi **reference implementation** untuk seluruh list page berikutnya.
+- [x] `architecture:ui-governance-check` diperkuat dengan rule list-page (non-brittle).
+- [x] Evidence: `docs/sprints/uix-3-kunjungan-list-polish.md`.
+
+## List-page standard (wajib untuk semua list page berikutnya)
+Setiap halaman list/index (RME, Kasir, Inventory, Procurement, Lab, Report) **wajib**: `x-ui.page-header` · `x-ui.filter-bar` · `x-ui.table` · `x-ui.badge` (`:status` untuk status domain) · `x-ui.button` · `x-ui.empty-state` · semantic token. Dilarang membuat table/badge/button dari nol, hardcode warna, atau memakai teal legacy.
+
 ## Migration order
 1. [x] UIX-2 Dashboard Owner polish
-2. UIX-3 Kunjungan list polish
+2. [x] UIX-3 Kunjungan list polish
 3. UIX-4 RME + Odontogram polish
 4. UIX-5 Kasir/payment polish
 5. UIX-6 Inventory table/dashboard polish

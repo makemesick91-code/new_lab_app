@@ -1,213 +1,221 @@
 <x-settings-shell title="Kunjungan Pasien">
     @php
+        // Presentation-only labels. Status tone is resolved by x-ui.badge :status
+        // (UIX design-system status map). No business logic here.
         $statusLabels = [
-            'registered'  => 'Terdaftar',
-            'waiting'     => 'Menunggu',
-            'in_progress' => 'Dalam Pemeriksaan',
-            'completed'   => 'Selesai',
-            'cancelled'   => 'Dibatalkan',
+            'registered'      => 'Terdaftar',
+            'waiting'         => 'Menunggu',
+            'in_progress'     => 'Dalam Pemeriksaan',
+            'cashier_pending' => 'Menunggu Kasir',
+            'completed'       => 'Selesai',
+            'cancelled'       => 'Dibatalkan',
         ];
-        $statusTone = [
-            'registered'  => 'info',
-            'waiting'     => 'warning',
-            'in_progress' => 'primary',
-            'completed'   => 'success',
-            'cancelled'   => 'danger',
-        ];
+        $hasActiveFilters = $filters['search'] || $filters['status'] || $filters['visit_date'] || $filters['branch_id'];
     @endphp
 
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">Kunjungan Pasien</h2>
-                <p class="mt-1 text-sm text-gray-500">Antrian dan riwayat kunjungan seluruh Cabang RME aktif.</p>
-            </div>
+        <x-ui.page-header
+            title="Kunjungan Pasien"
+            subtitle="Antrian dan riwayat kunjungan seluruh Cabang RME aktif.">
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
-                <x-ui.button variant="primary" :href="route('rme.visits.create')">+ Daftar Kunjungan</x-ui.button>
+                <x-slot:actions>
+                    <x-ui.button variant="primary" :href="route('rme.visits.create')">+ Daftar Kunjungan</x-ui.button>
+                </x-slot:actions>
             @endcan
-        </div>
+        </x-ui.page-header>
 
         @include('rme.partials.cross-branch-rm-lookup')
 
+        {{-- KPI quick-jump cards (drilldowns preserve the existing status filter params). --}}
+        @php
+            $branchQuery = $filters['branch_id'] ? ['branch_id' => $filters['branch_id']] : [];
+            $rmeWidgetDefs = [
+                ['label' => 'Kunjungan Hari Ini', 'value' => $rmeWidgets['visits_today'] ?? 0, 'href' => route('rme.visits.index', $branchQuery)],
+                ['label' => 'Menunggu', 'value' => $rmeWidgets['waiting'] ?? 0, 'href' => route('rme.visits.index', $branchQuery + ['status' => 'waiting'])],
+                ['label' => 'Sedang Dilayani', 'value' => $rmeWidgets['in_progress'] ?? 0, 'href' => route('rme.visits.index', $branchQuery + ['status' => 'in_progress'])],
+                ['label' => 'RM Draft', 'value' => $rmeWidgets['draft_medical_records'] ?? 0, 'href' => route('rme.medical-records.index', ['status' => 'draft'])],
+                ['label' => 'RM Final Hari Ini', 'value' => $rmeWidgets['finalized_today'] ?? 0, 'href' => route('rme.medical-records.index', ['status' => 'final'])],
+            ];
+        @endphp
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            @php
-                $branchQuery = $filters['branch_id'] ? ['branch_id' => $filters['branch_id']] : [];
-                $rmeWidgetDefs = [
-                    [
-                        'label' => 'Kunjungan Hari Ini',
-                        'value' => $rmeWidgets['visits_today'] ?? 0,
-                        'href'  => route('rme.visits.index', $branchQuery),
-                    ],
-                    [
-                        'label' => 'Menunggu',
-                        'value' => $rmeWidgets['waiting'] ?? 0,
-                        'href'  => route('rme.visits.index', $branchQuery + ['status' => 'waiting']),
-                    ],
-                    [
-                        'label' => 'Sedang Dilayani',
-                        'value' => $rmeWidgets['in_progress'] ?? 0,
-                        'href'  => route('rme.visits.index', $branchQuery + ['status' => 'in_progress']),
-                    ],
-                    [
-                        'label' => 'RM Draft',
-                        'value' => $rmeWidgets['draft_medical_records'] ?? 0,
-                        'href'  => route('rme.medical-records.index', ['status' => 'draft']),
-                    ],
-                    [
-                        'label' => 'RM Final Hari Ini',
-                        'value' => $rmeWidgets['finalized_today'] ?? 0,
-                        'href'  => route('rme.medical-records.index', ['status' => 'final']),
-                    ],
-                ];
-            @endphp
             @foreach ($rmeWidgetDefs as $widget)
                 <a href="{{ $widget['href'] }}"
-                   class="ui-card flex flex-col p-4 transition-shadow hover:border-teal-300 hover:shadow-md">
-                    <span class="text-2xl font-bold text-gray-900">{{ $widget['value'] }}</span>
-                    <span class="mt-1 text-xs font-medium text-gray-500">{{ $widget['label'] }}</span>
+                   class="group rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2">
+                    <x-ui.kpi-card
+                        :label="$widget['label']"
+                        :value="$widget['value']"
+                        class="h-full transition-shadow group-hover:shadow-md" />
                 </a>
             @endforeach
         </div>
 
-        <x-ui.card padding="p-4">
-            <form method="GET" action="{{ route('rme.visits.index') }}">
-                <div class="flex flex-wrap items-end gap-2">
-                    <div class="min-w-[12rem] flex-1">
-                        <label for="visit-search" class="text-sm font-medium text-gray-700">Cari kunjungan</label>
-                        <input id="visit-search" type="text" name="search" value="{{ $filters['search'] }}" placeholder="Cari nomor atau nama pasien"
-                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                    </div>
-                    <div>
-                        <label for="visit-date" class="text-sm font-medium text-gray-700">Tanggal</label>
-                        <input id="visit-date" type="date" name="visit_date" value="{{ $filters['visit_date'] }}"
-                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                    </div>
-                    <div>
-                        <label for="visit-status" class="text-sm font-medium text-gray-700">Status</label>
-                        <select id="visit-status" name="status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">Semua status</option>
-                            @foreach ($statuses as $status)
-                                <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="visit-branch" class="text-sm font-medium text-gray-700">Cabang RME</label>
-                        <select id="visit-branch" name="branch_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
-                            <option value="">Semua Cabang RME</option>
-                            @foreach ($rmeBranches as $branch)
-                                <option value="{{ $branch->id }}" @selected((int) $filters['branch_id'] === (int) $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <x-ui.button type="submit" variant="neutral">Terapkan</x-ui.button>
-                    @if ($filters['search'] || $filters['status'] || $filters['visit_date'] || $filters['branch_id'])
-                        <x-ui.button variant="secondary" :href="route('rme.visits.index')">Atur Ulang</x-ui.button>
-                    @endif
-                </div>
-            </form>
-        </x-ui.card>
+        {{-- Filter bar (search / date / status / branch). Same GET params as before. --}}
+        <x-ui.filter-bar :action="route('rme.visits.index')" method="GET">
+            <div class="w-full md:flex-1 md:min-w-[14rem]">
+                <x-ui.input
+                    label="Cari kunjungan"
+                    id="visit-search"
+                    name="search"
+                    :value="$filters['search']"
+                    placeholder="Cari nomor atau nama pasien" />
+            </div>
+            <div class="w-full sm:w-auto">
+                <x-ui.input label="Tanggal" id="visit-date" name="visit_date" type="date" :value="$filters['visit_date']" />
+            </div>
+            <div class="w-full sm:w-auto">
+                <x-ui.select label="Status" id="visit-status" name="status">
+                    <option value="">Semua status</option>
+                    @foreach ($statuses as $status)
+                        <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
+                    @endforeach
+                </x-ui.select>
+            </div>
+            <div class="w-full sm:w-auto">
+                <x-ui.select label="Cabang RME" id="visit-branch" name="branch_id">
+                    <option value="">Semua Cabang RME</option>
+                    @foreach ($rmeBranches as $branch)
+                        <option value="{{ $branch->id }}" @selected((int) $filters['branch_id'] === (int) $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
+                    @endforeach
+                </x-ui.select>
+            </div>
+            <x-slot:actions>
+                <x-ui.button type="submit" variant="primary">Terapkan</x-ui.button>
+                @if ($hasActiveFilters)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.index')">Atur Ulang</x-ui.button>
+                @endif
+            </x-slot:actions>
+        </x-ui.filter-bar>
+
+        {{-- Quick status tabs — presentation-only, drive the existing `status` param. --}}
+        @php
+            $tabBaseParams = array_filter([
+                'search' => $filters['search'],
+                'visit_date' => $filters['visit_date'],
+                'branch_id' => $filters['branch_id'],
+            ], fn ($v) => $v !== null && $v !== '');
+            $statusTabs = ['' => 'Semua'];
+            foreach ($statuses as $status) {
+                $statusTabs[$status] = $statusLabels[$status] ?? $status;
+            }
+        @endphp
+        <div class="flex flex-wrap gap-2">
+            @foreach ($statusTabs as $value => $label)
+                @php $tabActive = (string) ($filters['status'] ?? '') === (string) $value; @endphp
+                <a href="{{ route('rme.visits.index', $value !== '' ? $tabBaseParams + ['status' => $value] : $tabBaseParams) }}"
+                   class="rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 {{ $tabActive ? 'bg-brand-600 text-white ring-brand-600' : 'bg-surface text-ink-soft ring-hairline hover:bg-navy-50' }}">
+                    {{ $label }}
+                </a>
+            @endforeach
+        </div>
 
         <x-ui.card padding="">
-            <div class="border-b border-gray-200 px-4 py-3">
-                <h3 class="text-base font-semibold text-gray-900">Daftar Kunjungan</h3>
-                <p class="text-sm text-gray-500">{{ $visits->total() }} kunjungan ditemukan.</p>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-3">
+                <div>
+                    <h3 class="text-base font-semibold text-navy">Daftar Kunjungan</h3>
+                    <p class="text-sm text-ink-soft">{{ $visits->total() }} kunjungan ditemukan.</p>
+                </div>
             </div>
 
-            <x-ui.table>
-                <thead class="bg-gray-50">
-                    <tr class="text-left text-gray-500">
-                        <th scope="col" class="px-4 py-3 font-medium">No. Kunjungan</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Antrian</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Klinik/Cabang</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
-                        <th scope="col" class="px-3 py-3 font-medium">Status</th>
-                        <th scope="col" class="px-4 py-3 text-right font-medium">Aksi</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100">
-                    @forelse ($visits as $visit)
-                        @php
-                            $isTerminal = in_array($visit->status, [
-                                \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED,
-                                \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED,
-                            ]);
-                        @endphp
-                        <tr class="hover:bg-gray-50 {{ $isTerminal ? 'opacity-60' : '' }}">
-                            <td class="px-4 py-3 font-mono text-gray-700">{{ $visit->visit_number }}</td>
-                            <td class="px-3 py-3 text-center font-semibold text-gray-900">{{ $visit->queue_number }}</td>
-                            <td class="px-3 py-3 font-medium text-gray-900">
-                                {{ $visit->patient?->name ?? '—' }}
-                                @if ($visit->patient?->medical_record_number)
-                                    <span class="block font-mono text-xs font-normal text-gray-400">{{ $visit->patient->medical_record_number }}</span>
-                                @endif
-                            </td>
-                            <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
-                            <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
-                            <td class="px-3 py-3 text-gray-600">
+            @if ($visits->isEmpty())
+                <div class="px-4 py-8">
+                    <x-ui.empty-state
+                        title="Belum ada kunjungan."
+                        description="Daftarkan kunjungan baru untuk memulai antrian hari ini, atau sesuaikan filter pencarian.">
+                        @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
+                            <x-slot:action>
+                                <x-ui.button variant="primary" :href="route('rme.visits.create')">+ Daftar Kunjungan</x-ui.button>
+                            </x-slot:action>
+                        @endcan
+                    </x-ui.empty-state>
+                </div>
+            @else
+                <div class="overflow-x-auto">
+                    <x-ui.table>
+                        <thead class="bg-navy-50">
+                            <tr class="text-left text-ink-soft">
+                                <th scope="col" class="px-4 py-3 font-medium">No. Kunjungan</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Antrian</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Pasien</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Klinik/Cabang</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Dokter</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Tanggal</th>
+                                <th scope="col" class="px-3 py-3 font-medium">Status</th>
+                                <th scope="col" class="px-4 py-3 text-right font-medium">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-hairline">
+                            @foreach ($visits as $visit)
                                 @php
-                                    $branchRooms = ($roomsByBranch ?? collect())->get($visit->branch_id) ?? collect();
+                                    $isTerminal = in_array($visit->status, [
+                                        \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED,
+                                        \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CANCELLED,
+                                    ]);
                                 @endphp
-                                @if ($isTerminal || $branchRooms->isEmpty())
-                                    <span class="{{ $visit->clinicRoom ? 'text-gray-700' : 'text-gray-400' }}">
-                                        {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
-                                    </span>
-                                @elseif (auth()->user()?->can('update', $visit))
-                                    <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
-                                          class="flex flex-wrap items-center gap-1.5">
-                                        @csrf
-                                        @method('PATCH')
-                                        <select name="clinic_room_id"
-                                                class="min-w-[8rem] rounded-lg border-gray-300 text-xs focus:border-teal-500 focus:ring-teal-500">
-                                            <option value="">- Pilih ruangan -</option>
-                                            @foreach ($branchRooms as $room)
-                                                <option value="{{ $room->id }}" @selected($visit->clinic_room_id == $room->id)>{{ $room->name }}</option>
-                                            @endforeach
-                                        </select>
-                                        <button type="submit"
-                                                class="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-teal-700">
-                                            Simpan
-                                        </button>
-                                    </form>
-                                @else
-                                    <span class="{{ $visit->clinicRoom ? 'text-gray-700' : 'text-gray-400' }}">
-                                        {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
-                                    </span>
-                                @endif
-                            </td>
-                            <td class="px-3 py-3 text-gray-600">{{ $visit->visit_date?->format('d/m/Y') }}</td>
-                            <td class="px-3 py-3">
-                                <x-ui.badge :tone="$statusTone[$visit->status] ?? 'neutral'">
-                                    {{ $statusLabels[$visit->status] ?? $visit->status }}
-                                </x-ui.badge>
-                            </td>
-                            <td class="px-4 py-3">
-                                <div class="flex flex-wrap items-center justify-end gap-2">
-                                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $visit)" class="!px-3 !py-1.5 !text-xs">Detail</x-ui.button>
-                                    @if (!$isTerminal)
-                                        @can('update', $visit)
-                                            <x-ui.button variant="primary" :href="route('rme.visits.edit', $visit)" class="!px-3 !py-1.5 !text-xs">Ubah</x-ui.button>
-                                        @endcan
-                                    @endif
-                                </div>
-                            </td>
-                        </tr>
-                    @empty
-                        <tr>
-                            <td colspan="9" class="px-4 py-12 text-center">
-                                <p class="text-sm font-medium text-gray-900">Belum ada kunjungan.</p>
-                                <p class="mt-1 text-sm text-gray-500">Daftarkan kunjungan baru untuk memulai antrian hari ini.</p>
-                            </td>
-                        </tr>
-                    @endforelse
-                </tbody>
-            </x-ui.table>
+                                <tr class="transition-colors hover:bg-navy-50 {{ $isTerminal ? 'opacity-60' : '' }}">
+                                    <td class="px-4 py-3 font-mono text-ink">{{ $visit->visit_number }}</td>
+                                    <td class="px-3 py-3 text-center font-semibold text-navy">{{ $visit->queue_number }}</td>
+                                    <td class="px-3 py-3 font-medium text-navy">
+                                        {{ $visit->patient?->name ?? '—' }}
+                                        @if ($visit->patient?->medical_record_number)
+                                            <span class="block font-mono text-xs font-normal text-ink-muted">{{ $visit->patient->medical_record_number }}</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-3 py-3 text-ink-soft">{{ $visit->branch ? $visit->branch->code.' — '.$visit->branch->name : '—' }}</td>
+                                    <td class="px-3 py-3 text-ink-soft">{{ $visit->doctor?->name ?? '—' }}</td>
+                                    <td class="px-3 py-3 text-ink-soft">
+                                        @php
+                                            $branchRooms = ($roomsByBranch ?? collect())->get($visit->branch_id) ?? collect();
+                                        @endphp
+                                        @if ($isTerminal || $branchRooms->isEmpty())
+                                            <span class="{{ $visit->clinicRoom ? 'text-ink' : 'text-ink-muted' }}">
+                                                {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
+                                            </span>
+                                        @elseif (auth()->user()?->can('update', $visit))
+                                            <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
+                                                  class="flex flex-wrap items-center gap-1.5">
+                                                @csrf
+                                                @method('PATCH')
+                                                <select name="clinic_room_id"
+                                                        class="min-w-[8rem] rounded-lg border-hairline bg-surface text-xs text-navy focus:border-brand-500 focus:ring-brand-500">
+                                                    <option value="">- Pilih ruangan -</option>
+                                                    @foreach ($branchRooms as $room)
+                                                        <option value="{{ $room->id }}" @selected($visit->clinic_room_id == $room->id)>{{ $room->name }}</option>
+                                                    @endforeach
+                                                </select>
+                                                <x-ui.button type="submit" variant="primary" size="sm">Simpan</x-ui.button>
+                                            </form>
+                                        @else
+                                            <span class="{{ $visit->clinicRoom ? 'text-ink' : 'text-ink-muted' }}">
+                                                {{ $visit->clinicRoom?->name ?? 'Belum dipilih' }}
+                                            </span>
+                                        @endif
+                                    </td>
+                                    <td class="px-3 py-3 text-ink-soft">{{ $visit->visit_date?->format('d/m/Y') }}</td>
+                                    <td class="px-3 py-3">
+                                        <x-ui.badge :status="$visit->status">
+                                            {{ $statusLabels[$visit->status] ?? $visit->status }}
+                                        </x-ui.badge>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        <div class="flex flex-wrap items-center justify-end gap-2">
+                                            <x-ui.button variant="secondary" size="sm" :href="route('rme.visits.show', $visit)">Detail</x-ui.button>
+                                            @if (!$isTerminal)
+                                                @can('update', $visit)
+                                                    <x-ui.button variant="primary" size="sm" :href="route('rme.visits.edit', $visit)">Ubah</x-ui.button>
+                                                @endcan
+                                            @endif
+                                        </div>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </x-ui.table>
+                </div>
 
-            <div class="border-t border-gray-200 px-4 py-3">{{ $visits->links() }}</div>
+                <div class="border-t border-hairline px-4 py-3">{{ $visits->links() }}</div>
+            @endif
         </x-ui.card>
     </div>
 </x-settings-shell>
