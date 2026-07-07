@@ -25,13 +25,11 @@
     @endphp
 
     <div class="space-y-6">
-        <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-900">Sinkronisasi Dokter–Kasir</h2>
-            <p class="mt-1 text-sm text-gray-500">
-                Pantau status setiap kunjungan dari input dokter sampai siap dibayar — tanpa perlu konfirmasi manual ke dokter.
-            </p>
-        </div>
+        <x-ui.page-header
+            title="Sinkronisasi Dokter–Kasir"
+            subtitle="Pantau status setiap kunjungan dari input dokter sampai siap dibayar — tanpa perlu konfirmasi manual ke dokter.">
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
+        </x-ui.page-header>
 
         {{-- Ringkasan per status (klik untuk filter) --}}
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -41,12 +39,12 @@
                     $isActive = ($filters['group'] ?? null) === $key;
                 @endphp
                 <a href="{{ route('rme.cashier.handoff', array_merge(request()->only('search', 'branch_id'), $isActive ? [] : ['group' => $key])) }}"
-                   class="rounded-xl border p-3 transition {{ $isActive ? 'border-teal-500 bg-teal-50 ring-1 ring-teal-200' : 'border-gray-200 bg-white hover:border-gray-300' }}">
+                   class="rounded-xl border p-3 transition {{ $isActive ? 'border-brand-500 bg-brand-50 ring-1 ring-brand-100' : 'border-hairline bg-white hover:border-hairline' }}">
                     <div class="flex items-center justify-between gap-2">
-                        <span class="text-2xl font-semibold text-gray-900">{{ $counts[$key] ?? 0 }}</span>
+                        <span class="text-2xl font-semibold text-navy">{{ $counts[$key] ?? 0 }}</span>
                         <x-ui.badge :tone="$meta['tone']">&nbsp;</x-ui.badge>
                     </div>
-                    <p class="mt-1 text-xs font-medium text-gray-700">{{ $meta['label'] }}</p>
+                    <p class="mt-1 text-xs font-medium text-ink">{{ $meta['label'] }}</p>
                 </a>
             @endforeach
         </div>
@@ -55,15 +53,15 @@
             <form method="GET" action="{{ route('rme.cashier.handoff') }}">
                 <div class="flex flex-wrap items-end gap-2">
                     <div class="min-w-[12rem] flex-1">
-                        <label for="handoff-search" class="text-sm font-medium text-gray-700">Cari kunjungan</label>
+                        <label for="handoff-search" class="text-sm font-medium text-ink">Cari kunjungan</label>
                         <input id="handoff-search" type="text" name="search" value="{{ $filters['search'] ?? '' }}"
                                placeholder="No. kunjungan, nama pasien, atau No. RM"
-                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                               class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                     </div>
                     <div class="min-w-[10rem]">
-                        <label for="handoff-branch" class="text-sm font-medium text-gray-700">Cabang</label>
+                        <label for="handoff-branch" class="text-sm font-medium text-ink">Cabang</label>
                         <select id="handoff-branch" name="branch_id"
-                                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Semua Cabang RME</option>
                             @foreach ($branches as $branch)
                                 <option value="{{ $branch->id }}" @selected(($filters['branch_id'] ?? null) === $branch->id)>
@@ -88,19 +86,19 @@
             @if ($visits->isNotEmpty())
                 @php $meta = $groupMeta[$key]; @endphp
                 <x-ui.card padding="">
-                    <div class="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                    <div class="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3">
                         <div>
                             <div class="flex items-center gap-2">
                                 <x-ui.badge :tone="$meta['tone']">{{ $meta['label'] }}</x-ui.badge>
-                                <span class="text-sm text-gray-500">{{ $visits->count() }} kunjungan</span>
+                                <span class="text-sm text-ink-soft">{{ $visits->count() }} kunjungan</span>
                             </div>
-                            <p class="mt-1 text-xs text-gray-500">{{ $meta['hint'] }}</p>
+                            <p class="mt-1 text-xs text-ink-soft">{{ $meta['hint'] }}</p>
                         </div>
                     </div>
 
                     <x-ui.table>
-                        <thead class="bg-gray-50">
-                            <tr class="text-left text-gray-500">
+                        <thead class="bg-navy-50">
+                            <tr class="text-left text-ink-soft">
                                 <th scope="col" class="px-4 py-3 font-medium">No. RM / Pasien</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Cabang</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Ruangan</th>
@@ -113,7 +111,7 @@
                                 <th scope="col" class="px-4 py-3 text-right font-medium">Aksi</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100">
+                        <tbody class="divide-y divide-hairline">
                             @foreach ($visits as $visit)
                                 @php
                                     $invoice = $visit->rmeInvoice ?? null;
@@ -121,30 +119,30 @@
                                     $consentOk = $visit->hasVerifiedConsent();
                                     $isCashierPending = $visit->status === $cashierPendingStatus;
                                 @endphp
-                                <tr class="hover:bg-gray-50">
+                                <tr class="hover:bg-navy-50">
                                     <td class="px-4 py-3">
-                                        <span class="block font-medium text-gray-900">{{ $visit->patient?->name ?? '—' }}</span>
-                                        <span class="block font-mono text-xs text-gray-400">
+                                        <span class="block font-medium text-navy">{{ $visit->patient?->name ?? '—' }}</span>
+                                        <span class="block font-mono text-xs text-ink-muted">
                                             {{ $visit->patient?->medical_record_number ?? 'Belum ada RM' }}
                                             · {{ $visit->visit_number }}
                                         </span>
                                     </td>
-                                    <td class="px-3 py-3 text-gray-600">{{ $visit->branch ? $visit->branch->code : '—' }}</td>
+                                    <td class="px-3 py-3 text-ink-soft">{{ $visit->branch ? $visit->branch->code : '—' }}</td>
                                     <td class="px-3 py-3">
                                         @if ($visit->clinicRoom)
-                                            <span class="text-gray-700">{{ $visit->clinicRoom->name }}</span>
+                                            <span class="text-ink">{{ $visit->clinicRoom->name }}</span>
                                         @elseif ($visit->requiresRoomBeforeExam())
                                             <x-ui.badge tone="warning">Menunggu Ruangan</x-ui.badge>
-                                            <span class="mt-0.5 block text-xs text-amber-600">Belum siap diperiksa</span>
+                                            <span class="mt-0.5 block text-xs text-warning-700">Belum siap diperiksa</span>
                                         @else
-                                            <span class="text-xs text-gray-400">—</span>
+                                            <span class="text-xs text-ink-muted">—</span>
                                         @endif
                                     </td>
-                                    <td class="px-3 py-3 text-gray-600">{{ $visit->doctor?->name ?? '—' }}</td>
-                                    <td class="px-3 py-3 text-gray-600">
+                                    <td class="px-3 py-3 text-ink-soft">{{ $visit->doctor?->name ?? '—' }}</td>
+                                    <td class="px-3 py-3 text-ink-soft">
                                         {{ $visit->visit_date?->format('d/m/Y') ?? '—' }}
                                         @if ($visit->queue_number)
-                                            <span class="block text-xs text-gray-400">Antrean #{{ $visit->queue_number }}</span>
+                                            <span class="block text-xs text-ink-muted">Antrean #{{ $visit->queue_number }}</span>
                                         @endif
                                     </td>
                                     <td class="px-3 py-3">
@@ -161,7 +159,7 @@
                                             @php [$payLabel, $payTone] = $paymentStatusLabel[$invoice->status] ?? [$invoice->status, 'neutral']; @endphp
                                             <x-ui.badge :tone="$payTone">{{ $payLabel }}</x-ui.badge>
                                         @else
-                                            <span class="text-xs text-gray-400">Belum ditagih</span>
+                                            <span class="text-xs text-ink-muted">Belum ditagih</span>
                                         @endif
                                     </td>
                                     <td class="px-4 py-3">
@@ -171,7 +169,7 @@
                                             @elseif ($isCashierPending)
                                                 <x-ui.button variant="primary" :href="route('rme.cashier.create', $visit)" class="!px-3 !py-1.5 !text-xs">Buat Tagihan</x-ui.button>
                                             @else
-                                                <span class="text-xs text-gray-400">Menunggu dokter</span>
+                                                <span class="text-xs text-ink-muted">Menunggu dokter</span>
                                             @endif
                                         </div>
                                     </td>
@@ -185,12 +183,9 @@
         @endforelse
 
         @if ($total === 0)
-            <x-ui.card padding="p-12">
-                <div class="text-center">
-                    <p class="text-sm font-medium text-gray-900">Tidak ada kunjungan aktif pada antrean ini.</p>
-                    <p class="mt-1 text-sm text-gray-500">Semua kunjungan sudah selesai atau belum ada kunjungan baru hari ini.</p>
-                </div>
-            </x-ui.card>
+            <x-ui.empty-state
+                title="Tidak ada kunjungan aktif pada antrean ini."
+                description="Semua kunjungan sudah selesai atau belum ada kunjungan baru hari ini." />
         @endif
     </div>
 </x-settings-shell>
