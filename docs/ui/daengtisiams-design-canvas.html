@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DaengtisiaMS — Layar &amp; Komponen (Design Canvas)</title>
+<style>
+  :root{
+    --navy:#0F2540; --navy-700:#123151; --blue:#2563EB; --blue-600:#2563EB; --blue-700:#1D4ED8;
+    --gold:#C8A45C; --gold-soft:#F6EEDD; --bg:#F7F9FC; --surface:#FFFFFF;
+    --ink:#0F2540; --ink-2:#5B6B7F; --border:#E3E8EF;
+    --success:#059669; --danger:#DC2626; --warning:#D97706; --info:#2563EB;
+    --radius:12px; --shadow:0 1px 2px rgba(15,37,64,.06),0 4px 16px rgba(15,37,64,.06);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Figtree,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:28px;margin:0 0 4px} h2{font-size:20px;margin:40px 0 12px;border-bottom:1px solid var(--border);padding-bottom:8px}
+  h3{font-size:15px;margin:20px 0 8px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
+  .lede{color:var(--ink-2);max-width:70ch}
+  .grid{display:grid;gap:16px} .g2{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))} .g3{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))} .g4{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px}
+  .kpi{position:relative;overflow:hidden} .kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold)}
+  .kpi .label{font-size:12px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.05em}
+  .kpi .value{font-size:26px;font-weight:700;color:var(--navy);margin-top:6px}
+  .kpi .delta{font-size:12px;color:var(--success)}
+  .swatch{height:64px;border-radius:10px;border:1px solid var(--border)} .swrow{display:flex;flex-direction:column;gap:6px} .swrow small{color:var(--ink-2)}
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;padding:9px 16px;font-weight:600;font-size:14px;border:1px solid transparent;cursor:pointer}
+  .btn-primary{background:var(--blue);color:#fff} .btn-secondary{background:#fff;color:var(--ink);border-color:var(--border)}
+  .btn-gold{background:var(--gold);color:#3a2c07} .btn-danger{background:var(--danger);color:#fff} .btn-ghost{background:transparent;color:var(--blue)}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600;border:1px solid transparent}
+  .b-draft{background:#F1F5F9;color:#475569} .b-waiting{background:#FEF3C7;color:#92400E} .b-progress{background:#DBEAFE;color:#1D4ED8}
+  .b-cashier{background:#F6EEDD;color:#7a5a15} .b-paid{background:#D1FAE5;color:#065F46} .b-cancel{background:#FEE2E2;color:#991B1B}
+  table{width:100%;border-collapse:collapse;font-size:14px} th{ text-align:left;color:var(--ink-2);font-size:12px;text-transform:uppercase;letter-spacing:.04em;padding:10px 12px;border-bottom:1px solid var(--border)}
+  td{padding:11px 12px;border-bottom:1px solid var(--border)}
+  .shell{display:grid;grid-template-columns:220px 1fr;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:#fff}
+  .side{background:#fff;border-right:1px solid var(--border);padding:14px}
+  .side .brand{font-weight:800;color:var(--navy);margin-bottom:14px}
+  .side a{display:block;padding:9px 12px;border-radius:9px;color:var(--ink-2);text-decoration:none;font-size:14px;font-weight:500}
+  .side a.active{background:#EFF4FF;color:var(--blue-700);box-shadow:inset 3px 0 0 var(--gold)}
+  .top{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid var(--border)}
+  .chip{border:1px solid var(--border);border-radius:999px;padding:5px 12px;font-size:13px;color:var(--ink-2)}
+  .note{background:var(--gold-soft);border:1px solid #EAD9B0;border-radius:10px;padding:12px 14px;font-size:13px;color:#6b5416}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DaengtisiaMS — Layar &amp; Komponen</h1>
+  <p class="lede">Kanvas visual sumber kebenaran UI/UX. Arah: <strong>luxury healthcare SaaS</strong> — background putih/off-white, biru sebagai warna aksi/active/CTA, gold hanya aksen premium terbatas. Dokumen ini adalah refleksi in-repo dari file Claude Design (“DaengtisiaMS - Layar &amp; Komponen”). Token final ada di <code>tailwind.config.js</code> dan <code>docs/ui/daengtisiams-design-tokens.md</code>.</p>
+  <div class="note">Aturan gold: hanya untuk aksen premium, garis aksen KPI/revenue, dan highlight kecil. <strong>Gold tidak boleh menjadi primary CTA.</strong> Primary CTA selalu biru.</div>
+
+  <h2>Palet Warna</h2>
+  <div class="grid g4">
+    <div class="swrow"><div class="swatch" style="background:#0F2540"></div><small>navy / text &amp; brand dark</small></div>
+    <div class="swrow"><div class="swatch" style="background:#2563EB"></div><small>blue / primary action</small></div>
+    <div class="swrow"><div class="swatch" style="background:#C8A45C"></div><small>gold / accent only</small></div>
+    <div class="swrow"><div class="swatch" style="background:#F7F9FC"></div><small>bg / off-white</small></div>
+    <div class="swrow"><div class="swatch" style="background:#FFFFFF"></div><small>surface / white</small></div>
+    <div class="swrow"><div class="swatch" style="background:#059669"></div><small>success</small></div>
+    <div class="swrow"><div class="swatch" style="background:#DC2626"></div><small>danger</small></div>
+    <div class="swrow"><div class="swatch" style="background:#D97706"></div><small>warning</small></div>
+  </div>
+
+  <h2>Layout Shell (Sidebar putih + Topbar)</h2>
+  <div class="shell">
+    <div class="side">
+      <div class="brand">DaengtisiaMS</div>
+      <a class="active">Dasbor</a>
+      <a>Antrian Pasien</a>
+      <a>Rekam Medis</a>
+      <a>Kasir</a>
+      <a>Inventory</a>
+      <a>Lab</a>
+    </div>
+    <div>
+      <div class="top">
+        <div class="chip">Cabang: Makassar Pusat ▾</div>
+        <div style="display:flex;gap:10px;align-items:center"><span class="chip">Cari…</span><span class="chip">drg. A ▾</span></div>
+      </div>
+      <div style="padding:18px">
+        <h3>Dashboard Owner</h3>
+        <div class="grid g4">
+          <div class="card kpi"><div class="label">Pendapatan Bulan Ini</div><div class="value">Rp 128,4 jt</div><div class="delta">▲ 12%</div></div>
+          <div class="card kpi"><div class="label">Kunjungan</div><div class="value">642</div><div class="delta">▲ 4%</div></div>
+          <div class="card kpi"><div class="label">Piutang Aktif</div><div class="value">Rp 9,2 jt</div><div class="delta" style="color:#D97706">3 pasien</div></div>
+          <div class="card kpi"><div class="label">Lab Berjalan</div><div class="value">18</div><div class="delta">on track</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Tombol</h2>
+  <div class="card" style="display:flex;gap:12px;flex-wrap:wrap">
+    <button class="btn btn-primary">Simpan (Primary)</button>
+    <button class="btn btn-secondary">Batal (Secondary)</button>
+    <button class="btn btn-gold">Highlight Premium (Gold accent)</button>
+    <button class="btn btn-danger">Hapus (Danger)</button>
+    <button class="btn btn-ghost">Aksi Ringan (Ghost)</button>
+  </div>
+
+  <h2>Badge Status</h2>
+  <div class="card" style="display:flex;gap:8px;flex-wrap:wrap">
+    <span class="badge b-draft">draft</span>
+    <span class="badge b-waiting">waiting</span>
+    <span class="badge b-progress">in_progress</span>
+    <span class="badge b-cashier">cashier_pending</span>
+    <span class="badge b-paid">paid</span>
+    <span class="badge b-cancel">cancelled</span>
+  </div>
+
+  <h2>Tabel (kepadatan seimbang)</h2>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead><tr><th>No. RM</th><th>Pasien</th><th>Kunjungan</th><th>Status</th><th>Total</th></tr></thead>
+      <tbody>
+        <tr><td>RM-2026-0142</td><td>Andi P.</td><td>2026-07-07</td><td><span class="badge b-cashier">cashier_pending</span></td><td>Rp 350.000</td></tr>
+        <tr><td>RM-2026-0141</td><td>Siti R.</td><td>2026-07-07</td><td><span class="badge b-paid">paid</span></td><td>Rp 1.200.000</td></tr>
+        <tr><td>RM-2026-0140</td><td>Budi S.</td><td>2026-07-06</td><td><span class="badge b-progress">in_progress</span></td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>RME + Odontogram &middot; Kunjungan &middot; Kasir &middot; Inventory &middot; Lab</h2>
+  <p class="lede">Setiap modul memakai shell + komponen yang sama: page header, filter bar, tabel padat, badge status, KPI card. Odontogram/print/PDF mempertahankan layout struktural existing (tidak diubah oleh sprint fondasi ini). Inventory &amp; Lab mewarisi aturan tabel/badge/kartu yang sama; stok tetap ledger-derived (UI tidak menghitung stok).</p>
+</div>
+</body>
+</html>

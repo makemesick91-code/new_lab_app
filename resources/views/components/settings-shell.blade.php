@@ -3,8 +3,8 @@
 <x-app-layout>
     <x-slot name="header">
         <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">DaengtisiaMS</p>
-            <h2 class="text-xl font-semibold leading-tight text-gray-900">{{ $title }}</h2>
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">DaengtisiaMS</p>
+            <h2 class="text-xl font-semibold leading-tight text-navy">{{ $title }}</h2>
         </div>
     </x-slot>
 

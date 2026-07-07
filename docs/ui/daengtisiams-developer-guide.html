@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DaengtisiaMS — Panduan Developer (UI/UX)</title>
+<style>
+  body{margin:0;font-family:Figtree,ui-sans-serif,system-ui,Segoe UI,Roboto,sans-serif;background:#F7F9FC;color:#0F2540;line-height:1.55}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-size:26px} h2{font-size:19px;margin-top:36px;border-bottom:1px solid #E3E8EF;padding-bottom:6px}
+  code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  pre{background:#0F2540;color:#E6EEFB;padding:14px 16px;border-radius:10px;overflow:auto;font-size:13px}
+  code{background:#EEF2F7;padding:1px 6px;border-radius:5px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+  th,td{border:1px solid #E3E8EF;padding:8px 10px;text-align:left} th{background:#F1F5F9}
+  .lede{color:#5B6B7F} .warn{background:#F6EEDD;border:1px solid #EAD9B0;border-radius:8px;padding:10px 12px;color:#6b5416;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DaengtisiaMS — Panduan Developer UI/UX</h1>
+  <p class="lede">Panduan implementasi design system “luxury healthcare”. Refleksi in-repo dari file Claude Design (“DaengtisiaMS - Panduan Developer”). Token kanonik: <code>tailwind.config.js</code> + <code>docs/ui/daengtisiams-design-tokens.md</code>.</p>
+
+  <h2>1. Konsep Visual</h2>
+  <p>Bersih, mewah, ringan, cepat dibaca untuk klinik sibuk. Background putih/off-white, biru untuk aksi/focus/active/link/primary CTA, gold hanya aksen premium terbatas. Hindari UI gelap, ramai, terlalu warna-warni, atau berat.</p>
+
+  <h2>2. Palet &amp; Token</h2>
+  <table>
+    <tr><th>Token Tailwind</th><th>Nilai</th><th>Penggunaan</th></tr>
+    <tr><td><code>navy</code> (500 #0F2540)</td><td>#0F2540</td><td>Teks utama, brand gelap, heading</td></tr>
+    <tr><td><code>brand</code> (600 #2563EB)</td><td>#2563EB</td><td>Primary CTA, active, link, focus ring</td></tr>
+    <tr><td><code>gold</code> (500 #C8A45C)</td><td>#C8A45C</td><td>Aksen premium, garis KPI (bukan CTA)</td></tr>
+    <tr><td><code>canvas</code></td><td>#F7F9FC</td><td>Background halaman (off-white)</td></tr>
+    <tr><td><code>surface</code></td><td>#FFFFFF</td><td>Kartu, tabel, panel</td></tr>
+    <tr><td><code>ink-soft</code></td><td>#5B6B7F</td><td>Teks sekunder</td></tr>
+    <tr><td><code>hairline</code></td><td>#E3E8EF</td><td>Border subtle</td></tr>
+    <tr><td>success/danger/warning/info</td><td>#059669 / #DC2626 / #D97706 / #2563EB</td><td>Status</td></tr>
+  </table>
+
+  <h2>3. Tipografi</h2>
+  <p>Font: Figtree (sudah aktif). Skala: page title 24–28px/700, section 18–20px/600, body 14px, meta 12px uppercase tracking. Teks utama <code>text-navy</code>, sekunder <code>text-ink-soft</code>.</p>
+
+  <h2>4. Spacing, Radius, Shadow</h2>
+  <p>Radius kartu <code>rounded-xl</code> (12px), kontrol <code>rounded-lg</code>. Shadow lembut <code>shadow-card</code>. Padding kartu 20–24px. Density tabel: header 10–12px, sel 11px vertikal. Density form: input <code>py-2</code>, gap <code>gap-4</code>.</p>
+
+  <h2>5. Komponen — pakai <code>x-ui.*</code></h2>
+  <pre>{{-- Selalu pakai komponen, bukan class ad-hoc --}}
+&lt;x-ui.button variant="primary"&gt;Simpan&lt;/x-ui.button&gt;
+&lt;x-ui.badge :status="$visit-&gt;status" /&gt;
+&lt;x-ui.kpi-card label="Pendapatan" value="Rp 128 jt" accent /&gt;
+&lt;x-ui.page-header title="Antrian Pasien"&gt;
+    &lt;x-slot:actions&gt;&lt;x-ui.button&gt;Tambah&lt;/x-ui.button&gt;&lt;/x-slot:actions&gt;
+&lt;/x-ui.page-header&gt;</pre>
+  <div class="warn">Jangan hardcode <code>#hex</code> di Blade. Jangan pakai gold sebagai primary CTA. Jangan duplikasi class komponen — extend komponen <code>x-ui.*</code>.</div>
+
+  <h2>6. Pola Blade + Alpine</h2>
+  <p>Alpine hanya untuk interaksi ringan (dropdown, modal open, tab). Tidak ada React/Vue. Tidak ada logika bisnis di Blade. State server tetap sumber kebenaran.</p>
+
+  <h2>7. Responsive</h2>
+  <p>Mobile-first. Sidebar collapse pada layar kecil (perilaku existing dipertahankan). Tabel lebar memakai <code>overflow-x-auto</code>. Body halaman tidak pernah horizontal-scroll.</p>
+
+  <h2>8. State &amp; Akses</h2>
+  <p>Visibility UI mengikuti permission/Gate — sidebar bukan boundary keamanan. Setiap komponen mendukung default/hover/focus/disabled/loading dan varian error/warning/success/info bila relevan.</p>
+
+  <h2>9. Tabel &amp; Form</h2>
+  <p>Tabel: header uppercase meta, baris hairline, badge status kanan/khusus kolom status. Form: label jelas, <code>x-ui.input/select/textarea</code>, pesan error merah di bawah field.</p>
+
+  <h2>10. Print / PDF</h2>
+  <div class="warn">View print/PDF (RME, odontogram, struk, receipt) <strong>tidak diubah</strong> oleh sprint fondasi. Layout struktural print harus dipertahankan; dompdf-safe (tanpa flexbox pada template PDF).</div>
+
+  <h2>11. Aksesibilitas</h2>
+  <p>Kontras teks minimum, focus ring biru terlihat, label untuk input, <code>aria-*</code> pada modal/alert, target sentuh ≥ 40px.</p>
+
+  <h2>12. Performance</h2>
+  <p>Tanpa library UI berat, tanpa animasi berat/aset besar. Hanya Tailwind + Alpine + Blade. Token via config, bukan CSS besar di <code>app.css</code>.</p>
+
+  <h2>13. Strategi Migrasi &amp; Prioritas</h2>
+  <ol>
+    <li>Fondasi (sprint ini): token, shell, komponen, katalog, governance.</li>
+    <li>UIX-2 Dashboard Owner, UIX-3 Kunjungan, UIX-4 RME/Odontogram, UIX-5 Kasir, UIX-6 Inventory, UIX-7 Lab, UIX-8 Reports/print.</li>
+  </ol>
+  <p>Adopsi bertahap: jangan migrasi semua modul sekaligus. Reskin primitif bersama dulu (button/badge/card/table + active state sidebar).</p>
+
+  <h2>14. Acceptance &amp; Governance</h2>
+  <p>Lihat <code>docs/ui/daengtisiams-implementation-checklist.md</code> dan <code>docs/ui/daengtisiams-ui-governance.md</code>. Governance dapat diperiksa: <code>php artisan architecture:ui-governance-check</code>.</p>
+</div>
+</body>
+</html>

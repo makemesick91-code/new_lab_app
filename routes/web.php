@@ -711,6 +711,11 @@ if (config('developer_console.enabled', true)) {
     Route::middleware(['auth', 'permission:view_developer_console'])
         ->get('/dev-console', [DeveloperConsoleController::class, 'index'])
         ->name('developer-console.index');
+
+    // UIX-1 component catalog — dev-only, read-only, same Super-Admin/permission gate.
+    Route::middleware(['auth', 'permission:view_developer_console'])
+        ->get('/dev/ui-catalog', fn () => view('dev.ui-catalog'))
+        ->name('developer-console.ui-catalog');
 }
 
 require __DIR__.'/auth.php';

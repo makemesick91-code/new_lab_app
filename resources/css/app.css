@@ -2,21 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
+[x-cloak] {
+    display: none !important;
+}
+
+/*
+ * UIX-1 Luxury Healthcare Design System.
+ * Token-driven component classes only — keep this file minimal.
+ * Colors reference semantic tokens from tailwind.config.js.
+ */
 @layer components {
+    /* Sidebar navigation — white sidebar, navy text, blue active, subtle gold accent. */
     .menu-item {
         @apply flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors duration-150;
     }
 
     .menu-item-active {
-        @apply bg-teal-50 text-teal-800 ring-1 ring-inset ring-teal-100;
+        @apply bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-100 shadow-[inset_3px_0_0_0_theme(colors.gold.500)];
     }
 
     .menu-item-inactive {
-        @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900;
+        @apply text-ink-soft hover:bg-navy-50 hover:text-navy;
     }
 
     .menu-group-title {
-        @apply px-3 py-2 text-xs font-bold uppercase tracking-wider text-gray-500;
+        @apply px-3 py-2 text-xs font-bold uppercase tracking-wider text-ink-muted;
     }
 
     .menu-subitem {
@@ -24,18 +34,19 @@
     }
 
     .menu-subitem-active {
-        @apply bg-teal-50 font-medium text-teal-800;
+        @apply bg-brand-50 font-medium text-brand-700;
     }
 
     .menu-subitem-inactive {
-        @apply text-gray-600 hover:bg-gray-50 hover:text-gray-900;
+        @apply text-ink-soft hover:bg-navy-50 hover:text-navy;
     }
 
+    /* Shared surface primitives. */
     .ui-card {
-        @apply rounded-lg border border-gray-200 bg-white shadow-sm;
+        @apply rounded-xl border border-hairline bg-surface shadow-card;
     }
 
     .ui-table-shell {
-        @apply overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm;
+        @apply overflow-hidden rounded-xl border border-hairline bg-surface shadow-card;
     }
 }

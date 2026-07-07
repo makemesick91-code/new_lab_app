@@ -13,7 +13,7 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body
-        class="h-full font-sans antialiased bg-gray-100 text-gray-900"
+        class="h-full font-sans antialiased bg-canvas text-navy"
         x-data
         x-init="
             const onResize = () => {
@@ -36,7 +36,7 @@
             >
                 @include('layouts.partials.topbar')
 
-                <main class="flex-1 bg-gray-50 px-4 py-6 sm:px-6 lg:px-8 xl:px-[2cm]">
+                <main class="flex-1 bg-canvas px-4 py-6 sm:px-6 lg:px-8 xl:px-[2cm]">
                     {{ $slot }}
                 </main>
             </div>
