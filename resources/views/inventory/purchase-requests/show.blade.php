@@ -7,7 +7,7 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Permintaan Pembelian</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Detail Permintaan Pembelian</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $purchaseRequest->purchase_request_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
                     {{ format_date_id($purchaseRequest->request_date) }}
@@ -16,7 +16,7 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 @can('update', $purchaseRequest)
-                    <a href="{{ route('inventory.purchase-requests.edit', $purchaseRequest) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    <a href="{{ route('inventory.purchase-requests.edit', $purchaseRequest) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                         Ubah
                     </a>
                 @endcan
@@ -33,7 +33,7 @@
                 @can('approve', $purchaseRequest)
                     <form method="POST" action="{{ route('inventory.purchase-requests.approve', $purchaseRequest) }}">
                         @csrf
-                        <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                        <button type="submit" class="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                             Setujui
                         </button>
                     </form>
@@ -43,7 +43,7 @@
                     <form method="POST" action="{{ route('inventory.purchase-requests.reject', $purchaseRequest) }}" class="flex flex-wrap items-center gap-2">
                         @csrf
                         <input type="text" name="rejection_reason" placeholder="Alasan penolakan" value="{{ old('rejection_reason') }}" required minlength="3"
-                               class="rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                               class="rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <button type="submit" class="inline-flex items-center rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
                             Tolak
                         </button>
@@ -62,13 +62,13 @@
                 @can('create', PurchaseOrder::class)
                     @if ($purchaseRequest->isApproved() && ! $purchaseRequest->hasActivePurchaseOrder())
                         <a href="{{ route('inventory.purchase-orders.create', ['purchase_request_id' => $purchaseRequest->id]) }}"
-                           class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                           class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                             Buat PO
                         </a>
                     @endif
                 @endcan
 
-                <a href="{{ route('inventory.purchase-requests.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                <a href="{{ route('inventory.purchase-requests.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Kembali
                 </a>
             </div>

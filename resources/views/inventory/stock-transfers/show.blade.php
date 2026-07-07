@@ -12,7 +12,7 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Transfer Stok</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Detail Transfer Stok</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $stockTransfer->transfer_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
                     {{ $stockTransfer->sourceInventoryLocation?->name ?? '-' }} → {{ $stockTransfer->destinationInventoryLocation?->name ?? '-' }}
@@ -49,7 +49,7 @@
                         @if ($stockTransfer->status === StockTransfer::STATUS_IN_TRANSIT)
                             <form method="POST" action="{{ route('inventory.stock-transfers.receive', $stockTransfer) }}">
                                 @csrf
-                                <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                                <button type="submit" class="inline-flex items-center rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                     Terima Transfer
                                 </button>
                             </form>
@@ -59,7 +59,7 @@
                 <div class="flex flex-wrap items-center justify-end gap-2">
                     @can('downloadChecklist', $stockTransfer)
                         @if ($stockTransfer->isInTransit() || $stockTransfer->isReceived())
-                            <a href="{{ route('inventory.stock-transfers.checklist', $stockTransfer) }}" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            <a href="{{ route('inventory.stock-transfers.checklist', $stockTransfer) }}" class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                 Download Checklist PDF
                             </a>
                         @endif
@@ -67,7 +67,7 @@
 
                     @can('update', $stockTransfer)
                         @if ($stockTransfer->status === StockTransfer::STATUS_DRAFT)
-                            <a href="{{ route('inventory.stock-transfers.edit', $stockTransfer) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            <a href="{{ route('inventory.stock-transfers.edit', $stockTransfer) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                                 Ubah
                             </a>
                         @endif
@@ -78,7 +78,7 @@
                             <form method="POST" action="{{ route('inventory.stock-transfers.cancel', $stockTransfer) }}" class="flex flex-wrap items-center gap-2">
                                 @csrf
                                 <input type="text" name="notes" placeholder="Alasan pembatalan" value="{{ old('notes') }}"
-                                       class="rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                       class="rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">
                                     Batalkan
                                 </button>
@@ -86,7 +86,7 @@
                         @endif
                     @endcan
 
-                    <a href="{{ route('inventory.stock-transfers.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    <a href="{{ route('inventory.stock-transfers.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                         Kembali
                     </a>
                 </div>

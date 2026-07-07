@@ -1,6 +1,6 @@
 @php
     $styles = [
-        'fresh' => 'bg-teal-50 text-teal-800 ring-teal-200',
+        'fresh' => 'bg-brand-50 text-brand-800 ring-brand-200',
         'aging' => 'bg-sky-50 text-sky-800 ring-sky-200',
         'stale' => 'bg-amber-50 text-amber-800 ring-amber-200',
         'old' => 'bg-orange-50 text-orange-800 ring-orange-200',

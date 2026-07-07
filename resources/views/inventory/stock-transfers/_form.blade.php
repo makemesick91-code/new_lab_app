@@ -64,7 +64,7 @@
         <div class="grid gap-6 p-4 md:grid-cols-2">
             <div>
                 <label for="source-location" class="block text-sm font-medium text-gray-700">Lokasi Sumber <span class="text-red-600">*</span></label>
-                <select id="source-location" name="source_inventory_location_id" x-model.number="sourceLocationId" @change="onSourceChange()" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <select id="source-location" name="source_inventory_location_id" x-model.number="sourceLocationId" @change="onSourceChange()" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     <option value="">Pilih lokasi sumber</option>
                     @foreach ($locations as $location)
                         <option value="{{ $location->id }}">{{ $location->name }}</option>
@@ -77,7 +77,7 @@
 
             <div>
                 <label for="destination-location" class="block text-sm font-medium text-gray-700">Lokasi Tujuan <span class="text-red-600">*</span></label>
-                <select id="destination-location" name="destination_inventory_location_id" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <select id="destination-location" name="destination_inventory_location_id" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     <option value="">Pilih lokasi tujuan</option>
                     @foreach ($locations as $location)
                         <option value="{{ $location->id }}" @selected((int) old('destination_inventory_location_id', $stockTransfer?->destination_inventory_location_id) === $location->id)>{{ $location->name }}</option>
@@ -91,7 +91,7 @@
             <div>
                 <label for="transfer-date" class="block text-sm font-medium text-gray-700">Tanggal Transfer</label>
                 <input id="transfer-date" type="date" name="transfer_date" value="{{ old('transfer_date', optional($stockTransfer?->transfer_date)->format('Y-m-d') ?? now()->toDateString()) }}"
-                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('transfer_date')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -99,7 +99,7 @@
 
             <div class="md:col-span-2">
                 <label for="transfer-notes" class="block text-sm font-medium text-gray-700">Catatan</label>
-                <textarea id="transfer-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes', $stockTransfer?->notes) }}</textarea>
+                <textarea id="transfer-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('notes', $stockTransfer?->notes) }}</textarea>
                 @error('notes')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -114,7 +114,7 @@
                 <p class="mt-1 text-sm text-gray-500">Tambahkan produk dan jumlah yang akan dipindahkan antar lokasi.</p>
             </div>
             <button type="button" @click="items.push({ product_id: '', inventory_batch_id: '', quantity: 1, notes: '' })"
-                    class="inline-flex items-center rounded-lg bg-teal-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    class="inline-flex items-center rounded-lg bg-brand-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                 + Tambah Item
             </button>
         </div>
@@ -139,7 +139,7 @@
                     </div>
                     <div x-show="productRequiresBatch(item.product_id)">
                         <label class="block text-sm font-medium text-gray-700">Batch / Expired <span class="text-red-600">*</span></label>
-                        <select :name="`items[${index}][inventory_batch_id]`" x-model="item.inventory_batch_id" :required="productRequiresBatch(item.product_id)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <select :name="`items[${index}][inventory_batch_id]`" x-model="item.inventory_batch_id" :required="productRequiresBatch(item.product_id)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">Pilih batch</option>
                             <template x-for="batch in batchesForItem(item)" :key="batch.id">
                                 <option :value="batch.id" x-text="batchLabel(batch)"></option>
@@ -152,12 +152,12 @@
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Jumlah <span class="text-red-600">*</span></label>
                         <input type="number" step="0.0001" min="0.0001" :name="`items[${index}][quantity]`" x-model="item.quantity" required
-                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-teal-500 focus:ring-teal-500">
+                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-brand-500 focus:ring-brand-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Catatan Item</label>
                         <input type="text" :name="`items[${index}][notes]`" x-model="item.notes" placeholder="Opsional"
-                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                               class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     </div>
                     <div class="flex items-end">
                         <button type="button" x-show="items.length > 1" @click="items.splice(index, 1)"

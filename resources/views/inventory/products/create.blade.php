@@ -1,7 +1,7 @@
 <x-settings-shell title="Tambah Produk">
     <div class="space-y-6">
         <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Produk Persediaan</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Produk Persediaan</p>
             <h2 class="mt-1 text-xl font-semibold text-gray-900">Tambah Produk Baru</h2>
             <p class="mt-1 text-sm text-gray-500">Lengkapi data produk sebelum menerima stok atau mencatat stok awal.</p>
         </div>

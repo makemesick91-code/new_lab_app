@@ -130,7 +130,7 @@
             <select
                 id="purchase-order-id"
                 name="purchase_order_id"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 onchange="if (this.value) { window.location.href = '{{ route('inventory.goods-receipts.create') }}?purchase_order_id=' + this.value; }"
             >
                 <option value="">Pilih pesanan pembelian</option>
@@ -149,27 +149,27 @@
     @endif
 
     @if ($purchaseOrder)
-        <div class="rounded-lg border border-teal-200 bg-teal-50 p-4 text-sm text-teal-900">
+        <div class="rounded-lg border border-brand-200 bg-brand-50 p-4 text-sm text-brand-800">
             <p class="font-semibold">Ringkasan Pesanan Pembelian</p>
             <dl class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div>
-                    <dt class="text-teal-700">No. PO</dt>
+                    <dt class="text-brand-700">No. PO</dt>
                     <dd class="mt-1 font-medium">
-                        <a href="{{ route('inventory.purchase-orders.show', $purchaseOrder) }}" class="underline hover:text-teal-800">
+                        <a href="{{ route('inventory.purchase-orders.show', $purchaseOrder) }}" class="underline hover:text-brand-800">
                             {{ $purchaseOrder->purchase_order_number }}
                         </a>
                     </dd>
                 </div>
                 <div>
-                    <dt class="text-teal-700">Supplier</dt>
+                    <dt class="text-brand-700">Supplier</dt>
                     <dd class="mt-1 font-medium">{{ $purchaseOrder->displaySupplierName() }}</dd>
                 </div>
                 <div>
-                    <dt class="text-teal-700">Cabang</dt>
+                    <dt class="text-brand-700">Cabang</dt>
                     <dd class="mt-1 font-medium">{{ $purchaseOrder->branch?->name ?? '—' }}</dd>
                 </div>
                 <div>
-                    <dt class="text-teal-700">Status PO</dt>
+                    <dt class="text-brand-700">Status PO</dt>
                     <dd class="mt-1">@include('inventory.purchase-orders._status-badge', ['status' => $purchaseOrder->status])</dd>
                 </div>
             </dl>
@@ -185,7 +185,7 @@
                 name="receipt_date"
                 value="{{ old('receipt_date', optional($goodsReceipt?->receipt_date)->format('Y-m-d') ?? now()->toDateString()) }}"
                 required
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >
             @error('receipt_date')
                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -200,7 +200,7 @@
                 name="supplier_delivery_number"
                 value="{{ old('supplier_delivery_number', $goodsReceipt?->supplier_delivery_number) }}"
                 maxlength="100"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >
             @error('supplier_delivery_number')
                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -215,7 +215,7 @@
                 name="supplier_invoice_number"
                 value="{{ old('supplier_invoice_number', $goodsReceipt?->supplier_invoice_number) }}"
                 maxlength="100"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >
             @error('supplier_invoice_number')
                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -228,7 +228,7 @@
                 id="goods-receipt-notes"
                 name="notes"
                 rows="3"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >{{ old('notes', $goodsReceipt?->notes) }}</textarea>
             @error('notes')
                 <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
@@ -241,7 +241,7 @@
             <h3 class="text-base font-semibold text-gray-900">Item Penerimaan</h3>
             <p class="mt-1 text-sm text-gray-500">Isi lokasi stok dan jumlah diterima per baris. Kolom sudah diterima (PO) bersifat baca-saja.</p>
             <p class="mt-1 text-sm text-gray-500">Jumlah Diterima dihitung otomatis dari Diterima Baik + Ditolak. Hanya Diterima Baik yang menambah stok saat posting.</p>
-            <p class="mt-2 rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2 text-xs text-teal-800">Untuk barang dilacak batch, centang &quot;Buat nomor batch otomatis&quot; lalu isi tanggal kedaluwarsa. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch &amp; Lot.</p>
+            <p class="mt-2 rounded-lg border border-brand-100 bg-brand-50/60 px-3 py-2 text-xs text-brand-800">Untuk barang dilacak batch, centang &quot;Buat nomor batch otomatis&quot; lalu isi tanggal kedaluwarsa. Setelah Goods Receipt diposting, batch akan muncul di halaman Batch &amp; Lot.</p>
         </div>
 
         @error('items')
@@ -299,7 +299,7 @@
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-500" x-text="formatNumber(item.previously_received_qty)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatNumber(item.remaining_qty)"></td>
                                 <td class="px-3 py-3">
-                                    <select :name="'items[' + index + '][inventory_location_id]'" x-model="item.inventory_location_id" required class="block w-full min-w-[10rem] rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <select :name="'items[' + index + '][inventory_location_id]'" x-model="item.inventory_location_id" required class="block w-full min-w-[10rem] rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                         <option value="">Pilih lokasi</option>
                                         @foreach ($locations as $location)
                                             <option value="{{ $location->id }}">{{ $location->name }}</option>
@@ -307,11 +307,11 @@
                                     </select>
                                 </td>
                                 <td class="px-3 py-3">
-                                    <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-brand-500 focus:ring-brand-500">
                                     <p x-show="isOverReceive(item)" x-cloak class="mt-1 text-xs text-amber-700" x-text="overReceiveMessage(item)"></p>
                                 </td>
                                 <td class="px-3 py-3">
-                                    <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="block w-full min-w-[5rem] rounded-lg border-gray-300 text-right text-sm focus:border-brand-500 focus:ring-brand-500">
                                 </td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatNumber(item.received_qty)"></td>
                                 <td class="px-3 py-3 text-right tabular-nums text-gray-700" x-text="formatCurrency(item.unit_cost)"></td>
@@ -356,7 +356,7 @@
                         </dl>
                         <div class="mt-3">
                             <label class="text-sm font-medium text-gray-700">Lokasi Stok</label>
-                            <select :name="'items[' + index + '][inventory_location_id]'" x-model="item.inventory_location_id" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <select :name="'items[' + index + '][inventory_location_id]'" x-model="item.inventory_location_id" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <option value="">Pilih lokasi</option>
                                 @foreach ($locations as $location)
                                     <option value="{{ $location->id }}">{{ $location->name }}</option>
@@ -366,12 +366,12 @@
                         <div class="mt-3 grid grid-cols-2 gap-3">
                             <div>
                                 <label class="text-sm font-medium text-gray-700">Diterima Baik</label>
-                                <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <input type="number" step="0.0001" min="0" :max="item.remaining_qty" :name="'items[' + index + '][accepted_qty]'" x-model.number="item.accepted_qty" @input="onAcceptedChange(item)" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <p x-show="isOverReceive(item)" x-cloak class="mt-1 text-xs text-amber-700" x-text="overReceiveMessage(item)"></p>
                             </div>
                             <div>
                                 <label class="text-sm font-medium text-gray-700">Ditolak</label>
-                                <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <input type="number" step="0.0001" min="0" :name="'items[' + index + '][rejected_qty]'" x-model.number="item.rejected_qty" @input="onRejectedChange(item)" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                             </div>
                         </div>
                         <p class="mt-2 text-xs text-gray-500">Jumlah diterima: <span class="font-medium tabular-nums" x-text="formatNumber(item.received_qty)"></span></p>

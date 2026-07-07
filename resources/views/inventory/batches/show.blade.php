@@ -15,7 +15,7 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Batch & Lot</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Detail Batch & Lot</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">
                     {{ $batch->batch_number }}
                     @if (str_starts_with((string) $batch->batch_number, 'AUTO-'))
@@ -29,7 +29,7 @@
                     @endif
                 </p>
             </div>
-            <a href="{{ route('inventory.batches.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+            <a href="{{ route('inventory.batches.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                 Kembali
             </a>
         </div>
@@ -85,10 +85,10 @@
             </dl>
         </section>
 
-        <section class="rounded-lg border border-teal-100 bg-teal-50 p-6 shadow-sm">
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Stok Terderivasi Ledger</p>
-            <p class="mt-2 text-3xl font-semibold tabular-nums text-teal-900">{{ format_quantity_id($totalStock) }}</p>
-            <p class="mt-1 text-sm text-teal-700">{{ $batch->product?->unit?->symbol ?? 'satuan' }} total di seluruh lokasi cabang aktif.</p>
+        <section class="rounded-lg border border-brand-100 bg-brand-50 p-6 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Stok Terderivasi Ledger</p>
+            <p class="mt-2 text-3xl font-semibold tabular-nums text-brand-800">{{ format_quantity_id($totalStock) }}</p>
+            <p class="mt-1 text-sm text-brand-700">{{ $batch->product?->unit?->symbol ?? 'satuan' }} total di seluruh lokasi cabang aktif.</p>
         </section>
 
         <section class="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -131,7 +131,7 @@
                 <div class="border-b border-gray-200 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
                     <h3 class="text-base font-semibold text-gray-900">Permintaan Disposal/Adjustment</h3>
                     @can('viewAny', \App\Modules\Inventory\Models\InventoryBatchDisposalRequest::class)
-                        <a href="{{ route('inventory.batch-disposal-requests.index') }}" class="text-sm font-medium text-teal-700 hover:text-teal-600">Lihat semua</a>
+                        <a href="{{ route('inventory.batch-disposal-requests.index') }}" class="text-sm font-medium text-brand-700 hover:text-brand-600">Lihat semua</a>
                     @endcan
                 </div>
                 <div class="divide-y divide-gray-100">
@@ -142,7 +142,7 @@
                                 @include('inventory.batch-disposal-requests._status-badge', ['status' => $disposalReq->status])
                                 <p class="mt-1 text-gray-600">{{ $disposalReq->location?->name ?? '—' }} · {{ format_quantity_id((float) $disposalReq->quantity_requested) }}</p>
                             </div>
-                            <a href="{{ route('inventory.batch-disposal-requests.show', $disposalReq) }}" class="font-medium text-teal-700 hover:text-teal-600">Detail</a>
+                            <a href="{{ route('inventory.batch-disposal-requests.show', $disposalReq) }}" class="font-medium text-brand-700 hover:text-brand-600">Detail</a>
                         </div>
                     @endforeach
                 </div>
@@ -172,7 +172,7 @@
                                 </p>
                             </div>
                             @if ($item->stockTransfer)
-                                <a href="{{ route('inventory.stock-transfers.show', $item->stockTransfer) }}" class="font-medium text-teal-700 hover:text-teal-600">Lihat transfer</a>
+                                <a href="{{ route('inventory.stock-transfers.show', $item->stockTransfer) }}" class="font-medium text-brand-700 hover:text-brand-600">Lihat transfer</a>
                             @endif
                         </div>
                     @endforeach

@@ -724,3 +724,29 @@ always badged; every list has desktop + mobile layouts and an empty state.
 not itself change application code. Implementations must reuse the existing layout shell, sidebar,
 component families, and Breeze primitives, and stay within the Laravel + Blade + Tailwind +
 Alpine stack with no new front-end framework.*
+
+## Inventory analytics & workflow-form standard (UIX-9)
+
+Deferred inventory analytics/chart, workflow form, and workflow detail surfaces follow the same
+canonical component set as the list (UIX-3) and cashier (UIX-5) standards:
+
+- **Analytics / dashboard pages** — `x-ui.page-header` for the header, `x-ui.card` (or the shared
+  `x-inventory.dashboard-section`) to group each block, `x-inventory.kpi-card` for KPI tiles,
+  `x-ui.alert` for methodology/notes, `x-ui.button` for actions. Charts stay HTML/table + Tailwind
+  (no heavy chart dependency). Gold is reserved for revenue accents only — never an inventory CTA.
+- **Workflow detail pages** (PR/PO/GR/transfer/opname show) — `x-ui.page-header` with the action
+  cluster in the `actions` slot as `x-ui.button` variants (submit/approve=success, submit-for-review
+  =warning, send/receive=primary, cancel/void=danger, edit/back=secondary); status via the domain
+  `_status-badge` partial (which routes through `x-ui.badge`); "does-not-change-stock" notes via
+  `x-ui.alert`.
+- **Workflow form pages** (`create`/`edit`/`_form`) — `x-ui.page-header`, form wrapped in
+  `x-ui.card`, fields via `x-ui.input`/`x-ui.select`/`x-ui.textarea` (auto validation-error
+  display), footer actions as `x-ui.button`. Custom widgets like
+  `x-inventory.searchable-product-select` are preserved.
+- **Ledger rule (non-negotiable):** presentation views never write a mutable stock attribute
+  (`current_stock`, `qty_on_hand`, …). Stock stays ledger-derived; the governance command scans for
+  this. Semantic stock-status colours (empty/low/overstock, masuk/keluar) are preserved.
+
+`architecture:ui-governance-check --strict` enforces the reference surfaces
+(`inventory/analytics/index`, `inventory/executive-dashboard`, `inventory/purchase-orders/show`,
+`inventory/products/_form`) and the no-teal / no-gold-CTA / no-mutable-stock invariants.

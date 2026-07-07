@@ -509,6 +509,101 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-8 sprint evidence doc is missing (docs/sprints/uix-8-reports-print-pdf-polish.md).';
         }
 
+        // --- UIX-9 — Inventory analytics, charts & workflow forms adopt the shared design system. ---
+        // Presentation-only governance for the deferred inventory analytics/chart and
+        // workflow form/detail surfaces. The polished references must stay on x-ui.* +
+        // x-inventory.* + semantic tokens, must not reintroduce legacy teal, must never
+        // use gold as a CTA, and must never introduce a mutable stock attribute
+        // assignment (stock stays ledger-derived). No ledger, stock, procurement,
+        // transfer, opname, batch, or analytics calculation is asserted here.
+        $analyticsIndex = 'resources/views/inventory/analytics/index.blade.php';
+        $executiveDashboard = 'resources/views/inventory/executive-dashboard.blade.php';
+        $poShow = 'resources/views/inventory/purchase-orders/show.blade.php';
+        $productForm = 'resources/views/inventory/products/_form.blade.php';
+
+        foreach ([$analyticsIndex, $executiveDashboard, $poShow, $productForm] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing inventory UIX-9 view: {$file}";
+            }
+        }
+
+        // Analytics index + executive dashboard are the reference analytics/chart pages
+        // (both build cards from x-ui.page-header + x-inventory.kpi-card).
+        foreach ([$analyticsIndex, $executiveDashboard] as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            foreach (['x-ui.page-header', 'x-inventory.kpi-card'] as $component) {
+                if (! str_contains($contents, $component)) {
+                    $errors[] = "Inventory analytics view {$file} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Analytics index also wraps its summary block in the shared x-ui.card.
+        $analyticsContents = @file_get_contents($base.'/'.$analyticsIndex) ?: '';
+        if ($analyticsContents !== '' && ! str_contains($analyticsContents, 'x-ui.card')) {
+            $errors[] = "Inventory analytics view {$analyticsIndex} does not use the x-ui.card component.";
+        }
+
+        // Purchase order show is the reference workflow-detail page.
+        $poShowContents = @file_get_contents($base.'/'.$poShow) ?: '';
+        if ($poShowContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.button', 'x-ui.alert'] as $component) {
+                if (! str_contains($poShowContents, $component)) {
+                    $errors[] = "Inventory workflow detail view {$poShow} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Product form is the reference workflow-form partial.
+        $productFormContents = @file_get_contents($base.'/'.$productForm) ?: '';
+        if ($productFormContents !== '') {
+            foreach (['x-ui.input', 'x-ui.select', 'x-ui.textarea'] as $component) {
+                if (! str_contains($productFormContents, $component)) {
+                    $errors[] = "Inventory product form {$productForm} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // No legacy teal / gold-CTA / mutable-stock assignment across the polished
+        // inventory analytics + workflow surfaces.
+        $uix9Files = [
+            'resources/views/inventory/analytics/index.blade.php',
+            'resources/views/inventory/executive-dashboard.blade.php',
+            'resources/views/inventory/purchase-orders/show.blade.php',
+            'resources/views/inventory/purchase-requests/show.blade.php',
+            'resources/views/inventory/goods-receipts/show.blade.php',
+            'resources/views/inventory/goods-receipts/create.blade.php',
+            'resources/views/inventory/stock-transfers/show.blade.php',
+            'resources/views/inventory/stock-opnames/show.blade.php',
+            'resources/views/inventory/stock-opnames/create.blade.php',
+            'resources/views/inventory/products/_form.blade.php',
+            'resources/views/inventory/products/show.blade.php',
+            'resources/views/inventory/batches/show.blade.php',
+        ];
+        foreach ($uix9Files as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never an inventory action or status).";
+            }
+            if (preg_match('/->(?:current_stock|derived_stock|stock_quantity|quantity_on_hand|stock_on_hand)\s*=(?!=)/', $contents)) {
+                $errors[] = "Mutable stock attribute assignment found in {$file} (stock stays ledger-derived).";
+            }
+        }
+
+        // UIX-9 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-9-inventory-analytics-workflow-forms-polish.md')) {
+            $warnings[] = 'UIX-9 sprint evidence doc is missing (docs/sprints/uix-9-inventory-analytics-workflow-forms-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
