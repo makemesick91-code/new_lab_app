@@ -151,3 +151,35 @@ behaviour changes.
 - **No sensitive data exposure** (KTP/NIK/scans/raw notes/secrets/env) from responsive polish.
 
 Enforced by `architecture:ui-governance-check --strict`.
+
+## UIX-17 — Accessibility, error state & empty state rules
+
+Additive accessibility/semantics hardening for daily operators (keyboard + screen
+reader). No route, policy, permission, Gate, BranchContext, query, schema,
+validation-rule, financial, RME, Inventory, Lab, dashboard, or master-data behaviour
+changes. Server-side validation is never replaced by frontend-only validation.
+
+- **Explicit labels & association:** `x-ui.input`/`select`/`textarea` tie the label to the
+  control via `for`/`id`.
+- **Validation error visibility:** errors render near the field (danger token) and are
+  associated with the control via `aria-describedby="{id}-error"`; invalid state via
+  `aria-invalid="true"`; errors resolve automatically from the `$errors` bag by `name`.
+- **Required marker:** backend-required fields carry a visible danger asterisk +
+  `aria-required="true"` (never invents a requirement the backend does not have).
+- **Helper text:** `help` renders in soft-ink and is associated via
+  `aria-describedby="{id}-help"` when there is no error; it supplements, never replaces, the label.
+- **Disabled/loading clarity:** `x-ui.button` dims + disables, exposes `aria-disabled`, and on
+  `loading` shows a spinner + `aria-busy="true"` + an `sr-only` "Memproses…" label.
+- **Danger action clarity:** destructive actions use `x-ui.button variant="danger"` / a `danger` alert.
+- **Empty/no-data copy:** `x-ui.empty-state` keeps `title` + `description` explaining what
+  happened / what to do next; no invented actions.
+- **Alert semantics:** `x-ui.alert` uses a semantic variant and keeps `role="alert"`.
+- **No fake/noisy ARIA:** add ARIA only when it adds semantics native HTML lacks; never alter
+  keyboard/submission behaviour.
+- **No sensitive data exposure** (KTP/NIK/scans/raw notes/secrets/env).
+- **No formal WCAG claim** unless a real audit is performed.
+
+Enforced by `architecture:ui-governance-check --strict`: form components wire
+`aria-describedby` (+`-error`/`-help` id) and expose `aria-invalid`/`aria-required`;
+`x-ui.button` exposes `aria-busy` + `sr-only` loading label; `x-ui.alert` keeps
+`role="alert"`; `x-ui.empty-state` keeps a `description`.

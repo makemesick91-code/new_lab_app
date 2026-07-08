@@ -1060,3 +1060,62 @@ actions (`flex-wrap`); `x-ui.page-header` stacks (`flex-col` + `sm:flex-row`) an
 its actions (`flex-wrap`); and the representative operator surfaces (RME cashier
 show/payment, inventory products/stock-card, lab case-candidate detail) carry no fixed
 non-stacking `grid-cols-2`/`grid-cols-3` *text-sm* detail grid.
+
+## Accessibility, error state & empty state standard (UIX-17)
+
+DaengtisiaMS is operated all day by front-office, cashier, nurse, doctor, and
+warehouse staff. Forms, validation, actions, and no-data states must be clear and
+safe — including for keyboard and screen-reader users. UIX-17 hardens the shared
+`x-ui.*` foundation with a fixed, durable accessibility contract. **These are
+additive presentation/semantics changes only: no route, policy, permission, Gate,
+BranchContext, query, schema, validation-rule, financial, RME, Inventory, Lab,
+dashboard, or master-data behaviour changes. Server-side validation is never
+replaced by frontend-only validation.**
+
+### Accessibility foundation rules (must hold in every future UI sprint)
+
+- **Explicit labels & field association.** Every field uses `x-ui.input`/`x-ui.select`/
+  `x-ui.textarea` with a `label`; the label is tied to the control via `for`/`id`.
+- **Validation error visibility.** Validation errors render close to the field, in the
+  danger token, and are programmatically associated with the control via
+  `aria-describedby="{id}-error"`; the invalid state is exposed with `aria-invalid="true"`.
+  The form components resolve the error automatically from the `$errors` bag by `name`.
+- **Required marker.** Backend-required fields carry a visible danger asterisk and
+  `aria-required="true"`. The marker never invents a requirement the backend does not have.
+- **Helper text.** Optional `help` text renders in the soft-ink token and is associated
+  via `aria-describedby="{id}-help"` when there is no error. Helper text supplements — it
+  never replaces the label.
+- **Disabled / loading clarity.** `x-ui.button` disables + dims on `disabled`/`loading`,
+  exposes `aria-disabled`, and on `loading` shows a spinner plus `aria-busy="true"` and a
+  screen-reader-only "Memproses…" label so assistive tech announces the busy state.
+- **Danger / destructive action clarity.** Destructive actions use `x-ui.button
+  variant="danger"` (or a `danger` alert), so delete/void/cancel reads as high-risk.
+- **Empty / no-data copy.** No-data states use `x-ui.empty-state` with a `title` and a
+  `description` that explains what happened and what the operator can do next — without
+  inventing actions the user is not allowed to take. Table no-data rows use a clear,
+  full-width message.
+- **Alert semantics.** Operator messages use `x-ui.alert` with a semantic variant
+  (`info`/`success`/`warning`/`danger`) and keep `role="alert"` so they are announced.
+- **Heading hierarchy.** Pages lead with `x-ui.page-header` (`<h1>`); section titles stay
+  logically ordered and screen-reader-friendly.
+- **No fake/noisy ARIA.** Add ARIA only when it adds semantics native HTML does not
+  already provide. Never duplicate native behaviour or alter keyboard/submission behaviour.
+- **No sensitive-data exposure.** Accessibility copy never surfaces KTP/NIK/scans/raw
+  clinical notes/secrets/env values.
+- **No formal WCAG claim.** These are pragmatic accessibility improvements; DaengtisiaMS
+  does not claim formal WCAG conformance unless a real audit is performed.
+
+### Constraints
+
+- Blade + Tailwind + Alpine only — **no** accessibility framework, modal/form/datatable
+  library, or new JS dependency.
+- No business/validation/permission/query/data/route/policy/schema change.
+
+### Governance (UIX-17)
+
+`architecture:ui-governance-check --strict` additionally enforces: `x-ui.input`,
+`x-ui.select`, and `x-ui.textarea` associate their error/help text via
+`aria-describedby` with a stable `-error`/`-help` id and expose `aria-invalid` +
+`aria-required`; `x-ui.button` exposes `aria-busy` with an `sr-only` loading label;
+`x-ui.alert` keeps `role="alert"`; and `x-ui.empty-state` keeps a `description` so
+no-data states are explained.

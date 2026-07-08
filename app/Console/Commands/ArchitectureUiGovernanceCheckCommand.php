@@ -1132,6 +1132,72 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-16 sprint evidence doc is missing (docs/sprints/uix-16-responsive-tablet-operator-smoke-polish.md).';
         }
 
+        // --- UIX-17 — Accessibility, error state & empty state (lightweight, non-brittle). ---
+        // The shared form foundation must expose validation/help text to assistive tech:
+        // every field programmatically associates its visible error/help copy
+        // (aria-describedby + matching id), exposes the invalid state (aria-invalid)
+        // and required state (aria-required). The button foundation must announce its
+        // busy/loading state (aria-busy) with a screen-reader text alternative, the
+        // alert foundation keeps its role, and the empty-state foundation keeps a
+        // description so no-data states explain what happened / what to do next.
+        $formComponents = [
+            'resources/views/components/ui/input.blade.php',
+            'resources/views/components/ui/select.blade.php',
+            'resources/views/components/ui/textarea.blade.php',
+        ];
+        foreach ($formComponents as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (! str_contains($contents, 'aria-describedby')) {
+                $errors[] = "x-ui form component {$file} must associate its error/help text via aria-describedby (UIX-17).";
+            }
+            if (! str_contains($contents, '-error') || ! str_contains($contents, '-help')) {
+                $errors[] = "x-ui form component {$file} must give its error/help text a stable id (-error/-help) (UIX-17).";
+            }
+            if (! str_contains($contents, 'aria-invalid')) {
+                $errors[] = "x-ui form component {$file} must expose the invalid state via aria-invalid (UIX-17).";
+            }
+            if (! str_contains($contents, 'aria-required')) {
+                $errors[] = "x-ui form component {$file} must expose the required state via aria-required (UIX-17).";
+            }
+        }
+
+        // The button foundation must announce its loading/busy state to screen readers.
+        $buttonComponent = @file_get_contents($base.'/resources/views/components/ui/button.blade.php') ?: '';
+        if ($buttonComponent !== '') {
+            if (! str_contains($buttonComponent, 'aria-busy')) {
+                $errors[] = 'x-ui.button must expose its loading state via aria-busy (UIX-17).';
+            }
+            if (! str_contains($buttonComponent, 'sr-only')) {
+                $errors[] = 'x-ui.button loading state must carry a screen-reader text alternative (sr-only) (UIX-17).';
+            }
+        }
+
+        // The alert foundation must keep its assistive-tech role.
+        $alertComponent = @file_get_contents($base.'/resources/views/components/ui/alert.blade.php') ?: '';
+        if ($alertComponent !== '' && ! str_contains($alertComponent, 'role="alert"')) {
+            $errors[] = 'x-ui.alert must keep role="alert" so operator messages are announced (UIX-17).';
+        }
+
+        // The empty-state foundation must keep a description so no-data states are explained.
+        $emptyStateComponent = @file_get_contents($base.'/resources/views/components/ui/empty-state.blade.php') ?: '';
+        if ($emptyStateComponent !== '' && ! str_contains($emptyStateComponent, 'description')) {
+            $errors[] = 'x-ui.empty-state must keep a description slot/prop (explain what happened / what to do next) (UIX-17).';
+        }
+
+        // Design system doc should document the accessibility/error/empty-state standard (soft signal).
+        $designDocUix17 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix17 !== '' && stripos($designDocUix17, 'UIX-17') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-17 accessibility/error/empty-state standard.';
+        }
+
+        // UIX-17 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-17-accessibility-error-empty-state-polish.md')) {
+            $warnings[] = 'UIX-17 sprint evidence doc is missing (docs/sprints/uix-17-accessibility-error-empty-state-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
