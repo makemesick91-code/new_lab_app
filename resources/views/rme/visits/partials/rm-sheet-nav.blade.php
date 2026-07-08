@@ -31,7 +31,7 @@
     @if ($nextSheet) data-next-url="{{ $sheetUrl($nextSheet) }}" @endif
 >
     <x-ui.card title="Buku RM Pasien">
-        <p class="mb-3 text-xs text-gray-500">
+        <p class="mb-3 text-xs text-ink-soft">
             Satu pasien = satu buku RM. Geser ke kiri/kanan (swipe) atau gunakan tombol untuk berpindah lembar.
             Total {{ $sheets->count() }} lembar.
         </p>
@@ -44,8 +44,8 @@
                    data-sheet-tab="{{ $sheet->id }}"
                    @class([
                        $navBtn,
-                       'border-teal-600 bg-teal-700 text-white' => $sheet->id === $activeSheet->id,
-                       'border-gray-200 bg-white text-gray-700 hover:bg-gray-50' => $sheet->id !== $activeSheet->id,
+                       'border-brand-600 bg-brand-700 text-white' => $sheet->id === $activeSheet->id,
+                       'border-hairline bg-surface text-ink hover:bg-navy-50' => $sheet->id !== $activeSheet->id,
                    ])
                    @if ($sheet->id === $activeSheet->id) aria-current="true" @endif
                    title="{{ $sheet->clinicVisit?->visit_number }} — {{ $sheet->clinicVisit?->visit_date?->format('d/m/Y') }}">
@@ -57,17 +57,17 @@
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
                 @if ($prevSheet)
-                    <a href="{{ $sheetUrl($prevSheet) }}" class="{{ $navBtn }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Lembar Sebelumnya</a>
+                    <a href="{{ $sheetUrl($prevSheet) }}" class="{{ $navBtn }} border-hairline bg-surface text-ink hover:bg-navy-50">&larr; Lembar Sebelumnya</a>
                 @else
-                    <span class="{{ $navBtn }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300" aria-disabled="true">&larr; Lembar Sebelumnya</span>
+                    <span class="{{ $navBtn }} cursor-not-allowed border-hairline bg-navy-50 text-ink-muted" aria-disabled="true">&larr; Lembar Sebelumnya</span>
                 @endif
 
-                <span class="text-sm font-medium text-gray-700">Lembar {{ $activeIndex + 1 }} dari {{ $sheets->count() }}</span>
+                <span class="text-sm font-medium text-ink">Lembar {{ $activeIndex + 1 }} dari {{ $sheets->count() }}</span>
 
                 @if ($nextSheet)
-                    <a href="{{ $sheetUrl($nextSheet) }}" class="{{ $navBtn }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Lembar Berikutnya &rarr;</a>
+                    <a href="{{ $sheetUrl($nextSheet) }}" class="{{ $navBtn }} border-hairline bg-surface text-ink hover:bg-navy-50">Lembar Berikutnya &rarr;</a>
                 @else
-                    <span class="{{ $navBtn }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300" aria-disabled="true">Lembar Berikutnya &rarr;</span>
+                    <span class="{{ $navBtn }} cursor-not-allowed border-hairline bg-navy-50 text-ink-muted" aria-disabled="true">Lembar Berikutnya &rarr;</span>
                 @endif
             </div>
 

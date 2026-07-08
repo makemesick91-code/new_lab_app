@@ -18,30 +18,30 @@
         @if ($lockedBranchId && ! $visit)
             @php $lockedBranch = $rmeBranches->firstWhere('id', $lockedBranchId); @endphp
             <input type="hidden" name="branch_id" value="{{ $lockedBranchId }}">
-            <div class="rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Cabang Kunjungan</p>
-                <p class="mt-1 text-sm font-medium text-gray-900">
+            <div class="rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2">
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Cabang Kunjungan</p>
+                <p class="mt-1 text-sm font-medium text-navy">
                     {{ $lockedBranch?->code }} — {{ $lockedBranch?->name }}
                 </p>
-                <p class="mt-1 text-xs text-gray-500">Mengikuti konteks kerja admin klinik Anda.</p>
+                <p class="mt-1 text-xs text-ink-soft">Mengikuti konteks kerja admin klinik Anda.</p>
             </div>
         @else
-            <label class="block text-sm font-medium text-gray-700">Klinik/Cabang <span class="text-gray-400">(Cabang RME)</span> <span class="text-rose-500">*</span></label>
-            <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+            <label class="block text-sm font-medium text-ink">Klinik/Cabang <span class="text-ink-muted">(Cabang RME)</span> <span class="text-danger">*</span></label>
+            <select name="branch_id" required data-visit-branch class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                 <option value="">- Pilih cabang RME -</option>
                 @foreach ($rmeBranches as $branch)
                     <option value="{{ $branch->id }}" @selected((int) $prefillBranchId === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
                 @endforeach
             </select>
         @endif
-        @error('branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
-        <p class="mt-1 text-xs text-gray-400">Untuk pasien baru, Cabang RME pasien otomatis mengikuti Klinik/Cabang kunjungan.</p>
+        @error('branch_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+        <p class="mt-1 text-xs text-ink-muted">Untuk pasien baru, Cabang RME pasien otomatis mengikuti Klinik/Cabang kunjungan.</p>
     </div>
 
     @if (! $visit)
         <div class="sm:col-span-2">
-            <label class="block text-sm font-medium text-gray-700">Jenis Kunjungan <span class="text-rose-500">*</span></label>
-            <select name="visit_type" required data-visit-type class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+            <label class="block text-sm font-medium text-ink">Jenis Kunjungan <span class="text-danger">*</span></label>
+            <select name="visit_type" required data-visit-type class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                 @foreach ([
                     \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_NEW => 'Baru',
                     \App\Modules\ClinicVisit\Models\ClinicVisit::VISIT_TYPE_CONTROL => 'Kontrol',
@@ -51,31 +51,31 @@
                     <option value="{{ $typeValue }}" @selected($visitType === $typeValue)>{{ $typeLabel }}</option>
                 @endforeach
             </select>
-            @error('visit_type')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+            @error('visit_type')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
         </div>
 
         <div class="sm:col-span-2 hidden" data-follow-up-panel>
-            <label class="block text-sm font-medium text-gray-700">Kunjungan Sebelumnya <span class="text-rose-500">*</span></label>
-            <select name="follow_up_of_visit_id" data-follow-up-select class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+            <label class="block text-sm font-medium text-ink">Kunjungan Sebelumnya <span class="text-danger">*</span></label>
+            <select name="follow_up_of_visit_id" data-follow-up-select class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                 <option value="">- Pilih kunjungan sebelumnya -</option>
             </select>
-            <p class="mt-1 text-xs text-gray-500" data-follow-up-hint>Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.</p>
-            @error('follow_up_of_visit_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+            <p class="mt-1 text-xs text-ink-soft" data-follow-up-hint>Pilih pasien terdaftar terlebih dahulu untuk melihat riwayat kunjungan.</p>
+            @error('follow_up_of_visit_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
         </div>
     @endif
 
     @if (! $visit)
         {{-- Pilih pasien terdaftar ATAU daftarkan pasien baru (Sprint 23 Phase 23.8) --}}
-        <div class="sm:col-span-2 rounded-lg border border-teal-100 bg-teal-50/40 p-4" data-patient-block>
+        <div class="sm:col-span-2 rounded-lg border border-brand-100 bg-brand-50/40 p-4" data-patient-block>
             <input type="hidden" name="patient_mode" data-patient-mode value="{{ $patientMode }}" />
             <div class="flex flex-wrap items-center gap-4">
-                <span class="text-xs font-semibold uppercase tracking-wide text-teal-700">Pasien</span>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                    <input type="radio" name="patient_mode_radio" value="existing" @checked($patientMode === 'existing') data-mode-radio class="text-teal-600 focus:ring-teal-500" />
+                <span class="text-xs font-semibold uppercase tracking-wide text-brand-700">Pasien</span>
+                <label class="inline-flex items-center gap-2 text-sm text-ink">
+                    <input type="radio" name="patient_mode_radio" value="existing" @checked($patientMode === 'existing') data-mode-radio class="text-brand-600 focus:ring-brand-500" />
                     Pasien Terdaftar
                 </label>
-                <label class="inline-flex items-center gap-2 text-sm text-gray-700">
-                    <input type="radio" name="patient_mode_radio" value="new" @checked($patientMode === 'new') data-mode-radio class="text-teal-600 focus:ring-teal-500" />
+                <label class="inline-flex items-center gap-2 text-sm text-ink">
+                    <input type="radio" name="patient_mode_radio" value="new" @checked($patientMode === 'new') data-mode-radio class="text-brand-600 focus:ring-brand-500" />
                     Pasien Baru
                 </label>
             </div>
@@ -87,49 +87,49 @@
                     :selected="$prefillPatientId"
                     label="Pasien Terdaftar"
                 />
-                @error('patient_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                @error('patient_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
             </div>
 
             {{-- Mode: pasien baru --}}
             <div class="mt-3 hidden" data-mode-panel="new">
-                <p class="mb-2 text-xs text-gray-500">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
+                <p class="mb-2 text-xs text-ink-soft">Nomor RM final dibentuk otomatis: <span class="font-mono">DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}</span>. Nomor RM manual diisi oleh admin.</p>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nama Pasien</label>
-                        <input type="text" name="new_patient[name]" value="{{ old('new_patient.name') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        @error('new_patient.name')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Nama Pasien</label>
+                        <input type="text" name="new_patient[name]" value="{{ old('new_patient.name') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.name')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Cabang RME</label>
+                        <label class="block text-sm font-medium text-ink">Cabang RME</label>
                         @if ($lockedBranchId)
                             @php $lockedNewPatientBranch = $rmeBranches->firstWhere('id', $lockedBranchId); @endphp
                             <input type="hidden" name="new_patient[branch_id]" value="{{ $lockedBranchId }}" data-rm-branch data-code="{{ $lockedNewPatientBranch?->code }}">
-                            <p class="mt-1 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800">
+                            <p class="mt-1 rounded-lg border border-hairline bg-navy-50 px-3 py-2 text-sm text-ink">
                                 {{ $lockedNewPatientBranch?->code }} — {{ $lockedNewPatientBranch?->name }}
                             </p>
                         @else
-                            <select name="new_patient[branch_id]" data-rm-branch class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                            <select name="new_patient[branch_id]" data-rm-branch class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <option value="" data-code="">- Pilih cabang RME -</option>
                                 @foreach ($rmeBranches as $branch)
                                     <option value="{{ $branch->id }}" data-code="{{ $branch->code }}" @selected((int) old('new_patient.branch_id') === $branch->id)>{{ $branch->code }} — {{ $branch->name }}</option>
                                 @endforeach
                             </select>
                         @endif
-                        @error('new_patient.branch_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
-                        <p class="mt-1 text-xs text-gray-400">Harus sama dengan Klinik/Cabang kunjungan di atas.</p>
+                        @error('new_patient.branch_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+                        <p class="mt-1 text-xs text-ink-muted">Harus sama dengan Klinik/Cabang kunjungan di atas.</p>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Tanggal Daftar</label>
-                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        <label class="block text-sm font-medium text-ink">Tanggal Daftar</label>
+                        <input type="date" name="new_patient[registered_at]" data-rm-date value="{{ old('new_patient.registered_at', now()->format('Y-m-d')) }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nomor RM Manual</label>
-                        <input type="text" name="new_patient[manual_rm_number]" data-rm-manual inputmode="numeric" value="{{ old('new_patient.manual_rm_number') }}" placeholder="mis. 0001" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        @error('new_patient.manual_rm_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Nomor RM Manual</label>
+                        <input type="text" name="new_patient[manual_rm_number]" data-rm-manual inputmode="numeric" value="{{ old('new_patient.manual_rm_number') }}" placeholder="mis. 0001" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.manual_rm_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Jenis Kelamin <span class="text-gray-400">(opsional)</span></label>
-                        <select name="new_patient[gender]" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <label class="block text-sm font-medium text-ink">Jenis Kelamin <span class="text-ink-muted">(opsional)</span></label>
+                        <select name="new_patient[gender]" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                             <option value="">—</option>
                             @foreach (['Male' => 'Laki-laki', 'Female' => 'Perempuan', 'Other' => 'Lainnya'] as $val => $label)
                                 <option value="{{ $val }}" @selected(old('new_patient.gender') === $val)>{{ $label }}</option>
@@ -137,55 +137,55 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Tanggal Lahir <span class="text-gray-400">(opsional)</span></label>
-                        <input type="date" name="new_patient[date_of_birth]" value="{{ old('new_patient.date_of_birth') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+                        <label class="block text-sm font-medium text-ink">Tanggal Lahir <span class="text-ink-muted">(opsional)</span></label>
+                        <input type="date" name="new_patient[date_of_birth]" value="{{ old('new_patient.date_of_birth') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Telepon <span class="text-gray-400">(opsional)</span></label>
-                        <input type="text" name="new_patient[phone]" value="{{ old('new_patient.phone') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        @error('new_patient.phone')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Telepon <span class="text-ink-muted">(opsional)</span></label>
+                        <input type="text" name="new_patient[phone]" value="{{ old('new_patient.phone') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.phone')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nomor WA <span class="text-gray-400">(opsional)</span></label>
-                        <input type="text" name="new_patient[whatsapp_number]" value="{{ old('new_patient.whatsapp_number') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        <p class="mt-1 text-xs text-gray-500">Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.</p>
-                        @error('new_patient.whatsapp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Nomor WA <span class="text-ink-muted">(opsional)</span></label>
+                        <input type="text" name="new_patient[whatsapp_number]" value="{{ old('new_patient.whatsapp_number') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        <p class="mt-1 text-xs text-ink-soft">Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.</p>
+                        @error('new_patient.whatsapp_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Nomor KTP <span class="text-gray-400">(opsional)</span></label>
+                        <label class="block text-sm font-medium text-ink">Nomor KTP <span class="text-ink-muted">(opsional)</span></label>
                         <input
                             type="text"
                             name="new_patient[ktp_number]"
                             inputmode="numeric"
                             maxlength="16"
                             value="{{ old('new_patient.ktp_number') }}"
-                            class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                            class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500"
                         />
-                        <p class="mt-1 text-xs text-gray-500">Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
-                        @error('new_patient.ktp_number')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <p class="mt-1 text-xs text-ink-soft">Digunakan untuk validasi identitas pasien. Tidak ditampilkan di RME/cetak.</p>
+                        @error('new_patient.ktp_number')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">E-Mail <span class="text-gray-400">(opsional)</span></label>
-                        <input type="email" name="new_patient[email]" value="{{ old('new_patient.email') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        @error('new_patient.email')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">E-Mail <span class="text-ink-muted">(opsional)</span></label>
+                        <input type="email" name="new_patient[email]" value="{{ old('new_patient.email') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.email')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Pekerjaan <span class="text-gray-400">(opsional)</span></label>
-                        <input type="text" name="new_patient[occupation]" value="{{ old('new_patient.occupation') }}" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
-                        @error('new_patient.occupation')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Pekerjaan <span class="text-ink-muted">(opsional)</span></label>
+                        <input type="text" name="new_patient[occupation]" value="{{ old('new_patient.occupation') }}" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" />
+                        @error('new_patient.occupation')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Alamat Lengkap <span class="text-gray-400">(opsional)</span></label>
-                        <textarea name="new_patient[address]" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('new_patient.address') }}</textarea>
-                        @error('new_patient.address')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
+                        <label class="block text-sm font-medium text-ink">Alamat Lengkap <span class="text-ink-muted">(opsional)</span></label>
+                        <textarea name="new_patient[address]" rows="2" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('new_patient.address') }}</textarea>
+                        @error('new_patient.address')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
                     </div>
                     {{-- Sprint 61.1.1 — reuse the Sprint 61.1 direct KTP scanner section
                          inside the RME "Pasien Baru" panel. The hidden ktp_scan_token is
                          only attached when this new-patient form is submitted. --}}
                     @include('settings.patients._ktp-scan')
                     <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Nomor RM Final (Preview)</label>
-                        <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-gray-200 bg-gray-50 font-mono text-sm text-gray-700" />
+                        <label class="block text-sm font-medium text-ink">Nomor RM Final (Preview)</label>
+                        <input type="text" data-rm-preview readonly placeholder="DG-{KODE_CABANG}-{TAHUN_DAFTAR}-{NOMOR_RM_MANUAL}" class="mt-1 block w-full rounded-lg border-hairline bg-navy-50 font-mono text-sm text-ink" />
                     </div>
                 </div>
             </div>
@@ -200,24 +200,24 @@
         </div>
     @endif
     @if ($hideDoctorSelection)
-        <div class="sm:col-span-2 rounded-lg border border-teal-100 bg-teal-50/50 px-3 py-2">
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Dokter</p>
-            <p class="mt-1 text-sm text-gray-700">Dokter akan otomatis dipilih berdasarkan ruangan yang diassign pada halaman antrian.</p>
+        <div class="sm:col-span-2 rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2">
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Dokter</p>
+            <p class="mt-1 text-sm text-ink">Dokter akan otomatis dipilih berdasarkan ruangan yang diassign pada halaman antrian.</p>
         </div>
     @else
     <div>
-        <label class="block text-sm font-medium text-gray-700">Dokter <span class="text-rose-500">*</span></label>
-        <select name="doctor_id" required data-visit-doctor class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" @disabled($noOnlineDoctors && ($doctors ?? collect())->isEmpty())>
+        <label class="block text-sm font-medium text-ink">Dokter <span class="text-danger">*</span></label>
+        <select name="doctor_id" required data-visit-doctor class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500" @disabled($noOnlineDoctors && ($doctors ?? collect())->isEmpty())>
             <option value="">- Pilih dokter -</option>
             @foreach ($doctors ?? [] as $doctor)
                 <option value="{{ $doctor->id }}" @selected(old('doctor_id', $visit?->doctor_id) == $doctor->id)>{{ $doctor->name }}</option>
             @endforeach
         </select>
-        @error('doctor_id')<p class="mt-1 text-xs text-rose-600">{{ $message }}</p>@enderror
-        <p data-visit-doctor-empty class="mt-2 text-xs text-amber-700 @if(! $noOnlineDoctors) hidden @endif">
+        @error('doctor_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
+        <p data-visit-doctor-empty class="mt-2 text-xs text-warning-700 @if(! $noOnlineDoctors) hidden @endif">
             Belum ada dokter online di cabang ini. Minta dokter memilih cabang dan ruangan terlebih dahulu.
         </p>
-        <p data-visit-doctor-hint class="mt-1 text-xs text-gray-500 @if($noOnlineDoctors) hidden @endif">
+        <p data-visit-doctor-hint class="mt-1 text-xs text-ink-soft @if($noOnlineDoctors) hidden @endif">
             Hanya dokter yang sedang online di cabang kunjungan yang dapat dipilih.
         </p>
     </div>
@@ -225,22 +225,22 @@
     {{-- Sprint 58.6 — Room selection removed from registration. Admin Klinik now
          assigns a treatment room from the queue (Daftar Kunjungan) before treatment. --}}
     <div class="sm:col-span-2">
-        <label class="block text-sm font-medium text-gray-700">Keluhan Utama <span class="text-gray-400">(opsional)</span></label>
-        <textarea name="chief_complaint" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('chief_complaint', $visit?->chief_complaint) }}</textarea>
+        <label class="block text-sm font-medium text-ink">Keluhan Utama <span class="text-ink-muted">(opsional)</span></label>
+        <textarea name="chief_complaint" rows="3" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('chief_complaint', $visit?->chief_complaint) }}</textarea>
     </div>
 
     {{-- Initial Service (triage/antrian) — Phase 1.8 --}}
-    <div class="sm:col-span-2 border-t border-gray-100 pt-4">
-        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Layanan Awal (Triase)</p>
+    <div class="sm:col-span-2 border-t border-hairline pt-4">
+        <p class="text-xs font-semibold uppercase tracking-wide text-ink-soft mb-3">Layanan Awal (Triase)</p>
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-                <label class="block text-sm font-medium text-gray-700">
+                <label class="block text-sm font-medium text-ink">
                     Tindakan Awal
                     @if (!$visit)
-                        <span class="text-rose-500">*</span>
+                        <span class="text-danger">*</span>
                     @endif
                 </label>
-                <select name="initial_treatment_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                <select name="initial_treatment_id" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">
                     <option value="">- Pilih tindakan awal -</option>
                     @foreach ($treatments as $treatment)
                         <option value="{{ $treatment->id }}" @selected(old('initial_treatment_id', $visit?->initial_treatment_id) == $treatment->id)>
@@ -249,15 +249,15 @@
                     @endforeach
                 </select>
                 @error('initial_treatment_id')
-                    <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
+                    <p class="mt-1 text-xs text-danger-700">{{ $message }}</p>
                 @enderror
             </div>
             <div>
-                <label class="block text-sm font-medium text-gray-700">Catatan Layanan Awal <span class="text-gray-400">(opsional)</span></label>
-                <textarea name="initial_service_note" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('initial_service_note', $visit?->initial_service_note) }}</textarea>
+                <label class="block text-sm font-medium text-ink">Catatan Layanan Awal <span class="text-ink-muted">(opsional)</span></label>
+                <textarea name="initial_service_note" rows="2" class="mt-1 block w-full rounded-lg border-hairline text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('initial_service_note', $visit?->initial_service_note) }}</textarea>
             </div>
         </div>
-        <p class="mt-2 text-xs text-gray-400">Tindakan awal hanya untuk konteks triase/antrian, bukan tagihan akhir.</p>
+        <p class="mt-2 text-xs text-ink-muted">Tindakan awal hanya untuk konteks triase/antrian, bukan tagihan akhir.</p>
     </div>
 </div>
 
