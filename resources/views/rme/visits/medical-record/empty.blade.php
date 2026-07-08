@@ -8,16 +8,18 @@
         record. KTP / NIK is never rendered.
     --}}
     <div class="space-y-6">
-        <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-900">Buku RM Tulisan Tangan Pasien</h2>
-            <p class="mt-1 text-sm text-gray-500">{{ $workspaceVisit->visit_number }} &mdash; {{ $workspaceVisit->visit_date?->format('d/m/Y') }}</p>
-            @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
-                <p class="mt-2 text-sm text-sky-800">
-                    Dibuka dari Kunjungan #{{ $sourceVisit->visit_number }}. Buku RM tulisan tangan ditambahkan ke kunjungan pertama pasien.
-                </p>
-            @endif
-        </div>
+        <x-ui.page-header
+            title="Buku RM Tulisan Tangan Pasien"
+            :subtitle="$workspaceVisit->visit_number.' — '.($workspaceVisit->visit_date?->format('d/m/Y') ?? '-')"
+        >
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
+        </x-ui.page-header>
+
+        @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
+            <x-ui.alert variant="info">
+                Dibuka dari Kunjungan #{{ $sourceVisit->visit_number }}. Buku RM tulisan tangan ditambahkan ke kunjungan pertama pasien.
+            </x-ui.alert>
+        @endif
 
         <x-ui.card title="Informasi Pasien">
             @php
@@ -55,35 +57,35 @@
         </x-ui.card>
 
         <x-ui.card title="Buku RM Tulisan Tangan">
-            <div class="rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center">
-                <p class="text-sm font-medium text-amber-800">
-                    Belum ada halaman RM tulisan tangan untuk pasien ini.
-                </p>
-
-                @if ($canEdit)
-                    <p class="mt-2 text-xs text-amber-700">
-                        Buat halaman RM pertama pada kunjungan pertama pasien
-                        (Kunjungan #{{ $workspaceVisit->visit_number }}).
-                    </p>
-                    <form method="POST" action="{{ route('rme.visits.medical-record.store', $workspaceVisit) }}" class="mt-4">
-                        @csrf
-                        @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
-                            <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
-                        @endif
-                        <x-ui.button type="submit" variant="primary">
-                            Buat Halaman RM Pertama
-                        </x-ui.button>
-                    </form>
-                @else
-                    <p class="mt-2 text-xs text-amber-700">
-                        Halaman RM tulisan tangan akan tampil di sini setelah dokter membuat rekam medis pasien.
-                    </p>
-                @endif
-            </div>
+            @if ($canEdit)
+                <x-ui.empty-state
+                    :icon="false"
+                    title="Belum ada halaman RM tulisan tangan untuk pasien ini."
+                    :description="'Buat halaman RM pertama pada kunjungan pertama pasien (Kunjungan #'.$workspaceVisit->visit_number.').'"
+                >
+                    <x-slot:action>
+                        <form method="POST" action="{{ route('rme.visits.medical-record.store', $workspaceVisit) }}">
+                            @csrf
+                            @if ($sourceVisit && $sourceVisit->id !== $workspaceVisit->id)
+                                <input type="hidden" name="source_visit_id" value="{{ $sourceVisit->id }}">
+                            @endif
+                            <x-ui.button type="submit" variant="primary">
+                                Buat Halaman RM Pertama
+                            </x-ui.button>
+                        </form>
+                    </x-slot:action>
+                </x-ui.empty-state>
+            @else
+                <x-ui.empty-state
+                    :icon="false"
+                    title="Belum ada halaman RM tulisan tangan untuk pasien ini."
+                    description="Halaman RM tulisan tangan akan tampil di sini setelah dokter membuat rekam medis pasien."
+                />
+            @endif
         </x-ui.card>
 
         <div>
-            <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke detail kunjungan</a>
+            <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
         </div>
     </div>
 </x-settings-shell>

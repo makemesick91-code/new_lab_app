@@ -19,7 +19,7 @@
             display: flex;
             align-items: center;
             gap: 14px;
-            border-bottom: 2px solid #0f766e;
+            border-bottom: 2px solid #1D4ED8;
             padding-bottom: 10px;
             margin-bottom: 14px;
         }
@@ -32,7 +32,7 @@
         .header h1 {
             font-size: 18px;
             font-weight: 700;
-            color: #0f766e;
+            color: #1D4ED8;
         }
         .header .app-name {
             font-size: 11px;
@@ -185,8 +185,8 @@
             cursor: pointer;
             text-decoration: none;
         }
-        .btn-print { background: #0f766e; }
-        .btn-print:hover { background: #0d9488; }
+        .btn-print { background: #1D4ED8; }
+        .btn-print:hover { background: #1E40AF; }
         .btn-pdf { background: #374151; }
         .btn-pdf:hover { background: #1f2937; }
         .btn-close {

@@ -13,13 +13,13 @@
             line-height: 1.35;
         }
         .header {
-            border-bottom: 2px solid #0f766e;
+            border-bottom: 2px solid #1D4ED8;
             padding-bottom: 10px;
             margin-bottom: 14px;
         }
         .header .clinic-logo { height: 42px; width: auto; max-width: 150px; vertical-align: middle; }
         .header .header-text { display: inline-block; vertical-align: middle; padding-left: 12px; }
-        .header h1 { font-size: 16px; font-weight: 700; color: #0f766e; }
+        .header h1 { font-size: 16px; font-weight: 700; color: #1D4ED8; }
         .header .app-name { font-size: 10px; color: #6b7280; }
         .info-grid {
             width: 100%;

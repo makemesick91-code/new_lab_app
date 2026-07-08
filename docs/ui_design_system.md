@@ -775,3 +775,44 @@ online-context, RM lookup, workspace nav) follow the shared standards:
 `architecture:ui-governance-check --strict` enforces the RME reference surfaces
 (`rme/patient-queue/index`, `rme/visits/room-worklist`, `rme/visits/create`,
 `rme/visits/edit`) and the no-teal / no-gold-CTA / no-rendered-KTP invariants.
+
+## RME clinical documentation & print bundle (UIX-11)
+
+The doctor-facing RME clinical documentation surfaces (medical record list/
+detail/empty, odontogram detail) and the print/PDF bundle follow the shared
+standards. This is **presentation-only** — none of the clinical workflow rules
+below may be changed by a UI sprint.
+
+- **Clinical detail pages** (`rme/visits/medical-record/show`,
+  `rme/visits/odontogram/show`) — `x-ui.page-header` (breadcrumb + status badge /
+  actions in the actions slot) + `x-ui.card` context blocks + `x-ui.badge` +
+  `x-ui.button` + `x-ui.alert` for every state banner (finalized notice,
+  follow-up, finalize gate, opened-from-later-visit). Medical record detail is
+  the reference clinical documentation page.
+- **Clinical list page** (`rme/visits/medical-record/index`) — the UIX-3 list
+  standard (`x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` + `x-ui.badge` +
+  `x-ui.button` + `x-ui.empty-state`, same GET params).
+- **Handwriting area / canvas** — presentation-only. The Alpine canvas `<script>`
+  bakes the official Daengtisia RM paper template (neutral ink hex) into the saved
+  PNG; **never retokenize the canvas drawing/template colors** — they drive print
+  parity and the saved image. Capture / save / page-nav / finalize-guard logic is
+  untouched.
+- **Odontogram tooth map / DMF-T** — the FDI visual and DMF-T tally are generated,
+  read-only outputs of the saved table. **Clinical status colours are preserved
+  on purpose** (karies=red, tambalan=blue, hilang=gray, crown=amber, PSA=sky,
+  normal=green) for distinguishability and print parity — they are NOT legacy teal
+  and must stay.
+- **Print / PDF bundle** (`rme/visits/print`, `rme/visits/print-pdf`,
+  `rme/visits/odontogram/print`) — table-based / dompdf-safe; chrome teal hex
+  (`#0f766e`/`#0d9488`) → brand hex (`#1D4ED8`/`#1E40AF`); semantic status badge
+  colours preserved. Print templates are the only clinical surface where inline
+  brand hex is expected (UIX-8 precedent). No flexbox-only PDF layout.
+- **Privacy & workflow (non-negotiable):** no clinical view / print / PDF renders
+  a full KTP/NIK/identity number; medical-record and odontogram **finalization
+  logic**, the **handwriting-PNG-required-before-finalize** rule, the **SOAP-hidden**
+  rule, the **doctor-cannot-complete-visit-directly** rule (visit `completed` is
+  cashier/payment-driven), and the **room gate (`visit.room`)** are all unchanged.
+
+`architecture:ui-governance-check --strict` enforces the clinical reference
+surfaces and the no-teal / no-gold-CTA / no-rendered-KTP invariants (including a
+residual-teal-hex scan on the print templates).
