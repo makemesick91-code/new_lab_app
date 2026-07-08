@@ -1375,6 +1375,88 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'docs/ui_design_system.md does not document the UIX-20 permission-aware UI standard.';
         }
 
+        // --- UIX-21 — UI/UX rules enforcement & governance lock (non-brittle). ---
+        // This is the governance-lock sprint for the UIX-6 → UIX-20 foundation. It adds
+        // no broad visual/behaviour rule; it closes three concrete, stable enforcement
+        // gaps so future UI work cannot silently break the "Blade + Tailwind + Alpine,
+        // no CDN, single design system" foundation. All rules are additive and scoped —
+        // no app-wide legacy-color sweep, no "every view must use x-ui.*", no asset-hash
+        // or browser dependency, and no PII exposure. Server-side authorization stays
+        // authoritative; nothing here touches route/policy/permission/business logic.
+
+        // H1 — vite.config framework-plugin lock: the build stays Blade + Alpine. No
+        // React/Vue/Svelte/Angular/Solid Vite plugin may be introduced (complements the
+        // UIX-18 package.json dependency guard, which cannot see the build config).
+        $viteConfigPath = null;
+        foreach (['vite.config.js', 'vite.config.ts', 'vite.config.mjs'] as $candidate) {
+            if (is_file($base.'/'.$candidate)) {
+                $viteConfigPath = $candidate;
+                break;
+            }
+        }
+        if ($viteConfigPath === null) {
+            $errors[] = 'Missing vite.config.* build config (UIX-21 — asset pipeline must exist for the Vite bundle).';
+        } else {
+            $viteConfig = @file_get_contents($base.'/'.$viteConfigPath) ?: '';
+            $forbiddenVitePlugins = [
+                '@vitejs/plugin-react', '@vitejs/plugin-vue', '@vitejs/plugin-vue-jsx',
+                'plugin-svelte', 'plugin-solid', '@analogjs/', '@sveltejs/',
+                'vite-plugin-vue', '@preact/preset-vite',
+            ];
+            foreach ($forbiddenVitePlugins as $plugin) {
+                if (str_contains($viteConfig, $plugin)) {
+                    $errors[] = "Forbidden framework Vite plugin referenced in {$viteConfigPath}: {$plugin} (UIX-21 — Blade+Tailwind+Alpine only; no React/Vue/Svelte/Angular/Solid build plugin).";
+                }
+            }
+        }
+
+        // H2 — nav/layout shell CDN-script lock: the UIX-18 CDN guard only scans the
+        // x-ui.* components. Extend it to the navigation/layout shell foundation so a
+        // remote <script src="http..."> cannot creep into the app shell (assets ship
+        // through Vite, never a CDN).
+        $shellFoundationFiles = [
+            'resources/views/layouts/app.blade.php',
+            'resources/views/layouts/sidebar.blade.php',
+            'resources/views/layouts/partials/sidebar.blade.php',
+            'resources/views/layouts/partials/topbar.blade.php',
+        ];
+        foreach ($shellFoundationFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/<script[^>]+src\s*=\s*["\']https?:/i', $contents)) {
+                $errors[] = "CDN <script src=\"http...\"> injection found in {$file} (UIX-21 — no CDN scripts in the app shell; use the Vite bundle).";
+            }
+        }
+
+        // H3 — x-ui.card action-group wrap lock: the card's optional actions slot must
+        // keep flex-wrap so header actions never overflow on narrow widths (aligns the
+        // card with the UIX-16 filter-bar/page-header responsive-action guarantee).
+        $cardComponent = @file_get_contents($base.'/resources/views/components/ui/card.blade.php') ?: '';
+        if ($cardComponent !== '' && str_contains($cardComponent, '$actions') && ! str_contains($cardComponent, 'flex-wrap')) {
+            $errors[] = 'x-ui.card action group must keep flex-wrap so header actions wrap on narrow widths (UIX-21, aligned with UIX-16).';
+        }
+
+        // S1 — design-system doc documents the UIX-21 governance lock (soft signal).
+        $designDocUix21 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix21 !== '' && stripos($designDocUix21, 'UIX-21') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-21 UI/UX rules-enforcement governance lock.';
+        }
+
+        // S2 — the governance doc must keep its honest-limitation disclaimer. UIX-17
+        // established that no formal WCAG/accessibility audit is claimed; lock that copy
+        // so a future edit cannot silently drop the disclaimer and start over-claiming.
+        $govDocUix21 = @file_get_contents($base.'/docs/ui/daengtisiams-ui-governance.md') ?: '';
+        if ($govDocUix21 !== '' && stripos($govDocUix21, 'No formal WCAG') === false) {
+            $warnings[] = 'docs/ui/daengtisiams-ui-governance.md dropped the "No formal WCAG" honest-limitation disclaimer (UIX-21 — no formal WCAG/Lighthouse claim without a real audit).';
+        }
+
+        // UIX-21 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-21-ui-rules-enforcement-governance-lock.md')) {
+            $warnings[] = 'UIX-21 sprint evidence doc is missing (docs/sprints/uix-21-ui-rules-enforcement-governance-lock.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
