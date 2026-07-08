@@ -374,7 +374,7 @@
     <x-slot name="header">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h2 class="text-xl font-semibold leading-tight text-gray-800">
+                <h2 class="text-xl font-semibold leading-tight text-navy">
                     @if ($showBranchAdminDashboard)
                         Dashboard Admin Cabang
                     @elseif ($showOwnerDashboard)
@@ -383,7 +383,7 @@
                         Dashboard
                     @endif
                 </h2>
-                <p class="mt-1 text-sm text-gray-500">
+                <p class="mt-1 text-sm text-ink-soft">
                     @if ($showBranchAdminDashboard)
                         Ringkasan operasional harian untuk cabang aktif.
                     @elseif ($showOwnerDashboard)
@@ -394,8 +394,8 @@
                 </p>
             </div>
             <div class="text-left sm:text-right">
-                <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Login sebagai</p>
-                <p class="text-sm font-medium text-gray-900">{{ $user?->name }}</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-ink-soft">Login sebagai</p>
+                <p class="text-sm font-medium text-navy">{{ $user?->name }}</p>
             </div>
         </div>
     </x-slot>
@@ -443,19 +443,16 @@
                                             Menampilkan semua cabang aktif.
                                         @endif
                                     </p>
-                                    <p class="mt-2 text-xs text-gray-500">
+                                    <p class="mt-2 text-xs text-ink-muted">
                                         Dashboard ini hanya monitoring; tidak membuat atau mengubah data RME/Lab.
                                     </p>
                                 </div>
 
                                 <form method="GET" action="{{ route('dashboard') }}" class="w-full max-w-xs shrink-0">
-                                    <label for="owner-rme-lab-branch-filter" class="block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                        Filter Cabang
-                                    </label>
-                                    <select
+                                    <x-ui.select
                                         id="owner-rme-lab-branch-filter"
                                         name="branch_id"
-                                        class="mt-1 block w-full rounded-lg border-hairline text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500"
+                                        label="Filter Cabang"
                                         onchange="this.form.submit()"
                                     >
                                         <option value="" @selected($ownerRmeLabSelectedBranchId === null)>Semua Cabang</option>
@@ -464,15 +461,15 @@
                                                 {{ $branch->name }}
                                             </option>
                                         @endforeach
-                                    </select>
+                                    </x-ui.select>
                                 </form>
                             </div>
                         </div>
 
                         <div>
                             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <h4 class="text-base font-semibold text-gray-900">KPI Pilot RME &amp; Lab</h4>
-                                <p class="text-xs text-gray-500">Read-only — tidak membuat atau mengubah transaksi</p>
+                                <h4 class="text-base font-semibold text-navy">KPI Pilot RME &amp; Lab</h4>
+                                <p class="text-xs text-ink-soft">Read-only — tidak membuat atau mengubah transaksi</p>
                             </div>
                             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                 @foreach ($ownerRmeLabKpiCards as $kpi)
@@ -487,110 +484,100 @@
                             </div>
                             @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
                                 <div class="mt-4">
-                                    <a href="{{ $ownerRmeLabDrilldowns['rme_receivables'] }}"
-                                       class="inline-flex items-center rounded-md border border-brand-200 bg-surface px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
-                                        Piutang RME
-                                    </a>
+                                    <x-ui.button :href="$ownerRmeLabDrilldowns['rme_receivables']" variant="secondary" size="sm">Piutang RME</x-ui.button>
                                 </div>
                             @endif
                         </div>
 
                         <div>
                             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <h4 class="text-base font-semibold text-gray-900">Ringkasan Per Cabang</h4>
-                                <p class="text-xs text-gray-500">Perbandingan ringan antar cabang aktif</p>
+                                <h4 class="text-base font-semibold text-navy">Ringkasan Per Cabang</h4>
+                                <p class="text-xs text-ink-soft">Perbandingan ringan antar cabang aktif</p>
                             </div>
 
                             @if (collect($ownerRmeLabBranchSummary)->isEmpty())
-                                <div class="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center">
-                                    <p class="text-sm font-medium text-gray-900">Belum ada cabang aktif</p>
-                                    <p class="mt-1 text-sm text-gray-500">Ringkasan per cabang akan tampil setelah ada cabang aktif dengan data pilot.</p>
-                                </div>
+                                <x-ui.empty-state
+                                    title="Belum ada cabang aktif"
+                                    description="Ringkasan per cabang akan tampil setelah ada cabang aktif dengan data pilot."
+                                />
                             @else
-                                <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                        <thead class="bg-gray-50">
-                                            <tr>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Kunjungan Hari Ini</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Menunggu Kasir</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Belum Dibayar</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Kandidat Lab Pending</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Dikonversi Hari Ini</th>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Status Perhatian</th>
+                                <x-ui.table>
+                                    <thead class="bg-navy-50">
+                                        <tr>
+                                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">Cabang</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Kunjungan Hari Ini</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Menunggu Kasir</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Invoice Belum Dibayar</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Kandidat Lab Pending</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Dikonversi Hari Ini</th>
+                                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">Status Perhatian</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-hairline">
+                                        @foreach ($ownerRmeLabBranchSummary as $row)
+                                            <tr class="hover:bg-navy-50">
+                                                <td class="px-4 py-3 font-medium text-navy">{{ $row['branch_name'] }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['visits_today'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['cashier_pending'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['unpaid_invoices'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['pending_candidates'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['converted_today'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-ink">{{ $row['attention_status'] ?? 'Aman' }}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-100">
-                                            @foreach ($ownerRmeLabBranchSummary as $row)
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-3 font-medium text-gray-900">{{ $row['branch_name'] }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['visits_today'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['cashier_pending'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['unpaid_invoices'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['pending_candidates'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['converted_today'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-gray-700">{{ $row['attention_status'] ?? 'Aman' }}</td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        @endforeach
+                                    </tbody>
+                                </x-ui.table>
                             @endif
                         </div>
 
                         <div>
                             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                <h4 class="text-base font-semibold text-gray-900">Ringkasan Piutang per Cabang</h4>
-                                <p class="text-xs text-gray-500">Sisa piutang invoice RME aktif (UNPAID + PARTIAL) per cabang. Invoice lunas (sisa nol) tidak dihitung sebagai piutang aktif.</p>
+                                <h4 class="text-base font-semibold text-navy">Ringkasan Piutang per Cabang</h4>
+                                <p class="text-xs text-ink-soft">Sisa piutang invoice RME aktif (UNPAID + PARTIAL) per cabang. Invoice lunas (sisa nol) tidak dihitung sebagai piutang aktif.</p>
                             </div>
-                            <p class="mb-3 text-xs text-gray-500">Tindak lanjut piutang dilakukan manual oleh operator (tanpa pengiriman WhatsApp otomatis).</p>
+                            <p class="mb-3 text-xs text-ink-soft">Tindak lanjut piutang dilakukan manual oleh operator (tanpa pengiriman WhatsApp otomatis).</p>
 
                             @if (collect($ownerRmeLabBranchReceivableSummary)->isEmpty())
-                                <div class="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-8 text-center">
-                                    <p class="text-sm font-medium text-gray-900">Belum ada cabang aktif</p>
-                                    <p class="mt-1 text-sm text-gray-500">Ringkasan piutang per cabang akan tampil setelah ada cabang aktif dengan data pilot.</p>
-                                </div>
+                                <x-ui.empty-state
+                                    title="Belum ada cabang aktif"
+                                    description="Ringkasan piutang per cabang akan tampil setelah ada cabang aktif dengan data pilot."
+                                />
                             @else
-                                <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-                                    <table class="min-w-full divide-y divide-gray-200 text-sm">
-                                        <thead class="bg-gray-50">
-                                            <tr>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Cabang</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Sisa Piutang</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Cicilan</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Belum Dibayar</th>
-                                                <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Tindak Lanjut</th>
-                                                <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Aksi</th>
+                                <x-ui.table>
+                                    <thead class="bg-navy-50">
+                                        <tr>
+                                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">Cabang</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Sisa Piutang</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Invoice Cicilan</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Invoice Belum Dibayar</th>
+                                            <th scope="col" class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">Tindak Lanjut</th>
+                                            <th scope="col" class="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-ink-soft">Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-hairline">
+                                        @foreach ($ownerRmeLabBranchReceivableSummary as $row)
+                                            <tr class="hover:bg-navy-50">
+                                                <td class="px-4 py-3 font-medium text-navy">{{ $row['branch_name'] }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_currency_id($row['receivable_total_remaining'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['partial_count'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-right tabular-nums text-ink">{{ format_number_id($row['unpaid_count'] ?? 0) }}</td>
+                                                <td class="px-4 py-3 text-xs text-ink-soft">
+                                                    <span class="font-medium text-warning-700">{{ format_number_id($row['follow_up_overdue_count'] ?? 0) }}</span> jatuh tempo;
+                                                    {{ format_number_id($row['follow_up_today_count'] ?? 0) }} hari ini;
+                                                    {{ format_number_id($row['follow_up_scheduled_count'] ?? 0) }} terjadwal;
+                                                    {{ format_number_id($row['never_followed_up_count'] ?? 0) }} belum pernah
+                                                </td>
+                                                <td class="px-4 py-3 text-right">
+                                                    @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
+                                                        <x-ui.button :href="route('rme.cashier.receivables', ['branch_id' => $row['branch_id']])" variant="secondary" size="sm">Lihat Piutang</x-ui.button>
+                                                    @else
+                                                        <span class="text-xs text-ink-muted">—</span>
+                                                    @endif
+                                                </td>
                                             </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-gray-100">
-                                            @foreach ($ownerRmeLabBranchReceivableSummary as $row)
-                                                <tr class="hover:bg-gray-50">
-                                                    <td class="px-4 py-3 font-medium text-gray-900">{{ $row['branch_name'] }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_currency_id($row['receivable_total_remaining'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['partial_count'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_number_id($row['unpaid_count'] ?? 0) }}</td>
-                                                    <td class="px-4 py-3 text-xs text-gray-600">
-                                                        <span class="font-medium text-warning-700">{{ format_number_id($row['follow_up_overdue_count'] ?? 0) }}</span> jatuh tempo;
-                                                        {{ format_number_id($row['follow_up_today_count'] ?? 0) }} hari ini;
-                                                        {{ format_number_id($row['follow_up_scheduled_count'] ?? 0) }} terjadwal;
-                                                        {{ format_number_id($row['never_followed_up_count'] ?? 0) }} belum pernah
-                                                    </td>
-                                                    <td class="px-4 py-3 text-right">
-                                                        @if (!empty($ownerRmeLabDrilldowns['rme_receivables']))
-                                                            <a href="{{ route('rme.cashier.receivables', ['branch_id' => $row['branch_id']]) }}"
-                                                               class="inline-flex items-center rounded-md border border-brand-200 bg-surface px-2.5 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
-                                                                Lihat Piutang
-                                                            </a>
-                                                        @else
-                                                            <span class="text-xs text-gray-400">—</span>
-                                                        @endif
-                                                    </td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
+                                        @endforeach
+                                    </tbody>
+                                </x-ui.table>
                             @endif
                         </div>
 
@@ -611,8 +598,8 @@
 
                 <section aria-labelledby="executive-kpis">
                     <div class="mb-3 flex items-center justify-between">
-                        <h3 id="executive-kpis" class="text-base font-semibold text-gray-900">Kartu KPI Eksekutif</h3>
-                        <p class="text-xs text-gray-500">Pendapatan, beban kerja, risiko kas, dan risiko persediaan</p>
+                        <h3 id="executive-kpis" class="text-base font-semibold text-navy">Kartu KPI Eksekutif</h3>
+                        <p class="text-xs text-ink-soft">Pendapatan, beban kerja, risiko kas, dan risiko persediaan</p>
                     </div>
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-6">
                         @foreach ($ownerKpis as $kpi)
@@ -650,10 +637,10 @@
                     action-label="Buka dasbor laporan"
                 >
                     @if (collect($branchPerformance)->isEmpty())
-                        <div class="rounded-lg border border-dashed border-gray-200 px-4 py-8 text-center">
-                            <p class="text-sm font-medium text-gray-900">Belum ada data performa cabang</p>
-                            <p class="mt-1 text-sm text-gray-500">Perbandingan cabang membutuhkan data laporan yang dikelompokkan. Halaman laporan tetap tersedia untuk review terperinci.</p>
-                        </div>
+                        <x-ui.empty-state
+                            title="Belum ada data performa cabang"
+                            description="Perbandingan cabang membutuhkan data laporan yang dikelompokkan. Halaman laporan tetap tersedia untuk review terperinci."
+                        />
                     @else
                         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                             @foreach ($branchPerformance as $branch)
@@ -672,47 +659,41 @@
                 <x-owner-dashboard.dashboard-section title="Akses Detail Tersedia" description="Gunakan modul DaengtisiaMS yang sudah ada untuk detail operasional live." density="compact">
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         @canany(['view_order_report', 'manage_report'])
-                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan Order</a>
+                            <a href="{{ route('reports.orders') }}" class="rounded-lg border border-hairline p-3 text-sm font-medium text-ink hover:bg-navy-50 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan Order</a>
                         @endcanany
                         @canany(['view_qc_report', 'manage_report'])
-                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan QC</a>
+                            <a href="{{ route('reports.qc') }}" class="rounded-lg border border-hairline p-3 text-sm font-medium text-ink hover:bg-navy-50 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Laporan QC</a>
                         @endcanany
                         @canany(['view_invoice_report', 'manage_report'])
-                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Invoice Tertunggak</a>
+                            <a href="{{ route('reports.outstanding') }}" class="rounded-lg border border-hairline p-3 text-sm font-medium text-ink hover:bg-navy-50 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Invoice Tertunggak</a>
                         @endcanany
                         @canany(['view_inventory', 'manage_inventory', 'manage master data'])
-                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-gray-200 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Stok Persediaan</a>
+                            <a href="{{ route('inventory.stock.index') }}" class="rounded-lg border border-hairline p-3 text-sm font-medium text-ink hover:bg-navy-50 hover:border-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">Stok Persediaan</a>
                         @endcanany
                     </div>
                 </x-owner-dashboard.dashboard-section>
                 @else
-                <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                <x-ui.card>
                     <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Dasbor Operasional</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Mulai dari menu modul Anda</h1>
-                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
+                    <h1 class="mt-1 text-2xl font-semibold text-navy">Mulai dari menu modul Anda</h1>
+                    <p class="mt-2 max-w-3xl text-sm text-ink-soft">
                         Peran ini tidak memiliki ringkasan eksekutif atau operasional cabang penuh. Gunakan menu samping untuk kunjungan klinik, kasir RME, atau modul lain yang diizinkan.
                     </p>
                     <div class="mt-4 flex flex-wrap gap-2">
                         @canany(['view_clinic_visits', 'manage_clinic_visits'])
                             @if($user?->hasRole('Doctor'))
-                                <a href="{{ route('rme.treatment-room-worklist.index') }}" class="rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-navy-700 focus:outline-none focus:ring-2 focus:ring-navy focus:ring-offset-2">
-                                    Buka Ruang Perawatan
-                                </a>
+                                <x-ui.button :href="route('rme.treatment-room-worklist.index')" variant="primary">Buka Ruang Perawatan</x-ui.button>
                             @elseif(! $user?->hasRole('Kasir'))
-                                <a href="{{ route('rme.visits.index') }}" class="rounded-lg bg-navy px-3 py-2 text-sm font-medium text-white hover:bg-navy-700 focus:outline-none focus:ring-2 focus:ring-navy focus:ring-offset-2">
-                                    Buka Kunjungan
-                                </a>
+                                <x-ui.button :href="route('rme.visits.index')" variant="primary">Buka Kunjungan</x-ui.button>
                             @endif
                         @endcanany
                         @can('manage_rme_billing')
                             @unless($user?->hasRole('Admin Klinik'))
-                                <a href="{{ route('rme.cashier.index') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
-                                    Buka Kasir RME
-                                </a>
+                                <x-ui.button :href="route('rme.cashier.index')" variant="secondary">Buka Kasir RME</x-ui.button>
                             @endunless
                         @endcan
                     </div>
-                </section>
+                </x-ui.card>
                 @endif
     </div>
 </x-app-layout>

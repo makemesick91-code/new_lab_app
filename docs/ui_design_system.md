@@ -853,3 +853,39 @@ of an invoice is presented through one canonical card:
 component, its reuse on the invoice detail (`rme/cashier/show`) and payment
 (`rme/cashier/payment/create`) surfaces, and the no-teal / no-gold-CTA /
 no-rendered-KTP invariants across the cashier surfaces.
+
+## Owner dashboard & executive-KPI standard (UIX-13)
+
+The Owner landing (`dashboard.blade.php`) is the reference **executive dashboard**
+and the branch-admin dashboard (`dashboards/branch-admin.blade.php`) follows the
+same foundation. Every owner/executive/branch dashboard surface is **strictly
+read-only** and built from the shared components + semantic tokens:
+
+- **KPI cards** — the owner KPI block uses `x-ui.kpi-card` (UIX-2); domain KPI
+  grids reuse the existing `x-owner-dashboard.owner-kpi-card` /
+  `x-branch-dashboard.daily-summary-card` partials. Gold (`accent`) is reserved
+  for the revenue KPI only and is **never** a CTA/button variant.
+- **Read-only period / branch filter** — the branch (and any period/date) filter
+  is a `GET` form on `x-ui.select` / `x-ui.input` that submits to the same route;
+  the `branch_id` (and period) request semantics are never changed by a UI sprint,
+  and `branch_id` is never trusted from the request (branch scope stays server-side).
+- **Branch drilldown summaries** — hand-rolled dashboard tables are replaced by
+  `x-ui.table` (thead `bg-navy-50` / `text-ink-soft`, tbody `divide-hairline`,
+  money/counts `tabular-nums`) and `x-ui.empty-state` for no-data states.
+- **Executive summary / hero / fallback** — `x-ui.card` (`accent` for the hero),
+  `x-ui.button` for read-only drilldown affordances, `x-ui.empty-state` for
+  empty/error sections.
+- **Dashboard rules (non-negotiable):** no dashboard UI sprint may change any KPI
+  calculation, `OwnerDashboardKpiService` / controller / service / repository
+  behavior, period/date filtering semantics, branch drilldown semantics, branch
+  isolation / cross-branch read rules, or owner-dashboard permission checks
+  (`view_owner_dashboard` / `view dashboard`); Supervisor RME gains no
+  owner-dashboard bypass. The dashboard stays read-only (no create/update/delete
+  mutation, no mutating form). No PII / full KTP/NIK / scans / raw clinical notes
+  are ever rendered. No heavy chart/BI dependency is added — Blade + Tailwind +
+  Alpine only. No expensive query is changed without evidence + tests.
+
+`architecture:ui-governance-check --strict` enforces the owner landing +
+branch-admin views on `x-ui.table` / `x-ui.empty-state` / `x-ui.select`, and the
+no-legacy-palette / no-gray / no-hardcoded-hex / no-gold-CTA / read-only (no
+mutating form) / no-rendered-KTP invariants across both dashboard surfaces.

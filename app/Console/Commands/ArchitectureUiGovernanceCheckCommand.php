@@ -122,6 +122,81 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-2 sprint evidence doc is missing (docs/sprints/uix-2-dashboard-owner-polish.md).';
         }
 
+        // --- UIX-13 — Owner Dashboard & KPI polish rules (lightweight, non-brittle). ---
+        // The owner landing view + branch-admin dashboard must stay on the design
+        // system: no legacy palette, hand-rolled branch-summary tables replaced by
+        // x-ui.table + x-ui.empty-state, and the read-only branch filter on x-ui.select.
+        $uix13DashboardFiles = [
+            'resources/views/dashboard.blade.php',
+            'resources/views/dashboards/branch-admin.blade.php',
+        ];
+
+        foreach ($uix13DashboardFiles as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing dashboard view: {$file}";
+            }
+        }
+
+        $ownerLandingView = @file_get_contents($base.'/resources/views/dashboard.blade.php') ?: '';
+
+        // Owner landing branch drilldown summaries must use foundation table +
+        // empty-state components (no hand-rolled dashboard tables/empty states).
+        if ($ownerLandingView !== '' && ! str_contains($ownerLandingView, 'x-ui.table')) {
+            $errors[] = 'Owner dashboard branch summaries do not use the x-ui.table component.';
+        }
+        if ($ownerLandingView !== '' && ! str_contains($ownerLandingView, 'x-ui.empty-state')) {
+            $errors[] = 'Owner dashboard does not use the x-ui.empty-state component for no-data states.';
+        }
+        // Read-only branch/period filter must use the x-ui.select foundation control.
+        if ($ownerLandingView !== '' && ! str_contains($ownerLandingView, 'x-ui.select')) {
+            $errors[] = 'Owner dashboard branch filter does not use the x-ui.select component.';
+        }
+
+        // No legacy palette / hardcoded hex may be reintroduced in these views.
+        foreach ($uix13DashboardFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring)-(?:teal|emerald|amber|rose|sky)-\d/', $contents)) {
+                $errors[] = "Legacy palette class found in {$file} (use semantic tokens).";
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-gray-\d/', $contents)) {
+                $errors[] = "Legacy gray class found in {$file} (use navy/ink/hairline tokens).";
+            }
+            if (preg_match('/#[0-9a-fA-F]{6}\b/', $contents)) {
+                $errors[] = "Hardcoded hex color found in {$file} (use semantic tokens).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only).";
+            }
+        }
+
+        // Dashboard stays read-only — no create/update/delete form verbs may appear.
+        foreach ($uix13DashboardFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/method=["\'](?:POST|PUT|PATCH|DELETE)["\']/i', $contents)
+                || preg_match('/@method\(["\'](?:PUT|PATCH|DELETE)["\']\)/i', $contents)) {
+                $errors[] = "Read-only dashboard {$file} contains a mutating form (dashboard must stay read-only).";
+            }
+        }
+
+        // No PII / KTP / NIK may be rendered on the owner/branch dashboards.
+        foreach ($uix13DashboardFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents !== '' && preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Sensitive identifier (KTP/NIK) rendered in {$file} (must never be exposed).";
+            }
+        }
+
+        // UIX-13 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-13-owner-dashboard-kpi-polish.md')) {
+            $warnings[] = 'UIX-13 sprint evidence doc is missing (docs/sprints/uix-13-owner-dashboard-kpi-polish.md).';
+        }
+
         // --- UIX-3 — Kunjungan list is the reference list page (lightweight). ---
         // Standard list pages must be built on x-ui.* foundation components and
         // semantic tokens (no legacy teal brand color, no hardcoded hex color).
