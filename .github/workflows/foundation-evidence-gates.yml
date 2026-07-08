@@ -21,6 +21,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # CICD-CTRL-1 — Safe CI Runtime Control classifier.
+  # Classifies the change set conservatively (default-strong) and exposes which
+  # gates should run. It NEVER gates the always-on security/governance/
+  # release-safety/evidence jobs; it only decides whether the expensive Pest
+  # regression steps and additive module tests run. Any uncertainty resolves to
+  # the strongest profile (unknown_high_risk) so everything runs.
+  classify:
+    name: CICD-CTRL Gate Classifier
+    runs-on: ubuntu-latest
+    outputs:
+      gate_profile: ${{ steps.resolve.outputs.gate_profile }}
+      run_critical_tests: ${{ steps.resolve.outputs.run_critical_tests }}
+      run_ui_tests: ${{ steps.resolve.outputs.run_ui_tests }}
+      run_permission_tests: ${{ steps.resolve.outputs.run_permission_tests }}
+      run_inventory_tests: ${{ steps.resolve.outputs.run_inventory_tests }}
+      run_rme_tests: ${{ steps.resolve.outputs.run_rme_tests }}
+      run_lab_tests: ${{ steps.resolve.outputs.run_lab_tests }}
+      run_full_suite: ${{ steps.resolve.outputs.run_full_suite }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve safe CI gates (CICD-CTRL-1)
+        id: resolve
+        run: |
+          chmod +x scripts/ci/resolve-gates.sh
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
+            BASE="origin/${{ github.base_ref }}"
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+          fi
+          echo "Resolving gates: event=${{ github.event_name }} base=$BASE head=$HEAD_SHA"
+          bash scripts/ci/resolve-gates.sh --base "$BASE" --head "$HEAD_SHA" --github-output 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Gate decision (summary)
+        run: |
+          echo "gate_profile=${{ steps.resolve.outputs.gate_profile }}"
+          echo "run_critical_tests=${{ steps.resolve.outputs.run_critical_tests }}"
+          echo "run_full_suite=${{ steps.resolve.outputs.run_full_suite }}"
+          echo "Always-on gates (quality, release-safety, release-evidence) run regardless."
+
   quality_gate:
     name: NSF-R012 Quality Gate
     runs-on: ubuntu-latest
@@ -87,7 +133,7 @@ jobs:
   critical_test_gate:
     name: NSF-R011 Critical Test Gate
     runs-on: ubuntu-latest
-    needs: quality_gate
+    needs: [quality_gate, classify]
     services:
       postgres:
         image: postgres:16
@@ -147,11 +193,25 @@ jobs:
         run: php artisan migrate --force
 
       - name: Run critical regression tests
+        # CICD-CTRL-1: runs for every profile EXCEPT a proven docs-only change.
+        # Any uncertainty leaves run_critical_tests unset/true, so this runs.
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         run: |
           php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
 
+      - name: Note skipped critical regression tests (docs-only change)
+        if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
+        run: |
+          {
+            echo "NSF-R011 critical regression tests SKIPPED for a docs-only change."
+            echo "gate_profile=${{ needs.classify.outputs.gate_profile }}"
+            echo "Reason: CICD-CTRL-1 classifier resolved a docs_only change set (Markdown only)."
+            echo "Governance, security, release-safety, and release-evidence gates still ran."
+          } | tee storage/ci-evidence/nsf-r011-critical-tests.log
+
       - name: Run governance audit commands
+        # Always runs — governance is never gated by the classifier.
         run: bash scripts/ci/foundation-evidence-gates.sh --critical-only
 
       - name: Write NSF-R011 critical evidence summary
@@ -174,6 +234,117 @@ jobs:
             storage/ci-evidence/nsf-r011-*
             storage/ci-evidence/foundation-summary.txt
             storage/ci-evidence/dq-audits.txt
+          retention-days: 30
+
+  # CICD-CTRL-1 — Selective Module Gate (tier 3).
+  # Runs in PARALLEL with the critical gate and ADDS module-specific coverage
+  # (Inventory / Lab / UI / Permission) for the modules the classifier detected
+  # in the change set. These suites are not part of the critical filter, so this
+  # is additive safety; it never reduces the critical gate. Skipped only for a
+  # docs-only change or when no relevant module was touched.
+  selective_module_gate:
+    name: CICD-CTRL Selective Module Gate
+    runs-on: ubuntu-latest
+    needs: [quality_gate, classify]
+    if: >-
+      needs.classify.outputs.run_critical_tests != 'false' &&
+      (needs.classify.outputs.run_inventory_tests == 'true' ||
+       needs.classify.outputs.run_lab_tests == 'true' ||
+       needs.classify.outputs.run_ui_tests == 'true' ||
+       needs.classify.outputs.run_permission_tests == 'true')
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d testing"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: testing
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql, bcmath
+          coverage: none
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare CI evidence directory
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Inventory module tests
+        if: ${{ needs.classify.outputs.run_inventory_tests == 'true' }}
+        run: php artisan test --filter='Inventory' 2>&1 | tee storage/ci-evidence/cicd-ctrl-inventory-tests.log
+
+      - name: Lab module tests
+        if: ${{ needs.classify.outputs.run_lab_tests == 'true' }}
+        run: php artisan test --filter='Lab' 2>&1 | tee storage/ci-evidence/cicd-ctrl-lab-tests.log
+
+      - name: UI / UIX module tests
+        if: ${{ needs.classify.outputs.run_ui_tests == 'true' }}
+        run: php artisan test --filter='Ui' 2>&1 | tee storage/ci-evidence/cicd-ctrl-ui-tests.log
+
+      - name: Permission / access-control tests
+        if: ${{ needs.classify.outputs.run_permission_tests == 'true' }}
+        run: php artisan test --filter='Permission|AccessControl' 2>&1 | tee storage/ci-evidence/cicd-ctrl-permission-tests.log
+
+      - name: Write selective module gate summary
+        run: |
+          {
+            echo "CICD-CTRL Selective Module Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "commit=${{ github.sha }}"
+            echo "gate_profile=${{ needs.classify.outputs.gate_profile }}"
+            echo "inventory=${{ needs.classify.outputs.run_inventory_tests }}"
+            echo "lab=${{ needs.classify.outputs.run_lab_tests }}"
+            echo "ui=${{ needs.classify.outputs.run_ui_tests }}"
+            echo "permission=${{ needs.classify.outputs.run_permission_tests }}"
+            echo "result=passed"
+          } > storage/ci-evidence/cicd-ctrl-selective-module-gate.txt
+
+      - name: Upload selective module gate evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicd-ctrl-selective-module-gate
+          path: storage/ci-evidence/cicd-ctrl-*
           retention-days: 30
 
   release_safety_gate:
@@ -414,7 +585,7 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' && inputs.run_full_suite == true) ||
       (github.event_name == 'push' && github.ref == 'refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report')
-    needs: critical_test_gate
+    needs: [critical_test_gate, classify]
     services:
       postgres:
         image: postgres:16
@@ -464,7 +635,20 @@ jobs:
         run: php artisan migrate --force
 
       - name: Run full Pest suite
+        # CICD-CTRL-1: skipped only for a proven docs-only change (e.g. a
+        # docs-only push to base). schedule/workflow_dispatch always resolve to
+        # the strongest profile, so the weekly/manual full suite always runs.
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         run: php artisan test 2>&1 | tee storage/ci-evidence/nsf-r011-full-suite.log
+
+      - name: Note skipped full suite (docs-only change)
+        if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
+        run: |
+          {
+            echo "NSF-R011 full Pest suite SKIPPED for a docs-only change."
+            echo "gate_profile=${{ needs.classify.outputs.gate_profile }}"
+            echo "The weekly scheduled run and any manual dispatch still run the full suite."
+          } | tee storage/ci-evidence/nsf-r011-full-suite.log
 
       - name: Write NSF-R011 full suite evidence summary
         run: |
