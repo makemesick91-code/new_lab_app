@@ -1119,3 +1119,56 @@ replaced by frontend-only validation.**
 `aria-required`; `x-ui.button` exposes `aria-busy` with an `sr-only` loading label;
 `x-ui.alert` keeps `role="alert"`; and `x-ui.empty-state` keeps a `description` so
 no-data states are explained.
+
+## Performance & asset-weight standard (UIX-18)
+
+The UI modernization (UIX-1 → UIX-17) stays deliberately lightweight. UIX-18 audited
+the built bundle and dependency footprint and locked guardrails so future UI work does
+not add hidden weight.
+
+### Measured asset baseline (2026-07-08)
+
+| Artifact | Raw | Gzip |
+| --- | --- | --- |
+| `app-*.css` | ~85.8 KB | ~13.8 KB |
+| `app-*.js` (Alpine + app) | ~96.5 KB | ~34.9 KB |
+| `public/build` total | ~192 KB | — |
+
+- Build: Vite 6, 56 modules, ~2s. One CSS + one JS entry (no code-splitting needed).
+- Zero runtime `dependencies`; devDependencies are Tailwind v3 (postcss), Alpine, axios,
+  `@tailwindcss/forms`, `laravel-vite-plugin`, `vite`, `autoprefixer`, `concurrently`.
+- **UIX-18 removed the dead `@tailwindcss/vite@^4.0.0` devDependency.** The app builds on
+  Tailwind v3 via `postcss.config.js`; the v4 vite plugin was never wired into
+  `vite.config.js` and only pulled an unused ~7 MB native oxide/node toolchain into
+  `npm ci`. The built CSS/JS were **byte-identical** before and after removal.
+
+### Performance foundation rules (must hold in every future UI sprint)
+
+- **Blade + Tailwind + Alpine only.** No React, Vue, Svelte, Angular, SPA rewrite, or
+  jQuery. No heavy chart library (Chart.js/ApexCharts/ECharts/Highcharts/Plotly), no heavy
+  datatable/grid library (DataTables/ag-Grid/Handsontable), no admin template.
+- **No new frontend dependency without explicit approval.** Adding any `dependencies` /
+  `devDependencies` entry is a reviewed decision; a heavy/duplicate one is forbidden.
+- **No CDN `<script src="http…">` injection in Blade.** All JS/CSS ships through the Vite
+  bundle so it is versioned, integrity-controlled, and offline-safe.
+- **Asset baseline evidence required for UI foundation changes.** A change to the design
+  system, `x-ui.*` components, Tailwind config, or JS/CSS entrypoints must run
+  `npm run build` and record the CSS/JS size in the sprint doc.
+- **No polling.** No `setInterval` background polling in Blade/Alpine. One-shot
+  `setTimeout` (toast auto-dismiss, focus, canvas restore) and on-demand `fetch` are fine.
+- **No speculative optimization / no query change from a UI sprint.** Queries, indexes,
+  migrations, controllers, services, and repositories are not touched by UI work; a real
+  performance issue needs measured evidence, tests, and explicit approval first.
+- **Preserve UIX-16 responsive + UIX-17 accessibility semantics.** Weight reductions must
+  never remove the table `overflow-x-auto`, stacking layouts, ARIA associations, `role`s,
+  loading/empty semantics, actions, or operational data. Never expose KTP/NIK/scans/raw
+  clinical notes/secrets/env values.
+
+### Governance (UIX-18)
+
+`architecture:ui-governance-check --strict` additionally enforces: `package.json` declares
+none of the forbidden heavy frontend libraries (React/Vue/SPA/chart/datatable/admin, and
+the removed `@tailwindcss/vite`); the shared `x-ui.*` components contain no CDN
+`<script src="http…">`; and (soft) the Vite build manifest exists and this standard is
+documented. `tests/Feature/Ui/PerformanceAssetWeightUixTest.php` additionally asserts the
+built bundle stays within a generous weight budget when built.
