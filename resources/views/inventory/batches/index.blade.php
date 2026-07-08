@@ -193,7 +193,7 @@
                                 @include('inventory.batches._batch-status-badge', ['status' => 'inactive'])
                             @endif
                         </div>
-                        <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                        <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                             <div><dt class="text-ink-soft">Lot</dt><dd class="font-medium text-navy">{{ $batch->lot_number ?? '-' }}</dd></div>
                             <div><dt class="text-ink-soft">Pemasok</dt><dd class="font-medium text-navy">{{ $batch->supplier?->name ?? '-' }}</dd></div>
                             <div><dt class="text-ink-soft">Terima</dt><dd class="font-medium text-navy">{{ format_date_id($batch->received_date) }}</dd></div>

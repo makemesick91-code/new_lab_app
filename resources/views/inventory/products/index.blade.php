@@ -150,7 +150,7 @@
                             </div>
                             <div class="shrink-0">@include('inventory._low-stock-badge', ['current' => $currentStock, 'minimum' => $minimumStock])</div>
                         </div>
-                        <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                             <div class="rounded-lg bg-surface p-3 ring-1 ring-hairline">
                                 <p class="text-xs text-ink-soft">Total Cabang</p>
                                 <p class="mt-1 font-semibold tabular-nums text-navy">{{ format_quantity_id($currentStock) }}</p>

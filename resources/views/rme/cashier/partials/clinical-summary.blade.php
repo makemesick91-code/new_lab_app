@@ -26,7 +26,7 @@
 @endphp
 
 <x-ui.card title="Ringkasan Klinis (Dokter)">
-    <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+    <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
         <div>
             <dt class="text-gray-500">No. Kunjungan</dt>
             <dd class="font-mono font-medium text-gray-900">{{ $visit->visit_number }}</dd>

@@ -131,7 +131,7 @@
                                     @include('inventory.batches._batch-action-type-badge', ['actionType' => $latestAction->action_type])
                                 </div>
                             @endif
-                            <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 <div>
                                     <dt class="text-ink-soft">Kedaluwarsa</dt>
                                     <dd class="font-medium tabular-nums text-navy">{{ format_date_id($alert['expiry_date']) }}</dd>
@@ -257,7 +257,7 @@
                             <h4 class="mt-2 font-semibold text-navy">
                                 {{ $alert['type'] === 'stock' ? $alert['product_name'] : $alert['batch_number'] }}
                             </h4>
-                            <dl class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                            <dl class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                                 @if ($alert['type'] === 'stock')
                                     <div>
                                         <dt class="text-ink-soft">Stok saat ini</dt>

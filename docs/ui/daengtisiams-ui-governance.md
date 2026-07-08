@@ -128,3 +128,26 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.
+
+## UIX-16 — Responsive, tablet & operator rules
+
+Presentation-only responsive hardening for laptop/tablet operators. No route, policy,
+query, permission, schema, financial, RME, Inventory, Lab, dashboard, or master-data
+behaviour changes.
+
+- **Table overflow:** every data table renders through `x-ui.table` (`overflow-x-auto`
+  scroll container); wide tables scroll inside their container, never the page body.
+- **Filter-bar wrapping:** `x-ui.filter-bar` stacks on narrow (`flex-col`), horizontal
+  from `md` (`md:flex-row md:flex-wrap`), actions wrap (`flex-wrap`).
+- **Page-header action wrapping:** `x-ui.page-header` stacks (`flex-col` → `sm:flex-row`),
+  actions wrap (`flex-wrap`).
+- **Button group wrapping:** action groups wrap on narrow widths, never a forced fixed row.
+- **Card/detail-grid stacking:** detail & summary grids use a `grid-cols-1` base and
+  widen from `sm`/`md` up; no fixed `grid-cols-2`/`grid-cols-3` *text-sm* detail grid.
+- **Form stacking:** form fields are `w-full` inside stacking containers.
+- **No hidden critical data** without a safe responsive alternative (scroll / stack / wrap);
+  actions are never removed.
+- **No heavy JS/responsive dependency** — Tailwind responsive utilities + Blade + Alpine only.
+- **No sensitive data exposure** (KTP/NIK/scans/raw notes/secrets/env) from responsive polish.
+
+Enforced by `architecture:ui-governance-check --strict`.

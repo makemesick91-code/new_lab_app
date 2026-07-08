@@ -39,7 +39,7 @@
 
         {{-- Patient & Visit --}}
         <x-ui.card title="Pasien &amp; Kunjungan">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
                     <dt class="text-ink-soft">Nama Pasien</dt>
                     <dd class="font-medium text-navy">{{ $candidate->patient?->name ?? '—' }}</dd>
@@ -71,7 +71,7 @@
 
         {{-- RME Invoice --}}
         <x-ui.card title="Invoice RME">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
                     <dt class="text-ink-soft">No. Invoice</dt>
                     <dd class="font-mono font-medium text-navy">
@@ -108,7 +108,7 @@
 
         {{-- Tindakan & Estimasi --}}
         <x-ui.card title="Tindakan &amp; Estimasi">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
                     <dt class="text-ink-soft">Tindakan</dt>
                     <dd class="text-navy">{{ $candidate->treatment?->name ?? $candidate->source_description ?? '—' }}</dd>
@@ -129,7 +129,7 @@
         {{-- Conversion status --}}
         <x-ui.card title="Status Konversi">
             @if ($candidate->isConverted() && $candidate->convertedLabOrder)
-                <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                     <div>
                         <dt class="text-ink-soft">Lab Order</dt>
                         <dd>

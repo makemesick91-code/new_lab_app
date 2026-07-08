@@ -59,7 +59,7 @@
 
         {{-- Patient & Visit Context --}}
         <x-ui.card title="Informasi Kunjungan">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
                     <dt class="text-ink-soft">No. Kunjungan</dt>
                     <dd class="font-mono font-medium text-navy">{{ $visit->visit_number }}</dd>
