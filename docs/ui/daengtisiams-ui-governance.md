@@ -268,3 +268,36 @@ representative surfaces (`inventory/products/index`, `rme/visits/index`, `lab-or
 `settings/clinic-rooms/index`) keep their `@can` guards **and** render the restricted
 companion. Plus `tests/Feature/Ui/PermissionAwareUiUixTest.php` (real authorized-vs-view-only
 HTTP proof; guests redirected to login).
+
+## UIX-21 — UI/UX Rules Enforcement & Governance Lock
+
+The governance-lock sprint for the UIX-6 → UIX-20 foundation. It adds **no broad visual
+change and no business-logic change** — it closes three concrete enforcement gaps and
+records the enforced standard durably. All UIX-1 → UIX-20 rules are preserved and none are
+weakened.
+
+- **Blade + Tailwind + Alpine only** — no React/Vue/SPA, no heavy chart/datatable/admin/
+  icon/perf/accessibility library, no new frontend dependency without explicit approval.
+- **No CDN script injection** in `x-ui.*` components **or** the app shell (`layouts/app`,
+  `layouts/sidebar`, `layouts/partials/sidebar|topbar`) — assets ship through Vite.
+- **No framework build plugin** — `vite.config.*` must not add a React/Vue/Svelte/Angular/
+  Solid Vite plugin.
+- **`x-ui.card` action group keeps `flex-wrap`** (responsive-action guarantee, aligned with
+  UIX-16 filter-bar/page-header).
+- **Server-side authorization stays authoritative;** Blade `@can`/`@canany` is presentation
+  only. **No frontend-only authorization.** No business/permission/validation/financial/
+  stock/RME/Lab/dashboard/branch logic in generic components.
+- **No sensitive data exposure** — full KTP/NIK, scans, raw clinical notes never rendered
+  in a UI foundation surface.
+- **No formal WCAG / Lighthouse / security audit claim** unless a real audit is performed
+  (this honest-limitation disclaimer is itself locked by the governance check).
+
+**Non-brittle scope.** The lock intentionally avoids app-wide legacy-color sweeps, an
+"every view must use `x-ui.*`" mandate, asset-hash/filename requirements, browser-required
+checks, and over-claim keyword scans; it locks positive, stable invariants. The governance
+command scans Blade component source **including comments**, so a component's comments must
+not contain a literal token banned by a rule (e.g. `variant="gold"`, `teal-*`).
+
+Enforced by `architecture:ui-governance-check --strict` (three hard rules: vite framework-
+plugin lock, app-shell CDN-script lock, `x-ui.card` action-wrap lock; plus soft
+documentation/disclaimer signals) and `tests/Feature/Ui/UiRulesEnforcementGovernanceLockUixTest.php`.

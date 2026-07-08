@@ -1260,3 +1260,59 @@ permission-aware surfaces wired this sprint (`inventory/products/index`,
 authorized-vs-view-only HTTP request — that the create action appears only for an
 authorized operator while a view-only operator gets the restricted notice, and that guests
 are still redirected to login.
+
+## UI/UX rules enforcement & governance lock (UIX-21)
+
+UIX-21 is the **governance-lock** sprint for the UIX-6 → UIX-20 UI foundation. It adds
+no broad visual polish and no business-logic change — it closes three concrete, stable
+enforcement gaps so future UI work cannot silently break the foundation, and it captures
+the enforced standard here as the durable reference. The whole foundation stays:
+
+- **Blade + Tailwind + Alpine only** — no React/Vue/SPA, no heavy chart/datatable/admin
+  template, no icon/perf/accessibility library, and **no new frontend dependency without
+  explicit approval**.
+- **No CDN script injection** in the UI foundation (`x-ui.*` components) **or the app
+  shell** (`layouts/app`, `layouts/sidebar`, `layouts/partials/sidebar|topbar`). Assets
+  ship through the Vite bundle, never a remote `<script src="http…">`.
+- **Semantic tokens only** (brand/gold/navy/canvas/ink/hairline/status) — gold is an
+  accent, never a primary CTA.
+- **Canonical `x-ui.*` component contracts** (badge status map, table `divide-hairline`
+  + `overflow-x-auto`, responsive filter-bar/page-header/card action wrapping, form
+  `aria-describedby`/`aria-invalid`/`aria-required`, button `aria-busy` + `sr-only`,
+  alert `role="alert"`, empty-state description, restricted-notice `role="note"`).
+- **Responsive/tablet/operator (UIX-16), accessibility/error/empty-state (UIX-17),
+  performance/asset-weight (UIX-18), navigation/IA (UIX-19), and permission-aware
+  (UIX-20)** standards remain in force and documented above.
+- **Server-side authorization is authoritative.** Blade `@can`/`@canany` is presentation
+  only; hiding a link is never protection. No frontend-only authorization. No business,
+  permission, validation, financial, stock, RME, Lab, dashboard, or branch logic lives in
+  generic components.
+- **No sensitive data exposure** — full KTP/NIK, scans, and raw clinical notes are never
+  rendered in a UI foundation surface.
+
+### Governance (UIX-21)
+
+`architecture:ui-governance-check --strict` additionally enforces three **hard** lock
+rules on top of every UIX-1 → UIX-20 rule (all preserved, none weakened):
+
+1. **vite.config framework-plugin lock** — `vite.config.*` must exist and must not
+   reference a React/Vue/Svelte/Angular/Solid Vite plugin (complements the UIX-18
+   `package.json` dependency guard, which cannot see the build config).
+2. **App-shell CDN-script lock** — no remote `<script src="http…">` in the navigation/
+   layout shell foundation files (extends the UIX-18 `x-ui.*`-only CDN scan).
+3. **`x-ui.card` action-group wrap lock** — the card's actions slot keeps `flex-wrap`,
+   aligning it with the UIX-16 filter-bar/page-header responsive-action guarantee.
+
+Plus soft signals: the design-system doc documents the UIX-21 lock, the governance doc
+keeps its **"No formal WCAG"** honest-limitation disclaimer (no formal WCAG/Lighthouse
+audit is claimed unless one is actually performed), and the UIX-21 sprint evidence doc
+exists.
+
+**Non-brittle by design.** The lock deliberately avoids app-wide legacy-color sweeps, a
+"every view must use `x-ui.*`" mandate, asset-hash/filename requirements, browser-required
+checks, and WCAG/Lighthouse over-claim keyword scans — it locks positive, stable invariants
+instead. **Note:** the governance command scans Blade component source *including comments*,
+so a foundation component's comments must not contain a literal token banned by a rule
+(e.g. `variant="gold"`, `teal-*`). `tests/Feature/Ui/UiRulesEnforcementGovernanceLockUixTest.php`
+proves the lock catches the three regressions and that the UIX-6 → UIX-20 rule set stays
+intact.
