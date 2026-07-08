@@ -64,6 +64,10 @@
                         <x-slot name="action">
                             <x-ui.button href="{{ route('settings.clinic-rooms.create') }}" size="sm">+ Tambah Ruangan</x-ui.button>
                         </x-slot>
+                    @else
+                        <x-slot name="action">
+                            <x-ui.restricted-notice description="Anda tidak memiliki akses untuk menambah ruangan. Hubungi administrator jika memerlukan akses." />
+                        </x-slot>
                     @endcan
                 </x-ui.empty-state>
             </div>

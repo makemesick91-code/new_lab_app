@@ -240,3 +240,31 @@ Enforced by `architecture:ui-governance-check --strict`: shell files exist with 
 `menu-subitem-active` preserved; sidebar permission-guard count preserved (non-brittle). Plus
 `tests/Feature/Ui/NavigationSidebarUixTest.php` (critical entries render for authorized roles;
 section labels present; unauthorized links stay hidden).
+
+## UIX-20 — Permission-Aware UI Consistency
+
+Visible actions/links/buttons/empty states consistently respect the existing
+**server-side** authorization boundary. Presentation-only consistency standard; not an
+authorization mechanism.
+
+- **Server-side authorization stays authoritative** — route middleware, policies, Gates,
+  Spatie Permission, BranchContext. Blade `@can`/`@canany`/`@cannot` is presentation only.
+  No permission/role added, removed, or renamed; no permission-to-role reassignment; no
+  policy/`Gate::before`/route-middleware/BranchContext change; never trust request `branch_id`.
+- **Never a silent absence of an action** — where an authorized operator sees a guarded
+  create/action button, a view-only operator gets `x-ui.restricted-notice` in the `@else`
+  branch of the **unchanged** guard.
+- **`x-ui.restricted-notice` is non-submitting** (no submit control / no form), carries
+  `role="note"`, semantic tokens only — copy/clarity, never a fake action.
+- **No authorized action hidden; no unauthorized link exposed.** Danger/print/export
+  actions stay under their existing guards.
+- **Blade + Tailwind + Alpine only.** No React/Vue/heavy permission/menu UI library.
+  Preserve UIX-16 responsive, UIX-17 accessibility, UIX-18 asset guardrails, UIX-19
+  navigation guards. Never expose KTP/NIK/scans/raw notes/secrets/env.
+
+Enforced by `architecture:ui-governance-check --strict`: `resources/views/components/ui/
+restricted-notice.blade.php` exists, non-submitting, `role="note"`, semantic tokens; the
+representative surfaces (`inventory/products/index`, `rme/visits/index`, `lab-orders/index`,
+`settings/clinic-rooms/index`) keep their `@can` guards **and** render the restricted
+companion. Plus `tests/Feature/Ui/PermissionAwareUiUixTest.php` (real authorized-vs-view-only
+HTTP proof; guests redirected to login).

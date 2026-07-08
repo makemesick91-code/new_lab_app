@@ -119,6 +119,10 @@
                                             <x-slot:action>
                                                 <x-ui.button variant="primary" :href="route('inventory.products.create')">Tambah Produk</x-ui.button>
                                             </x-slot:action>
+                                        @else
+                                            <x-slot:action>
+                                                <x-ui.restricted-notice description="Anda tidak memiliki akses untuk menambah produk. Hubungi administrator jika memerlukan akses." />
+                                            </x-slot:action>
                                         @endcan
                                     </x-ui.empty-state>
                                 </td>

@@ -1215,3 +1215,48 @@ classes are preserved; and the sidebar keeps its permission guards (a non-brittl
 count threshold, so guards can never be silently stripped). `tests/Feature/Ui/NavigationSidebarUixTest.php`
 additionally asserts critical navigation entries render for authorized roles, section labels
 appear, and permission-aware guards keep unauthorized links hidden.
+
+## Permission-Aware UI Consistency (UIX-20)
+
+Visible UI actions, links, buttons, and empty states must consistently respect the
+existing **server-side** authorization boundary. This is a UI **consistency** standard,
+not an authorization mechanism.
+
+- **Server-side authorization stays authoritative.** Route middleware, policies, Gates,
+  Spatie Permission, and BranchContext are the real boundary. Blade `@can` / `@canany` /
+  `@cannot` is **presentation only** and never a security control by itself. Do not add,
+  remove, or rename any permission or role, do not change permission-to-role assignments,
+  do not change policy/`Gate::before`/route-middleware behavior, and never trust
+  `branch_id` from the request.
+- **Never a silent absence of an action.** Where an authorized operator would see a
+  create/action button (guarded by a real `@can`/`@canany`), a **view-only** operator
+  should get a clear explanation instead of an empty gap. Use the canonical
+  `x-ui.restricted-notice` in the `@else` branch of the existing guard — never modify the
+  guard condition itself.
+- **`x-ui.restricted-notice` is copy/clarity, never an action.** It is intentionally
+  **non-submitting**: it renders no submit control and no form, carries `role="note"`
+  (aligned with UIX-17), and uses semantic tokens only (no `teal-*`, no hardcoded hex).
+  Do not use it to fake a disabled action that submits or mutates.
+- **No authorized action accidentally hidden; no unauthorized link exposed.** Additive
+  `@else` companions must never change what an authorized user sees, and must never render
+  a link/action to an operator the server would reject.
+- **Danger, print, and export actions stay under their existing guards.** Keep destructive
+  and export/print buttons wrapped by their current `@can`/policy checks; UIX-20 only
+  standardizes the surrounding copy/empty-state, not the guard.
+- **Blade + Tailwind + Alpine only.** No React/Vue/SPA, no permission/menu/admin UI library.
+  Preserve UIX-16 responsive behavior, UIX-17 accessibility semantics, UIX-18 asset
+  guardrails, and the UIX-19 navigation guard preservation. Never expose
+  KTP/NIK/scans/raw clinical notes/secrets/env values.
+
+### Governance (UIX-20)
+
+`architecture:ui-governance-check --strict` additionally enforces: the canonical
+`resources/views/components/ui/restricted-notice.blade.php` exists, stays non-submitting,
+keeps `role="note"`, and uses semantic tokens (no teal/hex); and the representative
+permission-aware surfaces wired this sprint (`inventory/products/index`,
+`rme/visits/index`, `lab-orders/index`, `settings/clinic-rooms/index`) keep their real
+`@can` guards **and** render the `x-ui.restricted-notice` companion.
+`tests/Feature/Ui/PermissionAwareUiUixTest.php` additionally proves — via a real
+authorized-vs-view-only HTTP request — that the create action appears only for an
+authorized operator while a view-only operator gets the restricted notice, and that guests
+are still redirected to login.

@@ -106,6 +106,10 @@
                             <x-slot:action>
                                 <x-ui.button :href="route('lab-orders.create')">+ Tambah Order Lab</x-ui.button>
                             </x-slot:action>
+                        @else
+                            <x-slot:action>
+                                <x-ui.restricted-notice description="Anda tidak memiliki akses untuk menambah order lab. Hubungi administrator jika memerlukan akses." />
+                            </x-slot:action>
                         @endcan
                     </x-ui.empty-state>
                 </td>
