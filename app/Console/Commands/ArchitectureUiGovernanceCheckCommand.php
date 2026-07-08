@@ -1312,6 +1312,69 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'docs/ui_design_system.md does not document the UIX-19 navigation/information-architecture standard.';
         }
 
+        // --- UIX-20 — Permission-aware UI consistency (non-brittle). ---
+        // Blade @can/@canany is presentation only; server-side route middleware,
+        // policies, Gates, Spatie Permission, and BranchContext stay authoritative.
+        // These rules keep the permission-aware UI conventions consistent without
+        // ever weakening a guard: the canonical restricted-notice must exist, must
+        // be non-submitting (it is copy/clarity, never an action), and the
+        // representative surfaces wired this sprint must keep their real @can guards.
+        $restrictedNotice = @file_get_contents($base.'/resources/views/components/ui/restricted-notice.blade.php');
+        if ($restrictedNotice === false) {
+            $errors[] = 'Missing canonical permission-aware component resources/views/components/ui/restricted-notice.blade.php (UIX-20).';
+        } else {
+            // Presentation only: a restricted notice must never submit or mutate.
+            if (preg_match('/<button|type=("|\')submit|<form/i', $restrictedNotice)) {
+                $errors[] = 'x-ui.restricted-notice must stay non-submitting (no <button>/type="submit"/<form>) — it is permission-aware copy, not an action (UIX-20).';
+            }
+            // Restricted copy must be announced as a note (accessibility, UIX-17 aligned).
+            if (! str_contains($restrictedNotice, 'role="note"')) {
+                $errors[] = 'x-ui.restricted-notice must keep role="note" so restricted-action copy is announced (UIX-20).';
+            }
+            // Semantic tokens only — no legacy teal / hardcoded hex chrome.
+            if (preg_match('/\b(?:text|bg|border|ring)-teal-\d/', $restrictedNotice)) {
+                $errors[] = 'x-ui.restricted-notice must use semantic tokens (no legacy teal chrome) (UIX-20).';
+            }
+            if (preg_match('/#[0-9a-fA-F]{3,6}\b/', $restrictedNotice)) {
+                $errors[] = 'x-ui.restricted-notice must not hardcode hex colours (use semantic tokens) (UIX-20).';
+            }
+        }
+
+        // Representative permission-aware surfaces wired this sprint must keep their
+        // real @can guards AND render the restricted companion — never a bare, silent
+        // absence of an action. Non-brittle: guard-presence + companion-presence only.
+        $uix20Surfaces = [
+            'resources/views/inventory/products/index.blade.php',
+            'resources/views/rme/visits/index.blade.php',
+            'resources/views/lab-orders/index.blade.php',
+            'resources/views/settings/clinic-rooms/index.blade.php',
+        ];
+        foreach ($uix20Surfaces as $file) {
+            $contents = @file_get_contents($base.'/'.$file);
+            if ($contents === false) {
+                $errors[] = "Missing UIX-20 permission-aware surface: {$file} (UIX-20).";
+
+                continue;
+            }
+            if (! str_contains($contents, '@can')) {
+                $errors[] = "Permission guard (@can) removed from {$file} — permission-aware UI must stay guarded (UIX-20).";
+            }
+            if (! str_contains($contents, 'x-ui.restricted-notice')) {
+                $errors[] = "{$file} must render the canonical x-ui.restricted-notice companion for view-only operators (UIX-20).";
+            }
+        }
+
+        // UIX-20 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-20-permission-aware-ui-consistency-polish.md')) {
+            $warnings[] = 'UIX-20 sprint evidence doc is missing (docs/sprints/uix-20-permission-aware-ui-consistency-polish.md).';
+        }
+
+        // Design system doc should document the UIX-20 permission-aware UI standard (soft signal).
+        $designDocUix20 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix20 !== '' && stripos($designDocUix20, 'UIX-20') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-20 permission-aware UI standard.';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

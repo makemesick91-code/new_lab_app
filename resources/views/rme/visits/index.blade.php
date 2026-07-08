@@ -126,6 +126,10 @@
                             <x-slot:action>
                                 <x-ui.button variant="primary" :href="route('rme.visits.create')">+ Daftar Kunjungan</x-ui.button>
                             </x-slot:action>
+                        @else
+                            <x-slot:action>
+                                <x-ui.restricted-notice description="Anda tidak memiliki akses untuk mendaftarkan kunjungan. Hubungi administrator jika memerlukan akses." />
+                            </x-slot:action>
                         @endcan
                     </x-ui.empty-state>
                 </div>

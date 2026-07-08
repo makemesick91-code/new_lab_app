@@ -119,6 +119,14 @@
             </x-ui.empty-state>
         </x-ui.card>
 
+        {{-- UIX-20 — permission-aware restricted-action notice (non-submitting; presentation only). --}}
+        <x-ui.card title="Restricted Notice (permission-aware)">
+            <div class="space-y-3">
+                <x-ui.restricted-notice />
+                <x-ui.restricted-notice description="Anda tidak memiliki akses untuk menambah produk. Hubungi administrator jika memerlukan akses." />
+            </div>
+        </x-ui.card>
+
         <x-ui.card title="Skeleton (loading)">
             <div class="space-y-3">
                 <x-ui.skeleton :lines="3" />
