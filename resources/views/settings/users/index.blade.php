@@ -1,86 +1,86 @@
 <x-settings-shell title="Manajemen Pengguna">
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <div class="p-6 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <form method="GET" action="{{ route('settings.users.index') }}" class="flex items-center gap-2">
-                    <input type="text" name="search" value="{{ $search }}" placeholder="Cari nama atau email"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Cari</button>
-                    @if ($search)
-                        <a href="{{ route('settings.users.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
-                    @endif
-                </form>
-
-                <a href="{{ route('settings.users.create') }}"
-                   class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
-                    + Tambah Pengguna
-                </a>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Nama</th>
-                            <th class="px-3 py-2 font-medium">Email</th>
-                            <th class="px-3 py-2 font-medium">Role</th>
-                            <th class="px-3 py-2 font-medium">Status</th>
-                            <th class="px-3 py-2 font-medium text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($users as $user)
-                            <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $user->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $user->email }}</td>
-                                <td class="px-3 py-2">
-                                    @forelse ($user->roles as $role)
-                                        <span class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">{{ $role->name }}</span>
-                                    @empty
-                                        <span class="text-gray-400">—</span>
-                                    @endforelse
-                                </td>
-                                <td class="px-3 py-2">
-                                    @if ($user->is_active)
-                                        <span class="inline-flex items-center rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Aktif</span>
-                                    @else
-                                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Nonaktif</span>
-                                    @endif
-                                </td>
-                                <td class="px-3 py-2">
-                                    <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ route('settings.users.edit', $user) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
-
-                                        @if ($user->is_active)
-                                            <form method="POST" action="{{ route('settings.users.deactivate', $user) }}">
-                                                @csrf @method('PATCH')
-                                                <button type="submit" class="text-amber-600 hover:text-amber-500">Nonaktifkan</button>
-                                            </form>
-                                        @else
-                                            <form method="POST" action="{{ route('settings.users.activate', $user) }}">
-                                                @csrf @method('PATCH')
-                                                <button type="submit" class="text-green-600 hover:text-green-500">Aktifkan</button>
-                                            </form>
-                                        @endif
-
-                                        <form method="POST" action="{{ route('settings.users.destroy', $user) }}"
-                                              onsubmit="return confirm('Hapus pengguna ini?');">
-                                            @csrf @method('DELETE')
-                                            <button type="submit" class="text-red-600 hover:text-red-500">Hapus</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="5" class="px-3 py-6 text-center text-gray-400">Belum ada pengguna.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-
-            <div>{{ $users->links() }}</div>
+    <x-ui.filter-bar :action="route('settings.users.index')">
+        <div class="w-full md:w-72">
+            <x-ui.input name="search" :value="$search" placeholder="Cari nama atau email" aria-label="Cari pengguna" />
         </div>
-    </div>
+        <x-slot name="actions">
+            <x-ui.button type="submit" size="sm">Cari</x-ui.button>
+            @if ($search)
+                <x-ui.button href="{{ route('settings.users.index') }}" variant="ghost" size="sm">Atur Ulang</x-ui.button>
+            @endif
+        </x-slot>
+    </x-ui.filter-bar>
+
+    <x-ui.card :padding="'p-0'">
+        <div class="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
+            <h3 class="text-base font-semibold text-navy">Daftar Pengguna</h3>
+            <x-ui.button href="{{ route('settings.users.create') }}" size="sm">+ Tambah Pengguna</x-ui.button>
+        </div>
+
+        @if ($users->isEmpty())
+            <div class="p-5">
+                <x-ui.empty-state title="Belum ada pengguna" description="Tambahkan akun pengguna dan tetapkan role akses.">
+                    <x-slot name="action">
+                        <x-ui.button href="{{ route('settings.users.create') }}" size="sm">+ Tambah Pengguna</x-ui.button>
+                    </x-slot>
+                </x-ui.empty-state>
+            </div>
+        @else
+            <x-ui.table>
+                <thead class="bg-navy-50 text-left text-xs uppercase tracking-wide text-ink-soft">
+                    <tr>
+                        <th class="px-4 py-3 font-semibold">Nama</th>
+                        <th class="px-4 py-3 font-semibold">Email</th>
+                        <th class="px-4 py-3 font-semibold">Role</th>
+                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 text-right font-semibold">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($users as $user)
+                        <tr class="hover:bg-navy-50/60">
+                            <td class="px-4 py-3 font-medium text-navy">{{ $user->name }}</td>
+                            <td class="px-4 py-3 text-ink-soft">{{ $user->email }}</td>
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap gap-1">
+                                    @forelse ($user->roles as $role)
+                                        <x-ui.badge tone="primary">{{ $role->name }}</x-ui.badge>
+                                    @empty
+                                        <span class="text-ink-muted">—</span>
+                                    @endforelse
+                                </div>
+                            </td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$user->is_active ? 'success' : 'neutral'">{{ $user->is_active ? 'Aktif' : 'Nonaktif' }}</x-ui.badge>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center justify-end gap-2">
+                                    <x-ui.button href="{{ route('settings.users.edit', $user) }}" variant="secondary" size="sm">Ubah</x-ui.button>
+
+                                    @if ($user->is_active)
+                                        <form method="POST" action="{{ route('settings.users.deactivate', $user) }}">
+                                            @csrf @method('PATCH')
+                                            <x-ui.button type="submit" variant="warning" size="sm">Nonaktifkan</x-ui.button>
+                                        </form>
+                                    @else
+                                        <form method="POST" action="{{ route('settings.users.activate', $user) }}">
+                                            @csrf @method('PATCH')
+                                            <x-ui.button type="submit" variant="success" size="sm">Aktifkan</x-ui.button>
+                                        </form>
+                                    @endif
+
+                                    <form method="POST" action="{{ route('settings.users.destroy', $user) }}" onsubmit="return confirm('Hapus pengguna ini?');">
+                                        @csrf @method('DELETE')
+                                        <x-ui.button type="submit" variant="danger" size="sm">Hapus</x-ui.button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-ui.table>
+        @endif
+    </x-ui.card>
+
+    <div>{{ $users->links() }}</div>
 </x-settings-shell>

@@ -907,6 +907,111 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-11 sprint evidence doc is missing (docs/sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md).';
         }
 
+        // --- UIX-14 — Settings, master data & access-control polish (lightweight). ---
+        // Settings/master-data/access-control list pages are the reference admin list
+        // surface: built on x-ui.* foundation components + semantic tokens, no legacy
+        // palette / hardcoded hex, gold never a CTA, and no PII (KTP/NIK) rendered.
+        $uix14ListViews = [
+            'resources/views/settings/clinic-rooms/index.blade.php',
+            'resources/views/settings/treatment-categories/index.blade.php',
+            'resources/views/settings/treatments/index.blade.php',
+            'resources/views/settings/tariffs/index.blade.php',
+            'resources/views/settings/payment-methods/index.blade.php',
+            'resources/views/settings/branches/index.blade.php',
+            'resources/views/settings/wa-reminder-templates/index.blade.php',
+            'resources/views/settings/users/index.blade.php',
+            'resources/views/settings/roles/index.blade.php',
+            'resources/views/settings/permissions/index.blade.php',
+        ];
+
+        $uix14RequiredListComponents = [
+            'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state',
+        ];
+
+        foreach ($uix14ListViews as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing settings UIX-14 list view: {$file}";
+
+                continue;
+            }
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+
+            foreach ($uix14RequiredListComponents as $component) {
+                if (! str_contains($contents, $component)) {
+                    $errors[] = "Settings list view {$file} does not use {$component}.";
+                }
+            }
+
+            // No legacy palette / hardcoded hex / gray legacy may be reintroduced.
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-(?:teal|indigo|emerald|amber|rose|sky|purple)-\d/', $contents)) {
+                $errors[] = "Legacy palette class found in {$file} (use semantic tokens).";
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-gray-\d/', $contents)) {
+                $errors[] = "Legacy gray class found in {$file} (use navy/ink/hairline tokens).";
+            }
+            if (preg_match('/#[0-9a-fA-F]{6}\b/', $contents)) {
+                $errors[] = "Hardcoded hex color found in {$file} (use semantic tokens).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Sensitive identifier (KTP/NIK) rendered in {$file} (must never be exposed).";
+            }
+        }
+
+        // Master-data form reference: the clinic-room form adopts the x-ui form controls.
+        $clinicRoomForm = @file_get_contents($base.'/resources/views/settings/clinic-rooms/_form.blade.php') ?: '';
+        if ($clinicRoomForm !== '') {
+            foreach (['x-ui.input', 'x-ui.select', 'x-ui.textarea'] as $component) {
+                if (! str_contains($clinicRoomForm, $component)) {
+                    $errors[] = "Master-data form reference clinic-rooms/_form does not use {$component}.";
+                }
+            }
+        }
+
+        // Settings/access-control forms must stay off the legacy teal/indigo palette,
+        // free of hardcoded hex, never use gold as a CTA, and never render KTP/NIK.
+        $uix14FormViews = [
+            'resources/views/settings/clinic-rooms/_form.blade.php',
+            'resources/views/settings/clinic-rooms/create.blade.php',
+            'resources/views/settings/clinic-rooms/edit.blade.php',
+            'resources/views/settings/roles/_form.blade.php',
+            'resources/views/settings/users/_form.blade.php',
+            'resources/views/settings/wa-reminder-templates/_form.blade.php',
+        ];
+
+        foreach ($uix14FormViews as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide|focus:border|focus:ring)-(?:teal|indigo)-\d/', $contents)) {
+                $errors[] = "Legacy teal/indigo class found in settings form {$file} (use brand/semantic tokens).";
+            }
+            if (preg_match('/#[0-9a-fA-F]{6}\b/', $contents)) {
+                $errors[] = "Hardcoded hex color found in settings form {$file} (use semantic tokens).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Sensitive identifier (KTP/NIK) rendered in {$file} (must never be exposed).";
+            }
+        }
+
+        // WA reminder template list must keep the manual-only safety notice
+        // (templates are copied by an operator; the system never auto-sends WA).
+        $waTemplateIndex = @file_get_contents($base.'/resources/views/settings/wa-reminder-templates/index.blade.php') ?: '';
+        if ($waTemplateIndex !== '' && ! str_contains($waTemplateIndex, 'belum mengirim WhatsApp otomatis')) {
+            $errors[] = 'WA reminder template list lost the manual-only safety notice (no auto-send guarantee).';
+        }
+
+        // UIX-14 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-14-settings-master-data-access-control-polish.md')) {
+            $warnings[] = 'UIX-14 sprint evidence doc is missing (docs/sprints/uix-14-settings-master-data-access-control-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

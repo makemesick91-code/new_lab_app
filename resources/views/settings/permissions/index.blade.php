@@ -1,42 +1,50 @@
 <x-settings-shell title="Manajemen Permission">
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <div class="p-6 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <form method="GET" action="{{ route('settings.permissions.index') }}" class="flex items-center gap-2">
-                    <input type="text" name="search" value="{{ $search }}" placeholder="Cari permission"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Cari</button>
-                    @if ($search)
-                        <a href="{{ route('settings.permissions.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
-                    @endif
-                </form>
-                <p class="text-xs text-gray-400">Atur permission role dari layar ubah role.</p>
-            </div>
+    <x-ui.alert variant="info">
+        Daftar permission bersifat read-only. Pemberian permission ke role diatur dari layar <span class="font-semibold">Ubah Role</span>.
+    </x-ui.alert>
 
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Permission</th>
-                            <th class="px-3 py-2 font-medium">Dipakai oleh role</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($permissions as $permission)
-                            <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $permission->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $permission->roles_count }}</td>
-                            </tr>
-                        @empty
-                            <tr>
-                                <td colspan="2" class="px-3 py-6 text-center text-gray-400">Belum ada permission.</td>
-                            </tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-
-            <div>{{ $permissions->links() }}</div>
+    <x-ui.filter-bar :action="route('settings.permissions.index')">
+        <div class="w-full md:w-72">
+            <x-ui.input name="search" :value="$search" placeholder="Cari permission" aria-label="Cari permission" />
         </div>
-    </div>
+        <x-slot name="actions">
+            <x-ui.button type="submit" size="sm">Cari</x-ui.button>
+            @if ($search)
+                <x-ui.button href="{{ route('settings.permissions.index') }}" variant="ghost" size="sm">Atur Ulang</x-ui.button>
+            @endif
+        </x-slot>
+    </x-ui.filter-bar>
+
+    <x-ui.card :padding="'p-0'">
+        <div class="border-b border-hairline px-5 py-4">
+            <h3 class="text-base font-semibold text-navy">Daftar Permission</h3>
+        </div>
+
+        @if ($permissions->isEmpty())
+            <div class="p-5">
+                <x-ui.empty-state title="Belum ada permission" description="Permission dikelola oleh seeder sistem." />
+            </div>
+        @else
+            <x-ui.table>
+                <thead class="bg-navy-50 text-left text-xs uppercase tracking-wide text-ink-soft">
+                    <tr>
+                        <th class="px-4 py-3 font-semibold">Permission</th>
+                        <th class="px-4 py-3 font-semibold">Dipakai oleh role</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($permissions as $permission)
+                        <tr class="hover:bg-navy-50/60">
+                            <td class="px-4 py-3 font-medium text-navy">{{ $permission->name }}</td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$permission->roles_count > 0 ? 'primary' : 'neutral'">{{ $permission->roles_count }}</x-ui.badge>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-ui.table>
+        @endif
+    </x-ui.card>
+
+    <div>{{ $permissions->links() }}</div>
 </x-settings-shell>
