@@ -116,6 +116,15 @@ Aturan wajib untuk semua pekerjaan UI setelah UIX-1. Dapat diperiksa (ringan) vi
 
 **Rule permanen — report/print-page standard:** setiap halaman laporan **wajib** memakai list-page standard UIX-3 (page-header/filter-bar/table/badge/button/empty-state) + semantic token; total ringkasan boleh `x-ui.kpi-card` (gold accent hanya untuk revenue); template cetak/PDF **wajib** table-based (dompdf-safe, hindari flexbox untuk grid data) dan memakai brand hex; **tanpa** perubahan kalkulasi laporan / receivable / payment / stock valuation / KPI, **tanpa** perubahan kolom export, dan **tanpa** render KTP/NIK penuh.
 
+### UIX-15 — Global component foundation hardening (ditambahkan 2026-07-08)
+`architecture:ui-governance-check` juga memverifikasi (ringan, non-brittle) fondasi komponen global:
+- `x-ui.badge` resolusi `status` **case-insensitive** (nilai di-lowercase sebelum lookup) dan **wajib** memetakan status finansial kanonik (`unpaid`/`partial`/`void`/`paid`); status tak dikenal jatuh ke `neutral` (default aman). Tidak ada pemetaan lama yang berubah tone; penambahan bersifat additive + tested (`unpaid`/`partial`/`overstock` → warning, `registered`/`submitted` → info, `posted`/`received` → success, `void` → danger).
+- `x-ui.table` **tanpa** class gray legacy dan memakai token `divide-hairline` (+ caption `text-navy`).
+- Komponen domain badge (`x-lab.status-badge`, `x-rme.invoice-summary`) **wajib** render melalui `x-ui.badge` — batas domain terdokumentasi, **bukan** design system kedua.
+- Dokumen `docs/ui_design_system.md` mendokumentasikan fondasi UIX-15 + evidence sprint `docs/sprints/uix-15-global-component-foundation-hardening.md` ada (soft signal).
+
+**Rule permanen — global component foundation:** `x-ui.*` adalah **satu-satunya** design system (Blade + Tailwind + Alpine, tanpa React/Vue/SPA/library UI berat). Backward compatibility komponen dijaga (tanpa rename/hapus prop publik). **Tanpa** business logic di komponen, **tanpa** keputusan permission/policy di komponen UI generik, **tanpa** mutasi/form/route tersembunyi. Tone semantik danger/success/warning/status berasal dari fondasi; badge status kanonik memakai `:status`; tabel/filter/page-header/card/alert/button/empty-state/form memakai komponen kanonik; print/PDF tetap dompdf table-safe; **tanpa** render KTP/NIK/scan/catatan klinis mentah/secret/env.
+
 ## Ownership & review
 - Perubahan token = review lintas modul (berdampak global).
 - Komponen `x-ui.*` = owner design system; PR wajib update katalog + docs.

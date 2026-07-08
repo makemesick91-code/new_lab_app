@@ -938,3 +938,71 @@ the clinic-rooms form reference on `x-ui.input`/`select`/`textarea`, the
 no-legacy-palette / no-gray / no-hardcoded-hex / no-gold-CTA / no-rendered-KTP
 invariants across the list views (plus a teal/indigo/hex/gold-CTA/KTP scan on the
 settings/access forms), and that the WA reminder list keeps its manual-only notice.
+
+## Global component foundation hardening (UIX-15)
+
+UIX-15 hardened the shared `x-ui.*` foundation built across UIX-1 → UIX-14 so it
+stays the **single** design system. Foundation-hardening only — no page rewrite, no
+mass conversion, no business/permission/route/controller/service/schema change,
+Blade + Tailwind + Alpine only, no new UI/JS/CSS dependency, no PII/KTP/NIK/secret
+exposure. All changes are additive and **backward compatible** — no public prop was
+renamed or removed.
+
+### Canonical status badge — `x-ui.badge`
+
+`x-ui.badge` is the one place that maps a domain status to a semantic tone. As of
+UIX-15 the `status` lookup is **case-insensitive** (the value is lowercased before the
+map lookup), so uppercase lifecycle codes resolve to the same tone as their lowercase
+form — a `strtolower(...)` wrapper at the call site is no longer required. Unknown
+statuses still fall back to the safe `neutral` tone.
+
+Canonical status → tone map (extended; none of the pre-existing mappings changed):
+
+| Tone | Statuses |
+| --- | --- |
+| `neutral` | `draft`, `normal`, *(unknown)* |
+| `warning` | `waiting`, `pending`, `qc`, `low_stock`, `expired_soon`, `unpaid`, `partial`, `overstock` |
+| `info` | `in_progress`, `info`, `registered`, `submitted` |
+| `gold` (accent) | `cashier_pending` |
+| `success` | `paid`, `approved`, `completed`, `delivered`, `success`, `posted`, `received` |
+| `danger` | `cancelled`, `rejected`, `out_of_stock`, `expired`, `void`, `danger` |
+
+Use `:status` (semantic, preferred) whenever the value is one of these lifecycle
+codes; use `tone` only for a bespoke one-off. Gold stays reserved for the
+`cashier_pending` financial handoff — it is never a CTA.
+
+### Foundation table tokens — `x-ui.table`
+
+`x-ui.table` now uses the `divide-hairline` divider and `text-navy` caption tokens
+(the residual legacy `divide-gray-200` / `text-gray-900` drift was removed) so the
+foundation table matches the tokens the list pages already use around it.
+
+### Domain component boundaries (documented, kept domain-specific)
+
+Some components are intentionally **domain-specific** and must not be folded into
+`x-ui.*`, but they **route through the foundation** rather than fork a second system:
+
+- **`x-lab.status-badge`** (UIX-7) — maps the Lab pipeline's uppercase
+  lifecycle/priority/QC/delivery codes to an Indonesian label + tone, then renders
+  through `x-ui.badge`. Presentation-only, no lifecycle logic.
+- **`x-rme.invoice-summary`** (UIX-12) — the standard Total / Sudah Dibayar / Sisa
+  Tagihan / Status financial-summary grid. Reads existing invoice accessors
+  (`grand_total`, `paidAmount()`, `remainingAmount()`, `status`) and renders the
+  status through `x-ui.badge`; it never computes, mutates, or changes any
+  payment/receivable/invoice value.
+- **`x-inventory.*`** (UIX-6/UIX-9) — inventory KPI/alert/timeline widgets that use
+  foundation tokens; they never write a mutable stock attribute (stock stays
+  ledger-derived).
+
+Rule: a domain component may add domain labels/tones/layout, but the **visual tone of
+danger / success / warning / status and the button/badge/alert primitives always come
+from the `x-ui.*` foundation** — no forked palette, no second design system.
+
+### Governance (UIX-15)
+
+`architecture:ui-governance-check --strict` additionally enforces: `x-ui.badge`
+resolves status case-insensitively and maps the canonical financial statuses
+(`unpaid`/`partial`/`void`/`paid`); `x-ui.table` carries no legacy gray class and
+uses `divide-hairline`; and the domain badge components (`x-lab.status-badge`,
+`x-rme.invoice-summary`) render through `x-ui.badge`. Print/PDF stays dompdf
+table-safe (no flex layout in print templates), unchanged by this sprint.

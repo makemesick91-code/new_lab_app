@@ -1012,6 +1012,60 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-14 sprint evidence doc is missing (docs/sprints/uix-14-settings-master-data-access-control-polish.md).';
         }
 
+        // --- UIX-15 — Global component foundation hardening (lightweight, non-brittle). ---
+        // The shared x-ui.* foundation is the single design system: the status badge
+        // is case-insensitive and covers the canonical financial/procurement/lifecycle
+        // statuses, the table uses semantic tokens (no legacy gray), and domain
+        // components route through the foundation rather than forking a second system.
+        $badge = @file_get_contents($base.'/resources/views/components/ui/badge.blade.php') ?: '';
+        if ($badge !== '') {
+            // Case-insensitive status resolution (UIX-15).
+            if (! str_contains($badge, 'Str::lower') && ! str_contains($badge, 'strtolower')) {
+                $errors[] = 'x-ui.badge status resolution must be case-insensitive (UIX-15).';
+            }
+            // Canonical financial statuses must be mapped so invoice states are consistent.
+            foreach (["'unpaid'", "'partial'", "'void'", "'paid'"] as $key) {
+                if (! str_contains($badge, $key)) {
+                    $errors[] = "x-ui.badge is missing the canonical status mapping for {$key} (UIX-15).";
+                }
+            }
+        }
+
+        // The foundation table must stay on semantic tokens (no legacy gray divider).
+        $table = @file_get_contents($base.'/resources/views/components/ui/table.blade.php') ?: '';
+        if ($table !== '') {
+            if (preg_match('/\b(?:divide|text|bg|border)-gray-\d/', $table)) {
+                $errors[] = 'x-ui.table uses a legacy gray class (use hairline/navy/ink tokens) (UIX-15).';
+            }
+            if (! str_contains($table, 'divide-hairline')) {
+                $errors[] = 'x-ui.table must use the divide-hairline token (UIX-15).';
+            }
+        }
+
+        // Domain badge components must route through the x-ui.badge foundation
+        // (documented boundary — they add domain labels/tones, not a second system).
+        $domainBadgeComponents = [
+            'resources/views/components/lab/status-badge.blade.php',
+            'resources/views/components/rme/invoice-summary.blade.php',
+        ];
+        foreach ($domainBadgeComponents as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents !== '' && ! str_contains($contents, 'x-ui.badge')) {
+                $errors[] = "Domain component {$file} must render through x-ui.badge (no forked design system) (UIX-15).";
+            }
+        }
+
+        // Design system doc should document the hardened foundation (soft signal).
+        $designDoc = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDoc !== '' && stripos($designDoc, 'UIX-15') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-15 global component foundation.';
+        }
+
+        // UIX-15 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-15-global-component-foundation-hardening.md')) {
+            $warnings[] = 'UIX-15 sprint evidence doc is missing (docs/sprints/uix-15-global-component-foundation-hardening.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
