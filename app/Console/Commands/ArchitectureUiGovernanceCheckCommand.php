@@ -1255,6 +1255,63 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-18 sprint evidence doc is missing (docs/sprints/uix-18-performance-asset-weight-audit.md).';
         }
 
+        // --- UIX-19 — Navigation, sidebar & information-architecture rules (non-brittle). ---
+        // The sidebar/topbar are the single navigation shell: they must stay on semantic
+        // tokens (no legacy teal/gray chrome), keep the IA section-label primitive
+        // (menu-group-title), preserve active-state classes, and keep the permission
+        // guards intact. Sidebar @can/@canany is presentation only — server-side route
+        // middleware/policy stays authoritative — so this check must never weaken guards.
+        $navFiles = [
+            'resources/views/layouts/partials/sidebar.blade.php',
+            'resources/views/layouts/partials/topbar.blade.php',
+        ];
+        foreach ($navFiles as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing navigation shell file: {$file} (UIX-19).";
+
+                continue;
+            }
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            // Legacy teal brand chrome must not return to the navigation shell.
+            if (preg_match('/\b(?:text|bg|border|ring|from|to|via)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal chrome found in {$file} (use brand/navy/ink/hairline tokens) (UIX-19).";
+            }
+            // Legacy gray borders/text chrome in the shell should use semantic tokens.
+            if (preg_match('/\b(?:text|bg|border)-gray-\d/', $contents)) {
+                $errors[] = "Legacy gray chrome found in {$file} (use navy/ink/hairline tokens) (UIX-19).";
+            }
+        }
+
+        $sidebar = @file_get_contents($base.'/resources/views/layouts/partials/sidebar.blade.php') ?: '';
+        if ($sidebar !== '') {
+            // IA section-label primitive must be used to group modules.
+            if (! str_contains($sidebar, 'menu-group-title')) {
+                $errors[] = 'Sidebar must use the menu-group-title primitive for IA section labels (UIX-19).';
+            }
+            // Active-state classes must be preserved (navigation orientation).
+            foreach (['menu-item-active', 'menu-subitem-active'] as $activeClass) {
+                if (! str_contains($sidebar, $activeClass)) {
+                    $errors[] = "Sidebar is missing the active-state class {$activeClass} (UIX-19).";
+                }
+            }
+            // Permission guards are presentation gating and must stay in the shell
+            // (server-side authorization remains authoritative). Non-brittle threshold.
+            if (substr_count($sidebar, '@can') < 20) {
+                $errors[] = 'Sidebar permission guards (@can/@canany) appear to have been removed — navigation must stay permission-aware (UIX-19).';
+            }
+        }
+
+        // UIX-19 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-19-navigation-sidebar-information-architecture-polish.md')) {
+            $warnings[] = 'UIX-19 sprint evidence doc is missing (docs/sprints/uix-19-navigation-sidebar-information-architecture-polish.md).';
+        }
+
+        // Design system doc should document the UIX-19 navigation/IA standard (soft signal).
+        $designDocUix19 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix19 !== '' && stripos($designDocUix19, 'UIX-19') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-19 navigation/information-architecture standard.';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

@@ -208,3 +208,35 @@ Enforced by `architecture:ui-governance-check --strict`: `package.json` declares
 heavy frontend library (incl. `@tailwindcss/vite`); `x-ui.*` carry no CDN script; (soft) the
 Vite manifest exists and this standard is documented. `tests/Feature/Ui/PerformanceAssetWeightUixTest.php`
 asserts the built bundle stays within a generous weight budget.
+
+## UIX-19 — Navigation, sidebar & information-architecture rules
+
+The sidebar + topbar (`resources/views/layouts/partials/{sidebar,topbar}.blade.php`) are the
+single navigation shell. UIX-19 polished them onto semantic tokens and added IA section labels.
+
+- **Sidebar `@can` / `@canany` / `@role` is presentation only, not security.** Route
+  middleware, Policies, and Gates remain the authoritative boundary. Never weaken/remove a
+  server-side guard, never expose a link to an unauthorized user, never let a link bypass a
+  workflow gate, and never add hidden mutations/form submissions in navigation.
+- **Route names, route paths, permission names, roles, policies, Gate, and BranchContext are
+  unchanged.** UIX-19 is navigation clarity only — no controller/service/repository/query/
+  data/business-logic change, no schema/migration change.
+- **IA section labels use the `menu-group-title` primitive**, guarded by the exact union of
+  their child links' guards (a label renders only when ≥1 child link is visible — no empty
+  header, no hidden label above visible links). Section labels: `Klinik & RME`, `Laboratorium`,
+  `Inventaris & Pembelian`, `Keuangan & Laporan`, `Administrasi Sistem`.
+- **Active state** uses `menu-item-active` / `menu-subitem-active` driven by `routeIs(...)`;
+  do not fork a second active-state mechanism.
+- **Semantic tokens only** in the shell (`border-hairline`, `text-navy`/`ink`/`ink-soft`/
+  `ink-muted`, `hover:bg-navy-50`, `focus:ring-brand-500`, brand for active/link). No legacy
+  `teal-*` / `*-gray-*` chrome.
+- **No critical module hidden without an existing permission rule**; navigation is additive
+  and permission-safe. Preserve UIX-16 responsive drawer + UIX-17 accessibility semantics.
+- **No React/Vue/heavy nav/menu/icon library.** Blade + Tailwind + Alpine only (existing
+  `adlmsSidebar` Alpine + `data-sidebar-panel` persistence). Never expose KTP/NIK/scans/notes/env.
+
+Enforced by `architecture:ui-governance-check --strict`: shell files exist with no legacy
+`teal-*` / `*-gray-*` chrome; `menu-group-title` IA primitive present; `menu-item-active` /
+`menu-subitem-active` preserved; sidebar permission-guard count preserved (non-brittle). Plus
+`tests/Feature/Ui/NavigationSidebarUixTest.php` (critical entries render for authorized roles;
+section labels present; unauthorized links stay hidden).

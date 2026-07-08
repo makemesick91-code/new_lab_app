@@ -1172,3 +1172,46 @@ the removed `@tailwindcss/vite`); the shared `x-ui.*` components contain no CDN
 `<script src="http…">`; and (soft) the Vite build manifest exists and this standard is
 documented. `tests/Feature/Ui/PerformanceAssetWeightUixTest.php` additionally asserts the
 built bundle stays within a generous weight budget when built.
+
+## Navigation, sidebar & information-architecture standard (UIX-19)
+
+The sidebar (`resources/views/layouts/partials/sidebar.blade.php`) and topbar
+(`resources/views/layouts/partials/topbar.blade.php`) are the **single navigation
+shell**. UIX-19 migrated the shell onto semantic tokens and introduced consistent
+information-architecture (IA) section labels so operators can locate modules quickly.
+
+### Navigation foundation rules (must hold in every future UI sprint)
+
+- **Sidebar `@can` / `@canany` / `@role` is presentation only, not security.** Server-side
+  route middleware, Policies, and Gates remain the authoritative access boundary. A link is
+  never a permission; hiding a link is never protection. Never weaken or remove a server-side
+  guard to "match" a navigation change, and never surface a link to an unauthorized user.
+- **IA section labels use the `menu-group-title` primitive.** Group related modules under an
+  uppercase section label (`Klinik & RME`, `Laboratorium`, `Inventaris & Pembelian`,
+  `Keuangan & Laporan`, `Administrasi Sistem`). Each label must be wrapped in a guard that is
+  the **exact union** of its child links' `@can/@canany` guards, so a label renders only when
+  at least one of its links is visible — never an empty section header, never a hidden label
+  above visible links. Mirror the existing `$show*Group` boolean idiom in the `@php` block.
+- **Active state via the `menu-item-active` / `menu-subitem-active` classes** driven by
+  `request()->routeIs(...)`. Do not invent a second active-state mechanism; do not change
+  route names/paths to make active matching easier.
+- **Semantic tokens for all shell chrome** — `border-hairline`, `text-navy`, `text-ink`,
+  `text-ink-soft`, `text-ink-muted`, `hover:bg-navy-50`, `focus:ring-brand-500`, brand for
+  active/link. No legacy `teal-*` and no legacy `*-gray-*` chrome in the shell.
+- **No critical module hidden without an existing permission rule.** Navigation changes are
+  additive and permission-safe: do not remove critical entries, do not add links that bypass
+  a workflow gate, and do not add hidden mutations/form submissions in navigation.
+- **Blade + Tailwind + Alpine only.** No React/Vue/SPA, no menu/nav/icon library, no admin
+  template. Collapsible groups keep the existing `adlmsSidebar` Alpine + `data-sidebar-panel`
+  localStorage-persistence mechanism. Preserve UIX-16 responsive + UIX-17 accessibility
+  (mobile drawer, `:aria-expanded`, focus rings). Never expose KTP/NIK/scans/raw notes/secrets.
+
+### Governance (UIX-19)
+
+`architecture:ui-governance-check --strict` additionally enforces: the sidebar/topbar shell
+files exist and carry no legacy `teal-*` / `*-gray-*` chrome; the sidebar uses the
+`menu-group-title` IA primitive; the `menu-item-active` / `menu-subitem-active` active-state
+classes are preserved; and the sidebar keeps its permission guards (a non-brittle `@can`
+count threshold, so guards can never be silently stripped). `tests/Feature/Ui/NavigationSidebarUixTest.php`
+additionally asserts critical navigation entries render for authorized roles, section labels
+appear, and permission-aware guards keep unauthorized links hidden.

@@ -69,6 +69,26 @@
         'inventory.goods-receipts.*',
     ];
 
+    // UIX-19 — information-architecture section visibility (presentation-only).
+    // Each boolean mirrors the exact union of its section's child @can/@canany guards,
+    // so a section label renders only when at least one of its links is visible. This
+    // is navigation clarity only — server-side route middleware/policy stays authoritative.
+    $showLabGroup = $user && (
+        $user->canAny(['view_lab_orders', 'manage_lab_orders', 'view_production', 'manage_production', 'view_quality_control', 'manage_quality_control', 'view_delivery', 'manage_delivery'])
+        || $user->hasRole('Courier')
+    );
+
+    $showFinanceReportingGroup = $user && $user->canAny([
+        'view_invoice', 'manage_invoice', 'view_payment', 'manage_payment', 'view_payment_report', 'manage_report',
+        'view_dashboard', 'view_order_report', 'view_production_report', 'view_qc_report', 'view_delivery_report', 'view_invoice_report',
+    ]);
+
+    $showAdminGroup = $user && (
+        ($user->canAny(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data']) && ! $user->hasRole('Admin Klinik'))
+        || $user->canAny(['manage users', 'manage roles', 'manage permissions'])
+        || (config('developer_console.enabled', true) && $user->can('view_developer_console'))
+    );
+
     $tabQuery = request('tab');
     $tabAliases = [
         'current-stock' => 'current_stock',
@@ -117,7 +137,7 @@
 @endphp
 
 <aside
-    class="fixed top-0 left-0 z-50 flex h-screen w-[290px] flex-col border-r border-gray-200 bg-white transition-transform duration-300 ease-in-out"
+    class="fixed top-0 left-0 z-50 flex h-screen w-[290px] flex-col border-r border-hairline bg-white transition-transform duration-300 ease-in-out"
     :class="{
         'translate-x-0': $store.sidebar.isMobileOpen,
         '-translate-x-full': ! $store.sidebar.isMobileOpen,
@@ -125,10 +145,10 @@
         'xl:-translate-x-full': ! $store.sidebar.isExpanded,
     }"
 >
-    <div class="flex items-center border-b border-gray-100 px-4 py-5">
+    <div class="flex items-center border-b border-hairline px-4 py-5">
         <a href="{{ route($isAdminWarehouse ? 'inventory.dashboard' : 'dashboard') }}" class="min-w-0">
-            <p class="text-sm font-bold text-gray-900">DaengtisiaMS</p>
-            <p class="text-xs text-gray-500">Klinik Gigi Daengtisia</p>
+            <p class="text-sm font-bold text-navy">DaengtisiaMS</p>
+            <p class="text-xs text-ink-soft">Klinik Gigi Daengtisia</p>
         </a>
     </div>
 
@@ -159,6 +179,7 @@
 
             @canany(['view_clinic_visits', 'manage_clinic_visits'])
                 <div class="pt-2">
+                    <p class="menu-group-title">Klinik &amp; RME</p>
                     <button type="button" @click="toggle('rme')" class="{{ $groupToggle }}" :aria-expanded="isOpen('rme')">
                         <span class="flex items-center gap-3">
                             <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -166,7 +187,7 @@
                             </svg>
                             <span>Dashboard RME</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('rme') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('rme') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -221,7 +242,7 @@
             @if ($user && $user->cannot('view_clinic_visits') && $user->cannot('manage_clinic_visits'))
                 @canany(['view_rme_patient_reports', 'view_rme_payment_reports'])
                     <div class="pt-2">
-                        <p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-400">Laporan RME</p>
+                        <p class="menu-group-title">Laporan RME</p>
                         @can('view_rme_patient_reports')
                             <a href="{{ route('rme.reports.patients') }}"
                                class="menu-item {{ request()->routeIs('rme.reports.patients') ? 'menu-item-active' : 'menu-item-inactive' }}">
@@ -236,6 +257,10 @@
                         @endcan
                     </div>
                 @endcanany
+            @endif
+
+            @if ($showLabGroup)
+                <p class="menu-group-title pt-2">Laboratorium</p>
             @endif
 
             @canany(['view_lab_orders', 'manage_lab_orders'])
@@ -285,7 +310,7 @@
                     <div class="pt-2">
                         <button type="button" @click="toggle('my-work')" class="{{ $groupToggle }}" :aria-expanded="isOpen('my-work')">
                             <span>Pekerjaan Saya</span>
-                            <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('my-work') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('my-work') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                                 <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                             </svg>
                         </button>
@@ -317,6 +342,10 @@
                 @endcanany
             @endrole
 
+            @if ($showInventoryMasterDataGroup || $showInventoryOperationsGroup || $showInventoryReportsGroup || $showProcurementGroup)
+                <p class="menu-group-title pt-2">Inventaris &amp; Pembelian</p>
+            @endif
+
             @if ($showInventoryMasterDataGroup)
                 <div class="pt-2">
                     <button type="button" @click="toggle('inventory-master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('inventory-master-data')">
@@ -326,7 +355,7 @@
                             </svg>
                             <span>Master Data</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory-master-data') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory-master-data') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -366,7 +395,7 @@
                             </svg>
                             <span>Operasional Stok</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -404,7 +433,7 @@
                             </svg>
                             <span>Laporan & Analitik</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory-reports-analytics') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('inventory-reports-analytics') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -460,7 +489,7 @@
                             </svg>
                             <span>Pembelian</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('procurement') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('procurement') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -481,6 +510,10 @@
                 </div>
             @endif
 
+            @if ($showFinanceReportingGroup)
+                <p class="menu-group-title pt-2">Keuangan &amp; Laporan</p>
+            @endif
+
             @canany(['view_invoice', 'manage_invoice', 'view_payment', 'manage_payment', 'view_payment_report', 'manage_report'])
                 <div class="pt-2">
                     <button type="button" @click="toggle('finance')" class="{{ $groupToggle }}" :aria-expanded="isOpen('finance')">
@@ -490,7 +523,7 @@
                             </svg>
                             <span>Keuangan</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('finance') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('finance') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -516,7 +549,7 @@
                             </svg>
                             <span>Laporan</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('reporting') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('reporting') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -551,6 +584,10 @@
                 </div>
             @endcanany
 
+            @if ($showAdminGroup)
+                <p class="menu-group-title pt-2">Administrasi Sistem</p>
+            @endif
+
             @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
                 @unless($user?->hasRole('Admin Klinik'))
                 <div class="pt-2">
@@ -561,7 +598,7 @@
                             </svg>
                             <span>Master Data RME</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('master-data') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('master-data') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
@@ -617,7 +654,7 @@
                             </svg>
                             <span>Pengaturan</span>
                         </span>
-                        <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform duration-150" :class="{ 'rotate-180': isOpen('settings') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('settings') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
                             <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
                         </svg>
                     </button>
