@@ -10,11 +10,14 @@
     @endphp
 
     <div class="space-y-6">
-        <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-            <h2 class="mt-1 text-xl font-semibold text-gray-900">Ubah Kunjungan</h2>
-            <p class="mt-1 text-sm text-gray-500">{{ $visit->visit_number }} &mdash; {{ $visit->patient?->name ?? '—' }}</p>
-        </div>
+        <x-ui.page-header
+            title="Ubah Kunjungan"
+            :subtitle="$visit->visit_number.' — '.($visit->patient?->name ?? '—')">
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.button variant="secondary" :href="route('rme.visits.show', $visit)">Kembali</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         <x-ui.card>
             <form method="POST" action="{{ route('rme.visits.update', $visit) }}" class="space-y-6">
@@ -22,45 +25,38 @@
                 @method('PUT')
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
-                        <label class="block text-sm font-medium text-gray-700">Status</label>
-                        <select name="status" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        <x-ui.select label="Status" name="status">
                             @foreach ($statuses as $status)
                                 <option value="{{ $status }}" @selected(old('status', $visit->status) === $status)>{{ $statusLabels[$status] ?? $status }}</option>
                             @endforeach
-                        </select>
+                        </x-ui.select>
                     </div>
                     {{-- Sprint 58.6 — Room selection removed from the visit edit form.
                          Treatment rooms are assigned by Admin Klinik from the queue. --}}
                     <div class="sm:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700">Keluhan Utama <span class="text-gray-400">(opsional)</span></label>
-                        <textarea name="chief_complaint" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('chief_complaint', $visit->chief_complaint) }}</textarea>
+                        <x-ui.textarea label="Keluhan Utama" name="chief_complaint" rows="3" help="Opsional.">{{ old('chief_complaint', $visit->chief_complaint) }}</x-ui.textarea>
                     </div>
                     {{-- Initial Service --}}
-                    <div class="sm:col-span-2 border-t border-gray-100 pt-4">
-                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Layanan Awal (Triase)</p>
+                    <div class="sm:col-span-2 border-t border-hairline pt-4">
+                        <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-ink-soft">Layanan Awal (Triase)</p>
                         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Tindakan Awal <span class="text-gray-400">(opsional)</span></label>
-                                <select name="initial_treatment_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                <x-ui.select label="Tindakan Awal" name="initial_treatment_id" help="Opsional.">
                                     <option value="">- Pilih tindakan awal -</option>
                                     @foreach ($treatments as $treatment)
                                         <option value="{{ $treatment->id }}" @selected(old('initial_treatment_id', $visit->initial_treatment_id) == $treatment->id)>
                                             {{ $treatment->name }}
                                         </option>
                                     @endforeach
-                                </select>
-                                @error('initial_treatment_id')
-                                    <p class="mt-1 text-xs text-rose-600">{{ $message }}</p>
-                                @enderror
+                                </x-ui.select>
                             </div>
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Catatan Layanan Awal <span class="text-gray-400">(opsional)</span></label>
-                                <textarea name="initial_service_note" rows="2" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('initial_service_note', $visit->initial_service_note) }}</textarea>
+                                <x-ui.textarea label="Catatan Layanan Awal" name="initial_service_note" rows="2" help="Opsional.">{{ old('initial_service_note', $visit->initial_service_note) }}</x-ui.textarea>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center justify-end gap-2 border-t border-gray-100 pt-5">
+                <div class="flex items-center justify-end gap-2 border-t border-hairline pt-5">
                     <x-ui.button variant="secondary" :href="route('rme.visits.show', $visit)">Batal</x-ui.button>
                     <x-ui.button type="submit" variant="primary">Simpan Perubahan</x-ui.button>
                 </div>

@@ -604,6 +604,92 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-9 sprint evidence doc is missing (docs/sprints/uix-9-inventory-analytics-workflow-forms-polish.md).';
         }
 
+        // --- UIX-10 — RME visit, queue & patient workspace operator surfaces. ---
+        // Presentation-only governance for the RME daily operator pages (queue,
+        // room worklist, visit create/edit forms, workspace nav, RM lookup). The
+        // polished references must stay on x-ui.* + semantic tokens, must not
+        // reintroduce legacy teal, must never use gold as a CTA, and must never
+        // render a full KTP/NIK/identity number. No RME workflow, status
+        // transition, room gate, or cashier logic is asserted here.
+        $queueIndex = 'resources/views/rme/patient-queue/index.blade.php';
+        $roomWorklist = 'resources/views/rme/visits/room-worklist.blade.php';
+        $visitCreate = 'resources/views/rme/visits/create.blade.php';
+        $visitEdit = 'resources/views/rme/visits/edit.blade.php';
+
+        foreach ([$queueIndex, $roomWorklist, $visitCreate, $visitEdit] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing RME UIX-10 view: {$file}";
+            }
+        }
+
+        // Antrian Pasien is the reference queue list page.
+        $queueContents = @file_get_contents($base.'/'.$queueIndex) ?: '';
+        if ($queueContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($queueContents, $component)) {
+                    $errors[] = "RME queue view {$queueIndex} does not use the {$component} component.";
+                }
+            }
+            if (! str_contains($queueContents, ':status')) {
+                $errors[] = 'RME queue status badge does not use the x-ui.badge :status map.';
+            }
+        }
+
+        // Room worklist follows the same list standard (header + filter + table).
+        $worklistContents = @file_get_contents($base.'/'.$roomWorklist) ?: '';
+        if ($worklistContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table'] as $component) {
+                if (! str_contains($worklistContents, $component)) {
+                    $errors[] = "RME room worklist view {$roomWorklist} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Visit create/edit forms use the standardized page header.
+        foreach ([$visitCreate, $visitEdit] as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents !== '' && ! str_contains($contents, 'x-ui.page-header')) {
+                $errors[] = "RME visit form {$file} does not use the x-ui.page-header component.";
+            }
+        }
+
+        // No legacy teal / gold-CTA / rendered KTP-NIK across the polished RME
+        // operator surfaces. The visit create form legitimately *inputs* a KTP
+        // field (never rendered back), so only attribute-access echoes are banned.
+        $uix10Files = [
+            'resources/views/rme/patient-queue/index.blade.php',
+            'resources/views/rme/visits/room-worklist.blade.php',
+            'resources/views/rme/visits/create.blade.php',
+            'resources/views/rme/visits/edit.blade.php',
+            'resources/views/rme/visits/_form.blade.php',
+            'resources/views/rme/partials/cross-branch-rm-lookup.blade.php',
+            'resources/views/rme/visits/partials/rm-sheet-nav.blade.php',
+            'resources/views/rme/visits/partials/visit-nav-arrows.blade.php',
+            'resources/views/rme/visits/partials/visit-workflow-nav.blade.php',
+            'resources/views/rme/dashboard/index.blade.php',
+            'resources/views/rme/online-context/select.blade.php',
+        ];
+        foreach ($uix10Files as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never an RME operator action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Rendered KTP/NIK attribute found in {$file} (identity numbers must never reach the RME UI).";
+            }
+        }
+
+        // UIX-10 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-10-rme-visit-queue-patient-workspace-polish.md')) {
+            $warnings[] = 'UIX-10 sprint evidence doc is missing (docs/sprints/uix-10-rme-visit-queue-patient-workspace-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

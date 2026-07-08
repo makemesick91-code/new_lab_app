@@ -750,3 +750,28 @@ canonical component set as the list (UIX-3) and cashier (UIX-5) standards:
 `architecture:ui-governance-check --strict` enforces the reference surfaces
 (`inventory/analytics/index`, `inventory/executive-dashboard`, `inventory/purchase-orders/show`,
 `inventory/products/_form`) and the no-teal / no-gold-CTA / no-mutable-stock invariants.
+
+## RME daily operator surfaces (UIX-10)
+
+The RME operator pages (queue, room worklist, visit create/edit, dashboard,
+online-context, RM lookup, workspace nav) follow the shared standards:
+
+- **Queue / worklist list pages** — `x-ui.page-header` + `x-ui.filter-bar`
+  (`x-ui.input`/`x-ui.select`, same GET params) + `x-ui.table` +
+  `x-ui.badge :status` + `x-ui.button` + `x-ui.empty-state`. `rme/patient-queue/index`
+  (Antrian Pasien) is the reference RME queue page.
+- **Visit forms** (`create`/`edit`) — `x-ui.page-header`; the edit form uses
+  `x-ui.select`/`x-ui.textarea`. The large `_form.blade.php` partial keeps its
+  Alpine (patient-mode / follow-up / online-doctor / RM-preview) and field names;
+  it is palette-normalized only.
+- **Privacy (non-negotiable):** no RME operator view renders a full KTP/NIK/
+  identity number. The visit create form may *input* a KTP field (never rendered
+  back). The governance command scans for `->ktp/nik/identity_number` echoes and
+  legacy `teal-*` / `variant="gold"` CTAs across these files.
+- **Workflow safety:** room-gate lock state on `visit-workflow-nav`, the
+  assign-room form, and every status/transition control are presentation-only —
+  no RME workflow, doctor→cashier gate, or room-gate behavior is changed here.
+
+`architecture:ui-governance-check --strict` enforces the RME reference surfaces
+(`rme/patient-queue/index`, `rme/visits/room-worklist`, `rme/visits/create`,
+`rme/visits/edit`) and the no-teal / no-gold-CTA / no-rendered-KTP invariants.
