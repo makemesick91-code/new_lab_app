@@ -816,3 +816,40 @@ below may be changed by a UI sprint.
 `architecture:ui-governance-check --strict` enforces the clinical reference
 surfaces and the no-teal / no-gold-CTA / no-rendered-KTP invariants (including a
 residual-teal-hex scan on the print templates).
+
+## RME cashier / receivable financial-summary standard (UIX-12)
+
+The RME financial operator surfaces (cashier list/detail, payment, receivable
+list, carry-over, follow-up) follow the shared standards, and the *money state*
+of an invoice is presented through one canonical card:
+
+- **`x-rme.invoice-summary`** (`components/rme/invoice-summary.blade.php`) — the
+  standardized financial summary row: **Total Tagihan / Sudah Dibayar / Sisa
+  Tagihan / Status Tagihan**. It is **presentation-only** — it reads existing
+  invoice accessors (`grand_total`, `paidAmount()`, `remainingAmount()`,
+  `status`) and never recomputes, allocates, or mutates a value. Reuse it on
+  every invoice/payment/receivable detail surface so the remaining amount is
+  always visible and partial payment is always clearly labeled. Status maps all
+  five states — `DRAFT` (info), `UNPAID`/`PARTIAL` (warning), `PAID` (success),
+  `VOID` (danger) — via `x-ui.badge`. Money is `tabular-nums`; a settled
+  (remaining Rp 0) balance reads calm/positive, an outstanding balance reads as
+  a warning.
+- **Financial list pages** (cashier index, receivables) — the UIX-3 list
+  standard (`x-ui.page-header` + `x-ui.filter-bar` + `x-ui.table` +
+  `x-ui.badge :status` + `x-ui.button` + `x-ui.empty-state`, same GET params).
+  Every invoice-status badge maps all five statuses (`PARTIAL` included).
+- **Consent gate** — surfaced via `x-ui.alert variant="warning"`; the field
+  names (`consent_signed_by_patient` / `consent_signed_by_doctor`) and
+  server-side validation are **never** changed by a UI sprint.
+- **Financial rules (non-negotiable):** no cashier/receivable/follow-up UI sprint
+  may change invoice/payment calculation, invoice-status behavior (`DRAFT`,
+  `UNPAID`, `PARTIAL`, `PAID`, `VOID`), partial-payment behavior, remaining-amount
+  calculation, receivable/aging logic, carry-over allocation, the consent gate,
+  Lab billing (no `trx_payments` from RME), or the cashier/payment-driven visit
+  completion (doctor cannot complete a visit directly). No full KTP/NIK is ever
+  rendered/exported/logged on a financial surface.
+
+`architecture:ui-governance-check --strict` enforces the `x-rme.invoice-summary`
+component, its reuse on the invoice detail (`rme/cashier/show`) and payment
+(`rme/cashier/payment/create`) surfaces, and the no-teal / no-gold-CTA /
+no-rendered-KTP invariants across the cashier surfaces.

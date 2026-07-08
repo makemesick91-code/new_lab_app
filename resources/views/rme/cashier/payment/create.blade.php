@@ -54,6 +54,9 @@
             </div>
         </x-ui.card>
 
+        {{-- Financial summary: total / paid / remaining / status (UIX-12 standard). --}}
+        <x-rme.invoice-summary :invoice="$invoice" />
+
         {{-- Patient & Visit Context --}}
         <x-ui.card title="Informasi Kunjungan">
             <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
@@ -98,26 +101,24 @@
 
         @if ($hasCarryOver)
             <x-ui.card title="Piutang Kunjungan Sebelumnya">
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-hairline text-sm">
-                        <thead class="bg-navy-50">
+                <x-ui.table>
+                    <thead class="bg-navy-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Kunjungan</th>
+                            <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Invoice</th>
+                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Sisa Piutang</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-hairline">
+                        @foreach ($carryOverInvoices as $parentInvoice)
                             <tr>
-                                <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Kunjungan</th>
-                                <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Invoice</th>
-                                <th class="px-4 py-3 text-right font-medium text-ink-soft">Sisa Piutang</th>
+                                <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
+                                <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->invoice_number }}</td>
+                                <td class="px-4 py-3 text-right font-semibold tabular-nums text-warning-700">Rp {{ number_format($parentInvoice->remainingAmount(), 0, ',', '.') }}</td>
                             </tr>
-                        </thead>
-                        <tbody class="divide-y divide-hairline">
-                            @foreach ($carryOverInvoices as $parentInvoice)
-                                <tr>
-                                    <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
-                                    <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->invoice_number }}</td>
-                                    <td class="px-4 py-3 text-right font-semibold text-warning-700">Rp {{ number_format($parentInvoice->remainingAmount(), 0, ',', '.') }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                        @endforeach
+                    </tbody>
+                </x-ui.table>
             </x-ui.card>
 
             <x-ui.card title="Total Harus Dibayar">
@@ -140,48 +141,46 @@
 
         {{-- Items Summary --}}
         <x-ui.card title="Ringkasan Tagihan">
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-hairline text-sm">
-                    <thead class="bg-navy-50">
+            <x-ui.table>
+                <thead class="bg-navy-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-medium text-ink-soft">Deskripsi</th>
+                        <th class="px-4 py-3 text-right font-medium text-ink-soft">Qty</th>
+                        <th class="px-4 py-3 text-right font-medium text-ink-soft">Harga Satuan</th>
+                        <th class="px-4 py-3 text-right font-medium text-ink-soft">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($invoice->items as $item)
                         <tr>
-                            <th class="px-4 py-3 text-left font-medium text-ink-soft">Deskripsi</th>
-                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Qty</th>
-                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Harga Satuan</th>
-                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Subtotal</th>
+                            <td class="px-4 py-3 text-navy">{{ $item->description }}</td>
+                            <td class="px-4 py-3 text-right tabular-nums text-ink">{{ $item->qty }}</td>
+                            <td class="px-4 py-3 text-right tabular-nums text-ink">Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
+                            <td class="px-4 py-3 text-right font-medium tabular-nums text-navy">Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
                         </tr>
-                    </thead>
-                    <tbody class="divide-y divide-hairline">
-                        @foreach ($invoice->items as $item)
-                            <tr>
-                                <td class="px-4 py-3 text-navy">{{ $item->description }}</td>
-                                <td class="px-4 py-3 text-right text-ink">{{ $item->qty }}</td>
-                                <td class="px-4 py-3 text-right text-ink">Rp {{ number_format($item->unit_price, 0, ',', '.') }}</td>
-                                <td class="px-4 py-3 text-right font-medium text-navy">Rp {{ number_format($item->subtotal, 0, ',', '.') }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                    <tfoot class="bg-navy-50">
-                        @if ($invoice->discount_total > 0)
-                            <tr>
-                                <td colspan="3" class="px-4 py-2 text-right text-sm text-danger-700">Total Diskon</td>
-                                <td class="px-4 py-2 text-right font-medium text-danger-700">- Rp {{ number_format($invoice->discount_total, 0, ',', '.') }}</td>
-                            </tr>
-                        @endif
-                        <tr class="border-t-2 border-hairline">
-                            <td colspan="3" class="px-4 py-3 text-right text-base font-semibold text-navy">Grand Total</td>
-                            <td class="px-4 py-3 text-right text-base font-bold text-brand-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
-                        </tr>
+                    @endforeach
+                </tbody>
+                <tfoot class="bg-navy-50">
+                    @if ($invoice->discount_total > 0)
                         <tr>
-                            <td colspan="3" class="px-4 py-2 text-right text-sm text-success-700">Sudah Dibayar</td>
-                            <td class="px-4 py-2 text-right font-medium text-success-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</td>
+                            <td colspan="3" class="px-4 py-2 text-right text-sm text-danger-700">Total Diskon</td>
+                            <td class="px-4 py-2 text-right font-medium tabular-nums text-danger-700">- Rp {{ number_format($invoice->discount_total, 0, ',', '.') }}</td>
                         </tr>
-                        <tr>
-                            <td colspan="3" class="px-4 py-2 text-right text-sm text-warning-700">Sisa Tagihan</td>
-                            <td class="px-4 py-2 text-right font-bold text-warning-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
+                    @endif
+                    <tr class="border-t-2 border-hairline">
+                        <td colspan="3" class="px-4 py-3 text-right text-base font-semibold text-navy">Grand Total</td>
+                        <td class="px-4 py-3 text-right text-base font-bold tabular-nums text-brand-700">Rp {{ number_format($invoice->grand_total, 0, ',', '.') }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" class="px-4 py-2 text-right text-sm text-success-700">Sudah Dibayar</td>
+                        <td class="px-4 py-2 text-right font-medium tabular-nums text-success-700">Rp {{ number_format($paidAmount, 0, ',', '.') }}</td>
+                    </tr>
+                    <tr>
+                        <td colspan="3" class="px-4 py-2 text-right text-sm text-warning-700">Sisa Tagihan</td>
+                        <td class="px-4 py-2 text-right font-bold tabular-nums text-warning-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</td>
+                    </tr>
+                </tfoot>
+            </x-ui.table>
         </x-ui.card>
 
         {{-- Payment Form --}}

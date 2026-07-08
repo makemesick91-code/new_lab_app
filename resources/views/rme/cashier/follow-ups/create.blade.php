@@ -27,15 +27,14 @@
             </x-slot:actions>
         </x-ui.page-header>
 
+        {{-- Financial summary: total / paid / remaining / status (UIX-12 standard). --}}
+        <x-rme.invoice-summary :invoice="$invoice" />
+
         <x-ui.card title="Informasi Tagihan">
             <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 <div>
                     <dt class="text-ink-soft">No. Invoice</dt>
                     <dd class="font-mono font-medium text-navy">{{ $invoice->invoice_number }}</dd>
-                </div>
-                <div>
-                    <dt class="text-ink-soft">Status</dt>
-                    <dd class="font-medium text-warning-700">{{ $invoice->status }}</dd>
                 </div>
                 <div>
                     <dt class="text-ink-soft">Pasien</dt>
@@ -48,10 +47,6 @@
                 <div>
                     <dt class="text-ink-soft">Nomor WA</dt>
                     <dd class="text-navy">{{ $invoice->patient?->whatsapp_number ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-ink-soft">Sisa Tagihan</dt>
-                    <dd class="text-base font-bold text-warning-700">Rp {{ number_format($remainingAmount, 0, ',', '.') }}</dd>
                 </div>
             </dl>
             <p class="mt-4 rounded-md border border-warning-100 bg-warning-50 px-3 py-2 text-xs text-warning-700">

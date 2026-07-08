@@ -2,16 +2,18 @@
     @php
         // Presentation-only labels/tones for invoice status. No business logic here.
         $invoiceStatusLabels = [
-            'DRAFT'  => 'Draft',
-            'UNPAID' => 'Belum Dibayar',
-            'PAID'   => 'Lunas',
-            'VOID'   => 'Dibatalkan',
+            'DRAFT'   => 'Draft',
+            'UNPAID'  => 'Belum Dibayar',
+            'PARTIAL' => 'Cicilan / Sebagian',
+            'PAID'    => 'Lunas',
+            'VOID'    => 'Dibatalkan',
         ];
         $invoiceStatusTone = [
-            'DRAFT'  => 'info',
-            'UNPAID' => 'warning',
-            'PAID'   => 'success',
-            'VOID'   => 'danger',
+            'DRAFT'   => 'info',
+            'UNPAID'  => 'warning',
+            'PARTIAL' => 'warning',
+            'PAID'    => 'success',
+            'VOID'    => 'danger',
         ];
         $hasFilter = !empty($filters['search']);
     @endphp
