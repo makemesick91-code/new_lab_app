@@ -285,6 +285,44 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-5 sprint evidence doc is missing (docs/sprints/uix-5-kasir-payment-polish.md).';
         }
 
+        // --- UIX-12 — RME cashier / receivable / follow-up financial polish. ---
+        // Presentation-only: the standardized financial summary card
+        // (x-rme.invoice-summary → total / paid / remaining / status) is the
+        // canonical way to surface an RME invoice's money state. It must be reused
+        // on the invoice detail and payment surfaces, must never render KTP/NIK,
+        // must not use legacy teal or a gold CTA, and must never recompute a
+        // payment/receivable/invoice-status value. No payment/consent/receivable/
+        // carry-over logic is asserted here.
+        $invoiceSummaryComponent = 'resources/views/components/rme/invoice-summary.blade.php';
+        if (! is_file($base.'/'.$invoiceSummaryComponent)) {
+            $errors[] = "Missing RME financial summary component: {$invoiceSummaryComponent}";
+        } else {
+            $summaryView = @file_get_contents($base.'/'.$invoiceSummaryComponent) ?: '';
+            // The summary reads existing accessors, never writes a mutable state.
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $summaryView)) {
+                $errors[] = "Legacy teal brand class found in {$invoiceSummaryComponent} (use brand/token classes).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $summaryView)) {
+                $errors[] = "Sensitive KTP/NIK field rendered in {$invoiceSummaryComponent} (forbidden on financial surface).";
+            }
+        }
+
+        // The invoice detail + payment surfaces must reuse the shared summary.
+        foreach ([
+            'resources/views/rme/cashier/show.blade.php',
+            'resources/views/rme/cashier/payment/create.blade.php',
+        ] as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents !== '' && ! str_contains($contents, 'x-rme.invoice-summary')) {
+                $errors[] = "Financial surface {$file} does not use the x-rme.invoice-summary card.";
+            }
+        }
+
+        // UIX-12 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-12-rme-cashier-receivable-follow-up-polish.md')) {
+            $warnings[] = 'UIX-12 sprint evidence doc is missing (docs/sprints/uix-12-rme-cashier-receivable-follow-up-polish.md).';
+        }
+
         // --- UIX-6 — Inventory pages adopt the shared design system. ---
         // Presentation-only governance: inventory scan surfaces must stay on
         // x-ui.* + semantic tokens, must not reintroduce legacy teal, must never

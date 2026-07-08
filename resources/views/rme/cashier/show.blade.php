@@ -57,6 +57,9 @@
             </div>
         </x-ui.card>
 
+        {{-- Financial summary: total / paid / remaining / status (UIX-12 standard). --}}
+        <x-rme.invoice-summary :invoice="$invoice" />
+
         {{-- Patient & Visit --}}
         @include('rme.cashier.partials.clinical-summary', ['visit' => $visit])
 
@@ -65,36 +68,34 @@
                 <p class="text-sm text-ink-soft mb-4">
                     Pembayaran dari kasir kontrol akan mengurangi piutang kunjungan sebelumnya terlebih dahulu (FIFO).
                 </p>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-hairline text-sm">
-                        <thead class="bg-navy-50">
+                <x-ui.table>
+                    <thead class="bg-navy-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Kunjungan</th>
+                            <th class="px-4 py-3 text-left font-medium text-ink-soft">Tanggal</th>
+                            <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Invoice</th>
+                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Total Invoice</th>
+                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Sudah Dibayar</th>
+                            <th class="px-4 py-3 text-right font-medium text-ink-soft">Sisa Piutang</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-hairline">
+                        @foreach ($carryOverInvoices as $parentInvoice)
+                            @php
+                                $parentPaid = $parentInvoice->paidAmount();
+                                $parentRemaining = $parentInvoice->remainingAmount();
+                            @endphp
                             <tr>
-                                <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Kunjungan</th>
-                                <th class="px-4 py-3 text-left font-medium text-ink-soft">Tanggal</th>
-                                <th class="px-4 py-3 text-left font-medium text-ink-soft">No. Invoice</th>
-                                <th class="px-4 py-3 text-right font-medium text-ink-soft">Total Invoice</th>
-                                <th class="px-4 py-3 text-right font-medium text-ink-soft">Sudah Dibayar</th>
-                                <th class="px-4 py-3 text-right font-medium text-ink-soft">Sisa Piutang</th>
+                                <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
+                                <td class="px-4 py-3 text-ink">{{ $parentInvoice->clinicVisit?->visit_date?->format('d/m/Y') ?? '-' }}</td>
+                                <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->invoice_number }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-ink">Rp {{ number_format($parentInvoice->grand_total, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right tabular-nums text-success-700">Rp {{ number_format($parentPaid, 0, ',', '.') }}</td>
+                                <td class="px-4 py-3 text-right font-semibold tabular-nums text-warning-700">Rp {{ number_format($parentRemaining, 0, ',', '.') }}</td>
                             </tr>
-                        </thead>
-                        <tbody class="divide-y divide-hairline">
-                            @foreach ($carryOverInvoices as $parentInvoice)
-                                @php
-                                    $parentPaid = $parentInvoice->paidAmount();
-                                    $parentRemaining = $parentInvoice->remainingAmount();
-                                @endphp
-                                <tr>
-                                    <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->clinicVisit?->visit_number ?? '-' }}</td>
-                                    <td class="px-4 py-3 text-ink">{{ $parentInvoice->clinicVisit?->visit_date?->format('d/m/Y') ?? '-' }}</td>
-                                    <td class="px-4 py-3 font-mono text-navy">{{ $parentInvoice->invoice_number }}</td>
-                                    <td class="px-4 py-3 text-right text-ink">Rp {{ number_format($parentInvoice->grand_total, 0, ',', '.') }}</td>
-                                    <td class="px-4 py-3 text-right text-success-700">Rp {{ number_format($parentPaid, 0, ',', '.') }}</td>
-                                    <td class="px-4 py-3 text-right font-semibold text-warning-700">Rp {{ number_format($parentRemaining, 0, ',', '.') }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
+                        @endforeach
+                    </tbody>
+                </x-ui.table>
             </x-ui.card>
 
             <x-ui.card title="Tagihan Kontrol Hari Ini">
