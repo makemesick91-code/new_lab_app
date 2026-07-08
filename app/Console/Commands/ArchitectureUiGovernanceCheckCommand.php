@@ -690,6 +690,110 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-10 sprint evidence doc is missing (docs/sprints/uix-10-rme-visit-queue-patient-workspace-polish.md).';
         }
 
+        // --- UIX-11 — RME medical record, odontogram & print bundle surfaces. ---
+        // Presentation-only governance for the doctor-facing clinical
+        // documentation pages (medical record list/detail/empty, odontogram
+        // detail) and the print/PDF bundle. These must stay on x-ui.* + semantic
+        // tokens, must not reintroduce legacy teal, must never use gold as a CTA,
+        // and must never render a full KTP/NIK/identity number. No RME workflow,
+        // finalization, handwriting-required, room gate, or cashier logic is
+        // asserted here — the clinical print templates keep inline brand hex and
+        // stay table-based (no flexbox-only dompdf layout is enforced by tokens).
+        $rmRecordDetail = 'resources/views/rme/visits/medical-record/show.blade.php';
+        $rmRecordIndex = 'resources/views/rme/visits/medical-record/index.blade.php';
+        $rmRecordEmpty = 'resources/views/rme/visits/medical-record/empty.blade.php';
+        $odontoDetail = 'resources/views/rme/visits/odontogram/show.blade.php';
+
+        foreach ([$rmRecordDetail, $rmRecordIndex, $rmRecordEmpty, $odontoDetail] as $file) {
+            if (! is_file($base.'/'.$file)) {
+                $errors[] = "Missing RME UIX-11 clinical view: {$file}";
+            }
+        }
+
+        // Medical record detail is the reference clinical documentation page.
+        $rmDetailContents = @file_get_contents($base.'/'.$rmRecordDetail) ?: '';
+        if ($rmDetailContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button', 'x-ui.alert'] as $component) {
+                if (! str_contains($rmDetailContents, $component)) {
+                    $errors[] = "RME medical record detail {$rmRecordDetail} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Medical record list follows the UIX-3 list standard.
+        $rmIndexContents = @file_get_contents($base.'/'.$rmRecordIndex) ?: '';
+        if ($rmIndexContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.filter-bar', 'x-ui.table', 'x-ui.badge', 'x-ui.button', 'x-ui.empty-state'] as $component) {
+                if (! str_contains($rmIndexContents, $component)) {
+                    $errors[] = "RME medical record list {$rmRecordIndex} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // Odontogram detail is the reference odontogram documentation page.
+        $odontoContents = @file_get_contents($base.'/'.$odontoDetail) ?: '';
+        if ($odontoContents !== '') {
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button'] as $component) {
+                if (! str_contains($odontoContents, $component)) {
+                    $errors[] = "RME odontogram detail {$odontoDetail} does not use the {$component} component.";
+                }
+            }
+        }
+
+        // No legacy teal / gold-CTA / rendered KTP-NIK across the polished clinical
+        // documentation views. (The canvas <script> bakes the RM paper template
+        // with neutral ink hex into the saved PNG — hex is not scanned here, per
+        // the UIX-4 clinical-page precedent.)
+        $uix11ClinicalFiles = [
+            $rmRecordDetail,
+            $rmRecordIndex,
+            $rmRecordEmpty,
+            $odontoDetail,
+        ];
+        foreach ($uix11ClinicalFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/\b(?:bg|text|border|ring|divide)-teal-\d/', $contents)) {
+                $errors[] = "Legacy teal brand class found in {$file} (use brand/token classes).";
+            }
+            if (str_contains($contents, 'variant="gold"')) {
+                $errors[] = "Gold used as a button/CTA in {$file} (gold is accent-only, never a clinical action).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Rendered KTP/NIK attribute found in {$file} (identity numbers must never reach the clinical UI).";
+            }
+        }
+
+        // Print bundle: no residual teal hex, and no rendered KTP/NIK. Print
+        // templates stay table-based (inline brand hex is allowed here — UIX-8
+        // precedent) and are the only clinical surface where raw hex is expected.
+        $uix11PrintFiles = [
+            'resources/views/rme/visits/print.blade.php',
+            'resources/views/rme/visits/print-pdf.blade.php',
+            'resources/views/rme/visits/odontogram/print.blade.php',
+            'resources/views/rme/visits/partials/print-body.blade.php',
+            'resources/views/rme/visits/odontogram/partials/structured-print-template.blade.php',
+        ];
+        foreach ($uix11PrintFiles as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            if (preg_match('/#0f766e|#0d9488/i', $contents)) {
+                $errors[] = "Legacy teal hex found in print template {$file} (use brand hex #1D4ED8/#1E40AF).";
+            }
+            if (preg_match('/->(?:ktp_number|ktp|nik|identity_number)\b/', $contents)) {
+                $errors[] = "Rendered KTP/NIK attribute found in print template {$file} (identity numbers must never reach print/PDF).";
+            }
+        }
+
+        // UIX-11 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md')) {
+            $warnings[] = 'UIX-11 sprint evidence doc is missing (docs/sprints/uix-11-rme-medical-record-odontogram-print-bundle-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [

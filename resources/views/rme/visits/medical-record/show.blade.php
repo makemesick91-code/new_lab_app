@@ -4,28 +4,27 @@
     @endphp
 
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Rekam Medis Elektronik</p>
-                <div class="mt-1 flex flex-wrap items-center gap-3">
-                    <h2 class="text-xl font-semibold text-gray-900">Rekam Medis</h2>
-                    <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
-                        {{ $isFinal ? 'Final' : 'Draft' }}
-                    </x-ui.badge>
-                </div>
-                <p class="mt-1 text-sm text-gray-500">{{ $clinicVisit->visit_number }} &mdash; {{ $clinicVisit->visit_date?->format('d/m/Y') }}</p>
-                @if ($clinicVisit->isFollowUpVisit())
-                    <p class="mt-2 text-sm text-teal-800">
-                        <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
-                        @if ($clinicVisit->followUpOf)
-                            &mdash; <span class="font-medium">Kontrol dari:</span>
-                            <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono underline">{{ $clinicVisit->followUpOf->visit_number }}</a>
-                        @endif
-                    </p>
-                @endif
-            </div>
+        <x-ui.page-header
+            title="Rekam Medis"
+            :subtitle="$clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')"
+        >
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
+                    {{ $isFinal ? 'Final' : 'Draft' }}
+                </x-ui.badge>
+            </x-slot:actions>
+        </x-ui.page-header>
 
-        </div>
+        @if ($clinicVisit->isFollowUpVisit())
+            <x-ui.alert variant="info">
+                <span class="font-medium">Jenis Kunjungan:</span> {{ $clinicVisit->visitTypeLabel() }}
+                @if ($clinicVisit->followUpOf)
+                    &mdash; <span class="font-medium">Kontrol dari:</span>
+                    <a href="{{ route('rme.visits.show', $clinicVisit->followUpOf) }}" class="font-mono underline">{{ $clinicVisit->followUpOf->visit_number }}</a>
+                @endif
+            </x-ui.alert>
+        @endif
 
         @include('rme.visits.partials.visit-workflow-nav', [
             'clinicVisit' => $clinicVisit,
@@ -34,9 +33,9 @@
 
         {{-- Sprint 64.0 — opened-from-later-visit notice (patient-centric workspace). --}}
         @if (! empty($notice))
-            <div class="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+            <x-ui.alert variant="info">
                 {{ $notice }}
-            </div>
+            </x-ui.alert>
         @endif
 
         {{-- Sprint 64.0 — patient RM workspace sheet navigation (swipe / tabs /
@@ -270,7 +269,7 @@
                            data-page-number="{{ $pageNo }}"
                            @class([
                                $navBase,
-                               'border-teal-600 bg-teal-700 text-white' => $pageNo === $activePageNumber,
+                               'border-brand-600 bg-brand-700 text-white' => $pageNo === $activePageNumber,
                                'border-gray-200 bg-white text-gray-700 hover:bg-gray-50' => $pageNo !== $activePageNumber,
                            ])
                            @if ($pageNo === $activePageNumber) aria-current="page" @endif
@@ -300,7 +299,7 @@
             {{-- Only the ACTIVE page preview is rendered (single <img>/canvas). --}}
             <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y">
                 <figure
-                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-teal-500 hover:shadow' : '' }}"
+                    class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
                     data-storage-page="{{ $storagePageNumber }}"
                     data-form-action="{{ route('rme.visits.medical-record.handwriting.store', [$handwritingFormVisit, $handwritingFormRecord]) }}"
@@ -321,7 +320,7 @@
                              draggable="false"
                              style="aspect-ratio:900/1273;object-fit:contain;" />
                     @else
-                        <div class="flex items-center justify-center rounded border border-dashed border-amber-300 bg-amber-50 px-4 py-8 text-center text-sm text-amber-800"
+                        <div class="flex items-center justify-center rounded border border-dashed border-warning-100 bg-warning-50 px-4 py-8 text-center text-sm text-warning-700"
                              style="aspect-ratio:900/1273;">
                             Belum ada handwriting RM. Silakan isi dan simpan tulisan tangan sebelum finalisasi.
                         </div>
@@ -337,7 +336,7 @@
             </div>{{-- /#rm-handwriting-swipe --}}
             @if ($canEditHandwriting)
                 @error('handwriting_data')
-                    <p class="mt-2 text-xs text-rose-600">{{ $message }}</p>
+                    <p class="mt-2 text-xs text-danger-600">{{ $message }}</p>
                 @enderror
 
                 {{-- Same-page overlay editor (relocated Sprint 59 canvas). One
@@ -944,33 +943,33 @@
             </script>
         </x-ui.card>
 
-        {{-- Finalize form: draft only, manager only --}}
+        {{-- Finalize form: draft only, manager only. Presentation only — the
+             $isDraft / $canFinalize / $hasHandwriting gate (handwriting PNG
+             required before finalize) is unchanged. --}}
         @if ($isDraft && $canFinalize)
             @if (! $hasHandwriting)
-                <div class="rounded-lg bg-yellow-50 border border-yellow-300 px-4 py-3 text-sm text-yellow-800">
+                <x-ui.alert variant="warning">
                     RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
-                </div>
-                <button type="button" disabled
-                        class="inline-flex items-center justify-center rounded-lg bg-gray-300 px-4 py-2 text-sm font-semibold text-gray-500 cursor-not-allowed">
+                </x-ui.alert>
+                <x-ui.button type="button" variant="success" disabled>
                     Finalisasi
-                </button>
+                </x-ui.button>
             @else
                 <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
                     @csrf
-                    <button type="submit"
-                            class="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
+                    <x-ui.button type="submit" variant="success">
                         Finalisasi
-                    </button>
+                    </x-ui.button>
                 </form>
             @endif
         @elseif (! $isDraft)
-            <div class="rounded-lg bg-emerald-50 border border-emerald-300 px-4 py-3 text-sm text-emerald-800 font-medium">
-                Rekam Medis ini telah difinalkan. Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
-            </div>
+            <x-ui.alert variant="success" title="Rekam Medis ini telah difinalkan.">
+                Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
+            </x-ui.alert>
         @endif
 
         <div>
-            <a href="{{ route('rme.visits.show', $clinicVisit) }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke detail kunjungan</a>
+            <a href="{{ route('rme.visits.show', $clinicVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
         </div>
     </div>
 </x-settings-shell>

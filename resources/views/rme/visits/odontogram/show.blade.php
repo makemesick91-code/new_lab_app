@@ -95,7 +95,7 @@
 
         {{-- Finalized notice --}}
         @if ($isFinalized)
-            <div class="rounded-lg bg-sky-50 border border-sky-200 p-4 text-sm text-sky-800">
+            <x-ui.alert variant="info">
                 Odontogram sudah final namun masih dapat direvisi oleh dokter.
                 @if ($odontogram->finalized_at)
                     Difinalisasi pada {{ $odontogram->finalized_at->format('d/m/Y H:i') }}
@@ -105,26 +105,22 @@
                         .
                     @endif
                 @endif
-            </div>
+            </x-ui.alert>
         @endif
 
         {{-- Header --}}
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Rekam Medis Elektronik</p>
-                <div class="mt-1 flex flex-wrap items-center gap-3">
-                    <h2 class="text-xl font-semibold text-gray-900">Odontogram</h2>
-                    @if ($isFinalized)
-                        <x-ui.badge tone="info">Final</x-ui.badge>
-                    @else
-                        <x-ui.badge tone="warning">Draft</x-ui.badge>
-                    @endif
-                </div>
-                <p class="mt-1 text-sm text-gray-500">
-                    {{ $clinicVisit->visit_number }} &mdash; {{ $clinicVisit->visit_date?->format('d/m/Y') }}
-                </p>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
+        <x-ui.page-header
+            title="Odontogram"
+            :subtitle="$clinicVisit->visit_number.' — '.($clinicVisit->visit_date?->format('d/m/Y') ?? '-')"
+        >
+            <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
+            <x-slot:actions>
+                @if ($isFinalized)
+                    <x-ui.badge tone="info">Final</x-ui.badge>
+                @else
+                    <x-ui.badge tone="warning">Draft</x-ui.badge>
+                @endif
+
                 {{-- Prev/next visit navigation (same patient, Odontogram page) — Sprint 59 --}}
                 @include('rme.visits.partials.visit-nav-arrows', [
                     'prev' => $adjacentVisits['previous'] ?? null,
@@ -149,8 +145,8 @@
                         <x-ui.button type="submit" variant="primary">Finalisasi Odontogram</x-ui.button>
                     </form>
                 @endif
-            </div>
-        </div>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         @include('rme.visits.partials.visit-workflow-nav', [
             'clinicVisit' => $clinicVisit,

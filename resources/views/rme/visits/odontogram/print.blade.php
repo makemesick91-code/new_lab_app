@@ -41,10 +41,10 @@
         .print-actions { margin-bottom: 16px; display: flex; gap: 8px; }
         .btn-print {
             display: inline-flex; align-items: center; padding: 6px 14px;
-            background: #0f766e; color: #fff; border: none; border-radius: 6px;
+            background: #1D4ED8; color: #fff; border: none; border-radius: 6px;
             font-size: 12px; font-weight: 600; cursor: pointer;
         }
-        .btn-print:hover { background: #0d9488; }
+        .btn-print:hover { background: #1E40AF; }
         .btn-close {
             display: inline-flex; align-items: center; padding: 6px 14px;
             background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;
