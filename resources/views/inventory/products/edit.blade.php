@@ -1,7 +1,7 @@
 <x-settings-shell title="Ubah Produk">
     <div class="space-y-6">
         <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Produk Persediaan</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Produk Persediaan</p>
             <h2 class="mt-1 text-xl font-semibold text-gray-900">Ubah Produk</h2>
             <p class="mt-1 text-sm text-gray-500">{{ $product->code }} — {{ $product->name }}</p>
         </div>

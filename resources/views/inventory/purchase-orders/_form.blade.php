@@ -28,7 +28,7 @@
             <div>
                 <label for="supplier-id" class="block text-sm font-medium text-gray-700">Pemasok</label>
                 <select id="supplier-id" name="supplier_id"
-                        class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                        class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                     <option value="">Pilih pemasok</option>
                     @foreach ($suppliers as $supplier)
                         <option value="{{ $supplier->id }}" @selected((string) old('supplier_id', $purchaseOrder?->supplier_id) === (string) $supplier->id)>{{ $supplier->name }}</option>
@@ -43,7 +43,7 @@
                 <label for="supplier-reference" class="block text-sm font-medium text-gray-700">Nomor Referensi Supplier</label>
                 <input id="supplier-reference" type="text" name="supplier_reference_number"
                        value="{{ old('supplier_reference_number', $purchaseOrder?->supplier_reference_number) }}"
-                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('supplier_reference_number')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -53,7 +53,7 @@
                 <label for="order-date" class="block text-sm font-medium text-gray-700">Tanggal Pesanan <span class="text-red-600">*</span></label>
                 <input id="order-date" type="date" name="order_date" required
                        value="{{ old('order_date', optional($purchaseOrder?->order_date)->format('Y-m-d') ?? now()->toDateString()) }}"
-                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('order_date')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -63,7 +63,7 @@
                 <label for="expected-delivery-date" class="block text-sm font-medium text-gray-700">Perkiraan Tanggal Kirim</label>
                 <input id="expected-delivery-date" type="date" name="expected_delivery_date"
                        value="{{ old('expected_delivery_date', optional($purchaseOrder?->expected_delivery_date)->format('Y-m-d')) }}"
-                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                       class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('expected_delivery_date')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -73,7 +73,7 @@
                 <label for="currency" class="block text-sm font-medium text-gray-700">Mata Uang</label>
                 <input id="currency" type="text" name="currency" readonly
                        value="{{ old('currency', $purchaseOrder?->currency ?? 'IDR') }}"
-                       class="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 text-sm focus:border-teal-500 focus:ring-teal-500">
+                       class="mt-1 block w-full rounded-lg border-gray-300 bg-gray-50 text-sm focus:border-brand-500 focus:ring-brand-500">
                 @error('currency')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -81,7 +81,7 @@
 
             <div class="md:col-span-2">
                 <label for="order-notes" class="block text-sm font-medium text-gray-700">Catatan</label>
-                <textarea id="order-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes', $purchaseOrder?->notes) }}</textarea>
+                <textarea id="order-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('notes', $purchaseOrder?->notes) }}</textarea>
                 @error('notes')
                     <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                 @enderror
@@ -96,7 +96,7 @@
                 <p class="mt-1 text-sm text-gray-500">Tambahkan produk, jumlah, dan harga satuan untuk setiap baris pesanan.</p>
             </div>
             <button type="button" @click="items.push({ product_id: '', inventory_location_id: '', purchase_request_item_id: '', quantity_ordered: 1, unit_price: '', notes: '' })"
-                    class="inline-flex items-center rounded-lg border border-teal-200 bg-teal-50 px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    class="inline-flex items-center rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-100 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                 Tambah Item
             </button>
         </div>
@@ -127,7 +127,7 @@
                         <div>
                             <label :for="'location-' + index" class="block text-sm font-medium text-gray-700">Lokasi Persediaan</label>
                             <select :id="'location-' + index" :name="'items[' + index + '][inventory_location_id]'" x-model="item.inventory_location_id"
-                                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                                 <option value="">Tanpa lokasi spesifik</option>
                                 @foreach ($locations as $location)
                                     <option value="{{ $location->id }}">{{ $location->name }}</option>
@@ -137,17 +137,17 @@
                         <div>
                             <label :for="'quantity-' + index" class="block text-sm font-medium text-gray-700">Jumlah Dipesan <span class="text-red-600">*</span></label>
                             <input :id="'quantity-' + index" type="number" step="0.0001" min="0.0001" :name="'items[' + index + '][quantity_ordered]'" x-model.number="item.quantity_ordered" required
-                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-teal-500 focus:ring-teal-500">
+                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-brand-500 focus:ring-brand-500">
                         </div>
                         <div>
                             <label :for="'price-' + index" class="block text-sm font-medium text-gray-700">Harga Satuan</label>
                             <input :id="'price-' + index" type="number" step="0.01" min="0" :name="'items[' + index + '][unit_price]'" x-model="item.unit_price"
-                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-teal-500 focus:ring-teal-500">
+                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm tabular-nums focus:border-brand-500 focus:ring-brand-500">
                         </div>
                         <div class="md:col-span-2 lg:col-span-1">
                             <label :for="'item-notes-' + index" class="block text-sm font-medium text-gray-700">Catatan Item</label>
                             <input :id="'item-notes-' + index" type="text" :name="'items[' + index + '][notes]'" x-model="item.notes"
-                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                                   class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         </div>
                     </div>
                     <template x-if="item.purchase_request_item_id">

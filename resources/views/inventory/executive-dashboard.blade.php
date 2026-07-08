@@ -15,49 +15,32 @@
 
 <x-settings-shell title="Dasbor Eksekutif Persediaan">
     <div class="space-y-6">
-        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Analitik Eksekutif</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Inventory Executive Dashboard</h1>
-                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                        Ringkasan eksekutif persediaan dan procurement untuk cabang aktif. Semua angka dihitung dari ledger pergerakan dan data procurement.
-                    </p>
-                    @if (! empty($meta['generated_at']))
-                        <p class="mt-2 text-xs text-gray-500">
-                            Dihasilkan: {{ $meta['generated_at']->timezone(config('app.timezone'))->format('d M Y H:i') }}
-                        </p>
-                    @endif
-                </div>
-                <div class="flex flex-wrap gap-2">
-                    @if (Route::has('inventory.analytics.index'))
-                        <a href="{{ route('inventory.analytics.index') }}" class="rounded-md border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Analitik Lengkap
-                        </a>
-                    @endif
-                    @if (Route::has('inventory.dashboard'))
-                        <a href="{{ route('inventory.dashboard') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Dasbor Operasional
-                        </a>
-                    @endif
-                </div>
-            </div>
+        <x-ui.page-header
+            title="Inventory Executive Dashboard"
+            subtitle="Ringkasan eksekutif persediaan dan procurement untuk cabang aktif. Semua angka dihitung dari ledger pergerakan dan data procurement."
+        >
+            <x-slot:breadcrumb>Persediaan / Dasbor Eksekutif</x-slot:breadcrumb>
+            <x-slot:actions>
+                @if (Route::has('inventory.analytics.index'))
+                    <x-ui.button :href="route('inventory.analytics.index')" variant="ghost">Analitik Lengkap</x-ui.button>
+                @endif
+                @if (Route::has('inventory.dashboard'))
+                    <x-ui.button :href="route('inventory.dashboard')" variant="secondary">Dasbor Operasional</x-ui.button>
+                @endif
+            </x-slot:actions>
+        </x-ui.page-header>
 
-            <div class="mt-4 space-y-2 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <p>
-                    <span class="font-semibold">Operational valuation:</span>
-                    Operational inventory value based on current stock × average cost. Not accounting valuation.
-                </p>
-                <p>
-                    <span class="font-semibold">Consumption:</span>
-                    Consumption includes all outbound inventory movements.
-                </p>
-                <p>
-                    <span class="font-semibold">Supplier on-time:</span>
-                    On-time delivery is calculated only from purchase orders with expected delivery dates.
-                </p>
+        @if (! empty($meta['generated_at']))
+            <p class="-mt-3 text-xs text-ink-soft">Dihasilkan: {{ $meta['generated_at']->timezone(config('app.timezone'))->format('d M Y H:i') }}</p>
+        @endif
+
+        <x-ui.alert variant="info">
+            <div class="space-y-2">
+                <p><span class="font-semibold">Operational valuation:</span> Operational inventory value based on current stock × average cost. Not accounting valuation.</p>
+                <p><span class="font-semibold">Consumption:</span> Consumption includes all outbound inventory movements.</p>
+                <p><span class="font-semibold">Supplier on-time:</span> On-time delivery is calculated only from purchase orders with expected delivery dates.</p>
             </div>
-        </section>
+        </x-ui.alert>
 
         <section aria-labelledby="executive-kpis">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -307,12 +290,8 @@
                                     <td class="px-3 py-2 text-right tabular-nums">{{ format_number_id((float) ($reorder['reorder_point'] ?? 0)) }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums">{{ format_number_id((float) ($reorder['suggested_order_qty'] ?? 0)) }}</td>
                                     <td class="px-3 py-2">
-                                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold
-                                            @if (($reorder['severity'] ?? '') === 'critical') bg-rose-100 text-rose-800
-                                            @elseif (($reorder['severity'] ?? '') === 'low') bg-amber-100 text-amber-800
-                                            @else bg-sky-100 text-sky-800 @endif">
-                                            {{ ucfirst($reorder['severity'] ?? 'watch') }}
-                                        </span>
+                                        @php $sev = $reorder['severity'] ?? 'watch'; @endphp
+                                        <x-ui.badge :tone="$sev === 'critical' ? 'danger' : ($sev === 'low' ? 'warning' : 'info')">{{ ucfirst($sev) }}</x-ui.badge>
                                     </td>
                                     <td class="px-3 py-2 text-gray-600">
                                         @if (! empty($reorder['preferred_supplier_name']))

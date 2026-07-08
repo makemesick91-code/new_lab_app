@@ -12,7 +12,7 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Penerimaan Barang</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Detail Penerimaan Barang</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $goodsReceipt->receipt_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
                     {{ format_date_id($goodsReceipt->receipt_date) }}
@@ -21,7 +21,7 @@
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 @can('update', $goodsReceipt)
-                    <a href="{{ route('inventory.goods-receipts.edit', $goodsReceipt) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    <a href="{{ route('inventory.goods-receipts.edit', $goodsReceipt) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                         Edit
                     </a>
                 @endcan
@@ -36,7 +36,7 @@
                 @endcan
 
                 @can('post', $goodsReceipt)
-                    <button type="button" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2" x-data @click="$dispatch('open-modal', 'confirm-post-gr-show')">
+                    <button type="button" class="inline-flex items-center rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2" x-data @click="$dispatch('open-modal', 'confirm-post-gr-show')">
                         Posting
                     </button>
                 @endcan
@@ -53,7 +53,7 @@
                     </button>
                 @endcan
 
-                <a href="{{ route('inventory.goods-receipts.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                <a href="{{ route('inventory.goods-receipts.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Kembali
                 </a>
             </div>
@@ -169,7 +169,7 @@
                             <dt class="text-gray-500">Purchase Order</dt>
                             <dd>
                                 @if ($goodsReceipt->purchaseOrder)
-                                    <a href="{{ route('inventory.purchase-orders.show', $goodsReceipt->purchaseOrder) }}" class="font-medium text-teal-700 hover:text-teal-600">
+                                    <a href="{{ route('inventory.purchase-orders.show', $goodsReceipt->purchaseOrder) }}" class="font-medium text-brand-700 hover:text-brand-600">
                                         {{ $goodsReceipt->purchaseOrder->purchase_order_number }}
                                     </a>
                                 @else
@@ -252,7 +252,7 @@
                     <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-post-gr-show')">Batal</button>
                     <form method="POST" action="{{ route('inventory.goods-receipts.post', $goodsReceipt) }}">
                         @csrf
-                        <button type="submit" class="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-600">Ya, Posting Penerimaan</button>
+                        <button type="submit" class="rounded-lg bg-brand-700 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600">Ya, Posting Penerimaan</button>
                     </form>
                 </div>
             </div>
@@ -270,7 +270,7 @@
                     @csrf
                     <div>
                         <label for="cancel-notes" class="block text-sm font-medium text-gray-700">Alasan (opsional)</label>
-                        <textarea id="cancel-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('notes') }}</textarea>
+                        <textarea id="cancel-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">{{ old('notes') }}</textarea>
                     </div>
                     <div class="flex flex-wrap justify-end gap-3">
                         <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-cancel-gr-show')">Kembali</button>
@@ -292,7 +292,7 @@
                     @csrf
                     <div>
                         <label for="void-reason" class="block text-sm font-medium text-gray-700">Alasan void <span class="text-red-600">*</span></label>
-                        <textarea id="void-reason" name="reason" rows="3" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-teal-500 focus:ring-teal-500">{{ old('reason') }}</textarea>
+                        <textarea id="void-reason" name="reason" rows="3" required class="mt-1 block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">{{ old('reason') }}</textarea>
                     </div>
                     <div class="flex flex-wrap justify-end gap-3">
                         <button type="button" class="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50" @click="$dispatch('close-modal', 'confirm-void-gr-show')">Kembali</button>

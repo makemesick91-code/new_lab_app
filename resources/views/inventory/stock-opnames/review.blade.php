@@ -2,14 +2,14 @@
     <div class="space-y-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Tinjau Stok Opname</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-brand-700">Tinjau Stok Opname</p>
                 <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $stockOpname->opname_number }}</h2>
                 <p class="mt-1 text-sm text-gray-500">
                     {{ $stockOpname->inventoryLocation?->name ?? '-' }} · {{ format_date_id($stockOpname->opname_date) }}
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-                <a href="{{ route('inventory.stock-opnames.show', $stockOpname) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                <a href="{{ route('inventory.stock-opnames.show', $stockOpname) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
                     Kembali ke Detail
                 </a>
                 @if ($stockOpname->status === \App\Modules\Inventory\Models\StockOpname::STATUS_COUNTING)

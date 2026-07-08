@@ -5,18 +5,18 @@
 <div
     x-show="item.requires_batch_tracking"
     x-cloak
-    class="mt-3 rounded-lg border border-teal-200 bg-teal-50 p-3"
+    class="mt-3 rounded-lg border border-brand-200 bg-brand-50 p-3"
 >
-    <p class="text-xs font-semibold uppercase tracking-wide text-teal-800">Batch / Lot</p>
-    <p class="mt-1 text-xs text-teal-700">Pilih batch existing atau buat batch baru.</p>
+    <p class="text-xs font-semibold uppercase tracking-wide text-brand-800">Batch / Lot</p>
+    <p class="mt-1 text-xs text-brand-700">Pilih batch existing atau buat batch baru.</p>
 
     <div class="mt-3 flex flex-wrap gap-2">
-        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-medium text-gray-700">
-            <input type="radio" :name="'items[' + index + '][batch_mode]'" value="existing" class="text-teal-600 focus:ring-teal-500" x-model="item.batch_mode">
+        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs font-medium text-gray-700">
+            <input type="radio" :name="'items[' + index + '][batch_mode]'" value="existing" class="text-brand-600 focus:ring-brand-500" x-model="item.batch_mode">
             Batch Ada
         </label>
-        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-medium text-gray-700">
-            <input type="radio" :name="'items[' + index + '][batch_mode]'" value="new" class="text-teal-600 focus:ring-teal-500" x-model="item.batch_mode">
+        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-brand-200 bg-white px-3 py-2 text-xs font-medium text-gray-700">
+            <input type="radio" :name="'items[' + index + '][batch_mode]'" value="new" class="text-brand-600 focus:ring-brand-500" x-model="item.batch_mode">
             Batch Baru
         </label>
     </div>
@@ -26,7 +26,7 @@
         <select
             :name="'items[' + index + '][inventory_batch_id]'"
             x-model="item.inventory_batch_id"
-            class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+            class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
         >
             <option value="">Pilih batch</option>
             <template x-for="batch in (batchesByProduct[item.product_id] || [])" :key="batch.id">
@@ -39,12 +39,12 @@
         <label class="inline-flex items-start gap-2 text-sm text-gray-800">
             <input
                 type="checkbox"
-                class="mt-0.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                class="mt-0.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                 x-model="item.auto_batch"
             >
             <span>
                 <span class="font-semibold">Buat nomor batch otomatis</span>
-                <span class="mt-1 block text-xs text-teal-700">Nomor batch akan dibuat otomatis dari produk dan tanggal expired.</span>
+                <span class="mt-1 block text-xs text-brand-700">Nomor batch akan dibuat otomatis dari produk dan tanggal expired.</span>
             </span>
         </label>
         <input type="hidden" :name="'items[' + index + '][auto_batch]'" :value="item.auto_batch ? 1 : 0">
@@ -55,7 +55,7 @@
                 type="date"
                 :name="'items[' + index + '][expiry_date]'"
                 x-model="item.expiry_date"
-                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
             >
         </div>
 
@@ -67,7 +67,7 @@
                     maxlength="100"
                     :name="'items[' + index + '][batch_number]'"
                     x-model="item.batch_number"
-                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 >
             </div>
             <div>
@@ -77,7 +77,7 @@
                     maxlength="100"
                     :name="'items[' + index + '][lot_number]'"
                     x-model="item.lot_number"
-                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 >
             </div>
             <div>
@@ -86,7 +86,7 @@
                     type="date"
                     :name="'items[' + index + '][batch_received_date]'"
                     x-model="item.batch_received_date"
-                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 >
             </div>
             <div>
@@ -95,7 +95,7 @@
                     type="date"
                     :name="'items[' + index + '][expiry_date]'"
                     x-model="item.expiry_date"
-                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 >
             </div>
         </div>

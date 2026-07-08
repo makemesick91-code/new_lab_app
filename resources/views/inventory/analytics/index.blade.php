@@ -24,21 +24,15 @@
 
 <x-settings-shell title="Analitik Persediaan">
     <div class="space-y-6">
-        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Analitik Persediaan</p>
-                    <h1 class="mt-1 text-2xl font-semibold text-gray-900">Analitik persediaan cabang aktif</h1>
-                    <p class="mt-2 max-w-3xl text-sm text-gray-600">
-                        Semua metrik dihitung dari ledger pergerakan persediaan (<code class="text-xs">trx_inventory_movements</code>).
-                        Stok saat ini = jumlah masuk − jumlah keluar. Tidak ada kolom stok mutable yang digunakan.
-                    </p>
-                </div>
-                <a href="{{ route('inventory.dashboard') }}" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Kembali ke Dasbor
-                </a>
-            </div>
-        </section>
+        <x-ui.page-header
+            title="Analitik persediaan cabang aktif"
+            subtitle="Semua metrik dihitung dari ledger pergerakan persediaan (trx_inventory_movements). Stok saat ini = jumlah masuk − jumlah keluar. Tidak ada kolom stok mutable yang digunakan."
+        >
+            <x-slot:breadcrumb>Persediaan / Analitik</x-slot:breadcrumb>
+            <x-slot:actions>
+                <x-ui.button :href="route('inventory.dashboard')" variant="secondary">Kembali ke Dasbor</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
         @include('inventory.analytics._meta-hint')
 
@@ -48,16 +42,16 @@
                 <div>
                     <label for="analytics-date-from" class="text-sm font-medium text-gray-700">Tanggal Mulai</label>
                     <input id="analytics-date-from" type="date" name="date_from" value="{{ $dateFrom }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="analytics-date-to" class="text-sm font-medium text-gray-700">Tanggal Akhir</label>
                     <input id="analytics-date-to" type="date" name="date_to" value="{{ $dateTo }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="analytics-location" class="text-sm font-medium text-gray-700">Lokasi</label>
-                    <select id="analytics-location" name="location_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="analytics-location" name="location_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua lokasi</option>
                         @foreach ($locations as $location)
                             <option value="{{ $location->id }}" @selected((int) ($filters['location_id'] ?? 0) === $location->id)>{{ $location->name }}</option>
@@ -66,7 +60,7 @@
                 </div>
                 <div>
                     <label for="analytics-category" class="text-sm font-medium text-gray-700">Kategori</label>
-                    <select id="analytics-category" name="category_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="analytics-category" name="category_id" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="">Semua kategori</option>
                         @foreach ($categories as $category)
                             <option value="{{ $category->id }}" @selected((int) ($filters['category_id'] ?? 0) === $category->id)>{{ $category->name }}</option>
@@ -76,39 +70,35 @@
                 <div>
                     <label for="analytics-dead-days" class="text-sm font-medium text-gray-700">Hari Stok Mati</label>
                     <input id="analytics-dead-days" type="number" name="dead_stock_days" min="1" max="365" value="{{ $deadStockDays }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="analytics-slow-threshold" class="text-sm font-medium text-gray-700">Ambang Lambat</label>
                     <input id="analytics-slow-threshold" type="number" name="slow_moving_threshold" min="0" step="0.01" value="{{ $slowThreshold }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="analytics-limit" class="text-sm font-medium text-gray-700">Batas Baris</label>
                     <input id="analytics-limit" type="number" name="limit" min="1" max="100" value="{{ $limit }}"
-                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                           class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                 </div>
                 <div>
                     <label for="analytics-aging-granularity" class="text-sm font-medium text-gray-700">Umur Persediaan</label>
-                    <select id="analytics-aging-granularity" name="aging_granularity" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500">
+                    <select id="analytics-aging-granularity" name="aging_granularity" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
                         <option value="product" @selected($agingGranularity === 'product')>Per Produk</option>
                         <option value="batch" @selected($agingGranularity === 'batch')>Per Batch</option>
                     </select>
                 </div>
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
-                <button type="submit" class="inline-flex justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-700 focus:ring-offset-2">
-                    Terapkan
-                </button>
-                <a href="{{ route('inventory.analytics.index') }}" class="inline-flex justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Atur Ulang
-                </a>
+                <x-ui.button type="submit">Terapkan</x-ui.button>
+                <x-ui.button :href="route('inventory.analytics.index')" variant="secondary">Atur Ulang</x-ui.button>
             </div>
         </form>
 
-        <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm" aria-labelledby="analytics-summary">
-            <h2 id="analytics-summary" class="text-lg font-semibold text-gray-900">Ringkasan Analitik</h2>
-            <p class="mt-1 text-xs text-gray-500">
+        <x-ui.card aria-labelledby="analytics-summary">
+            <h2 id="analytics-summary" class="text-lg font-semibold text-navy">Ringkasan Analitik</h2>
+            <p class="mt-1 text-xs text-ink-soft">
                 Periode: {{ format_date_id($summary['period_from'] ?? $dateFrom) }} s/d {{ format_date_id($summary['period_to'] ?? $dateTo) }}
             </p>
             <div class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -149,27 +139,26 @@
                     tone="success"
                 />
             </div>
-        </section>
+        </x-ui.card>
 
-        <nav class="flex flex-wrap gap-2 rounded-lg border border-gray-200 bg-white p-3 shadow-sm" aria-label="Navigasi bagian analitik">
+        <nav class="flex flex-wrap gap-2 rounded-lg border border-hairline bg-surface p-3 shadow-card" aria-label="Navigasi bagian analitik">
             @foreach ($sectionNav as $section)
                 <a
                     href="{{ route('inventory.analytics.index', array_merge($filters, ['tab' => $section['key']])) }}#{{ $section['id'] }}"
-                    class="rounded-md px-3 py-2 text-sm font-medium {{ $tab === $section['key'] ? 'bg-teal-50 text-teal-800 ring-1 ring-teal-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
+                    class="rounded-md px-3 py-2 text-sm font-medium {{ $tab === $section['key'] ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900' }}"
                 >
                     {{ $section['label'] }}
                 </a>
             @endforeach
         </nav>
 
-        <aside class="rounded-lg border border-amber-100 bg-amber-50 p-4 text-sm text-amber-900">
-            <p class="font-semibold">Catatan Penting</p>
-            <ul class="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+        <x-ui.alert variant="warning" title="Catatan Penting">
+            <ul class="mt-2 list-disc space-y-1 pl-5">
                 <li>Semua stok dihitung dari ledger pergerakan — bukan kolom stok tersimpan.</li>
                 <li>Tren Nilai Keluar menunjukkan nilai keluar bulanan, <strong>bukan</strong> nilai stok historis on-hand.</li>
                 <li>Umur produk tanpa batch memakai tanggal masuk terakhir sebagai perkiraan (bukan FIFO penuh).</li>
             </ul>
-        </aside>
+        </x-ui.alert>
 
         @if ($tab === 'summary')
             @include('inventory.analytics._tab-summary')
@@ -500,7 +489,7 @@
                                     </td>
                                     <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($row['outbound_qty_period'] ?? 0) }}</td>
                                     <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($row['avg_stock_period'] ?? 0) }}</td>
-                                    <td class="px-3 py-3 text-right tabular-nums font-semibold text-teal-800">
+                                    <td class="px-3 py-3 text-right tabular-nums font-semibold text-brand-800">
                                         {{ ($row['turnover_ratio_qty'] ?? null) !== null ? format_number_id($row['turnover_ratio_qty'], 2) : '—' }}
                                     </td>
                                     <td class="px-4 py-3 text-right tabular-nums text-gray-700">{{ format_currency_id($row['outbound_value_period'] ?? 0) }}</td>

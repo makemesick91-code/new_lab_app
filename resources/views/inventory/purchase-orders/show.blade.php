@@ -20,81 +20,53 @@
 
 <x-settings-shell title="Pesanan Pembelian {{ $purchaseOrder->purchase_order_number }}">
     <div class="space-y-6">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">Detail Pesanan Pembelian</p>
-                <h2 class="mt-1 text-xl font-semibold text-gray-900">{{ $purchaseOrder->purchase_order_number }}</h2>
-                <p class="mt-1 text-sm text-gray-500">{{ $purchaseOrder->displaySupplierName() }}</p>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                    @include('inventory.purchase-orders._status-badge', ['status' => $purchaseOrder->status])
-                    @if (isset($receivingStatuses[$purchaseOrder->status]))
-                        @include('inventory.purchase-orders._receiving-status-badge', $receivingStatuses[$purchaseOrder->status])
-                    @endif
-                </div>
-            </div>
-            <div class="flex flex-col items-stretch gap-2 sm:items-end">
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                    @can('submit', $purchaseOrder)
-                        <form method="POST" action="{{ route('inventory.purchase-orders.submit', $purchaseOrder) }}">
-                            @csrf
-                            <button type="submit" class="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2">
-                                Ajukan
-                            </button>
-                        </form>
-                    @endcan
+        <x-ui.page-header :title="$purchaseOrder->purchase_order_number" :subtitle="$purchaseOrder->displaySupplierName()">
+            <x-slot:breadcrumb>Persediaan / Pesanan Pembelian</x-slot:breadcrumb>
+            <x-slot:actions>
+                @can('submit', $purchaseOrder)
+                    <form method="POST" action="{{ route('inventory.purchase-orders.submit', $purchaseOrder) }}">
+                        @csrf
+                        <x-ui.button type="submit" variant="warning">Ajukan</x-ui.button>
+                    </form>
+                @endcan
+                @can('approve', $purchaseOrder)
+                    <form method="POST" action="{{ route('inventory.purchase-orders.approve', $purchaseOrder) }}">
+                        @csrf
+                        <x-ui.button type="submit" variant="success">Setujui</x-ui.button>
+                    </form>
+                @endcan
+                @can('send', $purchaseOrder)
+                    <form method="POST" action="{{ route('inventory.purchase-orders.send', $purchaseOrder) }}">
+                        @csrf
+                        <x-ui.button type="submit">Kirim ke Supplier</x-ui.button>
+                    </form>
+                @endcan
+                @can('receive', $purchaseOrder)
+                    <x-ui.button variant="primary" :href="route('inventory.goods-receipts.create', ['purchase_order_id' => $purchaseOrder->id])">Terima Barang</x-ui.button>
+                @endcan
+                @can('update', $purchaseOrder)
+                    <x-ui.button variant="secondary" :href="route('inventory.purchase-orders.edit', $purchaseOrder)">Ubah</x-ui.button>
+                @endcan
+                @can('cancel', $purchaseOrder)
+                    <form method="POST" action="{{ route('inventory.purchase-orders.cancel', $purchaseOrder) }}">
+                        @csrf
+                        <x-ui.button type="submit" variant="danger">Batalkan</x-ui.button>
+                    </form>
+                @endcan
+                <x-ui.button variant="secondary" :href="route('inventory.purchase-orders.index')">Kembali</x-ui.button>
+            </x-slot:actions>
+        </x-ui.page-header>
 
-                    @can('approve', $purchaseOrder)
-                        <form method="POST" action="{{ route('inventory.purchase-orders.approve', $purchaseOrder) }}">
-                            @csrf
-                            <button type="submit" class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                                Setujui
-                            </button>
-                        </form>
-                    @endcan
-
-                    @can('send', $purchaseOrder)
-                        <form method="POST" action="{{ route('inventory.purchase-orders.send', $purchaseOrder) }}">
-                            @csrf
-                            <button type="submit" class="inline-flex items-center rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                                Kirim ke Supplier
-                            </button>
-                        </form>
-                    @endcan
-
-                    @can('receive', $purchaseOrder)
-                        <a href="{{ route('inventory.goods-receipts.create', ['purchase_order_id' => $purchaseOrder->id]) }}"
-                           class="inline-flex items-center rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Terima Barang
-                        </a>
-                    @endcan
-                </div>
-                <div class="flex flex-wrap items-center justify-end gap-2">
-                    @can('update', $purchaseOrder)
-                        <a href="{{ route('inventory.purchase-orders.edit', $purchaseOrder) }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                            Ubah
-                        </a>
-                    @endcan
-
-                    @can('cancel', $purchaseOrder)
-                        <form method="POST" action="{{ route('inventory.purchase-orders.cancel', $purchaseOrder) }}">
-                            @csrf
-                            <button type="submit" class="inline-flex items-center rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2">
-                                Batalkan
-                            </button>
-                        </form>
-                    @endcan
-
-                    <a href="{{ route('inventory.purchase-orders.index') }}" class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                        Kembali
-                    </a>
-                </div>
-            </div>
+        <div class="flex flex-wrap items-center gap-2">
+            @include('inventory.purchase-orders._status-badge', ['status' => $purchaseOrder->status])
+            @if (isset($receivingStatuses[$purchaseOrder->status]))
+                @include('inventory.purchase-orders._receiving-status-badge', $receivingStatuses[$purchaseOrder->status])
+            @endif
         </div>
 
-        <div class="rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
-            <p class="font-semibold">Tidak menambah stok</p>
-            <p class="mt-1">Pesanan pembelian tidak menambah stok. Stok bertambah hanya melalui penerimaan barang.</p>
-        </div>
+        <x-ui.alert variant="info" title="Tidak menambah stok">
+            Pesanan pembelian tidak menambah stok. Stok bertambah hanya melalui penerimaan barang.
+        </x-ui.alert>
 
         <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -255,7 +227,7 @@
                                     <tr class="hover:bg-gray-50">
                                         <td class="px-4 py-3">
                                             @can('view', $goodsReceipt)
-                                                <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-teal-700 hover:text-teal-600">
+                                                <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-brand-700 hover:text-brand-600">
                                                     {{ $goodsReceipt->receipt_number }}
                                                 </a>
                                             @else
@@ -283,7 +255,7 @@
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
                                         @can('view', $goodsReceipt)
-                                            <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-teal-700 hover:text-teal-600">
+                                            <a href="{{ route('inventory.goods-receipts.show', $goodsReceipt) }}" class="font-semibold text-brand-700 hover:text-brand-600">
                                                 {{ $goodsReceipt->receipt_number }}
                                             </a>
                                         @else
@@ -329,7 +301,7 @@
                             <div>
                                 <dt class="text-gray-500">Permintaan Pembelian</dt>
                                 <dd>
-                                    <a href="{{ route('inventory.purchase-requests.show', $purchaseOrder->purchaseRequest) }}" class="font-medium text-teal-700 hover:text-teal-600">
+                                    <a href="{{ route('inventory.purchase-requests.show', $purchaseOrder->purchaseRequest) }}" class="font-medium text-brand-700 hover:text-brand-600">
                                         {{ $purchaseOrder->purchaseRequest->purchase_request_number }}
                                     </a>
                                 </dd>
@@ -387,9 +359,9 @@
                 @endif
 
                 @if ($purchaseOrder->sent_at)
-                    <div class="rounded-lg border border-teal-200 bg-teal-50 p-4 shadow-sm">
-                        <h3 class="text-base font-semibold text-teal-900">Pengiriman ke Supplier</h3>
-                        <dl class="mt-3 space-y-2 text-sm text-teal-800">
+                    <div class="rounded-lg border border-brand-200 bg-brand-50 p-4 shadow-sm">
+                        <h3 class="text-base font-semibold text-brand-800">Pengiriman ke Supplier</h3>
+                        <dl class="mt-3 space-y-2 text-sm text-brand-800">
                             <div>
                                 <dt class="font-medium">Dikirim oleh</dt>
                                 <dd>{{ $purchaseOrder->sentBy?->name ?? '—' }}</dd>
