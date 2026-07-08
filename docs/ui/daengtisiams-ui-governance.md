@@ -301,3 +301,40 @@ not contain a literal token banned by a rule (e.g. `variant="gold"`, `teal-*`).
 Enforced by `architecture:ui-governance-check --strict` (three hard rules: vite framework-
 plugin lock, app-shell CDN-script lock, `x-ui.card` action-wrap lock; plus soft
 documentation/disclaimer signals) and `tests/Feature/Ui/UiRulesEnforcementGovernanceLockUixTest.php`.
+
+## UIX-22 — Enterprise-Clean UI/UX Final Closure
+
+The **final closure** of the UIX foundation series. The **UIX-6 → UIX-22 UI/UX foundation is
+CLOSED.** UIX-22 adds **no broad visual change and no business-logic change** and starts **no**
+new polish cycle — it records the closure state durably and guards that the foundation-series
+evidence set stays intact. All UIX-1 → UIX-21 rules are **preserved and none weakened**.
+
+The closed foundation keeps these standards in force (unchanged from prior UIX sprints):
+
+- **Blade + Tailwind + Alpine only** — no React/Vue/SPA, no heavy chart/datatable/admin/
+  icon/perf/accessibility library, **no new frontend dependency without explicit approval**.
+- **No CDN script injection** in `x-ui.*` components or the app shell; no framework build
+  plugin in `vite.config.*` — assets ship through Vite.
+- **Semantic token standard** and **canonical `x-ui.*` component contracts**.
+- **Responsive/tablet/operator, accessibility/error/empty-state, performance/asset-weight,
+  navigation/sidebar IA, and permission-aware UI** standards all remain in force.
+- **Server-side authorization stays authoritative;** Blade `@can`/`@canany` is presentation
+  only. **No frontend-only authorization.** No business/permission logic in generic components.
+- **No route/policy/query/data/business-logic change** for UI work; **no sensitive data
+  exposure**.
+- **No formal WCAG / Lighthouse / security audit claim** unless a real audit is performed.
+
+**Non-brittle scope.** The closure verifies (soft signals) that every UIX-6 → UIX-21 sprint
+evidence doc is present, the UIX-22 closure evidence doc exists, and the docs record the
+closure — it never sweeps legacy classes, never mandates "every view uses `x-ui.*`", and never
+depends on asset hashes/timestamps/browser. The governance command scans Blade component source
+**including comments**, so a component's comments must not contain a literal token banned by a
+rule (e.g. `variant="gold"`, `teal-*`).
+
+**Next recommended workstream:** the next **product** workstream is **Inventory Sprint 68.45**
+(unless the user changes the roadmap). The enterprise-foundation-readiness track in
+`config/foundation_roadmap.php` independently reports `next_recommended_sprint = MON-1` and is
+**not** overridden here — the two are different tracks.
+
+Enforced by `architecture:ui-governance-check --strict` (soft closure signals) and
+`tests/Feature/Ui/EnterpriseCleanUiUxFinalClosureUixTest.php`.

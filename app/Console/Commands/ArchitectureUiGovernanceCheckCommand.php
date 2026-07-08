@@ -1457,6 +1457,54 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-21 sprint evidence doc is missing (docs/sprints/uix-21-ui-rules-enforcement-governance-lock.md).';
         }
 
+        // --- UIX-22 — Enterprise-clean UI/UX final closure (non-brittle). ---
+        // Final closure sprint for the UIX-6 → UIX-21 UI foundation. It adds no new
+        // visual/behaviour rule and starts no new polish cycle; it records the closure
+        // state durably and guards that the whole foundation-series evidence set stays
+        // intact. All checks are soft signals (WATCH, never a hard app-wide FAIL) so the
+        // closure gate is non-brittle: it never sweeps legacy classes, never mandates
+        // "every view uses x-ui.*", and never depends on asset hashes/timestamps/browser.
+        // The hard UI invariants stay locked by UIX-18/UIX-20/UIX-21 above; nothing here
+        // touches route/policy/permission/query/business logic or exposes PII.
+        $uixClosureSprintDocs = [
+            'uix-6-inventory-polish.md',
+            'uix-7-lab-pipeline-polish.md',
+            'uix-8-reports-print-pdf-polish.md',
+            'uix-9-inventory-analytics-workflow-forms-polish.md',
+            'uix-10-rme-visit-queue-patient-workspace-polish.md',
+            'uix-11-rme-medical-record-odontogram-print-bundle-polish.md',
+            'uix-12-rme-cashier-receivable-follow-up-polish.md',
+            'uix-13-owner-dashboard-kpi-polish.md',
+            'uix-14-settings-master-data-access-control-polish.md',
+            'uix-15-global-component-foundation-hardening.md',
+            'uix-16-responsive-tablet-operator-smoke-polish.md',
+            'uix-17-accessibility-error-empty-state-polish.md',
+            'uix-18-performance-asset-weight-audit.md',
+            'uix-19-navigation-sidebar-information-architecture-polish.md',
+            'uix-20-permission-aware-ui-consistency-polish.md',
+            'uix-21-ui-rules-enforcement-governance-lock.md',
+        ];
+        foreach ($uixClosureSprintDocs as $doc) {
+            if (! is_file($base.'/docs/sprints/'.$doc)) {
+                $warnings[] = "UIX foundation-series evidence doc is missing: docs/sprints/{$doc} (UIX-22 — the closed UIX-6 → UIX-21 series must keep its sprint evidence).";
+            }
+        }
+
+        // The design-system + governance docs must record the final closure state (soft).
+        $designDocUix22 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix22 !== '' && stripos($designDocUix22, 'UIX-22') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-22 enterprise-clean UI/UX final closure.';
+        }
+        $govDocUix22 = @file_get_contents($base.'/docs/ui/daengtisiams-ui-governance.md') ?: '';
+        if ($govDocUix22 !== '' && stripos($govDocUix22, 'UIX-22') === false) {
+            $warnings[] = 'docs/ui/daengtisiams-ui-governance.md does not document the UIX-22 enterprise-clean UI/UX final closure.';
+        }
+
+        // UIX-22 closure evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-22-enterprise-clean-uiux-final-closure.md')) {
+            $warnings[] = 'UIX-22 closure evidence doc is missing (docs/sprints/uix-22-enterprise-clean-uiux-final-closure.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
