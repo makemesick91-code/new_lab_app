@@ -49,7 +49,7 @@
         @if ($loading) aria-busy="true" @endif
         {{ $attributes->merge(['class' => $classes]) }}
     >
-        @if ($loading) {!! $spinner !!} @endif
+        @if ($loading) {!! $spinner !!}<span class="sr-only">Memproses…</span> @endif
         {{ $slot }}
     </button>
 @endif
