@@ -13,83 +13,101 @@
             'inactive' => 'Nonaktif',
             'maintenance' => 'Pemeliharaan',
         ];
-        $statusBadge = [
-            'active' => 'bg-green-50 text-green-700',
-            'inactive' => 'bg-gray-100 text-gray-600',
-            'maintenance' => 'bg-amber-50 text-amber-700',
+        $statusTone = [
+            'active' => 'success',
+            'inactive' => 'neutral',
+            'maintenance' => 'warning',
         ];
+        $hasFilters = $filters['search'] || $filters['type'] || $filters['status'];
     @endphp
 
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <div class="p-6 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <form method="GET" action="{{ route('settings.clinic-rooms.index') }}" class="flex flex-wrap items-center gap-2">
-                    <input type="text" name="search" value="{{ $filters['search'] }}" placeholder="Cari nama atau kode"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                    <select name="type" class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <option value="">Semua tipe</option>
-                        @foreach ($types as $type)
-                            <option value="{{ $type }}" @selected($filters['type'] === $type)>{{ $typeLabels[$type] ?? $type }}</option>
-                        @endforeach
-                    </select>
-                    <select name="status" class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500">
-                        <option value="">Semua status</option>
-                        @foreach ($statuses as $status)
-                            <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
-                        @endforeach
-                    </select>
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
-                    @if ($filters['search'] || $filters['type'] || $filters['status'])
-                        <a href="{{ route('settings.clinic-rooms.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
-                    @endif
-                </form>
-                @can('create', \App\Modules\ClinicRoom\Models\ClinicRoom::class)
-                    <a href="{{ route('settings.clinic-rooms.create') }}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">+ Tambah Ruangan</a>
-                @endcan
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Kode</th>
-                            <th class="px-3 py-2 font-medium">Nama</th>
-                            <th class="px-3 py-2 font-medium">Tipe</th>
-                            <th class="px-3 py-2 font-medium">Cabang</th>
-                            <th class="px-3 py-2 font-medium">Status</th>
-                            <th class="px-3 py-2 font-medium text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($rooms as $room)
-                            <tr>
-                                <td class="px-3 py-2 text-gray-600">{{ $room->code }}</td>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $room->name }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $typeLabels[$room->type] ?? $room->type }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $room->branch?->name ?? '—' }}</td>
-                                <td class="px-3 py-2">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $statusBadge[$room->status] ?? 'bg-gray-100 text-gray-600' }}">
-                                        {{ $statusLabels[$room->status] ?? $room->status }}
-                                    </span>
-                                </td>
-                                <td class="px-3 py-2">
-                                    <div class="flex items-center justify-end gap-2">
-                                        @can('update', $room)
-                                            <a href="{{ route('settings.clinic-rooms.edit', $room) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
-                                        @endcan
-                                        @can('delete', $room)
-                                            <form method="POST" action="{{ route('settings.clinic-rooms.destroy', $room) }}" onsubmit="return confirm('Hapus ruangan ini?');">@csrf @method('DELETE')<button class="text-red-600 hover:text-red-500">Hapus</button></form>
-                                        @endcan
-                                    </div>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada ruangan.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-            <div>{{ $rooms->links() }}</div>
+    <x-ui.filter-bar :action="route('settings.clinic-rooms.index')">
+        <div class="w-full md:w-64">
+            <x-ui.input name="search" :value="$filters['search']" placeholder="Cari nama atau kode" aria-label="Cari ruangan" />
         </div>
-    </div>
+        <div class="w-full md:w-48">
+            <x-ui.select name="type" aria-label="Filter tipe">
+                <option value="">Semua tipe</option>
+                @foreach ($types as $type)
+                    <option value="{{ $type }}" @selected($filters['type'] === $type)>{{ $typeLabels[$type] ?? $type }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <div class="w-full md:w-48">
+            <x-ui.select name="status" aria-label="Filter status">
+                <option value="">Semua status</option>
+                @foreach ($statuses as $status)
+                    <option value="{{ $status }}" @selected($filters['status'] === $status)>{{ $statusLabels[$status] ?? $status }}</option>
+                @endforeach
+            </x-ui.select>
+        </div>
+        <x-slot name="actions">
+            <x-ui.button type="submit" size="sm">Terapkan</x-ui.button>
+            @if ($hasFilters)
+                <x-ui.button href="{{ route('settings.clinic-rooms.index') }}" variant="ghost" size="sm">Atur Ulang</x-ui.button>
+            @endif
+        </x-slot>
+    </x-ui.filter-bar>
+
+    <x-ui.card :padding="'p-0'">
+        <div class="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
+            <h3 class="text-base font-semibold text-navy">Daftar Ruangan</h3>
+            @can('create', \App\Modules\ClinicRoom\Models\ClinicRoom::class)
+                <x-ui.button href="{{ route('settings.clinic-rooms.create') }}" size="sm">+ Tambah Ruangan</x-ui.button>
+            @endcan
+        </div>
+
+        @if ($rooms->isEmpty())
+            <div class="p-5">
+                <x-ui.empty-state title="Belum ada ruangan" description="Tambahkan ruangan perawatan untuk cabang RME.">
+                    @can('create', \App\Modules\ClinicRoom\Models\ClinicRoom::class)
+                        <x-slot name="action">
+                            <x-ui.button href="{{ route('settings.clinic-rooms.create') }}" size="sm">+ Tambah Ruangan</x-ui.button>
+                        </x-slot>
+                    @endcan
+                </x-ui.empty-state>
+            </div>
+        @else
+            <x-ui.table>
+                <thead class="bg-navy-50 text-left text-xs uppercase tracking-wide text-ink-soft">
+                    <tr>
+                        <th class="px-4 py-3 font-semibold">Kode</th>
+                        <th class="px-4 py-3 font-semibold">Nama</th>
+                        <th class="px-4 py-3 font-semibold">Tipe</th>
+                        <th class="px-4 py-3 font-semibold">Cabang</th>
+                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 text-right font-semibold">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($rooms as $room)
+                        <tr class="hover:bg-navy-50/60">
+                            <td class="px-4 py-3 text-ink-soft">{{ $room->code }}</td>
+                            <td class="px-4 py-3 font-medium text-navy">{{ $room->name }}</td>
+                            <td class="px-4 py-3 text-ink-soft">{{ $typeLabels[$room->type] ?? $room->type }}</td>
+                            <td class="px-4 py-3 text-ink-soft">{{ $room->branch?->name ?? '—' }}</td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$statusTone[$room->status] ?? 'neutral'">{{ $statusLabels[$room->status] ?? $room->status }}</x-ui.badge>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center justify-end gap-2">
+                                    @can('update', $room)
+                                        <x-ui.button href="{{ route('settings.clinic-rooms.edit', $room) }}" variant="secondary" size="sm">Ubah</x-ui.button>
+                                    @endcan
+                                    @can('delete', $room)
+                                        <form method="POST" action="{{ route('settings.clinic-rooms.destroy', $room) }}" onsubmit="return confirm('Hapus ruangan ini?');">
+                                            @csrf @method('DELETE')
+                                            <x-ui.button type="submit" variant="danger" size="sm">Hapus</x-ui.button>
+                                        </form>
+                                    @endcan
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-ui.table>
+        @endif
+    </x-ui.card>
+
+    <div>{{ $rooms->links() }}</div>
 </x-settings-shell>

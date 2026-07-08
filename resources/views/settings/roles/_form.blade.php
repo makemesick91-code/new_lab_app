@@ -6,9 +6,9 @@
     <div>
         <label for="role-name" class="block text-sm font-medium text-gray-700">Nama Role</label>
         <input id="role-name" type="text" name="name" value="{{ old('name', $role?->name) }}"
-               class="mt-1 block w-full max-w-md rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500" />
+               class="mt-1 block w-full max-w-md rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" />
         @error('name')
-            <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            <p class="mt-1 text-sm text-danger">{{ $message }}</p>
         @enderror
     </div>
 
@@ -61,12 +61,12 @@
                     type="search"
                     x-model="search"
                     placeholder="Cari permission..."
-                    class="block w-full rounded-lg border-gray-300 text-sm focus:border-teal-500 focus:ring-teal-500"
+                    class="block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
                 />
             </div>
         </div>
 
-        <div class="rounded-lg border border-teal-100 bg-teal-50 px-4 py-3 text-xs text-teal-800">
+        <div class="rounded-lg border border-brand-100 bg-brand-50 px-4 py-3 text-xs text-brand-800">
             <ul class="list-disc space-y-1 pl-4">
                 <li>Centang permission yang ingin diberikan pada role ini.</li>
                 <li>Permission yang sudah aktif akan tetap tercentang saat edit role.</li>
@@ -75,10 +75,10 @@
         </div>
 
         @error('permissions')
-            <p class="text-sm text-red-600">{{ $message }}</p>
+            <p class="text-sm text-danger">{{ $message }}</p>
         @enderror
         @error('permissions.*')
-            <p class="text-sm text-red-600">{{ $message }}</p>
+            <p class="text-sm text-danger">{{ $message }}</p>
         @enderror
 
         <div class="space-y-3">
@@ -115,7 +115,7 @@
                             <input
                                 type="checkbox"
                                 data-module-select-all="{{ $group['key'] }}"
-                                class="rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                class="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                                 @change="toggleModule(@js($group['key']), $event.target.checked)"
                             />
                             <span>Pilih semua</span>
@@ -124,7 +124,7 @@
 
                     <div x-show="openGroups[@js($group['key'])]" class="divide-y divide-gray-100">
                         @if ($group['key'] === 'other')
-                            <p class="bg-amber-50 px-4 py-2 text-xs text-amber-700">
+                            <p class="bg-warning-50 px-4 py-2 text-xs text-warning-700">
                                 Permission di sini belum masuk klasifikasi modul utama. Review sebelum diberikan ke role.
                             </p>
                         @endif
@@ -142,7 +142,7 @@
                                     data-module="{{ $group['key'] }}"
                                     @checked(in_array($permission['name'], $selectedPermissions, true))
                                     @change="syncModuleSelectAll(@js($group['key']))"
-                                    class="mt-0.5 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                                    class="mt-0.5 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
                                 />
                                 <span class="min-w-0">
                                     <span class="block text-sm font-medium text-gray-900">{{ $permission['name'] }}</span>

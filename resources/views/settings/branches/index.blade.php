@@ -1,72 +1,75 @@
 <x-settings-shell title="Master Cabang RME">
-    <div class="bg-white shadow-sm sm:rounded-lg">
-        <div class="p-6 space-y-4">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <form method="GET" action="{{ route('settings.branches.index') }}" class="flex flex-wrap items-center gap-2">
-                    <input type="text" name="search" value="{{ $search }}" placeholder="Cari nama atau kode"
-                           class="rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500" />
-                    <button type="submit" class="inline-flex items-center rounded-md bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">Terapkan</button>
-                    @if ($search)
-                        <a href="{{ route('settings.branches.index') }}" class="text-sm text-gray-500 hover:text-gray-700">Atur Ulang</a>
-                    @endif
-                </form>
-                @can('create', \App\Modules\Branch\Models\Branch::class)
-                    <a href="{{ route('settings.branches.create') }}" class="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">+ Tambah Cabang</a>
-                @endcan
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-500">
-                            <th class="px-3 py-2 font-medium">Kode Cabang</th>
-                            <th class="px-3 py-2 font-medium">Nama Cabang</th>
-                            <th class="px-3 py-2 font-medium">Status</th>
-                            <th class="px-3 py-2 font-medium">RME</th>
-                            <th class="px-3 py-2 font-medium">Inventory</th>
-                            <th class="px-3 py-2 font-medium text-right">Aksi</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse ($branches as $branch)
-                            <tr>
-                                <td class="px-3 py-2 font-medium text-gray-900">{{ $branch->code }}</td>
-                                <td class="px-3 py-2 text-gray-600">{{ $branch->name }}</td>
-                                <td class="px-3 py-2">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $branch->is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600' }}">
-                                        {{ $branch->is_active ? 'Aktif' : 'Nonaktif' }}
-                                    </span>
-                                </td>
-                                <td class="px-3 py-2">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $branch->is_rme_enabled ? 'bg-indigo-50 text-indigo-700' : 'bg-gray-100 text-gray-500' }}">
-                                        {{ $branch->is_rme_enabled ? 'Ya' : 'Tidak' }}
-                                    </span>
-                                </td>
-                                <td class="px-3 py-2">
-                                    <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium {{ $branch->is_inventory_enabled ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500' }}">
-                                        {{ $branch->is_inventory_enabled ? 'Ya' : 'Tidak' }}
-                                    </span>
-                                </td>
-                                <td class="px-3 py-2">
-                                    <div class="flex items-center justify-end gap-2">
-                                        @can('update', $branch)
-                                            <a href="{{ route('settings.branches.edit', $branch) }}" class="text-indigo-600 hover:text-indigo-500">Ubah</a>
-                                        @endcan
-                                        @can('delete', $branch)
-                                            @if ($branch->code !== \App\Modules\Branch\Models\Branch::MAIN_CODE)
-                                                <form method="POST" action="{{ route('settings.branches.destroy', $branch) }}" onsubmit="return confirm('Hapus cabang ini?');">@csrf @method('DELETE')<button class="text-red-600 hover:text-red-500">Hapus</button></form>
-                                            @endif
-                                        @endcan
-                                    </div>
-                                </td>
-                            </tr>
-                        @empty
-                            <tr><td colspan="6" class="px-3 py-6 text-center text-gray-400">Belum ada cabang.</td></tr>
-                        @endforelse
-                    </tbody>
-                </table>
-            </div>
-            <div>{{ $branches->links() }}</div>
+    <x-ui.filter-bar :action="route('settings.branches.index')">
+        <div class="w-full md:w-72">
+            <x-ui.input name="search" :value="$search" placeholder="Cari nama atau kode" aria-label="Cari cabang" />
         </div>
-    </div>
+        <x-slot name="actions">
+            <x-ui.button type="submit" size="sm">Terapkan</x-ui.button>
+            @if ($search)
+                <x-ui.button href="{{ route('settings.branches.index') }}" variant="ghost" size="sm">Atur Ulang</x-ui.button>
+            @endif
+        </x-slot>
+    </x-ui.filter-bar>
+
+    <x-ui.card :padding="'p-0'">
+        <div class="flex items-center justify-between gap-3 border-b border-hairline px-5 py-4">
+            <h3 class="text-base font-semibold text-navy">Daftar Cabang</h3>
+            @can('create', \App\Modules\Branch\Models\Branch::class)
+                <x-ui.button href="{{ route('settings.branches.create') }}" size="sm">+ Tambah Cabang</x-ui.button>
+            @endcan
+        </div>
+
+        @if ($branches->isEmpty())
+            <div class="p-5">
+                <x-ui.empty-state title="Belum ada cabang" description="Tambahkan cabang dan atur modul RME / Inventory yang aktif." />
+            </div>
+        @else
+            <x-ui.table>
+                <thead class="bg-navy-50 text-left text-xs uppercase tracking-wide text-ink-soft">
+                    <tr>
+                        <th class="px-4 py-3 font-semibold">Kode Cabang</th>
+                        <th class="px-4 py-3 font-semibold">Nama Cabang</th>
+                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 font-semibold">RME</th>
+                        <th class="px-4 py-3 font-semibold">Inventory</th>
+                        <th class="px-4 py-3 text-right font-semibold">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($branches as $branch)
+                        <tr class="hover:bg-navy-50/60">
+                            <td class="px-4 py-3 font-medium text-navy">{{ $branch->code }}</td>
+                            <td class="px-4 py-3 text-ink-soft">{{ $branch->name }}</td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$branch->is_active ? 'success' : 'neutral'">{{ $branch->is_active ? 'Aktif' : 'Nonaktif' }}</x-ui.badge>
+                            </td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$branch->is_rme_enabled ? 'primary' : 'neutral'">{{ $branch->is_rme_enabled ? 'Ya' : 'Tidak' }}</x-ui.badge>
+                            </td>
+                            <td class="px-4 py-3">
+                                <x-ui.badge :tone="$branch->is_inventory_enabled ? 'warning' : 'neutral'">{{ $branch->is_inventory_enabled ? 'Ya' : 'Tidak' }}</x-ui.badge>
+                            </td>
+                            <td class="px-4 py-3">
+                                <div class="flex items-center justify-end gap-2">
+                                    @can('update', $branch)
+                                        <x-ui.button href="{{ route('settings.branches.edit', $branch) }}" variant="secondary" size="sm">Ubah</x-ui.button>
+                                    @endcan
+                                    @can('delete', $branch)
+                                        @if ($branch->code !== \App\Modules\Branch\Models\Branch::MAIN_CODE)
+                                            <form method="POST" action="{{ route('settings.branches.destroy', $branch) }}" onsubmit="return confirm('Hapus cabang ini?');">
+                                                @csrf @method('DELETE')
+                                                <x-ui.button type="submit" variant="danger" size="sm">Hapus</x-ui.button>
+                                            </form>
+                                        @endif
+                                    @endcan
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </x-ui.table>
+        @endif
+    </x-ui.card>
+
+    <div>{{ $branches->links() }}</div>
 </x-settings-shell>

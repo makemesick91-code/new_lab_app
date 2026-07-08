@@ -889,3 +889,52 @@ read-only** and built from the shared components + semantic tokens:
 branch-admin views on `x-ui.table` / `x-ui.empty-state` / `x-ui.select`, and the
 no-legacy-palette / no-gray / no-hardcoded-hex / no-gold-CTA / read-only (no
 mutating form) / no-rendered-KTP invariants across both dashboard surfaces.
+
+## Settings, master-data & access-control standard (UIX-14)
+
+The Settings / master-data / access-control **index pages** are the reference admin
+list surface (`settings/clinic-rooms/index` for master data, `settings/users/index`
+for access control), and `settings/clinic-rooms/_form` is the reference master-data
+form. Every settings/admin list + form page renders inside `<x-settings-shell>` (the
+shell provides the page-header band + flash/validation) and is built from the shared
+components + semantic tokens:
+
+- **Filters** — a `GET` `x-ui.filter-bar` wrapping `x-ui.input` / `x-ui.select`
+  fields (same request params as before) with `Terapkan`/`Cari` + `Atur Ulang`
+  (`x-ui.button variant="ghost"`) actions. Filter/search request semantics are never
+  changed by a UI sprint.
+- **Tables** — `x-ui.card` (`p-0`) + a header row (title + permission-gated
+  `+ Tambah…` action) + `x-ui.table` (thead `bg-navy-50` / `text-ink-soft`, tbody
+  `divide-hairline`). Status / role / flag columns use the shared `x-ui.badge` tone
+  map (never inline ad-hoc spans). Every list has an `x-ui.empty-state` (with the
+  permission-gated create action) for the no-data state.
+- **Action / danger hierarchy** — `x-ui.button variant="secondary"` for Ubah,
+  `variant="danger"` for Hapus/destroy (wrapped in a POST + `@method('DELETE')` +
+  `confirm()` form, unchanged), `success`/`warning` for activate/deactivate. Save/
+  cancel forms use a primary `x-ui.button` submit + `ghost` Batal, separated by a
+  `border-t border-hairline` footer. Gold is **never** a settings CTA.
+- **Forms** — the reference master-data form uses `x-ui.input` / `x-ui.select` /
+  `x-ui.textarea` (inline validation via the shared error bag; the shell also renders
+  the aggregate `$errors` band). Complex forms (role permission matrix, user password)
+  keep all field names, Alpine logic, and danger sections verbatim — polish is
+  palette/token only (legacy indigo/teal → brand, red action → danger, amber →
+  warning).
+- **WA reminder templates** — the list keeps its **manual-only** safety notice
+  (`x-ui.alert variant="warning"`, "belum mengirim WhatsApp otomatis") and the
+  variable-reference note (`x-ui.alert variant="info"`). WA is a manual copy-paste
+  SOP: no auto-send, no WhatsApp API/vendor, no new automation.
+- **RBAC / master-data rules (non-negotiable):** no settings/admin UI sprint may
+  change any permission or role (add/remove/rename), Spatie Permission behavior,
+  `Gate::before`, policy, or route middleware; branch scope stays server-side and
+  `branch_id` is never trusted from the request. Master-data semantics
+  (treatment/tariff/payment-method/clinic-room/branch, tariff uniqueness &
+  effective-date) are unchanged, and no controller/service/repository/route/schema/
+  migration is touched. No full KTP/NIK, scans, raw notes, secrets, tokens, or env
+  values are ever rendered.
+
+`architecture:ui-governance-check --strict` enforces the 10 settings list views on
+`x-ui.filter-bar` / `x-ui.table` / `x-ui.badge` / `x-ui.button` / `x-ui.empty-state`,
+the clinic-rooms form reference on `x-ui.input`/`select`/`textarea`, the
+no-legacy-palette / no-gray / no-hardcoded-hex / no-gold-CTA / no-rendered-KTP
+invariants across the list views (plus a teal/indigo/hex/gold-CTA/KTP scan on the
+settings/access forms), and that the WA reminder list keeps its manual-only notice.
