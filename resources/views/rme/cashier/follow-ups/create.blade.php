@@ -31,7 +31,7 @@
         <x-rme.invoice-summary :invoice="$invoice" />
 
         <x-ui.card title="Informasi Tagihan">
-            <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                 <div>
                     <dt class="text-ink-soft">No. Invoice</dt>
                     <dd class="font-mono font-medium text-navy">{{ $invoice->invoice_number }}</dd>

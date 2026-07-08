@@ -99,7 +99,7 @@
             </x-ui.card>
 
             <x-ui.card title="Tagihan Kontrol Hari Ini">
-                <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                <dl class="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                     <div>
                         <dt class="text-ink-soft">No. Invoice Kontrol</dt>
                         <dd class="font-mono font-medium text-navy">{{ $invoice->invoice_number }}</dd>

@@ -12,7 +12,7 @@
         <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
             {{ $slot }}
             @isset($actions)
-                <div class="flex items-center gap-2">{{ $actions }}</div>
+                <div class="flex flex-wrap items-center gap-2">{{ $actions }}</div>
             @endisset
         </div>
     </form>
@@ -21,7 +21,7 @@
         <div class="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-end">
             {{ $slot }}
             @isset($actions)
-                <div class="flex items-center gap-2">{{ $actions }}</div>
+                <div class="flex flex-wrap items-center gap-2">{{ $actions }}</div>
             @endisset
         </div>
     </div>

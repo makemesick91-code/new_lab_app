@@ -1006,3 +1006,57 @@ resolves status case-insensitively and maps the canonical financial statuses
 uses `divide-hairline`; and the domain badge components (`x-lab.status-badge`,
 `x-rme.invoice-summary`) render through `x-ui.badge`. Print/PDF stays dompdf
 table-safe (no flex layout in print templates), unchanged by this sprint.
+
+## Responsive, tablet & operator standard (UIX-16)
+
+DaengtisiaMS is operated on laptops and tablets (landscape 1024px and portrait
+768px) as well as desktops (1366px+). The foundation must stay usable at those
+widths without a horizontal body scrollbar or lost actions. UIX-16 hardens the
+shared `x-ui.*` foundation and the highest-frequency operator surfaces to a fixed,
+durable set of responsive rules. **These are presentation-only: no route, policy,
+query, permission, schema, financial, RME, Inventory, Lab, dashboard, or master-data
+behaviour changes with responsive polish.**
+
+### Responsive foundation rules (must hold in every future UI sprint)
+
+- **Table overflow rule.** Every data table renders through `x-ui.table`, which wraps
+  the table in an `overflow-x-auto` scroll container. Wide tables scroll *inside their
+  own container* — they never widen or break the page body. Never emit a raw `<table>`
+  outside this container on an operator surface.
+- **Filter-bar wrapping rule.** `x-ui.filter-bar` stacks its fields (`flex-col`) on
+  narrow widths and lays them out horizontally from `md` up (`md:flex-row md:flex-wrap`);
+  its action group wraps (`flex-wrap`) so submit/reset buttons never overflow.
+- **Page-header action wrapping rule.** `x-ui.page-header` stacks the title and action
+  slot (`flex-col`) on narrow widths and goes horizontal from `sm` up (`sm:flex-row`);
+  the action group wraps (`flex-wrap`) so multiple actions never overflow the header.
+- **Button group wrapping rule.** Action/button groups (`x-ui.card` actions, filter
+  actions, page-header actions) wrap on narrow widths rather than forcing a fixed row.
+- **Card grid / detail-grid stacking rule.** Detail and summary grids (`<dl>` label/value
+  pairs, KPI/summary cards) use a `grid-cols-1` base and only widen from `sm`/`md` up
+  (e.g. `grid grid-cols-1 gap-3 text-sm sm:grid-cols-2`). Never ship a fixed
+  `grid-cols-2`/`grid-cols-3` *text-sm* detail grid with no stacking base — it crowds
+  and overflows on tablet-portrait and phone widths. Desktop/tablet (≥640px) appearance
+  is preserved because the wider column count still applies from `sm` up.
+- **Form stacking rule.** Form fields use the `x-ui.input`/`x-ui.select`/`x-ui.textarea`
+  primitives with `w-full` inside stacking containers so forms stack cleanly on narrow
+  widths.
+- **No hidden critical data.** Responsive polish never hides critical operational data
+  (amounts, statuses, actions) without a safe responsive alternative (scroll container,
+  stacked layout, or a wrapped action). Actions are never removed to “fit”.
+
+### Constraints
+
+- Tailwind responsive utilities only (`sm:`/`md:`/`lg:`/`xl:`) — **no** heavy responsive
+  framework, datatable library, chart library, or new JS dependency. Blade + Tailwind +
+  Alpine only.
+- No sensitive-data exposure: KTP/NIK/scans/raw clinical notes/secrets/env values are
+  never surfaced by a responsive change.
+
+### Governance (UIX-16)
+
+`architecture:ui-governance-check --strict` additionally enforces: `x-ui.table` keeps
+`overflow-x-auto`; `x-ui.filter-bar` stacks (`flex-col` + `md:flex-row`) and wraps its
+actions (`flex-wrap`); `x-ui.page-header` stacks (`flex-col` + `sm:flex-row`) and wraps
+its actions (`flex-wrap`); and the representative operator surfaces (RME cashier
+show/payment, inventory products/stock-card, lab case-candidate detail) carry no fixed
+non-stacking `grid-cols-2`/`grid-cols-3` *text-sm* detail grid.

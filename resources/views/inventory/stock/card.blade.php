@@ -176,7 +176,7 @@
                                             <p class="text-xs text-ink-soft">Perubahan</p>
                                         </div>
                                     </div>
-                                    <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                    <dl class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                                         <div class="rounded-lg bg-success-50 p-3">
                                             <dt class="text-xs text-success-700">Jumlah Masuk</dt>
                                             <dd class="mt-1 font-semibold tabular-nums text-success-700">{{ format_quantity_id($quantityIn) }}</dd>

@@ -178,7 +178,7 @@
                                         'label' => $item->receivingStatusLabel(),
                                     ])
                                 </div>
-                                <div class="mt-3 grid grid-cols-3 gap-2 text-sm">
+                                <div class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                                     <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
                                         <p class="text-xs text-gray-500">Dipesan</p>
                                         <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantity_ordered) }}</p>

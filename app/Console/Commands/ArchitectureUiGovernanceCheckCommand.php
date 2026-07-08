@@ -1066,6 +1066,72 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-15 sprint evidence doc is missing (docs/sprints/uix-15-global-component-foundation-hardening.md).';
         }
 
+        // --- UIX-16 — Responsive, tablet & operator behaviour (lightweight, non-brittle). ---
+        // The shared x-ui.* foundation must keep its responsive operator guarantees:
+        // tables scroll inside their own overflow container (never break the page),
+        // the filter bar stacks + wraps its actions on narrow widths, and the page
+        // header stacks + wraps its action group. Representative high-frequency
+        // detail/summary grids must stack on the smallest widths (grid-cols-1 base).
+        $tableComponent = @file_get_contents($base.'/resources/views/components/ui/table.blade.php') ?: '';
+        if ($tableComponent !== '' && ! str_contains($tableComponent, 'overflow-x-auto')) {
+            $errors[] = 'x-ui.table must keep its overflow-x-auto scroll container (UIX-16 table overflow rule).';
+        }
+
+        $filterBarComponent = @file_get_contents($base.'/resources/views/components/ui/filter-bar.blade.php') ?: '';
+        if ($filterBarComponent !== '') {
+            // Filter fields must stack on narrow and lay out horizontally from md up.
+            if (! str_contains($filterBarComponent, 'flex-col') || ! str_contains($filterBarComponent, 'md:flex-row')) {
+                $errors[] = 'x-ui.filter-bar must stack (flex-col) and go horizontal at md (md:flex-row) (UIX-16).';
+            }
+            // The action group must be allowed to wrap on narrow widths.
+            if (! str_contains($filterBarComponent, 'flex-wrap')) {
+                $errors[] = 'x-ui.filter-bar action group must wrap on narrow widths (flex-wrap) (UIX-16).';
+            }
+        }
+
+        $pageHeaderComponent = @file_get_contents($base.'/resources/views/components/ui/page-header.blade.php') ?: '';
+        if ($pageHeaderComponent !== '') {
+            if (! str_contains($pageHeaderComponent, 'flex-col') || ! str_contains($pageHeaderComponent, 'sm:flex-row')) {
+                $errors[] = 'x-ui.page-header must stack (flex-col) and go horizontal at sm (sm:flex-row) (UIX-16).';
+            }
+            if (! str_contains($pageHeaderComponent, 'flex-wrap')) {
+                $errors[] = 'x-ui.page-header action group must wrap on narrow widths (flex-wrap) (UIX-16).';
+            }
+        }
+
+        // Representative operator surfaces must keep responsive (stacking) detail
+        // grids — no fixed multi-column detail/summary grid without a grid-cols-1
+        // base (which would overflow / crowd on tablet-portrait & phone widths).
+        $uix16ResponsivePages = [
+            'resources/views/rme/cashier/show.blade.php',
+            'resources/views/rme/cashier/payment/create.blade.php',
+            'resources/views/inventory/products/index.blade.php',
+            'resources/views/inventory/stock/card.blade.php',
+            'resources/views/lab/case-candidates/show.blade.php',
+        ];
+        foreach ($uix16ResponsivePages as $file) {
+            $contents = @file_get_contents($base.'/'.$file) ?: '';
+            if ($contents === '') {
+                continue;
+            }
+            // A fixed 2/3-column *text-sm* detail grid with no stacking base is the
+            // regression we are guarding against (non-brittle: only the un-stacked form).
+            if (preg_match('/grid grid-cols-[23] gap-[^"]*text-sm/', $contents)) {
+                $errors[] = "Fixed non-stacking detail grid found in {$file} (use grid-cols-1 sm:grid-cols-N) (UIX-16).";
+            }
+        }
+
+        // Design system doc should document the responsive/operator standard (soft signal).
+        $designDocUix16 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix16 !== '' && stripos($designDocUix16, 'UIX-16') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-16 responsive/operator standard.';
+        }
+
+        // UIX-16 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-16-responsive-tablet-operator-smoke-polish.md')) {
+            $warnings[] = 'UIX-16 sprint evidence doc is missing (docs/sprints/uix-16-responsive-tablet-operator-smoke-polish.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
