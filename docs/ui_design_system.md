@@ -1316,3 +1316,46 @@ so a foundation component's comments must not contain a literal token banned by 
 (e.g. `variant="gold"`, `teal-*`). `tests/Feature/Ui/UiRulesEnforcementGovernanceLockUixTest.php`
 proves the lock catches the three regressions and that the UIX-6 → UIX-20 rule set stays
 intact.
+
+## Enterprise-clean UI/UX final closure (UIX-22)
+
+UIX-22 is the **final closure** of the UIX foundation series. The **UIX-6 → UIX-22 UI/UX
+foundation is CLOSED.** It adds **no new visual/behaviour rule** and starts **no** new polish
+cycle — it records the closure state durably and guards that the whole foundation-series
+evidence set (sprint docs + governance sections + `Ui`/`Uix` tests) stays intact. Every
+UIX-1 → UIX-21 rule is **preserved and none weakened.**
+
+The closed foundation keeps these enterprise-clean standards in force:
+
+- **Blade + Tailwind + Alpine only** — no React/Vue/SPA, no heavy chart/datatable/admin/
+  icon/perf/accessibility library, **no new frontend dependency without explicit approval**,
+  no CDN script in the app shell (assets ship through Vite; no framework build plugin).
+- **Semantic token standard** and **canonical `x-ui.*` component contracts**.
+- **Responsive/tablet/operator** (UIX-16), **accessibility/error/empty-state** (UIX-17),
+  **performance/asset-weight** (UIX-18), **navigation/sidebar IA** (UIX-19), and
+  **permission-aware UI** (UIX-20) standards.
+- **Server-side authorization remains authoritative;** Blade `@can`/`@canany` is presentation
+  only. **No frontend-only authorization.** No business/permission logic in generic components.
+- **No route/policy/query/data/business-logic change** for UI work; **no sensitive data
+  exposure**; **no formal WCAG/Lighthouse/security claim** unless a real audit is performed.
+
+### Governance (UIX-22)
+
+`architecture:ui-governance-check --strict` additionally verifies the closure state with
+**non-brittle soft signals** (WATCH, never an app-wide hard FAIL): every UIX-6 → UIX-21
+sprint evidence doc is present, the UIX-22 closure evidence doc exists, and both the
+design-system and governance docs record the closure. The hard invariants stay locked by
+the UIX-18/UIX-20/UIX-21 rules above.
+
+**Non-brittle by design.** The closure deliberately avoids app-wide legacy-color sweeps, an
+"every view must use `x-ui.*`" mandate, asset-hash/filename/browser requirements, and
+WCAG/Lighthouse over-claim scans. `tests/Feature/Ui/EnterpriseCleanUiUxFinalClosureUixTest.php`
+proves the closure markers exist and the UIX-6 → UIX-21 rule set stays intact.
+
+### Next recommended workstream
+
+After UIX closure, the next **product** workstream is **Inventory Sprint 68.45** (unless the
+user changes the roadmap). Separately, `config/foundation_roadmap.php` tracks the
+enterprise-foundation-readiness track and reports `next_recommended_sprint = MON-1` — that is
+authoritative for the foundation track and is **not** overridden here (the two are different
+tracks).
