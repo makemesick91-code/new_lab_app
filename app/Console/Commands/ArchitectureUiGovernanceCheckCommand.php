@@ -1198,6 +1198,63 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-17 sprint evidence doc is missing (docs/sprints/uix-17-accessibility-error-empty-state-polish.md).';
         }
 
+        // --- UIX-18 — Performance & asset-weight guardrails (lightweight, non-brittle). ---
+        // The UI foundation is Blade + Tailwind + Alpine only. Guard the frontend
+        // dependency footprint so no heavy SPA / chart / datatable / admin-template
+        // library can silently creep in, keeping bundle weight and install size low.
+        $forbiddenFrontendDeps = [
+            'react', 'react-dom', 'preact', 'vue', '@vue/runtime-dom', 'svelte',
+            '@angular/core', 'jquery', 'bootstrap',
+            'chart.js', 'chartjs', 'apexcharts', 'echarts', 'highcharts', 'plotly.js',
+            'datatables.net', 'datatables.net-dt', 'ag-grid-community', 'handsontable',
+            'moment', 'select2',
+            // Tailwind v4 vite plugin: the app builds on Tailwind v3 via postcss, so
+            // this pulls an unused ~7MB native oxide toolchain (removed in UIX-18).
+            '@tailwindcss/vite',
+        ];
+
+        $packageJsonRaw = @file_get_contents($base.'/package.json') ?: '';
+        $packageJson = json_decode($packageJsonRaw, true);
+        if (is_array($packageJson)) {
+            $declaredDeps = array_merge(
+                array_keys($packageJson['dependencies'] ?? []),
+                array_keys($packageJson['devDependencies'] ?? []),
+            );
+            foreach ($forbiddenFrontendDeps as $dep) {
+                if (in_array($dep, $declaredDeps, true)) {
+                    $errors[] = "Forbidden heavy frontend dependency declared in package.json: {$dep} (UIX-18 — Blade+Tailwind+Alpine only; no React/Vue/SPA/chart/datatable/admin lib without explicit approval).";
+                }
+            }
+        } else {
+            $errors[] = 'package.json is missing or not valid JSON (UIX-18 asset/dependency audit).';
+        }
+
+        // No CDN <script src="http..."> injection may appear in the shared x-ui
+        // components — assets must ship through the Vite pipeline, not a remote CDN.
+        foreach (glob($base.'/resources/views/components/ui/*.blade.php') ?: [] as $uiComponent) {
+            $componentBody = @file_get_contents($uiComponent) ?: '';
+            if (preg_match('/<script[^>]+src\s*=\s*["\']https?:/i', $componentBody)) {
+                $errors[] = 'CDN <script src="http..."> injection found in '.basename($uiComponent).' (UIX-18 — no CDN scripts; use the Vite bundle).';
+            }
+        }
+
+        // Built asset manifest is the asset-baseline evidence signal (soft): a UI
+        // foundation change should ship with a fresh `npm run build`.
+        if (! is_file($base.'/public/build/manifest.json')) {
+            $warnings[] = 'Vite build manifest missing (public/build/manifest.json) — run `npm run build` to refresh the asset baseline (UIX-18).';
+        }
+
+        // Design system doc should document the UIX-18 performance/asset standard.
+        $designDocUix18 = @file_get_contents($base.'/docs/ui_design_system.md') ?: '';
+        if ($designDocUix18 !== '' && stripos($designDocUix18, 'UIX-18') === false) {
+            $warnings[] = 'docs/ui_design_system.md does not document the UIX-18 performance/asset-weight standard.';
+        }
+
+        // UIX-18 sprint evidence doc should exist (soft signal).
+        if (! is_file($base.'/docs/sprints/uix-18-performance-asset-weight-audit.md')) {
+            $warnings[] = 'UIX-18 sprint evidence doc is missing (docs/sprints/uix-18-performance-asset-weight-audit.md).';
+        }
+
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
@@ -1205,6 +1262,7 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             'docs_checked' => count($requiredDocs),
             'components_checked' => count($requiredComponents),
             'tokens_checked' => count($requiredTokens),
+            'forbidden_frontend_deps_checked' => count($forbiddenFrontendDeps),
             'errors' => $errors,
             'warnings' => $warnings,
         ];
