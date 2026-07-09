@@ -312,6 +312,9 @@ class DoctorPerformanceReportService
                 'selected_doctor_id' => $doctorId,
                 'doctor' => Doctor::query()->find($doctorId),
                 'kpis' => $this->doctorKpis($scope),
+                // HOTFIX-...-TREATMENT-DATE: the daily "Tanggal Perawatan" table is
+                // always computed from the scoped result — no date filter required.
+                'daily_rows' => $this->dailyBreakdown($scope, $treatmentId, $invoiceStatus),
                 'treatment_breakdown' => $this->treatmentBreakdown($scope, $treatmentId, $invoiceStatus),
                 'summary_rows' => [],
             ];
@@ -323,6 +326,7 @@ class DoctorPerformanceReportService
             'selected_doctor_id' => null,
             'doctor' => null,
             'kpis' => $this->doctorKpis($scope),
+            'daily_rows' => [],
             'treatment_breakdown' => [],
             'summary_rows' => $this->doctorSummaryRows($scope),
         ];
@@ -479,6 +483,97 @@ class DoctorPerformanceReportService
             'paid_item_count' => (int) $row->paid_item_count,
             'billed' => (float) $row->billed,
         ])->sortByDesc('billed')->values()->all();
+    }
+
+    /**
+     * HOTFIX-FIX-PRE-68-45-DOCTOR-PERFORMANCE-TREATMENT-DATE — daily breakdown
+     * grouped by treatment date (canonical `trx_clinic_visits.visit_date`, the same
+     * field the date-range filter uses). Always computed from the already-scoped
+     * result so the doctor never has to pick a date first.
+     *
+     * Each date row carries: distinct patients, distinct treatment types
+     * ("jenis perawatan"), total treatment items ("total tindakan"), the exact paid
+     * total for that date (RME payment truth), and a nested per-treatment breakdown
+     * (name, item count, distinct patients, exact billed subtotal). Payment is only
+     * attributable at the visit/invoice level, so per-treatment shows exact billed
+     * and the date-level "Total Dibayar" is the exact RME payment sum.
+     *
+     * Grouped in PHP (portable across PG/SQLite) — mirrors OwnerDashboardKpiService.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function dailyBreakdown(array $scope, ?int $treatmentId, ?string $invoiceStatus): array
+    {
+        $invoiceIds = RmeInvoice::query()
+            ->whereIn('clinic_visit_id', $this->visitIdSubquery($scope))
+            ->where('status', '!=', RmeInvoice::STATUS_VOID)
+            ->when($invoiceStatus !== null, fn (Builder $q) => $q->where('status', $invoiceStatus))
+            ->select('id')
+            ->getQuery();
+
+        // Raw invoice-item rows carrying their visit date, patient, and treatment.
+        $items = RmeInvoiceItem::query()
+            ->join('trx_rme_invoices', 'trx_rme_invoice_items.rme_invoice_id', '=', 'trx_rme_invoices.id')
+            ->join('trx_clinic_visits', 'trx_rme_invoices.clinic_visit_id', '=', 'trx_clinic_visits.id')
+            ->whereIn('trx_rme_invoice_items.rme_invoice_id', $invoiceIds)
+            ->when($treatmentId !== null, fn (Builder $q) => $q->where('trx_rme_invoice_items.treatment_id', $treatmentId))
+            ->get([
+                'trx_clinic_visits.visit_date as visit_date',
+                'trx_clinic_visits.patient_id as patient_id',
+                'trx_rme_invoice_items.treatment_id as treatment_id',
+                'trx_rme_invoice_items.subtotal as subtotal',
+            ]);
+
+        if ($items->isEmpty()) {
+            return [];
+        }
+
+        // Exact paid total per treatment date (RME payment source of truth).
+        $paidByDate = RmePayment::query()
+            ->join('trx_clinic_visits', 'trx_rme_payments.clinic_visit_id', '=', 'trx_clinic_visits.id')
+            ->whereIn('trx_clinic_visits.id', $this->visitIdSubquery($scope))
+            ->get(['trx_clinic_visits.visit_date as visit_date', 'trx_rme_payments.amount as amount'])
+            ->groupBy(fn ($row) => Carbon::parse($row->visit_date)->toDateString())
+            ->map(fn (Collection $rows) => (float) $rows->sum('amount'));
+
+        $treatmentNames = Treatment::query()
+            ->whereIn('id', $items->pluck('treatment_id')->filter()->unique()->all())
+            ->pluck('name', 'id');
+
+        return $items
+            ->groupBy(fn ($row) => Carbon::parse($row->visit_date)->toDateString())
+            ->map(function (Collection $dayItems, string $date) use ($paidByDate, $treatmentNames): array {
+                $treatments = $dayItems
+                    ->groupBy(fn ($row) => $row->treatment_id === null ? 'manual' : (string) (int) $row->treatment_id)
+                    ->map(function (Collection $group) use ($treatmentNames): array {
+                        $treatmentId = $group->first()->treatment_id;
+
+                        return [
+                            'treatment_id' => $treatmentId !== null ? (int) $treatmentId : null,
+                            'treatment_name' => $treatmentId !== null
+                                ? ($treatmentNames[$treatmentId] ?? 'Tindakan #'.$treatmentId)
+                                : 'Tindakan manual / bebas',
+                            'item_count' => $group->count(),
+                            'patient_count' => $group->pluck('patient_id')->unique()->count(),
+                            'billed' => (float) $group->sum('subtotal'),
+                        ];
+                    })
+                    ->sortByDesc('billed')
+                    ->values()
+                    ->all();
+
+                return [
+                    'date' => $date,
+                    'patients' => $dayItems->pluck('patient_id')->unique()->count(),
+                    'treatment_types' => $dayItems->pluck('treatment_id')->map(fn ($id) => $id === null ? 'manual' : (int) $id)->unique()->count(),
+                    'total_items' => $dayItems->count(),
+                    'paid' => (float) ($paidByDate[$date] ?? 0),
+                    'treatments' => $treatments,
+                ];
+            })
+            ->sortByDesc('date')
+            ->values()
+            ->all();
     }
 
     /**

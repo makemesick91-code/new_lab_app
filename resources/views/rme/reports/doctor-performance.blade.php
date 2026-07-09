@@ -76,6 +76,81 @@
         </div>
 
         @if ($viewMode === 'detail')
+            {{-- HOTFIX-...-TREATMENT-DATE: daily table grouped by Tanggal Perawatan.
+                 Always shown from the scoped result — no date filter required first.
+                 Each date row expands (Blade + Alpine) into its treatment breakdown. --}}
+            <x-ui.card title="Rincian Harian per Tanggal Perawatan">
+                @if (count($report['daily_rows'] ?? []))
+                    <x-ui.table>
+                        <thead>
+                            <tr class="bg-navy-50 text-left text-ink-soft">
+                                <th class="px-3 py-2 text-left">Tanggal Perawatan</th>
+                                <th class="px-3 py-2 text-right">Jumlah Pasien</th>
+                                <th class="px-3 py-2 text-right">Jumlah Jenis Perawatan</th>
+                                <th class="px-3 py-2 text-right">Total Tindakan</th>
+                                <th class="px-3 py-2 text-right">Total Dibayar</th>
+                                <th class="px-3 py-2 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        @foreach ($report['daily_rows'] as $day)
+                            <tbody x-data="{ open: false }" class="divide-y divide-hairline border-b border-hairline">
+                                <tr>
+                                    <td class="px-3 py-2 font-medium text-navy">{{ format_date_id($day['date']) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($day['patients']) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($day['treatment_types']) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_number_id($day['total_items']) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-ink">{{ format_currency_id($day['paid']) }}</td>
+                                    <td class="px-3 py-2 text-right">
+                                        <x-ui.button type="button" variant="secondary" size="sm" x-on:click="open = ! open">
+                                            <span x-show="! open">Lihat Perawatan</span>
+                                            <span x-show="open" x-cloak>Sembunyikan</span>
+                                        </x-ui.button>
+                                    </td>
+                                </tr>
+                                <tr x-show="open" x-cloak>
+                                    <td colspan="6" class="bg-navy-50/40 px-3 py-3">
+                                        <div class="text-xs font-semibold uppercase tracking-wide text-ink-soft mb-2">
+                                            Jenis Perawatan pada {{ format_date_id($day['date']) }}
+                                        </div>
+                                        <table class="w-full text-sm">
+                                            <thead>
+                                                <tr class="text-left text-ink-soft">
+                                                    <th class="px-3 py-1 text-left">Jenis Perawatan</th>
+                                                    <th class="px-3 py-1 text-right">Jumlah Tindakan</th>
+                                                    <th class="px-3 py-1 text-right">Jumlah Pasien</th>
+                                                    <th class="px-3 py-1 text-right">Nilai Ditagih</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-hairline">
+                                                @foreach ($day['treatments'] as $treat)
+                                                    <tr>
+                                                        <td class="px-3 py-1 text-navy">{{ $treat['treatment_name'] }}</td>
+                                                        <td class="px-3 py-1 text-right tabular-nums text-ink">{{ format_number_id($treat['item_count']) }}</td>
+                                                        <td class="px-3 py-1 text-right tabular-nums text-ink">{{ format_number_id($treat['patient_count']) }}</td>
+                                                        <td class="px-3 py-1 text-right tabular-nums text-ink">{{ format_currency_id($treat['billed']) }}</td>
+                                                    </tr>
+                                                @endforeach
+                                                <tr class="font-semibold">
+                                                    <td class="px-3 py-1 text-navy">Total Dibayar (tanggal ini)</td>
+                                                    <td class="px-3 py-1"></td>
+                                                    <td class="px-3 py-1"></td>
+                                                    <td class="px-3 py-1 text-right tabular-nums text-navy">{{ format_currency_id($day['paid']) }}</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        @endforeach
+                    </x-ui.table>
+                    <p class="mt-3 text-xs text-ink-soft">
+                        Tanggal perawatan diambil dari tanggal kunjungan RME. Nilai per jenis perawatan adalah nilai yang ditagih (invoice); "Total Dibayar" per tanggal bersumber dari pembayaran RME aktual dan bersifat pasti.
+                    </p>
+                @else
+                    <x-ui.empty-state title="Belum ada tanggal perawatan pada rentang ini." description="Tindakan akan muncul otomatis di sini ketika dokter menangani pasien; sesuaikan rentang tanggal jika perlu." />
+                @endif
+            </x-ui.card>
+
             {{-- Treatment breakdown for the scoped doctor. --}}
             <x-ui.card title="Rincian per Tindakan / Perawatan">
                 @if (count($report['treatment_breakdown'] ?? []))
