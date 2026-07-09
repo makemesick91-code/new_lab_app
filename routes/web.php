@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DeveloperConsoleController;
+use App\Http\Controllers\FiveBranchRolloutReadinessController;
 use App\Http\Controllers\FoundationMonitoringController;
 use App\Http\Controllers\HealthCheckController;
 use App\Http\Controllers\HomeDashboardController;
@@ -745,6 +746,21 @@ if (config('foundation_monitoring.enabled', true)) {
     Route::middleware(['auth', 'permission:'.config('foundation_monitoring.ui.permission', 'view_developer_console')])
         ->get('/foundation/monitoring', [FoundationMonitoringController::class, 'index'])
         ->name('foundation.monitoring.index');
+}
+
+/*
+| ROLL-5-1 — Five Branch Controlled Production Rollout Readiness (read-only).
+| GET only; reuses the ENT-7 Developer Console permission (Super Admin only via
+| Gate::before) — no new permission. Surfaces one GO/WATCH/FAIL/UNKNOWN decision
+| plus per-stage (1 -> 3 -> 5 branch) readiness across app health, branch/role,
+| RME/cashier/inventory, backup, restore-drill, monitoring, and deploy signals.
+| Never mutates runtime state; never runs heavy audits or the capacity smoke on
+| a web request. Certifies CONTROLLED 5-branch rollout only, not national scale.
+*/
+if (config('rollout_readiness.enabled', true)) {
+    Route::middleware(['auth', 'permission:'.config('rollout_readiness.ui.permission', 'view_developer_console')])
+        ->get('/foundation/rollout/five-branch-readiness', [FiveBranchRolloutReadinessController::class, 'index'])
+        ->name('foundation.rollout.five-branch-readiness');
 }
 
 require __DIR__.'/auth.php';
