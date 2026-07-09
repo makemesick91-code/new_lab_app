@@ -22,6 +22,8 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage_rme_billing',
     'view_rme_patient_reports',
     'view_rme_payment_reports',
+    // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
+    'view_doctor_performance_report',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

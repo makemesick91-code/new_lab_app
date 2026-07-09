@@ -46,6 +46,14 @@ trait ValidatesGoodsReceiptInput
     protected function prepareForValidation(): void
     {
         $this->replace($this->stripExcludedFields($this->all()));
+
+        // FIX-PRE-68-45 Scope E — expand the GR header-level default batch/lot into
+        // each batch-tracked item that has no item-level batch of its own, BEFORE
+        // validation runs (so the existing per-item batch rules see the merged
+        // values). A distinct batch row per product is created at post time via the
+        // (branch_id, product_id, batch_number, lot_number) key — never one shared
+        // batch across products.
+        $this->applyDefaultBatchToItems();
     }
 
     /**
@@ -75,6 +83,14 @@ trait ValidatesGoodsReceiptInput
             'supplier_invoice_number' => ['nullable', 'string', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
+            // FIX-PRE-68-45 Scope E — GR header-level default batch/lot. Expanded
+            // per batch-tracked item (distinct batch per product) in
+            // prepareForValidation; item-level batch always overrides.
+            'apply_default_batch_to_all' => ['nullable', 'boolean'],
+            'default_batch_number' => ['nullable', 'string', 'max:100'],
+            'default_lot_number' => ['nullable', 'string', 'max:100'],
+            'default_batch_received_date' => ['nullable', 'date', 'before_or_equal:today'],
+            'default_expiry_date' => ['nullable', 'date'],
         ];
 
         if ($requirePurchaseOrder) {

@@ -6,17 +6,20 @@ use App\Modules\Branch\Services\BranchContext;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\Schema;
 
-it('does not depend on a users.branch_id column that does not exist', function () {
-    // The VPS pilot confirmed users has no branch_id column.
-    expect(Schema::hasColumn((new User)->getTable(), 'branch_id'))->toBeFalse();
+it('falls back to MAIN for a user whose branch_id is null', function () {
+    // FIX-PRE-68-45 Scope G added an additive nullable users.branch_id column.
+    // BranchContext is Schema::hasColumn-guarded: a NULL branch_id must still fall
+    // back to MAIN, so existing (branchless) users are unaffected by the column.
+    expect(Schema::hasColumn((new User)->getTable(), 'branch_id'))->toBeTrue();
 
     test()->seed(BranchSeeder::class);
     $user = User::factory()->create();
+    expect($user->branch_id)->toBeNull();
     $main = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
 
     $context = app(BranchContext::class);
 
-    // Resolves cleanly via the MAIN fallback — never touches the missing column.
+    // Resolves cleanly via the MAIN fallback — a null branch_id is ignored.
     expect($context->forUser($user))->toBe($main->id)
         ->and($context->id())->toBe($main->id);
 });

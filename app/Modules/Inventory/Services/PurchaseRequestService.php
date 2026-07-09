@@ -13,6 +13,7 @@ use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -38,6 +39,49 @@ class PurchaseRequestService
     }
 
     /**
+     * FIX-PRE-68-45 Scope G — normalize the branch PR type; only Reguler/Darurat are
+     * accepted, anything else becomes NULL (unclassified / legacy regular).
+     */
+    private function normalizePrType(?string $prType): ?string
+    {
+        return in_array($prType, PurchaseRequest::PR_TYPES, true) ? $prType : null;
+    }
+
+    /**
+     * FIX-PRE-68-45 Scope G — branch PR workflow board (Kepala Cabang → Admin
+     * Warehouse). Every group is scoped to a single branch, so a Kepala Cabang
+     * (pinned to their branch via BranchContext) only ever sees their own branch's
+     * requests — no cross-branch leak.
+     *
+     * @return array<string, Collection<int, PurchaseRequest>>
+     */
+    public function branchWorkflowBoard(int $branchId): array
+    {
+        $scoped = fn () => PurchaseRequest::query()
+            ->where('branch_id', $branchId)
+            ->with('requestedBy')
+            ->withCount('items')
+            ->orderByDesc('request_date')
+            ->orderByDesc('id');
+
+        return [
+            'drafts' => $scoped()->where('status', PurchaseRequest::STATUS_DRAFT)->get(),
+            'emergency_processing' => $scoped()
+                ->where('status', PurchaseRequest::STATUS_SUBMITTED)
+                ->where('pr_type', PurchaseRequest::PR_TYPE_DARURAT)
+                ->get(),
+            'regular_processing' => $scoped()
+                ->where('status', PurchaseRequest::STATUS_SUBMITTED)
+                ->where(fn ($q) => $q->where('pr_type', '!=', PurchaseRequest::PR_TYPE_DARURAT)->orWhereNull('pr_type'))
+                ->get(),
+            'recent_completed' => $scoped()
+                ->whereIn('status', [PurchaseRequest::STATUS_APPROVED, PurchaseRequest::STATUS_REJECTED])
+                ->limit(10)
+                ->get(),
+        ];
+    }
+
+    /**
      * @param  array{request_date: string, notes?: string|null, items: array<int, array{product_id: int, inventory_location_id?: int|null, quantity_requested: float, estimated_unit_price?: float|null, notes?: string|null}>}  $data
      */
     public function createDraft(array $data, User $user): PurchaseRequest
@@ -51,6 +95,8 @@ class PurchaseRequestService
                 'purchase_request_number' => $this->generatePurchaseRequestNumber($branchId, $data['request_date']),
                 'request_date' => $data['request_date'],
                 'status' => PurchaseRequest::STATUS_DRAFT,
+                // FIX-PRE-68-45 Scope G — branch PR type (Reguler/Darurat).
+                'pr_type' => $this->normalizePrType($data['pr_type'] ?? null),
                 'requested_by' => $user->id,
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $user->id,
@@ -98,6 +144,8 @@ class PurchaseRequestService
 
             $updated = $this->purchaseRequests->update($locked, [
                 'request_date' => $data['request_date'],
+                // FIX-PRE-68-45 Scope G — branch PR type (Reguler/Darurat).
+                'pr_type' => $this->normalizePrType($data['pr_type'] ?? null),
                 'notes' => $data['notes'] ?? null,
             ]);
 

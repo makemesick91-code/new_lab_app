@@ -248,6 +248,18 @@ class RoleSeeder extends Seeder
             'approve_inventory_purchase_request',
             'approve_inventory_purchase_order',
         ],
+        // FIX-PRE-68-45 Scope G — Kepala Cabang: branch PR flow ONLY. Can create /
+        // edit / submit a branch Purchase Request (Reguler or Darurat) and view PRs,
+        // but CANNOT create Purchase Orders. Intentionally EXCLUDES
+        // manage_purchase_order, manage_inventory, manage master data, and the
+        // approve_* permissions so the PurchaseOrderPolicy::create chokepoint denies
+        // PO creation server-side. Scoped to one branch via users.branch_id.
+        'Kepala Cabang' => [
+            'view dashboard',
+            'view_inventory',
+            'view_purchase_request',
+            'manage_purchase_request',
+        ],
         // Hotfix — Supervisor RME: full access to the entire RME module only.
         // Aggregates every permission that gates an RME route (clinic visits,
         // medical record, odontogram, treatment worklist, cashier/receivable/
