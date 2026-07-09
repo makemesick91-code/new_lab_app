@@ -2,6 +2,7 @@
 
 namespace App\Modules\Inventory\Requests\Concerns;
 
+use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Services\AutoBatchNumberService;
@@ -23,6 +24,120 @@ trait ValidatesGoodsReceiptBatchInput
             'items.*.batch_received_date' => ['nullable', 'date', 'before_or_equal:today'],
             'items.*.expiry_date' => ['nullable', 'date'],
         ];
+    }
+
+    /**
+     * FIX-PRE-68-45 Scope E — expand the GR header-level default batch/lot into each
+     * batch-tracked item that has no item-level batch of its own. Called from
+     * prepareForValidation so the existing per-item batch rules validate the merged
+     * values. The same default batch_number yields a DISTINCT batch row per product
+     * at post time (found-or-create key = branch_id + product_id + batch_number +
+     * lot_number) — never one shared batch across products. Item-level batch always
+     * overrides; non-batch-tracked products keep their batch empty.
+     */
+    protected function applyDefaultBatchToItems(): void
+    {
+        if (! $this->boolean('apply_default_batch_to_all')) {
+            return;
+        }
+
+        $defaultBatch = $this->input('default_batch_number');
+        $defaultExpiry = $this->input('default_expiry_date');
+
+        // Nothing to expand — the per-item rules will still block a batch-tracked
+        // item that has neither its own batch nor a usable default.
+        if (! filled($defaultBatch) && ! filled($defaultExpiry)) {
+            return;
+        }
+
+        $items = $this->input('items');
+
+        if (! is_array($items) || $items === []) {
+            return;
+        }
+
+        try {
+            $branchId = app(BranchContext::class)->requireId();
+        } catch (\Throwable) {
+            return;
+        }
+
+        $productIds = collect($items)
+            ->pluck('product_id')
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->all();
+
+        if ($productIds === []) {
+            return;
+        }
+
+        $batchTrackedIds = Product::query()
+            ->where('branch_id', $branchId)
+            ->whereIn('id', $productIds)
+            ->where('requires_batch_tracking', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($batchTrackedIds === []) {
+            return;
+        }
+
+        $defaultLot = $this->input('default_lot_number');
+        $defaultReceived = $this->input('default_batch_received_date') ?: $this->input('receipt_date');
+
+        foreach ($items as $index => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $productId = (int) ($item['product_id'] ?? 0);
+            $acceptedQty = (float) ($item['accepted_qty'] ?? 0);
+
+            if ($acceptedQty <= 0 || ! in_array($productId, $batchTrackedIds, true)) {
+                continue;
+            }
+
+            // Item-level batch always wins — never overwrite an EXPLICIT selection
+            // (an existing batch, an entered batch number, or an explicit auto-batch
+            // request). A blank item receives the header default (the default takes
+            // precedence over the implicit auto-batch fallback).
+            $explicitAutoBatch = array_key_exists('auto_batch', $item)
+                && filter_var($item['auto_batch'], FILTER_VALIDATE_BOOLEAN);
+
+            $hasExplicitBatch = filled($item['inventory_batch_id'] ?? null)
+                || ($item['batch_mode'] ?? null) === 'existing'
+                || filled($item['batch_number'] ?? null)
+                || $explicitAutoBatch;
+
+            if ($hasExplicitBatch) {
+                continue;
+            }
+
+            $item['batch_mode'] = 'new';
+
+            if (filled($defaultBatch)) {
+                $item['batch_number'] = $defaultBatch;
+            }
+
+            if (filled($defaultLot)) {
+                $item['lot_number'] = $defaultLot;
+            }
+
+            if (filled($defaultExpiry)) {
+                $item['expiry_date'] = $defaultExpiry;
+            }
+
+            if (filled($defaultReceived)) {
+                $item['batch_received_date'] = $defaultReceived;
+            }
+
+            $items[$index] = $item;
+        }
+
+        $this->merge(['items' => $items]);
     }
 
     protected function validateGoodsReceiptBatchItems(Validator $validator, int $branchId): void

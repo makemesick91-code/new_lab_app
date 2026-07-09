@@ -44,6 +44,17 @@ class PurchaseRequest extends Model
         self::STATUS_CANCELLED,
     ];
 
+    // FIX-PRE-68-45 Scope G — branch PR type (Kepala Cabang flow). NULL = legacy /
+    // unclassified (treated as regular).
+    public const PR_TYPE_REGULER = 'reguler';
+
+    public const PR_TYPE_DARURAT = 'darurat';
+
+    public const PR_TYPES = [
+        self::PR_TYPE_REGULER,
+        self::PR_TYPE_DARURAT,
+    ];
+
     protected $table = 'trx_purchase_requests';
 
     protected $fillable = [
@@ -51,6 +62,7 @@ class PurchaseRequest extends Model
         'purchase_request_number',
         'request_date',
         'status',
+        'pr_type',
         'requested_by',
         'approved_by',
         'approved_at',
@@ -98,6 +110,12 @@ class PurchaseRequest extends Model
     public function isTerminal(): bool
     {
         return in_array($this->status, self::TERMINAL_STATUSES, true);
+    }
+
+    // FIX-PRE-68-45 Scope G — a Darurat (emergency) branch PR.
+    public function isEmergency(): bool
+    {
+        return $this->pr_type === self::PR_TYPE_DARURAT;
     }
 
     public function branch(): BelongsTo

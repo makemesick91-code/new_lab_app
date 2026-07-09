@@ -3,9 +3,11 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Delivery\Models\Delivery;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -29,6 +31,9 @@ class User extends Authenticatable
         'password',
         'is_active',
         'last_login_at',
+        // FIX-PRE-68-45 Scope G — optional home branch (branch-scoped roles e.g.
+        // Kepala Cabang). NULL for existing users; BranchContext falls back to MAIN.
+        'branch_id',
     ];
 
     /**
@@ -54,6 +59,14 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    // FIX-PRE-68-45 Scope G — optional home branch. Convenience relation only; the
+    // active-branch resolution is handled by BranchContext (which reads the
+    // branch_id column directly), so this does not change branch scoping.
+    public function homeBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'branch_id');
     }
 
     public function courierDeliveries(): HasMany

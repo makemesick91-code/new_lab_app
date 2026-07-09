@@ -236,6 +236,47 @@
         </div>
     </div>
 
+    {{-- FIX-PRE-68-45 Scope E — GR header-level default batch/lot. Fill once here;
+         on save it expands to a DISTINCT batch per batch-tracked product/item that
+         has no item-level batch. Item-level batch below always overrides. Products
+         that do not require batch tracking keep their batch empty. --}}
+    <div class="rounded-lg border border-brand-100 bg-brand-50 p-4">
+        <h3 class="text-sm font-semibold text-gray-900">Batch / Lot Default (opsional)</h3>
+        <p class="mt-1 text-xs text-gray-600">Isi sekali untuk semua item yang wajib pelacakan batch. Batch per produk dibuat otomatis dan terpisah — bukan satu batch global. Item yang sudah punya batch sendiri tidak akan ditimpa.</p>
+        <div class="mt-3 grid gap-4 md:grid-cols-4">
+            <div>
+                <label for="default-batch-number" class="block text-sm font-medium text-gray-700">No. Batch Default</label>
+                <input id="default-batch-number" type="text" name="default_batch_number" value="{{ old('default_batch_number') }}" maxlength="100"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                @error('default_batch_number')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label for="default-lot-number" class="block text-sm font-medium text-gray-700">No. Lot Default</label>
+                <input id="default-lot-number" type="text" name="default_lot_number" value="{{ old('default_lot_number') }}" maxlength="100"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                @error('default_lot_number')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label for="default-batch-received-date" class="block text-sm font-medium text-gray-700">Tgl Terima Default</label>
+                <input id="default-batch-received-date" type="date" name="default_batch_received_date" value="{{ old('default_batch_received_date') }}"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                @error('default_batch_received_date')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+            </div>
+            <div>
+                <label for="default-expiry-date" class="block text-sm font-medium text-gray-700">Tgl Kedaluwarsa Default</label>
+                <input id="default-expiry-date" type="date" name="default_expiry_date" value="{{ old('default_expiry_date') }}"
+                    class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                @error('default_expiry_date')<p class="mt-1 text-sm text-red-600">{{ $message }}</p>@enderror
+            </div>
+        </div>
+        <label class="mt-3 inline-flex items-center gap-2 text-sm text-gray-800">
+            <input type="hidden" name="apply_default_batch_to_all" value="0">
+            <input type="checkbox" name="apply_default_batch_to_all" value="1" @checked(old('apply_default_batch_to_all'))
+                class="rounded border-gray-300 text-brand-600 focus:ring-brand-500">
+            Terapkan batch/lot ini ke semua item yang wajib batch tracking
+        </label>
+    </div>
+
     <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
         <div>
             <h3 class="text-base font-semibold text-gray-900">Item Penerimaan</h3>

@@ -24,6 +24,20 @@
             @enderror
         </div>
 
+        {{-- FIX-PRE-68-45 Scope G — branch PR type (Reguler/Darurat). Defaults from
+             the ?pr_type= query param used by the "Alur PR Cabang" quick-create. --}}
+        <div>
+            <label for="pr-type" class="block text-sm font-medium text-gray-700">Tipe Permintaan</label>
+            @php $prTypeValue = old('pr_type', $purchaseRequest?->pr_type ?? request('pr_type')); @endphp
+            <select id="pr-type" name="pr_type" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                <option value="reguler" @selected($prTypeValue !== 'darurat')>Reguler</option>
+                <option value="darurat" @selected($prTypeValue === 'darurat')>Darurat</option>
+            </select>
+            @error('pr_type')
+                <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
+            @enderror
+        </div>
+
         <div class="md:col-span-2">
             <label for="request-notes" class="block text-sm font-medium text-gray-700">Catatan</label>
             <textarea id="request-notes" name="notes" rows="3" class="mt-1 block w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('notes', $purchaseRequest?->notes) }}</textarea>

@@ -505,8 +505,10 @@
                     </button>
                     <div data-sidebar-panel="procurement" x-show="isOpen('procurement')" class="mt-1 space-y-0.5 pl-8">
                         @can('viewAny', \App\Modules\Inventory\Models\PurchaseRequest::class)
+                            <a href="{{ route('inventory.purchase-requests.workflow') }}"
+                               class="menu-subitem {{ request()->routeIs('inventory.purchase-requests.workflow') ? $linkActive : $linkIdle }}">Alur PR Cabang</a>
                             <a href="{{ route('inventory.purchase-requests.index') }}"
-                               class="menu-subitem {{ request()->routeIs('inventory.purchase-requests.*') ? $linkActive : $linkIdle }}">Permintaan Pembelian</a>
+                               class="menu-subitem {{ request()->routeIs('inventory.purchase-requests.index') ? $linkActive : $linkIdle }}">Permintaan Pembelian</a>
                         @endcan
                         @can('viewAny', \App\Modules\Inventory\Models\PurchaseOrder::class)
                             <a href="{{ route('inventory.purchase-orders.index') }}"

@@ -34,6 +34,7 @@ use App\Modules\Inventory\Controllers\ProductImportController;
 use App\Modules\Inventory\Controllers\ProductUnitController;
 use App\Modules\Inventory\Controllers\PurchaseOrderController;
 use App\Modules\Inventory\Controllers\PurchaseRequestController;
+use App\Modules\Inventory\Controllers\PurchaseRequestWorkflowController;
 use App\Modules\Inventory\Controllers\StockCardController;
 use App\Modules\Inventory\Controllers\StockOpnameController;
 use App\Modules\Inventory\Controllers\StockTransferController;
@@ -690,6 +691,11 @@ Route::middleware('auth')->prefix('inventory')->name('inventory.')->group(functi
     Route::post('stock-transfers/{stockTransfer}/receive', [StockTransferController::class, 'receive'])->name('stock-transfers.receive');
     Route::post('stock-transfers/{stockTransfer}/cancel', [StockTransferController::class, 'cancel'])->name('stock-transfers.cancel');
 
+    // FIX-PRE-68-45 Scope G — branch PR workflow board (Kepala Cabang → Admin
+    // Warehouse). Registered BEFORE the resource so "workflow" is not captured as a
+    // {purchaseRequest} id. Read-only board; PR-create-only for Kepala Cabang.
+    Route::get('purchase-requests/workflow', [PurchaseRequestWorkflowController::class, 'index'])
+        ->name('purchase-requests.workflow');
     Route::resource('purchase-requests', PurchaseRequestController::class)->only(['index', 'create', 'store', 'show', 'edit', 'update']);
     Route::post('purchase-requests/{purchaseRequest}/submit', [PurchaseRequestController::class, 'submit'])->name('purchase-requests.submit');
     Route::post('purchase-requests/{purchaseRequest}/approve', [PurchaseRequestController::class, 'approve'])->name('purchase-requests.approve');

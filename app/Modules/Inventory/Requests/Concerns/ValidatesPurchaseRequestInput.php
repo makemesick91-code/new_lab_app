@@ -11,6 +11,8 @@ trait ValidatesPurchaseRequestInput
     {
         return [
             'request_date' => ['required', 'date'],
+            // FIX-PRE-68-45 Scope G — branch PR type: Reguler or Darurat.
+            'pr_type' => ['nullable', 'string', 'in:reguler,darurat'],
             'notes' => ['nullable', 'string', 'max:2000'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.product_id' => ['required', 'integer', 'exists:inv_products,id'],
