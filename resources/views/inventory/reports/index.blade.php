@@ -114,6 +114,7 @@
                                 <option value="{{ $supplier->id }}" @selected(($filters['supplier_id'] ?? null) == $supplier->id)>{{ $supplier->name }}</option>
                             @endforeach
                         </select>
+                        <p class="mt-1 text-xs text-gray-500">Filter vendor memakai provenance pembelian/Goods Receipt (bukan kepemilikan stok bersih).</p>
                     </div>
                 @endif
 
@@ -179,23 +180,36 @@
             </div>
         </div>
 
-        {{-- FIX-PRE-68-45 Scope F — per-vendor spend summary. Sourced from
-             procurement truth (POSTED Goods Receipt line_total via
-             getSupplierPerformance), NOT the stock ledger, so the "dibelanjakan"
-             figure reflects invoiced spend. Branch-scoped; hidden when no vendor
-             data exists (fails gracefully, never 500). --}}
+        {{-- SPRINT-68.45 Scope C — a selected vendor filter only narrows tabs that
+             carry purchase/GR provenance (Stok Saat Ini, Low Stock, Mutasi Stok,
+             Nilai Persediaan). Kartu Stok and Stok per Ruangan are per-movement /
+             per-room views without vendor provenance, so the filter is not applied
+             there — explain that instead of returning wrong data. --}}
+        @if (($filters['supplier_id'] ?? null) && in_array($activeTab, ['stock_card', 'room_stock'], true))
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" data-report-note="vendor-filter-inapplicable">
+                Filter vendor tidak diterapkan pada tab ini karena datanya tidak memiliki provenance vendor per baris. Gunakan tab Stok Saat Ini, Low Stock, Mutasi Stok, atau Nilai Persediaan untuk analisis per vendor.
+            </div>
+        @endif
+
+        {{-- FIX-PRE-68-45 Scope F / SPRINT-68.45 Scope C — per-vendor spend summary.
+             Sourced from procurement truth (POSTED Goods Receipt line_total +
+             accepted_qty via getSupplierPerformance), NOT the stock ledger, so the
+             "dibelanjakan" figure reflects invoiced spend. Branch-scoped; hidden
+             when no vendor data exists (fails gracefully, never 500). --}}
         @if (($supplierSpend ?? collect())->isNotEmpty())
             <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="vendor-spend">
                 <h3 class="text-base font-semibold text-gray-900">Ringkasan Belanja per Vendor</h3>
-                <p class="mt-1 text-sm text-gray-500">Nilai barang diterima dari tiap vendor (berdasarkan Goods Receipt yang sudah diposting).</p>
+                <p class="mt-1 text-sm text-gray-500">Nilai &amp; jumlah barang diterima dari tiap vendor (berdasarkan Goods Receipt yang sudah diposting — sumber kebenaran procurement, bukan ledger stok).</p>
                 <div class="mt-3 overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 text-sm">
                         <thead>
                             <tr class="bg-gray-50 text-left text-gray-500">
                                 <th class="px-3 py-2">Vendor</th>
                                 <th class="px-3 py-2 text-right">Jumlah PO</th>
+                                <th class="px-3 py-2 text-right">Item Diterima</th>
+                                <th class="px-3 py-2 text-right">Qty Diterima</th>
                                 <th class="px-3 py-2 text-right">Nilai Pesanan</th>
-                                <th class="px-3 py-2 text-right">Nilai Diterima / Dibelanjakan</th>
+                                <th class="px-3 py-2 text-right">Total Belanja (GR)</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -203,6 +217,8 @@
                                 <tr>
                                     <td class="px-3 py-2 font-medium text-gray-900">{{ $vendor['supplier_name'] ?? '—' }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_number_id($vendor['order_count'] ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_number_id($vendor['received_gr_item_count'] ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_number_id($vendor['received_gr_quantity'] ?? 0) }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_currency_id($vendor['order_value'] ?? 0) }}</td>
                                     <td class="px-3 py-2 text-right tabular-nums text-gray-900">{{ format_currency_id($vendor['received_value'] ?? 0) }}</td>
                                 </tr>

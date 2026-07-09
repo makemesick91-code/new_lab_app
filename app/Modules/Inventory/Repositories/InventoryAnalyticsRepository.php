@@ -576,14 +576,23 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
             ->selectRaw('COALESCE(SUM(trx_purchase_order_items.quantity_ordered * trx_purchase_order_items.unit_price), 0) as total')
             ->value('total');
 
-        $receivedValue = (float) GoodsReceiptItem::query()
+        // SPRINT-68.45 Scope C — vendor spend + received goods from procurement/GR
+        // truth (POSTED Goods Receipts joined to their PO supplier), never the
+        // stock ledger. line_total = billed value; accepted_qty = goods received.
+        $receivedGoods = GoodsReceiptItem::query()
             ->join('trx_goods_receipts', 'trx_goods_receipts.id', '=', 'trx_goods_receipt_items.goods_receipt_id')
             ->join('trx_purchase_orders', 'trx_purchase_orders.id', '=', 'trx_goods_receipts.purchase_order_id')
             ->where('trx_goods_receipts.branch_id', $branchId)
             ->where('trx_purchase_orders.supplier_id', $supplier->id)
             ->where('trx_goods_receipts.status', GoodsReceipt::STATUS_POSTED)
-            ->selectRaw('COALESCE(SUM(trx_goods_receipt_items.line_total), 0) as total')
-            ->value('total');
+            ->selectRaw('COALESCE(SUM(trx_goods_receipt_items.line_total), 0) as total_value')
+            ->selectRaw('COALESCE(SUM(trx_goods_receipt_items.accepted_qty), 0) as total_qty')
+            ->selectRaw('COUNT(trx_goods_receipt_items.id) as item_count')
+            ->first();
+
+        $receivedValue = (float) ($receivedGoods->total_value ?? 0);
+        $receivedGrQuantity = (float) ($receivedGoods->total_qty ?? 0);
+        $receivedGrItemCount = (int) ($receivedGoods->item_count ?? 0);
 
         $orderedQty = (float) PurchaseOrderItem::query()
             ->join('trx_purchase_orders', 'trx_purchase_orders.id', '=', 'trx_purchase_order_items.purchase_order_id')
@@ -628,6 +637,8 @@ class InventoryAnalyticsRepository implements InventoryAnalyticsRepositoryInterf
             'order_count' => $totalPoCount,
             'order_value' => $orderValue,
             'received_value' => $receivedValue > 0 ? $receivedValue : $ledgerValue,
+            'received_gr_item_count' => $receivedGrItemCount,
+            'received_gr_quantity' => $receivedGrQuantity,
             'fulfillment_rate' => $fulfillmentRate,
             'on_time_delivery_rate' => $onTimeStats['rate'],
             'coverage_percentage' => $coveragePercentage,
