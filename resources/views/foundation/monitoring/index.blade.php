@@ -32,6 +32,11 @@
                 Konsolidasi read-only dari signal yang sudah ada (health, deploy/backup, queue, storage/cache, log, audit).
                 Halaman ini tidak menjalankan audit berat, tidak mengubah state runtime, dan memasking semua data sensitif.
             </p>
+            @if (Route::has('foundation.rollout.five-branch-readiness'))
+                <a href="{{ route('foundation.rollout.five-branch-readiness') }}" class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-800">
+                    → Kesiapan Rollout 5 Cabang (ROLL-5-1): keputusan bertahap 1 → 3 → 5 cabang
+                </a>
+            @endif
         </div>
 
         {{-- Overall decision banner --}}

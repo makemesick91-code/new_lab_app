@@ -27,6 +27,11 @@
                     → Monitoring Fondasi (MON-1): keputusan konsolidasi GO/WATCH/FAIL/UNKNOWN
                 </a>
             @endif
+            @if (Route::has('foundation.rollout.five-branch-readiness'))
+                <a href="{{ route('foundation.rollout.five-branch-readiness') }}" class="mt-1 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-800">
+                    → Kesiapan Rollout 5 Cabang (ROLL-5-1): keputusan bertahap 1 → 3 → 5 cabang
+                </a>
+            @endif
         </div>
 
         {{-- Runtime health --}}

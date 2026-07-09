@@ -1,0 +1,38 @@
+---
+description: ROLL-5-1 controlled 5-branch rollout readiness rules
+globs:
+  - "config/rollout_readiness.php"
+  - "app/Services/Foundation/FiveBranchRolloutReadinessService.php"
+  - "app/Console/Commands/FiveBranchRolloutReadinessCommand.php"
+  - "app/Http/Controllers/FiveBranchRolloutReadinessController.php"
+  - "resources/views/foundation/rollout/**"
+alwaysApply: false
+---
+
+# ROLL-5-1 — Controlled 5-Branch Rollout Readiness
+
+- Rollout is **staged**: Stage 1 = 1 branch, Stage 2 = 3 total, Stage 3 = 5 total.
+  Never onboard all branches at once.
+- `rollout:five-branch-readiness` is a **read-only orchestrator**. It REUSES
+  MON-1 (`FoundationMonitoringStatusService`), `BranchService`, ENT-8
+  `HealthCheckService`, and existing audit commands — it must NOT re-implement
+  health probes, deploy evidence, or domain audit logic.
+- Branch counts come from `BranchService::listRmeEnabled()` — never from a
+  request `branch_id`.
+- Decision precedence: any FAIL → FAIL; else any WATCH → WATCH; else GO; else
+  UNKNOWN. `--strict` fails only on unsafe FAIL; `--fail-on-warning` also on WATCH.
+- Fewer-than-target branches / missing role / missing evidence → **WATCH**
+  (blocker to fix, never a 500). Role-permission leak (e.g. Kepala Cabang with
+  `manage_purchase_order`), health down, storage not writable, or a broken
+  capacity query → **FAIL**.
+- The UI (`/foundation/rollout/five-branch-readiness`) is Super Admin only via
+  the existing `view_developer_console` permission — **no new permission**. It
+  never runs heavy audits or the capacity smoke on a web request, never mutates
+  state, and never renders secrets / env / KTP / NIK / raw notes / raw logs.
+- Restore drill runs ONLY against a staging/test scratch DB (ENT-12
+  `restore-rehearsal.sh`) — production DB is never overwritten; never
+  `migrate:fresh` / `db:wipe`.
+- The capacity smoke is a **lightweight** bounded read-only probe, NOT a
+  national-scale load test. ROLL-5-1 certifies controlled 5-branch rollout only.
+- Domain audits (`inventory:procurement-workflow-audit`,
+  `rme:doctor-performance-access-audit`) remain the authoritative sources.
