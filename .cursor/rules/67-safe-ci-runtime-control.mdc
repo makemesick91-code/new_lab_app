@@ -1,0 +1,36 @@
+---
+description: CICD-CTRL-1 Safe CI Runtime Control — how CI gates are selected safely
+globs:
+  - ".github/workflows/**"
+  - "scripts/ci/**"
+  - "config/ci_runtime_control.php"
+alwaysApply: false
+---
+
+# CICD-CTRL-1 — Safe CI Runtime Control
+
+CI gate selection is decided by the conservative classifier
+`scripts/ci/resolve-gates.sh` and governed by `config/ci_runtime_control.php`.
+
+Non-negotiable rules:
+
+- **DEFAULT-STRONG.** Any uncertainty (no diff, unreachable base, unknown path)
+  resolves to `unknown_high_risk` → every gate runs.
+- **`docs_only` is the ONLY profile that may skip the critical Pest step.**
+  Every changed file must be Markdown for `docs_only`. Any code, config,
+  workflow, script, dependency, test, migration, route, policy, permission, or
+  view change forces the critical gate. Do not widen `skip_critical_profiles`
+  without a reviewed sprint + tests.
+- **Always-on gates.** `quality_gate`, `release_safety_gate` (NSF-9), and
+  `nsf10_release_evidence_gate` are never gated by the classifier. Security,
+  governance, release-safety, evidence, and smoke gates always run.
+- **Full-suite fallback preserved.** The full Pest suite stays available via
+  schedule (weekly), manual dispatch, and push-to-base. Do not delete it.
+- **No unsafe path filtering.** Never add `paths-ignore` or blanket path filters
+  to the workflow; selection is the audited classifier, not opaque globs.
+- **Additive only.** Module flags add module test coverage; they never downgrade
+  the critical gate.
+
+Verify with `php artisan foundation:ci-runtime-control-check --strict`
+(re-verifies the ENT-10 enterprise gate stays GO). Preview locally with
+`scripts/ci/resolve-gates.sh --base origin/<base> --head HEAD`.
