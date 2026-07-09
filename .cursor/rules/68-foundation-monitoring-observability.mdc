@@ -1,0 +1,44 @@
+---
+description: MON-1 Foundation Monitoring & Observability consolidation rules
+globs:
+  - "config/foundation_monitoring.php"
+  - "app/Services/Foundation/FoundationMonitoringStatusService.php"
+  - "app/Console/Commands/FoundationMonitoringObservabilityCheckCommand.php"
+  - "app/Http/Controllers/FoundationMonitoringController.php"
+  - "resources/views/foundation/monitoring/**"
+alwaysApply: false
+---
+
+# MON-1 — Foundation Monitoring & Observability
+
+MON-1 **consolidates** existing observability signals into one explainable
+`GO | WATCH | FAIL | UNKNOWN` decision. It must never duplicate or weaken:
+NSF-9 smoke/release-safety, NSF-10 release evidence, NSF-R011/R012, CICD-CTRL-1,
+POST-ENT runtime hardening, the ENT-8/LB-1 health endpoints, deploy/backup
+evidence, or the domain audit commands.
+
+Durable rules:
+
+1. Consolidate existing signals; never re-implement a health probe, smoke gate,
+   deploy-evidence pipeline, CI classifier, or domain audit.
+2. The monitoring UI (`/foundation/monitoring`) is read-only, Super-Admin-only
+   (`permission:view_developer_console`, no new permission), and never mutates
+   runtime state (no log clear, no queue retry/delete, no chmod).
+3. No secrets / environment values / DB credentials / tokens / raw stack traces /
+   KTP-NIK / raw failed-job payloads / full log payloads in UI or JSON. Route free
+   text through `SensitiveValueMasker`.
+4. No expensive command runs on a web request. Audit execution is CLI-only via
+   `--include-audits`; the web page reads cached evidence metadata. In
+   `config/foundation_monitoring.php`, any `type: command` signal MUST have
+   `auto_run: false`.
+5. Existing audit commands (`inventory:procurement-workflow-audit`,
+   `rme:doctor-performance-access-audit`) stay authoritative; MON-1 only reports
+   their exit status.
+6. Storage/cache writability (`storage/framework/cache/data`, `storage/logs`,
+   `bootstrap/cache`) must be observable (temp-file probe, report-only, never
+   chmod).
+7. Every GO/WATCH/FAIL/UNKNOWN decision must carry reasons + safe remediation.
+8. `--strict` exits non-zero only on real unsafe FAIL; WATCH/UNKNOWN never fail
+   unless `--fail-on-warning`.
+
+Command: `php artisan foundation:monitoring-observability-check [--json] [--strict] [--include-audits]`.

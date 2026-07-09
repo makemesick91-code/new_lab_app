@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DeveloperConsoleController;
+use App\Http\Controllers\FoundationMonitoringController;
 use App\Http\Controllers\HealthCheckController;
 use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\LoadBalancerHealthController;
@@ -731,6 +732,19 @@ if (config('developer_console.enabled', true)) {
     Route::middleware(['auth', 'permission:view_developer_console'])
         ->get('/dev/ui-catalog', fn () => view('dev.ui-catalog'))
         ->name('developer-console.ui-catalog');
+}
+
+/*
+| MON-1 — Foundation Monitoring & Observability (read-only consolidation).
+| GET only; reuses the ENT-7 Developer Console permission (Super Admin only via
+| Gate::before) — no new permission. Surfaces a single GO/WATCH/FAIL/UNKNOWN
+| decision across existing health/deploy/queue/storage/audit signals. Never
+| mutates runtime state and never runs heavy audits on a web request.
+*/
+if (config('foundation_monitoring.enabled', true)) {
+    Route::middleware(['auth', 'permission:'.config('foundation_monitoring.ui.permission', 'view_developer_console')])
+        ->get('/foundation/monitoring', [FoundationMonitoringController::class, 'index'])
+        ->name('foundation.monitoring.index');
 }
 
 require __DIR__.'/auth.php';
