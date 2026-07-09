@@ -76,6 +76,8 @@ class InventoryReportFilterRequest extends FormRequest
             'category_id' => ['nullable', 'integer', 'exists:inv_product_categories,id'],
             'inventory_location_id' => ['nullable', 'integer', 'exists:inv_inventory_locations,id'],
             'inventory_batch_id' => ['nullable', 'integer', 'exists:inv_inventory_batches,id'],
+            // FIX-PRE-68-45 Scope F — vendor/supplier filter (purchase provenance).
+            'supplier_id' => ['nullable', 'integer', 'exists:inv_suppliers,id'],
             'stock_status' => ['nullable', 'string', Rule::in(['normal', 'low', 'empty', 'overstock'])],
             'movement_type' => ['nullable', 'string', Rule::in(InventoryMovement::TYPES)],
             'tab' => ['nullable', 'string'],

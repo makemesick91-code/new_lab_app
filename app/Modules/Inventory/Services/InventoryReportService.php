@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryBatchRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryLocationRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryMovementRepositoryInterface;
@@ -15,6 +16,7 @@ use App\Modules\Inventory\Models\InventoryBatch;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
 use App\Modules\Inventory\Models\Product;
+use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator as LengthAwarePaginatorContract;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -40,6 +42,7 @@ class InventoryReportService
         private readonly ProductCategoryRepositoryInterface $categories,
         private readonly InventoryLocationRepositoryInterface $locations,
         private readonly InventoryBatchRepositoryInterface $batches,
+        private readonly InventoryAnalyticsRepositoryInterface $analytics,
     ) {}
 
     public function getCurrentStockReport(array $filters): LengthAwarePaginatorContract
@@ -304,6 +307,35 @@ class InventoryReportService
     }
 
     /**
+     * FIX-PRE-68-45 Scope F — active vendors/suppliers for the report's branch.
+     * Suppliers are branch-scoped (inv_suppliers.branch_id), so this list is the
+     * branch-isolation boundary for the supplier filter.
+     */
+    public function reportSupplierOptions(int $branchId): Collection
+    {
+        return Supplier::query()
+            ->where('branch_id', $branchId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+    }
+
+    /**
+     * FIX-PRE-68-45 Scope F — per-vendor spend summary sourced from procurement
+     * truth (POSTED GR line_total via getSupplierPerformance), NOT the ledger.
+     * Degrades to an empty collection so the report never breaks on a wiring
+     * issue. Branch-scoped by $branchId.
+     */
+    public function supplierSpendSummary(int $branchId): Collection
+    {
+        try {
+            return $this->analytics->getSupplierPerformance($branchId);
+        } catch (\Throwable) {
+            return collect();
+        }
+    }
+
+    /**
      * Active batches for the selected branch, optionally narrowed to a product.
      *
      * @return Collection<int, InventoryBatch>
@@ -364,6 +396,18 @@ class InventoryReportService
 
         if (isset($filters['category_id']) && ! in_array((int) $filters['category_id'], $allowedCategoryIds, true)) {
             unset($filters['category_id']);
+        }
+
+        // FIX-PRE-68-45 Scope F — a supplier not belonging to the resolved branch
+        // is dropped (IDOR boundary; a cross-branch user cannot inject another
+        // branch's supplier_id).
+        $allowedSupplierIds = $this->reportSupplierOptions($branchId)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if (isset($filters['supplier_id']) && ! in_array((int) $filters['supplier_id'], $allowedSupplierIds, true)) {
+            unset($filters['supplier_id']);
         }
 
         if (isset($filters['inventory_batch_id'])) {
@@ -453,6 +497,7 @@ class InventoryReportService
             'categories' => $this->categories->listActive($branchId),
             'locations' => $this->reportLocationOptions($branchId),
             'batches' => $this->reportBatchOptions($branchId, $productId),
+            'suppliers' => $this->reportSupplierOptions($branchId),
             'movementTypes' => InventoryMovement::TYPES,
             'stockStatuses' => [
                 'normal' => 'Normal',

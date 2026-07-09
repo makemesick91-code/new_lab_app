@@ -193,6 +193,8 @@ class RoleSeeder extends Seeder
             'manage_clinic_visits',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
+            // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
+            'view_own_doctor_performance_report',
         ],
         // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)
         'Owner' => [
@@ -212,6 +214,8 @@ class RoleSeeder extends Seeder
             // Sprint 23 Phase 23.5 — Owner sees both RME report families
             'view_rme_patient_reports',
             'view_rme_payment_reports',
+            // FIX-PRE-68-45 Scope C — Owner (executive) sees every doctor's income.
+            'view_doctor_performance_report',
             // Sprint 23 Phase 23.7 — Owner manages Master Data Cabang
             'view_branch_master_data',
             'manage_branch_master_data',
@@ -265,6 +269,8 @@ class RoleSeeder extends Seeder
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',
+            // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
+            'view_doctor_performance_report',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

@@ -102,6 +102,21 @@
                     </div>
                 @endif
 
+                {{-- FIX-PRE-68-45 Scope F — vendor/supplier filter (purchase provenance).
+                     Only movements sourced from a PO-linked Goods Receipt carry a
+                     supplier_id, so this filters received-from-vendor stock. --}}
+                @if (($filterOptions['suppliers'] ?? collect())->isNotEmpty())
+                    <div>
+                        <label for="supplier_id" class="block text-sm font-medium text-gray-700">Vendor / Supplier</label>
+                        <select id="supplier_id" name="supplier_id" class="mt-1 w-full rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+                            <option value="">Semua vendor</option>
+                            @foreach ($filterOptions['suppliers'] as $supplier)
+                                <option value="{{ $supplier->id }}" @selected(($filters['supplier_id'] ?? null) == $supplier->id)>{{ $supplier->name }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                @endif
+
                 @if ($showBatchFilter)
                     <div>
                         <label for="inventory_batch_id" class="block text-sm font-medium text-gray-700">Batch &amp; Lot</label>
@@ -163,6 +178,40 @@
                 @endforeach
             </div>
         </div>
+
+        {{-- FIX-PRE-68-45 Scope F — per-vendor spend summary. Sourced from
+             procurement truth (POSTED Goods Receipt line_total via
+             getSupplierPerformance), NOT the stock ledger, so the "dibelanjakan"
+             figure reflects invoiced spend. Branch-scoped; hidden when no vendor
+             data exists (fails gracefully, never 500). --}}
+        @if (($supplierSpend ?? collect())->isNotEmpty())
+            <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="vendor-spend">
+                <h3 class="text-base font-semibold text-gray-900">Ringkasan Belanja per Vendor</h3>
+                <p class="mt-1 text-sm text-gray-500">Nilai barang diterima dari tiap vendor (berdasarkan Goods Receipt yang sudah diposting).</p>
+                <div class="mt-3 overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead>
+                            <tr class="bg-gray-50 text-left text-gray-500">
+                                <th class="px-3 py-2">Vendor</th>
+                                <th class="px-3 py-2 text-right">Jumlah PO</th>
+                                <th class="px-3 py-2 text-right">Nilai Pesanan</th>
+                                <th class="px-3 py-2 text-right">Nilai Diterima / Dibelanjakan</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            @foreach ($supplierSpend as $vendor)
+                                <tr>
+                                    <td class="px-3 py-2 font-medium text-gray-900">{{ $vendor['supplier_name'] ?? '—' }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_number_id($vendor['order_count'] ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-gray-700">{{ format_currency_id($vendor['order_value'] ?? 0) }}</td>
+                                    <td class="px-3 py-2 text-right tabular-nums text-gray-900">{{ format_currency_id($vendor['received_value'] ?? 0) }}</td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        @endif
 
         @if ($activeTab === 'current_stock')
         <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm" data-report-panel="current-stock">

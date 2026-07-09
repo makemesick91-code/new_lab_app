@@ -64,6 +64,7 @@ use App\Modules\Reporting\Controllers\DashboardController as ReportingDashboardC
 use App\Modules\Reporting\Controllers\ExportReportController;
 use App\Modules\Reporting\Controllers\ReportController;
 use App\Modules\RmeDashboard\Controllers\RmeDashboardController;
+use App\Modules\RmeInvoice\Controllers\DoctorPerformanceReportController;
 use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
@@ -395,6 +396,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('reports.payments.export')->middleware('permission:view_rme_payment_reports');
     Route::get('reports/payments/print', [RmeReportController::class, 'paymentsPrint'])
         ->name('reports.payments.print')->middleware('permission:view_rme_payment_reports');
+
+    // FIX-PRE-68-45 Scope C — Doctor Performance / Income report. Read-only.
+    // Executive tier (view_doctor_performance_report) sees all doctors + RME
+    // branches; a linked doctor (view_own_doctor_performance_report) is forced to
+    // their own doctor_id server-side. Sources RME invoice/payment truth only.
+    Route::get('reports/doctor-performance', [DoctorPerformanceReportController::class, 'index'])
+        ->name('reports.doctor-performance')
+        ->middleware('permission:view_doctor_performance_report|view_own_doctor_performance_report');
 
     // Sprint 61.0 — Patient Data Completeness Audit & RM Gap Review (read-only).
     // Gated to RME report viewers (Owner) OR patient managers (FO/Admin); doctors
