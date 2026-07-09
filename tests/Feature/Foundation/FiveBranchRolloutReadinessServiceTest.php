@@ -56,14 +56,16 @@ it('marks branch readiness GO when the target of five RME-enabled branches exist
         ->and($branch['details']['rme_enabled_active_branches'])->toBe(5);
 });
 
-it('computes per-stage readiness against the branch target', function () {
+it('computes per-stage branch-count readiness against the branch target', function () {
     Branch::factory()->count(3)->create(['is_rme_enabled' => true]);
 
     $stages = collect(rolloutService()->collect()['stages'])->keyBy('key');
 
-    expect($stages['stage_1']['status'])->toBe('GO')   // needs 1, have 3
-        ->and($stages['stage_2']['status'])->toBe('GO') // needs 3, have 3
-        ->and($stages['stage_3']['status'])->toBe('WATCH'); // needs 5, have 3
+    // ROLL-5-1A: the branch-count gate is now surfaced as branch_status; the
+    // overall stage status also folds in base readiness (restore drill etc.).
+    expect($stages['stage_1']['branch_status'])->toBe('GO')   // needs 1, have 3
+        ->and($stages['stage_2']['branch_status'])->toBe('GO') // needs 3, have 3
+        ->and($stages['stage_3']['branch_status'])->toBe('WATCH'); // needs 5, have 3
 });
 
 it('focuses branch readiness on a requested stage target', function () {

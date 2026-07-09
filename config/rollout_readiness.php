@@ -148,6 +148,42 @@ return [
 
     /*
     |----------------------------------------------------------------------
+    | ROLL-5-1A — Staging restore-drill evidence contract.
+    |----------------------------------------------------------------------
+    | Canonical, versioned JSON evidence proving a SAFE staging/disposable
+    | restore drill was performed. Read-only + schema-validated by
+    | RestoreDrillEvidenceService. NO migration — evidence lives on disk.
+    |
+    | Safety invariants (enforced by the parser):
+    |  - `production_overwrite` MUST be exactly false, else UNSAFE FAIL.
+    |  - `environment` MUST NOT be a production-like environment.
+    |  - Evidence must never contain secrets / KTP / NIK / raw dumps.
+    |  - Missing evidence => WATCH (never a fake GO). Unsafe => FAIL.
+    */
+    'restore_drill' => [
+        'schema_version' => 1,
+        // Where the drill script writes evidence, and the CLI --create-template.
+        'canonical_evidence_path' => 'storage/app/readiness/restore-drills/latest.json',
+        // Verification sub-checks a valid drill records (each GO|WATCH|FAIL|UNKNOWN).
+        'verification_keys' => [
+            'db_connectivity',
+            'migration_consistency',
+            'app_boot',
+            'health_routes',
+            'sample_readonly_queries',
+        ],
+        // A drill whose environment is one of these is an UNSAFE FAIL — a drill
+        // must never target production/pilot/live.
+        'forbidden_environments' => ['production', 'pilot', 'live', 'prod'],
+        // A safe disposable/staging restore target name MUST contain one of these.
+        'safe_target_markers' => ['restore_drill', 'staging', 'test', 'rehearsal', 'disposable', 'scratch'],
+        // Execution-ready disposable-DB drill helper (presence readiness only).
+        'drill_script' => 'scripts/rollout-restore-drill.sh',
+        'evidence_template_doc' => 'docs/evidence/rollout/restore-drill-template.md',
+    ],
+
+    /*
+    |----------------------------------------------------------------------
     | Required commands operators run before each rollout stage (documented
     | in the runbook; ROLL-5 references them, never re-implements them).
     |----------------------------------------------------------------------
@@ -178,11 +214,12 @@ return [
     'paths' => [
         'backup_directory' => 'storage/app/backups/deploy',
         'evidence_directory' => 'storage/release-evidence/latest',
-        // ENT-12 restore rehearsal + ROLL-5 restore-drill evidence locations.
+        // ROLL-5-1A canonical restore-drill evidence locations (schema-validated
+        // by RestoreDrillEvidenceService). The ENT-12 DR `restore-rehearsal.json`
+        // is a DIFFERENT schema and is deliberately NOT parsed here.
         'restore_drill_evidence' => [
-            'storage/app/rollout/restore-drill.json',
-            'storage/app/load-test/restore-rehearsal.json',
-            'storage/release-evidence/latest/restore-rehearsal.json',
+            'storage/app/readiness/restore-drills/latest.json',
+            'storage/release-evidence/latest/restore-drill.json',
         ],
         'restore_drill_runbook' => 'docs/runbooks/roll-5-backup-restore-drill-runbook.md',
         'controlled_rollout_runbook' => 'docs/runbooks/roll-5-controlled-rollout-runbook.md',

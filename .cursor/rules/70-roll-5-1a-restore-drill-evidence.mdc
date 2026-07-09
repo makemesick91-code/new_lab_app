@@ -1,0 +1,37 @@
+---
+description: ROLL-5-1A staging restore-drill evidence & Stage-1 GO clearance rules
+globs:
+  - "config/rollout_readiness.php"
+  - "app/Services/Foundation/RestoreDrillEvidenceService.php"
+  - "app/Services/Foundation/FiveBranchRolloutReadinessService.php"
+  - "app/Console/Commands/RolloutRestoreDrillEvidenceCommand.php"
+  - "scripts/rollout-restore-drill.sh"
+  - "docs/runbooks/roll-5-backup-restore-drill-runbook.md"
+  - "docs/evidence/rollout/**"
+alwaysApply: false
+---
+
+# ROLL-5-1A — Staging Restore-Drill Evidence & Stage-1 GO Clearance
+
+- Restore-drill evidence must be **GO** before declaring **Stage-1** GO.
+- A restore drill **NEVER** targets the production DB: `production_overwrite`
+  must be exactly `false`; the target is a disposable/staging DB (≠ production,
+  name must contain `restore_drill`/`staging`/`test`). Never `migrate:fresh`,
+  `db:wipe`, `schema:drop`, `migrate:reset`; never over production.
+- Evidence is sanitized — no secrets, `.env`/environment values, tokens, DB
+  password, KTP/NIK, raw patient rows, or raw dumps. The parser scans the raw
+  payload and **FAILs** on a leaked secret/PII pattern; it never echoes the value.
+- **Missing** evidence ⇒ **WATCH** (never a fake GO). **Unsafe** evidence
+  (production overwrite, failed restore, invalid schema, leaked secret/PII) ⇒
+  **FAIL**. Stale/incomplete ⇒ WATCH.
+- `RestoreDrillEvidenceService` is **read-only** and never restores.
+- `php artisan rollout:restore-drill-evidence` **validates** evidence only. It
+  never performs a destructive restore. `--create-template` writes a NON-GO
+  placeholder. The disposable drill is the separate `scripts/rollout-restore-drill.sh`.
+- **Stage-1 readiness is independent of Stage-3's 5-branch count.** Each stage's
+  status = worst(shared base readiness incl. restore drill, that stage's
+  branch-count gate). **Stage-3 stays WATCH** until 5 branches are RME-enabled;
+  never hide that.
+- The readiness UI is read-only and **cannot** perform a restore.
+- Do not weaken MON-1, ROLL-5-1, CICD-CTRL-1, NSF-9/10/R011/R012, security, or
+  deploy gates. Reuse them — do not re-implement.

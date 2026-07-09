@@ -52,6 +52,7 @@ class FiveBranchRolloutReadinessService
         private readonly BranchService $branches,
         private readonly HealthCheckService $health,
         private readonly SensitiveValueMasker $masker,
+        private readonly RestoreDrillEvidenceService $restoreDrill,
     ) {}
 
     /**
@@ -99,7 +100,7 @@ class FiveBranchRolloutReadinessService
             'summary' => $this->summaryCounts($signals),
             'reasons' => $this->reasons($signals),
             'categories' => $this->categorySummary($signals),
-            'stages' => $this->stageReadiness(),
+            'stages' => $this->stageReadiness($signals),
             'monitoring_decision' => (string) ($mon['decision'] ?? self::UNKNOWN),
             'signals' => $signals,
         ];
@@ -401,49 +402,22 @@ class FiveBranchRolloutReadinessService
     /**
      * Restore-drill evidence — WATCH until a drill has been performed.
      */
+    /**
+     * Restore-drill evidence — ROLL-5-1A: schema-validated, production-safety
+     * checked, secret/PII-scanned via RestoreDrillEvidenceService. Missing =>
+     * WATCH; unsafe (production overwrite / failed / invalid / leaked) => FAIL.
+     */
     private function restoreDrillSignal(): array
     {
         return $this->guard('restore_drill_evidence', 'restore_drill_evidence', 'Bukti Uji Restore', function () {
-            $candidates = (array) config('rollout_readiness.paths.restore_drill_evidence', []);
-            $found = null;
-            foreach ($candidates as $rel) {
-                $abs = base_path($rel);
-                if (is_file($abs) && filesize($abs) > 0) {
-                    $found = $abs;
-                    break;
-                }
-            }
-
-            $runbook = base_path((string) config('rollout_readiness.paths.restore_drill_runbook'));
-            $runbookPresent = is_file($runbook);
-
-            if ($found === null) {
-                return [
-                    'status' => self::WATCH,
-                    'unsafe' => false,
-                    'summary' => $runbookPresent
-                        ? 'belum ada bukti uji restore — jalankan drill sesuai runbook'
-                        : 'belum ada bukti uji restore dan runbook belum tersedia',
-                    'remediation' => 'Lakukan restore drill ke DB staging/test (bukan produksi) sesuai `'.config('rollout_readiness.paths.restore_drill_runbook').'`.',
-                    'details' => ['evidence_present' => false, 'runbook_present' => $runbookPresent],
-                ];
-            }
-
-            $ageHours = (time() - (int) filemtime($found)) / 3600;
-            $staleHours = (float) config('rollout_readiness.thresholds.restore_drill_stale_hours', 720);
-            $stale = $ageHours > $staleHours;
+            $result = $this->restoreDrill->evaluate();
 
             return [
-                'status' => $stale ? self::WATCH : self::GO,
-                'unsafe' => false,
-                'summary' => sprintf('bukti uji restore ada (%.1f jam lalu)%s', $ageHours, $stale ? ', sudah kedaluwarsa' : ''),
-                'remediation' => $stale ? 'Ulangi restore drill; bukti terakhir sudah lama.' : null,
-                'details' => [
-                    'evidence_present' => true,
-                    'evidence_file' => basename($found),
-                    'evidence_age_hours' => round($ageHours, 1),
-                    'runbook_present' => $runbookPresent,
-                ],
+                'status' => (string) ($result['status'] ?? self::WATCH),
+                'unsafe' => (bool) ($result['unsafe'] ?? false),
+                'summary' => (string) ($result['summary'] ?? ''),
+                'remediation' => $result['remediation'] ?? null,
+                'details' => (array) ($result['details'] ?? ['evidence_present' => false]),
             ];
         });
     }
@@ -628,7 +602,19 @@ class FiveBranchRolloutReadinessService
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function stageReadiness(): array
+    /**
+     * Per-stage readiness. ROLL-5-1A: each stage's status combines the shared
+     * base readiness (all non-branch-count signals — app health, roles, RME,
+     * cashier, inventory, backup, RESTORE DRILL, monitoring, audit, deploy) with
+     * that stage's own branch-count gate. This makes Stage-1 able to clear to GO
+     * INDEPENDENTLY of Stage-3's 5-branch count: once restore evidence and the
+     * base categories are GO and one branch is RME-enabled, Stage-1 is GO while
+     * Stage-3 stays WATCH until 5 branches are RME-enabled.
+     *
+     * @param  array<int, array<string, mixed>>  $signals
+     * @return array<int, array<string, mixed>>
+     */
+    private function stageReadiness(array $signals): array
     {
         $out = [];
 
@@ -638,26 +624,70 @@ class FiveBranchRolloutReadinessService
             $rmeCount = null;
         }
 
+        $baseStatus = $this->baseReadinessStatus($signals);
+
         foreach ((array) config('rollout_readiness.stages', []) as $stage) {
             $target = (int) ($stage['branch_target'] ?? 0);
-            if ($rmeCount === null) {
-                $status = self::UNKNOWN;
-            } elseif ($rmeCount >= $target) {
-                $status = self::GO;
-            } else {
-                $status = self::WATCH;
-            }
+            $branchStatus = $this->branchCountStatus($rmeCount, $target);
 
             $out[] = [
                 'key' => $stage['key'] ?? null,
                 'label' => $stage['label'] ?? null,
                 'branch_target' => $target,
                 'available_branches' => $rmeCount,
-                'status' => $status,
+                'branch_status' => $branchStatus,
+                'base_status' => $baseStatus,
+                'status' => $this->decideStage($baseStatus, $branchStatus),
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * Branch-count gate for a stage. Fewer branches is a WATCH, never a FAIL.
+     */
+    private function branchCountStatus(?int $rmeCount, int $target): string
+    {
+        if ($rmeCount === null) {
+            return self::UNKNOWN;
+        }
+
+        return $rmeCount >= max(1, $target) ? self::GO : self::WATCH;
+    }
+
+    /**
+     * Shared base readiness = worst status across all signals EXCEPT the
+     * stage-specific branch-count signal. UNKNOWN signals that were simply not
+     * executed on this run (capacity smoke / cached audits) are neutral and do
+     * not drag the base down — only a real GO/WATCH/FAIL contributes.
+     *
+     * @param  array<int, array<string, mixed>>  $signals
+     */
+    private function baseReadinessStatus(array $signals): string
+    {
+        $statuses = [];
+        foreach ($signals as $signal) {
+            if (($signal['key'] ?? null) === 'branch_data_readiness') {
+                continue; // branch count is applied per-stage, not to the base
+            }
+            $status = (string) ($signal['status'] ?? self::UNKNOWN);
+            if ($status === self::UNKNOWN) {
+                continue; // not-evaluated is neutral for stage gating
+            }
+            $statuses[] = $status;
+        }
+
+        return $this->worstStatus($statuses);
+    }
+
+    /**
+     * Pure stage decision: worst of the base readiness and the stage's own
+     * branch-count gate. Unit-testable and independent per stage.
+     */
+    public function decideStage(string $baseStatus, string $branchStatus): string
+    {
+        return $this->worstStatus([$baseStatus, $branchStatus]);
     }
 
     // ------------------------------------------------------------------
