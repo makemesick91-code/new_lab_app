@@ -13,6 +13,13 @@
                 <x-ui.badge :tone="$isFinal ? 'success' : 'warning'">
                     {{ $isFinal ? 'Final' : 'Draft' }}
                 </x-ui.badge>
+
+                {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
+                     top of the page, matching the Odontogram page placement/style so
+                     the doctor reaches the handwriting area faster. --}}
+                <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                    &larr; Kembali ke Kunjungan
+                </x-ui.button>
             </x-slot:actions>
         </x-ui.page-header>
 
@@ -38,11 +45,10 @@
             </x-ui.alert>
         @endif
 
-        {{-- Sprint 64.0 — patient RM workspace sheet navigation (swipe / tabs /
-             prev-next / Tambah Lembar RM). One pasien = one buku RM. --}}
-        @include('rme.visits.partials.rm-sheet-nav', [
-            'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
-        ])
+        {{-- FIX-PRE-68-45 Scope A — "Buku RM Pasien" (sheet nav) and "Riwayat
+             Pencatatan" were relocated BELOW the handwriting canvas so the doctor
+             lands directly on the handwritten RME area with less scrolling. See the
+             relocated blocks after the RME Tulisan Tangan card. --}}
 
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
@@ -112,38 +118,6 @@
                     <div>
                         <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Catatan Layanan Awal</dt>
                         <dd class="mt-1 text-sm text-gray-900 whitespace-pre-wrap">{{ $clinicVisit->initial_service_note }}</dd>
-                    </div>
-                @endif
-            </dl>
-        </x-ui.card>
-
-        {{-- Sprint 59.2 — "Riwayat Kunjungan Pasien" removed from the Medical
-             Record page to declutter the doctor handwriting workflow and avoid
-             loading visit-history data that is no longer rendered here. The
-             history remains available on the clinic visit detail page. --}}
-
-        <x-ui.card title="Riwayat Pencatatan">
-            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
-                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                </div>
-                @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
-                    </div>
-                    <div>
-                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
                     </div>
                 @endif
             </dl>
@@ -943,6 +917,41 @@
             </script>
         </x-ui.card>
 
+        {{-- FIX-PRE-68-45 Scope A — relocated "Buku RM Pasien" sheet navigation
+             (Sprint 64.0). Moved below the handwriting canvas so the doctor sees
+             the handwritten RME first; sheet switching still works as before. --}}
+        @include('rme.visits.partials.rm-sheet-nav', [
+            'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
+        ])
+
+        {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card. --}}
+        <x-ui.card title="Riwayat Pencatatan">
+            <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dicatat oleh</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->recordedBy?->name ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Dibuat pada</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->created_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                </div>
+                <div>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Diperbarui pada</dt>
+                    <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->updated_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                </div>
+                @if ($medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL)
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi pada</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ optional($medicalRecord->finalized_at)->format('d/m/Y H:i') ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Difinalisasi oleh</dt>
+                        <dd class="mt-1 text-sm text-gray-900">{{ $medicalRecord->finalizedBy?->name ?? '—' }}</dd>
+                    </div>
+                @endif
+            </dl>
+        </x-ui.card>
+
         {{-- Finalize form: draft only, manager only. Presentation only — the
              $isDraft / $canFinalize / $hasHandwriting gate (handwriting PNG
              required before finalize) is unchanged. --}}
@@ -967,9 +976,5 @@
                 Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
             </x-ui.alert>
         @endif
-
-        <div>
-            <a href="{{ route('rme.visits.show', $clinicVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
-        </div>
     </div>
 </x-settings-shell>

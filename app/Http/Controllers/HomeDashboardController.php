@@ -58,6 +58,8 @@ class HomeDashboardController extends Controller
                 'payment_trend' => $this->ownerKpis->dailyPaymentTrend($kpiBranchId, $period['from'], $period['to']),
                 'top_unpaid' => $this->ownerKpis->topUnpaidReceivables($kpiBranchId),
                 'drilldowns' => $this->ownerKpis->drilldownLinks($user, $period['from'], $period['to']),
+                // FIX-PRE-68-45 Scope B — permission-gated module/report shortcuts.
+                'module_shortcuts' => $this->ownerKpis->moduleShortcuts($user),
             ];
         }
 
