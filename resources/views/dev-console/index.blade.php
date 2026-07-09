@@ -22,6 +22,11 @@
             <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">ENT-7 — Enterprise Foundation</p>
             <h2 class="mt-1 text-xl font-semibold text-gray-900">Developer Assistance Console</h2>
             <p class="mt-1 text-sm text-gray-500">Konsol diagnostik read-only. Semua akses diaudit; PII &amp; rahasia dimasking otomatis.</p>
+            @if (Route::has('foundation.monitoring.index'))
+                <a href="{{ route('foundation.monitoring.index') }}" class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-brand-600 hover:text-brand-800">
+                    → Monitoring Fondasi (MON-1): keputusan konsolidasi GO/WATCH/FAIL/UNKNOWN
+                </a>
+            @endif
         </div>
 
         {{-- Runtime health --}}
