@@ -123,6 +123,10 @@ class PermissionSeeder extends Seeder
         // Sprint 23 Phase 23.5 — Separated RME report access
         'view_rme_patient_reports',
         'view_rme_payment_reports',
+        // FIX-PRE-68-45 Scope C — Doctor Performance / Income report. Executive
+        // tier sees all doctors; own tier is a linked doctor scoped to self.
+        'view_doctor_performance_report',
+        'view_own_doctor_performance_report',
         // Sprint 23 Phase 23.7 — Master Data Cabang (RME + Inventory branches)
         'view_branch_master_data',
         'manage_branch_master_data',

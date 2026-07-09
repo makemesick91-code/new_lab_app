@@ -45,6 +45,8 @@ class InventoryReportController extends Controller
             'selectedBranchId' => $selectedBranchId,
             'selectedBranch' => $selectedBranch,
             'filterOptions' => $this->reports->getReportFilterOptions($filters, $branchOptions),
+            // FIX-PRE-68-45 Scope F — per-vendor spend summary (procurement truth).
+            'supplierSpend' => $this->reports->supplierSpendSummary($selectedBranchId),
         ];
 
         match ($activeTab) {

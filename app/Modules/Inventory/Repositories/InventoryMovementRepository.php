@@ -144,6 +144,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
             ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->select([
                 'trx_inventory_movements.branch_id',
                 'mst_branches.name as branch_name',
@@ -224,6 +225,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
             ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->select([
                 'trx_inventory_movements.branch_id',
                 'mst_branches.name as branch_name',
@@ -290,6 +292,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->whereDate('trx_inventory_movements.movement_date', '<=', $dateTo)
             ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->when($filters['movement_type'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.movement_type', $v))
             ->groupBy([
                 'trx_inventory_movements.branch_id',
@@ -309,6 +312,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->whereDate('trx_inventory_movements.movement_date', '<', $dateFrom)
             ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->groupBy([
                 'trx_inventory_movements.branch_id',
                 'trx_inventory_movements.product_id',
@@ -372,6 +376,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->when($filters['product_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.product_id', $v))
             ->when($filters['category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->select([
                 'trx_inventory_movements.branch_id',
                 'mst_branches.name as branch_name',
@@ -795,6 +800,7 @@ class InventoryMovementRepository implements InventoryMovementRepositoryInterfac
             ->when($filters['date_from'] ?? null, fn ($q, $v) => $q->whereDate('trx_inventory_movements.movement_date', '>=', $v))
             ->when($filters['date_to'] ?? null, fn ($q, $v) => $q->whereDate('trx_inventory_movements.movement_date', '<=', $v))
             ->when($filters['inventory_location_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.inventory_location_id', $v))
+            ->when($filters['supplier_id'] ?? null, fn ($q, $v) => $q->where('trx_inventory_movements.supplier_id', $v))
             ->when($filters['product_category_id'] ?? null, fn ($q, $v) => $q->where('inv_products.product_category_id', $v))
             ->groupByRaw($monthExpression)
             ->orderBy('month')

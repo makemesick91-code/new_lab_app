@@ -228,6 +228,10 @@
                             <a href="{{ route('rme.reports.payments') }}"
                                class="menu-subitem {{ request()->routeIs('rme.reports.payments') ? $linkActive : $linkIdle }}">Laporan Pembayaran RME</a>
                         @endcan
+                        @canany(['view_doctor_performance_report', 'view_own_doctor_performance_report'])
+                            <a href="{{ route('rme.reports.doctor-performance') }}"
+                               class="menu-subitem {{ request()->routeIs('rme.reports.doctor-performance') ? $linkActive : $linkIdle }}">Kinerja &amp; Pendapatan Dokter</a>
+                        @endcanany
                         @canany(['view_rme_patient_reports', 'manage patients'])
                             @unless($user?->hasRole('Admin Klinik'))
                                 <a href="{{ route('rme.patients.audit') }}"
@@ -253,6 +257,12 @@
                             <a href="{{ route('rme.reports.payments') }}"
                                class="menu-item {{ request()->routeIs('rme.reports.payments') ? 'menu-item-active' : 'menu-item-inactive' }}">
                                 <span>Laporan Pembayaran RME</span>
+                            </a>
+                        @endcan
+                        @can('view_doctor_performance_report')
+                            <a href="{{ route('rme.reports.doctor-performance') }}"
+                               class="menu-item {{ request()->routeIs('rme.reports.doctor-performance') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                                <span>Kinerja &amp; Pendapatan Dokter</span>
                             </a>
                         @endcan
                     </div>
