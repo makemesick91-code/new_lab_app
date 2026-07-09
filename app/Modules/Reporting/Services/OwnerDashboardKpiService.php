@@ -347,6 +347,69 @@ class OwnerDashboardKpiService
     }
 
     /**
+     * FIX-PRE-68-45 Scope B — module/report-category shortcuts shown at the top of
+     * the Owner dashboard. Each shortcut is permission-gated and route-existence
+     * checked, so a user only ever sees the reports they are already authorised to
+     * open. This never widens visibility: clicking a shortcut lands on the target
+     * report, whose own branch scope + policy still apply (no cross-branch leak).
+     *
+     * @return array<int, array{key: string, label: string, description: string, href: string}>
+     */
+    public function moduleShortcuts(User $user): array
+    {
+        $shortcuts = [];
+
+        // Owner summary — the current dashboard context. Always available to any
+        // user who can reach this dashboard.
+        if (Route::has('dashboard')) {
+            $shortcuts[] = [
+                'key' => 'owner_summary',
+                'label' => 'Ringkasan Owner',
+                'description' => 'Dashboard KPI eksekutif',
+                'href' => route('dashboard'),
+            ];
+        }
+
+        if ($user->can('view_rme_patient_reports') && Route::has('rme.reports.patients')) {
+            $shortcuts[] = [
+                'key' => 'rme_patients',
+                'label' => 'Laporan Pasien RME',
+                'description' => 'Kunjungan & pasien RME',
+                'href' => route('rme.reports.patients'),
+            ];
+        }
+
+        if ($user->can('view_rme_payment_reports') && Route::has('rme.reports.payments')) {
+            $shortcuts[] = [
+                'key' => 'rme_payments',
+                'label' => 'Laporan Pembayaran RME',
+                'description' => 'Pembayaran & pendapatan',
+                'href' => route('rme.reports.payments'),
+            ];
+        }
+
+        if ($user->can('manage_rme_billing') && Route::has('rme.cashier.receivables')) {
+            $shortcuts[] = [
+                'key' => 'receivables',
+                'label' => 'Piutang Pasien',
+                'description' => 'Tagihan belum lunas',
+                'href' => route('rme.cashier.receivables'),
+            ];
+        }
+
+        if ($user->canAny(['view_inventory', 'manage_inventory']) && Route::has('inventory.reports.index')) {
+            $shortcuts[] = [
+                'key' => 'inventory',
+                'label' => 'Laporan Inventory',
+                'description' => 'Stok & nilai persediaan',
+                'href' => route('inventory.reports.index'),
+            ];
+        }
+
+        return $shortcuts;
+    }
+
+    /**
      * Cross-branch inventory aggregate. Degrades to a safe empty state on any
      * failure so the dashboard never breaks on inventory wiring issues.
      *

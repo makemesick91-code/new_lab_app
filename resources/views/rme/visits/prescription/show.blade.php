@@ -45,6 +45,11 @@
                 </p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
+                {{-- FIX-PRE-68-45 Scope D — real "Kembali ke Kunjungan" button at the
+                     top of the page, matching the Odontogram page placement/style. --}}
+                <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                    &larr; Kembali ke Kunjungan
+                </x-ui.button>
                 @include('rme.visits.partials.visit-nav-arrows', [
                     'prev' => $adjacentVisits['prev'] ?? null,
                     'next' => $adjacentVisits['next'] ?? null,
@@ -188,7 +193,13 @@
                                     style="max-width:100%;height:auto;"></canvas>
                             <input type="hidden" name="doctor_signature_canvas_data" id="signature-canvas-data">
                             @error('doctor_signature_canvas_data')<p class="mt-1 text-sm text-rose-600">{{ $message }}</p>@enderror
-                            <p class="mt-2 text-center text-sm text-gray-600">( drg. .................... )</p>
+                            {{-- FIX-PRE-68-45 Scope D — name of the doctor currently
+                                 handling this visit, shown under the signature canvas.
+                                 Canonical source: ClinicVisit->doctor (belongsTo Doctor). --}}
+                            <p class="mt-2 text-center text-sm font-semibold text-gray-900">
+                                {{ $clinicVisit->doctor?->name ?? 'Dokter belum ditentukan' }}
+                            </p>
+                            <p class="text-center text-xs text-gray-500">Dokter yang menangani kunjungan ini</p>
                         </div>
                     </div>
 
@@ -231,6 +242,8 @@
                                     <img src="{{ $sigCanvasSrc }}" alt="Tanda tangan dokter" class="mx-auto max-w-full rounded-lg border border-gray-200 bg-white">
                                 @endif
                                 <p class="mt-2 text-sm text-gray-600">( drg. {{ $formValues['prescribed_by_name'] ?: '....................' }} )</p>
+                                {{-- FIX-PRE-68-45 Scope D — doctor currently handling this visit. --}}
+                                <p class="text-xs text-gray-500">Dokter yang menangani: {{ $clinicVisit->doctor?->name ?? 'Belum ditentukan' }}</p>
                             </div>
                         </div>
                     @else
@@ -276,10 +289,6 @@
                 </div>
             </x-ui.card>
         @endif
-
-        <div>
-            <a href="{{ route('rme.visits.show', $clinicVisit) }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke detail kunjungan</a>
-        </div>
     </div>
 
     @if ($editMode && $canManage)

@@ -14,6 +14,7 @@
     $paymentTrend = $ownerKpi['payment_trend'] ?? [];
     $topUnpaid = $ownerKpi['top_unpaid'] ?? [];
     $links = $ownerKpi['drilldowns'] ?? [];
+    $moduleShortcuts = $ownerKpi['module_shortcuts'] ?? [];
     $selectedBranchId = $ownerKpi['selected_branch_id'] ?? null;
     $activeBranches = $ownerRmeLabActiveBranches ?? collect();
     $currentRange = $period['range'] ?? 'month';
@@ -116,6 +117,25 @@
             <x-ui.input type="date" label="Sampai" name="date_to" id="owner-kpi-to" :value="optional($period['to'] ?? null)->toDateString()" />
             <x-ui.button type="submit" variant="primary">Terapkan rentang</x-ui.button>
         </form>
+
+        {{-- FIX-PRE-68-45 Scope B — module/report-category shortcuts. Each shortcut
+             is server-side permission-gated (OwnerDashboardKpiService::moduleShortcuts);
+             a user only sees reports they may already open, and the target report's
+             own branch scope still applies (no cross-branch leak from here). --}}
+        @if (count($moduleShortcuts))
+            <div class="mt-4 border-t border-hairline pt-4">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-soft">Pintasan Laporan Modul</p>
+                <div class="flex flex-wrap gap-2">
+                    @foreach ($moduleShortcuts as $shortcut)
+                        <a href="{{ $shortcut['href'] }}"
+                           class="group flex flex-col rounded-lg border border-hairline bg-surface px-3 py-2 transition-colors hover:border-brand-500 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+                            <span class="text-sm font-semibold text-navy group-hover:text-brand-700">{{ $shortcut['label'] }}</span>
+                            <span class="text-xs text-ink-soft">{{ $shortcut['description'] }}</span>
+                        </a>
+                    @endforeach
+                </div>
+            </div>
+        @endif
     </x-ui.card>
 
     @unless ($hasAnyData)
@@ -142,15 +162,37 @@
     </div>
 
     {{-- Trends --}}
+    {{-- FIX-PRE-68-45 Scope B — activated visit/payment trend charts. Real
+         aggregated data comes from OwnerDashboardKpiService::dailyVisitTrend /
+         dailyPaymentTrend (branch-scoped). Rendered server-side with the app's
+         Tailwind stack (no React/Vue, no charting dependency): peak + total
+         captions, per-bar hover value labels, and a first/last date axis. --}}
+    @php
+        $visitTrendTotal = collect($visitTrend)->sum('count');
+        $paymentTrendTotal = collect($paymentTrend)->sum('count');
+        $visitFirstLabel = collect($visitTrend)->first()['label'] ?? '';
+        $visitLastLabel = collect($visitTrend)->last()['label'] ?? '';
+        $paymentFirstLabel = collect($paymentTrend)->first()['label'] ?? '';
+        $paymentLastLabel = collect($paymentTrend)->last()['label'] ?? '';
+    @endphp
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <x-ui.card title="Tren Kunjungan">
             @if (count($visitTrend))
-                <div class="mt-2 flex items-end gap-1" style="height: 120px;">
+                <p class="mb-2 text-xs text-ink-soft">
+                    Puncak harian <span class="font-semibold text-navy">{{ format_number_id($visitTrendMax) }}</span>
+                    &middot; Total periode <span class="font-semibold text-navy">{{ format_number_id($visitTrendTotal) }}</span> kunjungan
+                </p>
+                <div class="flex items-end gap-1" style="height: 140px;">
                     @foreach ($visitTrend as $point)
-                        <div class="flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_number_id($point['count']) }}">
-                            <div class="w-full rounded-t bg-brand-500" style="height: {{ max(2, (int) round(($point['count'] / $visitTrendMax) * 100)) }}%"></div>
+                        <div class="group relative flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_number_id($point['count']) }}">
+                            <span class="pointer-events-none absolute -top-5 z-10 hidden whitespace-nowrap rounded bg-navy px-1.5 py-0.5 text-[10px] font-semibold text-white group-hover:block">{{ format_number_id($point['count']) }}</span>
+                            <div class="w-full rounded-t bg-brand-500 transition-colors group-hover:bg-brand-600" style="height: {{ max(2, (int) round(($point['count'] / $visitTrendMax) * 100)) }}%"></div>
                         </div>
                     @endforeach
+                </div>
+                <div class="mt-1 flex justify-between text-[10px] text-ink-muted">
+                    <span>{{ $visitFirstLabel }}</span>
+                    <span>{{ $visitLastLabel }}</span>
                 </div>
             @else
                 <p class="mt-2 text-sm text-ink-soft">Belum ada data pada periode ini.</p>
@@ -159,12 +201,21 @@
 
         <x-ui.card title="Tren Pembayaran">
             @if (count($paymentTrend))
-                <div class="mt-2 flex items-end gap-1" style="height: 120px;">
+                <p class="mb-2 text-xs text-ink-soft">
+                    Puncak harian <span class="font-semibold text-navy">{{ format_currency_id($paymentTrendMax) }}</span>
+                    &middot; Total periode <span class="font-semibold text-navy">{{ format_currency_id($paymentTrendTotal) }}</span>
+                </p>
+                <div class="flex items-end gap-1" style="height: 140px;">
                     @foreach ($paymentTrend as $point)
-                        <div class="flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_currency_id($point['count']) }}">
-                            <div class="w-full rounded-t bg-success" style="height: {{ max(2, (int) round(($point['count'] / $paymentTrendMax) * 100)) }}%"></div>
+                        <div class="group relative flex flex-1 flex-col items-center justify-end" title="{{ $point['label'] }}: {{ format_currency_id($point['count']) }}">
+                            <span class="pointer-events-none absolute -top-5 z-10 hidden whitespace-nowrap rounded bg-navy px-1.5 py-0.5 text-[10px] font-semibold text-white group-hover:block">{{ format_currency_id($point['count']) }}</span>
+                            <div class="w-full rounded-t bg-success transition-colors group-hover:opacity-80" style="height: {{ max(2, (int) round(($point['count'] / $paymentTrendMax) * 100)) }}%"></div>
                         </div>
                     @endforeach
+                </div>
+                <div class="mt-1 flex justify-between text-[10px] text-ink-muted">
+                    <span>{{ $paymentFirstLabel }}</span>
+                    <span>{{ $paymentLastLabel }}</span>
                 </div>
             @else
                 <p class="mt-2 text-sm text-ink-soft">Belum ada data pada periode ini.</p>
