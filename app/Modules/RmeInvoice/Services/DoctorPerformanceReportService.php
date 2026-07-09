@@ -15,6 +15,9 @@ use Illuminate\Contracts\Database\Query\Builder as BuilderContract;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * FIX-PRE-68-45 Scope C — Doctor Performance / Income report.
@@ -26,16 +29,22 @@ use Illuminate\Support\Collection;
  * allocation is needed). Lab invoices/payments are never touched.
  *
  * Visibility tiers (server-side, IDOR-safe):
- *   - `all`  : `view_doctor_performance_report` — every doctor, all RME branches,
- *              may filter by branch + doctor.
- *   - `own`  : `view_own_doctor_performance_report` + the user is a linked doctor
- *              (`mst_doctors.user_id`) — forced to their OWN doctor_id; any
- *              requested doctor_id is ignored.
- *   - denied : anything else → the controller returns 403.
+ *   - `all`      : `view_doctor_performance_report` — every doctor, all RME
+ *                  branches, may filter by branch + doctor.
+ *   - `own`      : `view_own_doctor_performance_report` + the user is a linked
+ *                  doctor (`mst_doctors.user_id`) — forced to their OWN
+ *                  doctor_id; any requested doctor_id is ignored.
+ *   - `unlinked` : has `view_own_doctor_performance_report` but is NOT linked to
+ *                  a doctor record — the controller returns a clear 403 telling
+ *                  the user to ask an admin to link their account.
+ *   - `denied`   : no doctor-report permission at all → the controller returns a
+ *                  plain 403.
  *
- * (The branch-scoped "Kepala Cabang" tier is introduced in Phase 3 alongside the
- *  Kepala Cabang role + user→branch link; it is intentionally not built here to
- *  avoid orphan infrastructure.)
+ * HOTFIX-FIX-PRE-68-45-DOCTOR-PERFORMANCE-403: the `unlinked` tier was split out
+ * of `denied` so an unlinked doctor account gets a diagnosable message instead of
+ * a bare 403. Kepala Cabang has NO doctor-report permission in this hotfix, so it
+ * always resolves to `denied` (branch-scoped access is deferred to a future
+ * sprint with explicit branch isolation + tests).
  *
  * Never renders KTP/NIK/scanned docs/raw medical notes.
  */
@@ -49,10 +58,11 @@ class DoctorPerformanceReportService
      * Resolve the caller's access tier. IDOR boundary: a doctor's own tier always
      * forces their own doctor_id regardless of the requested value.
      *
-     * @return array{mode: 'all'|'own'|'denied', forced_doctor_id: int|null, can_pick_doctor: bool, can_pick_branch: bool, own_doctor: Doctor|null}
+     * @return array{mode: 'all'|'own'|'unlinked'|'denied', forced_doctor_id: int|null, can_pick_doctor: bool, can_pick_branch: bool, own_doctor: Doctor|null}
      */
     public function resolveAccess(User $user): array
     {
+        // Executive tier — sees every doctor across all RME branches.
         if ($user->can('view_doctor_performance_report')) {
             return [
                 'mode' => 'all',
@@ -63,15 +73,29 @@ class DoctorPerformanceReportService
             ];
         }
 
-        $ownDoctor = Doctor::query()->where('user_id', $user->id)->first();
+        // Own-doctor tier requires BOTH the permission AND a linked doctor record.
+        if ($user->can('view_own_doctor_performance_report')) {
+            $ownDoctor = Doctor::query()->where('user_id', $user->id)->first();
 
-        if ($ownDoctor !== null && $user->can('view_own_doctor_performance_report')) {
+            if ($ownDoctor !== null) {
+                return [
+                    'mode' => 'own',
+                    'forced_doctor_id' => (int) $ownDoctor->id,
+                    'can_pick_doctor' => false,
+                    'can_pick_branch' => false,
+                    'own_doctor' => $ownDoctor,
+                ];
+            }
+
+            // Has the own-permission but no `mst_doctors.user_id` link → the
+            // controller returns a clear, diagnosable 403 (never other doctors'
+            // data). We never auto-link or infer identity from name/email.
             return [
-                'mode' => 'own',
-                'forced_doctor_id' => (int) $ownDoctor->id,
+                'mode' => 'unlinked',
+                'forced_doctor_id' => null,
                 'can_pick_doctor' => false,
                 'can_pick_branch' => false,
-                'own_doctor' => $ownDoctor,
+                'own_doctor' => null,
             ];
         }
 
@@ -82,6 +106,163 @@ class DoctorPerformanceReportService
             'can_pick_branch' => false,
             'own_doctor' => null,
         ];
+    }
+
+    /**
+     * HOTFIX-FIX-PRE-68-45-DOCTOR-PERFORMANCE-403 — read-only access-setup audit.
+     *
+     * Detects the misconfigurations that make a legitimate doctor hit a 403 on
+     * the Doctor Performance report, plus permission leakage to Kepala Cabang.
+     * Privacy-safe: reports user id/name/email only — never KTP/NIK/medical data.
+     * Never mutates data and never auto-links accounts.
+     *
+     * @return array<string, mixed>
+     */
+    public function accessAudit(): array
+    {
+        $execPermission = 'view_doctor_performance_report';
+        $ownPermission = 'view_own_doctor_performance_report';
+
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $permissionsExist = [
+            $execPermission => $this->permissionExists($execPermission),
+            $ownPermission => $this->permissionExists($ownPermission),
+        ];
+
+        // user_ids currently linked to a (non-soft-deleted) doctor record.
+        $linkedUserIds = Doctor::query()
+            ->whereNotNull('user_id')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // 1. Users with the Doctor role but no linked mst_doctors.user_id.
+        $doctorRoleUnlinked = $this->usersInRole('Doctor')
+            ->reject(fn (User $u) => in_array((int) $u->id, $linkedUserIds, true))
+            ->map(fn (User $u) => $this->auditUserRow($u))
+            ->values()
+            ->all();
+
+        // 2. Doctor records without a user_id (cannot resolve an own-tier login).
+        $doctorsWithoutUser = Doctor::query()
+            ->whereNull('user_id')
+            ->get()
+            ->map(fn (Doctor $d) => [
+                'doctor_id' => (int) $d->id,
+                'name' => $d->name,
+                'is_active' => (bool) $d->is_active,
+            ])
+            ->all();
+
+        // 3. Users with the own-report permission but no doctor link — these are
+        //    exactly the accounts that hit the clear "belum terhubung" 403.
+        //    Executive + Super Admin users are excluded (they access another way).
+        $ownPermissionUnlinked = $this->usersWithPermission($ownPermission)
+            ->reject(fn (User $u) => $u->can($execPermission) || $u->hasRole('Super Admin'))
+            ->reject(fn (User $u) => in_array((int) $u->id, $linkedUserIds, true))
+            ->map(fn (User $u) => $this->auditUserRow($u))
+            ->values()
+            ->all();
+
+        // 4. Kepala Cabang permission leakage — user-level (any grant path) and
+        //    role-level. In this hotfix Kepala Cabang must have NEITHER permission.
+        $kepalaCabangLeak = $this->usersInRole('Kepala Cabang')
+            ->filter(fn (User $u) => $u->can($execPermission) || $u->can($ownPermission))
+            ->map(fn (User $u) => $this->auditUserRow($u))
+            ->values()
+            ->all();
+
+        $kepalaRolePermissionLeak = $this->roleHasAnyPermission('Kepala Cabang', [$execPermission, $ownPermission]);
+
+        $anomalies = count($doctorRoleUnlinked)
+            + count($ownPermissionUnlinked)
+            + count($kepalaCabangLeak)
+            + ($kepalaRolePermissionLeak ? 1 : 0)
+            + (in_array(false, $permissionsExist, true) ? 1 : 0);
+
+        return [
+            'generated_at' => Carbon::now()->toIso8601String(),
+            'environment' => app()->environment(),
+            'permissions_exist' => $permissionsExist,
+            'summary' => [
+                'anomalies' => $anomalies,
+                'doctor_role_unlinked' => count($doctorRoleUnlinked),
+                'doctors_without_user' => count($doctorsWithoutUser),
+                'own_permission_unlinked' => count($ownPermissionUnlinked),
+                'kepala_cabang_permission_leak' => count($kepalaCabangLeak),
+                'kepala_cabang_role_permission_leak' => $kepalaRolePermissionLeak,
+                'decision' => $anomalies > 0 ? 'ANOMALY' : 'OK',
+            ],
+            'findings' => [
+                'doctor_role_unlinked' => $doctorRoleUnlinked,
+                'doctors_without_user' => $doctorsWithoutUser,
+                'own_permission_unlinked' => $ownPermissionUnlinked,
+                'kepala_cabang_permission_leak' => $kepalaCabangLeak,
+            ],
+            'privacy' => [
+                'privacy_safe' => true,
+                'renders_ktp_nik' => false,
+            ],
+        ];
+    }
+
+    /**
+     * @return array{user_id: int, name: string|null, email: string|null}
+     */
+    private function auditUserRow(User $user): array
+    {
+        return [
+            'user_id' => (int) $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+        ];
+    }
+
+    private function permissionExists(string $permission): bool
+    {
+        return Permission::query()
+            ->where('name', $permission)
+            ->where('guard_name', 'web')
+            ->exists();
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    private function usersInRole(string $role): Collection
+    {
+        if (! Role::query()->where('name', $role)->where('guard_name', 'web')->exists()) {
+            return collect();
+        }
+
+        return User::query()->role($role)->get();
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    private function usersWithPermission(string $permission): Collection
+    {
+        if (! $this->permissionExists($permission)) {
+            return collect();
+        }
+
+        return User::query()->permission($permission)->get();
+    }
+
+    /**
+     * @param  array<int, string>  $permissions
+     */
+    private function roleHasAnyPermission(string $role, array $permissions): bool
+    {
+        $roleModel = Role::query()->where('name', $role)->where('guard_name', 'web')->first();
+
+        if ($roleModel === null) {
+            return false;
+        }
+
+        return $roleModel->permissions->pluck('name')->intersect($permissions)->isNotEmpty();
     }
 
     /**

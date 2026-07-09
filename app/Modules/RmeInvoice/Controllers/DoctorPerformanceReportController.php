@@ -14,6 +14,10 @@ use Symfony\Component\HttpFoundation\Response;
  * Thin controller: the route permission middleware gates entry; the service
  * resolves the caller's visibility tier and forces a doctor's own scope. A user
  * whose only claim is a doctor tier but who is NOT a linked doctor gets 403.
+ *
+ * HOTFIX-FIX-PRE-68-45-DOCTOR-PERFORMANCE-403: an unlinked doctor account now
+ * gets a clear, diagnosable 403 message instead of a bare 403, and any other
+ * caller without a doctor-report permission still gets a plain 403.
  */
 class DoctorPerformanceReportController extends Controller
 {
@@ -24,6 +28,12 @@ class DoctorPerformanceReportController extends Controller
     public function index(DoctorPerformanceReportRequest $request): View
     {
         $access = $this->service->resolveAccess($request->user());
+
+        abort_if(
+            $access['mode'] === 'unlinked',
+            Response::HTTP_FORBIDDEN,
+            'Akun dokter belum terhubung ke data dokter. Hubungi admin untuk menghubungkan user ke master dokter.',
+        );
 
         abort_if($access['mode'] === 'denied', Response::HTTP_FORBIDDEN);
 
