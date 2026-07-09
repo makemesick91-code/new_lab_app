@@ -20,6 +20,11 @@
             default => 'info',
         };
         $banner = $decisionTone[$decision] ?? $decisionTone['UNKNOWN'];
+
+        $restore = collect($signals)->firstWhere('key', 'restore_drill_evidence') ?? [];
+        $restoreDetails = $restore['details'] ?? [];
+        $stage1 = collect($stages)->firstWhere('key', 'stage_1') ?? [];
+        $laterStages = collect($stages)->filter(fn ($s) => ($s['key'] ?? null) !== 'stage_1' && ($s['status'] ?? 'GO') !== 'GO');
     @endphp
 
     <div class="space-y-6">
@@ -77,6 +82,73 @@
                         </p>
                     </div>
                 @endforeach
+            </div>
+        </x-ui.card>
+
+        {{-- Stage-1 GO clearance --}}
+        <x-ui.card title="Kelayakan Stage-1 (independen dari Stage-3)">
+            <div class="flex flex-wrap items-center gap-3">
+                <x-ui.badge :tone="$statusTone($stage1['status'] ?? 'UNKNOWN')">Stage-1: {{ $stage1['status'] ?? '—' }}</x-ui.badge>
+                <span class="text-sm text-ink-soft">
+                    Kesiapan dasar: <strong>{{ $stage1['base_status'] ?? '—' }}</strong>
+                    &middot; Cabang: <strong>{{ $stage1['branch_status'] ?? '—' }}</strong>
+                    ({{ $stage1['available_branches'] ?? '—' }}/{{ $stage1['branch_target'] ?? 1 }} cabang RME)
+                </span>
+            </div>
+            <p class="mt-2 text-xs text-ink-muted">
+                Stage-1 dapat GO tanpa menunggu target 5 cabang. Setelah bukti uji restore GO dan kategori dasar GO
+                dengan minimal 1 cabang RME aktif, Stage-1 layak dinaikkan sementara Stage-3 tetap WATCH sampai 5 cabang aktif.
+            </p>
+            @if ($laterStages->isNotEmpty())
+                <p class="mt-2 text-xs text-warning-700">
+                    Stage lanjutan masih WATCH:
+                    {{ $laterStages->map(fn ($s) => ($s['label'] ?? $s['key'] ?? '?').' ('.($s['status'] ?? '?').')')->implode(', ') }}
+                    — menunggu jumlah cabang RME aktif memenuhi target.
+                </p>
+            @endif
+        </x-ui.card>
+
+        {{-- Restore-drill evidence --}}
+        <x-ui.card title="Bukti Uji Restore (Staging/Disposable)">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <x-ui.badge :tone="$statusTone($restore['status'] ?? 'UNKNOWN')">{{ $restore['status'] ?? '—' }}</x-ui.badge>
+                <span class="text-xs text-ink-muted">Uji restore hanya ke DB staging/disposable — tidak pernah menimpa produksi.</span>
+            </div>
+            <p class="mt-2 text-sm text-ink-soft">{{ $restore['summary'] ?? 'Tidak ada bukti.' }}</p>
+            <dl class="mt-3 grid gap-x-6 gap-y-1 text-xs text-ink-soft sm:grid-cols-2">
+                <div class="flex justify-between gap-2"><dt class="text-ink-muted">Bukti tersedia</dt><dd>{{ ($restoreDetails['evidence_present'] ?? false) ? 'Ya' : 'Belum' }}</dd></div>
+                @if (! empty($restoreDetails['evidence_file']))
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">File</dt><dd>{{ $restoreDetails['evidence_file'] }}</dd></div>
+                @endif
+                @if (array_key_exists('environment', $restoreDetails))
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Environment</dt><dd>{{ $restoreDetails['environment'] ?: '—' }}</dd></div>
+                @endif
+                @if (array_key_exists('restore_target', $restoreDetails))
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Target restore</dt><dd>{{ $restoreDetails['restore_target'] ?: '—' }}</dd></div>
+                @endif
+                @if (array_key_exists('source_backup_file', $restoreDetails))
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Backup sumber</dt><dd>{{ $restoreDetails['source_backup_file'] ?: '—' }}</dd></div>
+                @endif
+                @if (array_key_exists('production_overwrite', $restoreDetails))
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Overwrite produksi</dt><dd>{{ ($restoreDetails['production_overwrite'] ?? true) ? 'YA (TIDAK AMAN)' : 'false (aman)' }}</dd></div>
+                @endif
+                @if (array_key_exists('age_hours', $restoreDetails) && $restoreDetails['age_hours'] !== null)
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Usia bukti</dt><dd>{{ $restoreDetails['age_hours'] }} jam</dd></div>
+                @endif
+            </dl>
+            @if (! empty($restoreDetails['verification']))
+                <div class="mt-3 flex flex-wrap gap-2">
+                    @foreach ($restoreDetails['verification'] as $vk => $vv)
+                        <x-ui.badge :tone="$statusTone($vv)">{{ $vk }}: {{ $vv }}</x-ui.badge>
+                    @endforeach
+                </div>
+            @endif
+            @if (! empty($restore['remediation']))
+                <p class="mt-3 text-xs text-warning-700">{{ $restore['remediation'] }}</p>
+            @endif
+            <div class="mt-3 flex flex-wrap gap-3 text-xs text-ink-muted">
+                <span>Validasi: <code>php artisan rollout:restore-drill-evidence --strict</code></span>
+                <span>Runbook: <code>docs/runbooks/roll-5-backup-restore-drill-runbook.md</code></span>
             </div>
         </x-ui.card>
 
