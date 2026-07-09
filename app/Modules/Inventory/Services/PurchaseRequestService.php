@@ -57,10 +57,15 @@ class PurchaseRequestService
      */
     public function branchWorkflowBoard(int $branchId): array
     {
+        // SPRINT-68.45 Scope B — also count linked (non-cancelled) POs so the
+        // workflow board can badge an approved PR that has been continued into a
+        // Purchase Order ("Terhubung PO"). PO creation itself stays Admin Warehouse
+        // only; this is read-only provenance.
         $scoped = fn () => PurchaseRequest::query()
             ->where('branch_id', $branchId)
             ->with('requestedBy')
             ->withCount('items')
+            ->withCount('purchaseOrders')
             ->orderByDesc('request_date')
             ->orderByDesc('id');
 

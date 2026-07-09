@@ -243,6 +243,10 @@
     <div class="rounded-lg border border-brand-100 bg-brand-50 p-4">
         <h3 class="text-sm font-semibold text-gray-900">Batch / Lot Default (opsional)</h3>
         <p class="mt-1 text-xs text-gray-600">Isi sekali untuk semua item yang wajib pelacakan batch. Batch per produk dibuat otomatis dan terpisah — bukan satu batch global. Item yang sudah punya batch sendiri tidak akan ditimpa.</p>
+        <ul class="mt-2 list-disc space-y-1 pl-4 text-xs text-gray-600">
+            <li>Batch default akan diterapkan ke item yang wajib batch tracking.</li>
+            <li>Item tetap bisa memakai batch berbeda melalui override.</li>
+        </ul>
         <div class="mt-3 grid gap-4 md:grid-cols-4">
             <div>
                 <label for="default-batch-number" class="block text-sm font-medium text-gray-700">No. Batch Default</label>
