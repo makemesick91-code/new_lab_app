@@ -112,11 +112,13 @@ use App\Modules\LabOrder\Interfaces\LabPickupTaskRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\StatusLogRepositoryInterface;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
+use App\Modules\LabOrder\Models\LabDeliveryTask;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabPickupTask;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
 use App\Modules\LabOrder\Policies\AttachmentPolicy;
 use App\Modules\LabOrder\Policies\LabCaseCandidatePolicy;
+use App\Modules\LabOrder\Policies\LabDeliveryTaskPolicy;
 use App\Modules\LabOrder\Policies\LabOrderPolicy;
 use App\Modules\LabOrder\Policies\LabPickupTaskPolicy;
 use App\Modules\LabOrder\Policies\LabWorkflowEvidencePolicy;
@@ -371,6 +373,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Technician::class => TechnicianPolicy::class,
         LabOrder::class => LabOrderPolicy::class,
         LabPickupTask::class => LabPickupTaskPolicy::class,
+        LabDeliveryTask::class => LabDeliveryTaskPolicy::class,
         LabWorkflowEvidence::class => LabWorkflowEvidencePolicy::class,
         LabCaseCandidate::class => LabCaseCandidatePolicy::class,
         Attachment::class => AttachmentPolicy::class,

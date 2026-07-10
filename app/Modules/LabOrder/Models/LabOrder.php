@@ -247,6 +247,12 @@ class LabOrder extends Model
         return $this->workflowEvidence()->where('type', $type)->exists();
     }
 
+    /** LAB-WORKFLOW-V2 — the (single) courier delivery task for a V2 order. */
+    public function deliveryTask(): HasOne
+    {
+        return $this->hasOne(LabDeliveryTask::class, 'lab_order_id');
+    }
+
     /** LAB-WORKFLOW-V2 — append-only model analysis decisions. */
     public function modelAnalyses(): HasMany
     {
