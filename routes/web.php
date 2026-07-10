@@ -44,9 +44,11 @@ use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierCon
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
+use App\Modules\LabOrder\Controllers\ExternalLabController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabOrder\Controllers\LabPickupTaskController;
+use App\Modules\LabOrder\Controllers\LabV2OrderController;
 use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
@@ -512,6 +514,67 @@ Route::middleware('auth')->prefix('lab')->group(function () {
     // Private evidence stream — policy-authorized (LabWorkflowEvidencePolicy).
     Route::get('workflow-evidence/{evidence}', [LabWorkflowEvidenceController::class, 'show'])
         ->name('lab-workflow-evidence.show');
+
+    // --- LAB-WORKFLOW-V2 Phase 3: lab-side pipeline hub -------------------
+    // Analysis / production / QC / external-lab actions. Route permission is
+    // layer 1; the state machine + workflow services re-validate everything.
+    Route::get('v2-orders', [LabV2OrderController::class, 'index'])
+        ->name('lab-v2-orders.index')
+        ->middleware('permission:view_lab_orders|manage_lab_orders');
+    Route::get('v2-orders/{labV2Order}', [LabV2OrderController::class, 'show'])
+        ->name('lab-v2-orders.show')
+        ->middleware('permission:view_lab_orders|manage_lab_orders');
+
+    Route::post('v2-orders/{labV2Order}/register', [LabV2OrderController::class, 'registerModel'])
+        ->name('lab-v2-orders.register')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('v2-orders/{labV2Order}/analyze', [LabV2OrderController::class, 'analyze'])
+        ->name('lab-v2-orders.analyze')
+        ->middleware('permission:manage_lab_orders');
+
+    Route::post('v2-orders/{labV2Order}/assign-technician', [LabV2OrderController::class, 'assignTechnician'])
+        ->name('lab-v2-orders.assign-technician')
+        ->middleware('permission:assign_technicians|manage_production');
+    Route::post('v2-orders/{labV2Order}/steps/start', [LabV2OrderController::class, 'startStep'])
+        ->name('lab-v2-orders.steps.start')
+        ->middleware('permission:start_production_work|manage_production');
+    Route::post('v2-orders/{labV2Order}/steps/complete', [LabV2OrderController::class, 'completeStep'])
+        ->name('lab-v2-orders.steps.complete')
+        ->middleware('permission:complete_production_work|manage_production');
+    Route::post('v2-orders/{labV2Order}/send-to-qc', [LabV2OrderController::class, 'sendToQc'])
+        ->name('lab-v2-orders.send-to-qc')
+        ->middleware('permission:send_to_qc|manage_production');
+
+    Route::post('v2-orders/{labV2Order}/qc/pass', [LabV2OrderController::class, 'qcPass'])
+        ->name('lab-v2-orders.qc-pass')
+        ->middleware('permission:pass_qc|manage_quality_control');
+    Route::post('v2-orders/{labV2Order}/qc/fail', [LabV2OrderController::class, 'qcFail'])
+        ->name('lab-v2-orders.qc-fail')
+        ->middleware('permission:reject_qc|manage_quality_control');
+
+    Route::post('v2-orders/{labV2Order}/external/dispatch', [LabV2OrderController::class, 'externalDispatch'])
+        ->name('lab-v2-orders.external-dispatch')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('v2-orders/{labV2Order}/external/sent', [LabV2OrderController::class, 'externalSent'])
+        ->name('lab-v2-orders.external-sent')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('v2-orders/{labV2Order}/external/in-progress', [LabV2OrderController::class, 'externalInProgress'])
+        ->name('lab-v2-orders.external-in-progress')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('v2-orders/{labV2Order}/external/returned', [LabV2OrderController::class, 'externalReturned'])
+        ->name('lab-v2-orders.external-returned')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('v2-orders/{labV2Order}/external/review', [LabV2OrderController::class, 'externalReview'])
+        ->name('lab-v2-orders.external-review')
+        ->middleware('permission:manage_lab_orders');
+
+    // External lab master data (Admin Lab).
+    Route::get('external-labs', [ExternalLabController::class, 'index'])
+        ->name('lab-external-labs.index')
+        ->middleware('permission:manage_lab_orders');
+    Route::post('external-labs', [ExternalLabController::class, 'store'])
+        ->name('lab-external-labs.store')
+        ->middleware('permission:manage_lab_orders');
 });
 
 /*
