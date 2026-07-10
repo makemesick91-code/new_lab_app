@@ -53,6 +53,7 @@ class PurchaseOrderRepository implements PurchaseOrderRepositoryInterface
                 'sentBy',
                 'createdBy',
                 'items.product',
+                'items.supplier',
                 'items.inventoryLocation',
                 'items.purchaseRequestItem',
                 'goodsReceipts' => fn ($query) => $query
@@ -84,10 +85,12 @@ class PurchaseOrderRepository implements PurchaseOrderRepositoryInterface
         foreach ($items as $item) {
             $purchaseOrder->items()->create([
                 'product_id' => $item['product_id'],
+                'supplier_id' => $item['supplier_id'] ?? null,
                 'inventory_location_id' => $item['inventory_location_id'] ?? null,
                 'purchase_request_item_id' => $item['purchase_request_item_id'] ?? null,
                 'quantity_ordered' => $item['quantity_ordered'],
                 'unit_price' => $item['unit_price'] ?? null,
+                'estimated_arrival_date' => $item['estimated_arrival_date'] ?? null,
                 'notes' => $item['notes'] ?? null,
             ]);
         }

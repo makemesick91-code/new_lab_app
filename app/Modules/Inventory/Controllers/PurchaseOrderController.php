@@ -9,15 +9,18 @@ use App\Modules\Inventory\Interfaces\ProductRepositoryInterface;
 use App\Modules\Inventory\Interfaces\PurchaseOrderRepositoryInterface;
 use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\PurchaseOrder;
+use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Requests\StorePurchaseOrderRequest;
 use App\Modules\Inventory\Requests\UpdatePurchaseOrderRequest;
 use App\Modules\Inventory\Services\InventoryLocationService;
 use App\Modules\Inventory\Services\PurchaseOrderService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderController extends Controller
@@ -124,6 +127,34 @@ class PurchaseOrderController extends Controller
         return $this->renderInventoryView('inventory.purchase-orders.show', [
             'purchaseOrder' => $purchaseOrder,
         ]);
+    }
+
+    public function supplierPdf(PurchaseOrder $purchaseOrder, Supplier $supplier): Response
+    {
+        $this->authorize('view', $purchaseOrder);
+
+        $branchId = $this->branchContext->requireId();
+
+        $purchaseOrder = $this->purchaseOrders->findForBranch($branchId, $purchaseOrder->id) ?? abort(404);
+
+        // Branch ownership of the supplier is enforced server-side; a supplier
+        // from another branch (or one with no line on this PO) must never yield
+        // a PDF that could leak or fabricate data.
+        abort_if($supplier->branch_id !== $branchId, 404);
+
+        try {
+            $data = $this->purchaseOrderService->buildSupplierPdfData($purchaseOrder, $supplier);
+        } catch (ValidationException) {
+            abort(404);
+        }
+
+        $filename = sprintf(
+            '%s-%s.pdf',
+            $purchaseOrder->purchase_order_number,
+            Str::slug($supplier->name) ?: 'supplier',
+        );
+
+        return Pdf::loadView('inventory.purchase-orders.supplier-pdf', $data)->download($filename);
     }
 
     public function edit(PurchaseOrder $purchaseOrder): View|Response

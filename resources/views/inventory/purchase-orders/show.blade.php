@@ -16,11 +16,14 @@
             'label' => 'Lengkap',
         ],
     ];
+
+    $supplierGroups = $purchaseOrder->supplierGroups();
+    $suppliersInvolved = $purchaseOrder->suppliersInvolved();
 @endphp
 
 <x-settings-shell title="Pesanan Pembelian {{ $purchaseOrder->purchase_order_number }}">
     <div class="space-y-6">
-        <x-ui.page-header :title="$purchaseOrder->purchase_order_number" :subtitle="$purchaseOrder->displaySupplierName()">
+        <x-ui.page-header :title="$purchaseOrder->purchase_order_number" subtitle="{{ $suppliersInvolved->count() > 1 ? $suppliersInvolved->count().' supplier' : $purchaseOrder->displaySupplierName() }}">
             <x-slot:breadcrumb>Persediaan / Pesanan Pembelian</x-slot:breadcrumb>
             <x-slot:actions>
                 @can('submit', $purchaseOrder)
@@ -74,10 +77,8 @@
                 <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">{{ format_date_id($purchaseOrder->order_date) }}</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                <p class="text-xs font-medium text-gray-500">Perkiraan Kirim</p>
-                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">
-                    {{ $purchaseOrder->expected_delivery_date ? format_date_id($purchaseOrder->expected_delivery_date) : '—' }}
-                </p>
+                <p class="text-xs font-medium text-gray-500">Jumlah Supplier</p>
+                <p class="mt-1 text-sm font-semibold tabular-nums text-gray-900">{{ format_number_id($suppliersInvolved->count()) }}</p>
             </div>
             <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p class="text-xs font-medium text-gray-500">Dibuat oleh</p>
@@ -95,116 +96,87 @@
 
         <div class="grid gap-6 lg:grid-cols-3">
             <div class="space-y-6 lg:col-span-2">
-                <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
-                    <div class="border-b border-gray-200 px-4 py-3">
-                        <h3 class="text-base font-semibold text-gray-900">Item Pesanan</h3>
-                        <p class="mt-1 text-sm text-gray-500">Progress penerimaan per baris menggunakan cache jumlah diterima dari penerimaan barang yang diposting.</p>
-                    </div>
+                @forelse ($supplierGroups as $group)
+                    <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                            <div>
+                                <h3 class="text-base font-semibold text-gray-900">{{ $group['supplier_name'] }}</h3>
+                                <p class="mt-1 text-sm text-gray-500">{{ format_number_id($group['item_count']) }} item · Subtotal {{ format_currency_id($group['subtotal']) }}</p>
+                            </div>
+                            @if ($group['supplier_id'] !== null)
+                                @can('view', $purchaseOrder)
+                                    <x-ui.button
+                                        variant="secondary"
+                                        size="sm"
+                                        :href="route('inventory.purchase-orders.supplier-pdf', ['purchaseOrder' => $purchaseOrder->id, 'supplier' => $group['supplier_id']])">
+                                        Unduh PDF Supplier
+                                    </x-ui.button>
+                                @endcan
+                            @else
+                                <span class="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 ring-1 ring-rose-200">Supplier belum dipilih</span>
+                            @endif
+                        </div>
 
-                    <div class="hidden overflow-x-auto md:block">
-                        <table class="min-w-full divide-y divide-gray-200 text-sm">
-                            <thead class="bg-gray-50">
-                                <tr class="text-left text-gray-500">
-                                    <th scope="col" class="px-4 py-3 font-medium">Produk</th>
-                                    <th scope="col" class="px-3 py-3 font-medium">Lokasi</th>
-                                    <th scope="col" class="px-3 py-3 font-medium">Item PR</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Dipesan</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Diterima</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Sisa</th>
-                                    <th scope="col" class="px-3 py-3 font-medium">Status Penerimaan</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Harga Satuan</th>
-                                    <th scope="col" class="px-3 py-3 text-right font-medium">Total Baris</th>
-                                    <th scope="col" class="px-4 py-3 font-medium">Catatan</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-100">
-                                @forelse ($purchaseOrder->items as $item)
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="px-4 py-3">
-                                            <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
-                                            <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
-                                        </td>
-                                        <td class="px-3 py-3 text-gray-600">{{ $item->inventoryLocation?->name ?? '—' }}</td>
-                                        <td class="px-3 py-3 text-gray-600">
-                                            @if ($item->purchaseRequestItem)
-                                                {{ $item->purchaseRequestItem->id }}
-                                            @else
-                                                —
-                                            @endif
-                                        </td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_ordered) }}</td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_received ?? 0) }}</td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantityRemaining()) }}</td>
-                                        <td class="px-3 py-3">
-                                            @include('inventory.purchase-orders._receiving-status-badge', [
-                                                'status' => $item->receivingStatus(),
-                                                'label' => $item->receivingStatusLabel(),
-                                            ])
-                                        </td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">
-                                            {{ $item->unit_price !== null ? format_currency_id($item->unit_price) : '—' }}
-                                        </td>
-                                        <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_currency_id($item->lineTotal()) }}</td>
-                                        <td class="px-4 py-3 text-gray-600">{{ $item->notes ?? '—' }}</td>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr class="text-left text-gray-500">
+                                        <th scope="col" class="px-4 py-3 font-medium">Produk</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Dipesan</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Diterima</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Sisa</th>
+                                        <th scope="col" class="px-3 py-3 font-medium">Status Penerimaan</th>
+                                        <th scope="col" class="px-3 py-3 font-medium">Estimasi Datang</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Harga Satuan</th>
+                                        <th scope="col" class="px-3 py-3 text-right font-medium">Total Baris</th>
                                     </tr>
-                                @empty
-                                    <tr>
-                                        <td colspan="10" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada item.</td>
-                                    </tr>
-                                @endforelse
-                            </tbody>
-                            @if ($purchaseOrder->items->isNotEmpty())
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    @foreach ($group['items'] as $item)
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-3">
+                                                <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
+                                                <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
+                                                @if ($item->notes)
+                                                    <p class="mt-1 text-xs text-gray-500">{{ $item->notes }}</p>
+                                                @endif
+                                            </td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_ordered) }}</td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantity_received ?? 0) }}</td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_quantity_id($item->quantityRemaining()) }}</td>
+                                            <td class="px-3 py-3">
+                                                @include('inventory.purchase-orders._receiving-status-badge', [
+                                                    'status' => $item->receivingStatus(),
+                                                    'label' => $item->receivingStatusLabel(),
+                                                ])
+                                            </td>
+                                            <td class="px-3 py-3 tabular-nums text-gray-700">{{ $item->estimated_arrival_date ? format_date_id($item->estimated_arrival_date) : '—' }}</td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ $item->unit_price !== null ? format_currency_id($item->unit_price) : '—' }}</td>
+                                            <td class="px-3 py-3 text-right tabular-nums text-gray-700">{{ format_currency_id($item->lineTotal()) }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
                                 <tfoot class="bg-gray-50">
                                     <tr>
-                                        <td colspan="8" class="px-4 py-3 text-right text-sm font-semibold text-gray-900">Total Pesanan</td>
-                                        <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">{{ format_currency_id($purchaseOrder->total_amount) }}</td>
-                                        <td></td>
+                                        <td colspan="7" class="px-4 py-3 text-right text-sm font-semibold text-gray-900">Subtotal {{ $group['supplier_name'] }}</td>
+                                        <td class="px-3 py-3 text-right text-sm font-semibold tabular-nums text-gray-900">{{ format_currency_id($group['subtotal']) }}</td>
                                     </tr>
                                 </tfoot>
-                            @endif
-                        </table>
+                            </table>
+                        </div>
                     </div>
+                @empty
+                    <div class="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 shadow-sm">Belum ada item.</div>
+                @endforelse
 
-                    <div class="divide-y divide-gray-100 md:hidden">
-                        @forelse ($purchaseOrder->items as $item)
-                            <article class="p-4">
-                                <div class="flex items-start justify-between gap-3">
-                                    <div class="min-w-0">
-                                        <p class="font-semibold text-gray-900">{{ $item->product?->name ?? '-' }}</p>
-                                        <p class="text-xs text-gray-500">{{ $item->product?->code ?? '-' }}</p>
-                                    </div>
-                                    @include('inventory.purchase-orders._receiving-status-badge', [
-                                        'status' => $item->receivingStatus(),
-                                        'label' => $item->receivingStatusLabel(),
-                                    ])
-                                </div>
-                                <div class="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
-                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
-                                        <p class="text-xs text-gray-500">Dipesan</p>
-                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantity_ordered) }}</p>
-                                    </div>
-                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
-                                        <p class="text-xs text-gray-500">Diterima</p>
-                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantity_received ?? 0) }}</p>
-                                    </div>
-                                    <div class="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-100">
-                                        <p class="text-xs text-gray-500">Sisa</p>
-                                        <p class="mt-0.5 font-semibold tabular-nums text-gray-900">{{ format_quantity_id($item->quantityRemaining()) }}</p>
-                                    </div>
-                                </div>
-                                <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
-                                    <span>Harga: {{ $item->unit_price !== null ? format_currency_id($item->unit_price) : '—' }}</span>
-                                    <span>Subtotal: {{ format_currency_id($item->lineTotal()) }}</span>
-                                </div>
-                                @if ($item->notes)
-                                    <p class="mt-2 text-sm text-gray-600">{{ $item->notes }}</p>
-                                @endif
-                            </article>
-                        @empty
-                            <div class="px-4 py-8 text-center text-sm text-gray-500">Belum ada item.</div>
-                        @endforelse
+                @if ($purchaseOrder->items->isNotEmpty())
+                    <div class="rounded-lg border border-brand-200 bg-brand-50 px-4 py-3">
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="font-semibold text-brand-800">Grand Total Pesanan ({{ $purchaseOrder->currency }})</span>
+                            <span class="font-semibold tabular-nums text-brand-800">{{ format_currency_id($purchaseOrder->total_amount) }}</span>
+                        </div>
                     </div>
-                </div>
+                @endif
 
                 <div class="rounded-lg border border-gray-200 bg-white shadow-sm">
                     <div class="border-b border-gray-200 px-4 py-3">
@@ -284,8 +256,23 @@
                             <dd class="font-medium text-gray-900">{{ $purchaseOrder->branch?->name ?? '—' }}</dd>
                         </div>
                         <div>
-                            <dt class="text-gray-500">Pemasok</dt>
-                            <dd class="font-medium text-gray-900">{{ $purchaseOrder->displaySupplierName() }}</dd>
+                            <dt class="text-gray-500">Supplier Terlibat</dt>
+                            <dd class="font-medium text-gray-900">
+                                @if ($suppliersInvolved->isNotEmpty())
+                                    <ul class="space-y-1">
+                                        @foreach ($suppliersInvolved as $supplier)
+                                            <li class="flex items-center justify-between gap-2">
+                                                <span>{{ $supplier->name }}</span>
+                                                @can('view', $purchaseOrder)
+                                                    <a href="{{ route('inventory.purchase-orders.supplier-pdf', ['purchaseOrder' => $purchaseOrder->id, 'supplier' => $supplier->id]) }}" class="text-xs font-medium text-brand-700 hover:text-brand-600">PDF</a>
+                                                @endcan
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                @else
+                                    <span class="text-gray-500">—</span>
+                                @endif
+                            </dd>
                         </div>
                         @if ($purchaseOrder->supplier_reference_number)
                             <div>
@@ -305,12 +292,6 @@
                                         {{ $purchaseOrder->purchaseRequest->purchase_request_number }}
                                     </a>
                                 </dd>
-                            </div>
-                        @endif
-                        @if ($purchaseOrder->expected_delivery_date)
-                            <div>
-                                <dt class="text-gray-500">Perkiraan Tanggal Kirim</dt>
-                                <dd class="font-medium tabular-nums text-gray-900">{{ format_date_id($purchaseOrder->expected_delivery_date) }}</dd>
                             </div>
                         @endif
                         <div>

@@ -32,7 +32,7 @@ interface PurchaseOrderRepositoryInterface
     public function update(PurchaseOrder $purchaseOrder, array $data): PurchaseOrder;
 
     /**
-     * @param  array<int, array{product_id: int, inventory_location_id?: int|null, purchase_request_item_id?: int|null, quantity_ordered: float, unit_price?: float|null, notes?: string|null}>  $items
+     * @param  array<int, array{product_id: int, supplier_id?: int|null, inventory_location_id?: int|null, purchase_request_item_id?: int|null, quantity_ordered: float, unit_price?: float|null, estimated_arrival_date?: string|null, notes?: string|null}>  $items
      */
     public function replaceItems(PurchaseOrder $purchaseOrder, array $items): void;
 

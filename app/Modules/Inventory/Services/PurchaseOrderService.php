@@ -13,12 +13,14 @@ use App\Modules\Inventory\Interfaces\SupplierRepositoryInterface;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseOrder;
+use App\Modules\Inventory\Models\PurchaseOrderItem;
 use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\PurchaseRequestItem;
 use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Services\Concerns\LogsInventoryActivity;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -75,20 +77,25 @@ class PurchaseOrderService
     {
         $result = DB::transaction(function () use ($data, $user) {
             $branchId = $this->branchContext->requireId();
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $data['items']);
 
-            $supplierId = isset($data['supplier_id']) && $data['supplier_id'] !== '' && $data['supplier_id'] !== null
+            // Compatibility layer: a header supplier_id (legacy single-vendor
+            // callers) defaults any item that omits its own supplier; the form
+            // always sends per-item supplier + arrival, which take precedence.
+            $defaultSupplierId = isset($data['supplier_id']) && $data['supplier_id'] !== '' && $data['supplier_id'] !== null
                 ? (int) $data['supplier_id']
                 : null;
-            $supplier = $this->assertSupplierInBranch($branchId, $supplierId);
+            $items = $this->applyItemDefaults($data['items'], $defaultSupplierId, $data['order_date']);
+
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items, $data['order_date']);
+            $headerSupplier = $this->deriveHeaderSupplier($normalizedItems);
 
             $purchaseOrder = $this->purchaseOrders->create([
                 'branch_id' => $branchId,
                 'purchase_order_number' => $this->generatePurchaseOrderNumber($branchId, $data['order_date']),
                 'order_date' => $data['order_date'],
                 'status' => PurchaseOrder::STATUS_DRAFT,
-                'supplier_id' => $supplierId,
-                'supplier_snapshot_name' => $supplier?->name,
+                'supplier_id' => $headerSupplier['supplier_id'],
+                'supplier_snapshot_name' => $headerSupplier['supplier_snapshot_name'],
                 'supplier_reference_number' => $data['supplier_reference_number'] ?? null,
                 'currency' => $data['currency'] ?? 'IDR',
                 'purchase_request_id' => null,
@@ -117,27 +124,29 @@ class PurchaseOrderService
             $this->assertPurchaseRequestEligible($purchaseRequest, $branchId);
             $this->assertNoActivePurchaseOrderForPurchaseRequest($purchaseRequest);
 
-            $supplierId = isset($data['supplier_id']) && $data['supplier_id'] !== '' && $data['supplier_id'] !== null
+            $orderDate = $data['order_date'] ?? now()->toDateString();
+            $items = $this->resolveItemsFromPurchaseRequest($purchaseRequest, $data['items'] ?? null);
+
+            // PR → PO convenience: purchase requests carry no supplier and no
+            // per-item arrival date, so a header supplier_id (single-vendor PO)
+            // and the order date are applied as defaults to any item that does
+            // not already declare its own. The multi-vendor form always sends
+            // per-item supplier + arrival, which take precedence over these.
+            $defaultSupplierId = isset($data['supplier_id']) && $data['supplier_id'] !== '' && $data['supplier_id'] !== null
                 ? (int) $data['supplier_id']
                 : null;
+            $items = $this->applyItemDefaults($items, $defaultSupplierId, $orderDate);
 
-            if ($supplierId === null) {
-                throw ValidationException::withMessages([
-                    'supplier_id' => 'Supplier wajib dipilih untuk pesanan pembelian.',
-                ]);
-            }
-
-            $supplier = $this->assertSupplierInBranch($branchId, $supplierId);
-            $items = $this->resolveItemsFromPurchaseRequest($purchaseRequest, $data['items'] ?? null);
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items, $purchaseRequest);
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items, $orderDate, $purchaseRequest);
+            $headerSupplier = $this->deriveHeaderSupplier($normalizedItems);
 
             $purchaseOrder = $this->purchaseOrders->create([
                 'branch_id' => $branchId,
-                'purchase_order_number' => $this->generatePurchaseOrderNumber($branchId, $data['order_date'] ?? now()->toDateString()),
-                'order_date' => $data['order_date'] ?? now()->toDateString(),
+                'purchase_order_number' => $this->generatePurchaseOrderNumber($branchId, $orderDate),
+                'order_date' => $orderDate,
                 'status' => PurchaseOrder::STATUS_DRAFT,
-                'supplier_id' => $supplierId,
-                'supplier_snapshot_name' => $supplier->name,
+                'supplier_id' => $headerSupplier['supplier_id'],
+                'supplier_snapshot_name' => $headerSupplier['supplier_snapshot_name'],
                 'supplier_reference_number' => $data['supplier_reference_number'] ?? null,
                 'currency' => $data['currency'] ?? 'IDR',
                 'purchase_request_id' => $purchaseRequest->id,
@@ -169,32 +178,32 @@ class PurchaseOrderService
 
             $this->assertStatus($locked, PurchaseOrder::STATUS_DRAFT);
 
+            $orderDate = $data['order_date'] ?? $locked->order_date->toDateString();
+
             $purchaseRequest = $locked->purchase_request_id !== null
                 ? $this->purchaseRequests->findById($branchId, (int) $locked->purchase_request_id)
                 : null;
-            $normalizedItems = $this->normalizeAndValidateItems($branchId, $data['items'], $purchaseRequest);
+
+            $defaultSupplierId = isset($data['supplier_id']) && $data['supplier_id'] !== '' && $data['supplier_id'] !== null
+                ? (int) $data['supplier_id']
+                : null;
+            $items = $this->applyItemDefaults($data['items'], $defaultSupplierId, $orderDate);
+
+            $normalizedItems = $this->normalizeAndValidateItems($branchId, $items, $orderDate, $purchaseRequest);
+            $headerSupplier = $this->deriveHeaderSupplier($normalizedItems);
 
             $updateData = [
-                'order_date' => $data['order_date'] ?? $locked->order_date->toDateString(),
+                'order_date' => $orderDate,
                 'supplier_reference_number' => $data['supplier_reference_number'] ?? $locked->supplier_reference_number,
                 'currency' => $data['currency'] ?? $locked->currency,
                 'expected_delivery_date' => array_key_exists('expected_delivery_date', $data)
                     ? $data['expected_delivery_date']
                     : $locked->expected_delivery_date?->toDateString(),
                 'notes' => $data['notes'] ?? $locked->notes,
+                // Deprecated header supplier snapshot re-derived from canonical item suppliers.
+                'supplier_id' => $headerSupplier['supplier_id'],
+                'supplier_snapshot_name' => $headerSupplier['supplier_snapshot_name'],
             ];
-
-            if (array_key_exists('supplier_id', $data)) {
-                $newSupplierId = $data['supplier_id'] !== null && $data['supplier_id'] !== ''
-                    ? (int) $data['supplier_id']
-                    : null;
-
-                if ($newSupplierId !== $locked->supplier_id) {
-                    $supplier = $this->assertSupplierInBranch($branchId, $newSupplierId);
-                    $updateData['supplier_id'] = $newSupplierId;
-                    $updateData['supplier_snapshot_name'] = $supplier?->name;
-                }
-            }
 
             $updated = $this->purchaseOrders->update($locked, $updateData);
             $this->purchaseOrders->replaceItems($updated, $normalizedItems);
@@ -239,7 +248,7 @@ class PurchaseOrderService
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
             $this->assertStatus($locked, PurchaseOrder::STATUS_SUBMITTED);
-            $this->assertActiveSupplierInBranch($branchId, (int) $locked->supplier_id);
+            $this->assertAllItemSuppliersActive($branchId, $locked);
 
             return $this->purchaseOrders->update($locked, [
                 'status' => PurchaseOrder::STATUS_APPROVED,
@@ -260,7 +269,7 @@ class PurchaseOrderService
             $locked = $this->lockPurchaseOrderInBranch($branchId, $purchaseOrder->id);
 
             $this->assertStatus($locked, PurchaseOrder::STATUS_APPROVED);
-            $this->assertActiveSupplierInBranch($branchId, (int) $locked->supplier_id);
+            $this->assertAllItemSuppliersActive($branchId, $locked);
 
             return $this->purchaseOrders->update($locked, [
                 'status' => PurchaseOrder::STATUS_SENT,
@@ -294,11 +303,18 @@ class PurchaseOrderService
     {
         $purchaseOrder->loadMissing('items');
 
+        $supplierIds = $purchaseOrder->items
+            ->pluck('supplier_id')
+            ->filter(fn ($id): bool => $id !== null)
+            ->unique()
+            ->values();
+
         $metadata = [
             'document_number' => $purchaseOrder->purchase_order_number,
             'branch_id' => $purchaseOrder->branch_id,
             'status_to' => $purchaseOrder->status,
             'item_count' => $purchaseOrder->items->count(),
+            'supplier_count' => $supplierIds->count(),
         ];
 
         if ($statusFrom !== null) {
@@ -351,16 +367,20 @@ class PurchaseOrderService
     }
 
     /**
-     * @param  array<int, array{product_id: int, inventory_location_id?: int|null, purchase_request_item_id?: int|null, quantity_ordered: float, unit_price?: float|null, notes?: string|null}>  $items
-     * @return array<int, array{product_id: int, inventory_location_id: int|null, purchase_request_item_id: int|null, quantity_ordered: float, unit_price: float|null, notes: string|null}>
+     * @param  array<int, array{product_id: int, supplier_id?: int|null, inventory_location_id?: int|null, purchase_request_item_id?: int|null, quantity_ordered: float, unit_price?: float|null, estimated_arrival_date?: string|null, notes?: string|null}>  $items
+     * @return array<int, array{product_id: int, supplier_id: int, inventory_location_id: int|null, purchase_request_item_id: int|null, quantity_ordered: float, unit_price: float|null, estimated_arrival_date: string, notes: string|null}>
      */
-    private function normalizeAndValidateItems(int $branchId, array $items, ?PurchaseRequest $purchaseRequest = null): array
+    private function normalizeAndValidateItems(int $branchId, array $items, Carbon|string $orderDate, ?PurchaseRequest $purchaseRequest = null): array
     {
         if ($items === []) {
             throw ValidationException::withMessages([
                 'items' => 'Minimal satu item diperlukan.',
             ]);
         }
+
+        $orderDateValue = $orderDate instanceof Carbon
+            ? $orderDate->copy()->startOfDay()
+            : Carbon::parse($orderDate)->startOfDay();
 
         $purchaseRequestItems = $purchaseRequest !== null
             ? $purchaseRequest->items()->get()->keyBy('id')
@@ -384,6 +404,20 @@ class PurchaseOrderService
             }
 
             $product = $this->assertActiveProductInBranch($branchId, (int) $item['product_id'], $index);
+
+            $supplierId = isset($item['supplier_id']) && $item['supplier_id'] !== '' && $item['supplier_id'] !== null
+                ? (int) $item['supplier_id']
+                : null;
+
+            if ($supplierId === null) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.supplier_id" => 'Supplier wajib dipilih untuk setiap item.',
+                ]);
+            }
+
+            $this->assertActiveSupplierInBranchForItem($branchId, $supplierId, $index);
+
+            $estimatedArrival = $this->resolveEstimatedArrivalDate($item['estimated_arrival_date'] ?? null, $orderDateValue, $index);
 
             $locationId = isset($item['inventory_location_id']) && $item['inventory_location_id'] !== ''
                 ? (int) $item['inventory_location_id']
@@ -420,10 +454,12 @@ class PurchaseOrderService
 
             $normalized[] = [
                 'product_id' => $product->id,
+                'supplier_id' => $supplierId,
                 'inventory_location_id' => $locationId,
                 'purchase_request_item_id' => $purchaseRequestItemId,
                 'quantity_ordered' => $quantity,
                 'unit_price' => $unitPrice,
+                'estimated_arrival_date' => $estimatedArrival,
                 'notes' => $item['notes'] ?? null,
             ];
         }
@@ -431,40 +467,79 @@ class PurchaseOrderService
         return $normalized;
     }
 
-    private function assertSupplierInBranch(int $branchId, ?int $supplierId, bool $required = false): ?Supplier
+    private function resolveEstimatedArrivalDate(mixed $value, Carbon $orderDate, int $index): string
     {
-        if ($supplierId === null) {
-            if ($required) {
-                throw ValidationException::withMessages([
-                    'supplier_id' => 'Supplier wajib dipilih.',
-                ]);
-            }
-
-            return null;
+        if ($value === null || $value === '') {
+            throw ValidationException::withMessages([
+                "items.{$index}.estimated_arrival_date" => 'Estimasi tanggal barang datang wajib diisi untuk setiap item.',
+            ]);
         }
 
+        try {
+            $arrival = $value instanceof Carbon
+                ? $value->copy()->startOfDay()
+                : Carbon::parse((string) $value)->startOfDay();
+        } catch (\Throwable) {
+            throw ValidationException::withMessages([
+                "items.{$index}.estimated_arrival_date" => 'Estimasi tanggal barang datang tidak valid.',
+            ]);
+        }
+
+        if ($arrival->lt($orderDate)) {
+            throw ValidationException::withMessages([
+                "items.{$index}.estimated_arrival_date" => 'Estimasi tanggal barang datang tidak boleh sebelum tanggal pesanan.',
+            ]);
+        }
+
+        return $arrival->toDateString();
+    }
+
+    private function assertActiveSupplierInBranchForItem(int $branchId, int $supplierId, int $index): Supplier
+    {
         $supplier = $this->suppliers->findInBranch($branchId, $supplierId);
 
         if ($supplier === null) {
             throw ValidationException::withMessages([
-                'supplier_id' => 'Supplier tidak ditemukan di cabang aktif.',
+                "items.{$index}.supplier_id" => 'Supplier tidak ditemukan di cabang aktif.',
+            ]);
+        }
+
+        if (! $supplier->is_active) {
+            throw ValidationException::withMessages([
+                "items.{$index}.supplier_id" => 'Supplier tidak aktif.',
             ]);
         }
 
         return $supplier;
     }
 
-    private function assertActiveSupplierInBranch(int $branchId, int $supplierId): Supplier
+    /**
+     * Derive the deprecated header supplier snapshot from the canonical item
+     * suppliers: the sole distinct supplier for a single-vendor PO, or NULL for
+     * a multi-vendor PO. Kept only for legacy search/report compatibility.
+     *
+     * @param  array<int, array{supplier_id: int}>  $normalizedItems
+     * @return array{supplier_id: int|null, supplier_snapshot_name: string|null}
+     */
+    private function deriveHeaderSupplier(array $normalizedItems): array
     {
-        $supplier = $this->assertSupplierInBranch($branchId, $supplierId, true);
+        $supplierIds = collect($normalizedItems)
+            ->pluck('supplier_id')
+            ->filter(fn ($id): bool => $id !== null)
+            ->unique()
+            ->values();
 
-        if (! $supplier->is_active) {
-            throw ValidationException::withMessages([
-                'supplier_id' => 'Supplier tidak aktif.',
-            ]);
+        if ($supplierIds->count() !== 1) {
+            return ['supplier_id' => null, 'supplier_snapshot_name' => null];
         }
 
-        return $supplier;
+        $supplierId = (int) $supplierIds->first();
+        $supplier = $this->suppliers->findInBranch($this->branchContext->requireId(), $supplierId);
+
+        return [
+            'supplier_id' => $supplierId,
+            'supplier_snapshot_name' => $supplier?->name,
+        ];
     }
 
     private function assertPurchaseRequestEligible(PurchaseRequest $purchaseRequest, int $branchId): void
@@ -520,20 +595,45 @@ class PurchaseOrderService
             ]);
         }
 
-        if ($purchaseOrder->supplier_id === null) {
-            throw ValidationException::withMessages([
-                'supplier_id' => 'Supplier wajib dipilih sebelum pesanan pembelian diajukan.',
-            ]);
-        }
-
-        $this->assertActiveSupplierInBranch($branchId, (int) $purchaseOrder->supplier_id);
-
         foreach ($purchaseOrder->items as $index => $item) {
             $this->assertActiveProductInBranch($branchId, (int) $item->product_id, $index);
+
+            if ($item->supplier_id === null) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.supplier_id" => 'Supplier wajib dipilih untuk setiap item sebelum pesanan pembelian diajukan.',
+                ]);
+            }
+
+            $this->assertActiveSupplierInBranchForItem($branchId, (int) $item->supplier_id, $index);
 
             if ($item->inventory_location_id !== null) {
                 $this->assertActiveLocationInBranch($branchId, (int) $item->inventory_location_id, $index);
             }
+        }
+    }
+
+    /**
+     * Every canonical item supplier must still exist, belong to the branch, and
+     * be active before a PO advances to approved / sent.
+     */
+    private function assertAllItemSuppliersActive(int $branchId, PurchaseOrder $purchaseOrder): void
+    {
+        $purchaseOrder->loadMissing('items');
+
+        if ($purchaseOrder->items->isEmpty()) {
+            throw ValidationException::withMessages([
+                'items' => 'Pesanan pembelian harus memiliki minimal satu item.',
+            ]);
+        }
+
+        foreach ($purchaseOrder->items as $index => $item) {
+            if ($item->supplier_id === null) {
+                throw ValidationException::withMessages([
+                    "items.{$index}.supplier_id" => 'Supplier wajib dipilih untuk setiap item.',
+                ]);
+            }
+
+            $this->assertActiveSupplierInBranchForItem($branchId, (int) $item->supplier_id, $index);
         }
     }
 
@@ -590,16 +690,82 @@ class PurchaseOrderService
         return $purchaseRequest->items
             ->map(fn (PurchaseRequestItem $purchaseRequestItem) => [
                 'product_id' => $purchaseRequestItem->product_id,
+                // Supplier is chosen per item at PO time — the PR carries no supplier.
+                'supplier_id' => null,
                 'inventory_location_id' => $purchaseRequestItem->inventory_location_id,
                 'purchase_request_item_id' => $purchaseRequestItem->id,
                 'quantity_ordered' => (float) $purchaseRequestItem->quantity_requested,
                 'unit_price' => $purchaseRequestItem->estimated_unit_price !== null
                     ? (float) $purchaseRequestItem->estimated_unit_price
                     : null,
+                'estimated_arrival_date' => null,
                 'notes' => $purchaseRequestItem->notes,
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $items
+     * @return array<int, array<string, mixed>>
+     */
+    private function applyItemDefaults(array $items, ?int $defaultSupplierId, Carbon|string $orderDate): array
+    {
+        $orderDateString = $orderDate instanceof Carbon ? $orderDate->toDateString() : (string) $orderDate;
+
+        return array_map(function (array $item) use ($defaultSupplierId, $orderDateString): array {
+            $hasSupplier = isset($item['supplier_id']) && $item['supplier_id'] !== '' && $item['supplier_id'] !== null;
+            if (! $hasSupplier && $defaultSupplierId !== null) {
+                $item['supplier_id'] = $defaultSupplierId;
+            }
+
+            $hasArrival = isset($item['estimated_arrival_date']) && $item['estimated_arrival_date'] !== '' && $item['estimated_arrival_date'] !== null;
+            if (! $hasArrival) {
+                $item['estimated_arrival_date'] = $orderDateString;
+            }
+
+            return $item;
+        }, $items);
+    }
+
+    /**
+     * Build the vendor-scoped dataset for a supplier's copy of a purchase order.
+     *
+     * Server-side supplier membership is the security boundary: only lines that
+     * canonically belong to $supplier are returned, so the PDF can never leak
+     * another supplier's items, prices, or existence.
+     *
+     * @return array{purchase_order: PurchaseOrder, supplier: Supplier, items: Collection<int, PurchaseOrderItem>, subtotal: float, item_count: int}
+     */
+    public function buildSupplierPdfData(PurchaseOrder $purchaseOrder, Supplier $supplier): array
+    {
+        $branchId = $this->branchContext->requireId();
+
+        if ($purchaseOrder->branch_id !== $branchId || $supplier->branch_id !== $branchId) {
+            throw ValidationException::withMessages([
+                'supplier' => 'Supplier tidak ditemukan di cabang aktif.',
+            ]);
+        }
+
+        $purchaseOrder->loadMissing('items.product', 'items.supplier', 'branch', 'createdBy', 'approvedBy');
+
+        $items = $purchaseOrder->items
+            ->filter(fn (PurchaseOrderItem $item): bool => (int) $item->supplier_id === (int) $supplier->id)
+            ->values();
+
+        if ($items->isEmpty()) {
+            throw ValidationException::withMessages([
+                'supplier' => 'Supplier ini tidak memiliki item pada pesanan pembelian tersebut.',
+            ]);
+        }
+
+        return [
+            'purchase_order' => $purchaseOrder,
+            'supplier' => $supplier,
+            'items' => $items,
+            'subtotal' => (float) $items->sum(fn (PurchaseOrderItem $item): float => $item->lineTotal()),
+            'item_count' => $items->count(),
+        ];
     }
 
     private function loadDetails(PurchaseOrder $purchaseOrder): PurchaseOrder
@@ -613,6 +779,7 @@ class PurchaseOrderService
                 'sentBy',
                 'createdBy',
                 'items.product',
+                'items.supplier',
                 'items.inventoryLocation',
                 'items.purchaseRequestItem',
             ]);
