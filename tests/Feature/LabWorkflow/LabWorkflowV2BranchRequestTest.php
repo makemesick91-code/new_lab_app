@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabPickupTask;
@@ -20,10 +21,24 @@ beforeEach(function () {
 /** @param array<string,mixed> $overrides */
 function branchRequestPayload(array $overrides = []): array
 {
-    return array_merge(labOrderPayload(), [
+    $payload = array_merge(labOrderPayload(), [
         'spk_photo' => fakeEvidencePhoto('spk.png'),
         'model_photo' => fakeEvidencePhoto('model.png'),
     ], $overrides);
+
+    // Klinik = Cabang RME: the store FormRequest now rejects doctors bound to
+    // another branch, so align the fixture doctor with the active MAIN branch.
+    if (! array_key_exists('doctor_id', $overrides)) {
+        $main = Branch::where('code', Branch::MAIN_CODE)->first();
+        $doctor = Doctor::find($payload['doctor_id']);
+
+        if ($main && $doctor) {
+            $doctor->update(['branch_id' => $main->id]);
+            $doctor->branches()->syncWithoutDetaching([$main->id]);
+        }
+    }
+
+    return $payload;
 }
 
 function v2DraftWithPhotos(): LabOrder

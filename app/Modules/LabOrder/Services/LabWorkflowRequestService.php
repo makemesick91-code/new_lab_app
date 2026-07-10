@@ -3,7 +3,9 @@
 namespace App\Modules\LabOrder\Services;
 
 use App\Models\User;
+use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabPickupTaskRepositoryInterface;
 use App\Modules\LabOrder\Models\AuditLog;
@@ -11,8 +13,11 @@ use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabPickupTask;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
+use App\Modules\LabService\Models\LabService;
+use App\Modules\Patient\Models\Patient;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -38,6 +43,13 @@ class LabWorkflowRequestService
         private readonly BranchContext $branchContext,
         private readonly LabWorkflowNotificationService $notifications,
     ) {}
+
+    /**
+     * Bounded local-search catalog size for the patient dropdown (same
+     * local-catalog pattern as the Inventory product select — never the whole
+     * table into HTML).
+     */
+    public const PATIENT_OPTION_LIMIT = 500;
 
     /** Evidence types a branch actor may upload in the request stage. */
     public const BRANCH_EVIDENCE_TYPES = [
@@ -66,6 +78,8 @@ class LabWorkflowRequestService
     {
         $branchId = $this->branchContext->requireId();
 
+        $this->assertRmeBranch($branchId);
+
         $order = $this->createV2Draft($data, $branchId, $actor);
 
         $this->evidence->storePhoto($order, LabWorkflowEvidence::TYPE_SPK_PHOTO, $spkPhoto, $actor);
@@ -91,7 +105,9 @@ class LabWorkflowRequestService
             $order = $this->labOrders->create([
                 'order_number' => $this->orderNumbers->generate($orderDate),
                 'branch_id' => $branchId,
-                'clinic_id' => $data['clinic_id'],
+                // Legacy clinic master reference — nullable since the Klinik of a
+                // V2 branch request is the canonical branch_id (Cabang RME).
+                'clinic_id' => $data['clinic_id'] ?? null,
                 'doctor_id' => $data['doctor_id'],
                 'patient_id' => $data['patient_id'] ?? null,
                 'medical_record_number' => $data['medical_record_number'] ?? null,
@@ -119,6 +135,95 @@ class LabWorkflowRequestService
 
             return $order->refresh();
         });
+    }
+
+    /**
+     * Klinik = Cabang RME: a branch lab request may only be created from an
+     * active RME-enabled branch (service-level re-assertion of the FormRequest
+     * rule — defense in depth, per the ENT-1 3-layer authorization baseline).
+     */
+    private function assertRmeBranch(int $branchId): void
+    {
+        $branch = Branch::query()->whereKey($branchId)->first();
+
+        if ($branch === null || ! $branch->is_active || ! $branch->is_rme_enabled) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Permintaan lab hanya dapat dibuat dari Cabang RME aktif.',
+            ]);
+        }
+    }
+
+    /**
+     * Option catalogs for the create form, scoped server-side to the active
+     * Cabang RME so the searchable dropdowns can never present a foreign
+     * branch's patients or doctors. Returns safe display fields only — never
+     * KTP/NIK, phone, address, or notes.
+     *
+     * @return array{
+     *     branch: Branch|null,
+     *     patients: Collection<int, object>,
+     *     doctors: Collection<int, object>,
+     *     labServices: Collection<int, object>,
+     * }
+     */
+    public function formOptionsForActiveBranch(): array
+    {
+        $branch = $this->branchContext->branch();
+
+        $isRmeBranch = $branch !== null && $branch->is_active && $branch->is_rme_enabled;
+
+        if (! $isRmeBranch) {
+            return [
+                'branch' => null,
+                'patients' => collect(),
+                'doctors' => collect(),
+                'labServices' => collect(),
+            ];
+        }
+
+        $patients = Patient::query()
+            ->where('is_active', true)
+            ->where(fn ($query) => $query->where('branch_id', $branch->id)->orWhereNull('branch_id'))
+            ->orderBy('name')
+            ->limit(self::PATIENT_OPTION_LIMIT)
+            ->get(['id', 'name', 'medical_record_number'])
+            ->map(fn (Patient $patient) => (object) [
+                'id' => $patient->id,
+                'code' => $patient->medical_record_number,
+                'name' => $patient->name,
+            ]);
+
+        $doctors = Doctor::query()
+            ->where('is_active', true)
+            ->where(function ($query) use ($branch) {
+                $query->where('branch_id', $branch->id)
+                    ->orWhereHas('branches', fn ($q) => $q->where('mst_branches.id', $branch->id))
+                    ->orWhere(fn ($q) => $q->whereNull('branch_id')->whereDoesntHave('branches'));
+            })
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn (Doctor $doctor) => (object) [
+                'id' => $doctor->id,
+                'code' => null,
+                'name' => $doctor->name,
+            ]);
+
+        $labServices = LabService::query()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'code', 'name', 'price'])
+            ->map(fn (LabService $service) => (object) [
+                'id' => $service->id,
+                'code' => $service->code,
+                'name' => $service->name,
+            ]);
+
+        return [
+            'branch' => $branch,
+            'patients' => $patients,
+            'doctors' => $doctors,
+            'labServices' => $labServices,
+        ];
     }
 
     /**
