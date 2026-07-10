@@ -99,3 +99,43 @@ it('feature flag governance validates unsafe risky default as FAIL', function ()
 
     expect($governance['summary']['decision'])->toBe('FAIL');
 });
+
+// ---------------------------------------------------------------------------
+// LAB-WORKFLOW-V2 activation hotfix — config-build-time env_value override
+// (survives config:cache, where runtime env() reads nothing).
+// ---------------------------------------------------------------------------
+
+it('honors a config-build-time env_value override (config:cache-safe path)', function () {
+    $flags = config('feature_flags.flags');
+    expect($flags['lab.workflow_v2']['default'])->toBeFalse();
+
+    // Simulate the value captured by config:cache from the environment file.
+    $flags['lab.workflow_v2']['env_value'] = 'true';
+    config()->set('feature_flags.flags', $flags);
+
+    $service = app(FeatureFlagService::class);
+    expect($service->enabled('lab.workflow_v2'))->toBeTrue();
+
+    // Governance: enabled risky flag is a WARNING (WATCH), never FAIL —
+    // the sanctioned activation posture per ReleaseSafetyService.
+    $governance = $service->validateGovernance();
+    expect($governance['summary']['decision'])->not->toBe('FAIL');
+    expect($governance['risky_enabled_flags'])->toContain('lab.workflow_v2');
+});
+
+it('treats a null env_value as no override (default stays authoritative)', function () {
+    $flags = config('feature_flags.flags');
+    $flags['lab.workflow_v2']['env_value'] = null;
+    config()->set('feature_flags.flags', $flags);
+
+    expect(app(FeatureFlagService::class)->enabled('lab.workflow_v2'))->toBeFalse();
+});
+
+it('honors an env_value of false even when the declared default is true', function () {
+    $flags = config('feature_flags.flags');
+    $flags['lab.workflow_v2']['default'] = true;
+    $flags['lab.workflow_v2']['env_value'] = 'false';
+    config()->set('feature_flags.flags', $flags);
+
+    expect(app(FeatureFlagService::class)->enabled('lab.workflow_v2'))->toBeFalse();
+});
