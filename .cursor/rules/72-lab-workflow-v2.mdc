@@ -56,3 +56,15 @@ alwaysApply: false
     di `StoreLabWorkflowRequestRequest` (pasien/dokter/layanan crafted → 422). Dropdown search BUKAN
     authorization boundary. Komponen searchable digenerikkan via prop `notFoundLabel`/`clearLabel`
     (default lama dipertahankan — Inventory tidak berubah).
+14. **Operator branch mapping (ops governance, 2026-07-10)**: Model Branch canonical =
+    `App\Modules\Branch\Models\Branch` (BUKAN `App\Models\Branch`). Audit pemegang permission WAJIB
+    memakai effective permission (`$user->can()`, `getAllPermissions()`, `getRoleNames()`) — query
+    direct-permission (`whereHas('permissions')`) melewatkan role permission dan `Gate::before`
+    Super Admin. ID user/branch TIDAK BOLEH disalin antar environment (DB lokal dev ≠ DB VPS pilot).
+    Operator Lab Request wajib punya `users.branch_id` → Cabang RME aktif; MAIN/non-RME tidak boleh
+    dipakai. Mapping cabang produksi harus berbasis evidence (online context, histori
+    `trx_clinic_visits.created_by`, audit log) atau konfirmasi owner — tidak boleh auto-assign; mutasi
+    harus `DB::transaction` + `lockForUpdate` + validasi branch aktif+RME + before/after tercatat.
+    Akun admin lintas-cabang (Super Admin/Lab Admin) tidak di-pin ke satu cabang tanpa keputusan owner.
+    Operational data repair TANPA code change tidak membutuhkan GO tag/deploy baru — cukup evidence doc
+    (lihat `docs/operations/lab-request-operator-rme-branch-mapping-2026-07-10.md`).

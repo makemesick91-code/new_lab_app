@@ -37,3 +37,16 @@ Halaman **Buat Permintaan Lab** (`lab-workflow-requests.create`, LAB-WORKFLOW-V2
 - Baru: `tests/Feature/LabWorkflow/LabWorkflowRequestRmeBranchSearchableFieldsTest.php` — 21 passed / 89 assertions (Klinik lock + non-RME blocked + guest, katalog pasien/dokter/layanan scoped + KTP tidak bocor + cap, injeksi branch/pasien/dokter/layanan ditolak, old input, pickup idempotent, conversion-path nullable clinic).
 - Regression: `tests/Feature/LabWorkflow` 111 passed / 520; `--filter='LabOrder|LabIntegration|LabCaseCandidate|LabService'` 89 passed / 211; Inventory pemakai komponen (`StockOpname|PurchaseOrder|StockTransfer|LocationMinimum|BatchDirectory`) 327 passed / 1255; Ui Inventory 19 passed / 122.
 - `pint --dirty` clean; `git diff --check` clean; `view:cache` compile OK.
+
+## Operational follow-up (2026-07-10) — Operator → Cabang RME mapping
+
+Pasca-deploy ditemukan seluruh user VPS pilot ber-`branch_id NULL` → `BranchContext` jatuh ke MAIN
+(non-RME) dan operator sah terblokir dari halaman Buat Permintaan Lab. **Murni data repair, tanpa
+code change, tanpa GO tag baru.** Yuni FO (user 7, Admin Klinik) dipetakan ke LDK2 (branch 2)
+berbasis evidence (online context miliknya 2026-07-09 + 2 kunjungan terakhir di LDK2), transaksional
++ lockForUpdate, setelah backup `auto_backup_20260710-150150.sql`. Rahmi (user 10, Perawat) belum
+dipetakan — nihil jejak aktivitas, menunggu konfirmasi cabang dari owner. Super Admin/Lab Admin
+sengaja tidak di-pin (aktor lintas-cabang; create adalah fungsi operator cabang). Verifikasi runtime:
+BranchContext → LDK2, form options 8 pasien/4 dokter/10 layanan, isolasi cabang benar, smoke +
+permission cache reset + services green. Evidence lengkap:
+`docs/operations/lab-request-operator-rme-branch-mapping-2026-07-10.md`.
