@@ -77,6 +77,15 @@ class LabOrder extends Model
 
     public const PRIORITIES = ['NORMAL', 'URGENT', 'SUPER_URGENT'];
 
+    /**
+     * LAB-WORKFLOW-V2 — workflow engine discriminator (trx_lab_orders.workflow_version).
+     * LEGACY (1) = Sprint 3-7 inline pipeline (read-only for new mutations once V2 active).
+     * V2 (2) = the Lab Workflow V2 state machine. NULL is treated as LEGACY.
+     */
+    public const WORKFLOW_LEGACY = 1;
+
+    public const WORKFLOW_V2 = 2;
+
     protected $table = 'trx_lab_orders';
 
     protected $fillable = [
@@ -90,6 +99,7 @@ class LabOrder extends Model
         'due_date',
         'priority',
         'status',
+        'workflow_version',
         'notes',
         'delivery_signature_path',
         'delivery_photo_path',
@@ -105,12 +115,27 @@ class LabOrder extends Model
             'order_date' => 'date',
             'due_date' => 'date',
             'received_at' => 'datetime',
+            'workflow_version' => 'integer',
         ];
     }
 
     public function isEditable(): bool
     {
         return ! in_array($this->status, [self::STATUS_CANCELLED, 'COMPLETED'], true);
+    }
+
+    /**
+     * LAB-WORKFLOW-V2 — engine resolution. NULL (legacy/backfilled rows and
+     * factory rows that predate an explicit stamp) counts as LEGACY.
+     */
+    public function isLegacyWorkflow(): bool
+    {
+        return (int) ($this->workflow_version ?? self::WORKFLOW_LEGACY) === self::WORKFLOW_LEGACY;
+    }
+
+    public function isV2Workflow(): bool
+    {
+        return (int) $this->workflow_version === self::WORKFLOW_V2;
     }
 
     public function branch(): BelongsTo

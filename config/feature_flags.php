@@ -277,6 +277,21 @@ return [
             'rollback_action' => 'Set env override to false; plan/design only, no production change to roll back.',
         ],
 
+        // --- Lab Workflow V2 (parallel engine, legacy read-only) ---
+
+        'lab.workflow_v2' => [
+            'name' => 'Lab Workflow V2',
+            'description' => 'Activates the Lab Workflow V2 state machine (Cabang pickup, courier transport, internal/external production, QC/rework, delivery proof) for NEW lab orders. When off, new orders keep the legacy Sprint 3-7 pipeline. Legacy orders always stay read-only legacy regardless of this flag.',
+            'default' => false,
+            'env_key' => 'FEATURE_LAB_WORKFLOW_V2',
+            'owner' => 'lab-workflow',
+            'risk_level' => 'high',
+            'rollout_status' => 'in_progress',
+            'review_target' => 'LAB-WORKFLOW-V2',
+            'dependencies' => [],
+            'rollback_action' => 'Set env override to false; new orders revert to the legacy Lab pipeline and existing V2 orders stay readable (no data migration required).',
+        ],
+
         // --- Release safety / governance flags (implemented in NSF-9) ---
 
         'release.automated_smoke_required' => [
