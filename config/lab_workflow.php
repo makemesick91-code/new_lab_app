@@ -54,23 +54,27 @@ return [
         S::INTERNAL_APPROVED => 'manage_lab_orders',
         S::EXTERNAL_LAB_REQUIRED => 'manage_lab_orders',
 
-        // Internal production
+        // Internal production. A production step start-state can also be
+        // entered by the QC actor as the rework target of a QC-fail decision
+        // (reject_qc) — route middleware still restricts the direct step
+        // endpoints to production actors, and the production service enforces
+        // assignment ownership on top.
         S::TECHNICIAN_ASSIGNMENT_PENDING => 'assign_technicians',
         S::TECHNICIAN_ASSIGNED => 'assign_technicians',
-        S::STEP_1_BLOCKOUT_DUPLICATE => 'start_production_work',
+        S::STEP_1_BLOCKOUT_DUPLICATE => ['start_production_work', 'reject_qc'],
         S::STEP_1_COMPLETED => 'complete_production_work',
-        S::STEP_2_TEETH_SETUP => 'start_production_work',
+        S::STEP_2_TEETH_SETUP => ['start_production_work', 'reject_qc'],
         S::STEP_2_COMPLETED => 'complete_production_work',
-        S::STEP_3_PROCESSING => 'start_production_work',
+        S::STEP_3_PROCESSING => ['start_production_work', 'reject_qc'],
         S::STEP_3_COMPLETED => 'complete_production_work',
-        S::STEP_4_FITTING_POLISH => 'start_production_work',
+        S::STEP_4_FITTING_POLISH => ['start_production_work', 'reject_qc'],
         S::STEP_4_COMPLETED => 'complete_production_work',
 
         // QC & rework
         S::QC_PENDING => 'send_to_qc',
         S::QC_PASSED => 'pass_qc',
         S::QC_FAILED => 'reject_qc',
-        S::REWORK_REQUIRED => 'request_remake',
+        S::REWORK_REQUIRED => 'reject_qc',
 
         // External lab (coordinator = Admin Lab in Phase 1)
         S::EXTERNAL_LAB_PREPARATION => 'manage_lab_orders',
@@ -79,8 +83,9 @@ return [
         S::EXTERNAL_LAB_RETURNED => 'manage_lab_orders',
         S::EXTERNAL_LAB_RESULT_REVIEW => 'manage_lab_orders',
 
-        // Model done -> delivery
-        S::MODEL_DONE => 'manage_lab_orders',
+        // Model done -> delivery. MODEL_DONE is reached from a QC pass
+        // (pass_qc) or an accepted external result review (manage_lab_orders).
+        S::MODEL_DONE => ['pass_qc', 'manage_lab_orders'],
         S::DELIVERY_PENDING => 'create_delivery',
         S::COURIER_NOTIFIED => 'create_delivery',
         S::DELIVERY_ACCEPTED => 'start_delivery',

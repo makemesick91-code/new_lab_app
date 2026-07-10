@@ -45,11 +45,19 @@ class LabWorkflowStateMachine
         return LabWorkflowState::allowedFrom((string) $order->status);
     }
 
-    public function permissionFor(string $targetState): string
+    /**
+     * Permission(s) allowed to move an order INTO the target state. A target
+     * may map to several permissions (e.g. MODEL_DONE via QC pass or external
+     * result review) — any one suffices.
+     *
+     * @return list<string>
+     */
+    public function permissionsFor(string $targetState): array
     {
         $map = (array) config('lab_workflow.transition_permissions', []);
+        $value = $map[$targetState] ?? config('lab_workflow.default_permission', 'manage_lab_orders');
 
-        return (string) ($map[$targetState] ?? config('lab_workflow.default_permission', 'manage_lab_orders'));
+        return array_values((array) $value);
     }
 
     /** Non-throwing check used by UI/policies to decide whether to offer a CTA. */
@@ -115,8 +123,7 @@ class LabWorkflowStateMachine
         }
 
         // 6. Actor authorization (Super Admin passes via Gate::before).
-        $permission = $this->permissionFor($targetState);
-        if (! $actor->can($permission)) {
+        if (! $actor->canAny($this->permissionsFor($targetState))) {
             throw ValidationException::withMessages([
                 'workflow' => 'Anda tidak memiliki izin untuk transisi ini.',
             ]);

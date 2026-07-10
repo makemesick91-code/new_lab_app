@@ -247,6 +247,30 @@ class LabOrder extends Model
         return $this->workflowEvidence()->where('type', $type)->exists();
     }
 
+    /** LAB-WORKFLOW-V2 — append-only model analysis decisions. */
+    public function modelAnalyses(): HasMany
+    {
+        return $this->hasMany(LabModelAnalysis::class, 'lab_order_id');
+    }
+
+    public function latestModelAnalysis(): HasOne
+    {
+        return $this->hasOne(LabModelAnalysis::class, 'lab_order_id')->latestOfMany();
+    }
+
+    /** LAB-WORKFLOW-V2 — external lab dispatches (append-only rounds). */
+    public function externalDispatches(): HasMany
+    {
+        return $this->hasMany(LabExternalDispatch::class, 'lab_order_id');
+    }
+
+    public function activeExternalDispatch(): HasOne
+    {
+        return $this->hasOne(LabExternalDispatch::class, 'lab_order_id')
+            ->whereIn('status', LabExternalDispatch::ACTIVE_STATUSES)
+            ->latestOfMany();
+    }
+
     protected static function newFactory(): LabOrderFactory
     {
         return LabOrderFactory::new();

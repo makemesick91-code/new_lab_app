@@ -130,6 +130,28 @@ final class LabWorkflowState
     public const DEFAULT_REWORK_TARGET = self::STEP_2_TEETH_SETUP;
 
     /**
+     * Internal production steps in canonical order: start-state => completed-state.
+     * Also used as the V2 step template rows in trx_lab_production_steps
+     * (step_name = the start-state string).
+     *
+     * @var array<string, string>
+     */
+    public const V2_PRODUCTION_STEPS = [
+        self::STEP_1_BLOCKOUT_DUPLICATE => self::STEP_1_COMPLETED,
+        self::STEP_2_TEETH_SETUP => self::STEP_2_COMPLETED,
+        self::STEP_3_PROCESSING => self::STEP_3_COMPLETED,
+        self::STEP_4_FITTING_POLISH => self::STEP_4_COMPLETED,
+    ];
+
+    /** Valid QC rework targets (production step start-states). */
+    public const REWORK_TARGETS = [
+        self::STEP_1_BLOCKOUT_DUPLICATE,
+        self::STEP_2_TEETH_SETUP,
+        self::STEP_3_PROCESSING,
+        self::STEP_4_FITTING_POLISH,
+    ];
+
+    /**
      * Canonical transition matrix: from-state => [allowed to-states].
      * Absence of a key (or an empty array) means terminal / no outgoing edge.
      *
