@@ -61,7 +61,53 @@ class LabV2OrderController extends Controller
             'orders' => $orders,
             'status' => $status,
             'search' => $search,
+            'kpis' => $this->pipelineKpis(),
         ]);
+    }
+
+    /**
+     * Pipeline stage counters (single grouped query, PHP bucketing).
+     *
+     * @return array<string, int>
+     */
+    private function pipelineKpis(): array
+    {
+        $byStatus = LabOrder::query()
+            ->where('workflow_version', LabOrder::WORKFLOW_V2)
+            ->selectRaw('status, count(*) as total')
+            ->groupBy('status')
+            ->pluck('total', 'status');
+
+        $sum = fn (array $states) => (int) collect($states)->sum(fn ($s) => (int) ($byStatus[$s] ?? 0));
+
+        return [
+            'Menunggu Pickup' => $sum([LabWorkflowState::WAITING_PICKUP]),
+            'Menuju Lab' => $sum([LabWorkflowState::PICKUP_ACCEPTED, LabWorkflowState::PICKED_UP, LabWorkflowState::IN_TRANSIT_TO_LAB]),
+            'Perlu Analisa' => $sum([LabWorkflowState::RECEIVED_AT_LAB, LabWorkflowState::MODEL_REGISTERED, LabWorkflowState::MODEL_ANALYSIS_PENDING]),
+            'Produksi Internal' => $sum([
+                LabWorkflowState::INTERNAL_APPROVED, LabWorkflowState::TECHNICIAN_ASSIGNMENT_PENDING, LabWorkflowState::TECHNICIAN_ASSIGNED,
+                LabWorkflowState::STEP_1_BLOCKOUT_DUPLICATE, LabWorkflowState::STEP_1_COMPLETED,
+                LabWorkflowState::STEP_2_TEETH_SETUP, LabWorkflowState::STEP_2_COMPLETED,
+                LabWorkflowState::STEP_3_PROCESSING, LabWorkflowState::STEP_3_COMPLETED,
+                LabWorkflowState::STEP_4_FITTING_POLISH, LabWorkflowState::STEP_4_COMPLETED,
+                LabWorkflowState::QC_FAILED, LabWorkflowState::REWORK_REQUIRED,
+            ]),
+            'QC Pending' => $sum([LabWorkflowState::QC_PENDING]),
+            'Lab Eksternal' => $sum([
+                LabWorkflowState::EXTERNAL_LAB_REQUIRED, LabWorkflowState::EXTERNAL_LAB_PREPARATION,
+                LabWorkflowState::EXTERNAL_LAB_SENT, LabWorkflowState::EXTERNAL_LAB_IN_PROGRESS,
+                LabWorkflowState::EXTERNAL_LAB_RETURNED, LabWorkflowState::EXTERNAL_LAB_RESULT_REVIEW,
+            ]),
+            'Pengiriman' => $sum([
+                LabWorkflowState::MODEL_DONE, LabWorkflowState::DELIVERY_PENDING, LabWorkflowState::COURIER_NOTIFIED,
+                LabWorkflowState::DELIVERY_ACCEPTED, LabWorkflowState::LAB_HANDOVER_PENDING,
+                LabWorkflowState::PRE_DELIVERY_PHOTO_CAPTURED, LabWorkflowState::COURIER_SIGNATURE_CAPTURED,
+                LabWorkflowState::READY_FOR_TRANSIT_TO_BRANCH, LabWorkflowState::IN_TRANSIT_TO_BRANCH,
+                LabWorkflowState::ARRIVED_AT_BRANCH, LabWorkflowState::RECIPIENT_SIGNATURE_CAPTURED,
+                LabWorkflowState::DELIVERY_LOCATION_PHOTO_CAPTURED,
+            ]),
+            'Terkirim' => $sum([LabWorkflowState::DELIVERED]),
+        ];
     }
 
     public function show(LabOrder $labV2Order): View

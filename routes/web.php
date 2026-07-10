@@ -6,6 +6,7 @@ use App\Http\Controllers\FoundationMonitoringController;
 use App\Http\Controllers\HealthCheckController;
 use App\Http\Controllers\HomeDashboardController;
 use App\Http\Controllers\LoadBalancerHealthController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ProfileController;
 use App\Modules\AccessControl\Controllers\PermissionController;
 use App\Modules\AccessControl\Controllers\RoleController;
@@ -119,6 +120,11 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // LAB-WORKFLOW-V2 Phase 5 — in-app notification inbox (strictly self-scoped).
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::post('/notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
 });
 
 /*

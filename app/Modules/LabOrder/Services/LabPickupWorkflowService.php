@@ -26,6 +26,7 @@ class LabPickupWorkflowService
         private readonly LabPickupTaskRepositoryInterface $tasks,
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly LabWorkflowEvidenceService $evidence,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     public function queue(array $filters = [], int $perPage = 15): LengthAwarePaginator
@@ -95,7 +96,7 @@ class LabPickupWorkflowService
     /** Courier departs toward the lab. Pickup evidence must already exist. */
     public function startTransit(LabPickupTask $task, User $actor): LabPickupTask
     {
-        return DB::transaction(function () use ($task, $actor) {
+        $result = DB::transaction(function () use ($task, $actor) {
             $locked = $this->lock($task);
 
             $this->assertTaskStatus($locked, LabPickupTask::STATUS_PICKED_UP);
@@ -116,6 +117,16 @@ class LabPickupWorkflowService
                 'in_transit_at' => now(),
             ]);
         });
+
+        $this->notifications->notifyPermissionHolders(
+            ['manage_lab_orders'],
+            'Model menuju lab',
+            "Order {$result->labOrder->order_number} sedang dalam perjalanan ke lab.",
+            route('lab-pickup-tasks.show', $result),
+            $result->labOrder,
+        );
+
+        return $result;
     }
 
     /**

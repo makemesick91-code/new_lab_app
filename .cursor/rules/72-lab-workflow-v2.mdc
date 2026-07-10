@@ -1,0 +1,45 @@
+---
+description: LAB-WORKFLOW-V2 — canonical Lab workflow rules (Cabang pickup, courier, production, QC, external lab, delivery proof, legacy inactivation)
+globs:
+  - "app/Modules/LabOrder/**"
+  - "app/Modules/Production/**"
+  - "app/Modules/QualityControl/**"
+  - "app/Modules/Delivery/**"
+alwaysApply: false
+---
+
+# LAB-WORKFLOW-V2 (canonical untuk order lab baru)
+
+1. **Lab Workflow V2 adalah canonical untuk order baru**; aktivasi via flag `lab.workflow_v2`
+   (env `FEATURE_LAB_WORKFLOW_V2`) dan keputusan engine HANYA lewat
+   `LabWorkflowResolver` (`FeatureFlagService::enabled()`), bukan config mentah.
+2. **Workflow lama INACTIVE + read-only untuk order baru** saat V2 aktif: `LabOrderService::create`
+   ditolak server-side (`assertLegacyCreationAllowed`); update/cancel legacy menolak order V2
+   (`assertLegacyMutable`). Jangan hapus workflow lama tanpa sprint retirement khusus.
+3. `trx_lab_orders.workflow_version`: LEGACY=1 (NULL diperlakukan LEGACY), V2=2. Order baru wajib V2.
+4. **Semua transisi status V2 lewat `LabWorkflowStateMachine::transition()`** — matrix di
+   `LabWorkflowState::matrix()`, permission map (multi-nilai, canAny) di `config/lab_workflow.php`.
+   Update status langsung dari request DILARANG. Transisi terlarang = ValidationException.
+5. SPK photo + model photo WAJIB sebelum `WAITING_PICKUP`; pickup & delivery adalah task terpisah
+   (`trx_lab_pickup_tasks`, `trx_lab_delivery_tasks`, UNIQUE lab_order_id, claim first-committed-wins
+   di bawah lock). Model wajib dikonfirmasi diterima lab (`manage_lab_orders`) — kurir tidak bisa
+   mengkonfirmasi penerimaan sendiri.
+6. Analisa wajib sebelum penugasan (INTERNAL vs EXTERNAL, alasan wajib, append-only
+   `trx_lab_model_analyses`). Jalur internal: step 1–4 berurutan ketat + QC; **QC gagal wajib alasan +
+   target rework eksplisit**; SEGREGATION OF DUTY: teknisi produsen tidak boleh memutuskan QC-nya sendiri.
+   Jalur eksternal wajib result review sebelum MODEL_DONE; reject = putaran dispatch BARU (append-only).
+7. **Delivery proof (aturan owner, server-side 3 lapis)**: sebelum `IN_TRANSIT_TO_BRANCH` wajib foto
+   serah terima lab→kurir + tanda tangan kurir; `DELIVERED` wajib nama + tanda tangan penerima + foto
+   lokasi/bukti. FormRequest + service re-assert + matrix — disabled button bukan security.
+8. **Bukti privat**: `trx_lab_workflow_evidence` (tipe eksplisit, sha256, soft-delete only — bukti audit
+   tidak boleh dihapus) di disk privat `local`; akses hanya via `lab-workflow-evidence.show` +
+   `LabWorkflowEvidencePolicy`. Signature = file PNG (magic bytes divalidasi), bukan base64 di DB.
+9. Histori transition append-only (`trx_lab_order_status_logs` + `sys_audit_logs`); jangan log binary/
+   base64/PII. Branch-scoped: transisi aktor-cabang di `branch_scoped_transitions`; workspace cabang
+   selalu difilter `BranchContext` (jangan percaya branch_id request).
+10. Notifikasi V2 = in-app database notifications saja (`LabWorkflowNotificationService`) — TIDAK ada
+    auto-send WhatsApp; kegagalan notifikasi tidak boleh membatalkan transisi.
+11. Integrasi RME → LabCaseCandidate → convert tetap manual review; saat V2 aktif konversi menghasilkan
+    order V2 DRAFT. Kegagalan workflow lab TIDAK PERNAH me-rollback payment RME.
+12. Report produksi legacy membaca `trx_lab_order_assignments` status `DONE` — pertahankan semantik
+    status assignment V2 identik dengan legacy.

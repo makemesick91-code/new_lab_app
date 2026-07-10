@@ -26,6 +26,7 @@ class LabV2QualityControlService
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly LabV2ProductionService $production,
         private readonly AuditLogService $auditLogs,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     /** QC pass: QC_PENDING -> QC_PASSED -> MODEL_DONE. */
@@ -34,7 +35,7 @@ class LabV2QualityControlService
         $actor = $actor ?? auth()->user();
         $this->assertSegregationOfDuty($order, $actor);
 
-        return DB::transaction(function () use ($order, $notes, $actor) {
+        $result = DB::transaction(function () use ($order, $notes, $actor) {
             $this->stateMachine->transition($order, LabWorkflowState::QC_PASSED, $actor, [
                 'reason' => $notes ?: 'QC lulus',
             ]);
@@ -63,6 +64,16 @@ class LabV2QualityControlService
 
             return $result;
         });
+
+        $this->notifications->notifyPermissionHolders(
+            ['create_delivery', 'manage_lab_orders'],
+            'Model selesai (QC lulus)',
+            "Order {$order->order_number} selesai dan siap dibuatkan tugas pengiriman.",
+            route('lab-v2-orders.show', $order),
+            $order,
+        );
+
+        return $result;
     }
 
     /**
@@ -89,7 +100,7 @@ class LabV2QualityControlService
 
         $this->assertSegregationOfDuty($order, $actor);
 
-        return DB::transaction(function () use ($order, $reason, $targetStep, $actor) {
+        $result = DB::transaction(function () use ($order, $reason, $targetStep, $actor) {
             $this->stateMachine->transition($order, LabWorkflowState::QC_FAILED, $actor, [
                 'reason' => $reason,
             ]);
@@ -128,6 +139,18 @@ class LabV2QualityControlService
 
             return $result;
         });
+
+        $assignment = $this->production->latestAssignment($order);
+        $assignment?->loadMissing('technician');
+        $this->notifications->notifyUsers(
+            [$assignment?->technician?->user_id ? User::find($assignment->technician->user_id) : null],
+            'QC gagal — rework',
+            "Order {$order->order_number} harus diulang dari {$targetStep}. Alasan: ".mb_substr($reason, 0, 120),
+            route('lab-v2-orders.show', $order),
+            $order,
+        );
+
+        return $result;
     }
 
     /** Sequential revision counter derived from the append-only status log. */
