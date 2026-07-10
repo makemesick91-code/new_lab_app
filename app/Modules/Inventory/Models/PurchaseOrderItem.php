@@ -26,10 +26,12 @@ class PurchaseOrderItem extends Model
     protected $fillable = [
         'purchase_order_id',
         'product_id',
+        'supplier_id',
         'inventory_location_id',
         'purchase_request_item_id',
         'quantity_ordered',
         'unit_price',
+        'estimated_arrival_date',
         'notes',
     ];
 
@@ -39,6 +41,7 @@ class PurchaseOrderItem extends Model
             'quantity_ordered' => 'decimal:4',
             'quantity_received' => 'decimal:4',
             'unit_price' => 'decimal:2',
+            'estimated_arrival_date' => 'date',
         ];
     }
 
@@ -85,6 +88,18 @@ class PurchaseOrderItem extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class);
+    }
+
+    public function displaySupplierName(): string
+    {
+        $this->loadMissing('supplier');
+
+        return filled($this->supplier?->name) ? $this->supplier->name : '—';
     }
 
     public function inventoryLocation(): BelongsTo

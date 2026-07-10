@@ -82,15 +82,18 @@ it('persists decimal quantity on purchase request items', function () {
 it('persists decimal quantity on purchase order items', function () {
     $product = Product::factory()->create(['branch_id' => $this->branch->id]);
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
+    $supplier = Supplier::factory()->create(['branch_id' => $this->branch->id]);
 
     $purchaseOrder = $this->purchaseOrderService->createDraft([
         'order_date' => now()->toDateString(),
         'items' => [
             [
                 'product_id' => $product->id,
+                'supplier_id' => $supplier->id,
                 'inventory_location_id' => $location->id,
                 'quantity_ordered' => 1.25,
                 'unit_price' => 1000,
+                'estimated_arrival_date' => now()->toDateString(),
             ],
         ],
     ], $this->manager);

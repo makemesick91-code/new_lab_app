@@ -263,13 +263,18 @@ class GoodsReceiptService
             );
             $this->assertHasPostableQuantity($locked);
 
-            $supplierId = $purchaseOrder->supplier_id !== null ? (int) $purchaseOrder->supplier_id : null;
+            // Multi-vendor: supplier is canonical on the PO item. Each PURCHASE
+            // movement records its own line's supplier so vendor provenance stays
+            // per-product even when one PO spans several suppliers. The deprecated
+            // header supplier is only a fallback for legacy roomless lines.
+            $headerSupplierId = $purchaseOrder->supplier_id !== null ? (int) $purchaseOrder->supplier_id : null;
             $movementNotes = sprintf('Dihasilkan dari penerimaan barang %s', $locked->receipt_number);
 
             foreach ($items as $item) {
                 $poItem = $item->purchaseOrderItem;
                 $acceptedQty = (float) $item->accepted_qty;
                 $costSnapshot = $this->snapshotCostFromPurchaseOrderItem($poItem, $acceptedQty);
+                $movementSupplierId = $poItem?->supplier_id !== null ? (int) $poItem->supplier_id : $headerSupplierId;
 
                 if ($acceptedQty > 0) {
                     $item->loadMissing('product');
@@ -288,7 +293,7 @@ class GoodsReceiptService
                         (int) $item->inventory_location_id,
                         $acceptedQty,
                         $costSnapshot['unit_cost'],
-                        $supplierId,
+                        $movementSupplierId,
                         $movementNotes,
                         $batchData,
                         $locked->getTable(),

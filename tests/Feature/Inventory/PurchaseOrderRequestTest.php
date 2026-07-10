@@ -4,6 +4,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Inventory\Models\Product;
 use App\Modules\Inventory\Models\PurchaseRequest;
 use App\Modules\Inventory\Models\PurchaseRequestItem;
+use App\Modules\Inventory\Models\Supplier;
 use App\Modules\Inventory\Requests\StorePurchaseOrderRequest;
 use App\Modules\Inventory\Requests\UpdatePurchaseOrderRequest;
 use Database\Seeders\BranchSeeder;
@@ -53,12 +54,18 @@ function runPurchaseOrderValidation(FormRequest $request): Illuminate\Contracts\
 
 function validPurchaseOrderPayload(int $productId, array $overrides = []): array
 {
+    $supplierId = Supplier::factory()->create([
+        'branch_id' => Product::find($productId)->branch_id,
+    ])->id;
+
     return array_merge([
         'order_date' => now()->toDateString(),
         'items' => [
             [
                 'product_id' => $productId,
+                'supplier_id' => $supplierId,
                 'quantity_ordered' => 2,
+                'estimated_arrival_date' => now()->toDateString(),
             ],
         ],
     ], $overrides);
@@ -263,6 +270,7 @@ it('accepts existing purchase_request_id and purchase_request_item_id on store p
         'purchase_request_id' => $purchaseRequest->id,
         'product_id' => $this->product->id,
     ]);
+    $supplier = Supplier::factory()->create(['branch_id' => $this->branch->id]);
 
     $validator = runPurchaseOrderValidation(makePurchaseOrderRequest(
         new StorePurchaseOrderRequest,
@@ -271,8 +279,10 @@ it('accepts existing purchase_request_id and purchase_request_item_id on store p
             'items' => [
                 [
                     'product_id' => $this->product->id,
+                    'supplier_id' => $supplier->id,
                     'quantity_ordered' => 1,
                     'purchase_request_item_id' => $purchaseRequestItem->id,
+                    'estimated_arrival_date' => now()->toDateString(),
                 ],
             ],
         ]),

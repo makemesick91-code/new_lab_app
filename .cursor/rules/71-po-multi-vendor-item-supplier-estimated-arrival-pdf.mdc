@@ -1,0 +1,46 @@
+---
+description: Multi-vendor Purchase Order rules — item-level supplier, estimated arrival date, vendor-scoped supplier PDF
+globs:
+  - app/Modules/Inventory/**
+  - resources/views/inventory/purchase-orders/**
+  - resources/views/inventory/goods-receipts/**
+alwaysApply: false
+---
+
+# Purchase Order — Multi-Vendor (FIX-PO-MULTI-VENDOR)
+
+A Purchase Order can carry items from **multiple suppliers**. Supplier is
+**canonical on the PO item** (`trx_purchase_order_items.supplier_id`).
+
+## Non-negotiable rules
+
+1. Supplier is chosen **per item**, never a canonical header input. The legacy
+   header `trx_purchase_orders.supplier_id` / `supplier_snapshot_name` is a
+   **deprecated, derived** compatibility snapshot (sole distinct item supplier, or
+   `NULL` for multi-vendor). Do not reintroduce a header supplier select as the
+   source of truth.
+2. Every PO item **must** have a supplier and an `estimated_arrival_date`
+   (`required` in `ValidatesPurchaseOrderInput`; `estimated_arrival_date >= order_date`).
+3. Prices, per-supplier subtotals, and grand total are computed **server-side**
+   (`PurchaseOrder::supplierGroups()` / `subtotalForSupplier()` / `totalAmount()`).
+   Never trust request totals.
+4. The supplier PDF (`inventory.purchase-orders.supplier-pdf`) is **vendor-scoped**:
+   render only the target supplier's items via
+   `PurchaseOrderService::buildSupplierPdfData()`, which enforces server-side
+   supplier **membership** + branch ownership. Never leak another supplier's items,
+   prices, or existence. Reuse the existing `view` policy — no new permission.
+5. Goods Receipt references the PO item explicitly; the `PURCHASE` movement records
+   the **PO item's** supplier (`poItem.supplier_id ?? header.supplier_id`). PO
+   completion is computed across **all** items.
+6. Inventory stays **ledger-only**; branch isolation, authorization, batch tracking,
+   approval workflow, and additive-migration-only rules are preserved. Never
+   `migrate:fresh`/`db:wipe`. KTP/NIK are not part of procurement and are never rendered.
+7. dompdf templates are table-based (no flexbox); sanitize all output; never take raw
+   HTML from the request.
+
+## Compatibility layer
+
+`PurchaseOrderService::applyItemDefaults()` lets legacy/programmatic callers pass a
+header `supplier_id` (single-vendor) and omit per-item supplier/arrival — the header
+supplier and order date fill the blanks. The HTTP FormRequest still **requires**
+per-item supplier + arrival, so this shim never weakens the UI/API boundary.

@@ -65,16 +65,23 @@ it('creates trx_purchase_order_items table with required columns', function () {
         'id',
         'purchase_order_id',
         'product_id',
+        'supplier_id',
         'inventory_location_id',
         'purchase_request_item_id',
         'quantity_ordered',
         'unit_price',
+        'estimated_arrival_date',
         'notes',
         'created_at',
         'updated_at',
     ] as $column) {
         expect($columns)->toContain($column);
     }
+});
+
+it('stores canonical item-level supplier and estimated arrival on purchase order items', function () {
+    expect(Schema::hasColumn('trx_purchase_order_items', 'supplier_id'))->toBeTrue()
+        ->and(Schema::hasColumn('trx_purchase_order_items', 'estimated_arrival_date'))->toBeTrue();
 });
 
 it('stores supplier snapshot and reference fields on purchase order header', function () {

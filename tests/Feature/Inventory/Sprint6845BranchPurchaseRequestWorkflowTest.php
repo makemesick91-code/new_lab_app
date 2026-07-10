@@ -84,9 +84,11 @@ it('blocks a Kepala Cabang from creating a PO by route, policy, and direct reque
             'supplier_id' => $supplier->id,
             'items' => [[
                 'product_id' => $product->id,
+                'supplier_id' => $supplier->id,
                 'inventory_location_id' => $location->id,
                 'quantity_ordered' => 5,
                 'unit_price' => 1000,
+                'estimated_arrival_date' => now()->toDateString(),
             ]],
         ])
         ->assertForbidden();

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 /**
  * Sprint 16.2 — trx_purchase_orders (purchase order document header).
@@ -153,6 +154,72 @@ class PurchaseOrder extends Model
     public function getTotalAmountAttribute(): float
     {
         return $this->totalAmount();
+    }
+
+    /**
+     * Vendor-grouped view of the purchase order lines.
+     *
+     * One PO can carry items from several suppliers. Each group exposes the
+     * supplier, its lines, and its server-derived subtotal. Items without a
+     * resolvable supplier are grouped under a null-supplier bucket so the UI
+     * can flag them rather than silently hide them.
+     *
+     * @return Collection<int, array{supplier_id: int|null, supplier: Supplier|null, supplier_name: string, items: Collection<int, PurchaseOrderItem>, subtotal: float, item_count: int}>
+     */
+    public function supplierGroups(): Collection
+    {
+        $this->loadMissing('items.supplier', 'items.product');
+
+        return $this->items
+            ->groupBy(fn (PurchaseOrderItem $item): string => $item->supplier_id !== null ? (string) $item->supplier_id : 'none')
+            ->map(function ($items): array {
+                /** @var PurchaseOrderItem $first */
+                $first = $items->first();
+
+                return [
+                    'supplier_id' => $first->supplier_id !== null ? (int) $first->supplier_id : null,
+                    'supplier' => $first->supplier,
+                    'supplier_name' => $first->displaySupplierName(),
+                    'items' => $items->values(),
+                    'subtotal' => (float) $items->sum(fn (PurchaseOrderItem $item): float => $item->lineTotal()),
+                    'item_count' => $items->count(),
+                ];
+            })
+            ->sortBy('supplier_name')
+            ->values();
+    }
+
+    /**
+     * Distinct suppliers referenced by this PO's items (canonical), oldest-first.
+     *
+     * @return Collection<int, Supplier>
+     */
+    public function suppliersInvolved(): Collection
+    {
+        $this->loadMissing('items.supplier');
+
+        return $this->items
+            ->filter(fn (PurchaseOrderItem $item): bool => $item->supplier !== null)
+            ->map(fn (PurchaseOrderItem $item): Supplier => $item->supplier)
+            ->unique('id')
+            ->sortBy('name')
+            ->values();
+    }
+
+    public function subtotalForSupplier(int $supplierId): float
+    {
+        $this->loadMissing('items');
+
+        return (float) $this->items
+            ->filter(fn (PurchaseOrderItem $item): bool => (int) $item->supplier_id === $supplierId)
+            ->sum(fn (PurchaseOrderItem $item): float => $item->lineTotal());
+    }
+
+    public function hasItemsForSupplier(int $supplierId): bool
+    {
+        $this->loadMissing('items');
+
+        return $this->items->contains(fn (PurchaseOrderItem $item): bool => (int) $item->supplier_id === $supplierId);
     }
 
     public function branch(): BelongsTo

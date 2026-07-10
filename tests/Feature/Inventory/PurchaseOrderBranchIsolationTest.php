@@ -47,9 +47,11 @@ function poBranchIsolationPayload(
         'items' => [
             [
                 'product_id' => $productId,
+                'supplier_id' => $supplierId,
                 'inventory_location_id' => $locationId,
                 'quantity_ordered' => $quantity,
                 'unit_price' => $unitPrice,
+                'estimated_arrival_date' => now()->toDateString(),
             ],
         ],
     ], $overrides);
@@ -84,6 +86,7 @@ function createOtherBranchPurchaseOrder(
     PurchaseOrderItem::factory()->create([
         'purchase_order_id' => $purchaseOrder->id,
         'product_id' => $product->id,
+        'supplier_id' => $supplier->id,
     ]);
 
     return $purchaseOrder->refresh();
@@ -213,9 +216,11 @@ it('denies branch A user from creating purchase order from purchase request in b
                 'items' => [
                     [
                         'product_id' => $product->id,
+                        'supplier_id' => $supplier->id,
                         'purchase_request_item_id' => $otherPrItem->id,
                         'quantity_ordered' => 10,
                         'unit_price' => 5000,
+                        'estimated_arrival_date' => now()->toDateString(),
                     ],
                 ],
             ],

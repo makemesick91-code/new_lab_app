@@ -47,9 +47,11 @@ function grPurchaseOrderPayload(
         'items' => [
             [
                 'product_id' => $productId,
+                'supplier_id' => $supplierId,
                 'inventory_location_id' => $locationId,
                 'quantity_ordered' => $quantity,
                 'unit_price' => $unitPrice,
+                'estimated_arrival_date' => now()->toDateString(),
             ],
         ],
     ];

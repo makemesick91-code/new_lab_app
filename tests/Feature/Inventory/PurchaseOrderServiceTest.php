@@ -40,9 +40,11 @@ function purchaseOrderPayload(
         'items' => [
             [
                 'product_id' => $productId,
+                'supplier_id' => $supplierId,
                 'inventory_location_id' => $locationId,
                 'quantity_ordered' => $quantity,
                 'unit_price' => $unitPrice,
+                'estimated_arrival_date' => now()->toDateString(),
             ],
         ],
     ], $overrides);
@@ -211,7 +213,10 @@ it('refreshes supplier snapshot name when supplier changes during draft update',
         ->and($updated->supplier_snapshot_name)->toBe('Supplier Pengganti');
 });
 
-it('keeps supplier snapshot name when supplier does not change during draft update', function () {
+it('re-derives header supplier snapshot from the sole item supplier during draft update', function () {
+    // Header supplier_id/supplier_snapshot_name are now a DERIVED compatibility
+    // snapshot of the canonical item supplier (sole distinct supplier), so an
+    // update recomputes the snapshot from the current supplier record.
     ['supplier' => $supplier, 'product' => $product] = createBranchFixtures($this);
     $supplier->update(['name' => 'Nama Awal Supplier']);
 
@@ -229,7 +234,7 @@ it('keeps supplier snapshot name when supplier does not change during draft upda
     );
 
     expect($updated->supplier_id)->toBe($supplier->id)
-        ->and($updated->supplier_snapshot_name)->toBe('Nama Awal Supplier')
+        ->and($updated->supplier_snapshot_name)->toBe('Nama Supplier Berubah')
         ->and($updated->notes)->toBe('Catatan diperbarui');
 });
 
