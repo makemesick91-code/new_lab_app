@@ -25,6 +25,7 @@ class EnsureRmeOnlineContext
         'rme.online-context.rooms',
         'rme.online-context.doctor',
         'rme.online-context.admin-clinic',
+        'rme.online-context.perawat',
         'rme.online-context.offline',
     ];
 
@@ -49,12 +50,13 @@ class EnsureRmeOnlineContext
         }
 
         if (! $this->onlineContext->requiresDoctorContext($user)
-            && ! $this->onlineContext->requiresAdminClinicContext($user)) {
+            && ! $this->onlineContext->requiresAdminClinicContext($user)
+            && ! $this->onlineContext->requiresPerawatContext($user)) {
             return $next($request);
         }
 
         if ($request->expectsJson()) {
-            abort(403, 'Pilih cabang dan ruangan (dokter) atau cabang (admin klinik) terlebih dahulu.');
+            abort(403, 'Pilih cabang dan ruangan (dokter) atau cabang (admin klinik/perawat) terlebih dahulu.');
         }
 
         return redirect()

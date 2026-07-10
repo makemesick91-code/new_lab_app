@@ -101,7 +101,11 @@ it('shows lab workflow menus for Admin Lab but not Kasir', function () {
 });
 
 it('shows clinic visit menu for Perawat without cashier or settings', function () {
-    $this->actingAs(userInRole('Perawat'))
+    $perawatBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $perawat = userInRole('Perawat');
+    rmeMakePerawatActive($perawat, $perawatBranch);
+
+    $this->actingAs($perawat)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Dashboard RME')

@@ -18,6 +18,8 @@ class UserOnlineContext extends Model
 
     public const ROLE_ADMIN_CLINIC = 'admin_clinic';
 
+    public const ROLE_PERAWAT = 'perawat';
+
     public const STATUS_ONLINE = 'online';
 
     public const STATUS_INACTIVE = 'inactive';

@@ -130,7 +130,10 @@ it('lets a Doctor open the treatment room worklist', function () {
 });
 
 it('lets a Perawat open the treatment room worklist', function () {
-    $this->actingAs(userInRole('Perawat'))
+    $perawat = userInRole('Perawat');
+    rmeMakePerawatActive($perawat, $this->atg);
+
+    $this->actingAs($perawat)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertOk();
 });

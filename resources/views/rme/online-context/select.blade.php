@@ -8,6 +8,8 @@
                     Pilih cabang RME dan ruangan perawatan agar status dokter Anda aktif (online).
                 @elseif ($requiresAdmin)
                     Pilih cabang RME sebagai konteks kerja admin klinik Anda.
+                @elseif ($requiresPerawat)
+                    Pilih cabang tempat Anda bertugas pada sesi ini.
                 @endif
             </x-slot:subtitle>
         </x-ui.page-header>
@@ -73,9 +75,11 @@
             @endif
         @endif
 
-        @if ($requiresAdmin)
+        @if ($requiresAdmin || $requiresPerawat)
             <x-ui.card>
-                <form method="POST" action="{{ route('rme.online-context.admin-clinic') }}" class="space-y-5">
+                <form method="POST"
+                    action="{{ $requiresAdmin ? route('rme.online-context.admin-clinic') : route('rme.online-context.perawat') }}"
+                    class="space-y-5">
                     @csrf
                     <div>
                         <label for="admin_branch_id" class="block text-sm font-medium text-navy">Cabang RME <span class="text-danger">*</span></label>
