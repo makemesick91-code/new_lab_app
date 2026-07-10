@@ -31,6 +31,9 @@ class PermissionSeeder extends Seeder
         'create_lab_orders',
         'update_lab_orders',
         'cancel_lab_orders',
+        // LAB-WORKFLOW-V2 Phase 2 — Cabang lab request + courier pickup
+        'create_lab_branch_requests',
+        'manage_lab_pickups',
         // Sprint 4 — Production Workflow
         'manage_production',
         'view_production',

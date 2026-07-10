@@ -46,6 +46,9 @@ use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
+use App\Modules\LabOrder\Controllers\LabPickupTaskController;
+use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
+use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
@@ -462,6 +465,53 @@ Route::middleware('auth')->prefix('lab')->name('lab-')->group(function () {
     Route::post('case-candidates/{candidate}/convert', [LabCaseCandidateController::class, 'convert'])
         ->name('case-candidates.convert')
         ->middleware('permission:create_lab_orders|manage_lab_orders');
+});
+
+/*
+|--------------------------------------------------------------------------
+| LAB-WORKFLOW-V2 Phase 2 — Cabang request, courier pickup, lab receive
+|--------------------------------------------------------------------------
+| Cabang (branch) V2 request workspace, courier pickup queue, and the
+| authorized private evidence stream. Every mutation is additionally guarded
+| server-side by the workflow services + state machine (branch/ownership/
+| status/evidence) — route permissions are only the first layer.
+*/
+Route::middleware('auth')->prefix('lab')->group(function () {
+    // Cabang (branch nurse / branch admin) workspace
+    Route::middleware('permission:create_lab_branch_requests|manage_lab_orders')->group(function () {
+        Route::get('workflow-requests', [LabWorkflowRequestController::class, 'index'])
+            ->name('lab-workflow-requests.index');
+        Route::get('workflow-requests/create', [LabWorkflowRequestController::class, 'create'])
+            ->name('lab-workflow-requests.create');
+        Route::post('workflow-requests', [LabWorkflowRequestController::class, 'store'])
+            ->name('lab-workflow-requests.store');
+        Route::get('workflow-requests/{labWorkflowRequest}', [LabWorkflowRequestController::class, 'show'])
+            ->name('lab-workflow-requests.show');
+        Route::post('workflow-requests/{labWorkflowRequest}/evidence', [LabWorkflowRequestController::class, 'storeEvidence'])
+            ->name('lab-workflow-requests.evidence.store');
+        Route::post('workflow-requests/{labWorkflowRequest}/submit-pickup', [LabWorkflowRequestController::class, 'submitPickup'])
+            ->name('lab-workflow-requests.submit-pickup');
+    });
+
+    // Courier pickup queue + lab receive (policy-enforced per action)
+    Route::middleware('permission:manage_lab_pickups|manage_lab_orders')->group(function () {
+        Route::get('pickup-tasks', [LabPickupTaskController::class, 'index'])
+            ->name('lab-pickup-tasks.index');
+        Route::get('pickup-tasks/{pickupTask}', [LabPickupTaskController::class, 'show'])
+            ->name('lab-pickup-tasks.show');
+        Route::post('pickup-tasks/{pickupTask}/accept', [LabPickupTaskController::class, 'accept'])
+            ->name('lab-pickup-tasks.accept');
+        Route::post('pickup-tasks/{pickupTask}/picked-up', [LabPickupTaskController::class, 'pickedUp'])
+            ->name('lab-pickup-tasks.picked-up');
+        Route::post('pickup-tasks/{pickupTask}/start-transit', [LabPickupTaskController::class, 'startTransit'])
+            ->name('lab-pickup-tasks.start-transit');
+        Route::post('pickup-tasks/{pickupTask}/receive', [LabPickupTaskController::class, 'receive'])
+            ->name('lab-pickup-tasks.receive');
+    });
+
+    // Private evidence stream — policy-authorized (LabWorkflowEvidencePolicy).
+    Route::get('workflow-evidence/{evidence}', [LabWorkflowEvidenceController::class, 'show'])
+        ->name('lab-workflow-evidence.show');
 });
 
 /*

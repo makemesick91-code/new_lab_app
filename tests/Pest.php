@@ -71,6 +71,8 @@ use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
+use Illuminate\Http\Testing\File;
+use Illuminate\Http\UploadedFile;
 
 /**
  * Seed the Sprint 0 roles & permissions for access-control tests.
@@ -422,4 +424,16 @@ function rmeAdminClinicUser(Branch $branch): User
     rmeMakeAdminClinicActive($user, $branch);
 
     return $user;
+}
+
+/**
+ * LAB-WORKFLOW-V2 — a real (1x1) PNG upload without requiring the GD extension.
+ * getimagesizefromstring + the `image` validation rule both parse these bytes
+ * natively, so evidence tests run on CLI environments without GD.
+ */
+function fakeEvidencePhoto(string $name = 'photo.png'): File
+{
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+
+    return UploadedFile::fake()->createWithContent($name, $png);
 }

@@ -17,6 +17,8 @@ class LabCaseCandidateConversionService
         private readonly BranchContext $branchContext,
         private readonly LabOrderService $labOrderService,
         private readonly LabOrderRepositoryInterface $labOrders,
+        private readonly LabWorkflowResolver $workflowResolver,
+        private readonly LabWorkflowRequestService $workflowRequests,
     ) {}
 
     /**
@@ -73,7 +75,7 @@ class LabCaseCandidateConversionService
                 $payload['notes'] ?? null,
             ])->filter()->implode("\n"));
 
-            $order = $this->labOrderService->create([
+            $orderData = [
                 'clinic_id' => $clinicId,
                 'doctor_id' => $locked->doctor_id,
                 'patient_id' => $locked->patient_id,
@@ -88,9 +90,18 @@ class LabCaseCandidateConversionService
                     'unit_price' => (float) $labService->price,
                     'notes' => $itemNotes !== '' ? $itemNotes : null,
                 ]],
-            ], $actor);
+            ];
 
-            $this->labOrders->update($order, ['branch_id' => $branchId]);
+            // LAB-WORKFLOW-V2: once V2 is the active engine, converted candidates
+            // become V2 DRAFT orders (branch completes SPK/model photos + pickup);
+            // manual review before conversion is unchanged. While V2 is off the
+            // legacy path is used verbatim.
+            if ($this->workflowResolver->isV2Active()) {
+                $order = $this->workflowRequests->createV2Draft($orderData, $branchId, $actor);
+            } else {
+                $order = $this->labOrderService->create($orderData, $actor);
+                $this->labOrders->update($order, ['branch_id' => $branchId]);
+            }
 
             $locked->update([
                 'status' => LabCaseCandidate::STATUS_CONVERTED_TO_LAB_ORDER,

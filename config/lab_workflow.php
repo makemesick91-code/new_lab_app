@@ -30,14 +30,22 @@ return [
     // target not listed falls back to `default_permission`.
     'default_permission' => 'manage_lab_orders',
 
+    // Targets whose transition must be performed from the order's own branch
+    // (branch-actor actions). Courier / lab-side transitions are inherently
+    // cross-branch (transport + central lab) and are ownership-guarded via the
+    // pickup/delivery task assignment instead.
+    'branch_scoped_transitions' => [
+        S::WAITING_PICKUP,
+    ],
+
     'transition_permissions' => [
         // Branch (Cabang) nurse
-        S::WAITING_PICKUP => 'create_lab_orders',
+        S::WAITING_PICKUP => 'create_lab_branch_requests',
 
         // Courier pickup leg
-        S::PICKUP_ACCEPTED => 'manage_delivery',
-        S::PICKED_UP => 'manage_delivery',
-        S::IN_TRANSIT_TO_LAB => 'manage_delivery',
+        S::PICKUP_ACCEPTED => 'manage_lab_pickups',
+        S::PICKED_UP => 'manage_lab_pickups',
+        S::IN_TRANSIT_TO_LAB => 'manage_lab_pickups',
 
         // Lab receive / input / analysis (Admin Lab)
         S::RECEIVED_AT_LAB => 'manage_lab_orders',

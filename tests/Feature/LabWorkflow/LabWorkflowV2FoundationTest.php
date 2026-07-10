@@ -167,18 +167,18 @@ it('enforces the actor permission mapped to the target state', function () {
     $order = v2Order(['status' => LabWorkflowState::WAITING_PICKUP]);
     $machine = app(LabWorkflowStateMachine::class);
 
-    // PICKUP_ACCEPTED is mapped to manage_delivery.
+    // PICKUP_ACCEPTED is mapped to manage_lab_pickups.
     $withoutPerm = userWith(['view_lab_orders']);
     expect(fn () => $machine->transition($order, LabWorkflowState::PICKUP_ACCEPTED, $withoutPerm))
         ->toThrow(ValidationException::class);
     expect($order->refresh()->status)->toBe(LabWorkflowState::WAITING_PICKUP);
 
-    $withPerm = userWith(['manage_delivery']);
+    $withPerm = userWith(['manage_lab_pickups']);
     $machine->transition($order, LabWorkflowState::PICKUP_ACCEPTED, $withPerm);
     expect($order->refresh()->status)->toBe(LabWorkflowState::PICKUP_ACCEPTED);
 });
 
-it('enforces branch ownership using the stored branch, never a request value', function () {
+it('enforces branch ownership on branch-scoped transitions, never a request value', function () {
     $main = Branch::factory()->main()->create();
     $otherBranchId = Branch::factory()->create()->id;
 
@@ -186,17 +186,24 @@ it('enforces branch ownership using the stored branch, never a request value', f
     $contextBranchId = app(BranchContext::class)->id();
     expect($contextBranchId)->toBe($main->id);
 
-    // Cross-branch order -> denied.
-    $foreign = v2Order(['status' => LabWorkflowState::WAITING_PICKUP, 'branch_id' => $otherBranchId]);
+    // WAITING_PICKUP is a branch-scoped transition: cross-branch order -> denied.
+    $foreign = v2Order(['status' => LabWorkflowState::DRAFT, 'branch_id' => $otherBranchId]);
     expect(fn () => app(LabWorkflowStateMachine::class)
-        ->transition($foreign, LabWorkflowState::PICKUP_ACCEPTED, superAdmin()))
+        ->transition($foreign, LabWorkflowState::WAITING_PICKUP, superAdmin()))
         ->toThrow(ValidationException::class);
 
     // Same-branch order -> allowed.
-    $own = v2Order(['status' => LabWorkflowState::WAITING_PICKUP, 'branch_id' => $contextBranchId]);
+    $own = v2Order(['status' => LabWorkflowState::DRAFT, 'branch_id' => $contextBranchId]);
     app(LabWorkflowStateMachine::class)
-        ->transition($own, LabWorkflowState::PICKUP_ACCEPTED, superAdmin());
-    expect($own->refresh()->status)->toBe(LabWorkflowState::PICKUP_ACCEPTED);
+        ->transition($own, LabWorkflowState::WAITING_PICKUP, superAdmin());
+    expect($own->refresh()->status)->toBe(LabWorkflowState::WAITING_PICKUP);
+
+    // Courier-side transitions are NOT branch-equality-scoped (transport is
+    // cross-branch); the foreign-branch order can still be claimed by a courier.
+    $foreign->forceFill(['status' => LabWorkflowState::WAITING_PICKUP])->save();
+    app(LabWorkflowStateMachine::class)
+        ->transition($foreign, LabWorkflowState::PICKUP_ACCEPTED, superAdmin());
+    expect($foreign->refresh()->status)->toBe(LabWorkflowState::PICKUP_ACCEPTED);
 });
 
 it('is idempotent: transitioning to the current state is a safe no-op', function () {
