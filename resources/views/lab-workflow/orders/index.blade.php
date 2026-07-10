@@ -8,6 +8,12 @@
         </x-slot:actions>
     </x-ui.page-header>
 
+    <div class="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4" data-v2-pipeline-kpis>
+        @foreach ($kpis as $label => $count)
+            <x-ui.kpi-card :label="$label" :value="(string) $count" />
+        @endforeach
+    </div>
+
     <x-ui.filter-bar :action="route('lab-v2-orders.index')">
         <x-ui.input name="search" label="Cari No. Order" :value="$search ?? ''" />
         <x-ui.select name="status" label="Status" :value="$status ?? ''">

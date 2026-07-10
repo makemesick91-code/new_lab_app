@@ -36,6 +36,7 @@ class LabWorkflowRequestService
         private readonly LabWorkflowEvidenceService $evidence,
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly BranchContext $branchContext,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     /** Evidence types a branch actor may upload in the request stage. */
@@ -157,7 +158,7 @@ class LabWorkflowRequestService
             ]);
         }
 
-        return DB::transaction(function () use ($order, $actor) {
+        $task = DB::transaction(function () use ($order, $actor) {
             // State machine re-validates edge/permission/branch under its own row lock.
             $this->stateMachine->transition($order, LabWorkflowState::WAITING_PICKUP, $actor, [
                 'reason' => 'Model siap dijemput kurir',
@@ -165,6 +166,17 @@ class LabWorkflowRequestService
 
             return $this->pickupTasks->firstOrCreateForOrder($order, (int) $order->branch_id, $actor);
         });
+
+        // Post-commit, failure-safe in-app notification (never breaks the flow).
+        $this->notifications->notifyPermissionHolders(
+            ['manage_lab_pickups'],
+            'Tugas pickup baru',
+            "Order {$order->order_number} menunggu penjemputan dari cabang.",
+            route('lab-pickup-tasks.show', $task),
+            $order,
+        );
+
+        return $task;
     }
 
     /** Branch actors can only touch V2 orders of their own active branch. */

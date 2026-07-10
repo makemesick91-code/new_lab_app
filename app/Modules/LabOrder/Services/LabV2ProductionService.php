@@ -36,6 +36,7 @@ class LabV2ProductionService
         private readonly ProductionStepRepositoryInterface $steps,
         private readonly WorkLogService $workLogs,
         private readonly AuditLogService $auditLogs,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     /**
@@ -60,7 +61,7 @@ class LabV2ProductionService
             ]);
         }
 
-        return DB::transaction(function () use ($order, $technician, $actor, $notes) {
+        $assignment = DB::transaction(function () use ($order, $technician, $actor, $notes) {
             $this->stateMachine->transition($order, LabWorkflowState::TECHNICIAN_ASSIGNMENT_PENDING, $actor, [
                 'reason' => 'Membuka penugasan teknisi',
             ]);
@@ -94,6 +95,16 @@ class LabV2ProductionService
 
             return $assignment;
         });
+
+        $this->notifications->notifyUsers(
+            [$technician->user()->first()],
+            'Penugasan produksi baru',
+            "Anda ditugaskan mengerjakan order {$order->order_number}.",
+            route('lab-v2-orders.show', $order),
+            $order,
+        );
+
+        return $assignment;
     }
 
     /**
@@ -155,7 +166,7 @@ class LabV2ProductionService
         $actor = $actor ?? auth()->user();
         $assignment = $this->assertActorMayWork($order, $actor);
 
-        return DB::transaction(function () use ($order, $actor, $notes, $assignment) {
+        $result = DB::transaction(function () use ($order, $actor, $notes, $assignment) {
             $result = $this->stateMachine->transition($order, LabWorkflowState::QC_PENDING, $actor, [
                 'reason' => $notes ?: 'Dikirim ke Quality Control',
             ]);
@@ -170,6 +181,16 @@ class LabV2ProductionService
 
             return $result;
         });
+
+        $this->notifications->notifyPermissionHolders(
+            ['pass_qc', 'manage_quality_control'],
+            'QC menunggu review',
+            "Order {$order->order_number} menunggu keputusan Quality Control.",
+            route('lab-v2-orders.show', $order),
+            $order,
+        );
+
+        return $result;
     }
 
     /**

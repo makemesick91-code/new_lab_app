@@ -24,10 +24,19 @@
     ];
 @endphp
 
+@php
+    /** LAB-WORKFLOW-V2 Phase 5 — legacy labeling (server gate lives in LabOrderService). */
+    $labV2Active = app(App\Modules\LabOrder\Services\LabWorkflowResolver::class)->isV2Active();
+@endphp
 <x-settings-shell title="Detail Order Lab">
     <x-ui.page-header title="Detail Order Lab">
         <x-slot:breadcrumb>Lab / Order Lab / {{ $order->order_number }}</x-slot:breadcrumb>
         <x-slot:actions>
+            @if ($order->isV2Workflow())
+                <x-ui.badge tone="primary">Lab Workflow V2</x-ui.badge>
+            @elseif ($labV2Active)
+                <x-ui.badge tone="warning">Legacy Workflow</x-ui.badge>
+            @endif
             @can('update', $order)
                 <x-ui.button variant="secondary" :href="route('lab-orders.edit', $order)">Ubah</x-ui.button>
             @endcan

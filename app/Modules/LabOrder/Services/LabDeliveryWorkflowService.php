@@ -30,6 +30,7 @@ class LabDeliveryWorkflowService
     public function __construct(
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly LabWorkflowEvidenceService $evidence,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     /**
@@ -41,7 +42,7 @@ class LabDeliveryWorkflowService
     {
         $actor = $actor ?? auth()->user();
 
-        return DB::transaction(function () use ($order, $actor) {
+        $task = DB::transaction(function () use ($order, $actor) {
             $existing = LabDeliveryTask::query()->where('lab_order_id', $order->id)->first();
             if ($existing) {
                 return $existing;
@@ -61,6 +62,16 @@ class LabDeliveryWorkflowService
                 'created_by' => $actor->id,
             ]);
         });
+
+        $this->notifications->notifyPermissionHolders(
+            ['start_delivery'],
+            'Tugas pengiriman baru',
+            "Order {$order->order_number} siap diantar kembali ke cabang.",
+            route('lab-delivery-tasks.show', $task),
+            $order,
+        );
+
+        return $task;
     }
 
     /** Courier claims the delivery (first-committed-wins). */
@@ -194,7 +205,9 @@ class LabDeliveryWorkflowService
      */
     public function completeDelivery(LabDeliveryTask $task, User $actor, string $recipientSignatureDataUrl, UploadedFile $locationPhoto, array $data): LabDeliveryTask
     {
-        return DB::transaction(function () use ($task, $actor, $recipientSignatureDataUrl, $locationPhoto, $data) {
+        $justDelivered = false;
+
+        $result = DB::transaction(function () use ($task, $actor, $recipientSignatureDataUrl, $locationPhoto, $data, &$justDelivered) {
             $locked = $this->lock($task);
 
             // Idempotent double-submit: already delivered -> safe no-op,
@@ -202,6 +215,8 @@ class LabDeliveryWorkflowService
             if ($locked->status === LabDeliveryTask::STATUS_DELIVERED) {
                 return $locked;
             }
+
+            $justDelivered = true;
 
             $this->assertTaskStatus($locked, LabDeliveryTask::STATUS_ARRIVED);
             $this->assertClaimedBy($locked, $actor);
@@ -243,6 +258,18 @@ class LabDeliveryWorkflowService
                 'delivery_notes' => $data['notes'] ?? null,
             ]);
         });
+
+        if ($justDelivered) {
+            $this->notifications->notifyPermissionHolders(
+                ['create_lab_branch_requests'],
+                'Model tiba di cabang',
+                "Order {$result->labOrder->order_number} telah diterima {$result->recipient_name}.",
+                route('lab-workflow-requests.show', $result->lab_order_id),
+                $result->labOrder,
+            );
+        }
+
+        return $result;
     }
 
     /**

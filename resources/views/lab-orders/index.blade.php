@@ -21,15 +21,31 @@
     ];
 @endphp
 
+@php
+    /** LAB-WORKFLOW-V2 Phase 5 — legacy inactivation UI (server gate lives in LabOrderService). */
+    $labV2Active = app(App\Modules\LabOrder\Services\LabWorkflowResolver::class)->isV2Active();
+@endphp
 <x-settings-shell title="Order Lab">
     <x-ui.page-header title="Order Lab" subtitle="Kelola order pekerjaan laboratorium dari klinik.">
         <x-slot:breadcrumb>Lab / Order Lab</x-slot:breadcrumb>
         <x-slot:actions>
-            @can('create', App\Modules\LabOrder\Models\LabOrder::class)
-                <x-ui.button :href="route('lab-orders.create')">+ Tambah Order Lab</x-ui.button>
-            @endcan
+            @if ($labV2Active)
+                <x-ui.badge tone="warning">Legacy Workflow — Inactive for New Orders</x-ui.badge>
+            @else
+                @can('create', App\Modules\LabOrder\Models\LabOrder::class)
+                    <x-ui.button :href="route('lab-orders.create')">+ Tambah Order Lab</x-ui.button>
+                @endcan
+            @endif
         </x-slot:actions>
     </x-ui.page-header>
+
+    @if ($labV2Active)
+        <x-ui.alert variant="warning" class="mb-4">
+            Alur order lama nonaktif untuk order baru. Order baru dibuat melalui
+            <a href="{{ route('lab-workflow-requests.index') }}" class="font-medium underline">Permintaan Lab Cabang (Workflow V2)</a>.
+            Riwayat order lama tetap dapat dibaca di halaman ini.
+        </x-ui.alert>
+    @endif
 
     <x-ui.filter-bar :action="route('lab-orders.index')">
         <x-ui.input name="search" :value="$filters['search']" placeholder="No. order, RM, klinik, dokter, pasien" label="Cari" class="md:w-72" />
@@ -102,7 +118,7 @@
             <tr>
                 <td colspan="8" class="px-3 py-6">
                     <x-ui.empty-state title="Belum ada order" description="Order lab yang dibuat atau dikonversi dari RME akan tampil di sini.">
-                        @can('create', App\Modules\LabOrder\Models\LabOrder::class)
+                        @if (! $labV2Active && auth()->user()?->can('create', App\Modules\LabOrder\Models\LabOrder::class))
                             <x-slot:action>
                                 <x-ui.button :href="route('lab-orders.create')">+ Tambah Order Lab</x-ui.button>
                             </x-slot:action>
@@ -110,7 +126,7 @@
                             <x-slot:action>
                                 <x-ui.restricted-notice description="Anda tidak memiliki akses untuk menambah order lab. Hubungi administrator jika memerlukan akses." />
                             </x-slot:action>
-                        @endcan
+                        @endif
                     </x-ui.empty-state>
                 </td>
             </tr>

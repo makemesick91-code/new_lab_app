@@ -23,6 +23,7 @@ class LabExternalDispatchService
     public function __construct(
         private readonly LabWorkflowStateMachine $stateMachine,
         private readonly AuditLogService $auditLogs,
+        private readonly LabWorkflowNotificationService $notifications,
     ) {}
 
     /**
@@ -163,7 +164,7 @@ class LabExternalDispatchService
             ]);
         }
 
-        return DB::transaction(function () use ($order, $result, $notes, $actor) {
+        $dispatch = DB::transaction(function () use ($order, $result, $notes, $actor) {
             $dispatch = $this->activeDispatchOrFail($order, LabExternalDispatch::STATUS_RETURNED);
 
             $dispatch->update([
@@ -201,6 +202,18 @@ class LabExternalDispatchService
 
             return $dispatch->refresh();
         });
+
+        if ($result === LabExternalDispatch::RESULT_ACCEPTED) {
+            $this->notifications->notifyPermissionHolders(
+                ['create_delivery', 'manage_lab_orders'],
+                'Model selesai (hasil eksternal diterima)',
+                "Order {$order->order_number} selesai dan siap dibuatkan tugas pengiriman.",
+                route('lab-v2-orders.show', $order),
+                $order,
+            );
+        }
+
+        return $dispatch;
     }
 
     private function activeDispatchOrFail(LabOrder $order, string $expectedStatus): LabExternalDispatch
