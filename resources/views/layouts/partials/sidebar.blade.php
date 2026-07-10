@@ -104,7 +104,7 @@
 
     $sidebarRouteOpen = [
         'rme' => request()->routeIs('rme.*'),
-        'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*', 'lab-workflow-requests.*', 'lab-pickup-tasks.*', 'lab-v2-orders.*', 'lab-external-labs.*'),
+        'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*', 'lab-workflow-requests.*', 'lab-pickup-tasks.*', 'lab-v2-orders.*', 'lab-external-labs.*', 'lab-delivery-tasks.*'),
         'production' => request()->routeIs('production.*'),
         'qc' => request()->routeIs('quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
@@ -324,6 +324,17 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
                     </svg>
                     <span>Pipeline Lab V2</span>
+                </a>
+            @endcanany
+
+            {{-- LAB-WORKFLOW-V2 Phase 4 — delivery queue (lab -> branch) --}}
+            @canany(['view_delivery', 'manage_delivery', 'manage_lab_orders'])
+                <a href="{{ route('lab-delivery-tasks.index') }}"
+                   class="menu-item {{ request()->routeIs('lab-delivery-tasks.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                    </svg>
+                    <span>Pengiriman Lab V2</span>
                 </a>
             @endcanany
 

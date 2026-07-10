@@ -314,6 +314,29 @@
                 @endif
             @endcan
 
+            {{-- Delivery task creation after MODEL_DONE --}}
+            @if ($status === S::MODEL_DONE)
+                @canany(['create_delivery', 'manage_delivery', 'manage_lab_orders'])
+                    <x-ui.card title="Buat Tugas Pengiriman">
+                        <p class="mb-2 text-sm text-ink-soft">Model selesai — buat tugas pengantaran kembali ke cabang.</p>
+                        <form method="POST" action="{{ route('lab-v2-orders.delivery-task.store', $order) }}">
+                            @csrf
+                            <x-ui.button type="submit" class="w-full">Buat Tugas Pengiriman</x-ui.button>
+                        </form>
+                    </x-ui.card>
+                @endcanany
+            @endif
+
+            @if ($order->deliveryTask)
+                <x-ui.card title="Tugas Pengiriman">
+                    <dl class="space-y-2 text-sm">
+                        <div class="flex justify-between"><dt class="text-ink-muted">Status</dt><dd class="text-ink">{{ $order->deliveryTask->status }}</dd></div>
+                        <div class="flex justify-between"><dt class="text-ink-muted">Kurir</dt><dd class="text-ink">{{ $order->deliveryTask->courier?->name ?? 'Belum ada' }}</dd></div>
+                    </dl>
+                    <x-ui.button :href="route('lab-delivery-tasks.show', $order->deliveryTask)" variant="secondary" size="sm" class="mt-2 w-full">Detail Pengiriman</x-ui.button>
+                </x-ui.card>
+            @endif
+
             {{-- Evidence --}}
             @if ($order->workflowEvidence->isNotEmpty())
                 <x-ui.card title="Foto Bukti">

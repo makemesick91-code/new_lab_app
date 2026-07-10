@@ -46,6 +46,7 @@ use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\ExternalLabController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
+use App\Modules\LabOrder\Controllers\LabDeliveryTaskController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabOrder\Controllers\LabPickupTaskController;
 use App\Modules\LabOrder\Controllers\LabV2OrderController;
@@ -575,6 +576,34 @@ Route::middleware('auth')->prefix('lab')->group(function () {
     Route::post('external-labs', [ExternalLabController::class, 'store'])
         ->name('lab-external-labs.store')
         ->middleware('permission:manage_lab_orders');
+
+    // --- LAB-WORKFLOW-V2 Phase 4: delivery with mandatory proof gates ------
+    // Policy-enforced per action; the photo/signature gates are re-verified in
+    // LabDeliveryWorkflowService + the state machine (server-side).
+    Route::middleware('permission:view_delivery|manage_delivery|manage_lab_orders')->group(function () {
+        Route::get('delivery-tasks', [LabDeliveryTaskController::class, 'index'])
+            ->name('lab-delivery-tasks.index');
+        Route::get('delivery-tasks/{deliveryTask}', [LabDeliveryTaskController::class, 'show'])
+            ->name('lab-delivery-tasks.show');
+    });
+    Route::post('v2-orders/{labV2Order}/delivery-task', [LabDeliveryTaskController::class, 'store'])
+        ->name('lab-v2-orders.delivery-task.store')
+        ->middleware('permission:create_delivery|manage_delivery|manage_lab_orders');
+    Route::post('delivery-tasks/{deliveryTask}/accept', [LabDeliveryTaskController::class, 'accept'])
+        ->name('lab-delivery-tasks.accept')
+        ->middleware('permission:start_delivery|manage_delivery');
+    Route::post('delivery-tasks/{deliveryTask}/handover', [LabDeliveryTaskController::class, 'submitHandover'])
+        ->name('lab-delivery-tasks.handover')
+        ->middleware('permission:start_delivery|manage_delivery');
+    Route::post('delivery-tasks/{deliveryTask}/start-transit', [LabDeliveryTaskController::class, 'startTransit'])
+        ->name('lab-delivery-tasks.start-transit')
+        ->middleware('permission:start_delivery|manage_delivery');
+    Route::post('delivery-tasks/{deliveryTask}/arrived', [LabDeliveryTaskController::class, 'markArrived'])
+        ->name('lab-delivery-tasks.arrived')
+        ->middleware('permission:start_delivery|manage_delivery');
+    Route::post('delivery-tasks/{deliveryTask}/complete', [LabDeliveryTaskController::class, 'complete'])
+        ->name('lab-delivery-tasks.complete')
+        ->middleware('permission:mark_delivered|manage_delivery');
 });
 
 /*

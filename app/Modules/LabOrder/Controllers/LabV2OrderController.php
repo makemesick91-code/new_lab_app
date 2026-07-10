@@ -74,7 +74,7 @@ class LabV2OrderController extends Controller
             'modelAnalyses.externalLab', 'modelAnalyses.analyst',
             'externalDispatches.externalLab',
             'assignments.technician', 'productionSteps',
-            'qualityControls', 'pickupTask.courier',
+            'qualityControls', 'pickupTask.courier', 'deliveryTask.courier',
         ]);
 
         return view('lab-workflow.orders.show', [
