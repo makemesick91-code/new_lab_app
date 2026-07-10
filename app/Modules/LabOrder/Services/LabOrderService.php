@@ -20,6 +20,7 @@ class LabOrderService
         private readonly OrderNumberGeneratorService $orderNumbers,
         private readonly StatusLogService $statusLogs,
         private readonly AuditLogService $auditLogs,
+        private readonly LabWorkflowResolver $workflowResolver,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -39,6 +40,9 @@ class LabOrderService
     {
         $actor = $actor ?? auth()->user();
 
+        // LAB-WORKFLOW-V2: legacy creation is disabled once V2 is active.
+        $this->workflowResolver->assertLegacyCreationAllowed();
+
         return DB::transaction(function () use ($data, $actor) {
             $orderDate = $data['order_date'] ?? now()->toDateString();
 
@@ -52,6 +56,7 @@ class LabOrderService
                 'due_date' => $data['due_date'] ?? null,
                 'priority' => $data['priority'] ?? 'NORMAL',
                 'status' => LabOrder::STATUS_RECEIVED,
+                'workflow_version' => LabOrder::WORKFLOW_LEGACY,
                 'notes' => $data['notes'] ?? null,
                 'created_by' => $actor?->id,
             ]);
@@ -79,6 +84,8 @@ class LabOrderService
     public function update(LabOrder $order, array $data, ?User $actor = null): LabOrder
     {
         $actor = $actor ?? auth()->user();
+
+        $this->workflowResolver->assertLegacyMutable($order);
 
         if (! $order->isEditable()) {
             throw ValidationException::withMessages([
@@ -119,6 +126,8 @@ class LabOrderService
     public function cancel(LabOrder $order, string $reason, ?User $actor = null): LabOrder
     {
         $actor = $actor ?? auth()->user();
+
+        $this->workflowResolver->assertLegacyMutable($order);
 
         if (! $order->isEditable()) {
             throw ValidationException::withMessages([
