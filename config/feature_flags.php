@@ -284,6 +284,9 @@ return [
             'description' => 'Activates the Lab Workflow V2 state machine (Cabang pickup, courier transport, internal/external production, QC/rework, delivery proof) for NEW lab orders. When off, new orders keep the legacy Sprint 3-7 pipeline. Legacy orders always stay read-only legacy regardless of this flag.',
             'default' => false,
             'env_key' => 'FEATURE_LAB_WORKFLOW_V2',
+            // Captured at config-BUILD time so the override keeps working under
+            // `config:cache` (runtime env() returns null once config is cached).
+            'env_value' => env('FEATURE_LAB_WORKFLOW_V2'),
             'owner' => 'lab-workflow',
             'risk_level' => 'high',
             'rollout_status' => 'in_progress',

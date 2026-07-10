@@ -165,8 +165,21 @@ class FeatureFlagService
     {
         $default = (bool) ($definition['default'] ?? false);
         $envKey = (string) ($definition['env_key'] ?? '');
-        $enabled = $envKey !== '' && env($envKey) !== null
-            ? filter_var(env($envKey), FILTER_VALIDATE_BOOLEAN)
+
+        // Env override resolution order:
+        //  1. `env_value` captured in the config file at config-BUILD time —
+        //     the only form that survives `config:cache` (runtime env() reads
+        //     nothing once config is cached, so cached deployments would
+        //     silently ignore a pure runtime env override).
+        //  2. Runtime env($envKey) for uncached (local/test) environments.
+        //  3. The declared default.
+        $override = $definition['env_value'] ?? null;
+        if ($override === null && $envKey !== '') {
+            $override = env($envKey);
+        }
+
+        $enabled = $override !== null
+            ? filter_var($override, FILTER_VALIDATE_BOOLEAN)
             : $default;
 
         return [
