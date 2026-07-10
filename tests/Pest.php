@@ -418,6 +418,20 @@ function rmeMakeAdminClinicActive(User $user, Branch $branch): void
         ->startAdminClinicSession($user, (int) $branch->id);
 }
 
+/**
+ * RME-BRANCH-SUN4 — activate a Perawat branch-only online context through the
+ * real service (same canonical mechanism as Admin Klinik).
+ */
+function rmeMakePerawatActive(User $user, Branch $branch): void
+{
+    if (! $user->hasRole('Perawat')) {
+        $user->assignRole('Perawat');
+    }
+
+    app(UserOnlineContextService::class)
+        ->startPerawatSession($user, (int) $branch->id);
+}
+
 function rmeAdminClinicUser(Branch $branch): User
 {
     $user = userInRole('Admin Klinik');

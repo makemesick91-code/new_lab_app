@@ -35,7 +35,9 @@ it('allows Doctor clinical routes but denies cashier billing', function () {
 });
 
 it('allows Perawat visit queue but denies cashier and lab candidates', function () {
+    $rmeBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
     $perawat = userInRole('Perawat');
+    rmeMakePerawatActive($perawat, $rmeBranch);
 
     $this->actingAs($perawat)->get(route('rme.visits.index'))->assertOk();
     $this->actingAs($perawat)->get(route('rme.visits.create'))->assertOk();

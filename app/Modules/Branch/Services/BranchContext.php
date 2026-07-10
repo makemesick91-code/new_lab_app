@@ -5,6 +5,7 @@ namespace App\Modules\Branch\Services;
 use App\Models\User;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
@@ -12,13 +13,14 @@ use RuntimeException;
 /**
  * Minimal active-branch resolver for branch-aware features.
  *
- * The current schema has no user branch assignment (the VPS pilot confirmed
- * `users.branch_id` does not exist), so resolution is defensive:
- *   - `branchIdFromUserColumn()` is guarded by Schema::hasColumn and never
- *     touches a missing column, so it cannot 500 when `users.branch_id` is
- *     absent.
- *   - The generic fallback is the active MAIN branch, otherwise the first
- *     active branch.
+ * Resolution priority (RME-BRANCH-SUN4):
+ *   1. Active RME online context (Doctor / Admin Klinik / Perawat) — the branch
+ *      the operator explicitly chose after login always wins while the context
+ *      is online, so daily work never depends on a static `users.branch_id` pin.
+ *   2. `users.branch_id` (guarded by Schema::hasColumn — older schemas without
+ *      the column never 500).
+ *   3. User `branches()` relation, when present.
+ *   4. The active MAIN branch, otherwise the first active branch.
  *   - Module-aware fallbacks (RME / Inventory) prefer MAIN when it participates
  *     in that module, otherwise the first active module-enabled branch.
  *
@@ -62,11 +64,27 @@ class BranchContext
 
     public function forUser(User $user): ?int
     {
-        $branchId = $this->branchIdFromUserColumn($user)
+        $branchId = $this->branchIdFromOnlineContext($user)
+            ?? $this->branchIdFromUserColumn($user)
             ?? $this->branchIdFromUserRelation($user)
             ?? $this->defaultBranchId();
 
         return $branchId ? (int) $branchId : null;
+    }
+
+    /**
+     * The branch of the user's active RME online context (fail closed: only an
+     * online, role-matching context on an active RME-enabled branch counts —
+     * MAIN can never qualify). Guarded so environments without the Sprint 66
+     * table keep resolving through the static fallbacks.
+     */
+    private function branchIdFromOnlineContext(User $user): ?int
+    {
+        if (! Schema::hasTable('trx_user_online_contexts')) {
+            return null;
+        }
+
+        return app(UserOnlineContextService::class)->activeContextBranchId($user);
     }
 
     private function branchIdFromUserColumn(User $user): ?int

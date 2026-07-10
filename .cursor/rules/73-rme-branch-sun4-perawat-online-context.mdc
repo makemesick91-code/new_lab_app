@@ -1,0 +1,40 @@
+---
+description: RME-BRANCH-SUN4 — canonical branch code registry + Perawat online context + BranchContext priority
+globs:
+alwaysApply: true
+---
+
+# RME-BRANCH-SUN4 — Aturan Permanen
+
+1. **Registry kode cabang canonical** (jangan reuse/renumber): TKM1 = Cabang
+   Telkomas, LDK2 = Cabang Landak, ATG3 = Cabang Antang, **SUN4 = Cabang Sunu**.
+   SUN4 aktif + RME-enabled, BUKAN MAIN, tidak otomatis inventory-enabled.
+   ID branch TIDAK BOLEH diasumsikan lintas environment — selalu resolve by `code`.
+2. **Penambahan cabang harus idempotent** via `Database\Seeders\RmeBranchSeeder`
+   (`firstOrNew` by unique `code` termasuk soft-deleted; row existing tidak
+   di-rename/di-reconfigure; MAIN tidak disentuh). Rollback TIDAK menghapus
+   cabang yang sudah punya transaksi. Deploy menjalankan seeder ini eksplisit
+   (`db:seed --class=RmeBranchSeeder --force`) — jangan andalkan seed global.
+3. **Role Perawat memakai online context Cabang RME** dengan mekanisme canonical
+   yang SAMA dengan Admin Klinik (module `RmeOnlineContext`, `ROLE_PERAWAT`,
+   route `rme.online-context.perawat`, `startPerawatSession`). Jangan membuat
+   engine context kedua, dan jangan pin Perawat permanen via `users.branch_id`
+   untuk pekerjaan online harian.
+4. **BranchContext priority**: (1) active RME online context
+   (Doctor/Admin Klinik/Perawat, fail closed via
+   `UserOnlineContextService::activeContextBranchId`) → (2) `users.branch_id`
+   → (3) relasi `branches()` → (4) MAIN/first-active fallback. MAIN tidak boleh
+   menjadi context RME; branch inaktif/non-RME tidak selectable; context
+   stale/expired meminta pemilihan ulang.
+5. **Branch selection tidak menambah permission** — context hanya menentukan
+   cabang. Lab Request/RME/pasien/antrian mengikuti cabang online context;
+   `branch_id` crafted dari request selalu ditimpa/ditolak server-side; katalog
+   pasien/dokter tetap branch-scoped.
+6. Mapping operator statis (`users.branch_id`) hanya fallback legacy/ops — bila
+   online context tersedia untuk role tersebut, context adalah pola canonical
+   (menggantikan kebutuhan mapping manual pada rule 72 butir 14 untuk role
+   ber-context). Legacy Lab workflow tetap inactive; Workflow V2 tetap canonical.
+7. **Test-infra**: HTTP test dengan user role Perawat WAJIB mengaktifkan context
+   (`rmeMakePerawatActive($user, $branch)` di `tests/Pest.php`) — sama seperti
+   Doctor/Admin Klinik (Sprint 66), atau akan 302 ke
+   `rme.online-context.select`.

@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeOnlineContext\Requests\StartAdminClinicOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartDoctorOnlineContextRequest;
+use App\Modules\RmeOnlineContext\Requests\StartPerawatOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Http\JsonResponse;
@@ -33,8 +34,9 @@ class OnlineContextController extends Controller
 
         $requiresDoctor = $this->onlineContext->requiresDoctorContext($user);
         $requiresAdmin = $this->onlineContext->requiresAdminClinicContext($user);
+        $requiresPerawat = $this->onlineContext->requiresPerawatContext($user);
 
-        abort_unless($requiresDoctor || $requiresAdmin, 403);
+        abort_unless($requiresDoctor || $requiresAdmin || $requiresPerawat, 403);
 
         $linkedDoctor = $requiresDoctor ? $this->doctorResolver->resolveForUser($user) : null;
 
@@ -51,6 +53,7 @@ class OnlineContextController extends Controller
         return view('rme.online-context.select', [
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
+            'requiresPerawat' => $requiresPerawat,
             'linkedDoctor' => $linkedDoctor,
             'doctorAllowedBranches' => $doctorAllowedBranches,
             'rmeBranches' => $this->branches->listRmeEnabled(),
@@ -103,6 +106,20 @@ class OnlineContextController extends Controller
         return redirect()
             ->intended(route('dashboard'))
             ->with('status', 'Konteks cabang admin klinik aktif.');
+    }
+
+    public function storePerawat(StartPerawatOnlineContextRequest $request): RedirectResponse
+    {
+        abort_unless($this->onlineContext->requiresPerawatContext($request->user()), 403);
+
+        $this->onlineContext->startPerawatSession(
+            $request->user(),
+            (int) $request->validated('branch_id'),
+        );
+
+        return redirect()
+            ->intended(route('dashboard'))
+            ->with('status', 'Konteks cabang perawat aktif.');
     }
 
     public function offline(Request $request): RedirectResponse

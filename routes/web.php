@@ -279,6 +279,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('online-context.doctor');
     Route::post('online-context/admin-clinic', [OnlineContextController::class, 'storeAdminClinic'])
         ->name('online-context.admin-clinic');
+    // RME-BRANCH-SUN4 — Perawat picks a Cabang RME the same way as Admin Klinik.
+    Route::post('online-context/perawat', [OnlineContextController::class, 'storePerawat'])
+        ->name('online-context.perawat');
     Route::post('online-context/offline', [OnlineContextController::class, 'offline'])
         ->name('online-context.offline');
 

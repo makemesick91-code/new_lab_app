@@ -34,6 +34,15 @@ class UserOnlineContextService
         return $user->hasRole('Admin Klinik') && ! $this->isExemptFromContext($user);
     }
 
+    /**
+     * RME-BRANCH-SUN4 — Perawat uses the same branch-only online context
+     * mechanism as Admin Klinik (no treatment room, no static users.branch_id).
+     */
+    public function requiresPerawatContext(User $user): bool
+    {
+        return $user->hasRole('Perawat') && ! $this->isExemptFromContext($user);
+    }
+
     public function isExemptFromContext(User $user): bool
     {
         return $user->hasRole(['Owner', 'Super Admin', 'Supervisor RME']);
@@ -47,6 +56,10 @@ class UserOnlineContextService
 
         if ($this->requiresAdminClinicContext($user)) {
             return $this->isAdminClinicActive($user);
+        }
+
+        if ($this->requiresPerawatContext($user)) {
+            return $this->isPerawatActive($user);
         }
 
         return true;
@@ -101,13 +114,68 @@ class UserOnlineContextService
             && $this->branchIsRmeEnabled((int) $context->branch_id);
     }
 
+    public function isPerawatActive(User $user): bool
+    {
+        if (! $this->requiresPerawatContext($user)) {
+            return false;
+        }
+
+        $context = $this->currentContextFor($user);
+
+        return $context !== null
+            && $context->role_context === UserOnlineContext::ROLE_PERAWAT
+            && $context->status === UserOnlineContext::STATUS_ONLINE
+            && $context->branch_id !== null
+            && $this->branchIsRmeEnabled((int) $context->branch_id);
+    }
+
+    /**
+     * Active branch-only online context branch (Admin Klinik or Perawat).
+     * Registration/queue flows treat both roles identically: the visit branch is
+     * always the online context branch, never a form-submitted branch_id.
+     */
     public function resolveActiveBranchForAdmin(User $user): ?int
     {
-        if (! $this->isAdminClinicActive($user)) {
+        if (! $this->isAdminClinicActive($user) && ! $this->isPerawatActive($user)) {
             return null;
         }
 
         return (int) $this->currentContextFor($user)?->branch_id;
+    }
+
+    /**
+     * RME-BRANCH-SUN4 — the active online context branch for BranchContext
+     * resolution, regardless of role context. Fail closed: returns null unless
+     * the context is online, matches the user's current role requirement, and
+     * points at an active RME-enabled branch (MAIN can never qualify because
+     * session start asserts an RME branch and MAIN is non-RME by definition).
+     */
+    public function activeContextBranchId(User $user): ?int
+    {
+        if ($this->isExemptFromContext($user)) {
+            return null;
+        }
+
+        $context = $this->currentContextFor($user);
+
+        if ($context === null
+            || $context->status !== UserOnlineContext::STATUS_ONLINE
+            || $context->branch_id === null) {
+            return null;
+        }
+
+        $matchesRole = match ($context->role_context) {
+            UserOnlineContext::ROLE_DOCTOR => $this->requiresDoctorContext($user),
+            UserOnlineContext::ROLE_ADMIN_CLINIC => $this->requiresAdminClinicContext($user),
+            UserOnlineContext::ROLE_PERAWAT => $this->requiresPerawatContext($user),
+            default => false,
+        };
+
+        if (! $matchesRole || ! $this->branchIsRmeEnabled((int) $context->branch_id)) {
+            return null;
+        }
+
+        return (int) $context->branch_id;
     }
 
     public function startDoctorSession(User $user, int $branchId, int $clinicRoomId): UserOnlineContext
@@ -179,6 +247,29 @@ class UserOnlineContextService
             'branch_id' => $branchId,
             'clinic_room_id' => null,
             'role_context' => UserOnlineContext::ROLE_ADMIN_CLINIC,
+            'status' => UserOnlineContext::STATUS_ONLINE,
+            'online_since' => $now,
+            'last_seen_at' => $now,
+            'offline_at' => null,
+        ]);
+    }
+
+    public function startPerawatSession(User $user, int $branchId): UserOnlineContext
+    {
+        if (! $this->requiresPerawatContext($user)) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Akun ini tidak memerlukan konteks perawat.',
+            ]);
+        }
+
+        $this->assertRmeBranch($branchId);
+
+        $now = now();
+
+        return $this->contexts->upsertForUser((int) $user->id, [
+            'branch_id' => $branchId,
+            'clinic_room_id' => null,
+            'role_context' => UserOnlineContext::ROLE_PERAWAT,
             'status' => UserOnlineContext::STATUS_ONLINE,
             'online_since' => $now,
             'last_seen_at' => $now,
