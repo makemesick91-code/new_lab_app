@@ -122,16 +122,20 @@ class LabWorkflowStateMachine
             ]);
         }
 
-        // 7. Branch ownership: never trust a request branch_id; compare the
-        //    order's stored branch to the resolved BranchContext. Only enforced
-        //    when both are known (central-lab branch semantics refined in later
-        //    phases via courier/lab-location scoping).
-        $contextBranchId = $this->branchContext->id();
-        if ($order->branch_id !== null && $contextBranchId !== null
-            && (int) $order->branch_id !== (int) $contextBranchId) {
-            throw ValidationException::withMessages([
-                'workflow' => 'Order milik cabang lain tidak dapat diproses.',
-            ]);
+        // 7. Branch ownership for branch-actor transitions: never trust a
+        //    request branch_id; compare the order's stored branch to the
+        //    resolved BranchContext. Courier/lab-side transitions are
+        //    inherently cross-branch and are ownership-guarded at the
+        //    pickup/delivery task level instead (config branch_scoped_transitions).
+        $branchScoped = (array) config('lab_workflow.branch_scoped_transitions', []);
+        if (in_array($targetState, $branchScoped, true)) {
+            $contextBranchId = $this->branchContext->id();
+            if ($order->branch_id !== null && $contextBranchId !== null
+                && (int) $order->branch_id !== (int) $contextBranchId) {
+                throw ValidationException::withMessages([
+                    'workflow' => 'Order milik cabang lain tidak dapat diproses.',
+                ]);
+            }
         }
     }
 

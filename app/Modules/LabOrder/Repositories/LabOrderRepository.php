@@ -50,6 +50,32 @@ class LabOrderRepository implements LabOrderRepositoryInterface
         return LabOrder::find($id);
     }
 
+    /**
+     * LAB-WORKFLOW-V2 — branch-scoped listing of V2 workflow orders (the
+     * Cabang workspace). Unlike the global lab list above, this one IS
+     * branch-scoped: branch actors only ever see their own branch's requests.
+     */
+    public function paginateV2ForBranch(int $branchId, array $filters = [], int $perPage = 10): LengthAwarePaginator
+    {
+        $search = $filters['search'] ?? null;
+
+        return LabOrder::query()
+            ->with(['clinic', 'doctor', 'patient', 'pickupTask'])
+            ->where('workflow_version', LabOrder::WORKFLOW_V2)
+            ->where('branch_id', $branchId)
+            ->when($search, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(order_number) LIKE ?', [$term])
+                        ->orWhereHas('patient', fn ($p) => $p->whereRaw('LOWER(name) LIKE ?', [$term]));
+                });
+            })
+            ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
     public function findDetailById(int $id): ?LabOrder
     {
         return LabOrder::query()

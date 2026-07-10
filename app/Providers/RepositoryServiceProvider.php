@@ -108,16 +108,22 @@ use App\Modules\Invoice\Repositories\PaymentRepository;
 use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
+use App\Modules\LabOrder\Interfaces\LabPickupTaskRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\StatusLogRepositoryInterface;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabOrder\Models\LabPickupTask;
+use App\Modules\LabOrder\Models\LabWorkflowEvidence;
 use App\Modules\LabOrder\Policies\AttachmentPolicy;
 use App\Modules\LabOrder\Policies\LabCaseCandidatePolicy;
 use App\Modules\LabOrder\Policies\LabOrderPolicy;
+use App\Modules\LabOrder\Policies\LabPickupTaskPolicy;
+use App\Modules\LabOrder\Policies\LabWorkflowEvidencePolicy;
 use App\Modules\LabOrder\Repositories\AttachmentRepository;
 use App\Modules\LabOrder\Repositories\AuditLogRepository;
 use App\Modules\LabOrder\Repositories\LabOrderRepository;
+use App\Modules\LabOrder\Repositories\LabPickupTaskRepository;
 use App\Modules\LabOrder\Repositories\StatusLogRepository;
 use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
@@ -234,6 +240,7 @@ class RepositoryServiceProvider extends ServiceProvider
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
         LabOrderRepositoryInterface::class => LabOrderRepository::class,
+        LabPickupTaskRepositoryInterface::class => LabPickupTaskRepository::class,
         AttachmentRepositoryInterface::class => AttachmentRepository::class,
         AuditLogRepositoryInterface::class => AuditLogRepository::class,
         StatusLogRepositoryInterface::class => StatusLogRepository::class,
@@ -363,6 +370,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LabService::class => LabServicePolicy::class,
         Technician::class => TechnicianPolicy::class,
         LabOrder::class => LabOrderPolicy::class,
+        LabPickupTask::class => LabPickupTaskPolicy::class,
+        LabWorkflowEvidence::class => LabWorkflowEvidencePolicy::class,
         LabCaseCandidate::class => LabCaseCandidatePolicy::class,
         Attachment::class => AttachmentPolicy::class,
         Delivery::class => DeliveryPolicy::class,

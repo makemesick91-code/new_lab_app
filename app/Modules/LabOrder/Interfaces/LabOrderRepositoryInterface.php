@@ -39,4 +39,11 @@ interface LabOrderRepositoryInterface
     public function existsOrderNumber(string $orderNumber): bool;
 
     public function latestOrderNumberForYear(string $year): ?string;
+
+    /**
+     * LAB-WORKFLOW-V2 — branch-scoped listing of V2 workflow orders.
+     *
+     * @param  array<string, mixed>  $filters  search?, status?
+     */
+    public function paginateV2ForBranch(int $branchId, array $filters = [], int $perPage = 10): LengthAwarePaginator;
 }

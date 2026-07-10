@@ -31,6 +31,9 @@ class RoleSeeder extends Seeder
             'create_lab_orders',
             'update_lab_orders',
             'cancel_lab_orders',
+            // LAB-WORKFLOW-V2 Phase 2 — pickup oversight + receive at lab
+            'create_lab_branch_requests',
+            'manage_lab_pickups',
             'manage_production',
             'view_production',
             'assign_technicians',
@@ -96,6 +99,8 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_branch_dashboard',
             'manage patients',
+            // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
+            'create_lab_branch_requests',
             'view_clinic_master_data',
             // Sprint 20 - RME: Clinic Visit Queue
             'view_clinic_visits',
@@ -166,6 +171,8 @@ class RoleSeeder extends Seeder
             'start_delivery',
             'mark_delivered',
             'upload_pod',
+            // LAB-WORKFLOW-V2 Phase 2 — courier pickup leg
+            'manage_lab_pickups',
         ],
         'Finance' => [
             'view dashboard',
@@ -234,6 +241,8 @@ class RoleSeeder extends Seeder
             'manage_clinic_visits',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
+            // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
+            'create_lab_branch_requests',
         ],
         // Sprint 58.1 — Admin Warehouse: inventory-focused role that lands on
         // the Inventory Executive Dashboard after login (least-privilege).

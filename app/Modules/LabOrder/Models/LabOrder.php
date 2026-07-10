@@ -230,6 +230,23 @@ class LabOrder extends Model
         return $this->hasOne(LabCaseCandidate::class, 'converted_lab_order_id');
     }
 
+    /** LAB-WORKFLOW-V2 — the (single) courier pickup task for a V2 order. */
+    public function pickupTask(): HasOne
+    {
+        return $this->hasOne(LabPickupTask::class, 'lab_order_id');
+    }
+
+    /** LAB-WORKFLOW-V2 — typed workflow evidence (photos/signatures). */
+    public function workflowEvidence(): HasMany
+    {
+        return $this->hasMany(LabWorkflowEvidence::class, 'lab_order_id');
+    }
+
+    public function hasWorkflowEvidence(string $type): bool
+    {
+        return $this->workflowEvidence()->where('type', $type)->exists();
+    }
+
     protected static function newFactory(): LabOrderFactory
     {
         return LabOrderFactory::new();
