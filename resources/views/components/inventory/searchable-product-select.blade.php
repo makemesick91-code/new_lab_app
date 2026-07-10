@@ -13,6 +13,8 @@
     'alpineName' => null,
     'model' => null,
     'onSelect' => null,
+    'notFoundLabel' => 'Produk tidak ditemukan.',
+    'clearLabel' => 'Hapus pilihan produk',
 ])
 
 @php
@@ -105,7 +107,7 @@
                 x-show="selectedId && !disabled"
                 @click.stop="clearSelection()"
                 tabindex="-1"
-                aria-label="Hapus pilihan produk"
+                aria-label="{{ $clearLabel }}"
             >
                 <span aria-hidden="true">&times;</span>
             </button>
@@ -144,6 +146,6 @@
     </div>
 
     <p x-show="open && filtered().length === 0" x-cloak class="absolute z-20 mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-500 shadow-lg">
-        Produk tidak ditemukan.
+        {{ $notFoundLabel }}
     </p>
 </div>

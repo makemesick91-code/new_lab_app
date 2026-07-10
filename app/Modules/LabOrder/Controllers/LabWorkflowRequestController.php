@@ -4,14 +4,10 @@ namespace App\Modules\LabOrder\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Branch\Services\BranchContext;
-use App\Modules\Clinic\Models\Clinic;
-use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Requests\StoreLabWorkflowRequestRequest;
 use App\Modules\LabOrder\Requests\UploadLabWorkflowEvidenceRequest;
 use App\Modules\LabOrder\Services\LabWorkflowRequestService;
-use App\Modules\LabService\Models\LabService;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -47,12 +43,9 @@ class LabWorkflowRequestController extends Controller
 
     public function create(): View
     {
-        return view('lab-workflow.requests.create', [
-            'clinics' => Clinic::query()->orderBy('name')->get(['id', 'name']),
-            'doctors' => Doctor::query()->orderBy('name')->get(['id', 'name']),
-            'patients' => Patient::query()->orderBy('name')->limit(500)->get(['id', 'name', 'medical_record_number']),
-            'labServices' => LabService::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'price']),
-        ]);
+        // Klinik = Cabang RME: all option catalogs are resolved and scoped
+        // server-side to the active RME branch (never from request input).
+        return view('lab-workflow.requests.create', $this->requests->formOptionsForActiveBranch());
     }
 
     public function store(StoreLabWorkflowRequestRequest $request): RedirectResponse

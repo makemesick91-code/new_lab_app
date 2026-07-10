@@ -43,3 +43,16 @@ alwaysApply: false
     order V2 DRAFT. Kegagalan workflow lab TIDAK PERNAH me-rollback payment RME.
 12. Report produksi legacy membaca `trx_lab_order_assignments` status `DONE` — pertahankan semantik
     status assignment V2 identik dengan legacy.
+13. **FIX-LAB-REQUEST-RME-BRANCH-SEARCHABLE-FIELDS — Buat Permintaan Lab**: "Klinik" = **Cabang RME**
+    (`mst_branches` aktif + `is_rme_enabled`, semantik Sprint 23.9.1), terkunci ke branch `BranchContext`
+    (prepareForValidation MENIMPA `branch_id` request — injeksi mustahil); service re-assert
+    (`assertRmeBranch`). `trx_lab_orders.clinic_id` nullable (referensi legacy; order V2 dari form
+    menyimpan `clinic_id = NULL`, konversi RME boleh membawa clinic_id visit). Pasien/Dokter/Layanan Lab
+    memakai `x-inventory.searchable-product-select` (catalog lokal terbatas, keyboard nav, old-input) —
+    katalog di-scope server-side via `LabWorkflowRequestService::formOptionsForActiveBranch()`:
+    pasien = aktif + branch aktif ATAU legacy tanpa cabang (KTP/NIK TIDAK PERNAH masuk katalog, cap
+    `PATIENT_OPTION_LIMIT`); dokter = aktif + branch-compatible (kolom/pivot `mst_doctor_branches` atau
+    unbound legacy); layanan = aktif + tidak soft-deleted. Semua hidden ID divalidasi ulang server-side
+    di `StoreLabWorkflowRequestRequest` (pasien/dokter/layanan crafted → 422). Dropdown search BUKAN
+    authorization boundary. Komponen searchable digenerikkan via prop `notFoundLabel`/`clearLabel`
+    (default lama dipertahankan — Inventory tidak berubah).
