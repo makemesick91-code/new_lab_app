@@ -35,7 +35,7 @@ it('lets a Quality Control user view production but not assign', function () {
 
     $order = receivedOrder();
     $this->actingAs($qc)
-        ->post(route('production.assign', $order), ['technician_id' => Technician::factory()->create()->id])
+        ->post(route('production.assign', $order), ['technician_id' => Technician::factory()->assignable()->create()->id])
         ->assertForbidden();
 });
 
@@ -54,7 +54,7 @@ it('lets a technician start their own assignment', function () {
 it('prevents a technician from starting another technician assignment', function () {
     [$user] = technicianActor(['view_production', 'start_production_work']);
     $order = receivedOrder();
-    assignOrder($order, Technician::factory()->create()); // assigned to someone else
+    assignOrder($order, Technician::factory()->assignable()->create()); // assigned to someone else
 
     $this->actingAs($user)
         ->post(route('production.start', $order->refresh()), [])

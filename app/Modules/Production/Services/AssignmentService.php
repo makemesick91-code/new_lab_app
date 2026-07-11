@@ -10,6 +10,7 @@ use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\LabOrder\Services\StatusLogService;
 use App\Modules\Production\Interfaces\AssignmentRepositoryInterface;
 use App\Modules\Production\Models\LabOrderAssignment;
+use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,7 @@ class AssignmentService
         private readonly StatusLogService $statusLogs,
         private readonly AuditLogService $auditLogs,
         private readonly ProductionStepService $productionSteps,
+        private readonly TechnicianAssignmentEligibility $technicianEligibility,
     ) {}
 
     public function board(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -46,6 +48,10 @@ class AssignmentService
     public function assign(LabOrder $order, int $technicianId, ?string $notes, ?User $actor = null): LabOrderAssignment
     {
         $actor = $actor ?? auth()->user();
+
+        // Same rule as the V2 path: the target must be an active user account
+        // holding the canonical Technician role (server-side revalidation).
+        $this->technicianEligibility->assertAssignable($technicianId);
 
         if ($order->status !== LabOrder::STATUS_RECEIVED) {
             throw ValidationException::withMessages([
@@ -89,6 +95,9 @@ class AssignmentService
     public function reassign(LabOrder $order, int $newTechnicianId, string $reason, ?User $actor = null): LabOrderAssignment
     {
         $actor = $actor ?? auth()->user();
+
+        // Reassignment creates a NEW assignment — same eligibility rule applies.
+        $this->technicianEligibility->assertAssignable($newTechnicianId);
 
         if (! in_array($order->status, [LabOrder::STATUS_ASSIGNED, 'IN_PRODUCTION', 'ON_HOLD'], true)) {
             throw ValidationException::withMessages([

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
+use App\Modules\LabOrder\Support\OptimizedEvidenceImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -33,22 +34,25 @@ class LabWorkflowEvidenceService
         'image/webp' => 'webp',
     ];
 
-    private const MAX_BYTES = 10 * 1024 * 1024; // matches existing lab attachment cap (10240 KB)
-
     public function __construct(
         private readonly AuditLogService $auditLogs,
+        private readonly LabEvidenceImageOptimizer $optimizer,
     ) {}
 
     /**
-     * Store an uploaded photo as typed evidence for a V2 order.
+     * Store an uploaded photo as typed evidence for a V2 order. Every photo
+     * flows through the canonical adaptive-compression pipeline (config
+     * lab_workflow_uploads) — re-encoding strips EXIF/GPS metadata and
+     * neutralizes polyglot payloads before the binary ever reaches disk.
      */
     public function storePhoto(LabOrder $order, string $type, UploadedFile $file, User $actor): LabWorkflowEvidence
     {
         $this->assertKnownType($type);
 
         $binary = (string) file_get_contents($file->getRealPath());
+        $maxInput = (int) config('lab_workflow_uploads.max_input_bytes');
 
-        if ($binary === '' || strlen($binary) > self::MAX_BYTES) {
+        if ($binary === '' || strlen($binary) > $maxInput) {
             throw ValidationException::withMessages([
                 'file' => 'Ukuran foto tidak valid (maksimal 10 MB).',
             ]);
@@ -64,9 +68,14 @@ class LabWorkflowEvidenceService
             ]);
         }
 
-        $path = $this->generatePath($order, $type, self::ALLOWED_IMAGE_MIMES[$mime]);
+        // Decompression-bomb guard from header bytes, before any full decode.
+        $this->optimizer->assertSafeDimensions($imageInfo);
 
-        return $this->persist($order, $type, $path, $binary, $mime, $actor);
+        $optimized = $this->optimizer->optimizePhoto($binary, $mime, $type);
+
+        $path = $this->generatePath($order, $type, $optimized->extension);
+
+        return $this->persist($order, $type, $path, $optimized, $actor);
     }
 
     /**
@@ -78,7 +87,9 @@ class LabWorkflowEvidenceService
     {
         $this->assertKnownType($type);
 
-        if ($binary === '' || strlen($binary) > self::MAX_BYTES) {
+        $maxInput = (int) config('lab_workflow_uploads.max_signature_input_bytes');
+
+        if ($binary === '' || strlen($binary) > $maxInput) {
             throw ValidationException::withMessages([
                 'file' => 'Ukuran berkas tanda tangan tidak valid.',
             ]);
@@ -90,9 +101,23 @@ class LabWorkflowEvidenceService
             ]);
         }
 
+        // Real-bytes decode validation + bomb guard (magic bytes alone can be spoofed).
+        $imageInfo = @getimagesizefromstring($binary);
+
+        if ($imageInfo === false || ($imageInfo['mime'] ?? null) !== 'image/png') {
+            throw ValidationException::withMessages([
+                'file' => 'Berkas tanda tangan harus berupa PNG yang valid.',
+            ]);
+        }
+
+        $this->optimizer->assertSafeDimensions($imageInfo);
+
+        // Signatures stay PNG: canvas capped, alpha preserved, lossless re-encode.
+        $optimized = $this->optimizer->optimizeSignaturePng($binary);
+
         $path = $this->generatePath($order, $type, 'png');
 
-        return $this->persist($order, $type, $path, $binary, 'image/png', $actor);
+        return $this->persist($order, $type, $path, $optimized, $actor);
     }
 
     public function has(LabOrder $order, string $type): bool
@@ -109,28 +134,31 @@ class LabWorkflowEvidenceService
         LabOrder $order,
         string $type,
         string $path,
-        string $binary,
-        string $mime,
+        OptimizedEvidenceImage $optimized,
         User $actor,
     ): LabWorkflowEvidence {
         $disk = Storage::disk(self::DISK);
 
-        if (! $disk->put($path, $binary)) {
+        if (! $disk->put($path, $optimized->binary)) {
             throw ValidationException::withMessages([
                 'file' => 'Gagal menyimpan berkas bukti. Coba lagi.',
             ]);
         }
 
         try {
-            return DB::transaction(function () use ($order, $type, $path, $binary, $mime, $actor) {
+            return DB::transaction(function () use ($order, $type, $path, $optimized, $actor) {
                 $evidence = LabWorkflowEvidence::create([
                     'lab_order_id' => $order->id,
                     'branch_id' => $order->branch_id,
                     'type' => $type,
                     'file_path' => $path,
-                    'mime_type' => $mime,
-                    'file_size' => strlen($binary),
-                    'checksum' => hash('sha256', $binary),
+                    'mime_type' => $optimized->mime,
+                    'file_size' => $optimized->size(),
+                    'original_file_size' => $optimized->originalSize,
+                    'width' => $optimized->width,
+                    'height' => $optimized->height,
+                    'compression_method' => $optimized->method,
+                    'checksum' => hash('sha256', $optimized->binary),
                     'uploaded_by' => $actor->id,
                     'captured_at' => now(),
                 ]);
@@ -140,7 +168,14 @@ class LabWorkflowEvidenceService
                     $order->id,
                     AuditLog::ACTION_UPLOAD_ATTACHMENT,
                     null,
-                    ['evidence_type' => $type, 'evidence_id' => $evidence->id, 'checksum' => $evidence->checksum],
+                    [
+                        'evidence_type' => $type,
+                        'evidence_id' => $evidence->id,
+                        'checksum' => $evidence->checksum,
+                        'original_size' => $optimized->originalSize,
+                        'compressed_size' => $optimized->size(),
+                        'compression_method' => $optimized->method,
+                    ],
                     $actor,
                 );
 

@@ -1,0 +1,56 @@
+---
+description: Lab technician assignment eligibility + canonical Lab Workflow upload compression rules
+globs:
+  - "app/Modules/LabOrder/**"
+  - "app/Modules/Production/**"
+  - "app/Modules/Technician/**"
+  - "config/lab_workflow_uploads.php"
+alwaysApply: false
+---
+
+# FIX-LAB-TECHNICIAN-ROLE-ASSIGNMENT-UPLOAD-COMPRESSION — aturan permanen
+
+## Assignment teknisi
+
+1. Target assignment teknisi (V2 & legacy) HARUS user aktif, tidak
+   soft-deleted, ter-link via `mst_technicians.user_id`, dan memegang role
+   Spatie canonical `Technician`. Sumber kebenaran tunggal:
+   `App\Modules\Technician\Services\TechnicianAssignmentEligibility`.
+2. Permission produksi (`manage_production` dll.) ≠ role Technician —
+   permission adalah override AKTOR, tidak pernah membuat user menjadi
+   target assignment yang sah.
+3. Non-Technician (Super Admin/Admin Lab/Admin Klinik/Perawat/Doctor/QC/
+   Delivery/Kasir/Owner) tidak boleh menjadi target; tidak ada override
+   kecuali user tersebut benar-benar diberi role Technician.
+4. `technician_id` dari request selalu direvalidasi server-side
+   (`assertAssignable`) — dropdown bukan authorization boundary.
+5. Pencabutan role Technician memblokir assignment BARU saja; histori
+   assignment tidak pernah dihapus dan tetap terbaca (board legacy tetap
+   `listAll()` untuk filter historis).
+
+## Upload Lab Workflow
+
+6. SEMUA upload Lab Workflow V2 wajib lewat `LabWorkflowEvidenceService` →
+   `LabEvidenceImageOptimizer` (config `lab_workflow_uploads.php`). Dilarang
+   membuat jalur kompresi terpisah per-controller.
+7. Foto = JPEG output; signature = PNG (transparansi + ketajaman dijaga,
+   tidak pernah dikonversi ke JPEG). Setiap `LabWorkflowEvidence::TYPES`
+   wajib ter-mapping ke profil (diassert test).
+8. MIME/magic-byte dari bytes riil; bomb guard dimensi sebelum decode; EXIF
+   (termasuk GPS) dihapus lewat re-encode; polyglot dinetralkan; SVG/PDF
+   bukan tipe evidence yang diterima.
+9. Target mayoritas image ≤ 1 MB (signature ≤ 300 KB) — tetapi quality tidak
+   boleh turun di bawah `min_quality` profil; melebihi hard cap setelah
+   iterasi terbatas → TOLAK (fail closed), bukan blur/loop tanpa henti.
+   File kecil tidak diperbesar.
+10. Storage privat (disk `local`), serve hanya via route ber-policy; nama
+    file generated; checksum sha256; metadata `original_file_size`/`width`/
+    `height`/`compression_method` wajib terisi (bukti before/after).
+11. Runtime tanpa GD = fallback jujur `original_no_gd` (validasi tetap penuh,
+    tanpa kompresi palsu) — CI & VPS wajib ber-GD; jangan hapus `gd, exif`
+    dari extensions CI.
+12. Evidence lama tidak di-recompress massal tanpa sprint khusus; file baru
+    harus tetap terbaca versi aplikasi sebelumnya (JPEG/PNG standar).
+13. Test-infra: target assignment di test dibuat via
+    `Technician::factory()->assignable()`; test kompresi GD di-skip jujur
+    saat runtime tanpa GD.

@@ -11,7 +11,7 @@ beforeEach(function () {
 it('lets an authorized user reassign a technician', function () {
     $order = receivedOrder();
     $original = assignOrder($order);
-    $newTech = Technician::factory()->create();
+    $newTech = Technician::factory()->assignable()->create();
 
     $this->actingAs(userWith(['reassign_technicians']))
         ->post(route('production.reassign', $order->refresh()), ['technician_id' => $newTech->id, 'reason' => 'unavailable'])
@@ -23,7 +23,7 @@ it('lets an authorized user reassign a technician', function () {
 it('creates a new ASSIGNED assignment for the new technician', function () {
     $order = receivedOrder();
     assignOrder($order);
-    $newTech = Technician::factory()->create();
+    $newTech = Technician::factory()->assignable()->create();
 
     $this->actingAs(superAdmin())
         ->post(route('production.reassign', $order->refresh()), ['technician_id' => $newTech->id, 'reason' => 'unavailable']);
@@ -39,7 +39,7 @@ it('requires a reason to reassign', function () {
     assignOrder($order);
 
     $this->actingAs(superAdmin())
-        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->create()->id])
+        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->assignable()->create()->id])
         ->assertSessionHasErrors('reason');
 });
 
@@ -48,7 +48,7 @@ it('creates an audit log on reassignment', function () {
     assignOrder($order);
 
     $this->actingAs(superAdmin())
-        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->create()->id, 'reason' => 'unavailable']);
+        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->assignable()->create()->id, 'reason' => 'unavailable']);
 
     expect(AuditLog::where('entity_id', $order->id)->where('action', 'REASSIGN_TECHNICIAN')->exists())->toBeTrue();
 });
@@ -66,7 +66,7 @@ it('forbids reassigning a RECEIVED order', function () {
     $order = receivedOrder();
 
     $this->actingAs(userWith(['reassign_technicians']))
-        ->post(route('production.reassign', $order), ['technician_id' => Technician::factory()->create()->id, 'reason' => 'whatever'])
+        ->post(route('production.reassign', $order), ['technician_id' => Technician::factory()->assignable()->create()->id, 'reason' => 'whatever'])
         ->assertForbidden();
 });
 
@@ -75,6 +75,6 @@ it('denies reassignment without permission', function () {
     assignOrder($order);
 
     $this->actingAs(userWith(['view_production']))
-        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->create()->id, 'reason' => 'unavailable'])
+        ->post(route('production.reassign', $order->refresh()), ['technician_id' => Technician::factory()->assignable()->create()->id, 'reason' => 'unavailable'])
         ->assertForbidden();
 });

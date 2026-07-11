@@ -54,6 +54,10 @@ class LabWorkflowEvidence extends Model
         'file_path',
         'mime_type',
         'file_size',
+        'original_file_size',
+        'width',
+        'height',
+        'compression_method',
         'checksum',
         'uploaded_by',
         'captured_at',
@@ -64,6 +68,9 @@ class LabWorkflowEvidence extends Model
         return [
             'captured_at' => 'datetime',
             'file_size' => 'integer',
+            'original_file_size' => 'integer',
+            'width' => 'integer',
+            'height' => 'integer',
         ];
     }
 

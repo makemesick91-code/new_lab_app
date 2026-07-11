@@ -31,7 +31,7 @@ function technicianWithUser(): Technician
 {
     $user = userWith(['start_production_work', 'complete_production_work', 'send_to_qc']);
 
-    return Technician::factory()->create(['user_id' => $user->id, 'is_active' => true]);
+    return Technician::factory()->assignable()->create(['user_id' => $user->id, 'is_active' => true]);
 }
 
 function adminLab(): User
