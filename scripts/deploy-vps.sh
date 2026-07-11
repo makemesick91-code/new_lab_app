@@ -100,6 +100,9 @@ php artisan foundation:queue-worker-runtime-check
 php artisan foundation:queue-worker-runtime-check --json > storage/release-evidence/latest/queue-worker-runtime-check.json || true
 php artisan foundation:runtime-hardening-check
 php artisan foundation:runtime-hardening-check --json > storage/release-evidence/latest/runtime-hardening-check.json || true
+php artisan foundation:devflow-check
+php artisan foundation:devflow-check --json > storage/release-evidence/latest/devflow-check.json || true
+php artisan foundation:shared-service-audit --json > storage/release-evidence/latest/shared-service-audit.json || true
 php artisan foundation:idempotency-audit
 php artisan foundation:idempotency-audit --json > storage/release-evidence/latest/idempotency-audit.json || true
 php artisan foundation:outbox-audit

@@ -12,6 +12,7 @@ use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
 use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
+use App\Services\Foundation\DevflowGovernanceService;
 use App\Services\Foundation\EnterpriseDocumentationGovernanceService;
 use App\Services\Foundation\EnterpriseFoundationClosureGovernanceService;
 use App\Services\Foundation\EntFoundationRuntimeHardeningGovernanceService;
@@ -86,6 +87,7 @@ class FoundationGovernanceSummaryService
         private readonly DeveloperConsoleGovernanceService $developerConsoleGovernance,
         private readonly HealthCheckGovernanceService $healthCheckGovernance,
         private readonly SecurityComplianceGovernanceService $securityComplianceGovernance,
+        private readonly DevflowGovernanceService $devflowGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
         private readonly BackupDrGovernanceService $backupDrGovernance,
@@ -154,6 +156,7 @@ class FoundationGovernanceSummaryService
         $developerConsoleGovernance = $this->developerConsoleGovernance->collect();
         $healthCheckGovernance = $this->healthCheckGovernance->collect();
         $securityComplianceGovernance = $this->securityComplianceGovernance->collect();
+        $devflowGovernance = $this->devflowGovernance->collect();
         $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
         $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
         $backupDrGovernance = $this->backupDrGovernance->collect();
@@ -454,6 +457,16 @@ class FoundationGovernanceSummaryService
                 'checks' => $cicdEnterpriseGateGovernance['checks'] ?? [],
                 'rules' => $cicdEnterpriseGateGovernance['rules'] ?? [],
                 'command' => 'foundation:cicd-enterprise-gate-check',
+            ],
+            // DEVFLOW-1 — informational only; NOT wired into combinedDecision.
+            'devflow_governance' => [
+                'decision' => $devflowGovernance['decision'] ?? 'UNKNOWN',
+                'readiness_status' => $devflowGovernance['readiness_status'] ?? 'unknown',
+                'summary' => $devflowGovernance['summary'] ?? [],
+                'checks' => $devflowGovernance['checks'] ?? [],
+                'rules' => $devflowGovernance['rules'] ?? [],
+                'commands' => $devflowGovernance['commands'] ?? [],
+                'command' => 'foundation:devflow-check',
             ],
             'deployment_rollback_governance' => [
                 'decision' => $deploymentRollbackGovernance['decision'] ?? 'UNKNOWN',

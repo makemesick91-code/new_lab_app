@@ -1,0 +1,42 @@
+---
+description: DEVFLOW-1 safe sprint acceleration — manifest, profiles, focused tests, release automation
+globs:
+alwaysApply: true
+---
+
+# DEVFLOW-1 — Safe Sprint Acceleration (canonical)
+
+Every DaengtisiaMS sprint inherits `docs/engineering/sprint-runtime-template.md`.
+A prompt supplies only id/type/module/objective/acceptance-criteria; the
+recurring contract is inherited, never repeated.
+
+## Sources of truth (read-only, config-driven)
+- `config/sprint_profiles.php` — the 10 sprint types + audit level + CI profile + release requirements.
+- `config/sprint_regression_matrix.php` — changed paths → impacted category → focused tests + CI escalation.
+- `config/shared_foundations.php` — canonical reusable services (reuse, never duplicate).
+- `config/devflow.php` — manifest schema + governance markers.
+- `.sprint/current.yml` — the active sprint manifest.
+
+## Commands (fail-closed, read-only unless noted)
+- `sprint:new` scaffolds a manifest + doc stub (no git branch unless `--create-branch`).
+- `sprint:prepare` read-only preflight; mutates nothing.
+- `sprint:manifest-check` validates schema/type + manifest-vs-diff consistency.
+- `sprint:audit-plan` audit depth + checklist scoped to the type.
+- `sprint:test-plan` / `sprint:test` focused + escalation plan / run (never hides skips).
+- `sprint:scope-audit` one-sprint-one-outcome coherence.
+- `sprint:release-check` GO/WATCH/NO-GO — creates NO tag, deploys nothing.
+- `sprint:evidence` real-value evidence pack (missing = NOT AVAILABLE).
+- `foundation:devflow-check` / `foundation:shared-service-audit` governance.
+- `scripts/sprint-release.sh` thin orchestration over the existing deploy runner; dry-run default, `--apply` for mutation, `--tag` only after deploy + smoke.
+
+## Non-negotiable
+1. Manifest is the source of truth; CI enforces impact flags match the diff.
+2. Fail closed: unresolved diff / unmatched file / unknown type → full required suite.
+3. CICD-CTRL-1 never weakened: `skip_critical_profiles=[docs_only]`, default `unknown_high_risk`.
+4. No `migrate:fresh` / `db:wipe` / force-push in the release path (config-declared + scanned).
+5. GO tag only after a real deploy + smoke; `sprint:release-check` never tags.
+6. Evidence from real results only; never invented numbers.
+7. Inventory ⇒ ledger tests; auth/branch/permission ⇒ security tests; schema ⇒ migration + release-safety; frontend ⇒ build + view compile.
+8. No arbitrary shell from a manifest; manifests select known profiles/commands only.
+9. Governance doc/rule text must not contain the environment-file literal.
+10. `devflow_governance` is informational in the foundation summary — not in the blocking combinedDecision.

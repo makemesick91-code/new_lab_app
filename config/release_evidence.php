@@ -34,6 +34,8 @@ return [
                 'foundation-governance-summary.json',
                 'nsf-governance-check.json',
                 'postgres-runtime-check.json',
+                'devflow-check.json',
+                'shared-service-audit.json',
             ],
         ],
 
@@ -73,6 +75,9 @@ return [
                 'ent-1-4-audit-check.json',
                 'queue-worker-runtime-check.json',
                 'runtime-hardening-check.json',
+                // DEVFLOW-1 sprint acceleration foundation (auditability, non-blocking).
+                'devflow-check.json',
+                'shared-service-audit.json',
             ],
         ],
 
@@ -117,6 +122,9 @@ return [
                 'ent-1-4-audit-check.json',
                 'queue-worker-runtime-check.json',
                 'runtime-hardening-check.json',
+                // DEVFLOW-1 sprint acceleration foundation (auditability, non-blocking).
+                'devflow-check.json',
+                'shared-service-audit.json',
             ],
         ],
     ],

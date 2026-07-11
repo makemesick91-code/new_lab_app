@@ -1,0 +1,30 @@
+# DEVFLOW-1 — Sprint Manifest (example / template)
+# Copy to .sprint/current.yml for the active sprint, or point tooling at it
+# with --manifest=<path>. Validated by: php artisan sprint:manifest-check
+#
+# Every recurring rule (base branch, architecture contract, branch isolation,
+# ledger-only inventory, RBAC, test/backup/deploy/smoke/rollback/evidence
+# requirements) is INHERITED from the sprint type + templates. A prompt only
+# needs to fill the fields below.
+
+id: DEVFLOW-EXAMPLE
+type: HOTFIX                 # HOTFIX | RUNTIME_FIX | MODULE_SPRINT | FOUNDATION_SPRINT | UI_POLISH | DATA_REPAIR | DOCS_ONLY | INFRA_RELEASE | SECURITY_FIX | MIGRATION_HEAVY
+module: Lab
+title: "Short human-readable objective"
+base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+
+# Impact flags — MUST match reality; CI + sprint:manifest-check enforce them.
+runtime_change: true         # app/routes/config behaviour changes
+schema_change: false         # migrations added/changed
+frontend_change: false       # JS/CSS/Vite/tailwind/build changes
+security_impact: false       # policy/middleware/permission changes
+branch_isolation_impact: false
+ledger_impact: false
+
+deploy_required: true         # deploy to VPS after merge (only when runtime_change)
+browser_required: false       # interactive UI needs a browser smoke
+
+# Optional: overrides the type's default test profiles (usually leave empty).
+test_profiles: []
+
+go_tag: devflow-example-go
