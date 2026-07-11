@@ -1,0 +1,50 @@
+---
+description: Lab Workflow V2 notification destinations are recipient-aware and resolved through one canonical resolver
+globs:
+  - app/Modules/LabOrder/Support/LabWorkflowNotificationDestinationResolver.php
+  - app/Modules/LabOrder/Services/LabWorkflowNotificationService.php
+  - app/Modules/LabOrder/Services/Lab*WorkflowService.php
+  - app/Modules/LabOrder/Services/LabV2*Service.php
+  - app/Modules/LabOrder/Services/LabExternalDispatchService.php
+  - app/Modules/LabOrder/Notifications/LabWorkflowEvent.php
+  - app/Http/Controllers/NotificationController.php
+alwaysApply: false
+---
+
+# HOTFIX-LAB-V2-NOTIFICATION-DESTINATION-ROUTING (2026-07-11)
+
+Baseline `fix-admin-lab-lab-only-access-go`. Fixes the "Model tiba di cabang"
+notification 404 for Admin Lab (branch page blocked by branch isolation).
+
+Durable rules:
+
+1. **Never build a Lab Workflow notification URL ad hoc in a service.** Every
+   destination is resolved through the canonical
+   `App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver`.
+2. **Destinations are recipient-aware.** A single event fanned out to Admin Lab
+   AND a branch operator must yield different, individually-openable routes. Use
+   `LabWorkflowNotificationService::notifyPermissionHoldersRouted()` /
+   `notifyUsersRouted()` (resolve per recipient, send one notification each) —
+   the string-URL `notifyPermissionHolders()` / `notifyUsers()` are deprecated.
+3. **Admin Lab notifications only ever target Lab-domain routes**
+   (`lab-v2-orders.*`, `lab-pickup-tasks.*`, `lab-delivery-tasks.*`), never the
+   branch `lab-workflow-requests.*` page (404s on branch isolation). Fixing a
+   link must NEVER widen Admin Lab's permissions.
+4. **Branch (Perawat / Admin Klinik) notifications are branch-scoped**: the
+   branch request page is only chosen when the recipient's active branch equals
+   the order's branch; otherwise fall back to the recipient's queue index.
+5. **Fallbacks are safe queues, never a 404 detail link**; when no safe
+   destination exists the resolver returns `null` (notification renders
+   link-less). No broken/unauthorized link is ever produced.
+6. **Stored notification URLs are internal + same-origin only.**
+   `NotificationController@read` refuses external hosts, protocol-relative
+   (`//host`), and `javascript:`/`data:`/`vbscript:` (open-redirect protection).
+   URLs use named routes honoring `config('app.url')` — never a hardcoded host.
+7. **Broken legacy notifications are repaired via the idempotent, dry-run-first
+   command** `php artisan lab-workflow:repair-notification-destinations`
+   (`--apply` to persist). It scans only `LabWorkflowEvent`, rewrites ONLY
+   `data.url`, preserves id/read_at/created_at/notifiable/title/message/
+   lab_order_id, and fails closed on a missing/soft-deleted order. Never bulk
+   overwrite; never delete old notifications.
+8. Workflow V2 stays canonical; legacy stays inactive for new orders; in-app
+   notifications only (no auto-WhatsApp); KTP/NIK never rendered.

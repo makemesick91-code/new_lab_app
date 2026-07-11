@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\LabOrder\Models\LabDeliveryTask;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -63,12 +64,13 @@ class LabDeliveryWorkflowService
             ]);
         });
 
-        $this->notifications->notifyPermissionHolders(
+        $this->notifications->notifyPermissionHoldersRouted(
             ['start_delivery'],
             'Tugas pengiriman baru',
             "Order {$order->order_number} siap diantar kembali ke cabang.",
-            route('lab-delivery-tasks.show', $task),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_DELIVERY_TASK,
+            ['delivery_task_id' => $task->id],
         );
 
         return $task;
@@ -260,12 +262,18 @@ class LabDeliveryWorkflowService
         });
 
         if ($justDelivered) {
-            $this->notifications->notifyPermissionHolders(
+            // Mixed audience: `create_lab_branch_requests` is held by branch
+            // operators (Perawat / Admin Klinik) AND Admin Lab. The resolver
+            // routes each recipient to a page they can actually open — the
+            // branch request page for the order's branch operators, the V2
+            // order detail for Admin Lab (the branch page 404s on isolation).
+            $this->notifications->notifyPermissionHoldersRouted(
                 ['create_lab_branch_requests'],
                 'Model tiba di cabang',
                 "Order {$result->labOrder->order_number} telah diterima {$result->recipient_name}.",
-                route('lab-workflow-requests.show', $result->lab_order_id),
                 $result->labOrder,
+                LabWorkflowNotificationDestinationResolver::EVENT_DELIVERED_TO_BRANCH,
+                ['delivery_task_id' => $result->id],
             );
         }
 

@@ -7,6 +7,7 @@ use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\ExternalLab;
 use App\Modules\LabOrder\Models\LabExternalDispatch;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -204,12 +205,12 @@ class LabExternalDispatchService
         });
 
         if ($result === LabExternalDispatch::RESULT_ACCEPTED) {
-            $this->notifications->notifyPermissionHolders(
+            $this->notifications->notifyPermissionHoldersRouted(
                 ['create_delivery', 'manage_lab_orders'],
                 'Model selesai (hasil eksternal diterima)',
                 "Order {$order->order_number} selesai dan siap dibuatkan tugas pengiriman.",
-                route('lab-v2-orders.show', $order),
                 $order,
+                LabWorkflowNotificationDestinationResolver::EVENT_MODEL_DONE,
             );
         }
 
