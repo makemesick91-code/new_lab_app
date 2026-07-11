@@ -66,17 +66,19 @@ describe('backward compatibility with legacy inventory permissions', function ()
             ->and($manager->can('post', $draftGr))->toBeTrue();
     });
 
-    it('preserves Admin Lab role access to procurement and inventory', function () {
+    it('denies the Lab-only Admin Lab role all procurement and inventory access', function () {
+        // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Admin Lab no longer holds any inventory
+        // permission, so every inventory policy check is denied at the authz layer.
         $admin = User::factory()->create();
         $admin->assignRole('Admin Lab');
         $this->actingAs($admin);
 
-        expect($admin->can('viewAny', Product::class))->toBeTrue()
-            ->and($admin->can('viewAny', PurchaseRequest::class))->toBeTrue()
-            ->and($admin->can('viewAny', GoodsReceipt::class))->toBeTrue()
-            ->and($admin->can('viewAny', InventoryActivityLog::class))->toBeTrue()
-            ->and($admin->can('viewExecutiveDashboard', InventoryMovement::class))->toBeTrue()
-            ->and($admin->can('create', Product::class))->toBeTrue();
+        expect($admin->can('viewAny', Product::class))->toBeFalse()
+            ->and($admin->can('viewAny', PurchaseRequest::class))->toBeFalse()
+            ->and($admin->can('viewAny', GoodsReceipt::class))->toBeFalse()
+            ->and($admin->can('viewAny', InventoryActivityLog::class))->toBeFalse()
+            ->and($admin->can('viewExecutiveDashboard', InventoryMovement::class))->toBeFalse()
+            ->and($admin->can('create', Product::class))->toBeFalse();
     });
 
     it('preserves Technician view_inventory access to core inventory', function () {

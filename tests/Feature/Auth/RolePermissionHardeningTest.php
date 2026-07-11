@@ -77,10 +77,14 @@ it('keeps Admin Klinik on full clinic and cashier workflow', function () {
         ->and($role->hasPermissionTo('view_rme_payment_reports'))->toBeFalse();
 });
 
-it('keeps Admin Lab on lab and RME integration permissions', function () {
+it('restricts Admin Lab to Lab-only permissions (no RME or branch dashboard)', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Admin Lab is a Lab-only role.
     $role = Role::findByName('Admin Lab');
 
     expect($role->hasPermissionTo('view_lab_orders'))->toBeTrue()
-        ->and($role->hasPermissionTo('manage_rme_billing'))->toBeTrue()
-        ->and($role->hasPermissionTo('view_branch_dashboard'))->toBeTrue();
+        ->and($role->hasPermissionTo('manage_lab_orders'))->toBeTrue()
+        // Non-Lab access is revoked.
+        ->and($role->hasPermissionTo('manage_rme_billing'))->toBeFalse()
+        ->and($role->hasPermissionTo('view_clinic_visits'))->toBeFalse()
+        ->and($role->hasPermissionTo('view_branch_dashboard'))->toBeFalse();
 });

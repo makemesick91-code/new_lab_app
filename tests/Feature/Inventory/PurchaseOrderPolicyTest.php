@@ -23,9 +23,11 @@ beforeEach(function () {
     $this->otherApproved = PurchaseOrder::factory()->approved()->create(['branch_id' => $this->otherBranch->id]);
 });
 
-it('allows Admin Lab full purchase order workflow', function () {
+it('allows Admin Warehouse full purchase order workflow', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — the full procurement workflow belongs to the
+    // inventory role (Admin Warehouse), not the Lab-only Admin Lab role.
     $admin = User::factory()->create();
-    $admin->assignRole('Admin Lab');
+    $admin->assignRole('Admin Warehouse');
     $this->actingAs($admin);
 
     expect($admin->can('viewAny', PurchaseOrder::class))->toBeTrue()
@@ -179,6 +181,8 @@ it('does not overgrant approve_inventory_purchase_order in role seeder', functio
         'Courier',
         'Finance',
         'Doctor',
+        // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Admin Lab is Lab-only, no procurement approval.
+        'Admin Lab',
     ];
 
     foreach ($rolesWithoutApproval as $roleName) {
@@ -186,7 +190,8 @@ it('does not overgrant approve_inventory_purchase_order in role seeder', functio
         expect($role->hasPermissionTo('approve_inventory_purchase_order'))->toBeFalse();
     }
 
-    expect(Role::findByName('Admin Lab')->hasPermissionTo('approve_inventory_purchase_order'))->toBeTrue();
+    // Admin Warehouse is the canonical procurement approver.
+    expect(Role::findByName('Admin Warehouse')->hasPermissionTo('approve_inventory_purchase_order'))->toBeTrue();
 });
 
 it('supports sprint 16.3 receiving statuses on purchase order model constants', function () {

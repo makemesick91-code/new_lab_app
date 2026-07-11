@@ -115,9 +115,11 @@ it('denies unauthorized user without inventory permissions', function () {
         ->and($user->can('cancel', $this->draft))->toBeFalse();
 });
 
-it('allows Admin Lab full goods receipt workflow', function () {
+it('allows Admin Warehouse full goods receipt workflow', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — goods receipt is an inventory workflow owned
+    // by Admin Warehouse; the Lab-only Admin Lab role no longer has access.
     $admin = User::factory()->create();
-    $admin->assignRole('Admin Lab');
+    $admin->assignRole('Admin Warehouse');
     $this->actingAs($admin);
 
     expect($admin->can('viewAny', GoodsReceipt::class))->toBeTrue()

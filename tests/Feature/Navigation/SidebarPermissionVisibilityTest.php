@@ -87,11 +87,15 @@ it('shows read-only RME and reporting for Owner but hides lab operations', funct
 });
 
 it('shows lab workflow menus for Admin Lab but not Kasir', function () {
-    $this->actingAs(userInRole('Admin Lab'))
-        ->get(route('dashboard'))
-        ->assertOk()
-        ->assertSee('Order Lab')
-        ->assertSee('Kandidat Lab RME');
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Admin Lab is Lab-only and no longer holds
+    // `view dashboard`, so it never reaches the generic dashboard; assert the sidebar
+    // it renders directly, and additionally that /dashboard is forbidden for it.
+    $this->actingAs(userInRole('Admin Lab'));
+    $labSidebar = view('layouts.partials.sidebar')->render();
+    expect($labSidebar)->toContain('Order Lab')
+        ->and($labSidebar)->toContain('Kandidat Lab RME')
+        ->and($labSidebar)->not->toContain('Kasir');
+    $this->get(route('dashboard'))->assertForbidden();
 
     $this->actingAs(userInRole('Kasir'))
         ->get(route('dashboard'))
