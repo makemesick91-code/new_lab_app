@@ -176,13 +176,15 @@ it('full rme to lab candidate to lab order happy path preserves traceability and
         ->and(Invoice::count())->toBe($beforeLabInvoices)
         ->and(DB::table('trx_payments')->count())->toBe($beforeLabPayments);
 
-    $this->actingAs($this->adminLab)
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — the RME cashier pages belong to the cashier
+    // (manage_rme_billing); Admin Lab is Lab-only and can no longer open them.
+    $this->actingAs($this->kasir)
         ->get(route('rme.cashier.show', [$visit, $invoice]))
         ->assertOk()
         ->assertSee('Status Pekerjaan Lab RME')
         ->assertSee('E2E_LAB_CROWN_VALIDATION');
 
-    $this->actingAs($this->adminLab)
+    $this->actingAs($this->kasir)
         ->get(route('rme.cashier.receipt.show', [$visit, $invoice]))
         ->assertOk()
         ->assertSee('Kandidat Lab RME');

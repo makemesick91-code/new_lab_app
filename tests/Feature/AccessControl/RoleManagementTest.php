@@ -172,12 +172,13 @@ it('seeds inventory permissions idempotently', function () {
     expect(Permission::where('name', 'manage_inventory')->count())->toBe(1);
 });
 
-it('assigns inventory permissions to Admin Lab role', function () {
+it('does not assign inventory permissions to the Lab-only Admin Lab role', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — inventory is out of the Admin Lab domain.
     $role = Role::findByName('Admin Lab');
 
-    expect($role->hasPermissionTo('view_inventory'))->toBeTrue();
-    expect($role->hasPermissionTo('manage_inventory'))->toBeTrue();
-    expect($role->hasPermissionTo('view_inventory_executive_dashboard'))->toBeTrue();
+    expect($role->hasPermissionTo('view_inventory'))->toBeFalse();
+    expect($role->hasPermissionTo('manage_inventory'))->toBeFalse();
+    expect($role->hasPermissionTo('view_inventory_executive_dashboard'))->toBeFalse();
 });
 
 it('keeps view_inventory on Technician and Quality Control roles', function () {

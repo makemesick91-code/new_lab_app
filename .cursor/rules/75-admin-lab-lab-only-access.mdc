@@ -1,0 +1,49 @@
+---
+description: Admin Lab is a Lab-only role — no RME/Inventory/Owner/system access, no Super Admin
+globs:
+  - database/seeders/RoleSeeder.php
+  - database/seeders/PermissionSeeder.php
+  - app/Support/AccessControl/**
+  - app/Http/Controllers/Auth/AuthenticatedSessionController.php
+alwaysApply: false
+---
+
+# FIX-ADMIN-LAB-LAB-ONLY-ACCESS — durable rules
+
+1. **Admin Lab is a Lab-only operational role.** It receives ONLY Lab-module + Lab
+   Workflow V2 permissions plus the legacy dental-lab billing + reporting module (all
+   Lab-scoped). Single source of truth: `RoleSeeder::ROLE_PERMISSIONS['Admin Lab']`.
+2. **Admin Lab must never hold `Super Admin`.** `Gate::before` gives Super Admin a full
+   bypass, so an operational Lab account with Super Admin is not Lab-restricted. Demote
+   via `rbac:admin-lab-lab-only-audit --demote=<id>` (guarded — never leaves zero Super
+   Admins, never touches the primary platform Super Admin).
+3. **Admin Lab gets NO** RME (`manage_rme_billing`, `view/manage_clinic_visits`),
+   Inventory/Procurement (`manage_inventory`, `approve_inventory_*`, inventory
+   analytics/executive/activity/cross-branch, `download_stock_transfer_checklist`),
+   master data (`manage patients/doctors/clinics/master data`, clinic master data),
+   owner/branch dashboard (`view dashboard`, `view_branch_dashboard`, `view_owner_dashboard`),
+   developer console, or system permission. Revoked set:
+   `RoleSeeder::ADMIN_LAB_REVOKED_NON_LAB`.
+4. **Sidebar is not a security boundary.** Non-Lab access must return 403 at the route
+   middleware (RME/settings/dashboard/dev-console) or controller policy layer
+   (inventory `$this->authorize('viewAny', Model)`), not merely be hidden.
+5. **Shared patient/doctor/branch labels never grant CRUD.** Admin Lab may see a
+   patient/doctor/branch name on a Lab detail page through a Lab service, but must not
+   open the patient list, Doctor module, or Master Cabang.
+6. **Global report/export permissions are not granted if they open a non-Lab domain.**
+   The legacy dental-lab reporting module (`reports.*`, `view_*_report`, `export_report`,
+   `manage_report`, `view_dashboard`) IS Lab-scoped and is kept; RME/Inventory/Owner
+   reports are not.
+7. **Admin Lab lands on the Lab workspace** (`lab-v2-orders.index`), never the generic
+   cross-module dashboard (it no longer holds `view dashboard`).
+8. **QC segregation** (producing technician cannot pass/fail own QC) stays enforced by
+   the Lab Workflow V2 state machine — Admin Lab keeping QC permissions does not bypass
+   it. **Technician assignment eligibility** (role `Technician`) and **Lab evidence
+   privacy/compression** are unchanged. Lab Workflow V2 stays canonical; legacy create
+   stays inactive.
+9. **Permission audits must use EFFECTIVE permissions** (`$user->can()`,
+   `getAllPermissions()`, `getRoleNames()`), never direct-only `whereHas('permissions')`
+   — role permissions + `Gate::before` are missed otherwise.
+10. **Role changes are seeder-only** (`db:seed --class=RoleSeeder --force`, idempotent) +
+    `permission:cache-reset`. No permission DEFINITION is removed (shared by other roles).
+    Production role/direct-permission repair is transactional, verified, and guarded.

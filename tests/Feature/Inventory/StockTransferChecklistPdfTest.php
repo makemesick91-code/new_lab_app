@@ -53,8 +53,10 @@ it('registers the stock transfer checklist route name', function () {
     expect(Route::has('inventory.stock-transfers.checklist'))->toBeTrue();
 });
 
-it('assigns checklist download permission to Admin Lab through the role seeder', function () {
-    expect(Role::findByName('Admin Lab')->hasPermissionTo('download_stock_transfer_checklist'))->toBeTrue();
+it('assigns checklist download permission to Admin Warehouse, not the Lab-only Admin Lab role', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — stock transfer is an inventory workflow.
+    expect(Role::findByName('Admin Warehouse')->hasPermissionTo('download_stock_transfer_checklist'))->toBeTrue()
+        ->and(Role::findByName('Admin Lab')->hasPermissionTo('download_stock_transfer_checklist'))->toBeFalse();
 });
 
 it('allows an authorized user to download the PDF checklist', function () {

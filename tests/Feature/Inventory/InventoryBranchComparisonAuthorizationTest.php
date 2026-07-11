@@ -22,8 +22,11 @@ it('seeds view_inventory_cross_branch_analytics permission', function () {
     expect(Permission::where('name', 'view_inventory_cross_branch_analytics')->count())->toBe(1);
 });
 
-it('assigns cross branch analytics permission to Admin Lab only among standard roles', function () {
-    expect(Role::findByName('Admin Lab')->hasPermissionTo('view_inventory_cross_branch_analytics'))->toBeTrue()
+it('assigns cross branch analytics to inventory roles but not the Lab-only Admin Lab role', function () {
+    // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — cross-branch inventory analytics is an
+    // inventory concern (Admin Warehouse), never the Lab-only Admin Lab role.
+    expect(Role::findByName('Admin Warehouse')->hasPermissionTo('view_inventory_cross_branch_analytics'))->toBeTrue()
+        ->and(Role::findByName('Admin Lab')->hasPermissionTo('view_inventory_cross_branch_analytics'))->toBeFalse()
         ->and(Role::findByName('Technician')->hasPermissionTo('view_inventory_cross_branch_analytics'))->toBeFalse()
         ->and(Role::findByName('Quality Control')->hasPermissionTo('view_inventory_cross_branch_analytics'))->toBeFalse();
 });

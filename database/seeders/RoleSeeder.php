@@ -16,24 +16,37 @@ class RoleSeeder extends Seeder
      */
     public const ROLE_PERMISSIONS = [
         'Super Admin' => '*', // all permissions
+        // FIX-ADMIN-LAB-LAB-ONLY-ACCESS (2026-07-11) — Admin Lab is a LAB-ONLY
+        // operational role. It receives ONLY permissions inside the Lab module and
+        // Lab Workflow V2 (orders, cabang requests, pickup oversight, receive at
+        // lab, model analysis, technician assignment, production, QC, external lab,
+        // delivery, evidence, lab notifications) plus the legacy dental-lab billing
+        // + reporting module (all Lab-scoped). It MUST NOT hold any RME, Inventory,
+        // Procurement, master-data (patients/doctors/clinics/branches/treatments),
+        // owner/branch-dashboard, dev-console, or system permission. Shared patient/
+        // doctor/branch labels are surfaced through Lab services, not CRUD grants.
+        // The removed non-Lab permissions are catalogued in ADMIN_LAB_REVOKED_NON_LAB
+        // below so the repair/audit command can strip them from live accounts.
+        // QC segregation of duty (a producing technician cannot pass/fail their own
+        // QC) is enforced by the Lab Workflow V2 state machine, not by withholding
+        // Admin Lab's QC permissions.
         'Admin Lab' => [
-            'view dashboard',
-            'view_branch_dashboard',
-            'manage master data',
-            'manage clinics',
-            'manage doctors',
-            'manage patients',
+            // Legacy dental-lab reporting dashboard landing gate (reports.dashboard)
+            'view_dashboard',
+            // Master Lab data (Lab domain only)
             'manage lab services',
             'manage technicians',
+            // Lab orders (legacy + V2)
             'manage lab orders',
             'manage_lab_orders',
             'view_lab_orders',
             'create_lab_orders',
             'update_lab_orders',
             'cancel_lab_orders',
-            // LAB-WORKFLOW-V2 Phase 2 — pickup oversight + receive at lab
+            // LAB-WORKFLOW-V2 Phase 2 — cabang request + pickup oversight + receive
             'create_lab_branch_requests',
             'manage_lab_pickups',
+            // Production
             'manage_production',
             'view_production',
             'assign_technicians',
@@ -43,6 +56,7 @@ class RoleSeeder extends Seeder
             'resume_production_work',
             'complete_production_work',
             'send_to_qc',
+            // Quality Control (segregation enforced by the V2 state machine)
             'manage_quality_control',
             'view_quality_control',
             'start_qc',
@@ -51,6 +65,7 @@ class RoleSeeder extends Seeder
             'request_remake',
             'update_qc_checklist',
             'upload_qc_evidence',
+            // Delivery
             'manage_delivery',
             'view_delivery',
             'create_delivery',
@@ -59,6 +74,7 @@ class RoleSeeder extends Seeder
             'mark_delivered',
             'complete_delivery',
             'upload_pod',
+            // Legacy dental-lab billing (Lab-domain invoice/payment — NOT RME cashier)
             'manage_invoice',
             'view_invoice',
             'create_invoice',
@@ -67,8 +83,8 @@ class RoleSeeder extends Seeder
             'manage_payment',
             'view_payment',
             'create_payment',
+            // Legacy dental-lab reporting module (all Lab-scoped)
             'manage_report',
-            'view_dashboard',
             'view_order_report',
             'view_production_report',
             'view_qc_report',
@@ -76,24 +92,9 @@ class RoleSeeder extends Seeder
             'view_invoice_report',
             'view_payment_report',
             'export_report',
-            'manage_inventory',
-            'view_inventory',
-            'view_inventory_executive_dashboard',
-            'view_inventory_cross_branch_analytics',
-            'view_inventory_activity_log',
-            'download_stock_transfer_checklist',
-            'approve_inventory_purchase_request',
-            'approve_inventory_purchase_order',
+            // Legacy coarse Lab permissions
             'manage assignments',
             'view reports',
-            // Sprint 19 - Clinic Master Data
-            'view_clinic_master_data',
-            'manage_clinic_master_data',
-            // Sprint 20 - RME: Clinic Visit Queue
-            'view_clinic_visits',
-            'manage_clinic_visits',
-            // Sprint 20 Phase 1.10 — RME Cashier Billing
-            'manage_rme_billing',
         ],
         'Admin Klinik' => [
             'view dashboard',
@@ -302,6 +303,36 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_rme_payment_reports',
         ],
+    ];
+
+    /**
+     * FIX-ADMIN-LAB-LAB-ONLY-ACCESS — the non-Lab permissions that were historically
+     * granted to Admin Lab and are now revoked. Kept as a canonical list so the
+     * `rbac:admin-lab-lab-only-audit` command can strip these from any live Admin Lab
+     * account (direct or role-inherited) without guessing. These permission
+     * DEFINITIONS remain in PermissionSeeder — they are still used by other roles;
+     * only Admin Lab's grant of them is removed.
+     */
+    public const ADMIN_LAB_REVOKED_NON_LAB = [
+        'view dashboard',
+        'view_branch_dashboard',
+        'manage master data',
+        'manage clinics',
+        'manage doctors',
+        'manage patients',
+        'view_clinic_master_data',
+        'manage_clinic_master_data',
+        'view_clinic_visits',
+        'manage_clinic_visits',
+        'manage_rme_billing',
+        'manage_inventory',
+        'view_inventory',
+        'view_inventory_executive_dashboard',
+        'view_inventory_cross_branch_analytics',
+        'view_inventory_activity_log',
+        'download_stock_transfer_checklist',
+        'approve_inventory_purchase_request',
+        'approve_inventory_purchase_order',
     ];
 
     public function run(): void
