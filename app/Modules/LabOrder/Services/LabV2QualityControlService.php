@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabOrderStatusLog;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\QualityControl\Models\QualityControl;
 use Illuminate\Support\Facades\DB;
@@ -65,12 +66,12 @@ class LabV2QualityControlService
             return $result;
         });
 
-        $this->notifications->notifyPermissionHolders(
+        $this->notifications->notifyPermissionHoldersRouted(
             ['create_delivery', 'manage_lab_orders'],
             'Model selesai (QC lulus)',
             "Order {$order->order_number} selesai dan siap dibuatkan tugas pengiriman.",
-            route('lab-v2-orders.show', $order),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_MODEL_DONE,
         );
 
         return $result;
@@ -142,12 +143,12 @@ class LabV2QualityControlService
 
         $assignment = $this->production->latestAssignment($order);
         $assignment?->loadMissing('technician');
-        $this->notifications->notifyUsers(
+        $this->notifications->notifyUsersRouted(
             [$assignment?->technician?->user_id ? User::find($assignment->technician->user_id) : null],
             'QC gagal — rework',
             "Order {$order->order_number} harus diulang dari {$targetStep}. Alasan: ".mb_substr($reason, 0, 120),
-            route('lab-v2-orders.show', $order),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_QC_REWORK,
         );
 
         return $result;

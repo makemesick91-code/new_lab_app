@@ -68,3 +68,12 @@ alwaysApply: false
     Akun admin lintas-cabang (Super Admin/Lab Admin) tidak di-pin ke satu cabang tanpa keputusan owner.
     Operational data repair TANPA code change tidak membutuhkan GO tag/deploy baru — cukup evidence doc
     (lihat `docs/operations/lab-request-operator-rme-branch-mapping-2026-07-10.md`).
+15. **Notification destination routing (2026-07-11, lihat rule 76)**: URL notifikasi Lab Workflow TIDAK
+    boleh dibentuk ad hoc di service — pakai resolver canonical
+    `LabWorkflowNotificationDestinationResolver` + `notify*Routed()` (recipient-aware). Notifikasi Admin
+    Lab hanya menuju route Lab-domain (`lab-v2-orders.*`/`lab-pickup-tasks.*`/`lab-delivery-tasks.*`),
+    tidak pernah `lab-workflow-requests.*` (404 branch isolation). Notifikasi cabang branch-scoped;
+    fallback aman (queue index), tidak pernah 404. URL tersimpan wajib internal same-origin
+    (`NotificationController@read` menolak open redirect). Perbaikan link lama via idempotent
+    `php artisan lab-workflow:repair-notification-destinations` (dry-run default; hanya `data.url`
+    diubah; read_at/created_at/notifiable/title/message/lab_order_id dipertahankan).

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\LabOrder\Interfaces\LabPickupTaskRepositoryInterface;
 use App\Modules\LabOrder\Models\LabPickupTask;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\UploadedFile;
@@ -118,12 +119,13 @@ class LabPickupWorkflowService
             ]);
         });
 
-        $this->notifications->notifyPermissionHolders(
+        $this->notifications->notifyPermissionHoldersRouted(
             ['manage_lab_orders'],
             'Model menuju lab',
             "Order {$result->labOrder->order_number} sedang dalam perjalanan ke lab.",
-            route('lab-pickup-tasks.show', $result),
             $result->labOrder,
+            LabWorkflowNotificationDestinationResolver::EVENT_MODEL_TO_LAB,
+            ['pickup_task_id' => $result->id],
         );
 
         return $result;

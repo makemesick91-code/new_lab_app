@@ -12,6 +12,7 @@ use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Models\LabPickupTask;
 use App\Modules\LabOrder\Models\LabWorkflowEvidence;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\Patient\Models\Patient;
@@ -273,12 +274,13 @@ class LabWorkflowRequestService
         });
 
         // Post-commit, failure-safe in-app notification (never breaks the flow).
-        $this->notifications->notifyPermissionHolders(
+        $this->notifications->notifyPermissionHoldersRouted(
             ['manage_lab_pickups'],
             'Tugas pickup baru',
             "Order {$order->order_number} menunggu penjemputan dari cabang.",
-            route('lab-pickup-tasks.show', $task),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_PICKUP_TASK,
+            ['pickup_task_id' => $task->id],
         );
 
         return $task;

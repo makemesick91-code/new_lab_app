@@ -5,6 +5,7 @@ namespace App\Modules\LabOrder\Services;
 use App\Models\User;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LabOrder\Support\LabWorkflowNotificationDestinationResolver;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\Production\Interfaces\AssignmentRepositoryInterface;
 use App\Modules\Production\Interfaces\ProductionStepRepositoryInterface;
@@ -104,12 +105,12 @@ class LabV2ProductionService
             return $assignment;
         });
 
-        $this->notifications->notifyUsers(
+        $this->notifications->notifyUsersRouted(
             [$technician->user()->first()],
             'Penugasan produksi baru',
             "Anda ditugaskan mengerjakan order {$order->order_number}.",
-            route('lab-v2-orders.show', $order),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_TECHNICIAN_ASSIGNED,
         );
 
         return $assignment;
@@ -190,12 +191,12 @@ class LabV2ProductionService
             return $result;
         });
 
-        $this->notifications->notifyPermissionHolders(
+        $this->notifications->notifyPermissionHoldersRouted(
             ['pass_qc', 'manage_quality_control'],
             'QC menunggu review',
             "Order {$order->order_number} menunggu keputusan Quality Control.",
-            route('lab-v2-orders.show', $order),
             $order,
+            LabWorkflowNotificationDestinationResolver::EVENT_QC_PENDING,
         );
 
         return $result;
