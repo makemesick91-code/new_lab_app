@@ -15,7 +15,7 @@ use App\Modules\LabOrder\Services\LabModelAnalysisService;
 use App\Modules\LabOrder\Services\LabV2ProductionService;
 use App\Modules\LabOrder\Services\LabV2QualityControlService;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
-use App\Modules\Technician\Models\Technician;
+use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -125,7 +125,10 @@ class LabV2OrderController extends Controller
 
         return view('lab-workflow.orders.show', [
             'order' => $labV2Order,
-            'technicians' => Technician::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            // Assignment targets only: active user accounts holding the
+            // canonical Technician role. The service re-validates on submit —
+            // this dropdown is presentation, never the authorization boundary.
+            'technicians' => app(TechnicianAssignmentEligibility::class)->listForAssignment(),
             'externalLabs' => ExternalLab::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'reworkTargets' => LabWorkflowState::REWORK_TARGETS,
             'productionSteps' => array_keys(LabWorkflowState::V2_PRODUCTION_STEPS),

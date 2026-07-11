@@ -12,7 +12,7 @@ use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Models\ProductionStep;
 use App\Modules\Production\Models\WorkLog;
 use App\Modules\Production\Services\WorkLogService;
-use App\Modules\Technician\Models\Technician;
+use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -37,6 +37,7 @@ class LabV2ProductionService
         private readonly WorkLogService $workLogs,
         private readonly AuditLogService $auditLogs,
         private readonly LabWorkflowNotificationService $notifications,
+        private readonly TechnicianAssignmentEligibility $technicianEligibility,
     ) {}
 
     /**
@@ -48,12 +49,10 @@ class LabV2ProductionService
     {
         $actor = $actor ?? auth()->user();
 
-        $technician = Technician::query()->find($technicianId);
-        if (! $technician || ! $technician->is_active) {
-            throw ValidationException::withMessages([
-                'technician_id' => 'Teknisi wajib dipilih dan aktif.',
-            ]);
-        }
+        // Assignment target must be an ACTIVE user account holding the
+        // canonical Technician role — a crafted technician_id is re-validated
+        // here, never trusted from the request.
+        $technician = $this->technicianEligibility->assertAssignable($technicianId);
 
         if ($this->assignments->findActiveByLabOrder($order->id) !== null) {
             throw ValidationException::withMessages([
@@ -65,6 +64,15 @@ class LabV2ProductionService
             $this->stateMachine->transition($order, LabWorkflowState::TECHNICIAN_ASSIGNMENT_PENDING, $actor, [
                 'reason' => 'Membuka penugasan teknisi',
             ]);
+
+            // Concurrency guard: the state-machine transition above holds the
+            // order row lock, so re-checking here makes a double-assign racing
+            // through the pre-check impossible.
+            if ($this->assignments->findActiveByLabOrder($order->id) !== null) {
+                throw ValidationException::withMessages([
+                    'technician_id' => 'Order ini sudah memiliki penugasan teknisi aktif.',
+                ]);
+            }
             $this->stateMachine->transition($order->refresh(), LabWorkflowState::TECHNICIAN_ASSIGNED, $actor, [
                 'reason' => 'Teknisi ditugaskan: '.$technician->name,
             ]);

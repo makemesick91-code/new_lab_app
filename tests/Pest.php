@@ -69,10 +69,12 @@ use App\Modules\QualityControl\Models\QualityControl;
 use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
+use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
+use Spatie\Permission\Models\Role;
 
 /**
  * Seed the Sprint 0 roles & permissions for access-control tests.
@@ -95,7 +97,8 @@ function receivedOrder(): LabOrder
  */
 function assignOrder(LabOrder $order, ?Technician $technician = null, ?User $actor = null): LabOrderAssignment
 {
-    $technician = $technician ?? Technician::factory()->create();
+    // Assignment targets must be eligible (active user + Technician role).
+    $technician = $technician ?? Technician::factory()->assignable()->create();
     $actor = $actor ?? superAdmin();
 
     return app(AssignmentService::class)->assign($order->refresh(), $technician->id, 'assigned in test', $actor);
@@ -125,6 +128,8 @@ function technicianActor(array $permissions): array
 {
     $user = User::factory()->create();
     $user->givePermissionTo($permissions);
+    Role::findOrCreate(TechnicianAssignmentEligibility::ROLE, 'web');
+    $user->assignRole(TechnicianAssignmentEligibility::ROLE);
     $technician = Technician::factory()->create(['user_id' => $user->id]);
 
     return [$user, $technician];

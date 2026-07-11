@@ -18,6 +18,7 @@ use App\Modules\Production\Services\AssignmentService;
 use App\Modules\Production\Services\ProductionStepService;
 use App\Modules\Production\Services\ProductionWorkflowService;
 use App\Modules\Production\Services\WorkLogService;
+use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
 use App\Modules\Technician\Services\TechnicianService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -37,6 +38,7 @@ class ProductionWorkflowController extends Controller
         private readonly LabOrderService $labOrderService,
         private readonly ClinicService $clinicService,
         private readonly TechnicianService $technicianService,
+        private readonly TechnicianAssignmentEligibility $technicianEligibility,
     ) {}
 
     public function board(Request $request): View
@@ -72,7 +74,10 @@ class ProductionWorkflowController extends Controller
             'steps' => $this->stepService->listForLabOrder($labOrder->id),
             'workLogs' => $this->workLogService->forLabOrder($labOrder->id),
             'auditLogs' => $this->auditLogService->paginateForEntity(LabOrder::ENTITY_TYPE, $labOrder->id, 15),
-            'technicians' => $this->technicianService->listAll(),
+            // Assign/reassign form targets: eligible technicians only (active
+            // user account + Technician role). The board filter above keeps
+            // listAll() so HISTORICAL assignments stay filterable/readable.
+            'technicians' => $this->technicianEligibility->listForAssignment(),
             'holdReasons' => PauseWorkRequest::HOLD_REASONS,
             'stepStatuses' => ProductionStep::STATUSES,
             'attachmentCategories' => Attachment::CATEGORIES,
