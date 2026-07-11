@@ -37,15 +37,111 @@ final class SprintManifest
         $raw = (string) file_get_contents($path);
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 
-        $parsed = $ext === 'json'
-            ? json_decode($raw, true)
-            : Yaml::parse($raw);
+        $parsed = $ext === 'json' ? json_decode($raw, true) : self::parseYaml($raw);
 
         if (! is_array($parsed)) {
             throw new RuntimeException("Sprint manifest did not parse to a map: {$path}");
         }
 
         return new self($parsed, $path);
+    }
+
+    /**
+     * Parse the manifest YAML. Prefers Symfony YAML when the dev dependency is
+     * present (local/CI); falls back to a dependency-free parser for the
+     * controlled flat manifest format so the tooling also works on production
+     * hosts where symfony/yaml is not installed (composer --no-dev).
+     *
+     * @return array<string,mixed>
+     */
+    private static function parseYaml(string $raw): array
+    {
+        if (class_exists(Yaml::class)) {
+            $parsed = Yaml::parse($raw);
+
+            return is_array($parsed) ? $parsed : [];
+        }
+
+        return self::parseSimpleYaml($raw);
+    }
+
+    /**
+     * Minimal parser for the DEVFLOW manifest shape only:
+     *   key: scalar        (string | bool | int)
+     *   key: []            (empty list)
+     *   key:               (block list)
+     *     - item
+     * Comments (`#`) and blank lines are ignored. Quoted scalars are unwrapped.
+     *
+     * @return array<string,mixed>
+     */
+    private static function parseSimpleYaml(string $raw): array
+    {
+        $result = [];
+        $currentListKey = null;
+
+        foreach (preg_split('/\R/', $raw) ?: [] as $line) {
+            if (trim($line) === '' || str_starts_with(ltrim($line), '#')) {
+                continue;
+            }
+
+            // List item under the most recent "key:" block.
+            if (preg_match('/^\s+-\s+(.*)$/', $line, $m) === 1 && $currentListKey !== null) {
+                $result[$currentListKey][] = self::castScalar(self::stripComment($m[1]));
+
+                continue;
+            }
+
+            if (preg_match('/^([A-Za-z0-9_]+):\s*(.*)$/', $line, $m) !== 1) {
+                continue;
+            }
+
+            $key = $m[1];
+            $value = self::stripComment($m[2]);
+
+            if ($value === '') {
+                $result[$key] = [];
+                $currentListKey = $key;
+
+                continue;
+            }
+
+            $currentListKey = null;
+            $result[$key] = $value === '[]' ? [] : self::castScalar($value);
+        }
+
+        return $result;
+    }
+
+    private static function stripComment(string $value): string
+    {
+        // Strip an inline comment only when the value is not quoted.
+        $trimmed = trim($value);
+        if ($trimmed !== '' && ($trimmed[0] === '"' || $trimmed[0] === "'")) {
+            return $trimmed;
+        }
+
+        return trim((string) preg_replace('/\s+#.*$/', '', $trimmed));
+    }
+
+    private static function castScalar(string $value): mixed
+    {
+        $value = trim($value);
+
+        if ($value === 'true') {
+            return true;
+        }
+        if ($value === 'false') {
+            return false;
+        }
+        if (preg_match('/^-?\d+$/', $value) === 1) {
+            return (int) $value;
+        }
+        if (strlen($value) >= 2 && ($value[0] === '"' || $value[0] === "'") && $value[-1] === $value[0]) {
+            return substr($value, 1, -1);
+        }
+
+        return $value;
     }
 
     public function get(string $key, mixed $default = null): mixed
