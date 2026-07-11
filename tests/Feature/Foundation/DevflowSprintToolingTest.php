@@ -235,3 +235,30 @@ it('exits success for foundation:devflow-check --strict', function () {
 it('exits success for foundation:shared-service-audit --strict', function () {
     $this->artisan('foundation:shared-service-audit', ['--strict' => true])->assertExitCode(0);
 });
+
+// ------------------------------------------------- Dependency-free YAML parse ---
+
+it('parses the manifest without symfony/yaml via the built-in fallback (VPS --no-dev)', function () {
+    $raw = <<<'YAML'
+    # comment
+    id: FIX-XYZ
+    type: HOTFIX
+    module: Lab
+    runtime_change: true
+    schema_change: false
+    test_profiles:
+      - focused
+      - related_regression
+    go_tag: fix-xyz-go
+    YAML;
+
+    $m = new ReflectionMethod(SprintManifest::class, 'parseSimpleYaml');
+    $m->setAccessible(true);
+    $parsed = $m->invoke(null, $raw);
+
+    expect($parsed['id'])->toBe('FIX-XYZ');
+    expect($parsed['runtime_change'])->toBeTrue();
+    expect($parsed['schema_change'])->toBeFalse();
+    expect($parsed['test_profiles'])->toBe(['focused', 'related_regression']);
+    expect($parsed['go_tag'])->toBe('fix-xyz-go');
+});
