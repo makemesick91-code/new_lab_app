@@ -148,6 +148,16 @@ run_release_safety() {
         php artisan foundation:queue-worker-runtime-check --json > "$EVIDENCE_DIR/queue-worker-runtime-check.json" || true
         php artisan foundation:runtime-hardening-check --json > "$EVIDENCE_DIR/runtime-hardening-check.json" || true
         echo ""
+        echo "--- DEVFLOW-1 sprint acceleration gates ---"
+        php artisan foundation:devflow-check
+        php artisan foundation:shared-service-audit
+        php artisan foundation:devflow-check --json > "$EVIDENCE_DIR/devflow-check.json" || true
+        php artisan foundation:shared-service-audit --json > "$EVIDENCE_DIR/shared-service-audit.json" || true
+        if [ -f .sprint/current.yml ]; then
+            echo "--- sprint:manifest-check (manifest vs diff consistency) ---"
+            php artisan sprint:manifest-check --no-diff-check
+        fi
+        echo ""
         echo "--- foundation:idempotency-audit ---"
         php artisan foundation:idempotency-audit
         echo ""

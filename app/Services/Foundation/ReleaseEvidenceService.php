@@ -312,6 +312,14 @@ class ReleaseEvidenceService
                 'command' => 'foundation:enterprise-closure-check',
                 'arguments' => ['--json' => true],
             ],
+            'devflow-check.json' => [
+                'command' => 'foundation:devflow-check',
+                'arguments' => ['--json' => true],
+            ],
+            'shared-service-audit.json' => [
+                'command' => 'foundation:shared-service-audit',
+                'arguments' => ['--json' => true],
+            ],
             'idempotency-audit.json' => [
                 'command' => 'foundation:idempotency-audit',
                 'arguments' => ['--json' => true],
