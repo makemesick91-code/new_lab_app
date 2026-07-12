@@ -6,6 +6,7 @@ namespace App\Modules\Technician\Services;
 
 use App\Models\User;
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabOrder\Services\AuditLogService;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Technician\Models\Technician;
@@ -275,11 +276,18 @@ final class TechnicianAccountAuditor
                 throw new \RuntimeException("Technician not found: {$technicianRef}");
             }
 
-            // Refuse while the master holds a currently-active assignment. History
-            // (DONE/CANCELLED/REASSIGNED rows) is preserved and never blocks this.
+            // Refuse while the master holds a currently-active assignment on a
+            // NON-TERMINAL order (live work). History (DONE/CANCELLED/REASSIGNED
+            // rows) never blocks this, and a stale ASSIGNED/IN_PROGRESS row left on
+            // an already COMPLETED/CANCELLED order is a historical artifact — the
+            // order is done, so it must not block deactivation. A missing/soft-
+            // deleted order also does not block (no live work).
             $activeAssignments = LabOrderAssignment::query()
                 ->where('technician_id', $technician->id)
                 ->whereIn('status', LabOrderAssignment::ACTIVE_STATUSES)
+                ->whereHas('labOrder', function ($query): void {
+                    $query->whereNotIn('status', [LabOrder::STATUS_COMPLETED, LabOrder::STATUS_CANCELLED]);
+                })
                 ->count();
             if ($activeAssignments > 0) {
                 throw new \RuntimeException(

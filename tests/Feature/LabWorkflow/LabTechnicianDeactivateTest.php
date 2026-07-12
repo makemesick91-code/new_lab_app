@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAccountAuditor;
@@ -53,6 +54,36 @@ it('refuses to deactivate while an assignment is ACTIVE', function () {
     LabOrderAssignment::factory()->create([
         'technician_id' => $tech->id,
         'status' => LabOrderAssignment::STATUS_ASSIGNED,
+    ]);
+
+    expect(fn () => app(TechnicianAccountAuditor::class)->deactivateMaster($tech->id, 'r', apply: true))
+        ->toThrow(RuntimeException::class);
+    expect($tech->fresh()->is_active)->toBeTrue();
+});
+
+it('allows deactivation when the only active-status assignment is on a COMPLETED order (stale artifact)', function () {
+    $tech = Technician::factory()->create(['is_active' => true]);
+    $order = LabOrder::factory()->create(['status' => LabOrder::STATUS_COMPLETED]);
+    LabOrderAssignment::factory()->create([
+        'technician_id' => $tech->id,
+        'lab_order_id' => $order->id,
+        'status' => LabOrderAssignment::STATUS_ASSIGNED, // never closed → stale, but the order is done
+    ]);
+
+    $result = app(TechnicianAccountAuditor::class)->deactivateMaster($tech->id, 'legacy faker master', apply: true);
+
+    expect($result['active_assignments'])->toBe(0)
+        ->and($result['applied'])->toBeTrue()
+        ->and($tech->fresh()->is_active)->toBeFalse();
+});
+
+it('still refuses when an active assignment is on a NON-terminal order', function () {
+    $tech = Technician::factory()->create(['is_active' => true]);
+    $order = LabOrder::factory()->create(['status' => LabOrder::STATUS_IN_PRODUCTION]);
+    LabOrderAssignment::factory()->create([
+        'technician_id' => $tech->id,
+        'lab_order_id' => $order->id,
+        'status' => LabOrderAssignment::STATUS_IN_PROGRESS,
     ]);
 
     expect(fn () => app(TechnicianAccountAuditor::class)->deactivateMaster($tech->id, 'r', apply: true))

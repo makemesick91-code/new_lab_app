@@ -34,7 +34,9 @@ VPS pilot, driving `--strict` to **GO** (not a WATCH closure):
 
 - **`lab:technician-deactivate --technician= --reason= [--dry-run|--apply] [--json]`**
   → `TechnicianAccountAuditor::deactivateMaster()`. Dry-run default; requires a non-empty reason;
-  refuses while an assignment is `ASSIGNED`/`IN_PROGRESS`; sets `is_active=false` only (NEVER
+  refuses while an assignment is `ASSIGNED`/`IN_PROGRESS` **on a NON-terminal order** (live work) —
+  a stale active-status row left on an already `COMPLETED`/`CANCELLED` order (or a missing/soft-
+  deleted order) is a historical artifact and does not block; sets `is_active=false` only (NEVER
   soft/hard-delete, NEVER detaches `user_id`); transactional + `lockForUpdate`; idempotent; audit
   log (`mst_technicians`, `UPDATE`, reason recorded); before/after output. Single master per run
   (no bulk wildcard). Fills the CLI gap — the UI-only `technicians.deactivate` route had no
