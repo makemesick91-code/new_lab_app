@@ -105,6 +105,8 @@ use App\Modules\Invoice\Policies\InvoicePolicy;
 use App\Modules\Invoice\Policies\PaymentPolicy;
 use App\Modules\Invoice\Repositories\InvoiceRepository;
 use App\Modules\Invoice\Repositories\PaymentRepository;
+use App\Modules\LabCapacity\Interfaces\LabTechnicianCapacityRepositoryInterface;
+use App\Modules\LabCapacity\Repositories\LabTechnicianCapacityRepository;
 use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabOperationalAnalyticsRepositoryInterface;
@@ -245,6 +247,7 @@ class RepositoryServiceProvider extends ServiceProvider
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
         LabOrderRepositoryInterface::class => LabOrderRepository::class,
         LabOperationalAnalyticsRepositoryInterface::class => LabOperationalAnalyticsRepository::class,
+        LabTechnicianCapacityRepositoryInterface::class => LabTechnicianCapacityRepository::class,
         LabPickupTaskRepositoryInterface::class => LabPickupTaskRepository::class,
         AttachmentRepositoryInterface::class => AttachmentRepository::class,
         AuditLogRepositoryInterface::class => AuditLogRepository::class,

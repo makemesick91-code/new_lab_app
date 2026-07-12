@@ -45,6 +45,10 @@ class RoleSeeder extends Seeder
             'cancel_lab_orders',
             // LAB-PROD-2 — Operational Analytics & KPI (Lab-scoped, read-only)
             'view_lab_operational_analytics',
+            // LAB-PROD-3 — Technician Capacity Planning (Lab-scoped)
+            'view_lab_technician_capacity',
+            'manage_lab_technician_capacity',
+            'export_lab_technician_capacity',
             // LAB-WORKFLOW-V2 Phase 2 — cabang request + pickup oversight + receive
             'create_lab_branch_requests',
             'manage_lab_pickups',
@@ -119,6 +123,8 @@ class RoleSeeder extends Seeder
             'view_lab_orders',
             // LAB-PROD-2 — technician self-scope operational KPI (own data only)
             'view_own_lab_operational_analytics',
+            // LAB-PROD-3 — technician self-scope capacity planning (own data only)
+            'view_own_lab_technician_capacity',
             'view_production',
             'start_production_work',
             'pause_production_work',
@@ -214,6 +220,9 @@ class RoleSeeder extends Seeder
             'view_owner_dashboard',
             // LAB-PROD-2 — executive cross-branch operational KPI (read-only)
             'view_lab_operational_analytics',
+            // LAB-PROD-3 — executive cross-branch capacity planning (read-only)
+            'view_lab_technician_capacity',
+            'export_lab_technician_capacity',
             'manage_report',
             'view_dashboard',
             'view_order_report',

@@ -44,6 +44,8 @@ use App\Modules\Inventory\Controllers\StockTransferController;
 use App\Modules\Inventory\Controllers\SupplierController as InventorySupplierController;
 use App\Modules\Invoice\Controllers\InvoiceController;
 use App\Modules\Invoice\Controllers\PaymentController;
+use App\Modules\LabCapacity\Controllers\LabCapacityConfigController;
+use App\Modules\LabCapacity\Controllers\LabTechnicianCapacityController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\ExternalLabController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
@@ -632,6 +634,42 @@ Route::middleware('auth')->prefix('lab')->group(function () {
     Route::get('analytics/operational-kpi/export', [LabOperationalAnalyticsController::class, 'export'])
         ->name('lab-analytics.operational-kpi.export')
         ->middleware('permission:view_lab_operational_analytics|view_own_lab_operational_analytics|manage_lab_orders');
+
+    // --- LAB-PROD-3: Technician Capacity Planning (read-only decision-support) ---
+    // Tier resolved server-side (full / own technician). Owner/Admin Lab see all;
+    // a linked technician is forced to own data. No PII. No auto-assignment.
+    Route::get('capacity-planning', [LabTechnicianCapacityController::class, 'index'])
+        ->name('lab-capacity-planning.index')
+        ->middleware('permission:view_lab_technician_capacity|view_own_lab_technician_capacity|manage_lab_technician_capacity');
+    Route::get('capacity-planning/export', [LabTechnicianCapacityController::class, 'export'])
+        ->name('lab-capacity-planning.export')
+        ->middleware('permission:view_lab_technician_capacity|view_own_lab_technician_capacity|manage_lab_technician_capacity');
+
+    // Capacity configuration management (manage only).
+    Route::middleware('permission:manage_lab_technician_capacity')->group(function () {
+        Route::get('capacity-planning/configuration', [LabCapacityConfigController::class, 'index'])
+            ->name('lab-capacity-planning.configuration');
+        Route::post('capacity-planning/capacity-profiles', [LabCapacityConfigController::class, 'storeCapacityProfile'])
+            ->name('lab-capacity-planning.capacity-profiles.store');
+        Route::put('capacity-planning/capacity-profiles/{capacityProfile}', [LabCapacityConfigController::class, 'updateCapacityProfile'])
+            ->name('lab-capacity-planning.capacity-profiles.update');
+        Route::delete('capacity-planning/capacity-profiles/{capacityProfile}', [LabCapacityConfigController::class, 'deactivateCapacityProfile'])
+            ->name('lab-capacity-planning.capacity-profiles.deactivate');
+        Route::post('capacity-planning/workload-profiles', [LabCapacityConfigController::class, 'storeWorkloadProfile'])
+            ->name('lab-capacity-planning.workload-profiles.store');
+        Route::put('capacity-planning/workload-profiles/{workloadProfile}', [LabCapacityConfigController::class, 'updateWorkloadProfile'])
+            ->name('lab-capacity-planning.workload-profiles.update');
+        Route::delete('capacity-planning/workload-profiles/{workloadProfile}', [LabCapacityConfigController::class, 'deactivateWorkloadProfile'])
+            ->name('lab-capacity-planning.workload-profiles.deactivate');
+        Route::post('capacity-planning/capabilities', [LabCapacityConfigController::class, 'storeCapability'])
+            ->name('lab-capacity-planning.capabilities.store');
+        Route::delete('capacity-planning/capabilities/{capability}', [LabCapacityConfigController::class, 'removeCapability'])
+            ->name('lab-capacity-planning.capabilities.remove');
+        Route::post('capacity-planning/availability-overrides', [LabCapacityConfigController::class, 'storeAvailabilityOverride'])
+            ->name('lab-capacity-planning.availability.store');
+        Route::delete('capacity-planning/availability-overrides/{availabilityOverride}', [LabCapacityConfigController::class, 'removeAvailabilityOverride'])
+            ->name('lab-capacity-planning.availability.remove');
+    });
 });
 
 /*

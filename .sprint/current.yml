@@ -1,18 +1,18 @@
-# Active sprint manifest — LAB-PROD-2
+# Active sprint manifest — LAB-PROD-3
 # Validated by: php artisan sprint:manifest-check
 
-id: LAB-PROD-2
+id: LAB-PROD-3
 type: MODULE_SPRINT
 module: Lab
-title: "Lab Workflow V2 Operational Analytics & KPI"
+title: "Technician Capacity Planning"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new analytics service/repository/controller/commands + read-only KPI surface
-schema_change: false            # no migration — reads canonical Lab Workflow V2 tables only
+runtime_change: true            # capacity planning engine + repository + controllers + commands + read-only planning surface
+schema_change: true             # 4 additive mst_lab_* config tables (capacity/workload/capability/availability)
 frontend_change: false          # Blade + x-ui only; no JS/CSS/Vite change
-security_impact: true           # 2 new lab analytics permissions + server-side scope tiers (IDOR-safe)
-branch_isolation_impact: true   # analytics is branch/technician scoped via BranchService; owner cross-branch read-only
-ledger_impact: false            # inventory ledger untouched; read-only over lab workflow data
+security_impact: true           # 4 new capacity permissions + server-side scope tiers (IDOR-safe)
+branch_isolation_impact: true   # demand branch-scoped via BranchService; technicians lab-wide; owner cross-branch read-only
+ledger_impact: false            # inventory ledger untouched; read-only planning over lab workflow data
 
 deploy_required: true
 browser_required: false         # authenticated-equivalent HTTP smoke (route 200/403, CSV export)
@@ -23,4 +23,4 @@ test_profiles:
   - branch_context
   - deployment
 
-go_tag: lab-prod-2-operational-analytics-kpi-go
+go_tag: lab-prod-3-technician-capacity-planning-go

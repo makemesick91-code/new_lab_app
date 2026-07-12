@@ -81,6 +81,11 @@ class PermissionSeeder extends Seeder
         // LAB-PROD-2 — Operational Analytics & KPI (read-only)
         'view_lab_operational_analytics',
         'view_own_lab_operational_analytics',
+        // LAB-PROD-3 — Technician Capacity Planning
+        'view_lab_technician_capacity',
+        'view_own_lab_technician_capacity',
+        'manage_lab_technician_capacity',
+        'export_lab_technician_capacity',
         'view_invoice_report',
         'view_payment_report',
         'export_report',
