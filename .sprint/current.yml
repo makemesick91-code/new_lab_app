@@ -1,27 +1,26 @@
-# Active sprint manifest — LAB-OPS-READINESS-1
+# Active sprint manifest — LAB-PROD-2
 # Validated by: php artisan sprint:manifest-check
 
-id: LAB-OPS-READINESS-1
+id: LAB-PROD-2
 type: MODULE_SPRINT
 module: Lab
-title: "Lab Workflow V2 Operational Data Readiness Closure — Technician Account Governance & Active External Lab Enablement"
+title: "Lab Workflow V2 Operational Analytics & KPI"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new governed Artisan data-repair commands + additive auditor metadata
-schema_change: false            # no migration — reuses mst_technicians.is_active + mst_external_labs columns
-frontend_change: false          # CLI + auditor only; existing External Lab/technician UI untouched
-security_impact: true           # technician assignment eligibility + external lab management RBAC posture
-branch_isolation_impact: true   # readiness auditor + eligibility respect BranchContext; lab actors cross-branch by design
-ledger_impact: false            # inventory ledger untouched
+runtime_change: true            # new analytics service/repository/controller/commands + read-only KPI surface
+schema_change: false            # no migration — reads canonical Lab Workflow V2 tables only
+frontend_change: false          # Blade + x-ui only; no JS/CSS/Vite change
+security_impact: true           # 2 new lab analytics permissions + server-side scope tiers (IDOR-safe)
+branch_isolation_impact: true   # analytics is branch/technician scoped via BranchService; owner cross-branch read-only
+ledger_impact: false            # inventory ledger untouched; read-only over lab workflow data
 
 deploy_required: true
-browser_required: false         # CLI-driven data repair + authenticated-equivalent smoke (no browser automation)
+browser_required: false         # authenticated-equivalent HTTP smoke (route 200/403, CSV export)
 
 test_profiles:
   - lab_workflow
   - access_control
   - branch_context
-  - state_machine
   - deployment
 
-go_tag: lab-ops-readiness-1-technician-external-lab-closure-go
+go_tag: lab-prod-2-operational-analytics-kpi-go

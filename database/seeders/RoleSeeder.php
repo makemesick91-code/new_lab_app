@@ -43,6 +43,8 @@ class RoleSeeder extends Seeder
             'create_lab_orders',
             'update_lab_orders',
             'cancel_lab_orders',
+            // LAB-PROD-2 — Operational Analytics & KPI (Lab-scoped, read-only)
+            'view_lab_operational_analytics',
             // LAB-WORKFLOW-V2 Phase 2 — cabang request + pickup oversight + receive
             'create_lab_branch_requests',
             'manage_lab_pickups',
@@ -115,6 +117,8 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'manage assignments',
             'view_lab_orders',
+            // LAB-PROD-2 — technician self-scope operational KPI (own data only)
+            'view_own_lab_operational_analytics',
             'view_production',
             'start_production_work',
             'pause_production_work',
@@ -208,6 +212,8 @@ class RoleSeeder extends Seeder
         'Owner' => [
             'view dashboard',
             'view_owner_dashboard',
+            // LAB-PROD-2 — executive cross-branch operational KPI (read-only)
+            'view_lab_operational_analytics',
             'manage_report',
             'view_dashboard',
             'view_order_report',

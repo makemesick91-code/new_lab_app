@@ -1,0 +1,51 @@
+---
+description: LAB-PROD-2 — Lab Workflow V2 Operational Analytics & KPI contract
+globs:
+  - "app/Modules/LabOrder/Services/LabOperationalAnalytics*.php"
+  - "app/Modules/LabOrder/Services/LabOperationalKpiAudit*.php"
+  - "app/Modules/LabOrder/Repositories/LabOperationalAnalytics*.php"
+  - "app/Modules/LabOrder/Controllers/LabOperationalAnalytics*.php"
+  - "config/lab_operational_analytics.php"
+  - "resources/views/lab/analytics/**"
+alwaysApply: false
+---
+
+# LAB-PROD-2 — Operational Analytics & KPI (canonical rules)
+
+Durable contract: `docs/architecture/lab-operational-analytics-kpi-contract.md`.
+Route `GET /lab/analytics/operational-kpi` (`lab-analytics.operational-kpi.*`).
+
+1. **KPIs come only from canonical V2 runtime data** (`workflow_version = 2`):
+   `trx_lab_orders`, append-only `trx_lab_order_status_logs` (`changed_at` only, never
+   `updated_at`), `trx_lab_order_assignments`, `trx_lab_model_analyses`,
+   `trx_lab_external_dispatches`, `trx_lab_delivery_tasks`. No fabricated/dummy/hard-coded
+   metric values.
+2. **Formula/denominator source of truth** = `config/lab_operational_analytics.php`
+   registry + `LabOperationalAnalyticsService`. Formulas live in the service, queries in
+   the repository (`LabOperationalAnalyticsRepositoryInterface`), nothing in Blade.
+   **Cycle time is reused from `LabWorkflowSlaBaselineService`** — never re-derived.
+3. **SLA deadline = `trx_lab_orders.due_date` only** (no separate SLA policy config).
+   Orders without a `due_date` are excluded from SLA compliance and shown in the
+   data-quality panel — never silently counted, never a fake 0. On-time = delivered
+   `changed_at` ≤ `due_date` end-of-day (boundary is on-time).
+4. **Missing/incomplete data = excluded / coverage / WATCH, never 0.** A zero denominator
+   yields `null` ("N/A"), not a fake percentage.
+5. **No PII** (KTP/NIK/WhatsApp/clinical notes/scans/prescriptions) in any KPI,
+   drill-down, or CSV export. Export uses the identical scope + filters as the screen.
+6. **Authorization (server-side, IDOR-safe):** tier `full`
+   (`view_lab_operational_analytics` or `manage_lab_orders`) → all RME branches,
+   read-only cross-branch, branch filter validated vs `BranchService::rmeEnabledIds()`;
+   tier `own` (`view_own_lab_operational_analytics` + linked active `mst_technicians`) →
+   forced own `technician_id`, forged id ignored; else 403. Admin Lab + Owner hold `full`
+   (Super Admin via `Gate::before`); Technician holds `own`. Sidebar ≠ security boundary.
+7. **Immutable history** — analytics is strictly read-only. **Real-time aggregation**
+   this sprint (no summary table); any future summary follows the ENT-3 reporting-summary
+   contract. Queries are V2-only + `max_scan_orders`-capped, day-grouped in PHP for
+   PG/SQLite parity.
+8. **Gates:** `lab-workflow:operational-kpi-audit --strict` (exit 2 on NO_GO) and
+   `lab-workflow:operational-kpi-go-no-go --strict` (exit 0 ONLY on GO). Run both before
+   GO/deploy. Never print a fake GO. WATCH must never mask a core-metric FAIL.
+9. **LAB-PROD-3 (Technician Capacity Planning) reuse contract:** consume
+   `LabOperationalAnalyticsService` + repository (technician assignment aggregates, cycle
+   time via SLA baseline) — do not duplicate calculators. `view_own_lab_operational_analytics`
+   is the capacity-planning self-scope baseline.

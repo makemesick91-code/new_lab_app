@@ -78,6 +78,9 @@ class PermissionSeeder extends Seeder
         'view_production_report',
         'view_qc_report',
         'view_delivery_report',
+        // LAB-PROD-2 — Operational Analytics & KPI (read-only)
+        'view_lab_operational_analytics',
+        'view_own_lab_operational_analytics',
         'view_invoice_report',
         'view_payment_report',
         'export_report',

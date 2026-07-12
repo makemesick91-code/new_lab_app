@@ -48,6 +48,7 @@ use App\Modules\LabOrder\Controllers\AttachmentController;
 use App\Modules\LabOrder\Controllers\ExternalLabController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
 use App\Modules\LabOrder\Controllers\LabDeliveryTaskController;
+use App\Modules\LabOrder\Controllers\LabOperationalAnalyticsController;
 use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabOrder\Controllers\LabPickupTaskController;
 use App\Modules\LabOrder\Controllers\LabV2OrderController;
@@ -620,6 +621,17 @@ Route::middleware('auth')->prefix('lab')->group(function () {
     Route::get('operational-dashboard', [LabWorkflowOperationalDashboardController::class, 'index'])
         ->name('lab-workflow-dashboard.index')
         ->middleware('permission:view_lab_orders|manage_lab_orders');
+
+    // --- LAB-PROD-2: Operational Analytics & KPI (read-only) ---
+    // Tier resolved server-side (full management / own technician). Owner/Admin
+    // Lab/Supervisor see all-branch analytics; a linked technician is forced to
+    // their own data. No PII in any KPI/drilldown/export.
+    Route::get('analytics/operational-kpi', [LabOperationalAnalyticsController::class, 'index'])
+        ->name('lab-analytics.operational-kpi.index')
+        ->middleware('permission:view_lab_operational_analytics|view_own_lab_operational_analytics|manage_lab_orders');
+    Route::get('analytics/operational-kpi/export', [LabOperationalAnalyticsController::class, 'export'])
+        ->name('lab-analytics.operational-kpi.export')
+        ->middleware('permission:view_lab_operational_analytics|view_own_lab_operational_analytics|manage_lab_orders');
 });
 
 /*
