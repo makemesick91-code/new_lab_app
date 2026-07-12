@@ -1,0 +1,43 @@
+---
+description: Post-auth landing + deploy runtime-permission rules (FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS)
+globs:
+  - app/Http/Controllers/Auth/**
+  - app/Services/Auth/**
+  - scripts/deploy-vps*.sh
+alwaysApply: false
+---
+
+# Post-authentication landing & deploy runtime permissions
+
+Canonical rules locked by FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS.
+
+## Post-auth redirect
+1. Post-auth landing MUST be permission/role-aware via
+   `App\Services\Auth\PostAuthenticationRedirectService` — do NOT hardcode
+   `redirect()->intended(route('dashboard'))` in auth controllers.
+2. `url.intended` MUST NOT override authorization. Honor it only when internal,
+   well-formed, route-resolvable, AND authorized for the user (checked against
+   the target route's own `permission:`/`role:` middleware).
+3. Discard unauthorized / external / protocol-relative / `javascript:` / `data:` /
+   malformed / unknown-route intended URLs → fall back to the role-aware default.
+4. Preserve authorized intended URLs (e.g. `/profile`, `/lab/v2-orders` for Admin Lab).
+5. Admin Lab is Lab-only: default landing = `lab-v2-orders.index`; `/dashboard` stays 403.
+6. NEVER fix a redirect 403 by granting a role dashboard permission or Super Admin.
+7. All auth completion paths (login, registration, email verification, password
+   confirmation, online-context) use the same resolver.
+8. Keep session regeneration; consume intended on use; no redirect loop.
+
+## Deploy runtime permissions (`scripts/deploy-vps.sh`)
+9.  Laravel runtime dirs (`storage/**`, `bootstrap/cache`) MUST be owned by and
+    writable to the PHP-FPM runtime user after deploy. Fail closed if it resolves to root.
+10. Cache artisan commands (`optimize:clear`/`config:cache`/`route:cache`/`view:cache`/
+    `event:cache`) run as the runtime user (`runuser`), never as root.
+11. No world-writable (0777) mode. Use `2775` dirs (setgid) + `0664` files. Ownership
+    normalized after ALL artisan/smoke commands.
+12. Mandatory writable gates (CACHE/SESSION/VIEW CACHE/LOG/BOOTSTRAP CACHE WRITE) — one
+    FAIL aborts the deploy (NOT GO).
+13. Deploy MUST run the authenticated authorization smoke
+    (`deploy:auth-landing-smoke --strict`) — guest smoke alone is insufficient; it must
+    exercise the Spatie permission-cache path. NO_GO if authenticated landing 500/403.
+14. `deploy-vps-runner.sh` runs ON the VPS, not locally. Backup-first; `migrate --force`
+    only; no `migrate:fresh`/`db:wipe`; no secret/PII in logs.
