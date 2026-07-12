@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Modules\Technician\Services;
 
 use App\Models\User;
+use App\Modules\LabOrder\Models\AuditLog;
+use App\Modules\LabOrder\Services\AuditLogService;
+use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Technician\Models\Technician;
 use App\Support\AccessControl\AdminLabLabOnlyAuditor;
 use Illuminate\Support\Collection;
@@ -18,10 +21,12 @@ use Spatie\Permission\PermissionRegistrar;
  * for Lab Workflow V2 assignment (the documented pilot blocker) and flags orphan
  * masters, unlinked/mis-roled users, inactive links, and duplicate user links.
  *
- * {@see linkUser()} is the ONLY mutation: it links a master `mst_technicians`
- * row to an existing user that ALREADY holds the Technician role. It is
- * transactional, row-locked, fail-closed, idempotent, and NEVER changes a
- * user's role, deletes history, or links ambiguous rows.
+ * Mutations: {@see linkUser()} links a master `mst_technicians` row to an
+ * existing user that ALREADY holds the Technician role; {@see deactivateMaster()}
+ * sets a master inactive. Both are transactional, row-locked, fail-closed,
+ * idempotent, and NEVER change a user's role, hard/soft-delete, detach user_id,
+ * or link ambiguous rows. deactivateMaster refuses while an assignment is active
+ * and preserves all assignment history.
  *
  * Decision convention mirrors {@see AdminLabLabOnlyAuditor}:
  * summary.decision in {GO, WATCH, NO-GO}; anomaly/critical codes are snake_case.
@@ -115,19 +120,40 @@ final class TechnicianAccountAuditor
         // non-critical master/data gaps. GO otherwise.
         $decision = $criticalCodes !== [] ? 'NO-GO' : ($anomalyCodes !== [] ? 'WATCH' : 'GO');
 
+        // Additive evidence metadata: distinguishes active masters that still need a
+        // decision (active + not eligible = an anomaly) from legitimately deactivated
+        // masters. Inactive orphans are intentionally NOT anomalies — a deactivated
+        // master preserves history and no longer blocks readiness.
+        $activeOrphanCount = 0;
+        $inactiveCount = 0;
+        foreach ($rows as $row) {
+            if ($row['is_active'] === false) {
+                $inactiveCount++;
+
+                continue;
+            }
+            if ($row['eligible'] === false) {
+                $activeOrphanCount++;
+            }
+        }
+
         return [
             'generated_at' => now()->toIso8601String(),
             'environment' => app()->environment(),
             'role' => TechnicianAssignmentEligibility::ROLE,
             'technician_count' => $technicians->count(),
             'active_technician_count' => $technicians->where('is_active', true)->count(),
+            'inactive_technician_count' => $inactiveCount,
             'linked_technician_count' => $technicians->whereNotNull('user_id')->count(),
             'eligible_technician_count' => $eligibleCount,
+            'active_orphan_count' => $activeOrphanCount,
             'technicians' => $rows,
             'summary' => [
                 'anomalies' => count($anomalyCodes),
                 'anomaly_codes' => $anomalyCodes,
                 'critical_codes' => $criticalCodes,
+                'active_orphan_count' => $activeOrphanCount,
+                'inactive_technician_count' => $inactiveCount,
                 'decision' => $decision,
             ],
         ];
@@ -219,6 +245,86 @@ final class TechnicianAccountAuditor
                 'idempotent_no_op' => $alreadyLinked,
                 'before' => $before,
                 'after' => $after,
+            ];
+        });
+    }
+
+    /**
+     * Guarded, transactional deactivation of a master technician (sets is_active
+     * = false). Dry-run unless $apply. Fail-closed and idempotent.
+     *
+     * NEVER hard-deletes, NEVER soft-deletes, NEVER detaches user_id — the master
+     * row and its assignment history stay readable. Refuses while the master holds
+     * a currently-active assignment. Every applied change is written to the audit
+     * log with the operator-supplied reason.
+     *
+     * @return array<string,mixed> before/after snapshot
+     *
+     * @throws \RuntimeException on any unsafe condition (missing master, active assignment, empty reason)
+     */
+    public function deactivateMaster(int|string $technicianRef, string $reason, bool $apply): array
+    {
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \RuntimeException('A non-empty --reason is required to deactivate a technician master.');
+        }
+
+        return DB::transaction(function () use ($technicianRef, $reason, $apply): array {
+            $technician = $this->resolveTechnician($technicianRef, lock: true);
+            if ($technician === null) {
+                throw new \RuntimeException("Technician not found: {$technicianRef}");
+            }
+
+            // Refuse while the master holds a currently-active assignment. History
+            // (DONE/CANCELLED/REASSIGNED rows) is preserved and never blocks this.
+            $activeAssignments = LabOrderAssignment::query()
+                ->where('technician_id', $technician->id)
+                ->whereIn('status', LabOrderAssignment::ACTIVE_STATUSES)
+                ->count();
+            if ($activeAssignments > 0) {
+                throw new \RuntimeException(
+                    "Technician '{$technician->code}' has {$activeAssignments} active assignment(s); ".
+                    'complete or reassign them before deactivating.'
+                );
+            }
+
+            $before = [
+                'technician_id' => $technician->id,
+                'technician_code' => $technician->code,
+                'is_active' => (bool) $technician->is_active,
+                'user_id' => $technician->user_id,
+            ];
+
+            $alreadyInactive = ! $technician->is_active;
+
+            // Project the deactivation in memory so dry-run reports the outcome;
+            // persist only with --apply.
+            $technician->is_active = false;
+
+            if ($apply && ! $alreadyInactive) {
+                $technician->save();
+                app(AuditLogService::class)->log(
+                    'mst_technicians',
+                    $technician->id,
+                    AuditLog::ACTION_UPDATE,
+                    ['is_active' => $before['is_active']],
+                    ['is_active' => false, 'reason' => $reason],
+                );
+                app(PermissionRegistrar::class)->forgetCachedPermissions();
+                $technician = $technician->fresh();
+            }
+
+            return [
+                'applied' => $apply && ! $alreadyInactive,
+                'idempotent_no_op' => $alreadyInactive,
+                'reason' => $reason,
+                'active_assignments' => $activeAssignments,
+                'before' => $before,
+                'after' => [
+                    'technician_id' => $technician->id,
+                    'is_active' => (bool) $technician->is_active,
+                    'user_id' => $technician->user_id,
+                ],
             ];
         });
     }
