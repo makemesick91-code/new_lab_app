@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Services\Auth\PostAuthenticationRedirectService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Route;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -30,45 +30,14 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended($this->redirectPathFor($request));
-    }
-
-    /**
-     * Resolve the default post-login landing path for the authenticated user.
-     *
-     * Only controls the default landing page — an existing intended() URL still
-     * takes precedence and authorization is enforced by the target route itself.
-     */
-    private function redirectPathFor(Request $request): string
-    {
-        $user = $request->user();
-        $onlineContext = app(UserOnlineContextService::class);
-
-        if ($user !== null && ! $onlineContext->hasSatisfiedContext($user)) {
-            if ($onlineContext->requiresDoctorContext($user)
-                || $onlineContext->requiresAdminClinicContext($user)
-                || $onlineContext->requiresPerawatContext($user)) {
-                return route('rme.online-context.select', absolute: false);
-            }
-        }
-
-        if ($user?->hasRole('Admin Warehouse')) {
-            return route('inventory.executive-dashboard', absolute: false);
-        }
-
-        // FIX-ADMIN-LAB-LAB-ONLY-ACCESS — Admin Lab is a Lab-only role and no longer
-        // holds `view dashboard`, so the generic cross-module dashboard is forbidden.
-        // Land it on the canonical Lab Workflow V2 orders workspace instead. Guard
-        // with Route::has so this never throws if the Lab route set is unavailable.
-        // Skip the redirect for a Super Admin (who legitimately reaches the dashboard)
-        // so a platform admin that also carries the Admin Lab role is not downgraded.
-        if ($user?->hasRole('Admin Lab')
-            && ! $user->hasRole('Super Admin')
-            && Route::has('lab-v2-orders.index')) {
-            return route('lab-v2-orders.index', absolute: false);
-        }
-
-        return route('dashboard', absolute: false);
+        // FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS — a stored `url.intended` may
+        // only win when it is internal, well-formed, and authorized for the
+        // user; otherwise the role-aware default landing page is used. This
+        // prevents a stale intended `/dashboard` from sending a Lab-only Admin
+        // Lab account into a 403.
+        return redirect()->to(
+            app(PostAuthenticationRedirectService::class)->resolve($request)
+        );
     }
 
     /**
