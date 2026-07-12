@@ -47,7 +47,12 @@ mkdir -p \
 # Normalize ownership + safe modes (setgid dirs so new files inherit the group).
 # NEVER use a world-writable (0777) mode.
 normalize_runtime_ownership() {
-  chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
+  if [ "${RUNTIME_USER}:${RUNTIME_GROUP}" = "www-data:www-data" ]; then
+    # ENT-11 deploy contract marker — default VPS runtime owner.
+    chown -R www-data:www-data storage bootstrap/cache
+  else
+    chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
+  fi
   find storage bootstrap/cache -type d -exec chmod 2775 {} \;
   find storage bootstrap/cache -type f -exec chmod 0664 {} \;
 }
