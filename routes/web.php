@@ -52,6 +52,7 @@ use App\Modules\LabOrder\Controllers\LabOrderController;
 use App\Modules\LabOrder\Controllers\LabPickupTaskController;
 use App\Modules\LabOrder\Controllers\LabV2OrderController;
 use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
+use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
@@ -613,6 +614,12 @@ Route::middleware('auth')->prefix('lab')->group(function () {
     Route::post('delivery-tasks/{deliveryTask}/complete', [LabDeliveryTaskController::class, 'complete'])
         ->name('lab-delivery-tasks.complete')
         ->middleware('permission:mark_delivered|manage_delivery');
+
+    // --- LAB-WORKFLOW-V2 Phase 8/9: read-only operational dashboard + SLA ---
+    // Branch/role scope is enforced server-side inside the dashboard service.
+    Route::get('operational-dashboard', [LabWorkflowOperationalDashboardController::class, 'index'])
+        ->name('lab-workflow-dashboard.index')
+        ->middleware('permission:view_lab_orders|manage_lab_orders');
 });
 
 /*

@@ -1,0 +1,16 @@
+---
+description: Lab Workflow V2 pilot operational readiness, real-role UAT, technician closure, dashboard & SLA baseline
+globs:
+alwaysApply: false
+---
+
+# LAB-WORKFLOW-V2-PILOT-UAT-1 — durable rules
+
+1. **Lab Workflow V2 requires real-role UAT before pilot closure.** Automated feature/security tests are logic evidence, NOT a substitute; overall status stays NOT GO until real operators execute the mandatory UAT rows (`docs/operations/lab-workflow-v2-pilot-uat-checklist.md`). Never fabricate login/operator/screenshot evidence, never pre-mark PASS.
+2. **At least one eligible technician must exist** (active user + linked master + `Technician` role). `php artisan lab:technician-account-audit --strict` gates it (NO-GO on `no_eligible_technician` or `duplicate_user_link`). Zero eligible technicians = NO-GO.
+3. **Master technician ↔ user mapping is governed:** `php artisan lab:technician-link-user --technician=<id> --user=<id> --dry-run` then `--apply` (dry-run default, transactional + `lockForUpdate`, fail-closed, idempotent). It **never changes the user's role** (role is a separate RBAC step — the user must already hold `Technician`), never links ambiguous rows, owner-confirmed when ambiguous.
+4. **Pilot readiness gate:** `php artisan lab-workflow:pilot-readiness-audit --strict` → GO/WATCH/NO-GO. NO-GO only for V2-inactive, no RME branch, no eligible technician, or invalid order status; staffing/master gaps + stuck orders are WATCH; an errored check is UNKNOWN (never a silent GO). Read-only.
+5. **Operational dashboard + SLA are derived from real status logs**, never `updated_at`. Dashboard status buckets come from a single GROUP BY (no N+1); SLA durations = diffs of `trx_lab_order_status_logs.changed_at`; rework = QC_FAILED transitions. Pilot SLA is a **baseline, not a final benchmark**.
+6. **Branch isolation in dashboard/SLA is fail-closed:** `manage_lab_orders` sees all branches (lab staff cross-branch by design); a branch operator is pinned to `BranchContext::forUser()` and gets an empty scope (id 0) if unresolved — never a cross-branch leak. A requested branch filter is validated against `BranchService::rmeEnabledIds()`. The SLA report is scoped to the dashboard's **effective (fail-closed) branch id**, never the raw one.
+7. Admin Lab stays Lab-only; QC segregation, delivery photo/signature gates, evidence privacy/compression, notification recipient-awareness, and RME→candidate manual review are all unchanged. No auto-WhatsApp. No migration/permission/role change in this sprint.
+8. Route `lab-workflow-dashboard.index` (`GET lab/operational-dashboard`, `permission:view_lab_orders|manage_lab_orders`). New commands live in `app/Console/Commands/` (auto-registered, Laravel 11).

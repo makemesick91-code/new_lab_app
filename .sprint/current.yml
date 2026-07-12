@@ -1,25 +1,29 @@
-# Active sprint manifest — DEVFLOW-1
+# Active sprint manifest — LAB-WORKFLOW-V2-PILOT-UAT-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DEVFLOW-1
-type: FOUNDATION_SPRINT
-module: foundation
-title: "Safe Sprint Acceleration, Reusable Foundations & Release Automation"
+id: LAB-WORKFLOW-V2-PILOT-UAT-1
+type: MODULE_SPRINT
+module: Lab
+title: "Lab Workflow V2 Pilot Operational Readiness, Real-Role UAT, SLA Baseline & Closure"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true          # adds Artisan commands + scripts (no domain runtime change)
-schema_change: false
-frontend_change: false
-security_impact: false        # tooling is read-only/fail-closed; no policy/permission change
-branch_isolation_impact: false
-ledger_impact: false
+runtime_change: true            # new Artisan readiness/audit commands + operational dashboard + SLA report
+schema_change: false            # no migration — SLA/dashboard are bounded queries over append-only status logs
+frontend_change: true           # operational dashboard Blade/Tailwind views
+security_impact: true           # dashboard/SLA are branch- and role-scoped; readiness audit inspects access posture
+branch_isolation_impact: true   # dashboard/report scope must respect BranchContext + Admin-Lab-only
+ledger_impact: false            # inventory ledger untouched
 
 deploy_required: true
-browser_required: false
+browser_required: true          # operational UI + signature canvas + upload need supervised UAT
 
 test_profiles:
-  - focused
-  - cross_module_regression
-  - full_required
+  - lab_workflow
+  - access_control
+  - branch_context
+  - notifications
+  - file_storage
+  - reporting
+  - deployment
 
-go_tag: devflow-1-safe-sprint-acceleration-release-automation-go
+go_tag: lab-workflow-v2-pilot-uat-1-operational-readiness-closure-go
