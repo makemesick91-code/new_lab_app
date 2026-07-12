@@ -94,14 +94,23 @@ final class LabWorkflowPilotReadinessAuditor
         });
 
         $checks[] = $this->guard('active_external_lab', function (): array {
-            $count = ExternalLab::query()->where('is_active', true)->count();
+            $active = ExternalLab::query()->where('is_active', true)->orderBy('name')->get();
+            $count = $active->count();
 
             return [
                 $count > 0 ? 'GO' : 'WATCH',
                 $count > 0
                     ? "Active external labs: {$count}."
                     : 'No active external lab — the external path cannot be exercised until one is added.',
-                ['count' => $count],
+                [
+                    'count' => $count,
+                    // Vendor names are operational labels (not KTP/NIK/patient PII);
+                    // surfaced so evidence shows which real vendor closed this check.
+                    'active_labs' => $active->map(fn (ExternalLab $lab) => [
+                        'id' => $lab->id,
+                        'name' => $lab->name,
+                    ])->all(),
+                ],
             ];
         });
 
@@ -146,6 +155,10 @@ final class LabWorkflowPilotReadinessAuditor
                 [
                     'decision' => $decision,
                     'eligible' => (int) ($report['eligible_technician_count'] ?? 0),
+                    // Additive evidence: active masters still needing a decision vs
+                    // legitimately deactivated ones (inactive orphans are not anomalies).
+                    'active_orphans' => (int) ($report['summary']['active_orphan_count'] ?? 0),
+                    'inactive' => (int) ($report['summary']['inactive_technician_count'] ?? 0),
                     'codes' => (array) ($report['summary']['anomaly_codes'] ?? []),
                 ],
             ];

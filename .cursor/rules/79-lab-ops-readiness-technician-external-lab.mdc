@@ -1,0 +1,46 @@
+---
+description: LAB-OPS-READINESS-1 — technician account governance & active external lab enablement
+globs:
+  - "app/Modules/Technician/**"
+  - "app/Modules/LabOrder/**"
+  - "app/Console/Commands/LabTechnician*.php"
+  - "app/Console/Commands/LabExternalLab*.php"
+alwaysApply: false
+---
+
+# LAB-OPS-READINESS-1 — durable rules
+
+Canonical for closing Lab Workflow V2 operational data readiness (technician accounts +
+active external lab). Extends `.cursor/rules/72-lab-workflow-v2.mdc` and the Admin-Lab-only
+rule 75. Baseline `lab-workflow-v2-pilot-uat-1-operational-readiness-closure-go`.
+
+1. **Every ACTIVE technician master must be eligible** — linked to an active user holding the
+   Spatie `Technician` role (`TechnicianAssignmentEligibility`). No exceptions for pilot GO.
+2. **Orphan/unused masters are DEACTIVATED, never deleted.** Use `lab:technician-deactivate`
+   (`TechnicianAccountAuditor::deactivateMaster`): dry-run default, `--reason` required, refuses
+   while an assignment is `ASSIGNED`/`IN_PROGRESS`, sets `is_active=false` only, keeps `user_id`
+   and all assignment history, audit-logs to `mst_technicians`. Never soft/hard-delete a master
+   that was ever used.
+3. **No fuzzy/automatic technician↔user linking.** `lab:technician-link-user` never assigns a
+   role and refuses ambiguous/duplicate links. Ambiguous mappings require owner confirmation.
+4. **Inactive orphans are NOT anomalies.** `TechnicianAccountAuditor` gates every orphan check on
+   `is_active`; a legitimately deactivated master must never re-open a WATCH. `active_orphan_count`
+   (active + not eligible) is the readiness signal, not raw orphan count.
+5. **At least one eligible technician is required for pilot GO** (`eligible_technician` NO-GO
+   otherwise). Deactivating orphans must never drop the eligible count to zero.
+6. **Active external lab must be a real/owner-approved vendor** — never fabricated, never seeded
+   fictitiously to the VPS pilot. `lab:external-lab-upsert`
+   (`ExternalLabProvisioningService::upsert`) persists exactly the allowlisted fields it is given
+   (name/phone/email/address/notes/is_active), idempotent by unique `name`, dry-run default,
+   audit-logged, never deletes (restores a soft-deleted same-name vendor instead of duplicating).
+7. **Inactive external labs are not selectable.** Model analysis + dispatch reject inactive/soft-
+   deleted labs server-side; a disabled option in the UI is never the boundary.
+8. **External workflow requires result review.** Reject requires a reason and opens a NEW dispatch
+   round (append-only); a direct jump to `MODEL_DONE` is forbidden; accept → `MODEL_DONE` → delivery.
+9. **External lab management is Lab-domain only** (`manage_lab_orders`); Admin Lab stays Lab-only;
+   Technician/QC/branch operators cannot mutate vendors.
+10. **All production data repair is backup-first, dry-run-first, transactional, audit-logged**; no
+    `migrate:fresh`/`db:wipe`/global destructive seed. Deploy runner runs **inside the VPS**, never
+    locally. GO tag only after deploy + owner-approved repair + internal & external UAT + strict GO
+    (`lab:technician-account-audit --strict` GO AND `lab-workflow:pilot-readiness-audit --strict`
+    GO) + smoke. A WATCH-labelled closure is NOT a GO tag.
