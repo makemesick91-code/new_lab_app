@@ -104,7 +104,7 @@
 
     $sidebarRouteOpen = [
         'rme' => request()->routeIs('rme.*'),
-        'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*', 'lab-workflow-requests.*', 'lab-pickup-tasks.*', 'lab-v2-orders.*', 'lab-external-labs.*', 'lab-delivery-tasks.*'),
+        'lab' => request()->routeIs('lab-orders.*', 'lab-case-candidates.*', 'lab-workflow-requests.*', 'lab-pickup-tasks.*', 'lab-v2-orders.*', 'lab-external-labs.*', 'lab-delivery-tasks.*', 'lab-workflow-dashboard.*'),
         'production' => request()->routeIs('production.*'),
         'qc' => request()->routeIs('quality-control.*'),
         'my-work' => request()->routeIs('production.*'),
@@ -287,6 +287,17 @@
             @if ($showLabGroup)
                 <p class="menu-group-title pt-2">Laboratorium</p>
             @endif
+
+            {{-- LAB-WORKFLOW-V2 Phase 8/9 — operational dashboard + SLA baseline --}}
+            @canany(['view_lab_orders', 'manage_lab_orders'])
+                <a href="{{ route('lab-workflow-dashboard.index') }}"
+                   class="menu-item {{ request()->routeIs('lab-workflow-dashboard.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 12h4l3 8 4-16 3 8h4" />
+                    </svg>
+                    <span>Dasbor Operasional Lab</span>
+                </a>
+            @endcanany
 
             @canany(['view_lab_orders', 'manage_lab_orders'])
                 <a href="{{ route('lab-orders.index') }}"
