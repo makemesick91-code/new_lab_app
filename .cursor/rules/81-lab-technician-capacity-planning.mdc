@@ -1,0 +1,48 @@
+---
+description: LAB-PROD-3 Technician Capacity Planning — canonical rules
+globs:
+  - app/Modules/LabCapacity/**
+  - config/lab_technician_capacity.php
+  - resources/views/lab/capacity-planning/**
+alwaysApply: false
+---
+
+# LAB-PROD-3 — Technician Capacity Planning
+
+Read-only **decision-support** for lab technician capacity. Builds on
+LAB-PROD-2 (`lab-prod-2-operational-analytics-kpi-go`). Canonical rules:
+
+1. **Decision-support only. NEVER auto-assign** technician/order/branch/external-
+   lab/due-date/priority/status/QC. Recommendations are read-only + explainable.
+2. **No employee ranking / score / leaderboard.** Only load, capacity,
+   availability, capability, due-risk, distribution.
+3. **planning_unit is explicit** (`minutes` | `units`); never mix units in one
+   plan — mismatched-unit profiles are treated as unconfigured (coverage flag).
+4. **Missing profile ⇒ UNCONFIGURED / UNPLANNABLE, never a fake zero.** Zero
+   denominator ⇒ `null`/"N/A", never a fake %.
+5. Capacity + workload + capability are **effective-dated**; capacity can never
+   be negative; overlap is rejected server-side.
+6. **Reuse LAB-PROD-2, do not duplicate calculators.** Consume
+   `LabOperationalAnalyticsRepositoryInterface::technicianAssignmentStats`
+   (historical completion confidence) + `LabWorkflowSlaBaselineService`. SLA/
+   deadline stays `trx_lab_orders.due_date` only. V2-only (`workflow_version=2`),
+   `max_scan_orders` cap.
+7. **Branch scope applies to DEMAND (orders); technicians are lab-wide** (no
+   branch column on `mst_technicians`). Owner cross-branch read-only.
+8. **Technician own-scope is IDOR-forced** via `mst_technicians.user_id`; a
+   forged `technician_id`/`branch_id` is ignored/re-scoped server-side. Sidebar
+   is not a security boundary.
+9. **No PII** (KTP/NIK/patient/clinical) in any plan/table/recommendation/export.
+   CSV export is scope-identical + formula-injection-safe.
+10. Architecture: HTTP → Controller (thin) → FormRequest → Service (formulas) →
+    RepositoryInterface → Repository (queries) → Model. Config writes are
+    transactional (`DB::transaction` + `lockForUpdate`). No query/formula in Blade.
+11. Permissions: `view_lab_technician_capacity` (Admin Lab, Owner),
+    `view_own_lab_technician_capacity` (Technician), `manage_lab_technician_capacity`
+    (Admin Lab config CRUD), `export_lab_technician_capacity`.
+12. Gate before GO/deploy: `lab-workflow:technician-capacity-audit --strict` +
+    `lab-workflow:technician-capacity-go-no-go --strict` (exit 0 only on GO); no
+    fake GO. Additive `mst_lab_*` migrations only; never migrate:fresh/db:wipe.
+13. A future capacity-consuming sprint (e.g. LAB-PROD-4) MUST reuse
+    `LabTechnicianCapacityPlanningService` + repository + the own tier — never a
+    parallel capacity calculator.
