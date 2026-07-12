@@ -299,6 +299,17 @@
                 </a>
             @endcanany
 
+            {{-- LAB-PROD-2 — Operational Analytics & KPI --}}
+            @canany(['view_lab_operational_analytics', 'view_own_lab_operational_analytics', 'manage_lab_orders'])
+                <a href="{{ route('lab-analytics.operational-kpi.index') }}"
+                   class="menu-item {{ request()->routeIs('lab-analytics.operational-kpi.*') ? 'menu-item-active' : 'menu-item-inactive' }}">
+                    <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 3v18h18M8 13v5m5-9v9m5-13v13" />
+                    </svg>
+                    <span>Analitik &amp; KPI Lab</span>
+                </a>
+            @endcanany
+
             @canany(['view_lab_orders', 'manage_lab_orders'])
                 <a href="{{ route('lab-orders.index') }}"
                    class="menu-item {{ request()->routeIs('lab-orders.*') ? 'menu-item-active' : 'menu-item-inactive' }}">

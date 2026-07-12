@@ -107,6 +107,7 @@ use App\Modules\Invoice\Repositories\InvoiceRepository;
 use App\Modules\Invoice\Repositories\PaymentRepository;
 use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\AuditLogRepositoryInterface;
+use App\Modules\LabOrder\Interfaces\LabOperationalAnalyticsRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabOrderRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\LabPickupTaskRepositoryInterface;
 use App\Modules\LabOrder\Interfaces\StatusLogRepositoryInterface;
@@ -124,6 +125,7 @@ use App\Modules\LabOrder\Policies\LabPickupTaskPolicy;
 use App\Modules\LabOrder\Policies\LabWorkflowEvidencePolicy;
 use App\Modules\LabOrder\Repositories\AttachmentRepository;
 use App\Modules\LabOrder\Repositories\AuditLogRepository;
+use App\Modules\LabOrder\Repositories\LabOperationalAnalyticsRepository;
 use App\Modules\LabOrder\Repositories\LabOrderRepository;
 use App\Modules\LabOrder\Repositories\LabPickupTaskRepository;
 use App\Modules\LabOrder\Repositories\StatusLogRepository;
@@ -242,6 +244,7 @@ class RepositoryServiceProvider extends ServiceProvider
         LabServiceRepositoryInterface::class => LabServiceRepository::class,
         TechnicianRepositoryInterface::class => TechnicianRepository::class,
         LabOrderRepositoryInterface::class => LabOrderRepository::class,
+        LabOperationalAnalyticsRepositoryInterface::class => LabOperationalAnalyticsRepository::class,
         LabPickupTaskRepositoryInterface::class => LabPickupTaskRepository::class,
         AttachmentRepositoryInterface::class => AttachmentRepository::class,
         AuditLogRepositoryInterface::class => AuditLogRepository::class,
