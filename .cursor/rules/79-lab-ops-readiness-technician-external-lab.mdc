@@ -18,9 +18,10 @@ rule 75. Baseline `lab-workflow-v2-pilot-uat-1-operational-readiness-closure-go`
    Spatie `Technician` role (`TechnicianAssignmentEligibility`). No exceptions for pilot GO.
 2. **Orphan/unused masters are DEACTIVATED, never deleted.** Use `lab:technician-deactivate`
    (`TechnicianAccountAuditor::deactivateMaster`): dry-run default, `--reason` required, refuses
-   while an assignment is `ASSIGNED`/`IN_PROGRESS`, sets `is_active=false` only, keeps `user_id`
-   and all assignment history, audit-logs to `mst_technicians`. Never soft/hard-delete a master
-   that was ever used.
+   while an assignment is `ASSIGNED`/`IN_PROGRESS` **on a NON-terminal order** (a stale active-status
+   row on an already `COMPLETED`/`CANCELLED` or missing order is a historical artifact and must NOT
+   block deactivation), sets `is_active=false` only, keeps `user_id` and all assignment history,
+   audit-logs to `mst_technicians`. Never soft/hard-delete a master that was ever used.
 3. **No fuzzy/automatic technician↔user linking.** `lab:technician-link-user` never assigns a
    role and refuses ambiguous/duplicate links. Ambiguous mappings require owner confirmation.
 4. **Inactive orphans are NOT anomalies.** `TechnicianAccountAuditor` gates every orphan check on
