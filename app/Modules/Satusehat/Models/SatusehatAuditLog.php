@@ -54,6 +54,31 @@ class SatusehatAuditLog extends Model
 
     public const EVENT_UNAUTHORIZED_ATTEMPT = 'unauthorized_attempt';
 
+    // SATUSEHAT-2 — outbound submission lifecycle events (all PII-free).
+    public const EVENT_SUBMISSION_QUEUED = 'submission_queued';
+
+    public const EVENT_SUBMISSION_STARTED = 'submission_started';
+
+    public const EVENT_RESOURCE_SUBMITTED = 'resource_submitted';
+
+    public const EVENT_RESOURCE_RETRYABLE_FAILED = 'resource_retryable_failed';
+
+    public const EVENT_RESOURCE_PERMANENT_FAILED = 'resource_permanent_failed';
+
+    public const EVENT_RESOURCE_UNKNOWN_OUTCOME = 'resource_unknown_outcome';
+
+    public const EVENT_RESOURCE_RECONCILED = 'resource_reconciled';
+
+    public const EVENT_RECONCILIATION_REQUIRED = 'reconciliation_required';
+
+    public const EVENT_SOURCE_DRIFT_ABORTED = 'source_drift_aborted';
+
+    public const EVENT_SEND_BLOCKED = 'send_blocked';
+
+    public const EVENT_BATCH_COMPLETED = 'batch_completed';
+
+    public const EVENT_IDENTIFIER_VERIFIED = 'identifier_verified';
+
     protected $fillable = [
         'environment',
         'branch_id',

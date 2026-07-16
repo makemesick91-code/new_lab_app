@@ -7,6 +7,7 @@ use App\Modules\Satusehat\Interfaces\SatusehatIdentifierRepositoryInterface;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
 use App\Modules\Satusehat\Requests\StoreSatusehatIdentifierRequest;
 use App\Modules\Satusehat\Services\SatusehatIdentifierService;
+use App\Modules\Satusehat\Services\SatusehatIdentifierVerificationService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -61,5 +62,17 @@ class SatusehatIdentifierController extends Controller
         $this->service->deactivate($identifier, Auth::user());
 
         return back()->with('success', 'Identifier dinonaktifkan.');
+    }
+
+    public function verify(SatusehatEntityIdentifier $identifier, SatusehatIdentifierVerificationService $verification): RedirectResponse
+    {
+        $this->authorize('update', $identifier);
+
+        $result = $verification->verify($identifier, Auth::user());
+
+        return back()->with($result['verified'] ? 'success' : 'error',
+            $result['verified']
+                ? 'Identifier terverifikasi di sandbox SATUSEHAT.'
+                : 'Verifikasi identifier belum berhasil (status: '.$result['status'].').');
     }
 }
