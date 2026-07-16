@@ -1,0 +1,70 @@
+---
+description: SATUSEHAT-2 — Sandbox API Adapter & FHIR Submission durable rules
+globs:
+  - "app/Modules/Satusehat/**"
+  - "config/satusehat.php"
+alwaysApply: false
+---
+
+# SATUSEHAT-2 — Sandbox API Adapter & FHIR Submission
+
+Builds on the SATUSEHAT-1 readiness foundation. The adapter is real but stays
+**OFF by default** and **sandbox-only**; production SATUSEHAT is fail-closed.
+
+1. Production SATUSEHAT stays disabled in SATUSEHAT-2. `satusehat.sandbox_only`
+   defaults true; the gateway/host guard reject any non-sandbox environment/host.
+2. Only sandbox hostnames on `config('satusehat.allowed_hosts.sandbox')` are
+   reachable. `SatusehatHostGuard::assertAllowedBaseUrl()` runs before every
+   outbound call (token + FHIR). HTTPS only; embedded credentials rejected;
+   `withoutRedirecting()` prevents redirect host escape.
+3. TLS verification is NEVER disabled (`Http::withoutVerifying()` is banned in
+   runtime, deploy, and evidence).
+4. Secrets/tokens are never logged, never put in an exception message, never
+   stored in the DB, never returned by `status()`/`connectionStatus()`, never in
+   audit/OperationOutcome. The token cache key uses a non-reversible fingerprint.
+5. The OAuth token comes only from `client_credentials`; it is cached
+   (Illuminate cache, not the DB), refreshed a buffer before expiry, and acquired
+   under a distributed lock so concurrent workers request at most one token.
+6. No auto-send. No scheduler selects/sends candidates. No send at payment /
+   visit-completed / RME-finalized. No "Send All"; no default selection. The
+   operator must explicitly review, approve, and queue a batch, and hold
+   `send_satusehat_submissions`.
+7. `SatusehatSubmissionService::queue()` is fail-closed: it refuses while the
+   gateway is not enabled (kill switch `send_enabled=false`). The driver job is
+   dispatched only AFTER the transaction commits.
+8. Every state change goes through `SatusehatSubmissionStateMachine` +
+   `SatusehatSubmissionProcessingService`. Free-form status writes from a
+   controller/Blade are forbidden. Transitions are locked, transactional, and
+   audited.
+9. The source hash is re-verified before each outbound request. Clinical drift
+   after preparation aborts the submission (`source_drift_aborted`) — never send
+   stale/fabricated data.
+10. Idempotency: a successfully-sent (succeeded/reconciled) resource is never
+    resent; `trx_satusehat_submission_items.idempotency_key` is UNIQUE at the DB
+    level; the claim step no-ops on a terminal item.
+11. An ambiguous outcome (timeout/reset after the body may have been sent, or a
+    500) is `unknown_outcome` → reconciliation via GET-by-id, NEVER a blind
+    re-POST. No remote id → stays `reconciliation_required` for operator review.
+12. Retry is classified + bounded: 401 → evict token + retry once then permanent;
+    429 → honor `Retry-After`; 502/503/504 → retryable; 400/403/409/422 →
+    permanent. The circuit breaker opens after repeated hard failures.
+13. NIK/KTP never appears in a URL, log, audit, OperationOutcome, or payload.
+    Identifier verification GETs by IHS id (never a NIK query). Odontogram,
+    handwriting, scans, attachments are never sent (asserted by
+    `SatusehatFhirValidator`).
+14. Terminology is never invented. Procedure/Condition codes come only from an
+    active versioned `SatusehatCodeMapping`; an unmapped treatment stays blocked.
+    There is no structured diagnosis source, so Condition is not emitted.
+15. Branch isolation: queue/batch actions are scoped to the actor's RME branches
+    server-side (`BranchService::rmeEnabledIds()`); the request `branch_id` is
+    never trusted.
+16. No external HTTP call is made while a DB transaction is open (claim →
+    network-outside-tx → record).
+17. A clinical/billing transaction is never rolled back by a SATUSEHAT failure.
+18. Live sandbox verification uses ONLY synthetic/test identifiers via
+    `php artisan satusehat:sandbox-verify --live --confirm-sandbox` (refuses
+    production; requires explicit confirmation; never prints secret/NIK/payload;
+    never runs during deploy). Mock-only success is NOT a GO.
+19. Production activation is a separate, explicitly-approved sprint. Until then
+    production host is fail-closed and `SATUSEHAT_ENABLED`/`SATUSEHAT_SEND_ENABLED`
+    stay false on the VPS.

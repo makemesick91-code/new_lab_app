@@ -5,11 +5,13 @@ namespace App\Modules\Satusehat\Services;
 use App\Models\User;
 use App\Modules\Satusehat\Gateways\SatusehatGatewayInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatCandidateRepositoryInterface;
+use App\Modules\Satusehat\Jobs\PrepareSatusehatSubmissionBatchJob;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatSubmissionBatch;
 use App\Modules\Satusehat\Models\SatusehatSubmissionItem;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -135,6 +137,59 @@ class SatusehatSubmissionService
 
             return $locked->refresh();
         });
+    }
+
+    /**
+     * SATUSEHAT-2 — queue a PREPARED batch for outbound submission. Fail-closed:
+     * if the runtime gateway is not fully enabled (send kill switch off /
+     * disabled binding), queuing is refused with a clear message so nothing is
+     * dispatched. On success the batch moves to QUEUED and the driver job is
+     * dispatched AFTER commit (never inside the transaction).
+     *
+     * @param  list<int>  $branchIds
+     */
+    public function queue(SatusehatSubmissionBatch $batch, array $branchIds, User $actor): SatusehatSubmissionBatch
+    {
+        if (! in_array((int) $batch->branch_id, $branchIds, true)) {
+            throw ValidationException::withMessages(['batch' => 'Batch di luar cakupan cabang Anda.']);
+        }
+
+        if (! $this->gateway->isEnabled()) {
+            throw ValidationException::withMessages([
+                'batch' => 'Pengiriman eksternal SATUSEHAT belum diaktifkan (send_enabled=false).',
+            ]);
+        }
+
+        if (! SatusehatSubmissionStateMachine::batchCanTransition($batch->status, SatusehatSubmissionBatch::STATUS_QUEUED)) {
+            throw ValidationException::withMessages([
+                'batch' => 'Batch tidak dalam status yang dapat dikirim.',
+            ]);
+        }
+
+        $correlationId = (string) Str::uuid();
+
+        $batch = DB::transaction(function () use ($batch, $actor, $correlationId) {
+            /** @var SatusehatSubmissionBatch $locked */
+            $locked = SatusehatSubmissionBatch::query()->lockForUpdate()->findOrFail($batch->id);
+
+            $locked->update([
+                'status' => SatusehatSubmissionBatch::STATUS_QUEUED,
+                'correlation_id' => $correlationId,
+            ]);
+
+            $this->audit->log('submission_batch', $locked->id, SatusehatAuditLog::EVENT_SUBMISSION_QUEUED,
+                'Batch diantre untuk pengiriman sandbox.', ['correlation_id' => $correlationId], $locked->branch_id, $actor);
+
+            return $locked;
+        });
+
+        // Dispatched AFTER the (outermost) transaction above commits. queue()
+        // owns its own transaction and runs outside any request-level tx, so
+        // dispatching here is post-commit — and it stays testable (DB::afterCommit
+        // would never fire under the test's wrapping transaction).
+        PrepareSatusehatSubmissionBatchJob::dispatch($batch->id, $correlationId);
+
+        return $batch->refresh();
     }
 
     /**

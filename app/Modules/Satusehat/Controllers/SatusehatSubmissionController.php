@@ -8,6 +8,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Satusehat\Interfaces\SatusehatCandidateRepositoryInterface;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
+use App\Modules\Satusehat\Models\SatusehatSubmissionBatch;
 use App\Modules\Satusehat\Requests\BulkSatusehatSubmissionRequest;
 use App\Modules\Satusehat\Requests\ExcludeSatusehatCandidateRequest;
 use App\Modules\Satusehat\Services\SatusehatAuditLogger;
@@ -156,6 +157,70 @@ class SatusehatSubmissionController extends Controller
         }
 
         return back()->with('success', "{$count} kandidat diproses ({$action}).");
+    }
+
+    public function batchIndex(Request $request): View
+    {
+        $this->authorize('viewAny', SatusehatCandidate::class);
+
+        $branchIds = $this->branches->rmeEnabledIds();
+
+        $batches = SatusehatSubmissionBatch::query()
+            ->where('environment', config('satusehat.environment'))
+            ->whereIn('branch_id', $branchIds)
+            ->with('branch:id,name')
+            ->withCount('items')
+            ->orderByDesc('id')
+            ->paginate(20)
+            ->withQueryString();
+
+        return view('satusehat.submissions.batches', [
+            'batches' => $batches,
+            'environment' => (string) config('satusehat.environment'),
+            'sendEnabled' => (bool) config('satusehat.send_enabled'),
+        ]);
+    }
+
+    public function batchShow(SatusehatSubmissionBatch $batch): View
+    {
+        $this->authorize('viewAny', SatusehatCandidate::class);
+
+        // IDOR-safe: a batch outside the actor's RME branch scope is 404.
+        abort_unless(in_array((int) $batch->branch_id, $this->branches->rmeEnabledIds(), true), 404);
+
+        $batch->load(['branch:id,name', 'items']);
+
+        $timeline = SatusehatAuditLog::query()
+            ->whereIn('entity_type', ['submission_batch', 'submission_item'])
+            ->where(function ($q) use ($batch) {
+                $q->where(fn ($qq) => $qq->where('entity_type', 'submission_batch')->where('entity_id', $batch->id))
+                    ->orWhere(fn ($qq) => $qq->where('entity_type', 'submission_item')->whereIn('entity_id', $batch->items->pluck('id')));
+            })
+            ->with('actor:id,name')
+            ->orderByDesc('id')
+            ->limit(200)
+            ->get();
+
+        return view('satusehat.submissions.batch-show', [
+            'batch' => $batch,
+            'timeline' => $timeline,
+            'environment' => (string) config('satusehat.environment'),
+            'sendEnabled' => (bool) config('satusehat.send_enabled'),
+            'canSend' => Auth::user()?->can('send_satusehat_submissions') ?? false,
+        ]);
+    }
+
+    public function queue(SatusehatSubmissionBatch $batch): RedirectResponse
+    {
+        $user = Auth::user();
+        abort_unless($user?->can('send_satusehat_submissions'), 403);
+
+        $branchIds = $this->branches->rmeEnabledIds();
+        abort_unless(in_array((int) $batch->branch_id, $branchIds, true), 404);
+
+        $this->submissions->queue($batch, $branchIds, $user);
+
+        return back()->with('success', 'Batch diantre untuk pengiriman ke sandbox SATUSEHAT.');
     }
 
     /**

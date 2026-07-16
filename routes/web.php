@@ -452,6 +452,13 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
         Route::post('submissions/{candidate}/refresh', [SatusehatSubmissionController::class, 'refresh'])->name('submissions.refresh');
         Route::post('submissions/{candidate}/approve', [SatusehatSubmissionController::class, 'approve'])->name('submissions.approve');
         Route::post('submissions/{candidate}/exclude', [SatusehatSubmissionController::class, 'exclude'])->name('submissions.exclude');
+
+        // SATUSEHAT-2 — outbound submission batches. Queuing requires the send
+        // permission (re-checked server-side) AND the runtime gateway enabled;
+        // while disabled the queue action is refused (fail-closed).
+        Route::get('batches', [SatusehatSubmissionController::class, 'batchIndex'])->name('batches.index');
+        Route::get('batches/{batch}', [SatusehatSubmissionController::class, 'batchShow'])->name('batches.show');
+        Route::post('batches/{batch}/queue', [SatusehatSubmissionController::class, 'queue'])->name('batches.queue');
     });
 
     Route::middleware('permission:manage_satusehat_mappings')->group(function () {
@@ -468,6 +475,9 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
         Route::get('identifiers', [SatusehatIdentifierController::class, 'index'])->name('identifiers.index');
         Route::post('identifiers', [SatusehatIdentifierController::class, 'store'])->name('identifiers.store');
         Route::post('identifiers/{identifier}/deactivate', [SatusehatIdentifierController::class, 'deactivate'])->name('identifiers.deactivate');
+        // SATUSEHAT-2 — verify an existing IHS identifier against the sandbox
+        // (GET-by-id; refused while the integration is disabled).
+        Route::post('identifiers/{identifier}/verify', [SatusehatIdentifierController::class, 'verify'])->name('identifiers.verify');
     });
 });
 

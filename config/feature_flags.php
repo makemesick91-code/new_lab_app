@@ -313,16 +313,16 @@ return [
         ],
         'satusehat.external_submission_enabled' => [
             'name' => 'SATUSEHAT External Submission Enabled',
-            'description' => 'Would allow the HTTP gateway to authenticate and submit FHIR resources to the SATUSEHAT sandbox/production API. Stays false in SATUSEHAT-1 (readiness only); real external submission is introduced in SATUSEHAT-2 after sandbox credentials + official profile validation.',
+            'description' => 'Allows the HTTP gateway to authenticate and submit FHIR resources to the SATUSEHAT sandbox API. SATUSEHAT-2 ships the real sandbox adapter but it stays OFF by default: the actual runtime switches are SATUSEHAT_ENABLED + SATUSEHAT_SEND_ENABLED (both false), sandbox-only, production fail-closed. This governance marker documents the capability; enabling requires sandbox credentials + a verified live round-trip.',
             'default' => false,
             'env_key' => 'FEATURE_SATUSEHAT_EXTERNAL_SUBMISSION_ENABLED',
             'env_value' => env('FEATURE_SATUSEHAT_EXTERNAL_SUBMISSION_ENABLED'),
             'owner' => 'satusehat',
             'risk_level' => 'critical',
-            'rollout_status' => 'not_started',
+            'rollout_status' => 'implemented',
             'review_target' => 'SATUSEHAT-2',
             'dependencies' => ['SATUSEHAT-1'],
-            'rollback_action' => 'Set env override to false and SATUSEHAT_ENABLED=false; the runtime binding falls back to DisabledSatusehatGateway and no network request is ever made.',
+            'rollback_action' => 'Set SATUSEHAT_SEND_ENABLED=false then SATUSEHAT_ENABLED=false and rebuild config cache; the runtime binding falls back to DisabledSatusehatGateway and no network request is ever made. Production stays fail-closed.',
         ],
 
         // --- Release safety / governance flags (implemented in NSF-9) ---

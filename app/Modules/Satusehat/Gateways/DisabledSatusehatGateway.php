@@ -41,4 +41,38 @@ final class DisabledSatusehatGateway implements SatusehatGatewayInterface
     {
         throw SatusehatIntegrationDisabledException::forOperation('lookupPatientIdentifier');
     }
+
+    public function assertSendAllowed(): void
+    {
+        throw SatusehatIntegrationDisabledException::forOperation('assertSendAllowed');
+    }
+
+    public function createResource(string $resourceType, array $payload, string $correlationId): SatusehatApiResponse
+    {
+        throw SatusehatIntegrationDisabledException::forOperation("createResource:{$resourceType}");
+    }
+
+    public function updateResource(string $resourceType, string $remoteId, array $payload, string $correlationId): SatusehatApiResponse
+    {
+        throw SatusehatIntegrationDisabledException::forOperation("updateResource:{$resourceType}");
+    }
+
+    public function getResource(string $resourceType, string $remoteId, string $correlationId): SatusehatApiResponse
+    {
+        throw SatusehatIntegrationDisabledException::forOperation("getResource:{$resourceType}");
+    }
+
+    public function verifyIdentifier(string $entityType, array $searchParams, string $correlationId): SatusehatApiResponse
+    {
+        throw SatusehatIntegrationDisabledException::forOperation("verifyIdentifier:{$entityType}");
+    }
+
+    public function connectionStatus(): array
+    {
+        return [
+            'gateway' => 'disabled',
+            'environment' => $this->environment,
+            'send_enabled' => 'false',
+        ];
+    }
 }

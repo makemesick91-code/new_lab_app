@@ -42,9 +42,76 @@ return [
     'client_id' => env('SATUSEHAT_CLIENT_ID', ''),
     'client_secret' => env('SATUSEHAT_CLIENT_SECRET', ''),
     'organization_id' => env('SATUSEHAT_ORGANIZATION_ID', ''),
+    // Location the encounters happen at (a sandbox Location resource id). Kept
+    // separate from organization_id; both are provisioned from the environment.
+    'location_id' => env('SATUSEHAT_LOCATION_ID', ''),
     'timeout_seconds' => (int) env('SATUSEHAT_TIMEOUT_SECONDS', 15),
     'connect_timeout_seconds' => (int) env('SATUSEHAT_CONNECT_TIMEOUT_SECONDS', 5),
     'max_attempts' => (int) env('SATUSEHAT_MAX_ATTEMPTS', 5),
+
+    // ---------------------------------------------------------------------
+    // SATUSEHAT-2 — Sandbox API adapter runtime governance.
+    //
+    // Two independent switches gate any outbound request. BOTH must be true,
+    // AND the environment must be sandbox, AND the resolved host must be on the
+    // sandbox allowlist. Production is fail-closed in SATUSEHAT-2 regardless of
+    // env — the adapter refuses to send to a production host.
+    // ---------------------------------------------------------------------
+
+    // Emergency kill switch. Separate from `enabled` so the whole outbound path
+    // can be stopped WITHOUT a code deploy (flip the env + config:cache rebuild).
+    // Every job re-reads this before each outbound request.
+    'send_enabled' => (bool) env('SATUSEHAT_SEND_ENABLED', false),
+
+    // Hard sandbox lock. When true (default) the adapter is only ever allowed to
+    // talk to the sandbox environment; a production env/host is rejected. This
+    // stays true for the whole SATUSEHAT-2 sprint — production cutover is a
+    // separate, explicitly-approved sprint.
+    'sandbox_only' => (bool) env('SATUSEHAT_SANDBOX_ONLY', true),
+
+    // Per-environment host allowlist. The gateway resolves the configured base
+    // URL host and asserts it is on this list for the ACTIVE environment before
+    // any request. An arbitrary/unlisted host (SSRF) is refused. Production
+    // hosts are declared for future config only and never reachable while
+    // `sandbox_only` is true / environment is not production.
+    'allowed_hosts' => [
+        'sandbox' => [
+            'api-satusehat-stg.dto.kemkes.go.id',
+        ],
+        'production' => [
+            'api-satusehat.kemkes.go.id',
+        ],
+    ],
+
+    // OAuth token cache/refresh. The token is cached (never persisted to the DB)
+    // keyed by environment + a non-reversible credential fingerprint, and
+    // refreshed `token_refresh_buffer_seconds` before its real expiry.
+    'token_refresh_buffer_seconds' => (int) env('SATUSEHAT_TOKEN_REFRESH_BUFFER_SECONDS', 60),
+    'token_lock_seconds' => (int) env('SATUSEHAT_TOKEN_LOCK_SECONDS', 10),
+
+    // Bounded retry with backoff + jitter. `retry_after_cap_seconds` caps how
+    // long a 429 Retry-After can defer a job.
+    'retry' => [
+        'base_delay_seconds' => (int) env('SATUSEHAT_RETRY_BASE_DELAY_SECONDS', 5),
+        'max_delay_seconds' => (int) env('SATUSEHAT_RETRY_MAX_DELAY_SECONDS', 300),
+        'retry_after_cap_seconds' => (int) env('SATUSEHAT_RETRY_AFTER_CAP_SECONDS', 600),
+    ],
+
+    // Circuit breaker (cache-backed). After `threshold` consecutive hard
+    // failures the breaker opens for `cooldown_seconds`; a single half-open
+    // probe closes it on success.
+    'circuit_breaker' => [
+        'threshold' => (int) env('SATUSEHAT_CIRCUIT_BREAKER_THRESHOLD', 5),
+        'cooldown_seconds' => (int) env('SATUSEHAT_CIRCUIT_BREAKER_COOLDOWN_SECONDS', 300),
+    ],
+
+    // Response body guardrail — a response larger than this is rejected before
+    // JSON decoding (defence against oversized/hostile responses).
+    'max_response_bytes' => (int) env('SATUSEHAT_MAX_RESPONSE_BYTES', 1048576),
+
+    // Queue the outbound jobs run on (governance: a dedicated queue name keeps
+    // SATUSEHAT work isolated from clinical/notification queues).
+    'queue' => env('SATUSEHAT_QUEUE', 'satusehat'),
 
     // Default runtime gateway. Overridden to a real adapter ONLY in SATUSEHAT-2,
     // and only when both `enabled` is true and the config validates.
