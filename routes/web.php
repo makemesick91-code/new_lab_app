@@ -84,6 +84,9 @@ use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
+use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
+use App\Modules\Satusehat\Controllers\SatusehatMappingController;
+use App\Modules\Satusehat\Controllers\SatusehatSubmissionController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -434,6 +437,38 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('patients.audit')->middleware('permission:view_rme_patient_reports|manage patients');
     Route::get('patients/audit/export', [PatientAuditController::class, 'export'])
         ->name('patients.audit.export')->middleware('permission:view_rme_patient_reports|manage patients');
+});
+
+// SATUSEHAT-1 — Controlled submission filter/review + mapping/identifier
+// governance. Readiness foundation only: server-side branch scope, separate
+// view/review/send + mapping/settings permissions, and NO external network call
+// while the integration is disabled. URL /rme/satusehat; route name satusehat.*
+Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(function () {
+    Route::middleware('permission:view_satusehat_submissions|review_satusehat_submissions|send_satusehat_submissions')->group(function () {
+        Route::get('submissions', [SatusehatSubmissionController::class, 'index'])->name('submissions.index');
+        Route::post('submissions/bulk', [SatusehatSubmissionController::class, 'bulk'])->name('submissions.bulk');
+        Route::get('submissions/{candidate}', [SatusehatSubmissionController::class, 'show'])->name('submissions.show');
+        Route::get('submissions/{candidate}/preview', [SatusehatSubmissionController::class, 'preview'])->name('submissions.preview');
+        Route::post('submissions/{candidate}/refresh', [SatusehatSubmissionController::class, 'refresh'])->name('submissions.refresh');
+        Route::post('submissions/{candidate}/approve', [SatusehatSubmissionController::class, 'approve'])->name('submissions.approve');
+        Route::post('submissions/{candidate}/exclude', [SatusehatSubmissionController::class, 'exclude'])->name('submissions.exclude');
+    });
+
+    Route::middleware('permission:manage_satusehat_mappings')->group(function () {
+        Route::get('mappings', [SatusehatMappingController::class, 'index'])->name('mappings.index');
+        Route::get('mappings/create', [SatusehatMappingController::class, 'create'])->name('mappings.create');
+        Route::post('mappings', [SatusehatMappingController::class, 'store'])->name('mappings.store');
+        Route::get('mappings/{mapping}', [SatusehatMappingController::class, 'show'])->name('mappings.show');
+        Route::post('mappings/{mapping}/review', [SatusehatMappingController::class, 'review'])->name('mappings.review');
+        Route::post('mappings/{mapping}/activate', [SatusehatMappingController::class, 'activate'])->name('mappings.activate');
+        Route::post('mappings/{mapping}/deprecate', [SatusehatMappingController::class, 'deprecate'])->name('mappings.deprecate');
+    });
+
+    Route::middleware('permission:manage_satusehat_settings')->group(function () {
+        Route::get('identifiers', [SatusehatIdentifierController::class, 'index'])->name('identifiers.index');
+        Route::post('identifiers', [SatusehatIdentifierController::class, 'store'])->name('identifiers.store');
+        Route::post('identifiers/{identifier}/deactivate', [SatusehatIdentifierController::class, 'deactivate'])->name('identifiers.deactivate');
+    });
 });
 
 /*

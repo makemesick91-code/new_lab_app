@@ -1,0 +1,59 @@
+---
+description: SATUSEHAT integration readiness rules (SATUSEHAT-1) — controlled submission, no auto-send, disabled-by-default gateway, no external network
+globs:
+  - app/Modules/Satusehat/**
+  - config/satusehat.php
+  - resources/views/satusehat/**
+  - database/migrations/*satusehat*
+alwaysApply: false
+---
+
+# SATUSEHAT Integration Readiness (SATUSEHAT-1)
+
+Durable rules for every future SATUSEHAT change. SATUSEHAT-1 is a readiness
+foundation only: it prepares the app to integrate with SATUSEHAT later and it
+NEVER talks to the external API.
+
+1. **No auto-send.** No lifecycle event (RME finalize, odontogram change, visit
+   completion, payment, invoice, scheduler, queue, observer, webhook, login,
+   dashboard, preview) may send SATUSEHAT data. Events may only create/refresh a
+   candidate idempotently, post-commit.
+2. **Every eligible visit becomes a CANDIDATE only** — never a submission.
+   Explicit review/filter is required before anything is prepared.
+3. **No "Send All" / no "select all across all pages".** Bulk actions operate on
+   explicitly checked rows on the current page; the server recomputes eligibility
+   and authorization.
+4. **Approval is server-side and branch-scoped.** A forged/out-of-scope/soft-
+   deleted id is rejected (IDOR boundary). Reviewers only see RME-enabled branches.
+5. **Source change revokes approval.** A deterministic source hash (no random /
+   drift-only fields) detects clinical drift after approval → candidate goes
+   `source_changed`, approval is revoked (`approved_by` retained, `revoked_at`
+   set), a fresh review is required, and the old preview/payload cannot be queued.
+6. **Mappings are versioned.** Active mappings are never edited in place — a
+   change is a new draft version; exactly one ACTIVE mapping per logical key.
+7. **Odontogram / scan / handwriting are NOT mapped.** No assumed diagnosis
+   Condition is fabricated. Unsupported resources are shown as not-mapped.
+8. **DisabledSatusehatGateway is the default binding.** `SATUSEHAT_ENABLED=false`.
+   The disabled gateway opens no network connection. The app fails closed on
+   incomplete config. The HTTP adapter is a SATUSEHAT-2 placeholder and never
+   runs in SATUSEHAT-1. A regression test proves zero external HTTP.
+9. **No secrets / raw payloads in logs, evidence, or the audit trail.** NIK is
+   always masked (`maskKtp`). Sensitive eligibility/preview snapshots use
+   encrypted casts. `trx_satusehat_audit_logs` is append-only (no updated_at, no
+   UI update/delete) and PII-free.
+10. **Sandbox and production are never mixed** — every mapping/identifier/
+    candidate/batch is environment-stamped and queries never cross environments.
+11. **A SATUSEHAT failure never rolls back a clinical/billing transaction.**
+    Candidate generation is post-commit (`DB::afterCommit`) + guarded try/catch.
+12. **Architecture:** HTTP → Controller (thin, authorize) → FormRequest → Service
+    → RepositoryInterface → Repository → Model. Branch from `BranchContext`, never
+    the request. Migrations are additive only.
+13. **SATUSEHAT-1 performs no external submission.** The external HTTP adapter is
+    only enabled in SATUSEHAT-2 after sandbox credentials + official FHIR profile
+    validation, behind `SATUSEHAT_ENABLED=true` + the external-submission flag.
+
+## RBAC
+Separate permissions: `view_satusehat_submissions`, `review_satusehat_submissions`,
+`send_satusehat_submissions`, `manage_satusehat_mappings`, `manage_satusehat_settings`.
+Owner = view + review. Supervisor RME = full. Super Admin via `Gate::before`.
+Doctor/Kasir/Perawat get none by default.

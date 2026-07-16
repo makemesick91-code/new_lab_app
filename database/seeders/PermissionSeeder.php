@@ -150,6 +150,14 @@ class PermissionSeeder extends Seeder
         'view reports',
         // ENT-7 — Developer Assistance Console (Super Admin only by default)
         'view_developer_console',
+        // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
+        // Separate view/review/send + mapping/settings governance permissions.
+        // send is intentionally very restricted (no auto-send exists yet).
+        'view_satusehat_submissions',
+        'review_satusehat_submissions',
+        'send_satusehat_submissions',
+        'manage_satusehat_mappings',
+        'manage_satusehat_settings',
     ];
 
     public function run(): void

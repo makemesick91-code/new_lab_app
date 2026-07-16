@@ -307,6 +307,50 @@ git diff --check
 
 ---
 
+## 21. SATUSEHAT Integration Readiness (SATUSEHAT-1)
+
+Fondasi kesiapan integrasi SATUSEHAT — **integrasi eksternal NONAKTIF, tanpa
+request ke API SATUSEHAT.** Modul `App\Modules\Satusehat`.
+
+- **Aturan inti:** tidak ada auto-send; setiap kunjungan selesai + RM final hanya
+  menjadi **kandidat** (idempotent, post-commit); wajib review eksplisit di halaman
+  Filter; tidak ada "Send All"/"select all across pages"; approve/exclude
+  server-side + branch-scoped (RME-enabled, IDOR-safe); exclude wajib alasan.
+- **Gateway:** `SatusehatGatewayInterface` → default `DisabledSatusehatGateway`
+  (tanpa koneksi jaringan), `FakeSatusehatGateway` (test), `HttpSatusehatGateway`
+  (placeholder SATUSEHAT-2). Master switch `SATUSEHAT_ENABLED=false`; fail-closed
+  bila konfigurasi tidak lengkap. Config `config/satusehat.php` +
+  `config/feature_flags.php` (`satusehat.integration_readiness`/
+  `satusehat.external_submission_enabled`, keduanya default OFF, risk critical).
+- **Readiness engine:** status `ready|incomplete|blocked|source_changed`, 16 gate,
+  reason kode PII-free; **source hash deterministik** → perubahan sumber klinis
+  setelah approve → `source_changed` + approval dicabut (`approved_by` disimpan,
+  `revoked_at`), review ulang. Preview FHIR lokal (Encounter/Condition/Procedure),
+  UTC dari WITA, NIK di-mask, tanpa odontogram/scan/handwriting, label jujur
+  "belum dikirim dan belum diverifikasi oleh API SATUSEHAT".
+- **Schema additive:** `mst_satusehat_code_mappings`,
+  `mst_satusehat_entity_identifiers`, `trx_satusehat_candidates`,
+  `trx_satusehat_submission_batches`, `trx_satusehat_submission_items`,
+  `trx_satusehat_audit_logs` (append-only, no updated_at). Mapping berversi (satu
+  aktif per key); identifier single-active per environment; sandbox ≠ production.
+- **Privasi:** NIK selalu masked (`maskKtp`); snapshot sensitif `encrypted:array`;
+  audit tanpa NIK/token/payload mentah. Kegagalan SATUSEHAT tidak me-rollback
+  transaksi klinis/billing.
+- **RBAC:** `view/review/send_satusehat_submissions`, `manage_satusehat_mappings`,
+  `manage_satusehat_settings`. Owner=view+review; Supervisor RME=full; Super Admin
+  via `Gate::before`; Doctor/Kasir/Perawat none.
+- **Route:** `/rme/satusehat/{submissions,mappings,identifiers}` (name
+  `satusehat.*`). Command `satusehat:backfill-candidates` (dry-run, bounded, idempotent).
+- **Docs:** `docs/architecture/satusehat-integration-readiness-governance.md`,
+  runbook `docs/runbooks/satusehat-integration-readiness-runbook.md`,
+  ADR `docs/adr/0001-satusehat-integration-readiness.md`, rule
+  `.cursor/rules/83-satusehat-integration-readiness.mdc`.
+- **Next:** SATUSEHAT-2 (Sandbox API Adapter & FHIR Submission) — hanya setelah
+  kredensial sandbox + validasi profil resmi; aktifkan adapter HTTP di belakang
+  `SATUSEHAT_ENABLED=true` + flag external submission.
+
+---
+
 ## TODO / UNKNOWN
 
 | Item | Status |
