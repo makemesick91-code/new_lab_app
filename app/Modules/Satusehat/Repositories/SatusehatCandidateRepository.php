@@ -23,6 +23,7 @@ class SatusehatCandidateRepository implements SatusehatCandidateRepositoryInterf
             ])
             ->when($this->str($filters, 'readiness_status'), fn (Builder $q, $v) => $q->where('readiness_status', $v))
             ->when($this->str($filters, 'review_status'), fn (Builder $q, $v) => $q->where('review_status', $v))
+            ->when($this->str($filters, 'dental_readiness_status'), fn (Builder $q, $v) => $q->where('dental_readiness_status', $v))
             ->when($this->int($filters, 'doctor_id'), fn (Builder $q, $v) => $q->where('doctor_id', $v))
             ->when($this->int($filters, 'branch_id'), fn (Builder $q, $v) => $q->where('branch_id', $v))
             ->when($this->str($filters, 'search'), function (Builder $q, $v) {

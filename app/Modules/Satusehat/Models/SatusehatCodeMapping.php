@@ -48,6 +48,14 @@ class SatusehatCodeMapping extends Model
         'approved_by',
         'created_by',
         'notes',
+        // SATUSEHAT-3 terminology governance.
+        'profile_family',
+        'official_source',
+        'official_source_version',
+        'verified_at',
+        'verified_by',
+        'effective_to',
+        'mapping_confidence',
     ];
 
     protected function casts(): array
@@ -55,12 +63,36 @@ class SatusehatCodeMapping extends Model
         return [
             'local_entity_id' => 'integer',
             'effective_date' => 'date',
+            'effective_to' => 'date',
             'version' => 'integer',
             'reviewed_by' => 'integer',
             'approved_at' => 'datetime',
             'approved_by' => 'integer',
+            'verified_at' => 'datetime',
+            'verified_by' => 'integer',
             'created_by' => 'integer',
         ];
+    }
+
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    /**
+     * A mapping belonging to a governed profile family (e.g. "dental") may only
+     * be ACTIVATED once it carries an official source citation AND a human
+     * verification stamp. General (non-family) mappings keep the SATUSEHAT-1
+     * behavior. Enforced in SatusehatMappingService (defense in depth + tests).
+     */
+    public function isProfileFamilyGoverned(): bool
+    {
+        return filled($this->profile_family);
+    }
+
+    public function hasOfficialProvenance(): bool
+    {
+        return filled($this->official_source) && $this->verified_at !== null;
     }
 
     public function reviewedBy(): BelongsTo

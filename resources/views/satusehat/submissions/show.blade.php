@@ -33,6 +33,7 @@
             <div class="flex flex-wrap items-center gap-2">
                 <x-ui.badge :tone="$candidate->readinessTone()">Readiness: {{ $candidate->readinessLabel() }}</x-ui.badge>
                 <x-ui.badge :tone="$candidate->reviewTone()">Review: {{ $candidate->reviewLabel() }}</x-ui.badge>
+                <x-ui.badge :tone="$candidate->dentalReadinessTone()">Gigi: {{ $candidate->dentalReadinessLabel() }}</x-ui.badge>
             </div>
 
             @if ($candidate->isSourceChanged())
@@ -50,6 +51,18 @@
                     </li>
                 @empty
                     <li class="text-ink-muted">Tidak ada catatan readiness.</li>
+                @endforelse
+            </ul>
+
+            <h3 class="mt-4 text-sm font-semibold text-ink">Alasan Readiness Gigi</h3>
+            <ul class="mt-2 space-y-1 text-sm">
+                @forelse ($candidate->dental_readiness_reasons ?? [] as $reason)
+                    <li class="flex items-start gap-2">
+                        <x-ui.badge :tone="in_array($reason['severity'] ?? '', ['unsupported','conformance_failed']) ? 'danger' : (($reason['severity'] ?? '') === 'incomplete' ? 'warning' : 'neutral')">{{ $reason['severity'] ?? '' }}</x-ui.badge>
+                        <span class="text-ink-soft">{{ $reason['message'] ?? '' }}</span>
+                    </li>
+                @empty
+                    <li class="text-ink-muted">Belum ada evaluasi gigi.</li>
                 @endforelse
             </ul>
         </x-ui.card>

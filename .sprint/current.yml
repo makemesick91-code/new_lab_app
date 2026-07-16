@@ -1,25 +1,25 @@
-# Active sprint manifest — SATUSEHAT-1
+# Active sprint manifest — SATUSEHAT-3
 # Validated by: php artisan sprint:manifest-check
 
-id: SATUSEHAT-1
+id: SATUSEHAT-3
 type: MODULE_SPRINT
 module: Satusehat
-title: "SATUSEHAT Readiness Foundation & Controlled Submission Filter (integration disabled, no external network)"
+title: "Dental Use-Case Expansion & Production Readiness (credential-independent, external submission disabled, production blocked)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new Satusehat module: candidate/readiness/preview services, gateway contract, filter/mapping UI
-schema_change: true             # 6 additive tables (mappings, entity identifiers, candidates, submission batches/items, audit logs)
-frontend_change: true           # new Blade views (filter/review, detail/preview, mapping, identifier) — Tailwind rebuild
-security_impact: true           # 5 new permissions + policies + branch-scoped review authorization
-branch_isolation_impact: true   # candidate/filter queries scoped to RME-enabled branches via BranchContext
+runtime_change: true            # dental snapshot/builders/conformance/readiness services, production guard, 5 read-only commands, dental preview UI
+schema_change: true             # 1 additive migration (mapping governance fields + candidate dental fields)
+frontend_change: true           # coverage + production-readiness pages, dental preview panel, mapping verify form — Tailwind rebuild
+security_impact: true           # reuses SATUSEHAT permissions; adds mapping verify + coverage/production-readiness gated routes (no new permission)
+branch_isolation_impact: true   # dental readiness/preview scoped via existing RME-enabled branch scope; no new cross-branch surface
 ledger_impact: false            # no inventory ledger / billing / payment behavior change
 
 deploy_required: true
-browser_required: true          # filter/review + mapping page smoke
+browser_required: true          # coverage + production-readiness + submission preview smoke
 
 test_profiles:
   - rme
   - access_control
   - deployment
 
-go_tag: satusehat-1-readiness-foundation-controlled-submission-filter-go
+go_tag: satusehat-3-dental-use-case-expansion-production-readiness-go

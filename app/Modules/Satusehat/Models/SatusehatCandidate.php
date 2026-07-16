@@ -41,6 +41,28 @@ class SatusehatCandidate extends Model
         self::READINESS_SOURCE_CHANGED,
     ];
 
+    // --- Dental readiness axis (SATUSEHAT-3) ---
+    public const DENTAL_READY = 'dental_ready';
+
+    public const DENTAL_INCOMPLETE = 'dental_incomplete';
+
+    public const DENTAL_MAPPING_BLOCKED = 'dental_mapping_blocked';
+
+    public const DENTAL_UNSUPPORTED = 'dental_unsupported';
+
+    public const DENTAL_SOURCE_CHANGED = 'dental_source_changed';
+
+    public const DENTAL_CONFORMANCE_FAILED = 'dental_conformance_failed';
+
+    public const DENTAL_READINESS_STATUSES = [
+        self::DENTAL_READY,
+        self::DENTAL_INCOMPLETE,
+        self::DENTAL_MAPPING_BLOCKED,
+        self::DENTAL_UNSUPPORTED,
+        self::DENTAL_SOURCE_CHANGED,
+        self::DENTAL_CONFORMANCE_FAILED,
+    ];
+
     // --- Review axis ---
     public const REVIEW_PENDING = 'pending';
 
@@ -69,6 +91,12 @@ class SatusehatCandidate extends Model
         'approved_source_hash',
         'readiness_status',
         'readiness_reasons',
+        'dental_readiness_status',
+        'dental_readiness_reasons',
+        'dental_source_hash',
+        'approved_dental_source_hash',
+        'dental_evaluated_at',
+        'dental_coverage_snapshot',
         'review_status',
         'reviewed_by',
         'reviewed_at',
@@ -93,6 +121,9 @@ class SatusehatCandidate extends Model
             'medical_record_id' => 'integer',
             'source_version' => 'integer',
             'readiness_reasons' => 'array',
+            'dental_readiness_reasons' => 'array',
+            'dental_evaluated_at' => 'datetime',
+            'dental_coverage_snapshot' => 'array',
             'reviewed_by' => 'integer',
             'reviewed_at' => 'datetime',
             'approved_by' => 'integer',
@@ -160,6 +191,40 @@ class SatusehatCandidate extends Model
     public function isSourceChanged(): bool
     {
         return $this->readiness_status === self::READINESS_SOURCE_CHANGED;
+    }
+
+    public function isDentalReady(): bool
+    {
+        return $this->dental_readiness_status === self::DENTAL_READY;
+    }
+
+    public function isDentalSourceChanged(): bool
+    {
+        return $this->dental_readiness_status === self::DENTAL_SOURCE_CHANGED;
+    }
+
+    public function dentalReadinessLabel(): string
+    {
+        return match ($this->dental_readiness_status) {
+            self::DENTAL_READY => 'Gigi Siap',
+            self::DENTAL_INCOMPLETE => 'Data Gigi Belum Lengkap',
+            self::DENTAL_MAPPING_BLOCKED => 'Mapping Gigi Belum Aktif',
+            self::DENTAL_UNSUPPORTED => 'Data Gigi Tidak Didukung',
+            self::DENTAL_SOURCE_CHANGED => 'Sumber Gigi Berubah',
+            self::DENTAL_CONFORMANCE_FAILED => 'Validasi Gigi Gagal',
+            default => $this->dental_readiness_status ?? 'Belum Dievaluasi',
+        };
+    }
+
+    public function dentalReadinessTone(): string
+    {
+        return match ($this->dental_readiness_status) {
+            self::DENTAL_READY => 'success',
+            self::DENTAL_INCOMPLETE, self::DENTAL_MAPPING_BLOCKED => 'warning',
+            self::DENTAL_UNSUPPORTED, self::DENTAL_CONFORMANCE_FAILED => 'danger',
+            self::DENTAL_SOURCE_CHANGED => 'info',
+            default => 'neutral',
+        };
     }
 
     public function isApproved(): bool

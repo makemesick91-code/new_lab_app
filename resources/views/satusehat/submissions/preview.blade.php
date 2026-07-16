@@ -8,9 +8,52 @@
         </x-slot:actions>
     </x-ui.page-header>
 
-    <x-ui.alert variant="info" title="Preview Lokal">
+    <x-ui.alert variant="info" title="PREVIEW LOKAL — BELUM DIKIRIM KE SATUSEHAT">
         {{ $preview['note'] }} Lingkungan: <strong>{{ $preview['environment'] }}</strong>.
+        Validasi lokal tidak menjamin acceptance oleh API SATUSEHAT.
     </x-ui.alert>
+
+    @if ($satusehat2Watch ?? true)
+        <x-ui.alert variant="warning" title="SATUSEHAT-2 MASIH WATCH">
+            Kredensial sandbox belum tersedia — pengiriman eksternal nonaktif.
+        </x-ui.alert>
+    @endif
+
+    {{-- SATUSEHAT-3 — dental (odontogram) local FHIR preview. --}}
+    <x-ui.card class="mt-4" title="Preview Gigi (Odontogram) — Lokal">
+        <p class="mb-3 text-sm text-ink-muted">
+            Observation gigi dibentuk dari odontogram terstruktur + mapping resmi yang aktif.
+            Gambar odontogram, scan, dan tulisan tangan tidak pernah disertakan.
+        </p>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-hairline text-left text-ink-soft">
+                        <th class="py-1 pr-3">#</th>
+                        <th class="py-1 pr-3">Variabel</th>
+                        <th class="py-1 pr-3">Status</th>
+                        <th class="py-1 pr-3">Confidence</th>
+                        <th class="py-1 pr-3">Gigi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($dentalPreview['resources'] as $resource)
+                        <tr class="border-b border-hairline/60">
+                            <td class="py-1 pr-3">{{ $resource['order'] }}</td>
+                            <td class="py-1 pr-3">{{ $resource['variable'] }}</td>
+                            <td class="py-1 pr-3">
+                                <x-ui.badge :tone="($resource['supported'] ?? false) ? 'success' : 'warning'">
+                                    {{ ($resource['supported'] ?? false) ? 'Didukung' : 'Belum' }}
+                                </x-ui.badge>
+                            </td>
+                            <td class="py-1 pr-3 text-xs text-ink-muted">{{ $resource['mapping_confidence'] ?? '—' }}</td>
+                            <td class="py-1 pr-3 text-xs">{{ $resource['tooth_number'] ?? '—' }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </x-ui.card>
 
     @foreach ($preview['resources'] as $resource)
         <x-ui.card class="mt-4" :title="$resource['resource_type']">

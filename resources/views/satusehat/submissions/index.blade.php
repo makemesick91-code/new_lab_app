@@ -41,6 +41,12 @@
                 <option value="{{ $status }}" @selected($filters['review_status'] === $status)>{{ $status }}</option>
             @endforeach
         </x-ui.select>
+        <x-ui.select label="Readiness Gigi" name="dental_readiness_status">
+            <option value="">Semua</option>
+            @foreach ($dentalReadinessStatuses as $status)
+                <option value="{{ $status }}" @selected(($filters['dental_readiness_status'] ?? null) === $status)>{{ $status }}</option>
+            @endforeach
+        </x-ui.select>
         <x-slot:actions>
             <x-ui.button type="submit" variant="primary">Terapkan</x-ui.button>
             <x-ui.button variant="secondary" :href="route('satusehat.submissions.index')">Atur Ulang</x-ui.button>

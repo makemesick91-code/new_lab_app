@@ -28,6 +28,25 @@
             <form method="POST" action="{{ route('satusehat.mappings.activate', $mapping) }}">@csrf<x-ui.button type="submit" variant="success" :disabled="$mapping->isActive()">Aktifkan</x-ui.button></form>
             <form method="POST" action="{{ route('satusehat.mappings.deprecate', $mapping) }}">@csrf<x-ui.button type="submit" variant="warning">Usangkan</x-ui.button></form>
         </div>
+
+        @if ($mapping->isProfileFamilyGoverned())
+            <div class="mt-4 rounded-xl border border-hairline bg-navy-50 p-3">
+                <p class="mb-2 text-sm text-ink-soft">
+                    Mapping profil <strong>{{ $mapping->profile_family }}</strong> wajib diverifikasi terhadap
+                    sumber resmi sebelum diaktifkan.
+                    Status verifikasi:
+                    <x-ui.badge :tone="$mapping->hasOfficialProvenance() ? 'success' : 'warning'">
+                        {{ $mapping->hasOfficialProvenance() ? 'Terverifikasi' : 'Belum diverifikasi' }}
+                    </x-ui.badge>
+                </p>
+                <form method="POST" action="{{ route('satusehat.mappings.verify', $mapping) }}" class="flex flex-wrap items-end gap-2">
+                    @csrf
+                    <x-ui.input label="Sumber resmi (URL/dokumen)" name="official_source" :value="$mapping->official_source" />
+                    <x-ui.input label="Versi sumber" name="official_source_version" :value="$mapping->official_source_version" />
+                    <x-ui.button type="submit" variant="primary">Verifikasi</x-ui.button>
+                </form>
+            </div>
+        @endif
     </x-ui.card>
 
     <x-ui.card title="Riwayat Versi" class="mt-4" padding="">

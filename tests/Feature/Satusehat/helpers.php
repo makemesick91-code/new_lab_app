@@ -4,6 +4,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Satusehat\Models\SatusehatCodeMapping;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
@@ -107,5 +108,93 @@ if (! function_exists('ssTreatmentMapping')) {
             'version' => 1,
             'effective_date' => now()->toDateString(),
         ]);
+    }
+}
+
+if (! function_exists('ssOdontogram')) {
+    /**
+     * SATUSEHAT-3 golden odontogram fixture. `$teeth` = ['48' => 'caries', ...].
+     * Deterministic, synthetic, no real patient/NIK.
+     *
+     * @param  array<string, string>  $teeth
+     */
+    function ssOdontogram(array $ctx, array $teeth, ?string $summary = null): Odontogram
+    {
+        $payload = ['teeth' => []];
+        foreach ($teeth as $number => $status) {
+            $payload['teeth'][(string) $number] = ['status' => $status, 'note' => '', 'conditions' => []];
+        }
+
+        return Odontogram::create([
+            'clinic_visit_id' => $ctx['visit']->id,
+            'branch_id' => $ctx['branch']->id,
+            'medical_record_id' => $ctx['mr']->id,
+            'status' => Odontogram::STATUS_FINALIZED,
+            'summary_notes' => $summary,
+            'tooth_map_payload' => $payload,
+        ]);
+    }
+}
+
+if (! function_exists('ssActivateDentalMappings')) {
+    /**
+     * Seed + activate the dental tooth-condition + bodySite mappings needed to
+     * make a golden odontogram dental_ready. Uses the official codes from config.
+     *
+     * @param  array<string, string>  $teeth  ['48' => 'caries', ...]
+     */
+    function ssActivateDentalMappings(array $teeth, string $env = 'sandbox'): void
+    {
+        $cfg = config('satusehat_dental');
+        $statuses = array_unique(array_values($teeth));
+        $numbers = array_unique(array_keys($teeth));
+
+        foreach ($statuses as $status) {
+            $def = $cfg['tooth_condition_map'][$status] ?? null;
+            if ($def === null) {
+                continue;
+            }
+            SatusehatCodeMapping::create([
+                'environment' => $env,
+                'local_entity_type' => 'odontogram_tooth_condition',
+                'local_code' => (string) $status,
+                'target_resource_type' => 'Observation',
+                'terminology_system' => $cfg['systems'][$def['system']],
+                'target_code' => $def['code'],
+                'target_display' => $def['display'],
+                'profile_family' => 'dental',
+                'official_source' => $cfg['official_profile']['annex_url'],
+                'official_source_version' => 'v1.5',
+                'verified_at' => now(),
+                'mapping_confidence' => 'verified_official',
+                'status' => SatusehatCodeMapping::STATUS_ACTIVE,
+                'version' => 1,
+                'effective_date' => now()->toDateString(),
+            ]);
+        }
+
+        foreach ($numbers as $number) {
+            $code = $cfg['fdi_bodysite_map'][(string) $number] ?? null;
+            if ($code === null) {
+                continue;
+            }
+            SatusehatCodeMapping::create([
+                'environment' => $env,
+                'local_entity_type' => 'odontogram_tooth_bodysite',
+                'local_code' => (string) $number,
+                'target_resource_type' => 'Observation',
+                'terminology_system' => $cfg['systems']['snomed'],
+                'target_code' => $code,
+                'target_display' => 'FDI '.$number,
+                'profile_family' => 'dental',
+                'official_source' => $cfg['official_profile']['annex_url'],
+                'official_source_version' => 'v1.5',
+                'verified_at' => now(),
+                'mapping_confidence' => 'verified_official',
+                'status' => SatusehatCodeMapping::STATUS_ACTIVE,
+                'version' => 1,
+                'effective_date' => now()->toDateString(),
+            ]);
+        }
     }
 }

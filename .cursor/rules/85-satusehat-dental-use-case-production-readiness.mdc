@@ -1,0 +1,22 @@
+---
+description: SATUSEHAT-3 dental use-case expansion & production readiness (credential-independent)
+globs:
+  - "app/Modules/Satusehat/**"
+  - "config/satusehat_dental.php"
+  - "database/seeders/SatusehatDentalMappingSeeder.php"
+alwaysApply: false
+---
+
+# SATUSEHAT-3 — Dental Use-Case & Production Readiness (durable rules)
+
+1. **SATUSEHAT-2 stays WATCH.** No SATUSEHAT-2 GO tag exists or may be created/moved by dental work. SATUSEHAT-3 GO is internal implementation/readiness only — never claims live sandbox, production, or Kemkes acceptance.
+2. **External submission stays disabled; production stays blocked.** No `SATUSEHAT_ENABLED`/`SATUSEHAT_SEND_ENABLED`, no OAuth, no sandbox/production call, no external lookup. Every dental test is hermetic (`Http::preventStrayRequests()` + `Http::assertNothingSent()`), synthetic data only, no credential.
+3. **Odontogram → official Observation mapping only.** Codes come exclusively from the versioned local `mst_satusehat_code_mappings` (official SATUSEHAT "Rawat Jalan Gigi" playbook v1.5 + annex). **Never guess a clinical code.**
+4. **No image/scan/handwriting/PNG/attachment is ever built or sent.** Dental Observations are structured codes only; the conformance validator bans `attachment/image/handwriting/ktp/nik` keys. NIK is never rendered.
+5. **A profile-family (dental) mapping may only be ACTIVATED once it carries an official source + a human verification stamp** (`SatusehatMappingService::activate` enforces). Seeded dental mappings are DRAFT — nothing auto-activated; readiness reports `dental_mapping_blocked` until verified+active.
+6. **Active mappings are versioned + immutable; a change is a new version.** No two ambiguous active mappings per key.
+7. **Dental source drift after approval revokes the approval** (separate dental source hash pinned at approval → `dental_source_changed`, review reset). Unsupported local data is `dental_unsupported`/`dental_incomplete` — never a fabricated default value.
+8. **Local conformance ≠ SATUSEHAT acceptance.** UI/commands must say so.
+9. **Production activation guard is permanent** (`SatusehatProductionActivationGuard`): production only ever activatable with SATUSEHAT-2 GO + credentials + explicit approval reference + production env + master/send switches. On SATUSEHAT-3 it always reports blocked; a test asserts it cannot activate. Production activation is a separate future sprint.
+10. **Architecture:** Controller (thin) → FormRequest → Service → RepositoryInterface → Repository → Model; branch from `BranchContext`/RME-enabled scope, never the request; no HTTP inside a DB transaction; extend the existing readiness/mapping engines — never a parallel subsystem.
+11. **Migrations additive only** — never `migrate:fresh`/`db:wipe`. Governance docs must not contain the literal environment-file name (release-evidence forbidden-pattern scan).
