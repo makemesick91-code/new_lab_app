@@ -108,6 +108,23 @@ it('cannot approve without the review permission', function () {
         ->assertForbidden();
 });
 
+it('cannot refresh (recompute/revoke) with only the view permission', function () {
+    $candidate = ssReadyCandidate();
+    $viewer = userWith(['view_satusehat_submissions']);
+
+    // refresh can revoke an approval on source drift → review-tier only.
+    $this->actingAs($viewer)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->post(route('satusehat.submissions.refresh', $candidate))
+        ->assertForbidden();
+
+    $reviewer = userWith(['review_satusehat_submissions']);
+    $this->actingAs($reviewer)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->post(route('satusehat.submissions.refresh', $candidate))
+        ->assertRedirect();
+});
+
 it('queue/prepare is fail-closed and makes no external HTTP call', function () {
     Http::fake();
     $candidate = ssReadyCandidate();

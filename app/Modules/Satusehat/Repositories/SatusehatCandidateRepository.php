@@ -15,7 +15,9 @@ class SatusehatCandidateRepository implements SatusehatCandidateRepositoryInterf
         return $this->scoped($branchIds)
             ->with([
                 'clinicVisit:id,visit_number,visit_date,status,doctor_id,branch_id',
-                'patient:id,name,medical_record_number,ktp_number',
+                // NIK deliberately NOT hydrated into the listing — the index view
+                // never renders it (name/MRN only). The masked show view loads it separately.
+                'patient:id,name,medical_record_number',
                 'doctor:id,name',
                 'medicalRecord:id,status,finalized_at',
             ])

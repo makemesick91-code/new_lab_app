@@ -99,7 +99,8 @@ class SatusehatSubmissionController extends Controller
 
     public function refresh(SatusehatCandidate $candidate): RedirectResponse
     {
-        $this->authorize('view', $candidate);
+        // Review-tier: recomputation can revoke an approval on source drift.
+        $this->authorize('refresh', $candidate);
 
         $this->candidateService->refresh($candidate, Auth::user());
 

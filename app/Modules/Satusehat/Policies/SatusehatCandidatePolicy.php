@@ -44,6 +44,16 @@ class SatusehatCandidatePolicy
             && $this->inRmeBranch($candidate);
     }
 
+    /**
+     * Recomputing readiness can revoke an existing approval (source drift), so it
+     * is a review-tier action, not a read.
+     */
+    public function refresh(User $user, SatusehatCandidate $candidate): bool
+    {
+        return $user->can('review_satusehat_submissions')
+            && $this->inRmeBranch($candidate);
+    }
+
     public function exclude(User $user, SatusehatCandidate $candidate): bool
     {
         return $this->approve($user, $candidate);
