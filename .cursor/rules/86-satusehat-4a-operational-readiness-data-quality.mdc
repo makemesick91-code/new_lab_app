@@ -1,0 +1,45 @@
+---
+description: SATUSEHAT-4A credential-independent operational readiness & data-quality rules (permanent)
+globs:
+alwaysApply: false
+---
+
+# SATUSEHAT-4A — Operational Readiness & Data Quality (permanent rules)
+
+1. SATUSEHAT-2 tetap WATCH; GO tag SATUSEHAT-2 tetap ABSENT sampai live sandbox
+   verification dengan kredensial resmi (External Credential Closure Campaign).
+2. SATUSEHAT-4A credential-independent: tidak butuh kredensial, TIDAK PERNAH
+   melakukan HTTP eksternal. GO-nya = internal readiness/data-quality saja.
+3. Diagnosis terstruktur TIDAK boleh dibuat dari tebakan free text; entry
+   eksplisit oleh otoritas update rekam medis; legacy RM tetap readable dan
+   tidak pernah di-backfill; SOAP-hidden rule tidak berubah.
+4. Master diagnosis (`mst_clinical_diagnoses`) ≠ SATUSEHAT mapping — mapping
+   Condition tetap lifecycle review klinis di `mst_satusehat_code_mappings`
+   (versioned, official-source untuk profile family, tidak pernah diedit in place).
+5. Readiness issues deterministic + idempotent (fingerprint
+   env|candidate|rule|entity|field); re-scan tidak menduplikasi; fixed ⇒
+   auto-resolve `revalidated`; regressed ⇒ reopen fingerprint yang sama.
+6. Hard issue TIDAK dapat di-waive dan TIDAK dapat diresolve manual selama
+   masih terdeteksi (resolve = revalidasi rule engine). Waiver butuh
+   `manage_satusehat_readiness_waivers` + alasan; waiver TIDAK PERNAH mengubah
+   verdict readiness kanonis.
+7. Remote IHS identifier tidak pernah difabrikasi — gap identifier selalu
+   berklasifikasi eksternal → BLOCKED_EXTERNAL_CREDENTIAL.
+8. Rehearsal (`satusehat:rehearse`) wajib `--synthetic`, dry-run default,
+   berhenti jujur di BLOCKED_EXTERNAL_CREDENTIAL, tidak pernah melaporkan
+   submitted/succeeded.
+9. Synthetic pack terisolasi di branch `SYN4A` + marker eksplisit; mappings
+   sintetis hanya keyed ke entity id sintetis (tidak pernah shared code);
+   reset hanya menghapus record kampanye — tidak pernah data normal, tidak
+   pernah `migrate:fresh`/`db:wipe`.
+10. Source drift setelah approval mencabut approval (core + dental + diagnosis
+    facts); fact key `diagnoses` di-omit saat kosong agar hash kandidat legacy
+    byte-stable.
+11. Branch scope workspace selalu server-side (`rmeEnabledIds`, fail-closed
+    empty ⇒ deny); request branch_id hanya mempersempit. NIK selalu masked/
+    absent di seluruh workspace, log, export, evidence.
+12. Command diagnostics bounded + read-only default (`--apply`/`--confirm`
+    untuk write); health klinis aplikasi tidak boleh gagal hanya karena
+    SATUSEHAT disabled/credential kosong.
+13. Tidak ada auto-send, tidak ada Send All, production guard tetap blocked;
+    aktivasi produksi = kampanye terpisah dengan approval eksplisit.

@@ -258,10 +258,21 @@
             @endcanany
 
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
-            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings'])
+            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses'])
                 <div>
                     <p class="menu-group-title pt-2">SATUSEHAT</p>
                     <div class="mt-1 space-y-1">
+                        {{-- SATUSEHAT-4A — operational readiness & data-quality workspace --}}
+                        @canany(['view_satusehat_readiness', 'manage_satusehat_remediation'])
+                            <a href="{{ route('satusehat.readiness.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.readiness.index') ? $linkActive : $linkIdle }}">Kesiapan Data</a>
+                            <a href="{{ route('satusehat.readiness.issues') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.readiness.issues*') ? $linkActive : $linkIdle }}">Isu Kualitas Data</a>
+                        @endcanany
+                        @can('manage_structured_diagnoses')
+                            <a href="{{ route('satusehat.diagnoses.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.diagnoses.*') ? $linkActive : $linkIdle }}">Master Diagnosis</a>
+                        @endcan
                         @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions'])
                             <a href="{{ route('satusehat.submissions.index') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.submissions.*') ? $linkActive : $linkIdle }}">Filter Pengiriman</a>

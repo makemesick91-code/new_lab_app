@@ -135,10 +135,12 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\MedicalRecord\Interfaces\ClinicalDiagnosisRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Policies\MedicalRecordPolicy;
+use App\Modules\MedicalRecord\Repositories\ClinicalDiagnosisRepository;
 use App\Modules\MedicalRecord\Repositories\MedicalRecordHandwritingRepository;
 use App\Modules\MedicalRecord\Repositories\MedicalRecordRepository;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
@@ -290,6 +292,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LocationProductMinimumRepositoryInterface::class => LocationProductMinimumRepository::class,
         // Sprint 20 Phase 1.2.2
         MedicalRecordRepositoryInterface::class => MedicalRecordRepository::class,
+        // SATUSEHAT-4A — structured diagnosis master
+        ClinicalDiagnosisRepositoryInterface::class => ClinicalDiagnosisRepository::class,
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,

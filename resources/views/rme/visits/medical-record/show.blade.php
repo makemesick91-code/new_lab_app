@@ -917,6 +917,11 @@
             </script>
         </x-ui.card>
 
+        {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
+        @include('rme.visits.medical-record.partials.structured-diagnoses', [
+            'canUpdate' => $canUpdate ?? (auth()->user()?->can('update', $medicalRecord) ?? false),
+        ])
+
         {{-- FIX-PRE-68-45 Scope A — relocated "Buku RM Pasien" sheet navigation
              (Sprint 64.0). Moved below the handwriting canvas so the doctor sees
              the handwritten RME first; sheet switching still works as before. --}}

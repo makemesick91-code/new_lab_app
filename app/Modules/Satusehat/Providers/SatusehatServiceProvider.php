@@ -10,17 +10,21 @@ use App\Modules\Satusehat\Gateways\OAuthClientCredentialsSatusehatTokenProvider;
 use App\Modules\Satusehat\Gateways\SatusehatGatewayInterface;
 use App\Modules\Satusehat\Gateways\SatusehatTokenProviderInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatCandidateRepositoryInterface;
+use App\Modules\Satusehat\Interfaces\SatusehatDataQualityIssueRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatIdentifierRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatMappingRepositoryInterface;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatCodeMapping;
+use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
 use App\Modules\Satusehat\Observers\SatusehatMedicalRecordObserver;
 use App\Modules\Satusehat\Observers\SatusehatVisitObserver;
 use App\Modules\Satusehat\Policies\SatusehatCandidatePolicy;
 use App\Modules\Satusehat\Policies\SatusehatCodeMappingPolicy;
+use App\Modules\Satusehat\Policies\SatusehatDataQualityIssuePolicy;
 use App\Modules\Satusehat\Policies\SatusehatEntityIdentifierPolicy;
 use App\Modules\Satusehat\Repositories\SatusehatCandidateRepository;
+use App\Modules\Satusehat\Repositories\SatusehatDataQualityIssueRepository;
 use App\Modules\Satusehat\Repositories\SatusehatIdentifierRepository;
 use App\Modules\Satusehat\Repositories\SatusehatMappingRepository;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
@@ -40,6 +44,8 @@ class SatusehatServiceProvider extends ServiceProvider
         $this->app->bind(SatusehatCandidateRepositoryInterface::class, SatusehatCandidateRepository::class);
         $this->app->bind(SatusehatMappingRepositoryInterface::class, SatusehatMappingRepository::class);
         $this->app->bind(SatusehatIdentifierRepositoryInterface::class, SatusehatIdentifierRepository::class);
+        // SATUSEHAT-4A — data-quality workspace.
+        $this->app->bind(SatusehatDataQualityIssueRepositoryInterface::class, SatusehatDataQualityIssueRepository::class);
 
         // OAuth token provider (SATUSEHAT-2). Resolvable even while disabled —
         // it only opens a socket when token() is called, and only the HTTP
@@ -75,6 +81,7 @@ class SatusehatServiceProvider extends ServiceProvider
         Gate::policy(SatusehatCandidate::class, SatusehatCandidatePolicy::class);
         Gate::policy(SatusehatCodeMapping::class, SatusehatCodeMappingPolicy::class);
         Gate::policy(SatusehatEntityIdentifier::class, SatusehatEntityIdentifierPolicy::class);
+        Gate::policy(SatusehatDataQualityIssue::class, SatusehatDataQualityIssuePolicy::class);
 
         // Post-commit, idempotent, network-silent candidate generation. Failure
         // never rolls back a clinical/billing transaction (see the observers).

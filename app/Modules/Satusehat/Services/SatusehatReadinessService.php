@@ -5,6 +5,7 @@ namespace App\Modules\Satusehat\Services;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\Satusehat\Interfaces\SatusehatIdentifierRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatMappingRepositoryInterface;
@@ -42,6 +43,7 @@ class SatusehatReadinessService
         $doctor = $visit->doctor;
         $mr = $visit->medicalRecord;
         $treatments = $this->collectTreatments($visit, $env);
+        $diagnoses = $this->collectDiagnoses($visit, $env);
 
         // G1 — visit not cancelled.
         if ($visit->status === ClinicVisit::STATUS_CANCELLED) {
@@ -124,10 +126,19 @@ class SatusehatReadinessService
             }
         }
 
-        // G10 — diagnosis mapping. The app stores no structured diagnosis
-        // (handwriting RM is primary). Condition is NOT emitted from an assumed
-        // source — surfaced as informational, never a fabricated Condition.
-        $this->info('diagnosis_not_structured', 'Diagnosis terstruktur belum tersedia — resource Condition tidak dibuat pada tahap ini.');
+        // G10 — structured diagnosis + Condition mapping (SATUSEHAT-4A).
+        // Handwriting RM stays primary; a record without an explicit structured
+        // diagnosis is surfaced as informational — Condition is NEVER fabricated
+        // from free text. When structured diagnoses exist, each needs an ACTIVE,
+        // clinically reviewed Condition mapping.
+        if ($diagnoses === []) {
+            $this->info('diagnosis_not_structured', 'Diagnosis terstruktur belum tersedia — resource Condition tidak dibuat pada tahap ini.');
+        } else {
+            $unmappedDx = collect($diagnoses)->filter(fn (array $d) => $d['mapping_code'] === null)->count();
+            if ($unmappedDx > 0) {
+                $this->incomplete('diagnosis_mapping_missing', "Terdapat {$unmappedDx} diagnosis tanpa mapping Condition SATUSEHAT aktif.");
+            }
+        }
 
         // G11 — treatment/procedure mapping.
         $unmapped = collect($treatments)->filter(fn (array $t) => $t['mapping_code'] === null)->count();
@@ -150,7 +161,7 @@ class SatusehatReadinessService
             'practitioner' => $practitionerIdentifier?->remote_identifier,
             'organization' => $organizationIdentifier?->remote_identifier,
             'location' => $locationIdentifier?->remote_identifier,
-        ]);
+        ], $diagnoses);
 
         return new SatusehatReadinessResult($this->rollup(), $this->reasons, $facts);
     }
@@ -191,13 +202,52 @@ class SatusehatReadinessService
     }
 
     /**
+     * Collect structured diagnoses for the visit's medical record + their
+     * ACTIVE Condition mapping. Read-only; empty for legacy records.
+     *
+     * @return list<array{diagnosis_id: int, code: ?string, role: string, mapping_code: ?string, mapping_version: ?int}>
+     */
+    private function collectDiagnoses(ClinicVisit $visit, string $env): array
+    {
+        $mr = $visit->medicalRecord;
+        if ($mr === null) {
+            return [];
+        }
+
+        $rows = [];
+        $diagnoses = MedicalRecordDiagnosis::query()
+            ->where('medical_record_id', $mr->id)
+            ->with('clinicalDiagnosis:id,code_system,code,display,status')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($diagnoses as $dx) {
+            $master = $dx->clinicalDiagnosis;
+            if ($master === null) {
+                continue;
+            }
+            $mapping = $this->mappings->findActive($env, 'diagnosis', (int) $master->id, (string) $master->code, SatusehatSubmissionItem::RESOURCE_CONDITION);
+            $rows[] = [
+                'diagnosis_id' => (int) $master->id,
+                'code' => $master->code !== null ? (string) $master->code : null,
+                'role' => (string) $dx->diagnosis_role,
+                'mapping_code' => $mapping?->target_code,
+                'mapping_version' => $mapping?->version,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
      * Deterministic clinical fingerprint input. NIK is hashed, never included raw.
      *
      * @param  list<array<string, mixed>>  $treatments
      * @param  array<string, ?string>  $identifiers
+     * @param  list<array<string, mixed>>  $diagnoses
      * @return array<string, mixed>
      */
-    private function buildFacts(ClinicVisit $visit, array $treatments, string $env, array $identifiers): array
+    private function buildFacts(ClinicVisit $visit, array $treatments, string $env, array $identifiers, array $diagnoses = []): array
     {
         $patient = $visit->patient;
         $mr = $visit->medicalRecord;
@@ -229,6 +279,9 @@ class SatusehatReadinessService
             ] : null,
             'treatments' => $treatments,
             'identifiers' => $identifiers,
+            // Key omitted entirely when no structured diagnosis exists so the
+            // source hash of every legacy candidate stays byte-stable.
+            ...($diagnoses !== [] ? ['diagnoses' => $diagnoses] : []),
         ];
     }
 

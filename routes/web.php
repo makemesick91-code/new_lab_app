@@ -58,7 +58,9 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\MedicalRecord\Controllers\ClinicalDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
+use App\Modules\MedicalRecord\Controllers\MedicalRecordDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\LegacyPatientImportController;
@@ -87,6 +89,8 @@ use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
 use App\Modules\Satusehat\Controllers\SatusehatDentalController;
 use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
+use App\Modules\Satusehat\Controllers\SatusehatReadinessController;
+use App\Modules\Satusehat\Controllers\SatusehatRemediationController;
 use App\Modules\Satusehat\Controllers\SatusehatSubmissionController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
@@ -346,7 +350,19 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             // Sprint 20 Phase 1.8 — Handwriting RME
             Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/handwriting', [MedicalRecordHandwritingController::class, 'store'])
                 ->name('visits.medical-record.handwriting.store');
+            // SATUSEHAT-4A — structured diagnosis entry (never auto-created;
+            // reuses MedicalRecordPolicy::update inside the controller).
+            Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses', [MedicalRecordDiagnosisController::class, 'store'])
+                ->name('visits.medical-record.diagnoses.store');
+            Route::delete('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}', [MedicalRecordDiagnosisController::class, 'destroy'])
+                ->name('visits.medical-record.diagnoses.destroy');
         });
+
+        // SATUSEHAT-4A — bounded ACTIVE-only master diagnosis autocomplete for
+        // the RME page (JSON; no PII).
+        Route::middleware('permission:view_clinic_visits|manage_clinic_visits')
+            ->get('diagnoses/search', [MedicalRecordDiagnosisController::class, 'search'])
+            ->name('diagnoses.search');
 
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder Foundation
         // Hotfix Sprint 60.8 — odontogram input is gated behind room assignment.
@@ -489,6 +505,38 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
         // SATUSEHAT-2 — verify an existing IHS identifier against the sandbox
         // (GET-by-id; refused while the integration is disabled).
         Route::post('identifiers/{identifier}/verify', [SatusehatIdentifierController::class, 'verify'])->name('identifiers.verify');
+    });
+
+    // SATUSEHAT-4A — credential-independent operational readiness & data-quality
+    // workspace. Read side (dashboard + issues) is view-or-manage; every write
+    // action needs the remediation permission; waivers need their own
+    // permission. Branch scope resolves server-side — never from the request.
+    Route::middleware('permission:view_satusehat_readiness|manage_satusehat_remediation')->group(function () {
+        Route::get('readiness', [SatusehatReadinessController::class, 'index'])->name('readiness.index');
+        Route::get('readiness/issues', [SatusehatReadinessController::class, 'issues'])->name('readiness.issues');
+        Route::get('readiness/issues/{issue}', [SatusehatReadinessController::class, 'issueShow'])->name('readiness.issues.show');
+    });
+
+    Route::middleware('permission:manage_satusehat_remediation')->group(function () {
+        Route::post('readiness/recalculate', [SatusehatReadinessController::class, 'recalculate'])->name('readiness.recalculate');
+        Route::post('readiness/issues/{issue}/acknowledge', [SatusehatRemediationController::class, 'acknowledge'])->name('readiness.issues.acknowledge');
+        Route::post('readiness/issues/{issue}/assign', [SatusehatRemediationController::class, 'assign'])->name('readiness.issues.assign');
+        Route::post('readiness/issues/{issue}/start', [SatusehatRemediationController::class, 'start'])->name('readiness.issues.start');
+        Route::post('readiness/issues/{issue}/request-review', [SatusehatRemediationController::class, 'requestReview'])->name('readiness.issues.request-review');
+        Route::post('readiness/issues/{issue}/resolve', [SatusehatRemediationController::class, 'resolve'])->name('readiness.issues.resolve');
+        Route::post('readiness/issues/{issue}/reopen', [SatusehatRemediationController::class, 'reopen'])->name('readiness.issues.reopen');
+    });
+
+    Route::middleware('permission:manage_satusehat_readiness_waivers')
+        ->post('readiness/issues/{issue}/waive', [SatusehatRemediationController::class, 'waive'])
+        ->name('readiness.issues.waive');
+
+    // SATUSEHAT-4A — master clinical diagnosis governance (clinical reference
+    // data; SATUSEHAT mapping stays a separate reviewed lifecycle).
+    Route::middleware('permission:manage_structured_diagnoses')->group(function () {
+        Route::get('diagnoses', [ClinicalDiagnosisController::class, 'index'])->name('diagnoses.index');
+        Route::post('diagnoses', [ClinicalDiagnosisController::class, 'store'])->name('diagnoses.store');
+        Route::post('diagnoses/{diagnosis}/deprecate', [ClinicalDiagnosisController::class, 'deprecate'])->name('diagnoses.deprecate');
     });
 });
 

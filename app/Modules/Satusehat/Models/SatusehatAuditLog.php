@@ -79,6 +79,33 @@ class SatusehatAuditLog extends Model
 
     public const EVENT_IDENTIFIER_VERIFIED = 'identifier_verified';
 
+    // SATUSEHAT-4A — data-quality workspace + synthetic rehearsal events.
+    public const EVENT_DATA_QUALITY_SCANNED = 'data_quality_scanned';
+
+    public const EVENT_ISSUE_ACKNOWLEDGED = 'issue_acknowledged';
+
+    public const EVENT_ISSUE_ASSIGNED = 'issue_assigned';
+
+    public const EVENT_ISSUE_REMEDIATION_STARTED = 'issue_remediation_started';
+
+    public const EVENT_ISSUE_CLINICAL_REVIEW_REQUESTED = 'issue_clinical_review_requested';
+
+    public const EVENT_ISSUE_RESOLVED = 'issue_resolved';
+
+    public const EVENT_ISSUE_WAIVED = 'issue_waived';
+
+    public const EVENT_ISSUE_REOPENED = 'issue_reopened';
+
+    public const EVENT_DIAGNOSIS_RECORDED = 'diagnosis_recorded';
+
+    public const EVENT_DIAGNOSIS_REMOVED = 'diagnosis_removed';
+
+    public const EVENT_SYNTHETIC_SEEDED = 'synthetic_seeded';
+
+    public const EVENT_SYNTHETIC_RESET = 'synthetic_reset';
+
+    public const EVENT_REHEARSAL_RUN = 'rehearsal_run';
+
     protected $fillable = [
         'environment',
         'branch_id',

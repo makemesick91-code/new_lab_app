@@ -158,6 +158,13 @@ class PermissionSeeder extends Seeder
         'send_satusehat_submissions',
         'manage_satusehat_mappings',
         'manage_satusehat_settings',
+        // SATUSEHAT-4A — credential-independent operational readiness &
+        // data-quality workspace. Waivers deliberately have their own
+        // permission (hard issues can never be waived at all).
+        'view_satusehat_readiness',
+        'manage_satusehat_remediation',
+        'manage_satusehat_readiness_waivers',
+        'manage_structured_diagnoses',
     ];
 
     public function run(): void

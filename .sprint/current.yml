@@ -1,25 +1,25 @@
-# Active sprint manifest — SATUSEHAT-3
+# Active sprint manifest — SATUSEHAT-4A
 # Validated by: php artisan sprint:manifest-check
 
-id: SATUSEHAT-3
+id: SATUSEHAT-4A
 type: MODULE_SPRINT
 module: Satusehat
-title: "Dental Use-Case Expansion & Production Readiness (credential-independent, external submission disabled, production blocked)"
+title: "Credential-Independent Operational Readiness & Data Quality Closure (external submission disabled, production blocked, SATUSEHAT-2 stays WATCH)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # dental snapshot/builders/conformance/readiness services, production guard, 5 read-only commands, dental preview UI
-schema_change: true             # 1 additive migration (mapping governance fields + candidate dental fields)
-frontend_change: true           # coverage + production-readiness pages, dental preview panel, mapping verify form — Tailwind rebuild
-security_impact: true           # reuses SATUSEHAT permissions; adds mapping verify + coverage/production-readiness gated routes (no new permission)
-branch_isolation_impact: true   # dental readiness/preview scoped via existing RME-enabled branch scope; no new cross-branch surface
+runtime_change: true            # data-quality rule engine, remediation workspace, structured diagnosis, synthetic rehearsal, 7 commands
+schema_change: true             # 3 additive tables (clinical diagnoses master, MR diagnoses, data-quality issues)
+frontend_change: true           # readiness dashboard, issue workspace, diagnosis master page, RME diagnosis card — Tailwind rebuild
+security_impact: true           # 4 new permissions, new policy, new gated routes; branch isolation fail-closed
+branch_isolation_impact: true   # issue/workspace scope via existing RME-enabled branch set; empty set denies
 ledger_impact: false            # no inventory ledger / billing / payment behavior change
 
 deploy_required: true
-browser_required: true          # coverage + production-readiness + submission preview smoke
+browser_required: true          # readiness dashboard + issue workspace + RME diagnosis card smoke
 
 test_profiles:
   - rme
   - access_control
   - deployment
 
-go_tag: satusehat-3-dental-use-case-expansion-production-readiness-go
+go_tag: satusehat-4a-credential-independent-operational-readiness-data-quality-closure-go
