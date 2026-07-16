@@ -116,6 +116,10 @@ class RoleSeeder extends Seeder
             'manage_rme_billing',
             // Hotfix 66.2.6 — Admin Klinik may view/export/print patient reports only
             'view_rme_patient_reports',
+            // SATUSEHAT-4A — limited branch-scoped remediation (patient data
+            // completeness) — no waiver, no mapping governance, no send.
+            'view_satusehat_readiness',
+            'manage_satusehat_remediation',
         ],
         'Technician' => [
             'view dashboard',
@@ -246,6 +250,8 @@ class RoleSeeder extends Seeder
             // filter: view + review only (no send, no mapping/settings governance).
             'view_satusehat_submissions',
             'review_satusehat_submissions',
+            // SATUSEHAT-4A — executive read-only view of operational readiness.
+            'view_satusehat_readiness',
         ],
         'Kasir' => [
             'view dashboard',
@@ -319,6 +325,12 @@ class RoleSeeder extends Seeder
             'send_satusehat_submissions',
             'manage_satusehat_mappings',
             'manage_satusehat_settings',
+            // SATUSEHAT-4A — RME operational owner of the readiness/data-quality
+            // workspace: remediation + waivers + structured diagnosis master.
+            'view_satusehat_readiness',
+            'manage_satusehat_remediation',
+            'manage_satusehat_readiness_waivers',
+            'manage_structured_diagnoses',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

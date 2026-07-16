@@ -122,6 +122,15 @@ class MedicalRecord extends Model
     }
 
     /**
+     * SATUSEHAT-4A — structured diagnoses (never auto-created; legacy records
+     * simply have none and stay fully readable).
+     */
+    public function diagnoses(): HasMany
+    {
+        return $this->hasMany(MedicalRecordDiagnosis::class)->orderBy('diagnosis_role')->orderBy('id');
+    }
+
+    /**
      * Sprint 60 — unified, ordered RM page list for rendering previews and the
      * page editor. Index 0 is always Page 1 (the legacy read-through row, even
      * when empty so the doctor can write the first page); subsequent entries are

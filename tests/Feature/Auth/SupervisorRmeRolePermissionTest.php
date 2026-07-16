@@ -24,6 +24,19 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'view_rme_payment_reports',
     // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
     'view_doctor_performance_report',
+    // SATUSEHAT-1 — RME operational owner of the controlled submission filter
+    // + mapping/identifier governance. (The exact-list pin below was stale
+    // since SATUSEHAT-1; repinned in SATUSEHAT-4A.)
+    'view_satusehat_submissions',
+    'review_satusehat_submissions',
+    'send_satusehat_submissions',
+    'manage_satusehat_mappings',
+    'manage_satusehat_settings',
+    // SATUSEHAT-4A — readiness/data-quality workspace ownership.
+    'view_satusehat_readiness',
+    'manage_satusehat_remediation',
+    'manage_satusehat_readiness_waivers',
+    'manage_structured_diagnoses',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

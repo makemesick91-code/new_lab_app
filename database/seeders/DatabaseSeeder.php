@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
             BranchSeeder::class,
             RmeBranchSeeder::class,
             PermissionSeeder::class,
+            // SATUSEHAT-4A — ICD-10 dental clinical master reference (idempotent).
+            ClinicalDiagnosisSeeder::class,
             RoleSeeder::class,
             AdminUserSeeder::class,
             MasterDataSeeder::class,

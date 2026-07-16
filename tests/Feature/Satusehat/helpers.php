@@ -1,13 +1,18 @@
 <?php
 
+use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatCodeMapping;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
+use App\Modules\Satusehat\Services\DataQuality\SatusehatDataQualityIssueService;
 use App\Modules\Satusehat\Services\SatusehatCandidateService;
 
 if (! function_exists('ssMakeVisit')) {
@@ -133,6 +138,67 @@ if (! function_exists('ssOdontogram')) {
             'summary_notes' => $summary,
             'tooth_map_payload' => $payload,
         ]);
+    }
+}
+
+if (! function_exists('ssDiagnosis')) {
+    /**
+     * SATUSEHAT-4A — attach a structured diagnosis (with optional ACTIVE
+     * Condition mapping) to a visit's medical record. Synthetic fixture only.
+     */
+    function ssDiagnosis(array $ctx, string $code = 'K02.9', string $role = 'primary', bool $mapped = false): MedicalRecordDiagnosis
+    {
+        $master = ClinicalDiagnosis::query()->firstOrCreate(
+            ['code_system' => 'ICD-10', 'code' => $code],
+            ['display' => 'Fixture diagnosis '.$code, 'status' => ClinicalDiagnosis::STATUS_ACTIVE],
+        );
+
+        if ($mapped) {
+            SatusehatCodeMapping::query()->firstOrCreate(
+                [
+                    'environment' => 'sandbox',
+                    'local_entity_type' => 'diagnosis',
+                    'local_entity_id' => $master->id,
+                    'local_code' => $code,
+                    'target_resource_type' => 'Condition',
+                    'status' => SatusehatCodeMapping::STATUS_ACTIVE,
+                ],
+                [
+                    'terminology_system' => 'http://hl7.org/fhir/sid/icd-10',
+                    'target_code' => $code,
+                    'target_display' => 'Fixture condition '.$code,
+                    'version' => 1,
+                    'effective_date' => now()->toDateString(),
+                ],
+            );
+        }
+
+        return MedicalRecordDiagnosis::create([
+            'medical_record_id' => $ctx['mr']->id,
+            'clinic_visit_id' => $ctx['visit']->id,
+            'branch_id' => $ctx['branch']->id,
+            'clinical_diagnosis_id' => $master->id,
+            'diagnosis_role' => $role,
+            'diagnosed_at' => now(),
+        ]);
+    }
+}
+
+if (! function_exists('ssSyncIssues')) {
+    /**
+     * SATUSEHAT-4A — generate candidate (if needed) + run the rule engine.
+     *
+     * @return array{candidate: SatusehatCandidate, summary: array<string, int>}
+     */
+    function ssSyncIssues(array $ctx, ?User $actor = null): array
+    {
+        $candidate = ssService()->generateForVisit($ctx['visit']->fresh(['medicalRecord']))
+            ?? SatusehatCandidate::query()->where('clinic_visit_id', $ctx['visit']->id)->firstOrFail();
+
+        $summary = app(SatusehatDataQualityIssueService::class)
+            ->syncForCandidate($candidate, $actor);
+
+        return ['candidate' => $candidate->fresh(), 'summary' => $summary];
     }
 }
 
