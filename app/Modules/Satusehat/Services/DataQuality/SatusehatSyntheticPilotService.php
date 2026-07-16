@@ -18,6 +18,8 @@ use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatCodeMapping;
 use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
+use App\Modules\Satusehat\Models\SatusehatSubmissionBatch;
+use App\Modules\Satusehat\Models\SatusehatSubmissionItem;
 use App\Modules\Satusehat\Services\SatusehatAuditLogger;
 use App\Modules\Satusehat\Services\SatusehatCandidateService;
 use App\Modules\Treatment\Models\Treatment;
@@ -307,11 +309,34 @@ class SatusehatSyntheticPilotService
         $counts = [];
 
         DB::transaction(function () use ($branch, $cfg, &$counts) {
-            $visitIds = ClinicVisit::query()->where('branch_id', $branch->id)->pluck('id');
+            // Every delete below is keyed on the campaign MARKERS, never on the
+            // branch alone. Fail-closed stray guard first: if anything
+            // non-synthetic ever landed in the SYN4A branch (e.g. an operator
+            // accidentally registered a real patient there), the reset aborts
+            // and deletes nothing.
+            $visitIds = ClinicVisit::query()
+                ->where('branch_id', $branch->id)
+                ->where('visit_number', 'like', 'SYN4A-%')
+                ->pluck('id');
+
+            $strays = ClinicVisit::query()->where('branch_id', $branch->id)->whereNotIn('id', $visitIds)->exists()
+                || Patient::query()->where('branch_id', $branch->id)->where('medical_record_number', 'not like', 'SYN4A-%')->exists()
+                || ClinicRoom::query()->where('branch_id', $branch->id)->where('code', 'not like', 'SYN4A-%')->exists();
+            if ($strays) {
+                throw new \RuntimeException('Reset dibatalkan: ada data NON-SINTETIS di cabang SYN4A — bersihkan/migrasikan manual terlebih dahulu.');
+            }
+
             $candidateIds = SatusehatCandidate::query()->whereIn('clinic_visit_id', $visitIds)->pluck('id');
 
             $counts['issues'] = SatusehatDataQualityIssue::query()
                 ->whereIn('satusehat_candidate_id', $candidateIds)->delete();
+            // A rehearsal with --prepare-batch may have created LOCAL submission
+            // rows (FK restrictOnDelete) — remove them first, scoped to the
+            // synthetic candidates only.
+            $counts['submission_items'] = SatusehatSubmissionItem::query()
+                ->whereIn('satusehat_candidate_id', $candidateIds)->forceDelete();
+            $counts['submission_batches'] = SatusehatSubmissionBatch::query()
+                ->where('branch_id', $branch->id)->forceDelete();
             $counts['candidates'] = SatusehatCandidate::query()->whereKey($candidateIds)->forceDelete();
 
             $counts['invoice_items'] = RmeInvoiceItem::query()

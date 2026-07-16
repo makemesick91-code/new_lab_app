@@ -22,6 +22,15 @@ class ClinicalDiagnosisService
         $codeSystem = trim((string) ($data['code_system'] ?? 'ICD-10'));
         $code = trim((string) $data['code']);
 
+        // The synthetic rehearsal code system is reserved — its entries are
+        // hidden from search and removed by the campaign reset.
+        $reserved = (string) config('satusehat_data_quality.synthetic.diagnosis_code_system');
+        if (strcasecmp($codeSystem, $reserved) === 0) {
+            throw ValidationException::withMessages([
+                'code_system' => 'Code system ini dicadangkan untuk kampanye rehearsal sintetis.',
+            ]);
+        }
+
         return DB::transaction(function () use ($codeSystem, $code, $data, $actor) {
             $existing = ClinicalDiagnosis::withTrashed()
                 ->where('code_system', $codeSystem)

@@ -9,6 +9,7 @@ use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
 use App\Modules\Satusehat\Requests\AssignSatusehatIssueRequest;
 use App\Modules\Satusehat\Requests\WaiveSatusehatIssueRequest;
 use App\Modules\Satusehat\Services\DataQuality\SatusehatRemediationService;
+use App\Modules\Satusehat\Support\SatusehatWorkspaceScope;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +27,7 @@ class SatusehatRemediationController extends Controller
         private readonly SatusehatRemediationService $remediation,
         private readonly SatusehatDataQualityIssueRepositoryInterface $issues,
         private readonly BranchService $branches,
+        private readonly SatusehatWorkspaceScope $scope,
     ) {}
 
     public function acknowledge(Request $request, int $issue): RedirectResponse
@@ -101,7 +103,7 @@ class SatusehatRemediationController extends Controller
 
     private function resolve404(int $issueId): SatusehatDataQualityIssue
     {
-        $record = $this->issues->findInBranches($issueId, $this->branches->rmeEnabledIds());
+        $record = $this->issues->findInBranches($issueId, $this->scope->branchIdsFor(request()->user()));
         abort_if($record === null, 404);
 
         return $record;

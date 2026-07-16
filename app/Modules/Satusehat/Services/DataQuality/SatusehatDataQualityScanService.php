@@ -37,7 +37,8 @@ class SatusehatDataQualityScanService
 
         $default = (int) config('satusehat_data_quality.scan.default_batch_size', 200);
         $max = (int) config('satusehat_data_quality.scan.max_batch_size', 1000);
-        $limit = min($limit ?? $default, $max);
+        // Clamp both ends — a zero/negative limit must never disable the cap.
+        $limit = max(1, min($limit ?? $default, $max));
 
         $query = SatusehatCandidate::query()
             ->when($branchIds === [], fn ($q) => $q->whereRaw('1 = 0'))

@@ -27,9 +27,10 @@ class SatusehatDataQualityIssueRepository implements SatusehatDataQualityIssueRe
             ->when($this->int($filters, 'doctor_id'), fn (Builder $q, $v) => $q->where('doctor_id', $v))
             ->when($this->int($filters, 'assigned_to'), fn (Builder $q, $v) => $q->where('assigned_to', $v))
             ->when($this->str($filters, 'search'), function (Builder $q, $v) {
-                $q->whereHas('patient', function (Builder $p) use ($v) {
-                    $p->where('name', 'like', "%{$v}%")
-                        ->orWhere('medical_record_number', 'like', "%{$v}%");
+                $escaped = addcslashes($v, '\\%_');
+                $q->whereHas('patient', function (Builder $p) use ($escaped) {
+                    $p->where('name', 'like', "%{$escaped}%")
+                        ->orWhere('medical_record_number', 'like', "%{$escaped}%");
                 });
             })
             ->when($this->str($filters, 'detected_from'), fn (Builder $q, $v) => $q->whereDate('last_detected_at', '>=', $v))

@@ -194,14 +194,16 @@ class SatusehatOperationalReadinessService
         $rmeBranches = $this->branches->listRmeEnabled();
         $branchIds = $rmeBranches->pluck('id')->map(fn ($id) => (int) $id)->all();
 
-        $identifierStatus = function (string $entityType, string $localType, int $localId) use ($env): string {
-            $identifier = SatusehatEntityIdentifier::query()
-                ->where('environment', $env)
-                ->where('entity_type', $entityType)
-                ->where('local_entity_type', $localType)
-                ->where('local_entity_id', $localId)
-                ->where('status', SatusehatEntityIdentifier::STATUS_ACTIVE)
-                ->first(['id', 'verified_at']);
+        // One query per entity type (batched keyed lookup — no per-row query).
+        $identifierMap = SatusehatEntityIdentifier::query()
+            ->where('environment', $env)
+            ->whereIn('entity_type', [SatusehatEntityIdentifier::ENTITY_ORGANIZATION, SatusehatEntityIdentifier::ENTITY_LOCATION])
+            ->where('status', SatusehatEntityIdentifier::STATUS_ACTIVE)
+            ->get(['entity_type', 'local_entity_type', 'local_entity_id', 'verified_at'])
+            ->keyBy(fn ($row) => $row->entity_type.'|'.$row->local_entity_type.'|'.$row->local_entity_id);
+
+        $identifierStatus = function (string $entityType, string $localType, int $localId) use ($identifierMap): string {
+            $identifier = $identifierMap->get($entityType.'|'.$localType.'|'.$localId);
 
             return match (true) {
                 $identifier === null => 'awaiting_external_identifier',

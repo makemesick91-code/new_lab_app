@@ -11,7 +11,7 @@ class ClinicalDiagnosisRepository implements ClinicalDiagnosisRepositoryInterfac
 {
     public function search(string $term, int $limit = 20): Collection
     {
-        $normalized = mb_strtolower(trim($term));
+        $normalized = addcslashes(mb_strtolower(trim($term)), '\\%_');
         if ($normalized === '') {
             return collect();
         }
@@ -26,7 +26,7 @@ class ClinicalDiagnosisRepository implements ClinicalDiagnosisRepositoryInterfac
 
     public function paginate(array $filters, int $perPage = 20): LengthAwarePaginator
     {
-        $search = is_string($filters['search'] ?? null) ? mb_strtolower(trim($filters['search'])) : '';
+        $search = is_string($filters['search'] ?? null) ? addcslashes(mb_strtolower(trim($filters['search'])), '\\%_') : '';
         $status = is_string($filters['status'] ?? null) ? trim($filters['status']) : '';
 
         return ClinicalDiagnosis::query()

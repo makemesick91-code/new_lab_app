@@ -101,12 +101,22 @@ class SatusehatDataQualityIssueService
                 $waiverExpired = $issue->status === SatusehatDataQualityIssue::STATUS_WAIVED
                     && $issue->waiver_expires_at !== null
                     && $issue->waiver_expires_at->isPast();
+                // A waived issue that ESCALATES to hard must reopen — hard
+                // defects can never stay silenced by an earlier soft waiver.
+                $waiverEscalated = $issue->status === SatusehatDataQualityIssue::STATUS_WAIVED
+                    && $draft['severity'] === SatusehatDataQualityIssue::SEVERITY_HARD;
 
-                if ($issue->status === SatusehatDataQualityIssue::STATUS_RESOLVED || $waiverExpired) {
+                if ($issue->status === SatusehatDataQualityIssue::STATUS_RESOLVED || $waiverExpired || $waiverEscalated) {
                     $updates['status'] = SatusehatDataQualityIssue::STATUS_REOPENED;
                     $updates['resolved_at'] = null;
                     $updates['resolution_type'] = null;
                     $updates['resolved_by'] = null;
+                    if ($waiverExpired || $waiverEscalated) {
+                        $updates['waived_by'] = null;
+                        $updates['waived_at'] = null;
+                        $updates['waiver_reason'] = null;
+                        $updates['waiver_expires_at'] = null;
+                    }
                     $summary['reopened']++;
                 }
 

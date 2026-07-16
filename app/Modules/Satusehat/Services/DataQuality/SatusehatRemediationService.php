@@ -77,20 +77,22 @@ class SatusehatRemediationService
         $candidate = $issue->candidate()->firstOrFail();
         $this->issues->syncForCandidate($candidate, $actor);
 
-        $fresh = SatusehatDataQualityIssue::query()->findOrFail($issue->id);
+        return DB::transaction(function () use ($issue, $actor) {
+            $fresh = SatusehatDataQualityIssue::query()->lockForUpdate()->findOrFail($issue->id);
 
-        if ($fresh->isOpen()) {
-            throw ValidationException::withMessages([
-                'issue' => 'Isu masih terdeteksi oleh rule engine — perbaiki data sumbernya terlebih dahulu.',
-            ]);
-        }
+            if ($fresh->isOpen()) {
+                throw ValidationException::withMessages([
+                    'issue' => 'Isu masih terdeteksi oleh rule engine — perbaiki data sumbernya terlebih dahulu.',
+                ]);
+            }
 
-        if ($fresh->status === SatusehatDataQualityIssue::STATUS_RESOLVED) {
-            $fresh->update(['resolution_type' => 'manual', 'resolved_by' => $actor->id]);
-            $this->log($fresh, SatusehatAuditLog::EVENT_ISSUE_RESOLVED, $actor);
-        }
+            if ($fresh->status === SatusehatDataQualityIssue::STATUS_RESOLVED) {
+                $fresh->update(['resolution_type' => 'manual', 'resolved_by' => $actor->id]);
+                $this->log($fresh, SatusehatAuditLog::EVENT_ISSUE_RESOLVED, $actor);
+            }
 
-        return $fresh;
+            return $fresh;
+        });
     }
 
     /**
