@@ -265,6 +265,8 @@
                         @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions'])
                             <a href="{{ route('satusehat.submissions.index') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.submissions.*') ? $linkActive : $linkIdle }}">Filter Pengiriman</a>
+                            <a href="{{ route('satusehat.dental.coverage') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.dental.*') ? $linkActive : $linkIdle }}">Cakupan Gigi</a>
                         @endcanany
                         @can('manage_satusehat_mappings')
                             <a href="{{ route('satusehat.mappings.index') }}"
@@ -273,6 +275,8 @@
                         @can('manage_satusehat_settings')
                             <a href="{{ route('satusehat.identifiers.index') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.identifiers.*') ? $linkActive : $linkIdle }}">Identifier IHS</a>
+                            <a href="{{ route('satusehat.production-readiness') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.production-readiness') ? $linkActive : $linkIdle }}">Kesiapan Produksi</a>
                         @endcan
                     </div>
                 </div>

@@ -105,6 +105,20 @@ class SatusehatMappingController extends Controller
         return back()->with('success', 'Mapping direview.');
     }
 
+    public function verify(Request $request, SatusehatCodeMapping $mapping): RedirectResponse
+    {
+        $this->authorize('review', $mapping);
+
+        $data = $request->validate([
+            'official_source' => ['required', 'string', 'max:500'],
+            'official_source_version' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $this->service->verify($mapping, $data, Auth::user());
+
+        return back()->with('success', 'Mapping diverifikasi terhadap sumber resmi.');
+    }
+
     public function activate(SatusehatCodeMapping $mapping): RedirectResponse
     {
         $this->authorize('activate', $mapping);

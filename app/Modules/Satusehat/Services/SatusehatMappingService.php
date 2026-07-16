@@ -38,9 +38,15 @@ class SatusehatMappingService
                 'target_code' => $data['target_code'] ?? null,
                 'target_display' => $data['target_display'] ?? null,
                 'effective_date' => $data['effective_date'] ?? null,
+                'effective_to' => $data['effective_to'] ?? null,
                 'status' => SatusehatCodeMapping::STATUS_DRAFT,
                 'version' => $this->nextVersion($data),
                 'notes' => $data['notes'] ?? null,
+                // SATUSEHAT-3 terminology governance provenance.
+                'profile_family' => $data['profile_family'] ?? null,
+                'official_source' => $data['official_source'] ?? null,
+                'official_source_version' => $data['official_source_version'] ?? null,
+                'mapping_confidence' => $data['mapping_confidence'] ?? null,
                 'created_by' => $actor->id,
             ]);
 
@@ -68,8 +74,41 @@ class SatusehatMappingService
             'target_code' => $data['target_code'] ?? null,
             'target_display' => $data['target_display'] ?? null,
             'effective_date' => $data['effective_date'] ?? null,
+            'effective_to' => $data['effective_to'] ?? null,
             'notes' => $data['notes'] ?? null,
+            'profile_family' => $data['profile_family'] ?? null,
+            'official_source' => $data['official_source'] ?? null,
+            'official_source_version' => $data['official_source_version'] ?? null,
+            'mapping_confidence' => $data['mapping_confidence'] ?? null,
         ], fn ($v) => $v !== null));
+
+        return $mapping->refresh();
+    }
+
+    /**
+     * Human verification stamp — required before a governed profile-family
+     * mapping may be activated. Records the official source + verifier.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function verify(SatusehatCodeMapping $mapping, array $data, User $actor): SatusehatCodeMapping
+    {
+        $source = trim((string) ($data['official_source'] ?? $mapping->official_source ?? ''));
+        if ($source === '') {
+            throw ValidationException::withMessages([
+                'official_source' => 'Sumber resmi wajib diisi sebelum verifikasi.',
+            ]);
+        }
+
+        $mapping->update([
+            'official_source' => $source,
+            'official_source_version' => $data['official_source_version'] ?? $mapping->official_source_version,
+            'verified_at' => now(),
+            'verified_by' => $actor->id,
+        ]);
+
+        $this->audit->log('code_mapping', $mapping->id, SatusehatAuditLog::EVENT_MAPPING_REVIEWED,
+            'Mapping diverifikasi terhadap sumber resmi', ['version' => $mapping->version], null, $actor);
 
         return $mapping->refresh();
     }
@@ -86,8 +125,24 @@ class SatusehatMappingService
 
     public function activate(SatusehatCodeMapping $mapping, User $actor): SatusehatCodeMapping
     {
+        // SATUSEHAT-3 terminology governance: a mapping belonging to a governed
+        // profile family (e.g. "dental") may only be ACTIVATED once it carries
+        // an official source citation AND a human verification stamp. This
+        // prevents an unverified/guessed clinical code from ever going active.
+        if ($mapping->isProfileFamilyGoverned() && ! $mapping->hasOfficialProvenance()) {
+            throw ValidationException::withMessages([
+                'status' => 'Mapping profil klinis wajib mencantumkan sumber resmi dan diverifikasi sebelum diaktifkan.',
+            ]);
+        }
+
         return DB::transaction(function () use ($mapping, $actor) {
             $locked = SatusehatCodeMapping::query()->lockForUpdate()->findOrFail($mapping->id);
+
+            if ($locked->isProfileFamilyGoverned() && ! $locked->hasOfficialProvenance()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Mapping profil klinis wajib mencantumkan sumber resmi dan diverifikasi sebelum diaktifkan.',
+                ]);
+            }
 
             // Single-active: deprecate any currently-active mapping for the key.
             SatusehatCodeMapping::query()

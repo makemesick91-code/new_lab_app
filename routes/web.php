@@ -84,6 +84,7 @@ use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
+use App\Modules\Satusehat\Controllers\SatusehatDentalController;
 use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
 use App\Modules\Satusehat\Controllers\SatusehatSubmissionController;
@@ -459,6 +460,9 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
         Route::get('batches', [SatusehatSubmissionController::class, 'batchIndex'])->name('batches.index');
         Route::get('batches/{batch}', [SatusehatSubmissionController::class, 'batchShow'])->name('batches.show');
         Route::post('batches/{batch}/queue', [SatusehatSubmissionController::class, 'queue'])->name('batches.queue');
+
+        // SATUSEHAT-3 — read-only dental coverage matrix (governance visibility).
+        Route::get('dental/coverage', [SatusehatDentalController::class, 'coverage'])->name('dental.coverage');
     });
 
     Route::middleware('permission:manage_satusehat_mappings')->group(function () {
@@ -467,8 +471,15 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
         Route::post('mappings', [SatusehatMappingController::class, 'store'])->name('mappings.store');
         Route::get('mappings/{mapping}', [SatusehatMappingController::class, 'show'])->name('mappings.show');
         Route::post('mappings/{mapping}/review', [SatusehatMappingController::class, 'review'])->name('mappings.review');
+        // SATUSEHAT-3 — human verification stamp (required before profile-family activate).
+        Route::post('mappings/{mapping}/verify', [SatusehatMappingController::class, 'verify'])->name('mappings.verify');
         Route::post('mappings/{mapping}/activate', [SatusehatMappingController::class, 'activate'])->name('mappings.activate');
         Route::post('mappings/{mapping}/deprecate', [SatusehatMappingController::class, 'deprecate'])->name('mappings.deprecate');
+    });
+
+    Route::middleware('permission:manage_satusehat_settings')->group(function () {
+        // SATUSEHAT-3 — read-only production-readiness (production stays blocked).
+        Route::get('production-readiness', [SatusehatDentalController::class, 'productionReadiness'])->name('production-readiness');
     });
 
     Route::middleware('permission:manage_satusehat_settings')->group(function () {

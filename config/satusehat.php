@@ -113,6 +113,22 @@ return [
     // SATUSEHAT work isolated from clinical/notification queues).
     'queue' => env('SATUSEHAT_QUEUE', 'satusehat'),
 
+    // ---------------------------------------------------------------------
+    // SATUSEHAT-3 — Production activation guard (permanent).
+    //
+    // Production submission is a SEPARATE, explicitly-gated future sprint. The
+    // production adapter can only ever activate when EVERY guard condition in
+    // SatusehatProductionActivationGuard passes; in SATUSEHAT-3 they all fail
+    // by design and tests assert production cannot activate. None of these may
+    // be set on the VPS pilot.
+    // ---------------------------------------------------------------------
+    'production_enabled' => (bool) env('SATUSEHAT_PRODUCTION_ENABLED', false),
+    'production_approved' => (bool) env('SATUSEHAT_PRODUCTION_APPROVED', false),
+    'production_approval_reference' => env('SATUSEHAT_PRODUCTION_APPROVAL_REFERENCE', ''),
+    // Set to true ONLY after a real, evidenced sandbox round-trip (the
+    // SATUSEHAT-2 GO gate). Mock/hermetic tests never count as sandbox proof.
+    'sandbox_verified' => (bool) env('SATUSEHAT_SANDBOX_VERIFIED', false),
+
     // Default runtime gateway. Overridden to a real adapter ONLY in SATUSEHAT-2,
     // and only when both `enabled` is true and the config validates.
     'default_gateway' => DisabledSatusehatGateway::class,

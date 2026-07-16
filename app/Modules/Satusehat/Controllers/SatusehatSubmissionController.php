@@ -11,6 +11,7 @@ use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatSubmissionBatch;
 use App\Modules\Satusehat\Requests\BulkSatusehatSubmissionRequest;
 use App\Modules\Satusehat\Requests\ExcludeSatusehatCandidateRequest;
+use App\Modules\Satusehat\Services\Dental\SatusehatDentalResourceBuilder;
 use App\Modules\Satusehat\Services\SatusehatAuditLogger;
 use App\Modules\Satusehat\Services\SatusehatCandidateService;
 use App\Modules\Satusehat\Services\SatusehatFhirPreviewBuilder;
@@ -55,6 +56,7 @@ class SatusehatSubmissionController extends Controller
             'doctors' => Doctor::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
             'readinessStatuses' => SatusehatCandidate::READINESS_STATUSES,
             'reviewStatuses' => SatusehatCandidate::REVIEW_STATUSES,
+            'dentalReadinessStatuses' => SatusehatCandidate::DENTAL_READINESS_STATUSES,
             'environment' => (string) config('satusehat.environment'),
             'integrationEnabled' => (bool) config('satusehat.enabled'),
         ]);
@@ -82,12 +84,13 @@ class SatusehatSubmissionController extends Controller
         ]);
     }
 
-    public function preview(SatusehatCandidate $candidate): View
+    public function preview(SatusehatCandidate $candidate, SatusehatDentalResourceBuilder $dental): View
     {
         $this->authorize('preview', $candidate);
 
         $result = $this->readiness->evaluate($candidate->clinicVisit);
         $preview = $this->preview->build($candidate->clinicVisit, $result);
+        $dentalPreview = $dental->build($candidate->clinicVisit);
 
         $this->audit->log('satusehat_candidate', $candidate->id, SatusehatAuditLog::EVENT_PREVIEW_OPENED,
             'Preview FHIR lokal dibuka', [], $candidate->branch_id);
@@ -95,6 +98,8 @@ class SatusehatSubmissionController extends Controller
         return view('satusehat.submissions.preview', [
             'candidate' => $candidate,
             'preview' => $preview,
+            'dentalPreview' => $dentalPreview,
+            'satusehat2Watch' => ! (bool) config('satusehat.sandbox_verified'),
         ]);
     }
 
@@ -243,6 +248,7 @@ class SatusehatSubmissionController extends Controller
             'visit_date_to' => $request->string('visit_date_to')->toString() ?: null,
             'readiness_status' => $request->string('readiness_status')->toString() ?: null,
             'review_status' => $request->string('review_status')->toString() ?: null,
+            'dental_readiness_status' => $request->string('dental_readiness_status')->toString() ?: null,
         ];
     }
 }
