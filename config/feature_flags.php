@@ -295,6 +295,36 @@ return [
             'rollback_action' => 'Set env override to false; new orders revert to the legacy Lab pipeline and existing V2 orders stay readable (no data migration required).',
         ],
 
+        // --- SATUSEHAT integration (readiness foundation; external send stays off) ---
+
+        'satusehat.integration_readiness' => [
+            'name' => 'SATUSEHAT Integration Readiness',
+            'description' => 'Marks the SATUSEHAT readiness foundation (candidate/readiness/preview/mapping/identifier governance + controlled submission filter) as implemented. Does NOT enable any external SATUSEHAT API call — the runtime gateway stays DisabledSatusehatGateway while SATUSEHAT_ENABLED=false.',
+            'default' => false,
+            'env_key' => 'FEATURE_SATUSEHAT_INTEGRATION_READINESS',
+            // Captured at config-BUILD time so the override survives config:cache.
+            'env_value' => env('FEATURE_SATUSEHAT_INTEGRATION_READINESS'),
+            'owner' => 'satusehat',
+            'risk_level' => 'critical',
+            'rollout_status' => 'implemented',
+            'review_target' => 'SATUSEHAT-1',
+            'dependencies' => [],
+            'rollback_action' => 'Set env override to false; SATUSEHAT menus/routes can be hidden via permission/config. No candidate/audit/mapping data is deleted and no external call is ever made by this flag.',
+        ],
+        'satusehat.external_submission_enabled' => [
+            'name' => 'SATUSEHAT External Submission Enabled',
+            'description' => 'Would allow the HTTP gateway to authenticate and submit FHIR resources to the SATUSEHAT sandbox/production API. Stays false in SATUSEHAT-1 (readiness only); real external submission is introduced in SATUSEHAT-2 after sandbox credentials + official profile validation.',
+            'default' => false,
+            'env_key' => 'FEATURE_SATUSEHAT_EXTERNAL_SUBMISSION_ENABLED',
+            'env_value' => env('FEATURE_SATUSEHAT_EXTERNAL_SUBMISSION_ENABLED'),
+            'owner' => 'satusehat',
+            'risk_level' => 'critical',
+            'rollout_status' => 'not_started',
+            'review_target' => 'SATUSEHAT-2',
+            'dependencies' => ['SATUSEHAT-1'],
+            'rollback_action' => 'Set env override to false and SATUSEHAT_ENABLED=false; the runtime binding falls back to DisabledSatusehatGateway and no network request is ever made.',
+        ],
+
         // --- Release safety / governance flags (implemented in NSF-9) ---
 
         'release.automated_smoke_required' => [

@@ -257,6 +257,27 @@
                 </div>
             @endcanany
 
+            {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
+            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings'])
+                <div>
+                    <p class="menu-group-title pt-2">SATUSEHAT</p>
+                    <div class="mt-1 space-y-1">
+                        @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions'])
+                            <a href="{{ route('satusehat.submissions.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.submissions.*') ? $linkActive : $linkIdle }}">Filter Pengiriman</a>
+                        @endcanany
+                        @can('manage_satusehat_mappings')
+                            <a href="{{ route('satusehat.mappings.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.mappings.*') ? $linkActive : $linkIdle }}">Mapping Kode</a>
+                        @endcan
+                        @can('manage_satusehat_settings')
+                            <a href="{{ route('satusehat.identifiers.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.identifiers.*') ? $linkActive : $linkIdle }}">Identifier IHS</a>
+                        @endcan
+                    </div>
+                </div>
+            @endcanany
+
             {{-- Sprint 23 Phase 23.5 — RME report viewers without clinical access still get their report links --}}
             @if ($user && $user->cannot('view_clinic_visits') && $user->cannot('manage_clinic_visits'))
                 @canany(['view_rme_patient_reports', 'view_rme_payment_reports'])

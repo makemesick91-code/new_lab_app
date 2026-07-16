@@ -1,25 +1,25 @@
-# Active sprint manifest — FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS
+# Active sprint manifest — SATUSEHAT-1
 # Validated by: php artisan sprint:manifest-check
 
-id: FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS
-type: RUNTIME_FIX
-module: Auth
-title: "Login recovery: role-aware safe post-auth redirect + deploy runtime-permission hardening"
+id: SATUSEHAT-1
+type: MODULE_SPRINT
+module: Satusehat
+title: "SATUSEHAT Readiness Foundation & Controlled Submission Filter (integration disabled, no external network)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # centralized post-auth redirect resolver + auth completion controllers + smoke command
-schema_change: false            # no migration
-frontend_change: false          # no JS/CSS/Vite/tailwind/build change
-security_impact: true           # post-auth authorization behavior (intended-URL sanitization; Admin Lab stays Lab-only)
-branch_isolation_impact: false  # no branch-scoping change
-ledger_impact: false            # inventory ledger untouched
+runtime_change: true            # new Satusehat module: candidate/readiness/preview services, gateway contract, filter/mapping UI
+schema_change: true             # 6 additive tables (mappings, entity identifiers, candidates, submission batches/items, audit logs)
+frontend_change: true           # new Blade views (filter/review, detail/preview, mapping, identifier) — Tailwind rebuild
+security_impact: true           # 5 new permissions + policies + branch-scoped review authorization
+branch_isolation_impact: true   # candidate/filter queries scoped to RME-enabled branches via BranchContext
+ledger_impact: false            # no inventory ledger / billing / payment behavior change
 
 deploy_required: true
-browser_required: true          # authenticated Admin Lab / Super Admin landing smoke
+browser_required: true          # filter/review + mapping page smoke
 
 test_profiles:
-  - auth
+  - rme
   - access_control
   - deployment
 
-go_tag: fix-login-redirect-runtime-permissions-go
+go_tag: satusehat-1-readiness-foundation-controlled-submission-filter-go

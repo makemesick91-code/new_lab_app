@@ -242,6 +242,10 @@ class RoleSeeder extends Seeder
             // Sprint 23 Phase 23.7 — Owner manages Master Data Cabang
             'view_branch_master_data',
             'manage_branch_master_data',
+            // SATUSEHAT-1 — executive oversight of the controlled submission
+            // filter: view + review only (no send, no mapping/settings governance).
+            'view_satusehat_submissions',
+            'review_satusehat_submissions',
         ],
         'Kasir' => [
             'view dashboard',
@@ -308,6 +312,13 @@ class RoleSeeder extends Seeder
             'view_rme_payment_reports',
             // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
             'view_doctor_performance_report',
+            // SATUSEHAT-1 — RME operational owner of the controlled submission
+            // filter + mapping/identifier governance (view/review/send/manage).
+            'view_satusehat_submissions',
+            'review_satusehat_submissions',
+            'send_satusehat_submissions',
+            'manage_satusehat_mappings',
+            'manage_satusehat_settings',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [
