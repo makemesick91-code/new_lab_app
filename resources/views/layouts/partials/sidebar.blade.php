@@ -258,7 +258,7 @@
             @endcanany
 
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
-            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption', 'view_satusehat_branch_readiness', 'view_satusehat_pilot_metrics', 'manage_satusehat_branch_remediation'])
+            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption', 'view_satusehat_branch_readiness', 'view_satusehat_pilot_metrics', 'manage_satusehat_branch_remediation', 'view_satusehat_multi_branch_readiness', 'view_satusehat_executive_readiness', 'manage_satusehat_rollout_waves', 'manage_satusehat_change_control', 'record_satusehat_uat_signoff'])
                 <div>
                     <p class="menu-group-title pt-2">SATUSEHAT</p>
                     <div class="mt-1 space-y-1">
@@ -278,6 +278,27 @@
                             <a href="{{ route('satusehat.branches.pilot-operations') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.branches.pilot-operations') ? $linkActive : $linkIdle }}">Operasi Pilot</a>
                         @endcanany
+                        {{-- SATUSEHAT-4D — multi-branch readiness scale-up & operational governance --}}
+                        @can('view_satusehat_multi_branch_readiness')
+                            <a href="{{ route('satusehat.multi-branch.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.multi-branch.*') ? $linkActive : $linkIdle }}">Matriks Multi-Cabang</a>
+                        @endcan
+                        @can('view_satusehat_executive_readiness')
+                            <a href="{{ route('satusehat.executive.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.executive.*') ? $linkActive : $linkIdle }}">Dasbor Eksekutif</a>
+                        @endcan
+                        @canany(['view_satusehat_multi_branch_readiness', 'manage_satusehat_rollout_waves'])
+                            <a href="{{ route('satusehat.waves.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.waves.*') ? $linkActive : $linkIdle }}">Wave Rollout</a>
+                        @endcanany
+                        @can('record_satusehat_uat_signoff')
+                            <a href="{{ route('satusehat.uat.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.uat.*') ? $linkActive : $linkIdle }}">UAT Operator</a>
+                        @endcan
+                        @can('manage_satusehat_change_control')
+                            <a href="{{ route('satusehat.change-control.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.change-control.*') ? $linkActive : $linkIdle }}">Change Control</a>
+                        @endcan
                         @canany(['manage_structured_diagnoses', 'review_clinical_terminology'])
                             <a href="{{ route('satusehat.diagnoses.index') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.diagnoses.*') ? $linkActive : $linkIdle }}">Master Diagnosis</a>

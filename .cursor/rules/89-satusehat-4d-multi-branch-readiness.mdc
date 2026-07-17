@@ -1,0 +1,52 @@
+---
+description: SATUSEHAT-4D — multi-branch readiness scale-up & operational governance rules (permanent)
+globs:
+alwaysApply: false
+---
+
+# SATUSEHAT-4D — Multi-Branch Readiness Scale-Up & Operational Governance
+
+1. SATUSEHAT-2 remains WATCH; its GO tag remains absent. SATUSEHAT-4D is
+   credential-independent: no OAuth / sandbox / production / external FHIR HTTP.
+2. SATUSEHAT-4D GO covers **internal** multi-branch readiness + operational
+   governance only. It does NOT mean SATUSEHAT-2 GO, external submission,
+   production activation, or Kemkes acceptance.
+3. Multi-branch operations include only RME-enabled branches. MAIN is excluded
+   (enforced via `BranchService::rmeEnabledIds()` in the service layer).
+4. No rollout wave is active by default (starts `draft`). No branch is a pilot
+   by default. Branch enrollment requires an explicit, audited action.
+5. A branch may belong to only ONE active wave (service check + partial unique
+   index `trx_ss_wave_membership_active_uq`).
+6. Branch promotion requires every INTERNAL hard gate to pass and ZERO open hard
+   blockers. A high readiness score can never override a hard blocker. Demotion
+   occurs when hard readiness regresses (a known trigger from config).
+7. The external credential blocker is ALWAYS a separate, ever-present signal;
+   every matrix row shows `blocked_external_credential`.
+8. Threshold/scoring-weight/wave-membership/pilot/suspension/terminology/rollout
+   changes go through change-control. `production_guard_config` and
+   `credential_state` categories can be logged but can NEVER be approved/applied
+   during 4D. Requester != approver (separation of duties).
+9. Human operator UAT sign-off is MANDATORY for an operational GO. Automated
+   tests never substitute. A UAT run reaches `signed_off` only when every
+   required role approves and no scenario failed. UAT evidence is synthetic /
+   PII-safe. Operator names/sign-offs are never fabricated.
+10. Admin Klinik is branch-pinned (matrix read + own-branch remediation only).
+    Owner is read-only aggregate (matrix + executive). Kasir and Admin Lab are
+    denied. No role gains external-send or production permission.
+11. No remote identifier (Organization/Location/Patient/Practitioner IHS) may be
+    fabricated. NIK/KTP and raw clinical notes are never rendered or exported;
+    executive/owner views are aggregate-by-default.
+12. No auto-send. No Send-All. Bulk issue operations are bounded (paginated
+    selection only, MAX_BULK), server-side branch-scoped, and never bulk-resolve
+    HARD issues.
+13. Multi-branch synthetic rehearsal is marker-scoped, network-silent, and ends
+    honestly at `BLOCKED_EXTERNAL_CREDENTIAL` (or `INCOMPLETE`) — never
+    `submitted`/`external_success`. A failed branch is isolated from the others.
+14. Production remains blocked. The primary health endpoints remain healthy while
+    SATUSEHAT is disabled. Deployment runner executes only on the VPS. Nginx
+    `listen 80 default_server;` protection and the AishPOS co-tenant must not
+    regress.
+15. Migrations are additive only (`migrate` — never `migrate:fresh`/`db:wipe`).
+    Append-only tables (score snapshots, transitions, drill runs, audit) are
+    never mutated in place.
+16. External GO requires the SATUSEHAT-2 External Credential Closure Campaign.

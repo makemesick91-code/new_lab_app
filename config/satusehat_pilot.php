@@ -177,4 +177,141 @@ return [
         ],
         'max_scan_candidates' => 2000,
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | SATUSEHAT-4D — Multi-branch scale-up & operational governance
+    |--------------------------------------------------------------------------
+    | Everything below stays credential-independent. No wave state, promotion,
+    | change request, or rehearsal can enable SATUSEHAT external send or
+    | production. A "pilot_ready_internal" wave/branch still has the external
+    | credential blocker owned by the SATUSEHAT-2 campaign.
+    */
+    'multi_branch' => [
+
+        // Feature flag for the 4D multi-branch workspace/UI. Runtime engines are
+        // always safe to run read-only regardless of this flag.
+        'enabled' => env('SATUSEHAT_MULTI_BRANCH_WORKSPACE_ENABLED', true),
+
+        /*
+        | Rollout wave lifecycle states, in progression order. There is
+        | deliberately NO externally_ready / production_ready state.
+        */
+        'wave_states' => [
+            'draft',
+            'profiling',
+            'approved',
+            'in_remediation',
+            'uat_scheduled',
+            'uat_in_progress',
+            'rehearsal_ready',
+            'pilot_ready_internal',
+            'blocked_external_credential',
+            'suspended',
+            'closed',
+        ],
+
+        // Terminal (non-progressable) wave states.
+        'wave_terminal_states' => ['closed'],
+
+        // At most one wave may be 'active' (non-draft, non-closed, non-suspended)
+        // by default. A branch may belong to only ONE active wave.
+        'max_active_waves' => 1,
+        'allow_multiple_active_waves' => false,
+
+        /*
+        | Branch readiness transition types + the demotion trigger codes that a
+        | governed demotion/suspension may cite.
+        */
+        'transition_types' => ['promotion', 'demotion', 'suspension', 'resume'],
+        'demotion_triggers' => [
+            'hard_issue_reopened',
+            'diagnosis_adoption_below_threshold',
+            'mapping_deprecated',
+            'source_drift_backlog',
+            'local_conformance_regression',
+            'failed_rehearsal',
+            'operator_coverage_unavailable',
+            'production_guard_failure',
+            'unauthorized_configuration_change',
+            'data_privacy_incident',
+        ],
+
+        // Comparative matrix + export bounds.
+        'matrix' => [
+            'per_page' => 25,
+            'max_export_rows' => 2000,
+        ],
+    ],
+
+    /*
+    | Human operator UAT governance. Required participant roles and the canonical
+    | scenario catalog. Evidence must be synthetic / PII-safe; automated tests
+    | never substitute for a real signed-off run.
+    */
+    'uat' => [
+        'run_states' => ['draft', 'in_progress', 'completed', 'signed_off', 'rejected'],
+        'outcomes' => ['pending', 'pass', 'fail', 'blocked'],
+        'finding_severities' => ['none', 'low', 'medium', 'high', 'critical'],
+        'required_signoff_roles' => [
+            'admin_klinik',
+            'doctor',
+            'supervisor_rme',
+            'clinical_reviewer',
+            'it_operator',
+            'owner',
+        ],
+        'signoff_decisions' => ['approved', 'rejected'],
+        'min_reason_length' => 10,
+    ],
+
+    /*
+    | Change-control governance. Categories a change request may target. No
+    | category may enable external send or production during SATUSEHAT-4D.
+    */
+    'change_control' => [
+        'categories' => [
+            'readiness_threshold',
+            'scoring_weight',
+            'wave_membership',
+            'pilot_status',
+            'branch_suspension',
+            'terminology_activation',
+            'rollout_mode',
+            'production_guard_config',
+            'credential_state',
+        ],
+        'states' => ['pending', 'reviewed', 'approved', 'rejected', 'applied', 'rolled_back'],
+        // Categories that can NEVER be auto-applied / must stay blocked in 4D.
+        'blocked_categories' => ['production_guard_config', 'credential_state'],
+        'min_reason_length' => 10,
+    ],
+
+    /*
+    | Hermetic incident-drill catalog (no-network). Each drill documents a
+    | trigger, expected safe state, diagnostic command, and rollback.
+    */
+    'incident_drills' => [
+        'cross_branch_idor',
+        'incorrect_wave_enrollment',
+        'duplicate_active_wave_membership',
+        'threshold_tampering',
+        'score_manipulation',
+        'hard_issue_reopening',
+        'mapping_deprecation',
+        'source_drift',
+        'rehearsal_partial_failure',
+        'synthetic_reset_scope',
+        'queue_worker_stopped',
+        'redis_unavailable',
+        'stale_assignment',
+        'unauthorized_suspension',
+        'external_send_flag_tampering',
+        'production_flag_tampering',
+        'integration_disabled',
+        'nginx_default_server_regression',
+        'co_tenant_shadowing',
+        'privacy_leak_attempt',
+        'rollback_to_safe_state',
+    ],
 ];

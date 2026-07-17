@@ -148,6 +148,63 @@ class SatusehatAuditLog extends Model
 
     public const EVENT_ISSUE_REVIEWED = 'issue_reviewed';
 
+    // --- SATUSEHAT-4D: multi-branch rollout waves ---
+    public const EVENT_WAVE_CREATED = 'wave_created';
+
+    public const EVENT_WAVE_UPDATED = 'wave_updated';
+
+    public const EVENT_WAVE_APPROVED = 'wave_approved';
+
+    public const EVENT_WAVE_STATUS_CHANGED = 'wave_status_changed';
+
+    public const EVENT_WAVE_SUSPENDED = 'wave_suspended';
+
+    public const EVENT_WAVE_RESUMED = 'wave_resumed';
+
+    public const EVENT_WAVE_CLOSED = 'wave_closed';
+
+    public const EVENT_WAVE_BRANCH_ENROLLED = 'wave_branch_enrolled';
+
+    public const EVENT_WAVE_BRANCH_REMOVED = 'wave_branch_removed';
+
+    // --- SATUSEHAT-4D: branch readiness transitions ---
+    public const EVENT_BRANCH_PROMOTED = 'branch_promoted';
+
+    public const EVENT_BRANCH_DEMOTED = 'branch_demoted';
+
+    public const EVENT_BRANCH_TRANSITION_SUSPENDED = 'branch_transition_suspended';
+
+    public const EVENT_BRANCH_TRANSITION_RESUMED = 'branch_transition_resumed';
+
+    public const EVENT_SCORE_SNAPSHOT_CAPTURED = 'score_snapshot_captured';
+
+    // --- SATUSEHAT-4D: change control ---
+    public const EVENT_CHANGE_REQUEST_CREATED = 'change_request_created';
+
+    public const EVENT_CHANGE_REQUEST_REVIEWED = 'change_request_reviewed';
+
+    public const EVENT_CHANGE_REQUEST_APPROVED = 'change_request_approved';
+
+    public const EVENT_CHANGE_REQUEST_REJECTED = 'change_request_rejected';
+
+    public const EVENT_CHANGE_REQUEST_APPLIED = 'change_request_applied';
+
+    public const EVENT_CHANGE_REQUEST_ROLLED_BACK = 'change_request_rolled_back';
+
+    // --- SATUSEHAT-4D: human UAT ---
+    public const EVENT_UAT_RUN_CREATED = 'uat_run_created';
+
+    public const EVENT_UAT_SCENARIO_RECORDED = 'uat_scenario_recorded';
+
+    public const EVENT_UAT_SIGNED_OFF = 'uat_signed_off';
+
+    public const EVENT_UAT_REJECTED = 'uat_rejected';
+
+    // --- SATUSEHAT-4D: multi-branch rehearsal + incident drills ---
+    public const EVENT_MULTI_BRANCH_REHEARSAL_RUN = 'multi_branch_rehearsal_run';
+
+    public const EVENT_INCIDENT_DRILL_RUN = 'incident_drill_run';
+
     protected $fillable = [
         'environment',
         'branch_id',
