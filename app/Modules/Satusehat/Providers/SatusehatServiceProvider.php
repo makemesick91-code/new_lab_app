@@ -13,12 +13,14 @@ use App\Modules\Satusehat\Interfaces\SatusehatCandidateRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatDataQualityIssueRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatIdentifierRepositoryInterface;
 use App\Modules\Satusehat\Interfaces\SatusehatMappingRepositoryInterface;
+use App\Modules\Satusehat\Models\SatusehatBranchPilotProfile;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Models\SatusehatCodeMapping;
 use App\Modules\Satusehat\Models\SatusehatDataQualityIssue;
 use App\Modules\Satusehat\Models\SatusehatEntityIdentifier;
 use App\Modules\Satusehat\Observers\SatusehatMedicalRecordObserver;
 use App\Modules\Satusehat\Observers\SatusehatVisitObserver;
+use App\Modules\Satusehat\Policies\SatusehatBranchPilotProfilePolicy;
 use App\Modules\Satusehat\Policies\SatusehatCandidatePolicy;
 use App\Modules\Satusehat\Policies\SatusehatCodeMappingPolicy;
 use App\Modules\Satusehat\Policies\SatusehatDataQualityIssuePolicy;
@@ -82,6 +84,7 @@ class SatusehatServiceProvider extends ServiceProvider
         Gate::policy(SatusehatCodeMapping::class, SatusehatCodeMappingPolicy::class);
         Gate::policy(SatusehatEntityIdentifier::class, SatusehatEntityIdentifierPolicy::class);
         Gate::policy(SatusehatDataQualityIssue::class, SatusehatDataQualityIssuePolicy::class);
+        Gate::policy(SatusehatBranchPilotProfile::class, SatusehatBranchPilotProfilePolicy::class);
 
         // Post-commit, idempotent, network-silent candidate generation. Failure
         // never rolls back a clinical/billing transaction (see the observers).

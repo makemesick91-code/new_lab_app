@@ -120,6 +120,10 @@ class RoleSeeder extends Seeder
             // completeness) — no waiver, no mapping governance, no send.
             'view_satusehat_readiness',
             'manage_satusehat_remediation',
+            // SATUSEHAT-4C — branch-scoped readiness + remediation only.
+            // No pilot configuration/approval/rehearsal (those are governance).
+            'view_satusehat_branch_readiness',
+            'manage_satusehat_branch_remediation',
         ],
         'Technician' => [
             'view dashboard',
@@ -258,6 +262,10 @@ class RoleSeeder extends Seeder
             'view_satusehat_readiness',
             // SATUSEHAT-4B — executive read-only view of diagnosis adoption.
             'view_diagnosis_adoption',
+            // SATUSEHAT-4C — executive read-only view of branch readiness +
+            // pilot operations metrics (no pilot configuration/approval).
+            'view_satusehat_branch_readiness',
+            'view_satusehat_pilot_metrics',
         ],
         'Kasir' => [
             'view dashboard',
@@ -344,6 +352,15 @@ class RoleSeeder extends Seeder
             'configure_diagnosis_rollout',
             'view_diagnosis_adoption',
             'override_diagnosis_requirement',
+            // SATUSEHAT-4C — RME operational owner of branch readiness & the
+            // internal pilot: full remediation, pilot configuration/approval,
+            // rehearsal, and metrics. Still NO external send / production.
+            'view_satusehat_branch_readiness',
+            'manage_satusehat_branch_remediation',
+            'configure_satusehat_internal_pilot',
+            'approve_satusehat_internal_pilot',
+            'run_satusehat_pilot_rehearsal',
+            'view_satusehat_pilot_metrics',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

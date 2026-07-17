@@ -1,0 +1,49 @@
+---
+description: SATUSEHAT-4C — branch readiness remediation & internal pilot operations rules (permanent)
+globs:
+alwaysApply: false
+---
+
+# SATUSEHAT-4C — Branch Readiness Remediation & Internal Pilot Operations
+
+1. SATUSEHAT-2 remains WATCH; its GO tag remains absent. SATUSEHAT-4C is
+   credential-independent: no OAuth / sandbox / production / external FHIR HTTP.
+2. SATUSEHAT-4C GO covers **internal** branch remediation + internal pilot
+   operations only. It does NOT mean SATUSEHAT-2 GO, external submission,
+   production activation, or Kemkes acceptance.
+3. Branch readiness + pilot state are branch-scoped server-side (RME-enabled
+   set via `BranchService::rmeEnabledIds()`). MAIN can never be a pilot clinic
+   branch. No branch is a pilot by default. A request `branch_id` may only
+   narrow within the actor's resolved scope — never widen (IDOR-safe).
+4. Pilot selection requires explicit action; approval requires **every**
+   internal eligibility gate to pass (INTERNAL GO). External credential is a
+   separate, always-present blocker (`BLOCKED_EXTERNAL_CREDENTIAL`).
+5. The internal readiness score is deterministic + versioned (`config/satusehat_pilot.php`);
+   it can never override hard blockers (hard blocker caps the score at the
+   configured ceiling and prevents `pilot_ready_internal`).
+6. Hard data-quality issues can never be waived and are never "resolved" except
+   by revalidation (SATUSEHAT-4A rule, unchanged). Issue assignment/escalation
+   respect branch scope; Admin Klinik is branch-pinned.
+7. Thresholds are config-driven defaults + reasoned, audited, allowlisted
+   per-branch overrides. Changing a threshold never resolves an issue and never
+   makes a candidate ready.
+8. Synthetic pilot rehearsal is marker-scoped + network-silent (reuses the
+   SATUSEHAT-4A synthetic pack). Terminal result is honestly
+   `PILOT_READY_INTERNAL` or `BLOCKED_EXTERNAL_CREDENTIAL` — never
+   submitted/sent/succeeded_external. Synthetic reset never touches real data.
+9. Permissions: Admin Klinik = branch-scoped readiness + remediation only;
+   Supervisor RME = full readiness/remediation/pilot config/approval/rehearsal;
+   Owner = read-only metrics; Doctor = diagnosis workflow only; Kasir / Admin
+   Lab = denied. No role gains external send / production activation. Super
+   Admin passes via `Gate::before`.
+10. No fabricated IHS / Organization / Location identifier. NIK / raw clinical
+    notes are never rendered/exported/logged. Every write is transactional,
+    locked, and audited (append-only `trx_satusehat_audit_logs`, PII-free).
+11. Production stays blocked; external send stays disabled; global structured
+    diagnosis hard enforcement stays disabled. No auto-send / no Send All / no
+    auto-WhatsApp.
+12. Architecture: HTTP → Controller (thin) → FormRequest → Service →
+    RepositoryInterface → Repository → Model. No HTTP inside a DB transaction.
+    No duplicate readiness/issue/diagnosis engine — compose the existing
+    SATUSEHAT-4A/4B services.
+13. External GO requires the SATUSEHAT-2 External Credential Closure Campaign.

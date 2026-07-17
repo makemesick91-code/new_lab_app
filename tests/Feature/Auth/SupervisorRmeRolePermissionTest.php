@@ -43,6 +43,13 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'configure_diagnosis_rollout',
     'view_diagnosis_adoption',
     'override_diagnosis_requirement',
+    // SATUSEHAT-4C — RME operational owner of branch readiness & internal pilot.
+    'view_satusehat_branch_readiness',
+    'manage_satusehat_branch_remediation',
+    'configure_satusehat_internal_pilot',
+    'approve_satusehat_internal_pilot',
+    'run_satusehat_pilot_rehearsal',
+    'view_satusehat_pilot_metrics',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

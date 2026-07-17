@@ -64,6 +64,33 @@ class SatusehatDataQualityIssue extends Model
         self::STATUS_UNSUPPORTED,
     ];
 
+    // --- SATUSEHAT-4C: issue SLA priority + escalation ---
+    public const PRIORITY_LOW = 'low';
+
+    public const PRIORITY_NORMAL = 'normal';
+
+    public const PRIORITY_HIGH = 'high';
+
+    public const PRIORITY_CRITICAL_INTERNAL = 'critical_internal';
+
+    public const PRIORITIES = [
+        self::PRIORITY_LOW,
+        self::PRIORITY_NORMAL,
+        self::PRIORITY_HIGH,
+        self::PRIORITY_CRITICAL_INTERNAL,
+    ];
+
+    public const ESCALATION_NONE = 'none';
+
+    public const ESCALATION_LEVELS = [
+        'none',
+        'branch_supervisor',
+        'clinical_reviewer',
+        'it_operator',
+        'super_admin',
+        'management',
+    ];
+
     protected $table = 'trx_satusehat_data_quality_issues';
 
     protected $fillable = [
@@ -96,6 +123,15 @@ class SatusehatDataQualityIssue extends Model
         'waiver_reason',
         'waiver_expires_at',
         'metadata',
+        // SATUSEHAT-4C SLA + escalation
+        'priority',
+        'assigned_role',
+        'due_at',
+        'escalation_level',
+        'escalated_at',
+        'resolution_evidence',
+        'reviewed_by',
+        'reviewed_at',
     ];
 
     protected function casts(): array
@@ -117,12 +153,43 @@ class SatusehatDataQualityIssue extends Model
             'waived_at' => 'datetime',
             'waiver_expires_at' => 'datetime',
             'metadata' => 'array',
+            'due_at' => 'datetime',
+            'escalated_at' => 'datetime',
+            'reviewed_by' => 'integer',
+            'reviewed_at' => 'datetime',
         ];
     }
 
     public function isOpen(): bool
     {
         return in_array($this->status, self::OPEN_STATUSES, true);
+    }
+
+    /** Open AND past its SLA due time. */
+    public function isOverdue(): bool
+    {
+        return $this->isOpen() && $this->due_at !== null && $this->due_at->isPast();
+    }
+
+    public function priorityLabel(): string
+    {
+        return match ($this->priority) {
+            self::PRIORITY_CRITICAL_INTERNAL => 'Kritis (Internal)',
+            self::PRIORITY_HIGH => 'Tinggi',
+            self::PRIORITY_LOW => 'Rendah',
+            self::PRIORITY_NORMAL => 'Normal',
+            default => '—',
+        };
+    }
+
+    public function priorityTone(): string
+    {
+        return match ($this->priority) {
+            self::PRIORITY_CRITICAL_INTERNAL => 'danger',
+            self::PRIORITY_HIGH => 'warning',
+            self::PRIORITY_LOW => 'neutral',
+            default => 'info',
+        };
     }
 
     public function isHard(): bool
@@ -193,5 +260,10 @@ class SatusehatDataQualityIssue extends Model
     public function assignedTo(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function reviewedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 }

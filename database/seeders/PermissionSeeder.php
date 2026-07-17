@@ -173,6 +173,16 @@ class PermissionSeeder extends Seeder
         'configure_diagnosis_rollout',
         'view_diagnosis_adoption',
         'override_diagnosis_requirement',
+        // SATUSEHAT-4C — branch readiness remediation & internal pilot
+        // operations. Branch remediation, pilot configuration, pilot approval,
+        // and rehearsal each have a dedicated permission (least privilege).
+        // NONE of these grant external send / production activation.
+        'view_satusehat_branch_readiness',
+        'manage_satusehat_branch_remediation',
+        'configure_satusehat_internal_pilot',
+        'approve_satusehat_internal_pilot',
+        'run_satusehat_pilot_rehearsal',
+        'view_satusehat_pilot_metrics',
     ];
 
     public function run(): void
