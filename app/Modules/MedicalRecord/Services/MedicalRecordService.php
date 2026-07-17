@@ -21,6 +21,7 @@ class MedicalRecordService
         private readonly ClinicVisitService $visitService,
         private readonly PatientRmWorkspaceResolver $workspace,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DiagnosisRolloutService $diagnosisRollout,
     ) {}
 
     /**
@@ -124,6 +125,12 @@ class MedicalRecordService
                     'handwriting' => 'RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.',
                 ]);
             }
+
+            // SATUSEHAT-4B — branch-scoped structured diagnosis rollout gate.
+            // Blocks ONLY on an explicitly configured pilot_enforced branch
+            // without an active primary diagnosis or a reasoned override;
+            // informational/warning branches are never blocked here.
+            $this->diagnosisRollout->assertFinalizationAllowed($medicalRecord);
 
             $finalized = $this->medicalRecords->update($medicalRecord, [
                 'status' => MedicalRecord::STATUS_FINAL,

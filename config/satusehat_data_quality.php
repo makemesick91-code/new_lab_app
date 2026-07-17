@@ -15,7 +15,10 @@
 */
 
 use App\Modules\Satusehat\Services\DataQuality\Rules\DentalCompletenessRule;
+use App\Modules\Satusehat\Services\DataQuality\Rules\DeprecatedDiagnosisSelectedRule;
+use App\Modules\Satusehat\Services\DataQuality\Rules\DiagnosisCodeInvalidRule;
 use App\Modules\Satusehat\Services\DataQuality\Rules\DiagnosisMappingRule;
+use App\Modules\Satusehat\Services\DataQuality\Rules\DuplicatePrimaryDiagnosisRule;
 use App\Modules\Satusehat\Services\DataQuality\Rules\LocalConformanceRule;
 use App\Modules\Satusehat\Services\DataQuality\Rules\LocationReadinessRule;
 use App\Modules\Satusehat\Services\DataQuality\Rules\OrganizationReadinessRule;
@@ -40,6 +43,9 @@ return [
         OrganizationReadinessRule::class,
         LocationReadinessRule::class,
         StructuredDiagnosisRule::class,
+        DuplicatePrimaryDiagnosisRule::class,
+        DeprecatedDiagnosisSelectedRule::class,
+        DiagnosisCodeInvalidRule::class,
         DiagnosisMappingRule::class,
         TreatmentMappingRule::class,
         DentalCompletenessRule::class,

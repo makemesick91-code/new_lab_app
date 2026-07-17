@@ -30,6 +30,8 @@ class ClinicalDiagnosisRepository implements ClinicalDiagnosisRepositoryInterfac
         $status = is_string($filters['status'] ?? null) ? trim($filters['status']) : '';
 
         return ClinicalDiagnosis::query()
+            ->withCount('records')
+            ->with('replacement:id,code,display')
             ->when($search !== '', fn ($q) => $q->where('normalized_search', 'like', "%{$search}%"))
             ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->orderBy('code_system')

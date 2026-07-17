@@ -138,6 +138,18 @@ class SatusehatReadinessService
             if ($unmappedDx > 0) {
                 $this->incomplete('diagnosis_mapping_missing', "Terdapat {$unmappedDx} diagnosis tanpa mapping Condition SATUSEHAT aktif.");
             }
+
+            // SATUSEHAT-4B — a diagnosis whose master terminology is no longer
+            // ACTIVE (deprecated/rejected/back-in-review) must be re-coded
+            // before the record is SATUSEHAT-ready. Historical rows stay
+            // readable. Synthetic rehearsal entries are lifecycle-exempt by
+            // design (isolated campaign branch only).
+            $inactiveDx = collect($diagnoses)
+                ->filter(fn (array $d) => ! in_array($d['master_status'] ?? 'active', ['active', 'synthetic_rehearsal'], true))
+                ->count();
+            if ($inactiveDx > 0) {
+                $this->incomplete('diagnosis_terminology_inactive', "Terdapat {$inactiveDx} diagnosis dengan terminologi yang tidak lagi aktif.");
+            }
         }
 
         // G11 — treatment/procedure mapping.
@@ -231,7 +243,16 @@ class SatusehatReadinessService
                 'diagnosis_id' => (int) $master->id,
                 'code' => $master->code !== null ? (string) $master->code : null,
                 'role' => (string) $dx->diagnosis_role,
+                // SATUSEHAT-4B — terminology lifecycle + mapping target details
+                // are part of the clinical fingerprint: deprecating terminology
+                // or changing the mapping after approval drifts the source hash
+                // and revokes the approval (re-review required). Only candidates
+                // that already carry structured diagnoses are affected; legacy
+                // candidates keep their byte-stable hash (key omitted).
+                'master_status' => (string) $master->status,
                 'mapping_code' => $mapping?->target_code,
+                'mapping_system' => $mapping?->terminology_system,
+                'mapping_display' => $mapping?->target_display,
                 'mapping_version' => $mapping?->version,
             ];
         }

@@ -63,4 +63,16 @@ class MedicalRecordDiagnosisController extends Controller
 
         return back()->with('status', 'Diagnosis terstruktur dihapus.');
     }
+
+    /** SATUSEHAT-4B — explicit primary swap (never silent, audited). */
+    public function makePrimary(Request $request, ClinicVisit $clinicVisit, MedicalRecord $medicalRecord, MedicalRecordDiagnosis $diagnosis): RedirectResponse
+    {
+        abort_if((int) $medicalRecord->clinic_visit_id !== (int) $clinicVisit->id, 404);
+        abort_if((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id, 404);
+        $this->authorize('update', $medicalRecord);
+
+        $this->service->makePrimary($medicalRecord, $diagnosis, $request->user());
+
+        return back()->with('status', 'Diagnosis utama diperbarui.');
+    }
 }
