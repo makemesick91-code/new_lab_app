@@ -258,7 +258,7 @@
             @endcanany
 
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
-            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption'])
+            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption', 'view_satusehat_branch_readiness', 'view_satusehat_pilot_metrics', 'manage_satusehat_branch_remediation'])
                 <div>
                     <p class="menu-group-title pt-2">SATUSEHAT</p>
                     <div class="mt-1 space-y-1">
@@ -268,6 +268,15 @@
                                class="menu-subitem {{ request()->routeIs('satusehat.readiness.index') ? $linkActive : $linkIdle }}">Kesiapan Data</a>
                             <a href="{{ route('satusehat.readiness.issues') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.readiness.issues*') ? $linkActive : $linkIdle }}">Isu Kualitas Data</a>
+                        @endcanany
+                        {{-- SATUSEHAT-4C — branch readiness remediation & internal pilot operations --}}
+                        @canany(['view_satusehat_branch_readiness', 'view_satusehat_pilot_metrics', 'manage_satusehat_branch_remediation'])
+                            <a href="{{ route('satusehat.branches.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.branches.index') || request()->routeIs('satusehat.branches.show') ? $linkActive : $linkIdle }}">Kesiapan Cabang</a>
+                        @endcanany
+                        @canany(['view_satusehat_pilot_metrics', 'configure_satusehat_internal_pilot', 'approve_satusehat_internal_pilot'])
+                            <a href="{{ route('satusehat.branches.pilot-operations') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.branches.pilot-operations') ? $linkActive : $linkIdle }}">Operasi Pilot</a>
                         @endcanany
                         @canany(['manage_structured_diagnoses', 'review_clinical_terminology'])
                             <a href="{{ route('satusehat.diagnoses.index') }}"

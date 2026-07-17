@@ -43,7 +43,11 @@ class SatusehatDataQualityIssueRepository implements SatusehatDataQualityIssueRe
 
     public function findInBranches(int $id, array $branchIds): ?SatusehatDataQualityIssue
     {
-        return $this->scoped($branchIds)->whereKey($id)->first();
+        // Scope the per-record write-action lookup by environment too
+        // (defense-in-depth; environment is config-fixed in this deployment).
+        return $this->scoped($branchIds)
+            ->where('environment', (string) config('satusehat.environment'))
+            ->whereKey($id)->first();
     }
 
     public function aggregates(array $branchIds): array

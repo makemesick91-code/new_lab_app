@@ -123,6 +123,31 @@ class SatusehatAuditLog extends Model
 
     public const EVENT_DIAGNOSIS_OVERRIDE_GRANTED = 'diagnosis_override_granted';
 
+    // SATUSEHAT-4C — branch readiness + internal pilot operations (PII-free).
+    public const EVENT_PILOT_CANDIDATE_SELECTED = 'pilot_candidate_selected';
+
+    public const EVENT_PILOT_APPROVED = 'pilot_approved';
+
+    public const EVENT_PILOT_SUSPENDED = 'pilot_suspended';
+
+    public const EVENT_PILOT_RESUMED = 'pilot_resumed';
+
+    public const EVENT_PILOT_READINESS_RECALCULATED = 'pilot_readiness_recalculated';
+
+    public const EVENT_PILOT_THRESHOLD_CHANGED = 'pilot_threshold_changed';
+
+    public const EVENT_PILOT_ELIGIBILITY_EVALUATED = 'pilot_eligibility_evaluated';
+
+    public const EVENT_PILOT_REHEARSAL_STARTED = 'pilot_rehearsal_started';
+
+    public const EVENT_PILOT_REHEARSAL_COMPLETED = 'pilot_rehearsal_completed';
+
+    public const EVENT_PILOT_GO_NO_GO = 'pilot_go_no_go_decision';
+
+    public const EVENT_ISSUE_ESCALATED = 'issue_escalated';
+
+    public const EVENT_ISSUE_REVIEWED = 'issue_reviewed';
+
     protected $fillable = [
         'environment',
         'branch_id',

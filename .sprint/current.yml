@@ -1,25 +1,25 @@
-# Active sprint manifest — SATUSEHAT-4B
+# Active sprint manifest — SATUSEHAT-4C
 # Validated by: php artisan sprint:manifest-check
 
-id: SATUSEHAT-4B
+id: SATUSEHAT-4C
 type: MODULE_SPRINT
 module: Satusehat
-title: "Structured Diagnosis Adoption & Clinical Terminology Rollout (credential-independent, external submission disabled, production blocked, SATUSEHAT-2 stays WATCH)"
+title: "Branch Readiness Remediation & Internal Pilot Operations (credential-independent, external submission disabled, production blocked, SATUSEHAT-2 stays WATCH)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # terminology lifecycle, branch rollout modes + finalize gate, override, Condition preview, adoption analytics, 3 commands
-schema_change: true             # 3 additive migrations (lifecycle columns, rollout settings, requirement overrides)
-frontend_change: true           # diagnoses workspace lifecycle UI, rollout page, adoption dashboard, RM diagnosis card polish
-security_impact: true           # 4 new permissions, review-permission split on terminology routes, override permission + policy re-check
-branch_isolation_impact: true   # rollout mode + adoption scope resolved server-side from RME-enabled branch set
+runtime_change: true            # branch readiness profiling, pilot eligibility/config, issue SLA/escalation, rehearsal, 6 commands
+schema_change: true             # 3 additive migrations (branch pilot profiles, rehearsal runs, issue SLA/escalation columns)
+frontend_change: true           # branch readiness board, branch detail, pilot operations dashboard, sidebar
+security_impact: true           # 6 new permissions, branch-scoped policy, IDOR boundaries, pilot approval gate
+branch_isolation_impact: true   # readiness/remediation/pilot resolved server-side from the RME-enabled branch set
 ledger_impact: false            # no inventory ledger / billing / payment behavior change
 
 deploy_required: true
-browser_required: true          # diagnoses workspace + rollout page + adoption dashboard + RM card smoke
+browser_required: true          # branch board + branch detail + pilot operations dashboard smoke
 
 test_profiles:
   - rme
   - access_control
   - deployment
 
-go_tag: satusehat-4b-structured-diagnosis-adoption-clinical-terminology-rollout-go
+go_tag: satusehat-4c-branch-readiness-remediation-internal-pilot-operations-go

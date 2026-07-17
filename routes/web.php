@@ -87,9 +87,11 @@ use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
+use App\Modules\Satusehat\Controllers\SatusehatBranchReadinessController;
 use App\Modules\Satusehat\Controllers\SatusehatDentalController;
 use App\Modules\Satusehat\Controllers\SatusehatDiagnosisAdoptionController;
 use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
+use App\Modules\Satusehat\Controllers\SatusehatInternalPilotController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
 use App\Modules\Satusehat\Controllers\SatusehatReadinessController;
 use App\Modules\Satusehat\Controllers\SatusehatRemediationController;
@@ -570,6 +572,38 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
     Route::middleware('permission:view_diagnosis_adoption')
         ->get('adoption', [SatusehatDiagnosisAdoptionController::class, 'index'])
         ->name('adoption.index');
+
+    // SATUSEHAT-4C — branch readiness remediation & internal pilot operations.
+    // Read side is branch-scoped server-side; every write action maps to a
+    // dedicated least-privilege permission. Nothing here enables external
+    // submission or production — pilot readiness is INTERNAL only.
+    Route::middleware('permission:view_satusehat_branch_readiness|view_satusehat_pilot_metrics|manage_satusehat_branch_remediation')->group(function () {
+        Route::get('branches', [SatusehatBranchReadinessController::class, 'index'])->name('branches.index');
+        Route::get('branches/pilot-operations', [SatusehatBranchReadinessController::class, 'pilotOperations'])->name('branches.pilot-operations');
+        Route::get('branches/{branch}', [SatusehatBranchReadinessController::class, 'show'])->whereNumber('branch')->name('branches.show');
+    });
+
+    Route::middleware('permission:manage_satusehat_branch_remediation')->group(function () {
+        Route::post('branches/{branch}/recalculate', [SatusehatBranchReadinessController::class, 'recalculate'])->whereNumber('branch')->name('branches.recalculate');
+        Route::post('branches/issues/{issue}/assign', [SatusehatBranchReadinessController::class, 'assignIssue'])->whereNumber('issue')->name('branches.issues.assign');
+        Route::post('branches/issues/{issue}/escalate', [SatusehatBranchReadinessController::class, 'escalateIssue'])->whereNumber('issue')->name('branches.issues.escalate');
+        Route::post('branches/issues/{issue}/review', [SatusehatBranchReadinessController::class, 'reviewIssue'])->whereNumber('issue')->name('branches.issues.review');
+    });
+
+    Route::middleware('permission:configure_satusehat_internal_pilot')->group(function () {
+        Route::post('branches/{branch}/pilot/select', [SatusehatInternalPilotController::class, 'select'])->whereNumber('branch')->name('branches.pilot.select');
+        Route::post('branches/{branch}/pilot/suspend', [SatusehatInternalPilotController::class, 'suspend'])->whereNumber('branch')->name('branches.pilot.suspend');
+        Route::post('branches/{branch}/pilot/resume', [SatusehatInternalPilotController::class, 'resume'])->whereNumber('branch')->name('branches.pilot.resume');
+        Route::post('branches/{branch}/pilot/thresholds', [SatusehatInternalPilotController::class, 'setThresholds'])->whereNumber('branch')->name('branches.pilot.thresholds');
+    });
+
+    Route::middleware('permission:approve_satusehat_internal_pilot')
+        ->post('branches/{branch}/pilot/approve', [SatusehatInternalPilotController::class, 'approve'])
+        ->whereNumber('branch')->name('branches.pilot.approve');
+
+    Route::middleware('permission:run_satusehat_pilot_rehearsal')
+        ->post('branches/{branch}/pilot/rehearse', [SatusehatInternalPilotController::class, 'rehearse'])
+        ->whereNumber('branch')->name('branches.pilot.rehearse');
 });
 
 /*
