@@ -10,6 +10,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Requests\FinalizeMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\StoreMedicalRecordRequest;
 use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
+use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
@@ -26,6 +27,7 @@ class MedicalRecordController extends Controller
         private readonly MedicalRecordService $service,
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
+        private readonly DiagnosisRolloutService $diagnosisRollout,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -194,6 +196,9 @@ class MedicalRecordController extends Controller
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
+            // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
+            // (drives the informational/warning/pilot banner + override form).
+            'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
         ]);
     }
 

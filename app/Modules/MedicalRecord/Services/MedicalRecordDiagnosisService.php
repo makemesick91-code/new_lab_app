@@ -104,6 +104,58 @@ class MedicalRecordDiagnosisService
         });
     }
 
+    /**
+     * SATUSEHAT-4B — explicit primary swap. The current primary (if any) is
+     * demoted to secondary and the chosen diagnosis promoted, in one locked
+     * transaction. Never silent: requested explicitly and audited.
+     */
+    public function makePrimary(MedicalRecord $medicalRecord, MedicalRecordDiagnosis $diagnosis, User $actor): MedicalRecordDiagnosis
+    {
+        $this->assertRmeBranch($medicalRecord);
+
+        if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
+            throw ValidationException::withMessages(['diagnosis' => 'Diagnosis tidak sesuai rekam medis.']);
+        }
+
+        return DB::transaction(function () use ($medicalRecord, $diagnosis, $actor) {
+            /** @var MedicalRecord $record */
+            $record = MedicalRecord::query()->lockForUpdate()->findOrFail($medicalRecord->id);
+
+            /** @var MedicalRecordDiagnosis $target */
+            $target = MedicalRecordDiagnosis::query()->lockForUpdate()->findOrFail($diagnosis->id);
+
+            if ($target->diagnosis_role === MedicalRecordDiagnosis::ROLE_PRIMARY) {
+                return $target; // idempotent no-op
+            }
+
+            $previousPrimary = MedicalRecordDiagnosis::query()
+                ->where('medical_record_id', $record->id)
+                ->where('diagnosis_role', MedicalRecordDiagnosis::ROLE_PRIMARY)
+                ->lockForUpdate()
+                ->first();
+
+            $previousPrimary?->update(['diagnosis_role' => MedicalRecordDiagnosis::ROLE_SECONDARY]);
+            $target->update(['diagnosis_role' => MedicalRecordDiagnosis::ROLE_PRIMARY]);
+
+            $this->audit->log(
+                'medical_record',
+                (int) $record->id,
+                SatusehatAuditLog::EVENT_DIAGNOSIS_ROLE_CHANGED,
+                'Diagnosis utama rekam medis diganti',
+                [
+                    'new_primary_code' => (string) $target->clinicalDiagnosis?->code,
+                    'previous_primary_code' => $previousPrimary?->clinicalDiagnosis?->code,
+                ],
+                (int) $record->branch_id,
+                $actor,
+            );
+
+            $this->refreshCandidate($record, $actor);
+
+            return $target;
+        });
+    }
+
     public function remove(MedicalRecord $medicalRecord, MedicalRecordDiagnosis $diagnosis, User $actor): void
     {
         $this->assertRmeBranch($medicalRecord);

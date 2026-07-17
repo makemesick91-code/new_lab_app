@@ -217,6 +217,10 @@ class RoleSeeder extends Seeder
             'view_treatment_worklist',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
+            // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency
+            // override on a pilot_enforced branch so patient care is never
+            // blocked; the missing-diagnosis issue stays open for review.
+            'override_diagnosis_requirement',
         ],
         // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)
         'Owner' => [
@@ -252,6 +256,8 @@ class RoleSeeder extends Seeder
             'review_satusehat_submissions',
             // SATUSEHAT-4A — executive read-only view of operational readiness.
             'view_satusehat_readiness',
+            // SATUSEHAT-4B — executive read-only view of diagnosis adoption.
+            'view_diagnosis_adoption',
         ],
         'Kasir' => [
             'view dashboard',
@@ -331,6 +337,13 @@ class RoleSeeder extends Seeder
             'manage_satusehat_remediation',
             'manage_satusehat_readiness_waivers',
             'manage_structured_diagnoses',
+            // SATUSEHAT-4B — clinical terminology reviewer + rollout owner +
+            // adoption analytics + emergency override authority. Self-approval
+            // stays impossible: separation of duties is enforced server-side.
+            'review_clinical_terminology',
+            'configure_diagnosis_rollout',
+            'view_diagnosis_adoption',
+            'override_diagnosis_requirement',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

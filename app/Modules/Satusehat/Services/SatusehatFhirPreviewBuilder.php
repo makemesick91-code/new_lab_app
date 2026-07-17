@@ -40,9 +40,22 @@ class SatusehatFhirPreviewBuilder
 
         $resources = [];
         $resources[] = $this->encounter($visit, $facts, $ids, $period, 0);
-        $resources[] = $this->condition(1);
-        foreach (($facts['treatments'] ?? []) as $offset => $treatment) {
-            $resources[] = $this->procedure($treatment, $ids, $period, 2 + $offset);
+
+        // SATUSEHAT-4B — one local Condition preview per structured diagnosis
+        // (canonical source: trx_medical_record_diagnoses via readiness facts).
+        // Never fabricated from free text; blocked honestly while unmapped.
+        $diagnoses = $facts['diagnoses'] ?? [];
+        $order = 1;
+        if ($diagnoses === []) {
+            $resources[] = $this->conditionPlaceholder($order++);
+        } else {
+            foreach ($diagnoses as $diagnosis) {
+                $resources[] = $this->condition($diagnosis, $ids, $order++);
+            }
+        }
+
+        foreach (($facts['treatments'] ?? []) as $treatment) {
+            $resources[] = $this->procedure($treatment, $ids, $period, $order++);
         }
 
         return [
@@ -94,18 +107,90 @@ class SatusehatFhirPreviewBuilder
     }
 
     /**
+     * No structured diagnosis recorded — never fabricate a Condition.
+     *
      * @return array<string, mixed>
      */
-    private function condition(int $order): array
+    private function conditionPlaceholder(int $order): array
     {
-        // No structured diagnosis source exists — never fabricate a Condition.
         return [
             'order' => $order,
             'resource_type' => SatusehatSubmissionItem::RESOURCE_CONDITION,
             'supported' => false,
-            'issues' => ['Diagnosis terstruktur belum tersedia — Condition tidak dipetakan pada SATUSEHAT-1.'],
+            'issues' => ['Diagnosis terstruktur belum tersedia — Condition tidak dibuat dari teks bebas.'],
             'payload' => null,
             'payload_hash' => null,
+        ];
+    }
+
+    /**
+     * SATUSEHAT-4B — local Condition preview from ONE structured diagnosis.
+     * Terminology comes exclusively from the ACTIVE, reviewed mapping (never
+     * guessed). The primary/secondary role is carried as supporting local
+     * context only — no unverified FHIR rank extension is fabricated.
+     *
+     * @param  array<string, mixed>  $diagnosis  row from readiness facts['diagnoses']
+     * @param  array<string, ?string>  $ids
+     * @return array<string, mixed>
+     */
+    private function condition(array $diagnosis, array $ids, int $order): array
+    {
+        $issues = [];
+
+        $mapped = ($diagnosis['mapping_code'] ?? null) !== null;
+        if (! $mapped) {
+            $issues[] = "Diagnosis {$diagnosis['code']} belum memiliki mapping Condition SATUSEHAT aktif (mapping_blocked).";
+        }
+
+        $terminologyActive = in_array($diagnosis['master_status'] ?? 'active', ['active', 'synthetic_rehearsal'], true);
+        if (! $terminologyActive) {
+            $issues[] = "Terminologi diagnosis {$diagnosis['code']} tidak lagi aktif — perlu re-koding klinis.";
+        }
+
+        $hasPatient = ($ids['patient'] ?? null) !== null;
+        if (! $hasPatient) {
+            $issues[] = 'Condition membutuhkan IHS Patient identifier.';
+        }
+
+        $supported = $mapped && $terminologyActive && $hasPatient;
+
+        $payload = $mapped ? [
+            'resourceType' => 'Condition',
+            'clinicalStatus' => [
+                'coding' => [[
+                    'system' => 'http://terminology.hl7.org/CodeSystem/condition-clinical',
+                    'code' => 'active',
+                ]],
+            ],
+            'category' => [[
+                'coding' => [[
+                    'system' => 'http://terminology.hl7.org/CodeSystem/condition-category',
+                    'code' => 'encounter-diagnosis',
+                    'display' => 'Encounter Diagnosis',
+                ]],
+            ]],
+            'code' => [
+                'coding' => [[
+                    'system' => $diagnosis['mapping_system'] ?? null,
+                    'code' => $diagnosis['mapping_code'],
+                    'display' => $diagnosis['mapping_display'] ?? null,
+                ]],
+            ],
+            'subject' => $this->reference('Patient', null, $ids['patient'] ?? null, null),
+            'encounter' => $this->reference('Encounter', null, null, null),
+            // Local supporting context — never sent as an unverified extension.
+            'local_diagnosis_role' => $diagnosis['role'] ?? null,
+            'local_diagnosis_id' => $diagnosis['diagnosis_id'] ?? null,
+            'local_mapping_version' => $diagnosis['mapping_version'] ?? null,
+        ] : null;
+
+        return [
+            'order' => $order,
+            'resource_type' => SatusehatSubmissionItem::RESOURCE_CONDITION,
+            'supported' => $supported,
+            'issues' => $issues,
+            'payload' => $payload,
+            'payload_hash' => $payload !== null ? $this->hasher->hash($payload) : null,
         ];
     }
 

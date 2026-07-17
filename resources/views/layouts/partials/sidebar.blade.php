@@ -258,7 +258,7 @@
             @endcanany
 
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
-            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses'])
+            @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption'])
                 <div>
                     <p class="menu-group-title pt-2">SATUSEHAT</p>
                     <div class="mt-1 space-y-1">
@@ -269,9 +269,18 @@
                             <a href="{{ route('satusehat.readiness.issues') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.readiness.issues*') ? $linkActive : $linkIdle }}">Isu Kualitas Data</a>
                         @endcanany
-                        @can('manage_structured_diagnoses')
+                        @canany(['manage_structured_diagnoses', 'review_clinical_terminology'])
                             <a href="{{ route('satusehat.diagnoses.index') }}"
                                class="menu-subitem {{ request()->routeIs('satusehat.diagnoses.*') ? $linkActive : $linkIdle }}">Master Diagnosis</a>
+                        @endcanany
+                        {{-- SATUSEHAT-4B — adoption analytics + branch rollout configuration --}}
+                        @can('view_diagnosis_adoption')
+                            <a href="{{ route('satusehat.adoption.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.adoption.*') ? $linkActive : $linkIdle }}">Adopsi Diagnosis</a>
+                        @endcan
+                        @can('configure_diagnosis_rollout')
+                            <a href="{{ route('satusehat.rollout.index') }}"
+                               class="menu-subitem {{ request()->routeIs('satusehat.rollout.*') ? $linkActive : $linkIdle }}">Rollout Diagnosis</a>
                         @endcan
                         @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions'])
                             <a href="{{ route('satusehat.submissions.index') }}"

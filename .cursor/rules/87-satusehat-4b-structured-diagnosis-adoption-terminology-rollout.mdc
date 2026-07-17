@@ -1,0 +1,58 @@
+---
+description: SATUSEHAT-4B — structured diagnosis adoption & clinical terminology rollout rules (permanent)
+globs:
+alwaysApply: false
+---
+
+# SATUSEHAT-4B — Structured Diagnosis Adoption & Clinical Terminology Rollout
+
+1. SATUSEHAT-2 remains WATCH; its GO tag remains absent. SATUSEHAT-4B is
+   credential-independent: no OAuth/sandbox/production/external FHIR HTTP.
+2. Structured diagnosis uses the canonical 4A tables
+   (`mst_clinical_diagnoses`, `trx_medical_record_diagnoses`) — never a
+   parallel diagnosis subsystem or second data-quality engine.
+3. Legacy free text is never auto-coded; no guessed ICD/SNOMED/clinical code;
+   no AI auto-coding; no bulk mutation of historical RME.
+4. Terminology lifecycle: draft → under_review → approved → active →
+   deprecated/rejected. Activation requires an official source + clinical
+   review (`review_clinical_terminology`); separation of duties is
+   server-side (creator/submitter can never approve their own entry). All
+   transitions via `ClinicalDiagnosisService` (row-locked) — never direct
+   status writes.
+5. Active terminology is immutable; corrections create a new entry and
+   deprecate the old one with an ACTIVE replacement pointer. Deprecated codes
+   stay historically readable and are only excluded from new selection.
+6. Only ACTIVE terminology is selectable for new records (search repository +
+   `MedicalRecordDiagnosisService::record` both enforce it). Synthetic
+   rehearsal entries are lifecycle-exempt (isolated campaign only).
+7. Rollout modes (`disabled|informational|warning|pilot_enforced`) are
+   branch-scoped via `DiagnosisRolloutService`/`mst_diagnosis_rollout_settings`
+   — resolved server-side from the record's branch, never request input.
+   **Global hard enforcement is forbidden by design**: the config default must
+   stay non-blocking and is refused otherwise; enforcement is only per-branch,
+   reasoned, audited (`configure_diagnosis_rollout`).
+8. `pilot_enforced` blocks ONLY `MedicalRecordService::finalize()` and only
+   without an ACTIVE-terminology primary diagnosis or a usable override.
+   It never bypasses/blocks room, consent, cashier, payment, or visit rules.
+9. Emergency override: dedicated `override_diagnosis_requirement` permission +
+   MedicalRecordPolicy re-check, reason ≥10 chars, time-boxed, append-only,
+   audited — and it NEVER makes the SATUSEHAT candidate ready.
+10. Exactly one primary diagnosis per record (service-enforced; the HARD
+    `duplicate_primary_diagnosis` rule guards history). Primary swaps only via
+    the explicit audited `makePrimary` — never silent.
+11. Diagnosis facts hash terminology status + mapping code/system/display +
+    role: any post-approval diagnosis/terminology/mapping change drifts the
+    source hash and revokes the candidate approval (re-review required).
+    Unchanged records must never fabricate drift.
+12. Condition preview is built ONLY from structured diagnoses + ACTIVE
+    reviewed mappings; unmapped ⇒ `mapping_blocked`; local preview is never
+    remote acceptance; NIK never rendered; primary/secondary carried as local
+    context (no unverified FHIR rank extension).
+13. Adoption analytics (`SatusehatDiagnosisAdoptionService`, dashboard,
+    `satusehat:diagnosis-adoption-audit`) are read-only, PII-free,
+    RME-branch-scoped (crafted branch ids dropped), null-not-zero rates, and
+    are operational quality indicators — never a punitive ranking.
+14. HARD diagnosis issues (`duplicate_primary_diagnosis`,
+    `diagnosis_code_invalid`) can never be waived into SATUSEHAT-ready status.
+15. Production stays blocked (SATUSEHAT-3 guard); no auto-send; no "Send All";
+    external GO depends on the SATUSEHAT-2 credential closure campaign.

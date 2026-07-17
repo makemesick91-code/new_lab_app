@@ -1,25 +1,25 @@
-# Active sprint manifest — SATUSEHAT-4A
+# Active sprint manifest — SATUSEHAT-4B
 # Validated by: php artisan sprint:manifest-check
 
-id: SATUSEHAT-4A
+id: SATUSEHAT-4B
 type: MODULE_SPRINT
 module: Satusehat
-title: "Credential-Independent Operational Readiness & Data Quality Closure (external submission disabled, production blocked, SATUSEHAT-2 stays WATCH)"
+title: "Structured Diagnosis Adoption & Clinical Terminology Rollout (credential-independent, external submission disabled, production blocked, SATUSEHAT-2 stays WATCH)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # data-quality rule engine, remediation workspace, structured diagnosis, synthetic rehearsal, 7 commands
-schema_change: true             # 3 additive tables (clinical diagnoses master, MR diagnoses, data-quality issues)
-frontend_change: true           # readiness dashboard, issue workspace, diagnosis master page, RME diagnosis card — Tailwind rebuild
-security_impact: true           # 4 new permissions, new policy, new gated routes; branch isolation fail-closed
-branch_isolation_impact: true   # issue/workspace scope via existing RME-enabled branch set; empty set denies
+runtime_change: true            # terminology lifecycle, branch rollout modes + finalize gate, override, Condition preview, adoption analytics, 3 commands
+schema_change: true             # 3 additive migrations (lifecycle columns, rollout settings, requirement overrides)
+frontend_change: true           # diagnoses workspace lifecycle UI, rollout page, adoption dashboard, RM diagnosis card polish
+security_impact: true           # 4 new permissions, review-permission split on terminology routes, override permission + policy re-check
+branch_isolation_impact: true   # rollout mode + adoption scope resolved server-side from RME-enabled branch set
 ledger_impact: false            # no inventory ledger / billing / payment behavior change
 
 deploy_required: true
-browser_required: true          # readiness dashboard + issue workspace + RME diagnosis card smoke
+browser_required: true          # diagnoses workspace + rollout page + adoption dashboard + RM card smoke
 
 test_profiles:
   - rme
   - access_control
   - deployment
 
-go_tag: satusehat-4a-credential-independent-operational-readiness-data-quality-closure-go
+go_tag: satusehat-4b-structured-diagnosis-adoption-clinical-terminology-rollout-go

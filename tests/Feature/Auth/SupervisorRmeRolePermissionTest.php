@@ -37,6 +37,12 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage_satusehat_remediation',
     'manage_satusehat_readiness_waivers',
     'manage_structured_diagnoses',
+    // SATUSEHAT-4B — terminology reviewer + rollout owner + adoption analytics
+    // + emergency override authority (separation of duties stays server-side).
+    'review_clinical_terminology',
+    'configure_diagnosis_rollout',
+    'view_diagnosis_adoption',
+    'override_diagnosis_requirement',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

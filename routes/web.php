@@ -59,6 +59,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\MedicalRecord\Controllers\ClinicalDiagnosisController;
+use App\Modules\MedicalRecord\Controllers\DiagnosisRolloutController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
@@ -87,6 +88,7 @@ use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
 use App\Modules\Satusehat\Controllers\SatusehatDentalController;
+use App\Modules\Satusehat\Controllers\SatusehatDiagnosisAdoptionController;
 use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
 use App\Modules\Satusehat\Controllers\SatusehatReadinessController;
@@ -356,6 +358,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
                 ->name('visits.medical-record.diagnoses.store');
             Route::delete('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}', [MedicalRecordDiagnosisController::class, 'destroy'])
                 ->name('visits.medical-record.diagnoses.destroy');
+            // SATUSEHAT-4B — explicit primary swap (never silent, audited).
+            Route::post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnoses/{diagnosis}/make-primary', [MedicalRecordDiagnosisController::class, 'makePrimary'])
+                ->name('visits.medical-record.diagnoses.make-primary');
+            // SATUSEHAT-4B — reasoned emergency override of the pilot-enforced
+            // diagnosis requirement (dedicated permission + policy re-check).
+            Route::middleware('permission:override_diagnosis_requirement')
+                ->post('visits/{clinicVisit}/medical-record/{medicalRecord}/diagnosis-override', [DiagnosisRolloutController::class, 'override'])
+                ->name('visits.medical-record.diagnosis-override');
         });
 
         // SATUSEHAT-4A — bounded ACTIVE-only master diagnosis autocomplete for
@@ -533,11 +543,33 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
 
     // SATUSEHAT-4A — master clinical diagnosis governance (clinical reference
     // data; SATUSEHAT mapping stays a separate reviewed lifecycle).
-    Route::middleware('permission:manage_structured_diagnoses')->group(function () {
+    // SATUSEHAT-4B — the review actions (approve/reject/activate/deprecate)
+    // require the dedicated review_clinical_terminology permission; separation
+    // of duties (no self-approval) is re-enforced in the service layer.
+    Route::middleware('permission:manage_structured_diagnoses|review_clinical_terminology')->group(function () {
         Route::get('diagnoses', [ClinicalDiagnosisController::class, 'index'])->name('diagnoses.index');
+    });
+    Route::middleware('permission:manage_structured_diagnoses')->group(function () {
         Route::post('diagnoses', [ClinicalDiagnosisController::class, 'store'])->name('diagnoses.store');
+        Route::post('diagnoses/{diagnosis}/submit-review', [ClinicalDiagnosisController::class, 'submitReview'])->name('diagnoses.submit-review');
+    });
+    Route::middleware('permission:review_clinical_terminology')->group(function () {
+        Route::post('diagnoses/{diagnosis}/approve', [ClinicalDiagnosisController::class, 'approve'])->name('diagnoses.approve');
+        Route::post('diagnoses/{diagnosis}/reject', [ClinicalDiagnosisController::class, 'reject'])->name('diagnoses.reject');
+        Route::post('diagnoses/{diagnosis}/activate', [ClinicalDiagnosisController::class, 'activate'])->name('diagnoses.activate');
         Route::post('diagnoses/{diagnosis}/deprecate', [ClinicalDiagnosisController::class, 'deprecate'])->name('diagnoses.deprecate');
     });
+
+    // SATUSEHAT-4B — branch-scoped rollout configuration (no global switch).
+    Route::middleware('permission:configure_diagnosis_rollout')->group(function () {
+        Route::get('rollout', [DiagnosisRolloutController::class, 'index'])->name('rollout.index');
+        Route::post('rollout/{branch}', [DiagnosisRolloutController::class, 'update'])->name('rollout.update');
+    });
+
+    // SATUSEHAT-4B — structured diagnosis adoption dashboard (read-only, PII-free).
+    Route::middleware('permission:view_diagnosis_adoption')
+        ->get('adoption', [SatusehatDiagnosisAdoptionController::class, 'index'])
+        ->name('adoption.index');
 });
 
 /*

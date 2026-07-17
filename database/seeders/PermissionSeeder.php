@@ -165,6 +165,14 @@ class PermissionSeeder extends Seeder
         'manage_satusehat_remediation',
         'manage_satusehat_readiness_waivers',
         'manage_structured_diagnoses',
+        // SATUSEHAT-4B — structured diagnosis adoption & clinical terminology
+        // rollout. Terminology review is separated from master data entry
+        // (separation of duties); rollout configuration and the emergency
+        // override each have a dedicated permission.
+        'review_clinical_terminology',
+        'configure_diagnosis_rollout',
+        'view_diagnosis_adoption',
+        'override_diagnosis_requirement',
     ];
 
     public function run(): void

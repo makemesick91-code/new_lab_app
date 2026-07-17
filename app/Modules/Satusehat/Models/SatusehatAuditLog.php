@@ -106,6 +106,23 @@ class SatusehatAuditLog extends Model
 
     public const EVENT_REHEARSAL_RUN = 'rehearsal_run';
 
+    // SATUSEHAT-4B — clinical terminology review lifecycle + rollout governance.
+    public const EVENT_TERMINOLOGY_SUBMITTED = 'terminology_submitted';
+
+    public const EVENT_TERMINOLOGY_APPROVED = 'terminology_approved';
+
+    public const EVENT_TERMINOLOGY_REJECTED = 'terminology_rejected';
+
+    public const EVENT_TERMINOLOGY_ACTIVATED = 'terminology_activated';
+
+    public const EVENT_TERMINOLOGY_DEPRECATED = 'terminology_deprecated';
+
+    public const EVENT_DIAGNOSIS_ROLE_CHANGED = 'diagnosis_role_changed';
+
+    public const EVENT_ROLLOUT_MODE_CHANGED = 'diagnosis_rollout_mode_changed';
+
+    public const EVENT_DIAGNOSIS_OVERRIDE_GRANTED = 'diagnosis_override_granted';
+
     protected $fillable = [
         'environment',
         'branch_id',
