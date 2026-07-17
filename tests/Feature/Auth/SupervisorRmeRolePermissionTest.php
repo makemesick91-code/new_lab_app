@@ -50,6 +50,14 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'approve_satusehat_internal_pilot',
     'run_satusehat_pilot_rehearsal',
     'view_satusehat_pilot_metrics',
+    // SATUSEHAT-4D
+    'view_satusehat_multi_branch_readiness',
+    'view_satusehat_executive_readiness',
+    'manage_satusehat_rollout_waves',
+    'approve_satusehat_rollout_wave',
+    'promote_satusehat_branch',
+    'manage_satusehat_change_control',
+    'record_satusehat_uat_signoff',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {

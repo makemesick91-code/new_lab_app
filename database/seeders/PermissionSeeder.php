@@ -183,6 +183,16 @@ class PermissionSeeder extends Seeder
         'approve_satusehat_internal_pilot',
         'run_satusehat_pilot_rehearsal',
         'view_satusehat_pilot_metrics',
+
+        // SATUSEHAT-4D — multi-branch readiness scale-up & operational governance.
+        // Credential-independent; NONE grant external send / production.
+        'view_satusehat_multi_branch_readiness',
+        'view_satusehat_executive_readiness',
+        'manage_satusehat_rollout_waves',
+        'approve_satusehat_rollout_wave',
+        'promote_satusehat_branch',
+        'manage_satusehat_change_control',
+        'record_satusehat_uat_signoff',
     ];
 
     public function run(): void

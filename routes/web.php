@@ -87,12 +87,17 @@ use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
+use App\Modules\Satusehat\Controllers\SatusehatBranchGovernanceController;
 use App\Modules\Satusehat\Controllers\SatusehatBranchReadinessController;
+use App\Modules\Satusehat\Controllers\SatusehatChangeControlController;
 use App\Modules\Satusehat\Controllers\SatusehatDentalController;
 use App\Modules\Satusehat\Controllers\SatusehatDiagnosisAdoptionController;
 use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
 use App\Modules\Satusehat\Controllers\SatusehatInternalPilotController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
+use App\Modules\Satusehat\Controllers\SatusehatMultiBranchReadinessController;
+use App\Modules\Satusehat\Controllers\SatusehatRolloutWaveController;
+use App\Modules\Satusehat\Controllers\SatusehatUatController;
 use App\Modules\Satusehat\Controllers\SatusehatReadinessController;
 use App\Modules\Satusehat\Controllers\SatusehatRemediationController;
 use App\Modules\Satusehat\Controllers\SatusehatSubmissionController;
@@ -604,6 +609,74 @@ Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(fu
     Route::middleware('permission:run_satusehat_pilot_rehearsal')
         ->post('branches/{branch}/pilot/rehearse', [SatusehatInternalPilotController::class, 'rehearse'])
         ->whereNumber('branch')->name('branches.pilot.rehearse');
+
+    // SATUSEHAT-4D — multi-branch readiness scale-up & operational governance.
+    // Read side is branch-scoped server-side; every write maps to a dedicated
+    // least-privilege permission. Nothing here enables external submission or
+    // production — readiness is INTERNAL only; the credential blocker is separate.
+
+    // Comparative multi-branch readiness matrix (read-only).
+    Route::middleware('permission:view_satusehat_multi_branch_readiness')
+        ->get('multi-branch', [SatusehatMultiBranchReadinessController::class, 'index'])
+        ->name('multi-branch.index');
+
+    // Executive / owner aggregate dashboard (read-only, PII-free).
+    Route::middleware('permission:view_satusehat_executive_readiness')
+        ->get('executive', [SatusehatMultiBranchReadinessController::class, 'executive'])
+        ->name('executive.index');
+
+    // Rollout waves.
+    Route::middleware('permission:view_satusehat_multi_branch_readiness|manage_satusehat_rollout_waves')->group(function () {
+        Route::get('waves', [SatusehatRolloutWaveController::class, 'index'])->name('waves.index');
+        Route::get('waves/{wave}', [SatusehatRolloutWaveController::class, 'show'])->whereNumber('wave')->name('waves.show');
+    });
+    Route::middleware('permission:manage_satusehat_rollout_waves')->group(function () {
+        Route::post('waves', [SatusehatRolloutWaveController::class, 'store'])->name('waves.store');
+        Route::post('waves/{wave}/enroll', [SatusehatRolloutWaveController::class, 'enroll'])->whereNumber('wave')->name('waves.enroll');
+        Route::post('waves/{wave}/remove-branch', [SatusehatRolloutWaveController::class, 'removeBranch'])->whereNumber('wave')->name('waves.remove-branch');
+        Route::post('waves/{wave}/status', [SatusehatRolloutWaveController::class, 'changeStatus'])->whereNumber('wave')->name('waves.status');
+        Route::post('waves/{wave}/suspend', [SatusehatRolloutWaveController::class, 'suspend'])->whereNumber('wave')->name('waves.suspend');
+        Route::post('waves/{wave}/resume', [SatusehatRolloutWaveController::class, 'resume'])->whereNumber('wave')->name('waves.resume');
+        Route::post('waves/{wave}/close', [SatusehatRolloutWaveController::class, 'close'])->whereNumber('wave')->name('waves.close');
+    });
+    Route::middleware('permission:approve_satusehat_rollout_wave')
+        ->post('waves/{wave}/approve', [SatusehatRolloutWaveController::class, 'approve'])
+        ->whereNumber('wave')->name('waves.approve');
+    Route::middleware('permission:run_satusehat_pilot_rehearsal')
+        ->post('waves/{wave}/rehearse', [SatusehatRolloutWaveController::class, 'rehearse'])
+        ->whereNumber('wave')->name('waves.rehearse');
+
+    // Branch readiness promotion / demotion + cross-branch bulk issue governance.
+    Route::middleware('permission:promote_satusehat_branch')->group(function () {
+        Route::post('branches/{branch}/promote', [SatusehatBranchGovernanceController::class, 'promote'])->whereNumber('branch')->name('branches.promote');
+        Route::post('branches/{branch}/demote', [SatusehatBranchGovernanceController::class, 'demote'])->whereNumber('branch')->name('branches.demote');
+        Route::post('branches/{branch}/readiness-suspend', [SatusehatBranchGovernanceController::class, 'suspend'])->whereNumber('branch')->name('branches.readiness-suspend');
+        Route::post('branches/{branch}/readiness-resume', [SatusehatBranchGovernanceController::class, 'resume'])->whereNumber('branch')->name('branches.readiness-resume');
+    });
+    Route::middleware('permission:manage_satusehat_branch_remediation')
+        ->post('issues/bulk-assign', [SatusehatBranchGovernanceController::class, 'bulkAssignIssues'])
+        ->name('issues.bulk-assign');
+
+    // Change-control governance.
+    Route::middleware('permission:manage_satusehat_change_control')->group(function () {
+        Route::get('change-control', [SatusehatChangeControlController::class, 'index'])->name('change-control.index');
+        Route::post('change-control', [SatusehatChangeControlController::class, 'store'])->name('change-control.store');
+        Route::post('change-control/{changeRequest}/review', [SatusehatChangeControlController::class, 'review'])->whereNumber('changeRequest')->name('change-control.review');
+        Route::post('change-control/{changeRequest}/approve', [SatusehatChangeControlController::class, 'approve'])->whereNumber('changeRequest')->name('change-control.approve');
+        Route::post('change-control/{changeRequest}/reject', [SatusehatChangeControlController::class, 'reject'])->whereNumber('changeRequest')->name('change-control.reject');
+        Route::post('change-control/{changeRequest}/apply', [SatusehatChangeControlController::class, 'apply'])->whereNumber('changeRequest')->name('change-control.apply');
+    });
+
+    // Human operator UAT workflow.
+    Route::middleware('permission:record_satusehat_uat_signoff')->group(function () {
+        Route::get('uat', [SatusehatUatController::class, 'index'])->name('uat.index');
+        Route::get('uat/{run}', [SatusehatUatController::class, 'show'])->whereNumber('run')->name('uat.show');
+        Route::post('uat', [SatusehatUatController::class, 'store'])->name('uat.store');
+        Route::post('uat/{run}/scenario', [SatusehatUatController::class, 'scenario'])->whereNumber('run')->name('uat.scenario');
+        Route::post('uat/{run}/signoff', [SatusehatUatController::class, 'signoff'])->whereNumber('run')->name('uat.signoff');
+        Route::post('uat/{run}/finalize', [SatusehatUatController::class, 'finalize'])->whereNumber('run')->name('uat.finalize');
+        Route::post('uat/{run}/reject', [SatusehatUatController::class, 'reject'])->whereNumber('run')->name('uat.reject');
+    });
 });
 
 /*

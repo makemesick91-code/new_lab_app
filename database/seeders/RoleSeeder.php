@@ -124,6 +124,8 @@ class RoleSeeder extends Seeder
             // No pilot configuration/approval/rehearsal (those are governance).
             'view_satusehat_branch_readiness',
             'manage_satusehat_branch_remediation',
+            // SATUSEHAT-4D — read the comparative multi-branch matrix (own scope).
+            'view_satusehat_multi_branch_readiness',
         ],
         'Technician' => [
             'view dashboard',
@@ -266,6 +268,9 @@ class RoleSeeder extends Seeder
             // pilot operations metrics (no pilot configuration/approval).
             'view_satusehat_branch_readiness',
             'view_satusehat_pilot_metrics',
+            // SATUSEHAT-4D — read-only executive/owner aggregate + matrix.
+            'view_satusehat_multi_branch_readiness',
+            'view_satusehat_executive_readiness',
         ],
         'Kasir' => [
             'view dashboard',
@@ -361,6 +366,15 @@ class RoleSeeder extends Seeder
             'approve_satusehat_internal_pilot',
             'run_satusehat_pilot_rehearsal',
             'view_satusehat_pilot_metrics',
+            // SATUSEHAT-4D — full multi-branch scale-up & operational governance.
+            // Still NO external send / production.
+            'view_satusehat_multi_branch_readiness',
+            'view_satusehat_executive_readiness',
+            'manage_satusehat_rollout_waves',
+            'approve_satusehat_rollout_wave',
+            'promote_satusehat_branch',
+            'manage_satusehat_change_control',
+            'record_satusehat_uat_signoff',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [
