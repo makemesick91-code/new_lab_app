@@ -24,7 +24,7 @@ class SatusehatBranchTransitionRequest extends FormRequest
             // bulk issue assignment
             'issue_ids' => ['sometimes', 'array', 'max:100'],
             'issue_ids.*' => ['integer'],
-            'assignee_id' => ['sometimes', 'integer'],
+            'assignee_id' => ['sometimes', 'integer', 'exists:users,id'],
             'priority' => ['nullable', 'string', 'max:20'],
             'assigned_role' => ['nullable', 'string', 'max:60'],
         ];

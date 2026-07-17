@@ -58,6 +58,20 @@ it('signs off a UAT run only when all required roles approve and no scenario fai
     Http::assertNothingSent();
 });
 
+it('blocks UAT sign-off when one operator attests multiple roles (segregation of duties)', function () {
+    $uat = app(SatusehatUatService::class);
+    $actor = User::factory()->create();
+
+    $run = $uat->createRun(['title' => 'SoD UAT'], $actor);
+    $uat->recordScenario($run, ['scenario_code' => 'X', 'role' => 'admin_klinik', 'outcome' => 'pass', 'operator_name' => 'Solo'], $actor);
+    // Same operator name for every required role → SoD violation at finalize.
+    foreach (config('satusehat_pilot.uat.required_signoff_roles') as $role) {
+        $uat->recordSignoff($run, ['role' => $role, 'decision' => 'approved', 'operator_name' => 'Solo Operator'], $actor);
+    }
+
+    expect(fn () => $uat->finalize($run, $actor))->toThrow(ValidationException::class);
+});
+
 it('blocks UAT sign-off when a scenario failed', function () {
     $uat = app(SatusehatUatService::class);
     $actor = User::factory()->create();

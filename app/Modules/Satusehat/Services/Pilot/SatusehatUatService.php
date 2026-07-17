@@ -166,14 +166,30 @@ class SatusehatUatService
             }
 
             $requiredRoles = (array) config('satusehat_pilot.uat.required_signoff_roles', []);
-            $approved = SatusehatUatSignoff::query()
+            $approvedSignoffs = SatusehatUatSignoff::query()
                 ->where('uat_run_id', $locked->id)
                 ->where('decision', SatusehatUatSignoff::DECISION_APPROVED)
-                ->pluck('role')->all();
+                ->get();
+            $approved = $approvedSignoffs->pluck('role')->all();
             $missing = array_values(array_diff($requiredRoles, $approved));
             if ($missing !== []) {
                 throw ValidationException::withMessages([
                     'signoff' => 'Sign-off belum lengkap. Peran belum menyetujui: '.implode(', ', $missing),
+                ]);
+            }
+
+            // Separation of duties: a single human must not attest multiple
+            // required roles. Each required role's approved sign-off must carry a
+            // DISTINCT operator_name (a facilitator may enter them, but the named
+            // accountable operators must differ). Sign-offs are never fabricated.
+            $requiredNames = $approvedSignoffs
+                ->whereIn('role', $requiredRoles)
+                ->map(fn ($s) => mb_strtolower(trim((string) $s->operator_name)))
+                ->filter()
+                ->values();
+            if ($requiredNames->unique()->count() < count($requiredRoles)) {
+                throw ValidationException::withMessages([
+                    'signoff' => 'Setiap peran wajib ditandatangani oleh operator yang berbeda (segregation of duties). Nama operator tidak boleh sama antar peran.',
                 ]);
             }
 
