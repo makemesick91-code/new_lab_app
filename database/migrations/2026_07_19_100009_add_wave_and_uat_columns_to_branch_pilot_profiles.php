@@ -24,8 +24,15 @@ return new class extends Migration
 
         Schema::table('mst_satusehat_branch_pilot_profiles', function (Blueprint $table) {
             if (! Schema::hasColumn('mst_satusehat_branch_pilot_profiles', 'active_wave_id')) {
-                $table->foreignId('active_wave_id')->nullable()->after('readiness_stage')
-                    ->constrained('mst_satusehat_rollout_waves')->nullOnDelete();
+                // Plain indexed pointer — NOT a DB-level foreign key. Adding a
+                // constrained() FK column forces SQLite to REBUILD the table,
+                // and Laravel's rebuild drops the 4C partial unique index's
+                // WHERE clause (flattening it to a full unique on environment,
+                // which would break multi-branch). The wave-branch membership
+                // table is the source of truth; this is a convenience pointer
+                // the service keeps consistent (and clears on wave close).
+                $table->unsignedBigInteger('active_wave_id')->nullable()->after('readiness_stage');
+                $table->index('active_wave_id', 'mst_ss_pilot_active_wave_idx');
             }
             if (! Schema::hasColumn('mst_satusehat_branch_pilot_profiles', 'uat_status')) {
                 // not_started | scheduled | in_progress | passed | failed
@@ -49,11 +56,7 @@ return new class extends Migration
         Schema::table('mst_satusehat_branch_pilot_profiles', function (Blueprint $table) {
             foreach (['last_transition_at', 'last_uat_signed_off_at', 'uat_status', 'active_wave_id'] as $col) {
                 if (Schema::hasColumn('mst_satusehat_branch_pilot_profiles', $col)) {
-                    if ($col === 'active_wave_id') {
-                        $table->dropConstrainedForeignId('active_wave_id');
-                    } else {
-                        $table->dropColumn($col);
-                    }
+                    $table->dropColumn($col);
                 }
             }
         });

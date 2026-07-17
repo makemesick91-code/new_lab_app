@@ -63,6 +63,10 @@ class SatusehatBranchPilotProfile extends Model
         'branch_id',
         'pilot_status',
         'readiness_stage',
+        'active_wave_id',
+        'uat_status',
+        'last_uat_signed_off_at',
+        'last_transition_at',
         'internal_readiness_score',
         'score_version',
         'open_hard_issues',
@@ -91,6 +95,9 @@ class SatusehatBranchPilotProfile extends Model
     {
         return [
             'branch_id' => 'integer',
+            'active_wave_id' => 'integer',
+            'last_uat_signed_off_at' => 'datetime',
+            'last_transition_at' => 'datetime',
             'internal_readiness_score' => 'integer',
             'score_version' => 'integer',
             'open_hard_issues' => 'integer',
@@ -150,6 +157,11 @@ class SatusehatBranchPilotProfile extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function activeWave(): BelongsTo
+    {
+        return $this->belongsTo(SatusehatRolloutWave::class, 'active_wave_id');
     }
 
     public function selectedBy(): BelongsTo
