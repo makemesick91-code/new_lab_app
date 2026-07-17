@@ -308,6 +308,7 @@ return [
         'unauthorized_suspension',
         'external_send_flag_tampering',
         'production_flag_tampering',
+        'integration_disabled',
         'nginx_default_server_regression',
         'co_tenant_shadowing',
         'privacy_leak_attempt',
