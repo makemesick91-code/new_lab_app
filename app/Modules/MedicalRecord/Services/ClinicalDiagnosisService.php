@@ -69,7 +69,9 @@ class ClinicalDiagnosisService
             if ($existing !== null) {
                 // Restore + refresh instead of violating the unique constraint.
                 // The restored entry re-enters the lifecycle as DRAFT — it must
-                // pass clinical review again before it becomes selectable.
+                // pass clinical review again before it becomes selectable, so
+                // all prior-life review metadata is cleared (no misleading
+                // historical approval trail on a draft).
                 $existing->restore();
                 $existing->update([
                     'display' => trim((string) $data['display']),
@@ -78,6 +80,18 @@ class ClinicalDiagnosisService
                     'source_version' => $data['source_version'] ?? null,
                     'aliases' => $data['aliases'] ?? null,
                     'notes' => $data['notes'] ?? null,
+                    'submitted_by' => null,
+                    'submitted_for_review_at' => null,
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'approved_by' => null,
+                    'approved_at' => null,
+                    'approval_reason' => null,
+                    'rejected_reason' => null,
+                    'replacement_diagnosis_id' => null,
+                    'deprecated_by' => null,
+                    'deprecated_at' => null,
+                    'effective_to' => null,
                 ]);
 
                 return $existing;
@@ -101,103 +115,115 @@ class ClinicalDiagnosisService
 
     public function submitForReview(ClinicalDiagnosis $diagnosis, User $actor): ClinicalDiagnosis
     {
-        $this->assertStatusIn($diagnosis, [ClinicalDiagnosis::STATUS_DRAFT, ClinicalDiagnosis::STATUS_REJECTED]);
+        return $this->lockedTransition($diagnosis, [ClinicalDiagnosis::STATUS_DRAFT, ClinicalDiagnosis::STATUS_REJECTED], function (ClinicalDiagnosis $locked) use ($actor) {
+            $locked->update([
+                'status' => ClinicalDiagnosis::STATUS_UNDER_REVIEW,
+                'submitted_by' => $actor->id,
+                'submitted_for_review_at' => now(),
+                'rejected_reason' => null,
+            ]);
 
-        $diagnosis->update([
-            'status' => ClinicalDiagnosis::STATUS_UNDER_REVIEW,
-            'submitted_by' => $actor->id,
-            'submitted_for_review_at' => now(),
-            'rejected_reason' => null,
-        ]);
-
-        $this->logTerminology($diagnosis, SatusehatAuditLog::EVENT_TERMINOLOGY_SUBMITTED, 'Terminologi diajukan untuk review klinis', $actor);
-
-        return $diagnosis;
+            $this->logTerminology($locked, SatusehatAuditLog::EVENT_TERMINOLOGY_SUBMITTED, 'Terminologi diajukan untuk review klinis', $actor);
+        });
     }
 
     public function approve(ClinicalDiagnosis $diagnosis, User $actor, string $reason): ClinicalDiagnosis
     {
-        $this->assertStatusIn($diagnosis, [ClinicalDiagnosis::STATUS_UNDER_REVIEW]);
-        $this->assertOfficialSource($diagnosis);
-        $this->assertSeparationOfDuties($diagnosis, $actor);
+        return $this->lockedTransition($diagnosis, [ClinicalDiagnosis::STATUS_UNDER_REVIEW], function (ClinicalDiagnosis $locked) use ($actor, $reason) {
+            $this->assertOfficialSource($locked);
+            $this->assertSeparationOfDuties($locked, $actor);
 
-        $diagnosis->update([
-            'status' => ClinicalDiagnosis::STATUS_APPROVED,
-            'reviewed_by' => $actor->id,
-            'reviewed_at' => now(),
-            'approved_by' => $actor->id,
-            'approved_at' => now(),
-            'approval_reason' => mb_substr(trim($reason), 0, 500),
-        ]);
+            $locked->update([
+                'status' => ClinicalDiagnosis::STATUS_APPROVED,
+                'reviewed_by' => $actor->id,
+                'reviewed_at' => now(),
+                'approved_by' => $actor->id,
+                'approved_at' => now(),
+                'approval_reason' => mb_substr(trim($reason), 0, 500),
+            ]);
 
-        $this->logTerminology($diagnosis, SatusehatAuditLog::EVENT_TERMINOLOGY_APPROVED, 'Terminologi disetujui reviewer klinis', $actor);
-
-        return $diagnosis;
+            $this->logTerminology($locked, SatusehatAuditLog::EVENT_TERMINOLOGY_APPROVED, 'Terminologi disetujui reviewer klinis', $actor);
+        });
     }
 
     public function reject(ClinicalDiagnosis $diagnosis, User $actor, string $reason): ClinicalDiagnosis
     {
-        $this->assertStatusIn($diagnosis, [ClinicalDiagnosis::STATUS_UNDER_REVIEW]);
+        return $this->lockedTransition($diagnosis, [ClinicalDiagnosis::STATUS_UNDER_REVIEW], function (ClinicalDiagnosis $locked) use ($actor, $reason) {
+            $locked->update([
+                'status' => ClinicalDiagnosis::STATUS_REJECTED,
+                'reviewed_by' => $actor->id,
+                'reviewed_at' => now(),
+                'rejected_reason' => mb_substr(trim($reason), 0, 500),
+            ]);
 
-        $diagnosis->update([
-            'status' => ClinicalDiagnosis::STATUS_REJECTED,
-            'reviewed_by' => $actor->id,
-            'reviewed_at' => now(),
-            'rejected_reason' => mb_substr(trim($reason), 0, 500),
-        ]);
-
-        $this->logTerminology($diagnosis, SatusehatAuditLog::EVENT_TERMINOLOGY_REJECTED, 'Terminologi ditolak reviewer klinis', $actor);
-
-        return $diagnosis;
+            $this->logTerminology($locked, SatusehatAuditLog::EVENT_TERMINOLOGY_REJECTED, 'Terminologi ditolak reviewer klinis', $actor);
+        });
     }
 
     public function activate(ClinicalDiagnosis $diagnosis, User $actor): ClinicalDiagnosis
     {
-        $this->assertStatusIn($diagnosis, [ClinicalDiagnosis::STATUS_APPROVED]);
-        $this->assertOfficialSource($diagnosis);
-        $this->assertSeparationOfDuties($diagnosis, $actor);
+        return $this->lockedTransition($diagnosis, [ClinicalDiagnosis::STATUS_APPROVED], function (ClinicalDiagnosis $locked) use ($actor) {
+            $this->assertOfficialSource($locked);
+            $this->assertSeparationOfDuties($locked, $actor);
 
-        $diagnosis->update([
-            'status' => ClinicalDiagnosis::STATUS_ACTIVE,
-        ]);
+            $locked->update([
+                'status' => ClinicalDiagnosis::STATUS_ACTIVE,
+            ]);
 
-        $this->logTerminology($diagnosis, SatusehatAuditLog::EVENT_TERMINOLOGY_ACTIVATED, 'Terminologi diaktifkan untuk pemilihan klinis', $actor);
-
-        return $diagnosis;
+            $this->logTerminology($locked, SatusehatAuditLog::EVENT_TERMINOLOGY_ACTIVATED, 'Terminologi diaktifkan untuk pemilihan klinis', $actor);
+        });
     }
 
     public function deprecate(ClinicalDiagnosis $diagnosis, User $actor, ?int $replacementId = null, ?string $reason = null): ClinicalDiagnosis
     {
-        $this->assertStatusIn($diagnosis, [ClinicalDiagnosis::STATUS_ACTIVE, ClinicalDiagnosis::STATUS_APPROVED]);
-
-        $replacement = null;
-        if ($replacementId !== null) {
-            $replacement = ClinicalDiagnosis::query()->find($replacementId);
-            if ($replacement === null || ! $replacement->isActive() || (int) $replacement->id === (int) $diagnosis->id) {
-                throw ValidationException::withMessages([
-                    'replacement_diagnosis_id' => 'Terminologi pengganti harus berupa entri AKTIF yang berbeda.',
-                ]);
+        return $this->lockedTransition($diagnosis, [ClinicalDiagnosis::STATUS_ACTIVE, ClinicalDiagnosis::STATUS_APPROVED], function (ClinicalDiagnosis $locked) use ($actor, $replacementId, $reason) {
+            $replacement = null;
+            if ($replacementId !== null) {
+                $replacement = ClinicalDiagnosis::query()->find($replacementId);
+                if ($replacement === null || ! $replacement->isActive() || (int) $replacement->id === (int) $locked->id) {
+                    throw ValidationException::withMessages([
+                        'replacement_diagnosis_id' => 'Terminologi pengganti harus berupa entri AKTIF yang berbeda.',
+                    ]);
+                }
             }
-        }
 
-        $diagnosis->update([
-            'status' => ClinicalDiagnosis::STATUS_DEPRECATED,
-            'reviewed_by' => $actor->id,
-            'reviewed_at' => now(),
-            'deprecated_by' => $actor->id,
-            'deprecated_at' => now(),
-            'effective_to' => now()->toDateString(),
-            'replacement_diagnosis_id' => $replacement?->id,
-            'notes' => $reason !== null && trim($reason) !== ''
-                ? mb_substr(trim($reason), 0, 500)
-                : $diagnosis->notes,
-        ]);
+            $locked->update([
+                'status' => ClinicalDiagnosis::STATUS_DEPRECATED,
+                'reviewed_by' => $actor->id,
+                'reviewed_at' => now(),
+                'deprecated_by' => $actor->id,
+                'deprecated_at' => now(),
+                'effective_to' => now()->toDateString(),
+                'replacement_diagnosis_id' => $replacement?->id,
+                'notes' => $reason !== null && trim($reason) !== ''
+                    ? mb_substr(trim($reason), 0, 500)
+                    : $locked->notes,
+            ]);
 
-        $this->logTerminology($diagnosis, SatusehatAuditLog::EVENT_TERMINOLOGY_DEPRECATED, 'Terminologi dinonaktifkan (deprecated)', $actor, [
-            'replacement_code' => $replacement?->code,
-        ]);
+            $this->logTerminology($locked, SatusehatAuditLog::EVENT_TERMINOLOGY_DEPRECATED, 'Terminologi dinonaktifkan (deprecated)', $actor, [
+                'replacement_code' => $replacement?->code,
+            ]);
+        });
+    }
 
-        return $diagnosis;
+    /**
+     * Serialize a lifecycle transition: lock the row, re-assert the allowed
+     * source statuses on the LOCKED state (TOCTOU-safe), apply, return fresh.
+     *
+     * @param  list<string>  $allowed
+     * @param  callable(ClinicalDiagnosis): void  $apply
+     */
+    private function lockedTransition(ClinicalDiagnosis $diagnosis, array $allowed, callable $apply): ClinicalDiagnosis
+    {
+        return DB::transaction(function () use ($diagnosis, $allowed, $apply) {
+            /** @var ClinicalDiagnosis $locked */
+            $locked = ClinicalDiagnosis::query()->lockForUpdate()->findOrFail($diagnosis->id);
+
+            $this->assertStatusIn($locked, $allowed);
+            $apply($locked);
+
+            return $locked->refresh();
+        });
     }
 
     private function assertStatusIn(ClinicalDiagnosis $diagnosis, array $allowed): void

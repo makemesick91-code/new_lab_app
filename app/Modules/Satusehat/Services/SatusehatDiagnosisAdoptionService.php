@@ -100,7 +100,11 @@ class SatusehatDiagnosisAdoptionService
 
         $deprecatedUsage = MedicalRecordDiagnosis::query()
             ->whereIn('trx_medical_record_diagnoses.branch_id', $scoped)
-            ->whereHas('clinicalDiagnosis', fn ($q) => $q->where('status', '!=', ClinicalDiagnosis::STATUS_ACTIVE))
+            // Synthetic rehearsal masters are lifecycle-exempt (isolated
+            // campaign) — never counted as deprecated usage.
+            ->whereHas('clinicalDiagnosis', fn ($q) => $q
+                ->where('status', '!=', ClinicalDiagnosis::STATUS_ACTIVE)
+                ->where('status', '!=', ClinicalDiagnosis::STATUS_SYNTHETIC))
             ->count();
 
         $overrides = DiagnosisRequirementOverride::query()

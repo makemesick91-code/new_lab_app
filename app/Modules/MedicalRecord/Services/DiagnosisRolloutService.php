@@ -12,6 +12,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use App\Modules\Satusehat\Services\SatusehatAuditLogger;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -115,12 +116,26 @@ class DiagnosisRolloutService
             $previous = $setting?->mode ?? $this->defaultMode();
 
             if ($setting === null) {
-                $setting = DiagnosisRolloutSetting::create([
-                    'branch_id' => (int) $branch->id,
-                    'mode' => $mode,
-                    'reason' => $reason,
-                    'configured_by' => $actor->id,
-                ]);
+                try {
+                    $setting = DiagnosisRolloutSetting::create([
+                        'branch_id' => (int) $branch->id,
+                        'mode' => $mode,
+                        'reason' => $reason,
+                        'configured_by' => $actor->id,
+                    ]);
+                } catch (QueryException) {
+                    // First-configuration race on the branch unique constraint:
+                    // re-fetch under lock and update instead of 500ing.
+                    $setting = DiagnosisRolloutSetting::query()
+                        ->where('branch_id', $branch->id)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+                    $setting->update([
+                        'mode' => $mode,
+                        'reason' => $reason,
+                        'configured_by' => $actor->id,
+                    ]);
+                }
             } else {
                 $setting->update([
                     'mode' => $mode,
