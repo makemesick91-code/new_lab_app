@@ -57,6 +57,12 @@ class PermissionGroupingService
                 'manage_rme_billing',
                 'view_rme_patient_reports',
                 'view_rme_payment_reports',
+                // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
+                'view_legacy_rme_imports',
+                'create_legacy_rme_imports',
+                'review_legacy_rme_imports',
+                'publish_legacy_rme_imports',
+                'void_legacy_rme_imports',
             ],
         ],
         [

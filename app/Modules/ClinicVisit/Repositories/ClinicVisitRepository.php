@@ -242,4 +242,33 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
 
         return ['previous' => $previous, 'next' => $next];
     }
+
+    /**
+     * LEGACY-RME-PDF-1A — the patient's EARLIEST native RME encounter.
+     *
+     * Excluded, on purpose:
+     *  - cancelled visits (they are not a real clinical encounter, matching the
+     *    canonical `total_visits` metric and the RM workspace anchor);
+     *  - visits without a medical record ("earliest native RME", not "earliest
+     *    visit");
+     *  - soft-deleted visits and soft-deleted medical records (handled by the
+     *    models' SoftDeletes).
+     *
+     * Legacy archive rows live in their own tables and are therefore never
+     * considered here — a legacy record can never become the native reference.
+     *
+     * Not branch-scoped: see the interface docblock. Ordering is the repo-wide
+     * chronological convention (visit_date, id) so same-day visits are stable
+     * across PostgreSQL and SQLite.
+     */
+    public function earliestVisitWithMedicalRecordForPatient(int $patientId): ?ClinicVisit
+    {
+        return ClinicVisit::query()
+            ->where('patient_id', $patientId)
+            ->where('status', '!=', ClinicVisit::STATUS_CANCELLED)
+            ->whereHas('medicalRecord')
+            ->orderBy('visit_date')
+            ->orderBy('id')
+            ->first();
+    }
 }

@@ -89,4 +89,17 @@ interface ClinicVisitRepositoryInterface
         ClinicVisit $visit,
         bool $requireMedicalRecord = false
     ): array;
+
+    /**
+     * LEGACY-RME-PDF-1A — the patient's EARLIEST native RME encounter: the
+     * oldest non-cancelled visit that already carries a medical record produced
+     * by this system's own workflow.
+     *
+     * Deliberately NOT branch-scoped. This is a clinical safety bound for the
+     * legacy archive, and a narrower scan could only move the bound LATER,
+     * which would let a historical document overlap a real native record.
+     * Branch isolation for "who may see/import what" is enforced separately by
+     * the LegacyRme policies.
+     */
+    public function earliestVisitWithMedicalRecordForPatient(int $patientId): ?ClinicVisit;
 }

@@ -363,5 +363,20 @@ return [
             'dependencies' => [],
             'rollback_action' => 'Set env override to false to relax the requirement (not recommended).',
         ],
+
+        // --- LEGACY-RME-PDF-1A — legacy RME PDF archive (foundation only) ---
+
+        'rme.legacy_pdf_archive' => [
+            'name' => 'Legacy RME PDF Archive',
+            'description' => 'Import and read-only archive of a patient historical RME documents (LEGACY-RME-PDF-1A foundation; upload/publish runtime lands in a follow-up sprint).',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_LEGACY_PDF_ARCHIVE',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'foundation',
+            'review_target' => 'LEGACY-RME-PDF-1B',
+            'dependencies' => [],
+            'rollback_action' => 'Set the env override to false and clear the config cache; the schema stays in place and nothing is imported or published.',
+        ],
     ],
 ];

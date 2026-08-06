@@ -197,7 +197,7 @@ jobs:
         # Any uncertainty leaves run_critical_tests unset/true, so this runs.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         run: |
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace' \
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
 
       - name: Note skipped critical regression tests (docs-only change)

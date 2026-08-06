@@ -135,6 +135,14 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
+use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
+use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Models\LegacyRmeRecord;
+use App\Modules\LegacyRme\Policies\LegacyRmeImportPolicy;
+use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
+use App\Modules\LegacyRme\Repositories\LegacyRmeImportRepository;
+use App\Modules\LegacyRme\Repositories\LegacyRmeRecordRepository;
 use App\Modules\MedicalRecord\Interfaces\ClinicalDiagnosisRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -305,6 +313,9 @@ class RepositoryServiceProvider extends ServiceProvider
         RmeInvoiceRepositoryInterface::class => RmeInvoiceRepository::class,
         // Sprint 20 Phase 1.11 — RME Payment
         RmePaymentRepositoryInterface::class => RmePaymentRepository::class,
+        // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
+        LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
+        LegacyRmeRecordRepositoryInterface::class => LegacyRmeRecordRepository::class,
     ];
 
     /**
@@ -408,6 +419,9 @@ class RepositoryServiceProvider extends ServiceProvider
         InventoryActivityLog::class => InventoryActivityLogPolicy::class,
         // Sprint 17.8 — per-room minimum/maximum stock threshold configuration
         LocationProductMinimum::class => LocationProductMinimumPolicy::class,
+        // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
+        LegacyRmeImport::class => LegacyRmeImportPolicy::class,
+        LegacyRmeRecord::class => LegacyRmeRecordPolicy::class,
     ];
 
     public function register(): void
