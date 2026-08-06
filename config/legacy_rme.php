@@ -51,9 +51,16 @@ return [
     | is never exposed through the public disk or a public URL.
     */
     'storage' => [
-        'disk' => env('LEGACY_RME_DISK', 'local'),
+        // LEGACY-RME-PDF-1B: a dedicated private disk rooted outside the
+        // `local` disk root, so no framework-served route can address a legacy
+        // page even with a signed URL. See config/filesystems.php.
+        'disk' => env('LEGACY_RME_DISK', 'legacy_rme_private'),
         'path_prefix' => 'rme-legacy',
         'public_disk_forbidden' => true,
+
+        // Disks that may never hold legacy archive material. Asserted at
+        // runtime before the first byte is written.
+        'forbidden_disks' => ['public', 's3'],
     ],
 
     /*
@@ -108,5 +115,57 @@ return [
         'allowed_mimes' => ['application/pdf'],
         'pdf_magic' => '%PDF-',
         'max_pages' => (int) env('LEGACY_RME_MAX_PAGES', 200),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | LEGACY-RME-PDF-1B — processing envelope
+    |----------------------------------------------------------------------
+    |
+    | Rasterization is ALWAYS performed by a queued job, never inside an HTTP
+    | request, and always through the argument-array Process API (never an
+    | interpolated shell string).
+    |
+    | The env names keep the 1A `LEGACY_RME_*` family rather than introducing a
+    | second `LEGACY_RME_PDF_*` family for the same domain — one prefix, one
+    | place to look.
+    */
+    'processing' => [
+        // Poppler binaries. Absolute paths are allowed; the resolved value is
+        // never taken from user input.
+        'pdfinfo_binary' => env('LEGACY_RME_PDFINFO_BINARY', 'pdfinfo'),
+        'pdftoppm_binary' => env('LEGACY_RME_PDFTOPPM_BINARY', 'pdftoppm'),
+
+        // Render resolution for the full page image.
+        'dpi' => (int) env('LEGACY_RME_DPI', 180),
+
+        // Longest edge of the generated thumbnail, in pixels. Thumbnails are
+        // produced by Poppler itself (`-scale-to`), so no PHP image extension
+        // is required on any environment.
+        'thumbnail_max_edge' => (int) env('LEGACY_RME_THUMBNAIL_MAX_EDGE', 320),
+
+        // Per-process wall clock limit, in seconds.
+        'process_timeout' => (int) env('LEGACY_RME_PROCESS_TIMEOUT', 180),
+
+        // Rendered page guard rails. A page larger than this is refused rather
+        // than allowed to exhaust the worker.
+        'max_page_pixels' => (int) env('LEGACY_RME_MAX_PAGE_PIXELS', 40000000),
+        'max_page_dimension_pt' => (int) env('LEGACY_RME_MAX_PAGE_DIMENSION_PT', 20000),
+
+        // Total bytes the rendered pages of one document may occupy.
+        'max_render_bytes' => (int) env('LEGACY_RME_MAX_RENDER_BYTES', 209715200), // 200 MiB
+
+        // Dedicated queue so a long rasterization never blocks default work.
+        'queue' => env('LEGACY_RME_QUEUE', 'legacy-rme-documents'),
+        'tries' => (int) env('LEGACY_RME_TRIES', 3),
+        'backoff' => [30, 120, 300],
+
+        // Optional external malware scan. OFF by default; when the scanner is
+        // disabled the pipeline reports "not scanned", never "scan passed".
+        'malware_scan' => [
+            'enabled' => (bool) env('LEGACY_RME_MALWARE_SCAN', false),
+            'binary' => env('LEGACY_RME_MALWARE_SCAN_BINARY', 'clamscan'),
+            'timeout' => (int) env('LEGACY_RME_MALWARE_SCAN_TIMEOUT', 120),
+        ],
     ],
 ];

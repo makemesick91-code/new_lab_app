@@ -58,6 +58,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
 use App\Modules\MedicalRecord\Controllers\ClinicalDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\DiagnosisRolloutController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
@@ -96,11 +97,11 @@ use App\Modules\Satusehat\Controllers\SatusehatIdentifierController;
 use App\Modules\Satusehat\Controllers\SatusehatInternalPilotController;
 use App\Modules\Satusehat\Controllers\SatusehatMappingController;
 use App\Modules\Satusehat\Controllers\SatusehatMultiBranchReadinessController;
-use App\Modules\Satusehat\Controllers\SatusehatRolloutWaveController;
-use App\Modules\Satusehat\Controllers\SatusehatUatController;
 use App\Modules\Satusehat\Controllers\SatusehatReadinessController;
 use App\Modules\Satusehat\Controllers\SatusehatRemediationController;
+use App\Modules\Satusehat\Controllers\SatusehatRolloutWaveController;
 use App\Modules\Satusehat\Controllers\SatusehatSubmissionController;
+use App\Modules\Satusehat\Controllers\SatusehatUatController;
 use App\Modules\Tariff\Controllers\TariffController;
 use App\Modules\Technician\Controllers\TechnicianController;
 use App\Modules\Treatment\Controllers\TreatmentController;
@@ -219,6 +220,43 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->name('patients.documents.show');
         Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])
             ->name('patients.documents.destroy');
+    });
+
+    // LEGACY-RME-PDF-1B — Impor Arsip RME Lama (historical PDF archive).
+    //
+    // Deliberately its OWN group rather than nested inside `manage patients`:
+    // 1A defines the five named legacy permissions as THE boundary for this
+    // capability, and inheriting a second, unrelated requirement would make
+    // those permissions insufficient on their own.
+    //
+    // The controller independently re-checks the feature flag (OFF by default,
+    // so the surface 404s) and the policy (which adds the per-row branch scope)
+    // on every action. `create` is declared before the numeric `{import}`
+    // routes so the static segment is never captured as an id.
+    Route::prefix('rme/legacy-imports')->name('rme.legacy-imports.')->group(function () {
+        Route::get('/', [LegacyRmeImportController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:view_legacy_rme_imports|create_legacy_rme_imports');
+
+        Route::get('create', [LegacyRmeImportController::class, 'create'])
+            ->name('create')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::post('/', [LegacyRmeImportController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:create_legacy_rme_imports');
+
+        Route::middleware('permission:view_legacy_rme_imports|create_legacy_rme_imports')->group(function () {
+            Route::get('{import}', [LegacyRmeImportController::class, 'show'])->name('show')->whereNumber('import');
+            Route::get('{import}/status', [LegacyRmeImportController::class, 'status'])->name('status')->whereNumber('import');
+            Route::get('{import}/source', [LegacyRmeImportController::class, 'source'])->name('source')->whereNumber('import');
+            Route::get('{import}/pages/{page}', [LegacyRmeImportController::class, 'page'])->name('pages.show')->whereNumber('import')->whereNumber('page');
+        });
+
+        Route::middleware('permission:create_legacy_rme_imports')->group(function () {
+            Route::post('{import}/retry', [LegacyRmeImportController::class, 'retry'])->name('retry')->whereNumber('import');
+            Route::post('{import}/cancel', [LegacyRmeImportController::class, 'cancel'])->name('cancel')->whereNumber('import');
+        });
     });
 
     // Lab Services (TASK-0204)

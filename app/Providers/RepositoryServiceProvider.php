@@ -136,6 +136,9 @@ use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
+use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
+use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
+use App\Modules\LegacyRme\Interfaces\LegacyRmePdfRasterizerInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
@@ -143,6 +146,9 @@ use App\Modules\LegacyRme\Policies\LegacyRmeImportPolicy;
 use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
 use App\Modules\LegacyRme\Repositories\LegacyRmeImportRepository;
 use App\Modules\LegacyRme\Repositories\LegacyRmeRecordRepository;
+use App\Modules\LegacyRme\Services\Pdf\ConfiguredLegacyRmeMalwareScanner;
+use App\Modules\LegacyRme\Services\Pdf\PopplerLegacyRmePdfInspector;
+use App\Modules\LegacyRme\Services\Pdf\PopplerLegacyRmePdfRasterizer;
 use App\Modules\MedicalRecord\Interfaces\ClinicalDiagnosisRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -316,6 +322,12 @@ class RepositoryServiceProvider extends ServiceProvider
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
         LegacyRmeRecordRepositoryInterface::class => LegacyRmeRecordRepository::class,
+        // LEGACY-RME-PDF-1B — PDF inspection, rendering and optional scanning.
+        // Bound as interfaces so a test can swap in a deterministic fake and the
+        // suite never depends on Poppler being installed.
+        LegacyRmePdfInspectorInterface::class => PopplerLegacyRmePdfInspector::class,
+        LegacyRmePdfRasterizerInterface::class => PopplerLegacyRmePdfRasterizer::class,
+        LegacyRmeMalwareScannerInterface::class => ConfiguredLegacyRmeMalwareScanner::class,
     ];
 
     /**

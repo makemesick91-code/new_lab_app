@@ -53,6 +53,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -61,6 +62,7 @@ use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Production\Services\AssignmentService;
@@ -455,4 +457,96 @@ function fakeEvidencePhoto(string $name = 'photo.png'): File
     $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
 
     return UploadedFile::fake()->createWithContent($name, $png);
+}
+
+/**
+ * LEGACY-RME-PDF-1B — a structurally valid, multi-page PDF built in pure PHP.
+ *
+ * Real bytes with a correct xref table, so `mimetypes:application/pdf`, the
+ * `%PDF-` magic check and Poppler itself all accept it — no fixture binary is
+ * committed and no clinical document is ever used in a test.
+ */
+function legacyRmePdfBytes(int $pages = 1, float $width = 595.276, float $height = 841.89): string
+{
+    $objects = [];
+    $kids = [];
+
+    for ($i = 0; $i < $pages; $i++) {
+        $kids[] = (3 + $i).' 0 R';
+    }
+
+    $objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+    $objects[2] = '<< /Type /Pages /Kids ['.implode(' ', $kids).'] /Count '.$pages.' >>';
+
+    for ($i = 0; $i < $pages; $i++) {
+        $objects[3 + $i] = sprintf(
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 %.4F %.4F] /Resources << >> >>',
+            $width,
+            $height,
+        );
+    }
+
+    $pdf = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
+    $offsets = [];
+
+    foreach ($objects as $number => $body) {
+        $offsets[$number] = strlen($pdf);
+        $pdf .= $number." 0 obj\n".$body."\nendobj\n";
+    }
+
+    $size = count($objects) + 1;
+    $xref = strlen($pdf);
+
+    $pdf .= "xref\n0 ".$size."\n0000000000 65535 f \n";
+
+    for ($number = 1; $number < $size; $number++) {
+        $pdf .= sprintf("%010d 00000 n \n", $offsets[$number]);
+    }
+
+    return $pdf."trailer\n<< /Size ".$size." /Root 1 0 R >>\nstartxref\n".$xref."\n%%EOF\n";
+}
+
+/**
+ * LEGACY-RME-PDF-1B — an uploadable legacy PDF.
+ */
+function legacyRmePdfUpload(string $name = 'arsip.pdf', int $pages = 1): File
+{
+    return UploadedFile::fake()->createWithContent($name, legacyRmePdfBytes($pages));
+}
+
+/**
+ * LEGACY-RME-PDF-1B — toggle the legacy archive feature flag in a test.
+ *
+ * The flag key itself contains a dot ("rme.legacy_pdf_archive"), so it is a
+ * literal array key and cannot be reached by config dot-notation — the whole
+ * `feature_flags.flags` array has to be rewritten, exactly as
+ * FeatureFlagFoundationTest does.
+ */
+function legacyRmeArchiveFlag(bool $enabled): void
+{
+    $flags = config('feature_flags.flags', []);
+    $flags['rme.legacy_pdf_archive']['default'] = $enabled;
+
+    config()->set('feature_flags.flags', $flags);
+}
+
+/**
+ * LEGACY-RME-PDF-1B — give a patient a NATIVE RME encounter, which is what the
+ * 1A date rules compare a legacy date against.
+ */
+function legacyRmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
+{
+    $visit = ClinicVisit::factory()->create([
+        'patient_id' => $patient->id,
+        'visit_date' => $visitDate,
+    ]);
+
+    MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
+
+    return $visit;
 }

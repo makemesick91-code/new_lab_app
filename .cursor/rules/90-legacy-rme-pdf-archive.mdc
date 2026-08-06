@@ -56,10 +56,17 @@ alwaysApply: false
     date, file, hash or pages, and no hard delete (the published tables carry no
     soft delete either). The only correction is **VOID with a reason plus a fresh
     import**. `UNIQUE(source_import_id)` keeps publishing idempotent.
-14. `origin_branch_id` is **provenance metadata, never authorization**. Access is
-    resolved server-side by `LegacyRmeWorkspaceScope` from `BranchContext` / the
-    RME-enabled branch set, fail-closed on an unresolvable scope, and never from
-    the request. Rows with no origin branch are governance-tier only.
+14. The **caller's** access is resolved server-side by `LegacyRmeWorkspaceScope`
+    from `BranchContext` / the RME-enabled branch set, fail-closed on an
+    unresolvable scope, and **never** from the request.
+    But `origin_branch_id` on the ROW is not merely descriptive: repository
+    listings filter on it and the policy scopes on it, so it decides which branch
+    owns and can see that row. It is therefore validated on write against the
+    **uploader's own scope**, not just the global RME-enabled set — otherwise a
+    scoped operator could file a document into a branch they have no authority
+    over and then 404 on their own row. Rows with no origin branch are
+    governance-tier only, so a scoped operator's upload is anchored to their own
+    branch rather than left branchless.
 15. Permissions are `view_legacy_rme_imports`, `create_legacy_rme_imports`,
     `review_legacy_rme_imports`, `publish_legacy_rme_imports`,
     `void_legacy_rme_imports`. They are granted to no operational role by
@@ -71,8 +78,9 @@ alwaysApply: false
     `LegacyRmeAuditService`, which filters every payload against
     `LegacyRmeAuditEvent::ALLOWED_METADATA_KEYS` and drops non-scalars — never a
     patient name, clinical content, base64 data, a raw PDF or an absolute path.
-17. Legacy files are private. Never the public disk, never a public URL; serving
-    is an authenticated, policy-checked controller in a later sprint.
+17. Legacy files are private. Never the public disk, never a public URL, never
+    `storage:link`. Serving is only ever the authenticated, policy-checked
+    streaming controller.
 18. Migrations for this domain are **additive only** — `php artisan migrate`,
     never `migrate:fresh`, never `db:wipe`.
 19. The capability is gated by the feature flag `rme.legacy_pdf_archive`
@@ -81,3 +89,78 @@ alwaysApply: false
     traversal.
 20. Source of truth order stays: current code and migrations → current tests →
     current routes and policies → repository rules → current docs → older docs.
+
+---
+
+## LEGACY-RME-PDF-1B — upload runtime, queue and page rendering
+
+21. Legacy archive bytes live on the **dedicated private disk**
+    `legacy_rme_private`, rooted **outside** the `local` disk root and with
+    `serve` disabled. Laravel registers a `storage.{disk}` route for a local disk
+    with `serve => true`, so anything under that root is in principle addressable
+    by a signed framework URL — clinical archive pages must not be.
+    `LegacyRmeStorageService::assertPrivateDisk()` refuses a configured disk that
+    is forbidden, public, carries a `url`, or has `serve` enabled.
+22. Storage paths are **opaque**: an integer surrogate key plus a
+    server-generated UUID. Never a patient name, KTP/NIK, phone, address,
+    diagnosis, doctor name or the uploaded filename. The original filename is a
+    display label only — sanitized, bounded, and never used to build a path.
+23. **PDF processing never happens in an HTTP request.** Only the queued
+    `ProcessLegacyRmePdfImport` rasterizes, on its own `legacy-rme-documents`
+    queue, carrying only the import id — never a model and never bytes.
+24. Every binary invocation goes through `LegacyRmeProcessRunner` as an
+    **argument array** with an explicit timeout. Never an interpolated shell
+    string, never a caller-supplied binary path. Process diagnostics (stderr,
+    command line) go to the log only — never onto the exception, which is both
+    rendered and persisted to `failure_message`.
+25. A PDF is validated from its **own bytes**: detected MIME, the `%PDF-` magic,
+    the size limit, then a structural `pdfinfo` parse. Never the extension and
+    never the client-declared Content-Type. Encrypted and password-protected
+    PDFs are refused, as are documents over the page/dimension/pixel limits.
+26. The source SHA-256 is computed **server-side**; a client-supplied checksum is
+    never an input. Exact-file duplicates are refused for a published record and
+    for an in-flight staging row, and a FAILED same-patient duplicate is pointed
+    at Retry instead of creating a second staging row. A **VOID** record never
+    blocks — 1A defines correction as "VOID plus a fresh import", so blocking
+    there would break the documented path. A FAILED/CANCELLED row for a
+    *different* patient never blocks either — that is the mis-assignment fix.
+27. Processing is **idempotent and retry-safe**: the status claim is one locked
+    transaction, stale output and stale page rows are cleared before rendering,
+    and pages upsert on `UNIQUE(legacy_import_id, page_number)`. The temporary
+    render directory is always removed, including on failure.
+28. Every failure lands the import in `FAILED` with a **stable code** from
+    `LegacyRmePdfFailure` and a safe message. Branch on the code, never the
+    message. `failure_message` never contains a path, a command line or a stack
+    trace.
+29. Retry is only legal from `FAILED` (or a stale `PROCESSING`). There is no
+    `READY_FOR_REVIEW → QUEUED` edge and this sprint does not invent one, nor
+    abuse `FAILED` to fake it — a rendered document is corrected by cancelling
+    and re-uploading.
+30. The furthest a document goes in 1B is **`READY_FOR_REVIEW`**. No review
+    approval, no publish, no promotion into `trx_rme_legacy_records`, no
+    timeline, no doctor viewer, no annotation, no OCR. There is **no publish
+    route**.
+31. Private files are served only by the policy-gated streaming route, which
+    resolves the import through the repository with the caller's scope
+    (out-of-scope is a **404**, not a 403, so ids cannot be probed) and looks a
+    page up **through** its import so a page number cannot cross imports.
+    Responses carry an explicit Content-Type, `nosniff` and
+    `Cache-Control: private, no-store`, and echo back neither the storage path
+    nor the original filename.
+32. The archive routes are **not** nested under another module's permission
+    group: the five 1A permissions are the boundary. Three independent gates
+    apply on every action — route `permission:` middleware, the feature-flag
+    check (disabled ⇒ **404**), and the policy.
+33. Thumbnails are produced by **Poppler `-scale-to`**, not a PHP image
+    extension, so rendering behaves identically on every environment (the local
+    dev machine has no GD). They are PNG. Page images are validated with
+    `getimagesize()`, which is core and needs no extension. `pdftoppm` zero-pads
+    its numeric suffix to the page-count width, so output is always discovered by
+    scanning the directory and parsing the suffix — never by assuming a filename.
+34. Selecting a patient by surrogate key must not be a weaker door than the
+    canonical Nomor-RM search that produced the link: it goes through
+    `LegacyRmePatientLookupService::findSelectable()`, which applies the same
+    doctor patient scope, on both the create screen and the store action.
+35. `poppler-utils` (`pdfinfo`, `pdftoppm`) is a runtime dependency of any host
+    that processes documents. Tests use deterministic fakes; the one real-Poppler
+    suite **skips** when the binaries are absent — it never silently passes.
