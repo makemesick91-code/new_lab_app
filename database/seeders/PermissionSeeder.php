@@ -193,6 +193,16 @@ class PermissionSeeder extends Seeder
         'promote_satusehat_branch',
         'manage_satusehat_change_control',
         'record_satusehat_uat_signoff',
+
+        // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive.
+        // Deliberately granted to NO role by default: the archive is operated by
+        // Super Admin from Master Data RME (Super Admin passes via Gate::before).
+        // A later sprint may grant them explicitly once the runtime ships.
+        'view_legacy_rme_imports',
+        'create_legacy_rme_imports',
+        'review_legacy_rme_imports',
+        'publish_legacy_rme_imports',
+        'void_legacy_rme_imports',
     ];
 
     public function run(): void

@@ -1,0 +1,83 @@
+---
+description: LEGACY-RME-PDF — legacy (historical) RME PDF archive rules
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "database/migrations/*rme_legacy*"
+  - "tests/Feature/LegacyRme/**"
+  - "config/legacy_rme.php"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF — Legacy RME archive (permanent rules)
+
+1. A **legacy RME** is an archive of a patient's OLD RME data, sourced from a
+   historical PDF. It is **not** a template and **not** an RME produced by the
+   live examination workflow.
+2. It is operated by Super Admin from **Master Data → Master Data RME → Import
+   Arsip RME Lama**.
+3. A legacy RME **never** creates a clinic visit. It has no `clinic_visit_id`
+   and must never be forced into `trx_medical_records`, which requires one.
+4. A legacy RME **never** creates or affects: invoices, payments, consent,
+   odontogram, `LabCaseCandidate`, `LabOrder`, SATUSEHAT candidates/submissions,
+   visit status, visit KPI or revenue KPI.
+5. The legacy date is **chosen manually** by the operator from what is visible
+   on the document. Never from the upload time, `created_at`, the file date, PDF
+   metadata or OCR. It lives in `selected_rme_date` / `rme_date`, separate from
+   `uploaded_at` and `published_at`.
+6. **The bound:** `legacy date < earliest_native_rme_date` — STRICTLY earlier.
+   Equal is refused. Also `legacy date < today` (today is refused), and
+   `patient birth date <= legacy date` when a birth date exists (equal to the
+   birth date is accepted; `date_of_birth` is nullable, so a missing value skips
+   that rule and is never invented).
+7. In regular mode, a patient with **no native RME is refused**
+   (`PATIENT_HAS_NO_NATIVE_RME`). No hidden exception. A migration mode is a
+   separate, explicit sprint.
+8. `earliest_native_rme_date` comes from **`trx_clinic_visits.visit_date`** via
+   the visit that owns the medical record — never `trx_medical_records`'
+   `created_at`, `finalized_at` or `canonical_visit_id`, and never
+   `mst_patients.registered_at`.
+9. The cutoff is computed **only** in
+   `App\Modules\LegacyRme\Services\PatientEarliestNativeRmeDateResolver`
+   (backed by `ClinicVisitRepository::earliestVisitWithMedicalRecordForPatient`).
+   No controller, form request, policy, view or test may re-derive it.
+10. The cutoff excludes cancelled visits, visits with no medical record,
+    soft-deleted visits/records and **every** legacy row (staged, published or
+    VOID). A legacy record is never a native record.
+11. The cutoff is deliberately **not branch-scoped** — a narrower scan could only
+    move the bound later and admit an overlapping document. Do not "fix" this to
+    match `PatientRmWorkspaceResolver`.
+12. All date rules live in `LegacyRmeDateRuleService` with stable codes:
+    `PATIENT_HAS_NO_NATIVE_RME`, `LEGACY_DATE_NOT_BEFORE_NATIVE_RME`,
+    `LEGACY_DATE_IN_FUTURE`, `LEGACY_DATE_BEFORE_PATIENT_BIRTH`,
+    `LEGACY_DATE_INVALID`. Branch on the code, never on the message. The cutoff
+    is always recomputed server-side; a client-supplied snapshot is never
+    trusted.
+13. A **published** legacy record is immutable: no in-place edit of patient,
+    date, file, hash or pages, and no hard delete (the published tables carry no
+    soft delete either). The only correction is **VOID with a reason plus a fresh
+    import**. `UNIQUE(source_import_id)` keeps publishing idempotent.
+14. `origin_branch_id` is **provenance metadata, never authorization**. Access is
+    resolved server-side by `LegacyRmeWorkspaceScope` from `BranchContext` / the
+    RME-enabled branch set, fail-closed on an unresolvable scope, and never from
+    the request. Rows with no origin branch are governance-tier only.
+15. Permissions are `view_legacy_rme_imports`, `create_legacy_rme_imports`,
+    `review_legacy_rme_imports`, `publish_legacy_rme_imports`,
+    `void_legacy_rme_imports`. They are granted to no operational role by
+    default; Super Admin holds them through the existing `'*'` grant plus the
+    single global `Gate::before`. Never create permission rows outside
+    `PermissionSeeder`.
+16. Full KTP/NIK is never rendered, exported or written into an audit payload.
+    Audit goes to the shared `sys_audit_logs` trail through
+    `LegacyRmeAuditService`, which filters every payload against
+    `LegacyRmeAuditEvent::ALLOWED_METADATA_KEYS` and drops non-scalars — never a
+    patient name, clinical content, base64 data, a raw PDF or an absolute path.
+17. Legacy files are private. Never the public disk, never a public URL; serving
+    is an authenticated, policy-checked controller in a later sprint.
+18. Migrations for this domain are **additive only** — `php artisan migrate`,
+    never `migrate:fresh`, never `db:wipe`.
+19. The capability is gated by the feature flag `rme.legacy_pdf_archive`
+    (default **OFF**), resolved through `LegacyRmeFeatureGuard` /
+    `FeatureFlagService` — never `config('feature_flags…')`, whose dots break
+    traversal.
+20. Source of truth order stays: current code and migrations → current tests →
+    current routes and policies → repository rules → current docs → older docs.

@@ -1,26 +1,25 @@
-# Active sprint manifest — SATUSEHAT-4D
+# Active sprint manifest — LEGACY-RME-PDF-1A
 # Validated by: php artisan sprint:manifest-check
 
-id: SATUSEHAT-4D
+id: LEGACY-RME-PDF-1A
 type: MODULE_SPRINT
-module: Satusehat
-title: "Multi-Branch Readiness Scale-Up & Operational Governance (credential-independent, external submission disabled, production blocked, SATUSEHAT-2 stays WATCH; operational GO requires real human operator UAT sign-off)"
+module: LegacyRme
+title: "Legacy RME PDF archive foundation — schema, permissions, policies and date rules (feature flag OFF; no upload/publish runtime, no HTTP surface)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # rollout waves, comparative matrix, promotion/demotion, change-control, SLA/escalation, UAT workflow, multi-branch rehearsal, incident drills, 5 commands
-schema_change: true             # 9 additive migrations (waves, memberships, UAT, change-requests, score snapshots, transitions, drills, profile columns, self-heal index)
-frontend_change: true           # matrix, executive dashboard, waves index/show, change-control, UAT index/show, sidebar
-security_impact: true           # 7 new permissions, branch-scoped IDOR boundaries, bulk-op bounds, change-control SoD, UAT sign-off gate
-branch_isolation_impact: true   # matrix/executive/bulk/promotion resolved server-side from the RME-enabled branch set; MAIN excluded
-ledger_impact: false            # no inventory ledger / billing / payment behavior change
+runtime_change: true            # new bounded context: models, repositories, date resolver + rule service, audit facade, feature guard
+schema_change: true             # 4 additive migrations (2 staging + 2 archive tables); no native RME table altered
+frontend_change: false          # foundation only — no route, no controller, no Blade view in 1A
+security_impact: true           # 5 new permissions, 2 policies, fail-closed branch scope, PII-free audit payload policy
+branch_isolation_impact: true   # legacy rows scoped server-side from BranchContext / the RME-enabled branch set; origin branch is provenance, never authorization
+ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true
-browser_required: true          # matrix + executive + waves + UAT surfaces smoke; real human operator UAT sessions
+browser_required: false         # no UI surface ships in this sprint
 
 test_profiles:
   - rme
   - access_control
-  - deployment
+  - security
 
-# No GO tag is created until real human operator UAT is completed and signed off.
-go_tag: satusehat-4d-multi-branch-readiness-scale-up-operational-governance-go
+go_tag: legacy-rme-pdf-1a-schema-permission-date-rules-go
