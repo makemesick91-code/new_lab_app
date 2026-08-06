@@ -342,3 +342,155 @@ review/publish sprint (1C) makes the capability complete.
 
 Review approval, publish into `trx_rme_legacy_records`, patient-timeline
 integration, the doctor viewer and legacy print.
+
+---
+
+## 16. Closure status (as of the 2026-08-06 GitHub Actions outage)
+
+The sprint is **code-complete, tested, security-reviewed and pushed**, but the
+closure chain is **BLOCKED before merge** — not by this code.
+
+### What passed on authoritative CI (SHA `9d0cc60`)
+
+| Job | Result |
+|---|---|
+| CICD-CTRL Gate Classifier | success |
+| NSF-R012 Quality Gate | success |
+| NSF-R011 Critical Test Gate | success |
+| CICD-CTRL Selective Module Gate | success |
+| NSF-R011 Full Suite Gate | skipped (standing repo pattern) |
+| NSF-9 Release Safety & Automated Smoke | **blocked** |
+| NSF-10 Release Evidence | skipped (depends on NSF-9) |
+
+The classifier resolved this change set to `unknown_high_risk` — its fail-closed
+default — so every module suite ran.
+
+### Why NSF-9 could not pass
+
+Not a test failure. Three consecutive attempts:
+
+1. attempt 1 — `runner_name: ""`, `step_count: 0`, cancelled after exactly 15 min
+2. attempt 2 — identical
+3. attempt 3 — a runner was assigned, then the job failed in **`Set up job`**:
+
+```
+Getting action download info
+Failed to resolve action download info. Error: Service Unavailable
+Retrying in 20.378 seconds
+Failed to resolve action download info. Error: Service Unavailable
+##[error]Service Unavailable
+```
+
+The failure is before checkout and before any test executes. Confirmed against
+`githubstatus.com`: overall indicator `major` / "Partial System Outage", with the
+**`Actions` component in `major_outage`** and an open incident ("Actions and
+Pages are experiencing degraded availability").
+
+For contrast, NSF-9 is healthy in this repo: on the 1A push run it succeeded in
+4m22s with 28 steps.
+
+### Local evidence for the blocked gate (NOT a substitute for CI)
+
+Every command NSF-9 runs was executed locally:
+
+* 20 governance commands — 20/20 pass
+  (`architecture:foundation-roadmap-check`, `foundation:feature-flags`,
+  `cache-governance-check`, `queue-governance-check`,
+  `queue-retry-failed-job-check`, `idempotency-outbox-check`,
+  `developer-console-check`, `health-check`, `security-compliance-check`,
+  `cicd-enterprise-gate-check`, `deployment-rollback-check`, `backup-dr-check`,
+  `load-test-baseline-check`, `load-test-scale-projection-check`,
+  `enterprise-documentation-check`, `enterprise-closure-check`,
+  `db-performance-check`, `postgres-runtime-check`, `reporting-summary-check`,
+  `release-safety-check`)
+* `foundation:idempotency-audit`, `foundation:outbox-audit`,
+  `foundation:reporting-summary-refresh --dry-run` — pass
+* `release:automated-smoke --json` — **decision GO**, 6/6 checks, 0 errors,
+  `privacy_safe: true`
+
+This shows the gate *will* pass once a runner is available. It is **not** a
+passing CI run and must not be recorded as one.
+
+### Resume procedure (exact, in order)
+
+Nothing below may be skipped or reordered. Do not merge on a red CI, and do not
+create the GO tag without real deploy evidence.
+
+**1. Confirm Actions recovered**
+
+```bash
+curl -s https://www.githubstatus.com/api/v2/components.json \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print(next(c['status'] for c in d['components'] if c['name']=='Actions'))"
+# must print: operational
+```
+
+**2. Re-run and wait for a fully green run**
+
+```bash
+gh run rerun 31115843899 --failed          # or push an empty commit for a fresh run
+gh run view 31115843899 --json status,conclusion
+gh run view 31115843899 --json jobs --jq '.jobs[] | "\(.conclusion)\t\(.name)"'
+```
+
+Required: NSF-9 **and** NSF-10 both `success`. If a new commit was pushed,
+re-verify against that SHA — CI must be green on the exact candidate.
+
+**3. Merge PR #266** (base is the sprint branch, never `main`), then record the
+merge SHA and verify:
+
+```bash
+git fetch origin && git switch feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
+git pull --ff-only && git rev-parse HEAD
+git merge-base --is-ancestor <candidate-sha> <merge-sha> && echo ancestor-ok
+```
+
+**4. Install the runtime dependency ON the VPS** (absent as of this sprint;
+simulated clean — 8 packages, 0 removals, nothing touching PHP/nginx/Postgres):
+
+```bash
+ssh daengtisiams-vps 'apt-get update && apt-get install -y poppler-utils && pdfinfo -v && pdftoppm -v'
+```
+
+**5. Deploy — the runner runs ON the VPS, never locally**
+
+```bash
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh start'
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh follow'
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'   # must be exit=0
+```
+
+There is **no migration and no seeder** in this sprint.
+
+**6. Smoke (flag stays OFF, so the surface must 404 — that is the pass criterion)**
+
+```bash
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && php artisan migrate:status | tail -3'
+ssh daengtisiams-vps 'command -v pdfinfo && command -v pdftoppm'
+ssh daengtisiams-vps 'systemctl is-active daengtisiams-queue-worker.service'
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && php artisan queue:failed | tail -3'
+curl -si http://<vps>/login | head -1                       # 200
+curl -si http://<vps>/health/live | head -1                  # 200
+curl -si http://<vps>/settings/rme/legacy-imports | head -1   # 302 (guest) — never 500
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && tail -50 storage/logs/laravel.log'   # no new errors
+```
+
+Confirm the private root exists and is owned by the runtime user, and that no
+legacy file is reachable publicly.
+
+**7. GO tag — only after step 6 passes**
+
+```bash
+git tag -l 'legacy-rme-pdf-1b-private-upload-rendering-go'          # must be empty first
+git tag -a legacy-rme-pdf-1b-private-upload-rendering-go <merge-sha> \
+  -m "GO: LEGACY-RME-PDF-1B private upload and page rendering"
+git push origin legacy-rme-pdf-1b-private-upload-rendering-go
+ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && git fetch --tags origin && git describe --tags --exact-match HEAD'
+# must print the GO tag
+```
+
+If exact-match fails, do NOT claim GO and do NOT move the tag — fix the ref
+mismatch and re-smoke.
+
+**Rollback:** `scripts/rollback-vps.sh legacy-rme-pdf-1a-schema-permission-date-rules-go`
+(peels to `0b37ce4`, verified present on the VPS). No schema change to reverse;
+the new private disk directory is inert once the code is gone.
