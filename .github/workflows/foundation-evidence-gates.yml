@@ -594,7 +594,16 @@ jobs:
   release_safety_gate:
     name: NSF-9 Release Safety & Automated Smoke Gate
     runs-on: ubuntu-latest
-    needs: critical_test_gate
+    # CICD-CTRL-3: depend on BOTH critical-gate variants. Exactly one runs and
+    # the other is skipped, and a skipped `needs` would otherwise skip this
+    # always-on gate too — silently dropping NSF-9 whenever heavy CI is routed
+    # to the self-hosted runner. Require that ONE variant actually succeeded, so
+    # a failing critical gate still blocks this, but a skipped sibling does not.
+    needs: [critical_test_gate, critical_test_gate_self_hosted]
+    if: >-
+      !cancelled() &&
+      (needs.critical_test_gate.result == 'success' ||
+       needs.critical_test_gate_self_hosted.result == 'success')
     services:
       postgres:
         image: postgres:16
@@ -749,7 +758,9 @@ jobs:
   nsf10_release_evidence_gate:
     name: NSF-10 Release Evidence Gate
     runs-on: ubuntu-latest
+    # Only needs NSF-9, which now tolerates a skipped critical-gate sibling.
     needs: release_safety_gate
+    if: ${{ !cancelled() && needs.release_safety_gate.result == 'success' }}
     services:
       postgres:
         image: postgres:16
@@ -833,11 +844,16 @@ jobs:
   full_suite_gate:
     name: NSF-R011 Full Suite Gate
     runs-on: ubuntu-latest
+    # CICD-CTRL-3: depends on BOTH critical-gate variants for the same reason as
+    # NSF-9 — a skipped sibling must not silently drop the full-suite fallback.
     if: >-
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && inputs.run_full_suite == true) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report')
-    needs: [critical_test_gate, classify]
+      !cancelled() &&
+      (needs.critical_test_gate.result == 'success' ||
+       needs.critical_test_gate_self_hosted.result == 'success') &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.run_full_suite == true) ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report'))
+    needs: [critical_test_gate, critical_test_gate_self_hosted, classify]
     services:
       postgres:
         image: postgres:16

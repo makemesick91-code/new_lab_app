@@ -156,6 +156,25 @@ class SelfHostedRunnerScanner
             $issues[] = "job '{$job}' runs migrations without asserting a non-production database first";
         }
 
+        /*
+         * Exactly one critical-gate variant runs and the other is skipped.
+         * GitHub skips any job whose `needs` were skipped, so a downstream gate
+         * that depends on a single variant would silently disappear under one
+         * routing mode. Downstream gates must therefore depend on both variants
+         * and tolerate a skipped sibling.
+         */
+        if (str_contains($workflow, 'critical_test_gate_self_hosted')) {
+            foreach (['release_safety_gate', 'nsf10_release_evidence_gate'] as $downstream) {
+                if (! str_contains($workflow, "{$downstream}:")) {
+                    continue;
+                }
+                if (! str_contains($workflow, '!cancelled()')) {
+                    $issues[] = "downstream gate '{$downstream}' can be silently skipped when a critical-gate variant is skipped";
+                    break;
+                }
+            }
+        }
+
         return [
             'ok' => $issues === [],
             'exists' => true,

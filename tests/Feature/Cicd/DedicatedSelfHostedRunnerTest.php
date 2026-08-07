@@ -219,6 +219,58 @@ it('asserts a non-production database before every migration in every job', func
     expect($migrating)->toBeGreaterThanOrEqual(5);
 });
 
+it('never lets a skipped critical-gate variant silently skip a downstream gate', function () {
+    $jobs = ciWorkflow()['jobs'];
+
+    /*
+     * Exactly one critical-gate variant runs; the other is SKIPPED. GitHub
+     * skips any job whose `needs` were skipped, so a downstream job that
+     * depends on only one variant would silently vanish whenever heavy CI is
+     * routed the other way — dropping NSF-9 / NSF-10 without any failure.
+     * Every dependent must therefore depend on BOTH variants and tolerate a
+     * skipped sibling while still requiring one to have succeeded.
+     */
+    $dependents = [];
+    foreach ($jobs as $name => $job) {
+        $needs = (array) ($job['needs'] ?? []);
+        if (in_array('critical_test_gate', $needs, true) || in_array('critical_test_gate_self_hosted', $needs, true)) {
+            $dependents[$name] = $job;
+        }
+    }
+
+    expect($dependents)->not->toBeEmpty();
+
+    foreach ($dependents as $name => $job) {
+        $needs = (array) ($job['needs'] ?? []);
+        $condition = ' '.preg_replace('/\s+/', ' ', (string) ($job['if'] ?? '')).' ';
+
+        // NOTE: Pest's toContain() is variadic — extra arguments are additional
+        // needles, not a failure message. Assert on booleans so the message
+        // actually reaches the reader.
+        expect(in_array('critical_test_gate', $needs, true))
+            ->toBeTrue("job {$name} must depend on the GitHub-hosted variant");
+        expect(in_array('critical_test_gate_self_hosted', $needs, true))
+            ->toBeTrue("job {$name} must depend on the self-hosted variant");
+
+        expect(str_contains($condition, "needs.critical_test_gate.result == 'success'"))
+            ->toBeTrue("job {$name} must tolerate a skipped GitHub-hosted variant");
+        expect(str_contains($condition, "needs.critical_test_gate_self_hosted.result == 'success'"))
+            ->toBeTrue("job {$name} must tolerate a skipped self-hosted variant");
+    }
+});
+
+it('keeps the always-on gates reachable under both runner modes', function () {
+    $jobs = ciWorkflow()['jobs'];
+
+    // CICDCTRL-R003 (inherited): these must never be silently skipped.
+    foreach (['release_safety_gate', 'nsf10_release_evidence_gate'] as $alwaysOn) {
+        expect($jobs)->toHaveKey($alwaysOn);
+        $condition = (string) ($jobs[$alwaysOn]['if'] ?? '');
+        expect(str_contains($condition, '!cancelled()'))
+            ->toBeTrue("{$alwaysOn} must not be skipped by a skipped sibling");
+    }
+});
+
 it('never invokes a production deploy or rollback command from CI', function () {
     $raw = ciWorkflowRaw();
 
