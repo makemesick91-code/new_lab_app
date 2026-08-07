@@ -100,6 +100,10 @@ return [
         'daengtisia-ci',
         'runner_mode',
         'ci:assert-non-production-database',
+        // The self-hosted variant must execute through the pinned CI runtime,
+        // never against the host PHP.
+        'scripts/ci/self-hosted-php.sh',
+        'REQUIRED_PHP',
     ],
 
     /*
@@ -179,20 +183,71 @@ return [
     /*
      * Host tooling the runner must provide. The runner is pre-provisioned so CI
      * jobs never need sudo at run time.
+     *
+     * PHP, Composer and Poppler are deliberately NOT host requirements — they
+     * come from the pinned CI image (see `ci_runtime`), because the host OS
+     * cannot supply the authoritative PHP version.
      */
     'required_host_tooling' => [
-        'php',
-        'composer',
         'node',
         'npm',
         'psql',
         'git',
-        'pdfinfo',
-        'pdftoppm',
+        'podman',
     ],
 
-    // PHP major.minor the runner must provide, matching the GitHub-hosted gate.
+    // PHP major.minor the CI runtime must provide, matching the GitHub-hosted gate.
     'required_php_version' => env('CI_RUNNER_PHP_VERSION', '8.3'),
+
+    /*
+     * Authoritative CI runtime.
+     *
+     * The runner host is Ubuntu 26.04, which ships only PHP 8.5, while the
+     * GitHub-hosted gate pins PHP 8.3. Rather than weaken the authoritative
+     * requirement or reinstall the host OS, the self-hosted variant executes
+     * every php/composer/artisan command inside a pinned container image.
+     *
+     * Engine is ROOTLESS Podman under the dedicated service user. Rootful
+     * Docker and docker-group membership are forbidden: the docker group is
+     * root-equivalent.
+     */
+    'ci_runtime' => [
+        'engine' => 'podman',
+        'rootless' => true,
+        'image' => env('CI_PHP_IMAGE', 'localhost/daengtisia-ci-php:8.3'),
+        'containerfile' => '.github/ci-runtime/Containerfile.php83',
+        'wrapper_script' => 'scripts/ci/self-hosted-php.sh',
+
+        // The base image must be pinned by digest, never by a floating tag.
+        'require_digest_pin' => true,
+
+        // Extension set the image must provide, mirroring the setup-php list
+        // used by the GitHub-hosted critical gate.
+        'required_extensions' => [
+            'dom',
+            'curl',
+            'libxml',
+            'mbstring',
+            'zip',
+            'pcntl',
+            'pdo',
+            'pdo_pgsql',
+            'bcmath',
+            'gd',
+            'exif',
+        ],
+
+        /*
+         * Poppler must exist inside the image: the critical filter covers
+         * LegacyRme, whose Poppler suite SKIPS when these are missing. Omitting
+         * them would silently make the self-hosted gate weaker than the
+         * authoritative one.
+         */
+        'required_binaries' => ['pdfinfo', 'pdftoppm'],
+
+        // Group membership that must never be granted to the service user.
+        'forbidden_service_user_groups' => ['docker', 'sudo'],
+    ],
 
     /*
      * Resource guards enforced by the health script before a heavy job runs.

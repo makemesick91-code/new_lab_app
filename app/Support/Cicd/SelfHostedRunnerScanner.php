@@ -226,6 +226,95 @@ class SelfHostedRunnerScanner
     }
 
     /**
+     * The authoritative CI runtime is pinned, rootless, and complete.
+     *
+     * The runner host cannot supply the authoritative PHP version, so the
+     * self-hosted variant runs inside a pinned container image. This verifies
+     * the image definition and its wrapper honour the contract.
+     *
+     * @return array{ok: bool, issues: list<string>, digest_pinned: bool}
+     */
+    public function ciRuntimePosture(): array
+    {
+        $issues = [];
+        $runtime = (array) config('ci_runner.ci_runtime', []);
+
+        if (($runtime['engine'] ?? '') !== 'podman') {
+            $issues[] = 'the CI runtime engine must be podman';
+        }
+
+        if (($runtime['rootless'] ?? false) !== true) {
+            $issues[] = 'the CI runtime must be declared rootless';
+        }
+
+        foreach (['docker', 'sudo'] as $group) {
+            if (! in_array($group, (array) ($runtime['forbidden_service_user_groups'] ?? []), true)) {
+                $issues[] = "group '{$group}' must be forbidden for the runner service user";
+            }
+        }
+
+        $containerfilePath = (string) ($runtime['containerfile'] ?? '');
+        $containerfile = $containerfilePath !== '' && is_file(base_path($containerfilePath))
+            ? (string) file_get_contents(base_path($containerfilePath))
+            : null;
+
+        $digestPinned = false;
+
+        if ($containerfile === null) {
+            $issues[] = 'the CI runtime Containerfile is missing';
+        } else {
+            // A floating tag would let the authoritative runtime drift silently.
+            $digestPinned = preg_match('/^FROM\s+\S+@sha256:[0-9a-f]{64}/mi', $containerfile) === 1;
+            if (($runtime['require_digest_pin'] ?? true) && ! $digestPinned) {
+                $issues[] = 'the CI runtime base image must be pinned by digest, not a floating tag';
+            }
+
+            $phpVersion = (string) config('ci_runner.required_php_version', '');
+            if ($phpVersion !== '' && ! str_contains($containerfile, "php:{$phpVersion}")) {
+                $issues[] = "the CI runtime image must be built from PHP {$phpVersion}";
+            }
+
+            foreach ((array) ($runtime['required_extensions'] ?? []) as $extension) {
+                if (! str_contains($containerfile, (string) $extension)) {
+                    $issues[] = "the CI runtime image does not declare required extension '{$extension}'";
+                }
+            }
+
+            foreach ((array) ($runtime['required_binaries'] ?? []) as $binary) {
+                if (! str_contains($containerfile, (string) $binary)) {
+                    $issues[] = "the CI runtime image does not declare required binary '{$binary}'";
+                }
+            }
+        }
+
+        $wrapperPath = (string) ($runtime['wrapper_script'] ?? '');
+        $wrapper = $wrapperPath !== '' && is_file(base_path($wrapperPath))
+            ? (string) file_get_contents(base_path($wrapperPath))
+            : null;
+
+        if ($wrapper === null) {
+            $issues[] = 'the CI runtime wrapper script is missing';
+        } else {
+            if (! str_contains($wrapper, 'set -euo pipefail')) {
+                $issues[] = 'the CI runtime wrapper must fail fast (set -euo pipefail)';
+            }
+            // keep-id maps the container user to the host service user, which is
+            // what stops the workspace accumulating root-owned residue.
+            if (! str_contains($wrapper, '--userns=keep-id')) {
+                $issues[] = 'the CI runtime wrapper must map the container user to the host service user (--userns=keep-id)';
+            }
+            if (! str_contains($wrapper, 'podman run')) {
+                $issues[] = 'the CI runtime wrapper must execute through podman';
+            }
+            if (preg_match('/^\s*(exec\s+)?docker\s/m', $wrapper) === 1) {
+                $issues[] = 'the CI runtime wrapper must never invoke docker';
+            }
+        }
+
+        return ['ok' => $issues === [], 'issues' => $issues, 'digest_pinned' => $digestPinned];
+    }
+
+    /**
      * The production-database guard is strict enough to be worth having.
      *
      * @return array{ok: bool, issues: list<string>}

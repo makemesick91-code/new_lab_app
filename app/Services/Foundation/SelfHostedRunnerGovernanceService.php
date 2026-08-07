@@ -90,6 +90,11 @@ class SelfHostedRunnerGovernanceService
                 'title' => 'Concurrency comes from a benchmark, not from core count',
                 'description' => 'Heavy jobs run one at a time on the dedicated hardware, and the Pest worker count is chosen from a measured benchmark that stays clear of swap thrashing, thermal throttling, and database contention.',
             ],
+            [
+                'id' => 'CICDCTRL3-R013',
+                'title' => 'The authoritative PHP runtime is pinned and isolated, never the host PHP',
+                'description' => 'The runner host cannot supply the authoritative PHP version, so the self-hosted variant runs every php/composer/artisan command inside a digest-pinned image via rootless Podman under the dedicated service user. The host PHP is never authoritative, the base image is pinned by digest rather than a floating tag, and the image carries the same extension set and Poppler binaries as the GitHub-hosted gate so no test silently skips. Rootful Docker and docker-group membership are forbidden — the docker group is root-equivalent.',
+            ],
         ];
     }
 
@@ -125,6 +130,11 @@ class SelfHostedRunnerGovernanceService
             ? $this->pass('CICDCTRL3-HEALTH-SCRIPT', 'Runner health script exists, fails fast, checks production isolation, and mutates nothing.')
             : $this->fail('CICDCTRL3-HEALTH-SCRIPT', 'Health script posture failed: '.implode('; ', $health['issues']).'.');
 
+        $runtime = $this->scanner->ciRuntimePosture();
+        $checks[] = $runtime['ok']
+            ? $this->pass('CICDCTRL3-CI-RUNTIME', 'Authoritative CI runtime is a digest-pinned image executed through rootless Podman, with the full extension set.')
+            : $this->fail('CICDCTRL3-CI-RUNTIME', 'CI runtime posture failed: '.implode('; ', $runtime['issues']).'.');
+
         $guard = $this->scanner->databaseGuardPosture();
         $checks[] = $guard['ok']
             ? $this->pass('CICDCTRL3-DB-GUARD', 'Production database guard is strict: testing-only environment, local-only hosts, explicit production denylist.')
@@ -148,6 +158,9 @@ class SelfHostedRunnerGovernanceService
             'workflow_ok' => $workflow['ok'],
             'deploy_isolation_ok' => $deploy['ok'],
             'health_script_ok' => $health['ok'],
+            'ci_runtime_ok' => $runtime['ok'],
+            'ci_runtime_digest_pinned' => $runtime['digest_pinned'],
+            'ci_runtime_image' => (string) config('ci_runner.ci_runtime.image', ''),
             'database_guard_ok' => $guard['ok'],
             'required_labels' => $contract['required_labels'],
             'default_runner_mode' => $contract['default_mode'],

@@ -37,6 +37,7 @@ MIN_AVAILABLE_RAM_MB="${CI_RUNNER_MIN_AVAILABLE_RAM_MB:-4096}"
 REQUIRED_PHP_VERSION="${CI_RUNNER_PHP_VERSION:-8.3}"
 CI_DB_NAME="${CI_RUNNER_DB_NAME:-daengtisia_ci}"
 CI_DB_HOST="${CI_RUNNER_DB_HOST:-127.0.0.1}"
+CI_PHP_IMAGE="${CI_PHP_IMAGE:-localhost/daengtisia-ci-php:8.3}"
 
 PASS_COUNT=0
 FAIL_COUNT=0
@@ -68,21 +69,47 @@ fi
 
 # ---------------------------------------------------------------------------
 # 2. Host tooling — pre-provisioned so CI jobs never need sudo at run time.
+#
+# PHP, Composer and Poppler are deliberately NOT host requirements: they are
+# supplied by the pinned CI image, because the host cannot provide the
+# authoritative PHP version.
 # ---------------------------------------------------------------------------
-for tool in php composer node npm psql git pdfinfo pdftoppm; do
+for tool in node npm psql git podman; do
     if have "$tool"; then
         record PASS "tool_${tool}" "$(command -v "$tool")"
     else
-        record FAIL "tool_${tool}" "Required tool '${tool}' is not installed on the runner."
+        record FAIL "tool_${tool}" "Required host tool '${tool}' is not installed on the runner."
     fi
 done
 
-if have php; then
-    ACTUAL_PHP="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo unknown)"
-    if [ "$ACTUAL_PHP" = "$REQUIRED_PHP_VERSION" ]; then
-        record PASS "php_version" "PHP ${ACTUAL_PHP} matches the required CI version."
+# ---------------------------------------------------------------------------
+# 2b. Container runtime — rootless Podman, never rootful Docker.
+# ---------------------------------------------------------------------------
+if have podman; then
+    if [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = "true" ]; then
+        record PASS "podman_rootless" "Podman is running rootless as ${CURRENT_USER}."
     else
-        record FAIL "php_version" "PHP ${ACTUAL_PHP} does not match required ${REQUIRED_PHP_VERSION}; composer.lock is resolved for the CI version."
+        record FAIL "podman_rootless" "Podman is not rootless; the CI runtime must never run rootful."
+    fi
+
+    # The docker group is root-equivalent and is forbidden for the runner user.
+    if id -nG "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
+        record FAIL "docker_group" "${CURRENT_USER} is in the docker group, which is root-equivalent and forbidden."
+    else
+        record PASS "docker_group" "${CURRENT_USER} is not in the docker group."
+    fi
+
+    # The authoritative PHP runtime comes from the pinned image, not the host.
+    if podman image exists "$CI_PHP_IMAGE" 2>/dev/null; then
+        IMAGE_PHP="$(podman run --rm "$CI_PHP_IMAGE" \
+            php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo unknown)"
+        if [ "$IMAGE_PHP" = "$REQUIRED_PHP_VERSION" ]; then
+            record PASS "ci_runtime_php" "Authoritative CI image provides PHP ${IMAGE_PHP} (matches the GitHub-hosted gate)."
+        else
+            record FAIL "ci_runtime_php" "CI image provides PHP ${IMAGE_PHP}; the authoritative gate requires ${REQUIRED_PHP_VERSION}."
+        fi
+    else
+        record FAIL "ci_runtime_php" "Authoritative CI image '${CI_PHP_IMAGE}' is not present on this runner."
     fi
 fi
 

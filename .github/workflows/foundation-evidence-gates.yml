@@ -345,6 +345,10 @@ jobs:
       SESSION_DRIVER: array
       MAIL_MAILER: array
       FILESYSTEM_DISK: local
+      # Authoritative PHP runtime, supplied by the pinned image rather than by
+      # the host (Ubuntu 26.04 ships only PHP 8.5).
+      CI_PHP_IMAGE: localhost/daengtisia-ci-php:8.3
+      REQUIRED_PHP: '8.3'
     steps:
       # A persistent runner keeps its workspace between jobs; `clean: true`
       # guarantees the checkout starts from a pristine tree.
@@ -354,30 +358,73 @@ jobs:
 
       - name: Runner health check (CICD-CTRL-3)
         run: |
-          chmod +x scripts/ci/self-hosted-runner-health.sh
+          chmod +x scripts/ci/self-hosted-runner-health.sh scripts/ci/self-hosted-php.sh
           bash scripts/ci/self-hosted-runner-health.sh 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Equivalence proof: the authoritative gate pins PHP 8.3, and the host
+      # here ships 8.5, so the runtime MUST come from the pinned image. This
+      # step fails the job rather than let a divergent PHP run the suite.
+      - name: Assert authoritative PHP runtime (CICD-CTRL-3)
+        run: |
+          ACTUAL="$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
+          FULL="$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_VERSION;')"
+          echo "authoritative_php_required=${REQUIRED_PHP}"
+          echo "self_hosted_php_actual=${ACTUAL} (${FULL})"
+          if [ "$ACTUAL" != "$REQUIRED_PHP" ]; then
+            echo "::error::Self-hosted runtime is PHP ${ACTUAL}; the authoritative gate requires ${REQUIRED_PHP}."
+            exit 1
+          fi
+          {
+            echo "CICD-CTRL-3 runtime equivalence"
+            echo "required=${REQUIRED_PHP} actual=${ACTUAL} (${FULL})"
+            echo "engine=rootless podman, image=${CI_PHP_IMAGE}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # CICD-CTRL-3 self-hosted smoke evidence. Prints the acceptance proof
+      # points into the job log and step summary so a run can be audited after
+      # the fact. Prints no secret and no database credential.
+      - name: Self-hosted runner smoke evidence (CICD-CTRL-3)
+        run: |
+          {
+            echo "CICD-CTRL-3 self-hosted smoke"
+            echo "hostname=$(hostname)"
+            echo "runner_user=$(id -un) uid=$(id -u)"
+            echo "is_root=$([ "$(id -u)" -eq 0 ] && echo yes || echo no)"
+            echo "groups=$(id -nG)"
+            echo "container_engine=$(podman --version) rootless=$(podman info --format '{{.Host.Security.Rootless}}')"
+            echo "ci_php=$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_VERSION;')"
+            echo "ci_composer=$(bash scripts/ci/self-hosted-php.sh composer --version --no-interaction 2>/dev/null | head -1)"
+            echo "ci_pdfinfo=$(bash scripts/ci/self-hosted-php.sh sh -c 'pdfinfo -v 2>&1 | head -1')"
+            echo "host_node=$(node --version) host_npm=$(npm --version)"
+            echo "postgres_local=$(psql --version)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Must be false: the docker group is root-equivalent.
+          if id -nG | tr ' ' '\n' | grep -qx docker; then
+            echo "::error::runner user is in the docker group"; exit 1
+          fi
+
       - name: Install Composer dependencies
-        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+        run: bash scripts/ci/self-hosted-php.sh composer install --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
       # Hard production-database isolation guard. On a persistent runner this
       # matters more than on an ephemeral one: state survives between jobs, so a
-      # misconfigured environment must never reach a real database.
+      # misconfigured environment must never reach a real database. It runs in
+      # the same runtime that will run the migrations.
       - name: Assert non-production database (CICD-CTRL-3)
-        run: php artisan ci:assert-non-production-database
+        run: bash scripts/ci/self-hosted-php.sh php artisan ci:assert-non-production-database
 
       - name: Run migrations
-        run: php artisan migrate --force
+        run: bash scripts/ci/self-hosted-php.sh php artisan migrate --force
 
       - name: Run critical regression tests
         # Identical filter to the GitHub-hosted variant — the gate is equivalent,
         # only the infrastructure differs.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
         run: |
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
+          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
 
       - name: Note skipped critical regression tests (docs-only change)
@@ -392,7 +439,7 @@ jobs:
 
       - name: Run governance audit commands
         # Always runs — governance is never gated by the classifier.
-        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only
+        run: bash scripts/ci/self-hosted-php.sh bash scripts/ci/foundation-evidence-gates.sh --critical-only
 
       - name: Write NSF-R011 critical evidence summary
         run: |
@@ -404,6 +451,8 @@ jobs:
             echo "commit=${{ github.sha }}"
             echo "gate=critical_test_gate"
             echo "runner=self-hosted/daengtisia-ci"
+            echo "runtime=rootless-podman ${CI_PHP_IMAGE}"
+            echo "php=${REQUIRED_PHP}"
             echo "result=passed"
           } > storage/ci-evidence/nsf-r011-critical-tests.txt
 

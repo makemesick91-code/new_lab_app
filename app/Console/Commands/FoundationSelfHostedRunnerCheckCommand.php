@@ -51,6 +51,9 @@ class FoundationSelfHostedRunnerCheckCommand extends Command
         $this->line('Workflow routing: '.(($report['workflow_ok'] ?? false) ? 'ok' : 'FAIL'));
         $this->line('Deploy isolation: '.(($report['deploy_isolation_ok'] ?? false) ? 'ok' : 'FAIL'));
         $this->line('Health script: '.(($report['health_script_ok'] ?? false) ? 'ok' : 'FAIL'));
+        $this->line('CI runtime: '.(($report['ci_runtime_ok'] ?? false) ? 'ok' : 'FAIL')
+            .' ('.($report['ci_runtime_image'] ?? 'unknown')
+            .', digest-pinned: '.(($report['ci_runtime_digest_pinned'] ?? false) ? 'yes' : 'NO').')');
         $this->line('Production DB guard: '.(($report['database_guard_ok'] ?? false) ? 'ok' : 'FAIL'));
         $this->line('CICD-CTRL-1 runtime control: '.($report['ci_runtime_control_decision'] ?? 'UNKNOWN'));
         $this->newLine();

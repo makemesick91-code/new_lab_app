@@ -164,13 +164,18 @@ it('keeps the classifier on GitHub-hosted infrastructure', function () {
         ->and(config('ci_runner.always_github_hosted_jobs'))->toContain('classify');
 });
 
-it('runs an equivalent gate on both runners with an identical test filter', function () {
+it('runs an equivalent gate on both runners with an identical test selection', function () {
     $jobs = ciWorkflow()['jobs'];
 
+    // Compare the actual test SELECTION, not the literal command: the
+    // self-hosted variant is prefixed with the pinned-runtime wrapper, which is
+    // an infrastructure difference, not a coverage difference.
     $filterOf = function (array $job): string {
         foreach ($job['steps'] as $step) {
             if (($step['name'] ?? '') === 'Run critical regression tests') {
-                return trim((string) $step['run']);
+                preg_match("/--filter='([^']+)'/", (string) $step['run'], $m);
+
+                return $m[1] ?? '';
             }
         }
 
@@ -182,7 +187,8 @@ it('runs an equivalent gate on both runners with an identical test filter', func
 
     // CICDCTRL3-R009: the fallback is equivalent, never weaker.
     expect($hosted)->not->toBe('')
-        ->and($selfHosted)->toBe($hosted);
+        ->and($selfHosted)->toBe($hosted)
+        ->and($hosted)->toContain('LegacyRme');
 });
 
 it('asserts a non-production database before every migration in every job', function () {
@@ -299,13 +305,74 @@ it('reports GO for the self-hosted runner governance check', function () {
         ->and($report['summary']['errors'])->toBe(0);
 });
 
-it('publishes the twelve CICD-CTRL-3 governance rules', function () {
+it('publishes the thirteen CICD-CTRL-3 governance rules', function () {
     $rules = SelfHostedRunnerGovernanceService::rules();
     $ids = array_column($rules, 'id');
 
-    expect($rules)->toHaveCount(12)
+    expect($rules)->toHaveCount(13)
         ->and($ids)->toBe(array_unique($ids))
-        ->and($ids)->toContain('CICDCTRL3-R001', 'CICDCTRL3-R008', 'CICDCTRL3-R012');
+        ->and($ids)->toContain('CICDCTRL3-R001', 'CICDCTRL3-R008', 'CICDCTRL3-R013');
+});
+
+it('pins the authoritative CI runtime by digest rather than a floating tag', function () {
+    $posture = app(SelfHostedRunnerScanner::class)->ciRuntimePosture();
+
+    // CICDCTRL3-R013: a floating tag would let the runtime drift silently.
+    expect($posture['ok'])->toBeTrue(implode('; ', $posture['issues']))
+        ->and($posture['digest_pinned'])->toBeTrue();
+
+    $containerfile = (string) file_get_contents(base_path('.github/ci-runtime/Containerfile.php83'));
+    expect($containerfile)->toMatch('/^FROM\s+\S+@sha256:[0-9a-f]{64}/m');
+});
+
+it('builds the CI runtime image with the authoritative extension set and Poppler', function () {
+    $containerfile = (string) file_get_contents(base_path('.github/ci-runtime/Containerfile.php83'));
+
+    // Mirrors the setup-php extension list of the GitHub-hosted critical gate.
+    foreach (config('ci_runner.ci_runtime.required_extensions') as $extension) {
+        expect($containerfile)->toContain($extension);
+    }
+
+    // LegacyRme's Poppler suite SKIPS without these, which would quietly make
+    // the self-hosted gate weaker than the authoritative one.
+    foreach (config('ci_runner.ci_runtime.required_binaries') as $binary) {
+        expect($containerfile)->toContain($binary);
+    }
+});
+
+it('runs the self-hosted gate through the pinned runtime, never the host PHP', function () {
+    $jobs = ciWorkflow()['jobs'];
+    $steps = $jobs['critical_test_gate_self_hosted']['steps'];
+
+    $runs = collect($steps)->pluck('run')->filter()->implode("\n");
+
+    // Every php/composer invocation must go through the wrapper.
+    expect($runs)->toContain('scripts/ci/self-hosted-php.sh')
+        ->and($jobs['critical_test_gate_self_hosted']['env']['REQUIRED_PHP'])->toBe('8.3');
+
+    $names = array_map(fn (array $s) => (string) ($s['name'] ?? ''), $steps);
+    expect($names)->toContain('Assert authoritative PHP runtime (CICD-CTRL-3)');
+
+    // No bare `php ...` / `composer ...` step outside the wrapper.
+    foreach ($steps as $step) {
+        $run = (string) ($step['run'] ?? '');
+        if ($run === '' || str_contains($run, 'self-hosted-php.sh')) {
+            continue;
+        }
+        expect($run)->not->toMatch('/^\s*(php|composer)\s/m');
+    }
+});
+
+it('forbids docker and sudo for the runner service user', function () {
+    $forbidden = config('ci_runner.ci_runtime.forbidden_service_user_groups');
+
+    // The docker group is root-equivalent.
+    expect($forbidden)->toContain('docker')->toContain('sudo');
+
+    $wrapper = (string) file_get_contents(base_path('scripts/ci/self-hosted-php.sh'));
+    expect($wrapper)->toContain('--userns=keep-id')
+        ->and($wrapper)->toContain('podman run')
+        ->and($wrapper)->not->toMatch('/^\s*(exec\s+)?docker\s/m');
 });
 
 it('does not regress the CICD-CTRL-1 safe runtime control contract', function () {
