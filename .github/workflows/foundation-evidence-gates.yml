@@ -18,12 +18,12 @@ on:
       # github-hosted. Falling back to GitHub-hosted is always an explicit
       # operator action and always runs an equivalent gate, never a weaker one.
       runner_mode:
-        description: 'Heavy CI runner mode (empty = repository default)'
+        description: 'Heavy CI runner mode'
         type: choice
         required: false
-        default: ''
+        default: repository-default
         options:
-          - ''
+          - repository-default
           - github-hosted
           - self-hosted
   schedule:
@@ -73,6 +73,9 @@ jobs:
           REPO_MODE: ${{ vars.CI_RUNNER_MODE }}
         run: |
           MODE="${DISPATCH_MODE:-}"
+          # 'repository-default' means "no explicit override" — defer to the
+          # repository variable, then to the fail-safe github-hosted default.
+          [ "$MODE" = "repository-default" ] && MODE=""
           [ -z "$MODE" ] && MODE="${REPO_MODE:-}"
           [ -z "$MODE" ] && MODE="github-hosted"
           case "$MODE" in
