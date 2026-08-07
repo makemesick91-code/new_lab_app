@@ -3,6 +3,7 @@
 use App\Services\Foundation\CiRuntimeControlGovernanceService;
 use App\Services\Foundation\SelfHostedRunnerGovernanceService;
 use App\Support\Cicd\SelfHostedRunnerScanner;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Symfony\Component\Yaml\Yaml;
 
@@ -574,6 +575,102 @@ it('keeps the shipped health script free of the container-runtime nesting defect
 
     expect($posture['exists'])->toBeTrue()
         ->and($posture['ok'])->toBeTrue(implode("\n", $posture['issues']));
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * CICD-CTRL-3 — the runtime contract is semantic equivalence, not one engine.
+ *
+ * The wrapper originally hard-required Podman because the first runner host ran
+ * Ubuntu 26.04, whose only PHP is 8.5. That was an implementation detail of that
+ * host, not a security requirement. A host whose OS ships the authoritative PHP
+ * satisfies the contract natively — but it must still PROVE parity, and must
+ * never silently fall back to a mismatched PHP.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * @param  array<string, string>  $env
+ */
+function runRuntimeWrapper(array $env, array $command): ProcessResult
+{
+    return Process::path(base_path())
+        ->env($env)
+        ->run(array_merge(['bash', 'scripts/ci/self-hosted-php.sh'], $command));
+}
+
+it('allows native and container runtime modes but never docker', function () {
+    $runtime = config('ci_runner.ci_runtime');
+
+    expect($runtime['allowed_modes'])->toContain('native')->toContain('podman')
+        ->and($runtime['allowed_modes'])->not->toContain('docker')
+        // A container mode, when offered, is still rootless Podman.
+        ->and($runtime['engine'])->toBe('podman')
+        ->and($runtime['rootless'])->toBeTrue();
+
+    $posture = app(SelfHostedRunnerScanner::class)->ciRuntimePosture();
+    expect($posture['ok'])->toBeTrue(implode("\n", $posture['issues']));
+});
+
+it('runs natively when the host PHP already matches the authoritative version', function () {
+    $hostPhp = trim((string) shell_exec('php -r \'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;\''));
+
+    $result = runRuntimeWrapper([
+        'CI_RUNTIME_MODE' => 'native',
+        'CI_RUNNER_PHP_VERSION' => $hostPhp,
+        'CI_RUNTIME_REQUIRED_EXTENSIONS' => 'pdo',
+        'CI_RUNTIME_REQUIRED_BINARIES' => 'sh',
+    ], ['php', '-r', 'echo "NATIVE_RAN";']);
+
+    expect($result->successful())->toBeTrue($result->errorOutput())
+        ->and($result->output())->toContain('NATIVE_RAN');
+});
+
+it('refuses to run when the host PHP does not match the authoritative version', function () {
+    // The failure mode that matters: a mismatched PHP must never be used
+    // silently, because the gate's results would stop being comparable.
+    $result = runRuntimeWrapper([
+        'CI_RUNTIME_MODE' => 'native',
+        'CI_RUNNER_PHP_VERSION' => '9.9',
+    ], ['php', '-r', 'echo "SHOULD_NOT_RUN";']);
+
+    expect($result->successful())->toBeFalse()
+        ->and($result->output())->not->toContain('SHOULD_NOT_RUN')
+        ->and($result->errorOutput())->toContain('9.9');
+});
+
+it('refuses to run when no runtime on the host satisfies the contract', function () {
+    // auto-detect with an unobtainable PHP and no container engine must fail
+    // closed rather than fall through to whatever PHP happens to be on PATH.
+    $result = runRuntimeWrapper([
+        'CI_RUNTIME_MODE' => 'auto',
+        'CI_RUNNER_PHP_VERSION' => '9.9',
+        'PATH' => bareHostBinDir(),
+    ], ['php', '-r', 'echo "SHOULD_NOT_RUN";']);
+
+    expect($result->successful())->toBeFalse()
+        ->and($result->output())->not->toContain('SHOULD_NOT_RUN');
+});
+
+it('does not demand a container engine from a native runner host', function () {
+    $result = Process::path(base_path())
+        ->env(['CI_RUNTIME_MODE' => 'native'])
+        ->run(['bash', 'scripts/ci/self-hosted-runner-health.sh', '--json']);
+
+    $report = json_decode($result->output(), true);
+    expect($report)->toBeArray();
+
+    // podman is irrelevant to a native host and must not be reported missing.
+    expect(healthChecksNamed($report, 'tool_podman'))->toBeEmpty();
+
+    $mode = healthChecksNamed($report, 'ci_runtime_mode');
+    expect($mode)->toHaveCount(1)
+        ->and($mode[0]['status'])->toBe('PASS');
+
+    // Native mode must still assert real parity, not just declare itself native.
+    foreach (['ci_runtime_php', 'ci_runtime_extensions', 'ci_runtime_memory_limit'] as $check) {
+        expect(healthChecksNamed($report, $check))->toHaveCount(1);
+    }
 });
 
 it('does not regress the CICD-CTRL-1 safe runtime control contract', function () {

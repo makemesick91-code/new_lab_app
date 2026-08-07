@@ -32,9 +32,10 @@ done
 
 # Thresholds mirror config/ci_runner.php resource_guards. They are overridable
 # by environment so a benchmark can retune them without editing this script.
-MIN_FREE_DISK_GB="${CI_RUNNER_MIN_FREE_DISK_GB:-40}"
-MIN_AVAILABLE_RAM_MB="${CI_RUNNER_MIN_AVAILABLE_RAM_MB:-4096}"
+MIN_FREE_DISK_GB="${CI_RUNNER_MIN_FREE_DISK_GB:-15}"
+MIN_AVAILABLE_RAM_MB="${CI_RUNNER_MIN_AVAILABLE_RAM_MB:-2048}"
 REQUIRED_PHP_VERSION="${CI_RUNNER_PHP_VERSION:-8.3}"
+REQUIRED_EXTENSIONS="${CI_RUNTIME_REQUIRED_EXTENSIONS:-dom curl libxml mbstring zip pcntl pdo pdo_pgsql bcmath gd exif}"
 CI_DB_NAME="${CI_RUNNER_DB_NAME:-daengtisia_ci}"
 CI_DB_HOST="${CI_RUNNER_DB_HOST:-127.0.0.1}"
 CI_DB_PORT="${CI_RUNNER_DB_PORT:-5433}"
@@ -76,19 +77,87 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Host tooling — pre-provisioned so CI jobs never need sudo at run time.
+# 2. Runtime mode + host tooling.
 #
-# PHP, Composer and Poppler are deliberately NOT host requirements: they are
-# supplied by the pinned CI image, because the host cannot provide the
-# authoritative PHP version.
+# The contract is semantic runtime equivalence, not a specific container engine.
+# Which tools the host must provide therefore depends on where the authoritative
+# PHP comes from:
+#
+#   native — the host OS ships the pinned PHP, so php/composer/poppler are host
+#            requirements and no container engine is needed at all.
+#   podman — the runtime comes from the pinned image, so podman is the
+#            requirement and PHP on the host is irrelevant.
+#
+# Demanding podman unconditionally would report NO-GO on a perfectly valid
+# native host.
 # ---------------------------------------------------------------------------
-for tool in node npm psql git podman; do
+HOST_PHP_VERSION=""
+if have php; then
+    HOST_PHP_VERSION="$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "")"
+fi
+
+case "${CI_RUNTIME_MODE:-auto}" in
+    native|podman) EFFECTIVE_MODE="${CI_RUNTIME_MODE}" ;;
+    *)
+        if [ "$HOST_PHP_VERSION" = "$REQUIRED_PHP_VERSION" ]; then
+            EFFECTIVE_MODE="native"
+        elif have podman; then
+            EFFECTIVE_MODE="podman"
+        else
+            EFFECTIVE_MODE="none"
+        fi
+        ;;
+esac
+
+case "$EFFECTIVE_MODE" in
+    native)
+        MODE_TOOLS="php composer pdfinfo pdftoppm"
+        record PASS "ci_runtime_mode" "Authoritative runtime is the host itself (native PHP ${HOST_PHP_VERSION})."
+        ;;
+    podman)
+        MODE_TOOLS="podman"
+        record PASS "ci_runtime_mode" "Authoritative runtime is the pinned container image (podman)."
+        ;;
+    *)
+        MODE_TOOLS=""
+        record FAIL "ci_runtime_mode" "No runtime satisfies the contract: host PHP is '${HOST_PHP_VERSION:-absent}' (need ${REQUIRED_PHP_VERSION}) and no container engine is installed."
+        ;;
+esac
+
+for tool in node npm psql git $MODE_TOOLS; do
     if have "$tool"; then
         record PASS "tool_${tool}" "$(command -v "$tool")"
     else
         record FAIL "tool_${tool}" "Required host tool '${tool}' is not installed on the runner."
     fi
 done
+
+# In native mode the host PHP IS the authoritative runtime, so its version and
+# extension set must match the gate exactly. A missing extension would make the
+# affected tests SKIP instead of run — a silently weaker gate.
+if [ "$EFFECTIVE_MODE" = "native" ]; then
+    if [ "$HOST_PHP_VERSION" = "$REQUIRED_PHP_VERSION" ]; then
+        record PASS "ci_runtime_php" "Host provides PHP ${HOST_PHP_VERSION} (matches the GitHub-hosted gate)."
+    else
+        record FAIL "ci_runtime_php" "Host provides PHP ${HOST_PHP_VERSION:-none}; the authoritative gate requires ${REQUIRED_PHP_VERSION}."
+    fi
+
+    MISSING_EXTENSIONS=""
+    for extension in $REQUIRED_EXTENSIONS; do
+        php -m 2>/dev/null | grep -qix "$extension" || MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${extension}"
+    done
+    if [ -z "$MISSING_EXTENSIONS" ]; then
+        record PASS "ci_runtime_extensions" "All authoritative PHP extensions are present."
+    else
+        record FAIL "ci_runtime_extensions" "Host PHP is missing required extension(s):${MISSING_EXTENSIONS}"
+    fi
+
+    if [ "$(php -r 'echo ini_get("memory_limit");' 2>/dev/null)" = "-1" ]; then
+        record PASS "ci_runtime_memory_limit" "PHP memory_limit is unlimited, matching the authoritative gate."
+    else
+        record FAIL "ci_runtime_memory_limit" "PHP memory_limit must be -1; Pest OOMs in TestSuiteLoader otherwise."
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # 2b. Privileged group membership — ALWAYS evaluated, on every host.
@@ -116,12 +185,12 @@ for group in $FORBIDDEN_GROUPS; do
 done
 
 # ---------------------------------------------------------------------------
-# 2c. Container runtime posture — evaluated only when a container runtime is
-# actually present. Absence is not a security finding: the security verdict is
-# owned by 2b above, which always runs, and the capability verdict by the tool
-# checks in section 2.
+# 2c. Container runtime posture — evaluated only when the container runtime is
+# the authoritative one. Absence is not a security finding: the security verdict
+# is owned by 2b above, which always runs, and the capability verdict by the
+# tool checks in section 2.
 # ---------------------------------------------------------------------------
-if have podman; then
+if [ "$EFFECTIVE_MODE" = "podman" ] && have podman; then
     if [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = "true" ]; then
         record PASS "podman_rootless" "Podman is running rootless as ${CURRENT_USER}."
     else

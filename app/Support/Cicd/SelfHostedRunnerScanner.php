@@ -250,7 +250,7 @@ class SelfHostedRunnerScanner
          * comments, and a comment mentioning the probe would otherwise skew
          * every ordering comparison below.
          */
-        $runtimeProbe = preg_match('/^[ \t]*if have podman/m', $script, $probeMatch, PREG_OFFSET_CAPTURE) === 1
+        $runtimeProbe = preg_match('/^[ \t]*if\b[^\n]*podman/m', $script, $probeMatch, PREG_OFFSET_CAPTURE) === 1
             ? $probeMatch[0][1]
             : false;
 
@@ -315,12 +315,41 @@ class SelfHostedRunnerScanner
         $issues = [];
         $runtime = (array) config('ci_runner.ci_runtime', []);
 
-        if (($runtime['engine'] ?? '') !== 'podman') {
-            $issues[] = 'the CI runtime engine must be podman';
+        /*
+         * The contract is semantic runtime equivalence, not a specific engine.
+         * A host whose OS ships the authoritative PHP satisfies it natively; a
+         * host whose OS does not needs the pinned container image. Both are
+         * legitimate, so the posture check validates the declared mode set
+         * rather than demanding one engine.
+         */
+        $allowedModes = array_values(array_filter(
+            (array) ($runtime['allowed_modes'] ?? []),
+            fn ($mode): bool => is_string($mode) && $mode !== ''
+        ));
+        $mode = (string) ($runtime['mode'] ?? '');
+
+        if ($allowedModes === []) {
+            $issues[] = 'the CI runtime must declare its allowed modes';
         }
 
-        if (($runtime['rootless'] ?? false) !== true) {
-            $issues[] = 'the CI runtime must be declared rootless';
+        if ($mode !== '' && $mode !== 'auto' && ! in_array($mode, $allowedModes, true)) {
+            $issues[] = "the configured CI runtime mode '{$mode}' is not in the allowed mode set";
+        }
+
+        // Docker is root-equivalent and is forbidden however the runtime is supplied.
+        if (in_array('docker', $allowedModes, true)) {
+            $issues[] = 'docker must never be an allowed CI runtime mode';
+        }
+
+        // When a container mode is offered it must be rootless Podman.
+        if (in_array('podman', $allowedModes, true)) {
+            if (($runtime['engine'] ?? '') !== 'podman') {
+                $issues[] = 'the container CI runtime engine must be podman';
+            }
+
+            if (($runtime['rootless'] ?? false) !== true) {
+                $issues[] = 'the container CI runtime must be declared rootless';
+            }
         }
 
         // docker and lxd both grant root-equivalent control of the host; sudo is
@@ -382,10 +411,30 @@ class SelfHostedRunnerScanner
                 $issues[] = 'the CI runtime wrapper must map the container user to the host service user (--userns=keep-id)';
             }
             if (! str_contains($wrapper, 'podman run')) {
-                $issues[] = 'the CI runtime wrapper must execute through podman';
+                $issues[] = 'the CI runtime wrapper must execute the container mode through podman';
             }
             if (preg_match('/^\s*(exec\s+)?docker\s/m', $wrapper) === 1) {
                 $issues[] = 'the CI runtime wrapper must never invoke docker';
+            }
+
+            // Every declared mode must actually be implemented by the wrapper.
+            foreach ($allowedModes as $allowedMode) {
+                if (! str_contains($wrapper, $allowedMode)) {
+                    $issues[] = "the CI runtime wrapper does not implement the '{$allowedMode}' mode";
+                }
+            }
+
+            /*
+             * Equivalence is the whole point: whichever mode runs, the wrapper
+             * must prove the PHP version and extension set before executing, and
+             * must never silently fall back to a mismatched PHP.
+             */
+            if (! str_contains($wrapper, 'REQUIRED_PHP_VERSION')) {
+                $issues[] = 'the CI runtime wrapper must assert the authoritative PHP version before running';
+            }
+
+            if (! str_contains($wrapper, 'REQUIRED_EXTENSIONS')) {
+                $issues[] = 'the CI runtime wrapper must assert the authoritative extension set before running';
             }
         }
 

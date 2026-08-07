@@ -193,7 +193,18 @@ return [
         'npm',
         'psql',
         'git',
-        'podman',
+    ],
+
+    /*
+     * Tooling required in addition to the above, per runtime mode.
+     *
+     * In native mode the host itself is the authoritative runtime, so PHP,
+     * Composer and Poppler become host requirements. In podman mode they are
+     * supplied by the pinned image instead and must NOT be demanded of the host.
+     */
+    'required_host_tooling_by_mode' => [
+        'native' => ['php', 'composer', 'pdfinfo', 'pdftoppm'],
+        'podman' => ['podman'],
     ],
 
     // PHP major.minor the CI runtime must provide, matching the GitHub-hosted gate.
@@ -202,16 +213,27 @@ return [
     /*
      * Authoritative CI runtime.
      *
-     * The runner host is Ubuntu 26.04, which ships only PHP 8.5, while the
-     * GitHub-hosted gate pins PHP 8.3. Rather than weaken the authoritative
-     * requirement or reinstall the host OS, the self-hosted variant executes
-     * every php/composer/artisan command inside a pinned container image.
+     * The contract is SEMANTIC RUNTIME EQUIVALENCE, not a specific container
+     * engine: whatever executes a CI command must provide the same PHP
+     * major.minor, the same extension set and the same Poppler binaries as the
+     * GitHub-hosted gate. The wrapper proves that at run time in either mode and
+     * never falls back to a mismatched PHP.
      *
-     * Engine is ROOTLESS Podman under the dedicated service user. Rootful
-     * Docker and docker-group membership are forbidden: the docker group is
-     * root-equivalent.
+     * native — the host OS ships the authoritative PHP (Ubuntu 24.04 ships 8.3).
+     *          Preferred: no image build, no rootless plumbing, no userns
+     *          mapping, fewer moving parts to drift.
+     * podman — the runtime comes from the pinned image. Required when the host
+     *          cannot supply the authoritative PHP; this is why the wrapper was
+     *          originally written, on an Ubuntu 26.04 host that shipped only
+     *          PHP 8.5. Runs ROOTLESS under the dedicated service user.
+     *
+     * Docker is forbidden in BOTH modes: the docker group is root-equivalent.
      */
     'ci_runtime' => [
+        'mode' => env('CI_RUNTIME_MODE', 'auto'),
+        'allowed_modes' => ['native', 'podman'],
+
+        // Container engine used when (and only when) mode resolves to podman.
         'engine' => 'podman',
         'rootless' => true,
         'image' => env('CI_PHP_IMAGE', 'localhost/daengtisia-ci-php:8.3'),
@@ -307,8 +329,20 @@ return [
      * Below these thresholds the runner reports NO-GO instead of thrashing.
      */
     'resource_guards' => [
-        'min_free_disk_gb' => (int) env('CI_RUNNER_MIN_FREE_DISK_GB', 40),
-        'min_available_ram_mb' => (int) env('CI_RUNNER_MIN_AVAILABLE_RAM_MB', 4096),
+        /*
+         * Sized for the actual CI host, not for a hypothetical large one.
+         *
+         * The previous 40GB floor was set against a 231GB laptop disk. On the
+         * 58GB Biznet VPS it would report NO-GO permanently — a guard that can
+         * never pass is not a guard, it is an outage. 15GB still leaves room for
+         * a full vendor/ + node_modules/ + workspace + database on this host,
+         * and the bounded-cache policy below keeps it from creeping.
+         *
+         * RAM: 2GB available is the floor for one sequential heavy job on a
+         * 7.8GB host with 4GB of swap behind it.
+         */
+        'min_free_disk_gb' => (int) env('CI_RUNNER_MIN_FREE_DISK_GB', 15),
+        'min_available_ram_mb' => (int) env('CI_RUNNER_MIN_AVAILABLE_RAM_MB', 2048),
     ],
 
     /*
