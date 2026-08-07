@@ -1,0 +1,76 @@
+---
+description: CICD-CTRL-3 Dedicated Self-Hosted CI Runner — hybrid CI routing, production isolation, fallback
+globs:
+  - ".github/workflows/**"
+  - "scripts/ci/**"
+  - "config/ci_runner.php"
+  - "app/Support/Cicd/**"
+alwaysApply: false
+---
+
+# CICD-CTRL-3 — Dedicated Self-Hosted CI Runner
+
+Heavy CI may execute on a dedicated, project-labelled self-hosted runner.
+GitHub Actions stays the authoritative control plane.
+
+Verify with `php artisan foundation:self-hosted-runner-check --strict`.
+
+## Permanent rules
+
+1. **The production VPS is never a general CI runner.** Deployment keeps its own
+   boundary: `scripts/deploy-vps-runner.sh` runs ON the VPS and is never invoked
+   from a CI job. `deploy-vps.sh` / `rollback-vps.sh` must not appear in the CI
+   workflow.
+2. **GitHub Actions remains authoritative.** A self-hosted runner adds execution
+   capacity; it does not make CI independent of a GitHub Actions outage. Never
+   claim otherwise.
+3. **Heavy jobs target the full label set** `[self-hosted, linux, x64,
+   daengtisia-ci]`. A bare `runs-on: self-hosted` is forbidden — any other runner
+   on the account could satisfy it.
+4. **The classifier stays GitHub-hosted.** A dead self-hosted runner must never
+   stop the routing decision from being made.
+5. **Exactly one critical-gate variant runs.** The GitHub-hosted and self-hosted
+   variants share the check name `NSF-R011 Critical Test Gate` and have mutually
+   exclusive conditions. Never let both run, and never let both skip.
+6. **A runner outage queues the gate.** There is no automatic failover. A queued
+   job is the correct, visible failure mode; a silently passing required check is
+   not.
+7. **Fallback is explicit and equivalent.** Operators flip the repository
+   variable `CI_RUNNER_MODE` or pass the `runner_mode` dispatch input. The
+   default is `github-hosted`. The fallback runs the same test filter and the
+   same guards — never a weaker gate, never a renamed check.
+8. **Fork pull requests never run on the dedicated runner.** They are routed to
+   GitHub-hosted infrastructure — redirected, not skipped — so untrusted code
+   never touches the runner or its secrets.
+9. **CI uses a local, non-production database.** `php artisan
+   ci:assert-non-production-database` runs before migrations in every DB-heavy
+   job, on both runner types. It fails closed unless the database is local and
+   carries a CI/test name.
+10. **The runner runs CI as an unprivileged service user** (`github-runner`)
+    under a managed systemd unit. Never root. Never left as an interactive
+    `run.sh`. Never added to the `docker` group (root-equivalent) — the runner
+    has no Docker, which is why the self-hosted variant uses local PostgreSQL
+    instead of a service container.
+11. **The runner holds no production material** — no production environment
+    file, database credential, SSH private key, or application path. The health
+    check reports PRESENT/ABSENT only and never prints a credential.
+12. **The persistent workspace is cleaned** (`clean: true` checkout plus an
+    explicit post-job cleanup scoped to `$GITHUB_WORKSPACE`). Package caches may
+    persist; environment files, dumps, credentials, and clinical fixtures may
+    not.
+13. **Concurrency comes from a benchmark**, not from core count: one heavy job at
+    a time, and a Pest worker count measured against swap, thermal, and database
+    contention.
+14. **Never weaken a gate to make CI faster.** Widening what the self-hosted
+    runner may do requires extending `config/ci_runner.php`, the tests in
+    `tests/Feature/Cicd/DedicatedSelfHostedRunnerTest.php`, and a passing
+    `foundation:self-hosted-runner-check`.
+
+## Files
+
+- Contract: `config/ci_runner.php`
+- Scanner: `app/Support/Cicd/SelfHostedRunnerScanner.php`
+- Governance: `app/Services/Foundation/SelfHostedRunnerGovernanceService.php`
+- Guard: `app/Console/Commands/CiAssertNonProductionDatabaseCommand.php`
+- Health: `scripts/ci/self-hosted-runner-health.sh`
+- Runbook: `docs/runbooks/self-hosted-runner.md`

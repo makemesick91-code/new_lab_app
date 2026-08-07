@@ -13,6 +13,19 @@ on:
         description: Run full Pest suite (NSF-R011 full gate)
         type: boolean
         default: false
+      # CICD-CTRL-3 — explicit runner routing override. Leaving this empty uses
+      # the repository variable CI_RUNNER_MODE, which itself defaults to
+      # github-hosted. Falling back to GitHub-hosted is always an explicit
+      # operator action and always runs an equivalent gate, never a weaker one.
+      runner_mode:
+        description: 'Heavy CI runner mode (empty = repository default)'
+        type: choice
+        required: false
+        default: ''
+        options:
+          - ''
+          - github-hosted
+          - self-hosted
   schedule:
     - cron: '0 2 * * 0'
 
@@ -39,10 +52,42 @@ jobs:
       run_rme_tests: ${{ steps.resolve.outputs.run_rme_tests }}
       run_lab_tests: ${{ steps.resolve.outputs.run_lab_tests }}
       run_full_suite: ${{ steps.resolve.outputs.run_full_suite }}
+      # CICD-CTRL-3 — which runner the heavy gates target for this run.
+      runner_mode: ${{ steps.runner.outputs.runner_mode }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # CICD-CTRL-3 — resolve heavy-CI runner routing.
+      # Precedence: explicit workflow_dispatch input > repository variable >
+      # github-hosted. The default is fail-safe: if the variable is unset, the
+      # runner is decommissioned, or the value is unrecognised, heavy CI stays
+      # on GitHub-hosted infrastructure with no code change. This job itself
+      # always runs on GitHub-hosted so a dead self-hosted runner can never stop
+      # the routing decision from being made.
+      - name: Resolve heavy CI runner mode (CICD-CTRL-3)
+        id: runner
+        env:
+          DISPATCH_MODE: ${{ inputs.runner_mode }}
+          REPO_MODE: ${{ vars.CI_RUNNER_MODE }}
+        run: |
+          MODE="${DISPATCH_MODE:-}"
+          [ -z "$MODE" ] && MODE="${REPO_MODE:-}"
+          [ -z "$MODE" ] && MODE="github-hosted"
+          case "$MODE" in
+            self-hosted|github-hosted) ;;
+            *)
+              echo "Unrecognised runner mode '$MODE' — falling back to github-hosted."
+              MODE="github-hosted"
+              ;;
+          esac
+          echo "runner_mode=$MODE" >> "$GITHUB_OUTPUT"
+          {
+            echo "CICD-CTRL-3 heavy CI runner mode: $MODE"
+            echo "Exactly one NSF-R011 Critical Test Gate variant runs; the other is skipped."
+            echo "A self-hosted outage QUEUES the gate — it never lets it silently pass."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Resolve safe CI gates (CICD-CTRL-1)
         id: resolve
@@ -130,10 +175,22 @@ jobs:
           path: storage/ci-evidence/nsf-r012-*
           retention-days: 30
 
+  # CICD-CTRL-3 — GitHub-hosted variant of the critical regression gate.
+  # This and `critical_test_gate_self_hosted` share the SAME check name
+  # ("NSF-R011 Critical Test Gate") and mutually exclusive `if` conditions, so
+  # the required check name is preserved and appears exactly once per run.
+  # This variant is the default and the explicit fallback target.
   critical_test_gate:
     name: NSF-R011 Critical Test Gate
     runs-on: ubuntu-latest
     needs: [quality_gate, classify]
+    # Runs whenever the self-hosted variant does not. A pull request from a fork
+    # is ALWAYS routed here, never to the dedicated runner — so untrusted code
+    # is redirected to neutral infrastructure rather than silently skipped.
+    if: >-
+      needs.classify.outputs.runner_mode != 'self-hosted' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
     services:
       postgres:
         image: postgres:16
@@ -189,6 +246,12 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CTRL-3 — hard production-database isolation guard. Runs BEFORE any
+      # migration. Fails closed unless the active database is local and carries
+      # a CI/test name.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
+
       - name: Run migrations
         run: php artisan migrate --force
 
@@ -235,6 +298,131 @@ jobs:
             storage/ci-evidence/foundation-summary.txt
             storage/ci-evidence/dq-audits.txt
           retention-days: 30
+
+  # CICD-CTRL-3 — self-hosted variant of the critical regression gate.
+  #
+  # Shares the check name "NSF-R011 Critical Test Gate" with the GitHub-hosted
+  # variant above and is mutually exclusive with it, so the required check name
+  # is preserved. Differences are deliberate and limited to infrastructure:
+  #
+  #  - Targets the full label set [self-hosted, linux, x64, daengtisia-ci]. A
+  #    bare `self-hosted` runs-on is forbidden: it would let any other runner on
+  #    the account pick up this job.
+  #  - No Docker service container. The runner has NO Docker and its service
+  #    user is NOT in the docker group (that group is root-equivalent). It uses
+  #    the runner's local, loopback-only PostgreSQL CI database instead.
+  #  - No setup-php / setup-node action. The runtime is pre-provisioned so CI
+  #    jobs never need sudo, and the health check asserts the exact version.
+  #  - No actions/cache. The runner's own Composer/npm caches are persistent;
+  #    round-tripping them through GitHub would defeat the point. `composer
+  #    install` against composer.lock remains the authoritative install.
+  #
+  # Untrusted-PR protection: this job never runs for a pull request from a fork,
+  # so fork code can never execute on the dedicated runner or reach its secrets.
+  critical_test_gate_self_hosted:
+    name: NSF-R011 Critical Test Gate
+    runs-on: [self-hosted, linux, x64, daengtisia-ci]
+    needs: [quality_gate, classify]
+    if: >-
+      needs.classify.outputs.runner_mode == 'self-hosted' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: daengtisia_ci
+      DB_USERNAME: daengtisia_ci_user
+      DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+    steps:
+      # A persistent runner keeps its workspace between jobs; `clean: true`
+      # guarantees the checkout starts from a pristine tree.
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Runner health check (CICD-CTRL-3)
+        run: |
+          chmod +x scripts/ci/self-hosted-runner-health.sh
+          bash scripts/ci/self-hosted-runner-health.sh 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare CI evidence directory
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # Hard production-database isolation guard. On a persistent runner this
+      # matters more than on an ephemeral one: state survives between jobs, so a
+      # misconfigured environment must never reach a real database.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
+
+      - name: Run migrations
+        run: php artisan migrate --force
+
+      - name: Run critical regression tests
+        # Identical filter to the GitHub-hosted variant — the gate is equivalent,
+        # only the infrastructure differs.
+        if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        run: |
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
+            2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+
+      - name: Note skipped critical regression tests (docs-only change)
+        if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
+        run: |
+          {
+            echo "NSF-R011 critical regression tests SKIPPED for a docs-only change."
+            echo "gate_profile=${{ needs.classify.outputs.gate_profile }}"
+            echo "Reason: CICD-CTRL-1 classifier resolved a docs_only change set (Markdown only)."
+            echo "Governance, security, release-safety, and release-evidence gates still ran."
+          } | tee storage/ci-evidence/nsf-r011-critical-tests.log
+
+      - name: Run governance audit commands
+        # Always runs — governance is never gated by the classifier.
+        run: bash scripts/ci/foundation-evidence-gates.sh --critical-only
+
+      - name: Write NSF-R011 critical evidence summary
+        run: |
+          {
+            echo "NSF-R011 Critical Regression Evidence Gate"
+            echo "generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "workflow_run_id=${{ github.run_id }}"
+            echo "workflow_run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "commit=${{ github.sha }}"
+            echo "gate=critical_test_gate"
+            echo "runner=self-hosted/daengtisia-ci"
+            echo "result=passed"
+          } > storage/ci-evidence/nsf-r011-critical-tests.txt
+
+      - name: Upload NSF-R011 critical evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsf-r011-critical-test-gate
+          path: |
+            storage/ci-evidence/nsf-r011-*
+            storage/ci-evidence/foundation-summary.txt
+            storage/ci-evidence/dq-audits.txt
+          retention-days: 30
+
+      # Persistent-runner hygiene. Scoped to the job workspace only — never an
+      # arbitrary directory — and it removes generated CI artifacts, not the
+      # runner's package caches.
+      - name: Clean workspace artifacts
+        if: always()
+        run: |
+          rm -rf storage/ci-evidence
+          rm -f .env
+          git -C "$GITHUB_WORKSPACE" clean -fdx -e vendor -e node_modules >/dev/null 2>&1 || true
 
   # CICD-CTRL-1 — Selective Module Gate (tier 3).
   # Runs in PARALLEL with the critical gate and ADDS module-specific coverage
@@ -306,6 +494,10 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
 
       - name: Run migrations
         run: php artisan migrate --force
@@ -395,6 +587,10 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
 
       - name: Run migrations
         run: php artisan migrate --force
@@ -547,6 +743,10 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
+
       - name: Run migrations
         run: php artisan migrate --force
 
@@ -630,6 +830,10 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
+      - name: Assert non-production database (CICD-CTRL-3)
+        run: php artisan ci:assert-non-production-database
 
       - name: Run migrations
         run: php artisan migrate --force

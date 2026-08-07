@@ -1,0 +1,300 @@
+<?php
+
+namespace App\Support\Cicd;
+
+/**
+ * CICD-CTRL-3 — Dedicated Self-Hosted CI Runner scanner.
+ *
+ * Read-only. Verifies the Foundation Evidence Gates workflow, the deploy
+ * workflow, the runner health script, and the production-database guard honour
+ * the contract declared in config/ci_runner.php:
+ *
+ *  - Heavy self-hosted jobs target the full, project-specific label set; a bare
+ *    `self-hosted` runs-on (which any runner on the account could satisfy) is
+ *    forbidden.
+ *  - The classifier stays on GitHub-hosted infrastructure so a dead self-hosted
+ *    runner can never stop the routing decision from being made.
+ *  - Exactly one critical-gate variant runs for any routing combination, so an
+ *    outage queues the gate instead of letting it silently pass.
+ *  - Every DB-heavy job asserts a non-production database BEFORE migrating.
+ *  - Deployment never runs on a general CI runner.
+ *  - The runner health script is non-destructive and checks production
+ *    isolation.
+ *
+ * The scanner only reads files and config; it never runs a command or writes.
+ */
+class SelfHostedRunnerScanner
+{
+    private function readFile(string $key): ?string
+    {
+        $path = (string) config("ci_runner.files.{$key}", '');
+        if ($path === '') {
+            return null;
+        }
+
+        $full = base_path($path);
+        if (! is_file($full)) {
+            return null;
+        }
+
+        return (string) file_get_contents($full);
+    }
+
+    /**
+     * The declared contract is internally coherent.
+     *
+     * @return array{ok: bool, issues: list<string>, required_labels: list<string>, default_mode: string}
+     */
+    public function contractPosture(): array
+    {
+        $issues = [];
+
+        $labels = array_values((array) config('ci_runner.required_labels', []));
+        $custom = (string) config('ci_runner.custom_label', '');
+
+        if ($labels === []) {
+            $issues[] = 'no required runner labels are declared';
+        }
+
+        if ($custom === '') {
+            $issues[] = 'no project-specific custom label is declared';
+        } elseif (! in_array($custom, $labels, true)) {
+            $issues[] = "custom label '{$custom}' is missing from the required label set";
+        }
+
+        if (! in_array('self-hosted', $labels, true)) {
+            $issues[] = "required label set is missing 'self-hosted'";
+        }
+
+        $defaultMode = (string) config('ci_runner.runner_mode.default', '');
+        if ($defaultMode !== 'github-hosted') {
+            $issues[] = "runner_mode default must be 'github-hosted' (fail-safe), got '{$defaultMode}'";
+        }
+
+        $alwaysGithub = (array) config('ci_runner.always_github_hosted_jobs', []);
+        foreach (['classify', 'deploy'] as $mustStay) {
+            if (! in_array($mustStay, $alwaysGithub, true)) {
+                $issues[] = "job '{$mustStay}' must be pinned to GitHub-hosted infrastructure";
+            }
+        }
+
+        return [
+            'ok' => $issues === [],
+            'issues' => $issues,
+            'required_labels' => $labels,
+            'default_mode' => $defaultMode,
+        ];
+    }
+
+    /**
+     * The CI workflow wires the routing safely.
+     *
+     * @return array{ok: bool, exists: bool, issues: list<string>, missing_markers: list<string>, forbidden_present: list<string>}
+     */
+    public function workflowPosture(): array
+    {
+        $issues = [];
+        $missing = [];
+        $forbidden = [];
+
+        $workflow = $this->readFile('ci_workflow');
+        if ($workflow === null) {
+            return [
+                'ok' => false,
+                'exists' => false,
+                'issues' => ['CI workflow file is missing'],
+                'missing_markers' => [],
+                'forbidden_present' => [],
+            ];
+        }
+
+        foreach ((array) config('ci_runner.required_workflow_markers', []) as $marker) {
+            if (! is_string($marker) || $marker === '') {
+                continue;
+            }
+            if (! str_contains($workflow, $marker)) {
+                $missing[] = $marker;
+                $issues[] = "required workflow marker missing: {$marker}";
+            }
+        }
+
+        foreach ((array) config('ci_runner.forbidden_workflow_markers', []) as $marker) {
+            if (! is_string($marker) || $marker === '') {
+                continue;
+            }
+            if (str_contains($workflow, $marker)) {
+                $forbidden[] = $marker;
+                $issues[] = "forbidden workflow marker present: {$marker}";
+            }
+        }
+
+        // The heavy job must target the complete label set, not a bare label.
+        $labels = (array) config('ci_runner.required_labels', []);
+        $labelLine = '['.implode(', ', $labels).']';
+        if (! str_contains($workflow, $labelLine)) {
+            $issues[] = "no job targets the full required label set {$labelLine}";
+        }
+
+        // The classifier must never move off GitHub-hosted infrastructure.
+        if (preg_match('/^\s{2}classify:\s*$.*?^\s{4}runs-on:\s*(.+)$/ms', $workflow, $m) === 1) {
+            if (! str_contains($m[1], 'ubuntu-')) {
+                $issues[] = 'the classify job must stay on a GitHub-hosted runner';
+            }
+        } else {
+            $issues[] = 'unable to determine the classify job runner';
+        }
+
+        // Deployment / rollback must never be invoked from CI.
+        foreach ((array) config('ci_runner.forbidden_ci_production_commands', []) as $command) {
+            if (is_string($command) && $command !== '' && str_contains($workflow, $command)) {
+                $issues[] = "production command '{$command}' must never run from the CI workflow";
+            }
+        }
+
+        // Every job that migrates must guard the database first.
+        foreach ($this->jobsMigratingWithoutGuard($workflow) as $job) {
+            $issues[] = "job '{$job}' runs migrations without asserting a non-production database first";
+        }
+
+        return [
+            'ok' => $issues === [],
+            'exists' => true,
+            'issues' => $issues,
+            'missing_markers' => $missing,
+            'forbidden_present' => $forbidden,
+        ];
+    }
+
+    /**
+     * Deployment stays off the general CI runner.
+     *
+     * @return array{ok: bool, issues: list<string>}
+     */
+    public function deployIsolationPosture(): array
+    {
+        $issues = [];
+
+        $deploy = $this->readFile('deploy_workflow');
+        if ($deploy === null) {
+            return ['ok' => false, 'issues' => ['deploy workflow file is missing']];
+        }
+
+        $custom = (string) config('ci_runner.custom_label', 'daengtisia-ci');
+        if (str_contains($deploy, $custom)) {
+            $issues[] = "the deploy workflow must never target the '{$custom}' CI runner";
+        }
+
+        if (str_contains($deploy, 'self-hosted')) {
+            $issues[] = 'the deploy workflow must never run on a self-hosted runner';
+        }
+
+        return ['ok' => $issues === [], 'issues' => $issues];
+    }
+
+    /**
+     * The runner health script exists, is non-destructive, and checks isolation.
+     *
+     * @return array{ok: bool, exists: bool, issues: list<string>}
+     */
+    public function healthScriptPosture(): array
+    {
+        $issues = [];
+
+        $script = $this->readFile('runner_health_script');
+        if ($script === null) {
+            return ['ok' => false, 'exists' => false, 'issues' => ['runner health script is missing']];
+        }
+
+        if (! str_contains($script, 'set -euo pipefail')) {
+            $issues[] = 'health script must fail fast (set -euo pipefail)';
+        }
+
+        foreach (['production_isolation', 'ci_database', 'runtime_user', 'disk_free', 'ram_available'] as $check) {
+            if (! str_contains($script, $check)) {
+                $issues[] = "health script is missing the '{$check}' check";
+            }
+        }
+
+        // The health check reports; it never repairs.
+        foreach (['rm -rf /', 'chmod 777', 'migrate:fresh', 'db:wipe', 'DROP DATABASE'] as $destructive) {
+            if (str_contains($script, $destructive)) {
+                $issues[] = "health script must be non-destructive; found '{$destructive}'";
+            }
+        }
+
+        return ['ok' => $issues === [], 'exists' => true, 'issues' => $issues];
+    }
+
+    /**
+     * The production-database guard is strict enough to be worth having.
+     *
+     * @return array{ok: bool, issues: list<string>}
+     */
+    public function databaseGuardPosture(): array
+    {
+        $issues = [];
+        $guard = (array) config('ci_runner.database_guard', []);
+
+        $allowedEnvs = (array) ($guard['allowed_app_envs'] ?? []);
+        if ($allowedEnvs !== ['testing']) {
+            $issues[] = 'CI must only permit APP_ENV=testing';
+        }
+
+        $allowedHosts = (array) ($guard['allowed_hosts'] ?? []);
+        if ($allowedHosts === []) {
+            $issues[] = 'no allowed CI database hosts declared';
+        }
+        foreach ($allowedHosts as $host) {
+            if (! in_array((string) $host, ['127.0.0.1', 'localhost', '::1', 'postgres'], true)) {
+                $issues[] = "CI database host '{$host}' is not local; a CI database must be local";
+            }
+        }
+
+        if ((array) ($guard['denied_databases'] ?? []) === []) {
+            $issues[] = 'no production databases are explicitly denied';
+        }
+
+        $deniedSubstrings = array_map('strtolower', (array) ($guard['denied_database_substrings'] ?? []));
+        foreach ((array) ($guard['allowed_databases'] ?? []) as $allowed) {
+            foreach ($deniedSubstrings as $needle) {
+                if ($needle !== '' && str_contains(strtolower((string) $allowed), $needle)) {
+                    $issues[] = "allowed CI database '{$allowed}' contains the production marker '{$needle}'";
+                }
+            }
+        }
+
+        return ['ok' => $issues === [], 'issues' => $issues];
+    }
+
+    /**
+     * Names of jobs that run migrations without a preceding guard step.
+     *
+     * @return list<string>
+     */
+    private function jobsMigratingWithoutGuard(string $workflow): array
+    {
+        $offenders = [];
+
+        // Split on job headers (exactly two-space indented keys under `jobs:`).
+        $parts = preg_split('/^  (?=[a-z_][a-z0-9_]*:\s*$)/m', $workflow) ?: [];
+
+        foreach ($parts as $part) {
+            if (preg_match('/^([a-z_][a-z0-9_]*):\s*$/m', $part, $m) !== 1) {
+                continue;
+            }
+            $job = $m[1];
+
+            $migratePos = strpos($part, 'php artisan migrate --force');
+            if ($migratePos === false) {
+                continue;
+            }
+
+            $guardPos = strpos($part, 'ci:assert-non-production-database');
+            if ($guardPos === false || $guardPos > $migratePos) {
+                $offenders[] = $job;
+            }
+        }
+
+        return $offenders;
+    }
+}
