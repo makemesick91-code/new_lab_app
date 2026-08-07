@@ -139,26 +139,61 @@ actually detect problems rather than rubber-stamping.
 
 ---
 
-## 5. Blocker — runner host access
+## 5. Runner host — verified, provisioning blocked on OS
 
-The approved target hardware (Intel Core i3-7020U, 2c/4t, 16 GB RAM, 512 GB SSD,
-laptop) does not correspond to any machine that could be reached during this
-sprint.
+The runner host is **`aishrunner`** (Dell Inspiron 14-3467, tailnet
+`100.74.126.71`, LAN `192.168.1.21`), reached via the dedicated key
+`~/.ssh/daengtisia_runner_ed25519` (host alias `daengtisia-runner`, user
+`runner_dms`). The private key stays on the workstation, is never committed, and
+the production VPS key was deliberately **not** reused.
 
-| Candidate | Finding |
-|---|---|
-| Development workstation `fikri-H110` | **Intel Core i7-7700, 4c/8t, desktop chassis** — not the approved laptop. `/home` at 99% (1.3 GB free), below the 40 GB heavy-CI floor. |
-| `aishrunner` (tailnet `100.74.126.71`, LAN `192.168.1.21`) | Online, SSH port 22 open. Selected by the maintainer as the runner to verify. **No credential is authorized:** `fikri`/`root`/`ubuntu` all return `Permission denied (publickey,password)`; Tailscale SSH is not enabled on that node; ssh-agent holds no identities. Hardware unverified. |
-| Production VPS | Excluded by rule — never a general CI runner. |
+**Hardware matches the approved specification:**
 
-A dedicated provisioning key was generated at
-`~/.ssh/daengtisia_runner_ed25519` (private key stays on the workstation, never
-in the repository; the production VPS key was **not** reused) with a
-`daengtisia-runner` host alias. Provisioning resumes once its public key is
-authorized on the target host.
+| Spec | Approved | Verified on `aishrunner` |
+|---|---|---|
+| CPU | i3-7020U, 2c/4t | Intel Core i3-7020U @ 2.30GHz, 2 cores / 4 threads ✓ |
+| RAM | 16 GB | 14 GiB usable, 13 GiB free ✓ |
+| Disk | SSD | SSD 238.5 GB, `/` 231 GB with **211 GB free (4% used)** ✓ |
+| Chassis | Laptop | laptop ✓ |
+
+It runs **no** GitHub Actions runner today (no service, no directory, no
+process), so adopting it does not disturb the co-tenant *aish-pos* project. A
+`github-runner` user (uid 1001) already exists. Production isolation is clean: no
+DaengtisiaMS SSH key and no production application path.
+
+### Blocker — operating system cannot supply the CI PHP version
+
+The host runs **Ubuntu 26.04**, whose repositories ship **only PHP 8.5**. The CI
+gate uses **PHP 8.3**, and `composer.lock` is resolved against it. Verified
+2026-08-07:
+
+- Ubuntu 26.04 (`resolute`): no `php8.3-*` or `php8.4-*` packages at all.
+- `ondrej/php` PPA: **no `resolute` build** (HTTP 404); it stops at `noble`.
+- Installing ondrej's `noble` packages on 26.04 would be a mixed-release install
+  with conflicting `libssl`/`libc` dependencies — rejected as destabilising.
+
+Running the self-hosted gate on PHP 8.5 was rejected because it breaks the
+property that makes the gate worth having: a green self-hosted run would no
+longer prove the authoritative 8.3 gate passes (rule CICDCTRL3-R009).
+
+**Resolution chosen: reinstall the runner as Ubuntu 24.04 LTS**, which ships PHP
+8.3 natively — no PPA, no source build, no mixed-release packages. The machine
+holds almost nothing (8 GB used, no runner, no data), so the reinstall is cheap.
+
+Secondary divergence to track once provisioned: the host offers PostgreSQL 18
+while the GitHub-hosted gate uses `postgres:16`. Far lower risk than a PHP
+mismatch, but it is a real difference and is recorded rather than ignored.
 
 No machine was provisioned, no runner was registered, and no registration token
 was minted.
+
+### Privilege
+
+`runner_dms` is in the `sudo` group but every invocation requires interactive
+authentication, so no privileged provisioning step could run. The agreed
+approach is a **temporary** `NOPASSWD` sudoers entry for `runner_dms`, removed as
+the final provisioning step. The `github-runner` service user gets **no** sudo at
+any point.
 
 ---
 

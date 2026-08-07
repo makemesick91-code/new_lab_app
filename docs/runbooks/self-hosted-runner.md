@@ -26,6 +26,31 @@ Actions outage.
 
 ## 2. Prerequisites
 
+### 2.1 Operating system — must provide the CI PHP version natively
+
+The self-hosted gate is only a valid substitute for the GitHub-hosted gate if it
+runs the **same PHP version** (`config/ci_runner.php` → `required_php_version`,
+currently **8.3**). `composer.lock` is resolved against that version, and a
+green run on a different PHP does not prove the authoritative gate passes.
+
+**Use Ubuntu 24.04 LTS**, which ships PHP 8.3 natively — no PPA, no source
+build, no mixed-release packages.
+
+Verified 2026-08-07, so nobody repeats the investigation:
+
+| Option | Result |
+|---|---|
+| Ubuntu 24.04 LTS (`noble`) | **PHP 8.3 native.** Use this. |
+| Ubuntu 26.04 (`resolute`) | Ships **only** PHP 8.5. No 8.3/8.4 in its repos. |
+| `ondrej/php` PPA on 26.04 | **No `resolute` build** — the PPA stops at `noble` (HTTP 404 for `resolute`). |
+| ondrej `noble` packages on 26.04 | Mixed-release install. Do **not** do this: conflicting `libssl`/`libc` dependencies risk destabilising the machine and are hard to unwind. |
+
+If a future runner OS cannot supply the CI PHP version, do not silently run a
+different one — either change the OS or raise it as an explicit divergence,
+because it weakens rule CICDCTRL3-R009 (equivalent fallback).
+
+### 2.2 Access and hardware
+
 - A dedicated Linux machine that is not the production VPS.
 - SSH access as a provisioning admin using a key in `~/.ssh` on the workstation.
   **Never** put an SSH password or private key in the application environment
@@ -58,14 +83,19 @@ root-equivalent, and this runner deliberately has no Docker (see §3.4).
 
 Install the runtimes so CI jobs never need sudo at run time:
 
+On Ubuntu 24.04 LTS every runtime comes from the distribution repositories:
+
 ```bash
 sudo apt-get update
-sudo apt-get install -y git curl unzip zip poppler-utils postgresql
-# PHP: install the version in config/ci_runner.php (required_php_version)
-# with the extensions the CI gate uses:
-#   dom curl libxml mbstring zip pcntl pdo pdo_pgsql bcmath gd exif
-# Then Composer and Node.js (version matching the workflow's setup-node).
+sudo apt-get install -y git curl unzip zip poppler-utils postgresql \
+    php8.3-cli php8.3-dom php8.3-curl php8.3-xml php8.3-mbstring php8.3-zip \
+    php8.3-pcntl php8.3-pgsql php8.3-bcmath php8.3-gd php8.3-sqlite3 \
+    composer nodejs npm
 ```
+
+The extension set mirrors the CI gate (`dom curl libxml mbstring zip pcntl pdo
+pdo_pgsql bcmath gd exif`; `exif` is bundled with `php8.3-cli` on Ubuntu). Node
+must match the workflow's `setup-node` version (currently 22).
 
 Verify:
 
