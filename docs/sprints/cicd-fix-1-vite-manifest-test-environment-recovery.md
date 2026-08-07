@@ -33,9 +33,23 @@ the 2026-07-26 run pre-dates it by eleven days.
 
 ---
 
-## 2. Debt item A — 62 Vite-manifest test failures
+## 2. Debt item A — the 62 failures were TWO classes, not one
 
-### Observed
+> **Classification correction (2026-08-08).** The 62 failures were originally
+> described as "62 Vite-manifest failures". That is wrong and must not be
+> repeated. Re-reading the authoritative baseline log for run `30189642130`
+> (2026-07-26) shows two distinct root causes:
+>
+> | Class | Baseline `30189642130` | Cause |
+> |---|---|---|
+> | Vite manifest | **254 error occurrences** | `@vite` in `layouts/app.blade.php` with no built manifest |
+> | Governance JSON | **5 `JsonException`** | nested `Artisan::call` draining the outer command's output |
+>
+> The two are unrelated and were fixed separately. The governance JSON failures
+> are **not** Vite failures and never were; they reproduce only on PostgreSQL,
+> where the Vite failures are driver-independent.
+
+### Observed — Vite manifest
 
 ```
 Vite manifest not found at: .../public/build/manifest.json
@@ -43,9 +57,26 @@ Vite manifest not found at: .../public/build/manifest.json
   in vendor/laravel/framework/src/Illuminate/Foundation/Vite.php:946
 ```
 
-254 occurrences across the run; 61 distinct failing tests. Affected suites: RME 7,
-LegacyRme 6, Inventory 3, Architecture 3, DataQuality 1 (counts are of distinct
-test classes reported in the failure block).
+254 occurrences across the run. Affected suites: RME, LegacyRme, Inventory,
+Architecture, DataQuality.
+
+### Observed — governance JSON (separate cause, PostgreSQL only)
+
+```
+JsonException: Syntax error
+  at json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)
+  in NsfGovernanceCheckCommandTest, FoundationGovernanceSummaryCommandTest,
+     Dmo3DeferredMetricBacklogClosureTest
+```
+
+`architecture:nsf-governance-check --json --include-observability` emitted zero
+bytes and still exited 0, so the decode ran against an empty string. Cause:
+`NsfApplicationRulesService::inspectPgStatStatements()` called
+`Artisan::call(...)` then `Artisan::output()`;
+`Illuminate\Console\Application::call()` reassigns the shared `lastOutput` even
+when an explicit buffer is passed, and reading it drains the buffer, so the
+inner call destroyed the outer command's output. PostgreSQL-only because the
+`pg_stat_statements` branch does not run on other drivers.
 
 ### Observed contributing condition
 
@@ -106,11 +137,39 @@ CI will pass.
 
 ---
 
+## 3b. Debt item C — 5 governance `JsonException` failures (PostgreSQL only)
+
+Part of the same 62, but a wholly separate cause from the Vite manifest. See the
+classification correction in section 2.
+
+| | |
+|---|---|
+| Symptom | `JsonException: Syntax error` decoding `Artisan::output()` |
+| Affected | `NsfGovernanceCheckCommandTest`, `FoundationGovernanceSummaryCommandTest`, `Dmo3DeferredMetricBacklogClosureTest` |
+| Trigger | `--include-observability` on PostgreSQL |
+| Cause | nested `Artisan::call` reassigns and drains the shared `lastOutput` |
+| Secondary defect | `json_encode` failure returned exit 0 with empty stdout |
+
+Ruled out by a recursive pre-encode diagnostic on PostgreSQL 16: no invalid
+UTF-8, NAN, INF, resource or closure anywhere in the report, and `json_encode`
+succeeded. `Dq1AuditService` was a victim of the aborted transaction, not the
+cause — its `audit()` completes cleanly inside a transaction.
+
+**Trap worth recording:** passing an explicit `BufferedOutput` to
+`Artisan::call()` does **not** protect the caller. `Illuminate\Console\Application::call()`
+is `$this->run($input, $this->lastOutput = $outputBuffer ?: new BufferedOutput)`
+— it assigns whatever buffer you hand it to the shared `lastOutput`. The nested
+command must be run via `find(...)->run($input, $buffer)` instead.
+
+---
+
 ## 4. Acceptance criteria
 
 1. Root-cause analysis for debt item A is documented **before** any fix.
 2. The previously failing tests are run **first**, in isolation, and pass.
-3. The **complete** critical gate then runs and proves **62 failures → 0**.
+3. The **complete** critical gate then runs and proves the whole 62 → 0, counted
+   per class: **254 Vite manifest errors → 0** and **5 governance JSON
+   failures → 0**.
 4. `pint --test` (whole repository, not `--dirty`) passes.
 5. No assertion weakened, no test skipped, no coverage reduced, no manifest
    faked. If a test genuinely should not render a layout, that must be argued
