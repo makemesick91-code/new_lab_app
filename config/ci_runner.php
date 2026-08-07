@@ -250,6 +250,36 @@ return [
     ],
 
     /*
+     * CI database parity.
+     *
+     * The authoritative gate runs `postgres:16` as a service container. The
+     * runner host ships PostgreSQL 18, and that version difference produced
+     * self-hosted-only test failures (aborted-transaction cascades out of
+     * Dq1AuditService) — so the CI database is pinned to the same major version
+     * the gate uses, supplied the same way the PHP runtime is: a pinned image
+     * under rootless Podman, loopback-only.
+     *
+     * The host PostgreSQL is deliberately left untouched; a co-tenant project
+     * on this machine may depend on it.
+     */
+    'ci_database' => [
+        'engine' => 'podman',
+        'rootless' => true,
+        'image' => env('CI_DB_IMAGE', 'docker.io/library/postgres:16'),
+        'service_unit' => 'ci-pg16.service',
+        'host' => env('CI_RUNNER_DB_HOST', '127.0.0.1'),
+        'port' => (int) env('CI_RUNNER_DB_PORT', 5433),
+        'database' => env('CI_RUNNER_DB_NAME', 'daengtisia_ci'),
+        'username' => env('CI_RUNNER_DB_USER', 'daengtisia_ci_user'),
+
+        // Must match the major version of the workflow's service container.
+        'required_major_version' => env('CI_RUNNER_DB_MAJOR', '16'),
+
+        // Pinned by digest for the same reason as the PHP runtime.
+        'require_digest_pin' => true,
+    ],
+
+    /*
      * Resource guards enforced by the health script before a heavy job runs.
      * Below these thresholds the runner reports NO-GO instead of thrashing.
      */

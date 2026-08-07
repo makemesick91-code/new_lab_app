@@ -151,9 +151,11 @@ jobs:
         run: npm ci
 
       - name: Build frontend assets
+        shell: bash
         run: npm run build 2>&1 | tee storage/ci-evidence/nsf-r012-build.log
 
       - name: Pint style gate
+        shell: bash
         run: ./vendor/bin/pint --test 2>&1 | tee storage/ci-evidence/nsf-r012-pint.log
 
       - name: Git diff check
@@ -261,10 +263,28 @@ jobs:
       - name: Run critical regression tests
         # CICD-CTRL-1: runs for every profile EXCEPT a proven docs-only change.
         # Any uncertainty leaves run_critical_tests unset/true, so this runs.
+        #
+        # CICD-CTRL-3 strict exit propagation: `| tee` returns tee's status, so
+        # a failing suite — or a PHP fatal that runs zero tests — used to render
+        # as a green step. `shell: bash` runs with `-eo pipefail`; the status is
+        # captured explicitly so evidence is still written before it propagates.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
         run: |
+          set +e
           php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+          TEST_STATUS="${PIPESTATUS[0]}"
+          set -e
+          {
+            echo "runner=github-hosted"
+            echo "critical_test_exit_status=${TEST_STATUS}"
+            grep -aE '^\s*(Tests:|Fatal error)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -2
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
+            echo "::error::CI runtime ran out of memory — zero tests may have executed."
+          fi
+          exit "$TEST_STATUS"
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
@@ -423,29 +443,23 @@ jobs:
         # Identical filter to the GitHub-hosted variant — the gate is equivalent,
         # only the infrastructure differs.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        # Identical strict exit propagation to the GitHub-hosted variant.
+        shell: bash
         run: |
+          set +e
           bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
-          # `| tee` discards the test command's exit status, so a total failure
-          # would otherwise render as a green step — that is how a PHP OOM went
-          # unnoticed on the first self-hosted run. Surface the real status and
-          # the Pest summary as evidence. This deliberately mirrors the
-          # GitHub-hosted variant's pass/fail semantics rather than unilaterally
-          # tightening one side; the swallowed exit code is a pre-existing
-          # gate-integrity weakness that belongs to its own reviewed change.
           TEST_STATUS="${PIPESTATUS[0]}"
-          SUMMARY="$(grep -aE '^\s*(Tests|Fatal error|PHP Fatal)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -3)"
+          set -e
           {
+            echo "runner=self-hosted/daengtisia-ci"
             echo "critical_test_exit_status=${TEST_STATUS}"
-            echo "critical_test_summary=${SUMMARY:-<none captured>}"
+            grep -aE '^\s*(Tests:|Fatal error)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -2
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$TEST_STATUS" -ne 0 ]; then
-            echo "::warning::Critical regression tests exited ${TEST_STATUS} on the self-hosted runner (exit status is not enforced here, matching the GitHub-hosted variant)."
-          fi
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
-            echo "::error::CI runtime ran out of memory — the image must set memory_limit=-1 for parity with setup-php."
-            exit 1
+            echo "::error::CI runtime ran out of memory — zero tests may have executed."
           fi
+          exit "$TEST_STATUS"
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
@@ -576,18 +590,22 @@ jobs:
 
       - name: Inventory module tests
         if: ${{ needs.classify.outputs.run_inventory_tests == 'true' }}
+        shell: bash
         run: php artisan test --filter='Inventory' 2>&1 | tee storage/ci-evidence/cicd-ctrl-inventory-tests.log
 
       - name: Lab module tests
         if: ${{ needs.classify.outputs.run_lab_tests == 'true' }}
+        shell: bash
         run: php artisan test --filter='Lab' 2>&1 | tee storage/ci-evidence/cicd-ctrl-lab-tests.log
 
       - name: UI / UIX module tests
         if: ${{ needs.classify.outputs.run_ui_tests == 'true' }}
+        shell: bash
         run: php artisan test --filter='Ui' 2>&1 | tee storage/ci-evidence/cicd-ctrl-ui-tests.log
 
       - name: Permission / access-control tests
         if: ${{ needs.classify.outputs.run_permission_tests == 'true' }}
+        shell: bash
         run: php artisan test --filter='Permission|AccessControl' 2>&1 | tee storage/ci-evidence/cicd-ctrl-permission-tests.log
 
       - name: Write selective module gate summary
@@ -931,6 +949,7 @@ jobs:
         # docs-only push to base). schedule/workflow_dispatch always resolve to
         # the strongest profile, so the weekly/manual full suite always runs.
         if: ${{ needs.classify.outputs.run_critical_tests != 'false' }}
+        shell: bash
         run: php artisan test 2>&1 | tee storage/ci-evidence/nsf-r011-full-suite.log
 
       - name: Note skipped full suite (docs-only change)
