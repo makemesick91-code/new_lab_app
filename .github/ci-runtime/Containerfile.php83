@@ -54,6 +54,15 @@ RUN set -eux; \
     ; \
     rm -rf /var/lib/apt/lists/*
 
+# Runtime parity with the GitHub-hosted gate.
+#
+# The official php:8.3-cli image defaults to memory_limit=128M, while
+# shivammathur/setup-php runs with memory_limit=-1. Without this the Pest suite
+# dies with "Allowed memory size ... exhausted" inside TestSuiteLoader before a
+# single test executes — which is exactly what happened on the first real
+# self-hosted run.
+RUN printf 'memory_limit=-1\n' > /usr/local/etc/php/conf.d/zz-ci-parity.ini
+
 # Fail the build rather than ship a runtime that silently lacks a required
 # extension — a missing extension would make tests skip instead of run.
 RUN set -eux; \
@@ -63,6 +72,8 @@ RUN set -eux; \
     done; \
     command -v pdfinfo >/dev/null || { echo "MISSING pdfinfo" >&2; exit 1; }; \
     command -v pdftoppm >/dev/null || { echo "MISSING pdftoppm" >&2; exit 1; }; \
+    [ "$(php -r 'echo ini_get("memory_limit");')" = "-1" ] \
+        || { echo "memory_limit is not unlimited; Pest will OOM" >&2; exit 1; }; \
     composer --version
 
 WORKDIR /workspace

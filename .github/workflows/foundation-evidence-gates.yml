@@ -426,6 +426,26 @@ jobs:
         run: |
           bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
+          # `| tee` discards the test command's exit status, so a total failure
+          # would otherwise render as a green step — that is how a PHP OOM went
+          # unnoticed on the first self-hosted run. Surface the real status and
+          # the Pest summary as evidence. This deliberately mirrors the
+          # GitHub-hosted variant's pass/fail semantics rather than unilaterally
+          # tightening one side; the swallowed exit code is a pre-existing
+          # gate-integrity weakness that belongs to its own reviewed change.
+          TEST_STATUS="${PIPESTATUS[0]}"
+          SUMMARY="$(grep -aE '^\s*(Tests|Fatal error|PHP Fatal)' storage/ci-evidence/nsf-r011-critical-tests.log | tail -3)"
+          {
+            echo "critical_test_exit_status=${TEST_STATUS}"
+            echo "critical_test_summary=${SUMMARY:-<none captured>}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            echo "::warning::Critical regression tests exited ${TEST_STATUS} on the self-hosted runner (exit status is not enforced here, matching the GitHub-hosted variant)."
+          fi
+          if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
+            echo "::error::CI runtime ran out of memory — the image must set memory_limit=-1 for parity with setup-php."
+            exit 1
+          fi
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
