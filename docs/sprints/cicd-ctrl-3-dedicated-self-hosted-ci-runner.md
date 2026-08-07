@@ -3,11 +3,25 @@
 **Branch:** `feature/cicd-ctrl-3-dedicated-self-hosted-ci-runner`
 **Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `0b37ce4` (do NOT target `main`)
 **Type:** CI/CD control sprint — not a product feature sprint
-**Status:** **WATCH — repository foundation complete and green; runner provisioning BLOCKED on host access.**
 
-> **This sprint has no GO tag.** A GO tag requires a registered runner that is
-> online, a real GitHub Actions job assigned to it, and a heavy CI run executed
-> on it. None of that has happened, so claiming GO would be false. See §7.
+**Status:**
+
+```
+CICD-CTRL-3:
+IMPLEMENTED / RUNNER OPERATIONAL / EQUIVALENCE PROVEN
+WATCH — PRE-EXISTING AUTHORITATIVE CI FAILURES
+```
+
+| Dimension | Verdict |
+|---|---|
+| **RUNNER RESULT EQUIVALENCE** | **PASS** — GitHub-hosted and self-hosted produce identical failure sets |
+| **APPLICATION / TEST GATE** | **RED** — 62 pre-existing Vite-manifest failures, plus 3 files failing `pint --test` |
+
+> **No GO tag. PR #267 not merged.** The runner is operational and its results
+> are proven equivalent to the authoritative gate, but the application test gate
+> is red for reasons that pre-date this sprint by eleven days. Those are handed
+> to **CICD-FIX-1** (`docs/sprints/cicd-fix-1-vite-manifest-test-environment-recovery.md`)
+> and are explicitly NOT fixed here. Closure resumes once CICD-FIX-1 is green.
 
 ---
 
@@ -106,6 +120,80 @@ It never opens a connection and never prints a credential.
 
 ---
 
+## 2b. Runner result equivalence — PASS
+
+The load-bearing claim of this sprint is that a self-hosted run proves the same
+thing an authoritative GitHub-hosted run proves. That is now measured, not
+asserted.
+
+### Equivalence conditions held identical
+
+| Condition | Value |
+|---|---|
+| Commit SHA | identical |
+| PHP | **8.3** both sides (`8.3.33` from the pinned image on self-hosted) |
+| PostgreSQL | **16** both sides (`postgres:16` service container / pinned `postgres:16` on 16.14) |
+| Composer lock | identical |
+| Test filter | identical (asserted by test) |
+| `APP_ENV` | `testing` both sides |
+| Execution mode | sequential both sides — **Pest `--parallel` is NOT enabled** |
+| Exit-code propagation | strict `pipefail` + `PIPESTATUS` both sides |
+
+### Measured results
+
+| Run | Runner | Database | Failed | Warnings | Assertions | Distinct |
+|---|---|---|---|---|---|---|
+| `31143050283` | GitHub-hosted | `postgres:16` | **62** | 263 | 1106 | 61 |
+| runner-local | self-hosted | host PostgreSQL **18** | 69 | 256 | 1080 | 68 |
+| runner-local | self-hosted | pinned **`postgres:16`** | **62** | 263 | 1106 | 61 |
+
+Failing-test-name sets between GitHub-hosted and self-hosted/PG16: **empty diff
+in both directions**.
+
+**Conclusion: RUNNER RESULT EQUIVALENCE = PASS.** The database major version was
+the entire gap; on PostgreSQL 16 the runner is indistinguishable from the
+authoritative gate.
+
+## 2c. Application test gate — RED, pre-existing
+
+Strict exit propagation made two bodies of long-standing CI debt visible. Both
+pre-date this sprint and neither is fixed here.
+
+### Proof they pre-date CICD-CTRL-3
+
+| Run | Date | Branch | Runner | Failures | Distinct | CI verdict |
+|---|---|---|---|---|---|---|
+| `30189642130` | **2026-07-26** | base | GitHub-hosted | **62** | 61 | **`success`** |
+| `31143050283` | 2026-08-07 | CICD-CTRL-3 | GitHub-hosted | 62 | 61 | same set |
+| runner-local | 2026-08-07 | CICD-CTRL-3 | self-hosted + PG16 | 62 | 61 | same set |
+
+The CICD-CTRL-3 branch was created 2026-08-06. The 2026-07-26 run pre-dates it by
+eleven days, ran on GitHub-hosted, had the **identical** failing-test set — and
+CI reported it **green**. That is the masking this sprint removed.
+
+### Debt A — 62 Vite-manifest failures
+
+```
+Vite manifest not found at: .../public/build/manifest.json
+  (View: resources/views/layouts/app.blade.php)
+```
+
+`critical_test_gate` installs Composer only — no `npm ci` / `npm run build` — so
+no manifest exists when a test renders a view extending `layouts/app.blade.php`.
+**Root cause analysis and fix belong to CICD-FIX-1; the fix is deliberately not
+assumed to be "add npm build".**
+
+### Debt B — 3 files failing `pint --test`
+
+`routes/web.php` (`ordered_imports`),
+`tests/Feature/Satusehat/Satusehat4dMultiBranchMatrixTest.php` (`no_unused_imports`),
+`app/Console/Commands/StressSeedFoundationCommand.php` (5 fixers). None belong to
+this sprint.
+
+**Trap worth recording:** local pre-commit checks run `pint --dirty --test`
+(changed files only) while CI runs `pint --test` (whole repository). A clean
+`--dirty` run does not imply CI will pass.
+
 ## 3. Validation performed
 
 | Check | Result |
@@ -127,133 +215,139 @@ actually detect problems rather than rubber-stamping.
 
 ---
 
-## 4. Why this is safe to merge before a runner exists
+## 4. Runner — provisioned and operational
 
-`runner_mode` defaults to `github-hosted`, and the repository variable
-`CI_RUNNER_MODE` is unset. Therefore:
+The runner host is **`aishrunner`** (Dell Inspiron 14-3467 laptop, tailnet
+`100.74.126.71`), reached via the dedicated key `~/.ssh/daengtisia_runner_ed25519`
+(alias `daengtisia-runner`, user `runner_dms`). The production VPS key was
+deliberately **not** reused and the private key is never committed.
 
-- `critical_test_gate_self_hosted` **never runs** until an operator opts in.
-- Every gate behaves exactly as it did before this sprint.
-- The only behavioural change on GitHub-hosted runs is the **added** production
-  database guard — a strictly stronger posture.
+**Hardware matches the approved specification:** Intel Core i3-7020U @2.30GHz
+(2 cores / 4 threads), 14 GiB usable RAM, SSD with ~211 GB free, laptop chassis.
 
----
-
-## 5. Runner host — verified, provisioning blocked on OS
-
-The runner host is **`aishrunner`** (Dell Inspiron 14-3467, tailnet
-`100.74.126.71`, LAN `192.168.1.21`), reached via the dedicated key
-`~/.ssh/daengtisia_runner_ed25519` (host alias `daengtisia-runner`, user
-`runner_dms`). The private key stays on the workstation, is never committed, and
-the production VPS key was deliberately **not** reused.
-
-**Hardware matches the approved specification:**
-
-| Spec | Approved | Verified on `aishrunner` |
-|---|---|---|
-| CPU | i3-7020U, 2c/4t | Intel Core i3-7020U @ 2.30GHz, 2 cores / 4 threads ✓ |
-| RAM | 16 GB | 14 GiB usable, 13 GiB free ✓ |
-| Disk | SSD | SSD 238.5 GB, `/` 231 GB with **211 GB free (4% used)** ✓ |
-| Chassis | Laptop | laptop ✓ |
-
-It runs **no** GitHub Actions runner today (no service, no directory, no
-process), so adopting it does not disturb the co-tenant *aish-pos* project. A
-`github-runner` user (uid 1001) already exists. Production isolation is clean: no
-DaengtisiaMS SSH key and no production application path.
-
-### PHP parity — solved with an isolated runtime, not an OS change
-
-The host runs **Ubuntu 26.04**, whose repositories ship **only PHP 8.5**, while
-all six `setup-php` blocks in the workflow pin **PHP 8.3**. Options evaluated
-2026-08-07:
-
-| Option | Outcome |
+| Property | Verified |
 |---|---|
-| **Rootless Podman + digest-pinned PHP 8.3 image** | **Chosen.** Exact runtime parity, host untouched, no root-equivalent privilege. |
-| Ubuntu 26.04 native packages | No `php8.3-*` / `php8.4-*` at all. |
-| `ondrej/php` PPA | **No `resolute` build** (HTTP 404); stops at `noble`. |
-| ondrej `noble` packages on 26.04 | Mixed-release, conflicting `libssl`/`libc`. Rejected. |
-| Reinstall host as Ubuntu 24.04 LTS | Viable but unnecessary once the container approach was proven. |
-| Run the gate on host PHP 8.5 | **Rejected** — a green self-hosted run would no longer prove the authoritative 8.3 gate passes (CICDCTRL3-R009). |
-| Rootful Docker / `container:` job | **Forbidden** — requires the service user in the root-equivalent `docker` group. |
+| Runner | `daengtisia-ci-01` — online, labels `self-hosted, Linux, X64, daengtisia-ci` |
+| Service | systemd, enabled + active, user `github-runner` (uid 1001), **never root** |
+| Interactive `run.sh` | **none** — service cgroup holds only `runsvc.sh`, `RunnerService.js`, `Runner.Listener` |
+| Privilege | `github-runner` groups = `github-runner users` — **docker and sudo removed** |
+| Container engine | **rootless** Podman 5.7.0, user socket, no Docker involved |
+| PHP runtime | **8.3.33** from a **digest-pinned** image, full extension set + Poppler, `memory_limit=-1` |
+| CI database | pinned **`postgres:16`** (16.14), rootless, systemd `ci-pg16.service`, **loopback `127.0.0.1:5433` only** |
+| Host PostgreSQL 18 | **untouched** on 5432 — a co-tenant project may depend on it |
+| File ownership | `--userns=keep-id`; container writes owned by `github-runner`, **no root-owned residue** |
+| Production isolation | no production environment file, database credential, SSH key, or application path |
+| NSF-9 / NSF-10 | **executed** (not skipped) under self-hosted routing |
+| Fallback | flipping `CI_RUNNER_MODE` reroutes with no code change; full GitHub-hosted run succeeded |
 
-Note on an earlier imprecision: `composer.lock`'s platform is `{"php": "^8.2"}`,
-so the dependency graph itself would install on 8.5. The binding requirement is
-**runtime equivalence with the authoritative gate**, not a composer constraint.
-
-Secondary divergence, recorded rather than ignored: the runner's PostgreSQL is
-18 while the GitHub-hosted gate uses `postgres:16`. Much lower risk than a PHP
-mismatch, but it is a real difference.
-
-### Security findings on the host
+### Host findings during provisioning
 
 - The pre-existing `github-runner` account was in **both the `docker` and `sudo`
   groups** — both root-equivalent. Nothing depended on them (no runner service,
-  no processes, no crontab, no containers), so both were removed. The account is
-  now `github-runner users`.
-- `runner_dms` required interactive authentication for every `sudo`, so
-  provisioning used a **temporary** `NOPASSWD` sudoers entry
-  (`/etc/sudoers.d/99-cicd-ctrl-3-temp`), removed as the final step. The
-  `github-runner` service user gets **no** sudo at any point.
+  no processes, no crontab, no containers); both were removed.
+- `runner_dms` requires interactive authentication for `sudo`, so provisioning
+  uses a **temporary** `NOPASSWD` entry (`/etc/sudoers.d/99-cicd-ctrl-3-temp`),
+  to be revoked at closure. `github-runner` gets **no** sudo at any point.
 - The apt mirror `id.archive.ubuntu.com` served HTTP 403 for `libgpgmepp7` (a
   `libpoppler156` dependency), blocking installs. Switched to
-  `archive.ubuntu.com`; backup kept at `ubuntu.sources.cicd-ctrl-3.bak`.
+  `archive.ubuntu.com`; backup kept as `ubuntu.sources.cicd-ctrl-3.bak`.
 
-### Silent-skip defect found by running it
+## 5. Defects found and fixed during this sprint
 
-Routing a real run to the self-hosted runner exposed a defect introduced by this
-sprint: `release_safety_gate` depended only on `critical_test_gate`. Exactly one
-critical-gate variant runs and the other is **skipped**, and GitHub skips any job
-whose `needs` were skipped — so routing heavy CI to the self-hosted runner
-**silently skipped NSF-9 and, transitively, NSF-10**.
+### 5.1 NSF-9 / NSF-10 silently skipped under self-hosted routing
 
-That is precisely the silent-pass class this sprint exists to prevent. Fixed:
-NSF-9 and the full-suite fallback now depend on **both** variants and require
-that **one actually succeeded**, so a failing critical gate still blocks them
-while a skipped sibling does not. Guarded by a test over every dependent of the
-critical gate and by a scanner check.
+`release_safety_gate` depended only on `critical_test_gate`. Exactly one variant
+runs and the other is **skipped**, and GitHub skips any job whose `needs` were
+skipped — so routing heavy CI to the self-hosted runner silently skipped the
+release-safety gate and, transitively, the evidence gate. Precisely the
+silent-pass class this sprint exists to prevent.
 
-Inspection alone did not catch this; only executing the routing did.
+Fixed: both depend on **both** variants and require that **one actually
+succeeded**, so a failing gate still blocks while a skipped sibling does not.
+Guarded by a test over every dependent of the critical gate, plus a scanner check.
 
----
+**Found by executing the routing, not by inspecting it.**
 
-## 6. Remaining work (server-side)
+### 5.2 A green gate that ran zero tests
 
-1. Authorize the provisioning key on the runner host; verify hardware against the
-   approved spec.
-2. Provision per `docs/runbooks/self-hosted-runner.md` §3: service user, runtime,
-   power settings, local CI PostgreSQL, registration as `daengtisia-ci-01`,
-   systemd service.
-3. Set the `CI_DB_PASSWORD` repository secret.
-4. Real self-hosted smoke: a GitHub Actions job assigned to the runner, correct
-   hostname and runtime user, health check GO.
-5. Heavy CI validation on the runner (`CI_RUNNER_MODE=self-hosted`).
-6. Outage validation: stop the service, confirm the job **queues** and the gate
-   does not pass; restart and confirm it drains.
-7. Fallback validation: flip to `github-hosted`, confirm an equivalent gate runs.
-8. Benchmark Pest workers 1 / 2 / 3, recording duration, peak RAM, swap, load and
-   temperature; set `pest_workers` from the measurement, not from core count.
+The first self-hosted run reported the critical gate successful in two seconds.
+It had not run: the official `php:8.3-cli` image defaults to `memory_limit=128M`
+while `setup-php` runs unlimited, so Pest died in `TestSuiteLoader` — and
+`| tee` hid the exit status.
 
----
+Fixed: the image sets `memory_limit=-1` and the **build fails** if it is not
+unlimited; strict exit propagation now applies on both runners.
 
-## 7. GO criteria (none of which are met yet)
+### 5.3 Swallowed exit status (the masking itself)
 
-A GO tag `cicd-ctrl-3-dedicated-self-hosted-ci-runner-go` may be created only
-when all of the following are true and evidenced:
+Ten gate steps across both runners now use `shell: bash`
+(`bash --noprofile --norc -eo pipefail`), with `PIPESTATUS` captured so evidence
+is written before the status propagates. A Pest failure, an OOM, or a zero-test
+run can no longer render green.
 
-- `daengtisia-ci-01` is registered and Online with all four labels.
-- The runner service runs as `github-runner` under systemd, enabled and active,
-  and survives a restart. No interactive `run.sh` remains.
-- A real GitHub Actions job was assigned to and executed on that machine.
-- Heavy CI passed on the runner.
-- The CI database is local, non-production, and the guard passes there.
-- The runner holds no production environment file, database credential, SSH key,
-  or application path.
-- Outage and fallback behaviour were both validated.
-- A benchmark was recorded with real numbers.
-- Authoritative CI passed on the exact candidate SHA.
+This is what exposed the pre-existing debt in §2c. It is **not** rolled back to
+obtain a green gate, and the self-hosted variant is **not** made stricter than
+the GitHub-hosted one.
 
----
+## 6. Benchmark — hardware capacity evidence only
+
+Pest worker benchmark on `aishrunner`, identical workload, sequential authoritative
+mode unchanged:
+
+| Workers | Duration | Speedup | Peak swap | Min available RAM | Load after | Result |
+|---|---|---|---|---|---|---|
+| 1 | 326 s | 1.00× | 0 MB | 13994 MB | 1.14 | 69 failed / 256 passed / 1080 assertions |
+| 2 | 206 s | 1.58× | 0 MB | 13896 MB | 2.48 | identical |
+| 3 | 162 s | 2.01× | 0 MB | 13749 MB | 2.87 | identical |
+
+All three produced **identical results**, so parallelism does not perturb
+outcomes on this hardware. No swap, no OOM.
+
+> **`--parallel` is NOT enabled on the authoritative gate** and will not be while
+> the GitHub-hosted gate is sequential. These numbers are capacity evidence only.
+
+> **THERMAL METRIC = UNRELIABLE.** The probe returned exactly 25.0 °C in every
+> configuration, which is not a credible CPU package reading. `lm-sensors` is not
+> installed. No no-throttling claim is made from this data.
+
+### Environment comparison status
+
+A full GitHub-hosted vs `aishrunner` vs VPS timing table is **deferred** until
+CICD-FIX-1 is green, because a performance comparison is only meaningful once
+both runners produce the same result — and today both are red for the same
+pre-existing reason.
+
+**The VPS cannot be a live comparison point.** `srv1730088` is production
+(`APP_ENV=pilot`, `asia_dental_lab_pilot`, **32 patients / 26 clinic visits of
+real clinical data**, 2 vCPU, 7.8 GiB). It gets no heavy CI, no full Pest, no
+DB-heavy tests, no CPU benchmark. Any figure from it is
+`SOURCE = HISTORICAL EVIDENCE`, never a live identical benchmark. There is **no
+separate dedicated CI VPS**. It also runs **PHP 8.5.8**, so even hypothetically
+it would be a `NON-EQUIVALENT PERFORMANCE REFERENCE` for a gate pinned to 8.3.
+
+Deployment timing (`scripts/deploy-vps-runner.sh`) is
+**PRODUCTION DEPLOYMENT PERFORMANCE** and must never be reported as CI runner
+performance.
+
+## 7. Closure sequence — blocked on CICD-FIX-1
+
+Nothing below may proceed until **CICD-FIX-1** proves 62 failures → 0 without
+weakening coverage:
+
+1. Authoritative CI on the exact candidate SHA
+2. Outage-queueing validation (stop the runner service; the job must **queue**,
+   never pass)
+3. Final GitHub-hosted vs `aishrunner` timing comparison
+4. Historical VPS timing comparison where valid, clearly labelled
+5. Merge PR #267
+6. Post-merge runner validation
+7. Revoke the temporary `NOPASSWD` sudoers entry
+8. Clean temporary state (containers, scratch scripts, evidence staging)
+9. Immutable GO tag
+
+Until then the temporary sudo entry and all runtime evidence are **deliberately
+preserved** so the environment stays reproducible for CICD-FIX-1.
+
 
 ## 8. Rollback
 
