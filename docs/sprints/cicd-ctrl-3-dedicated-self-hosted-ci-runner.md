@@ -310,6 +310,39 @@ outcomes on this hardware. No swap, no OOM.
 > configuration, which is not a credible CPU package reading. `lm-sensors` is not
 > installed. No no-throttling claim is made from this data.
 
+### Critical-gate duration — valid comparison
+
+Both sides doing **identical work** (same commit, PHP 8.3, PostgreSQL 16,
+identical filter, sequential, identical 62-failure result):
+
+| Environment | Database | Critical-gate duration | Work done |
+|---|---|---|---|
+| GitHub-hosted | `postgres:16` service container | **1347 s** (22m27s) | 62 failed / 1106 assertions |
+| `aishrunner` | pinned `postgres:16` | **1808 s** (30m08s) | 62 failed / 1106 assertions |
+| ~~`aishrunner`~~ | ~~host PostgreSQL 18~~ | ~~307 s~~ | **INVALID — 69 failed / 1080 assertions** |
+
+**`aishrunner` is 1.34× SLOWER than GitHub-hosted** for the same work
+(−34.2% time change). That is expected: an i3-7020U with 2 physical cores at
+2.3 GHz against GitHub's cloud runners.
+
+> **Retracted measurement.** The 307 s figure was reported earlier in this sprint
+> as the runner's heavy-CI duration. It is **not valid**: on the host's
+> PostgreSQL 18 the expensive governance tests short-circuited on aborted
+> transactions — `fg1 ci check` took **0.21 s** there versus **68.37 s** on
+> GitHub-hosted — so the suite was doing materially less work. A faster wall
+> clock there measured broken behaviour, not speed. Only the PostgreSQL 16
+> figure is comparable.
+>
+> Database performance is **not** the cause of the 1808 s: a direct probe shows
+> the PG16 container is marginally *faster* than the host PG18 (bulk insert 84 ms
+> vs 95 ms; connect+commit 459 ms vs 632 ms), and every relevant PostgreSQL
+> setting is identical between them. The difference is CPU-bound test execution.
+
+Queue wait, runner assignment delay, persistent-cache benefit, and the
+setup/composer/npm/cleanup breakdown are **not yet measured** and are marked
+`N/A — not measured`. They matter for the final decision, because a self-hosted
+runner can reduce queue delay without being faster at compute.
+
 ### Environment comparison status
 
 A full GitHub-hosted vs `aishrunner` vs VPS timing table is **deferred** until
