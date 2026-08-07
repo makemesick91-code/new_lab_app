@@ -6,6 +6,8 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Output\BufferedOutput;
 
 /**
  * NSF-6 application-level governance validation.
@@ -529,12 +531,43 @@ class NsfApplicationRulesService
         }
 
         try {
-            Artisan::call('performance:runtime-query-observability', [
-                '--json' => true,
-                '--limit' => 1,
-                '--min-calls' => 1,
-            ]);
-            $payload = json_decode(Artisan::output(), true);
+            /*
+             * This nested command must NOT go through Artisan::call().
+             *
+             * Illuminate\Console\Application::call() does:
+             *
+             *     $this->run($input, $this->lastOutput = $outputBuffer ?: new BufferedOutput)
+             *
+             * so it reassigns the shared `lastOutput` even when an explicit
+             * buffer is supplied. Reading that buffer then DRAINS it. The net
+             * effect was that this inner call destroyed the output of whichever
+             * command was running on the outside: the caller asked for its own
+             * output afterwards and received this command's already-emptied
+             * buffer instead.
+             *
+             * The visible symptom was `architecture:nsf-governance-check --json
+             * --include-observability` appearing to emit nothing at all (exit 0,
+             * zero bytes), so callers doing
+             * json_decode(Artisan::output(), ..., JSON_THROW_ON_ERROR) failed
+             * with "Syntax error" on an empty string. It reproduced only on
+             * PostgreSQL because this pg_stat_statements branch does not run
+             * otherwise.
+             *
+             * Running the command object directly keeps its output fully
+             * isolated and leaves `lastOutput` untouched.
+             */
+            $buffer = new BufferedOutput;
+
+            Artisan::getFacadeRoot()
+                ->getArtisan()
+                ->find('performance:runtime-query-observability')
+                ->run(new ArrayInput([
+                    '--json' => true,
+                    '--limit' => 1,
+                    '--min-calls' => 1,
+                ]), $buffer);
+
+            $payload = json_decode($buffer->fetch(), true);
             $pgStat = is_array($payload) ? ($payload['pg_stat_statements'] ?? []) : [];
             $available = (bool) ($pgStat['available'] ?? false);
 

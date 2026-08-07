@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\Architecture\NsfApplicationRulesService;
 use Illuminate\Console\Command;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 
 class ArchitectureNsfGovernanceCheckCommand extends Command
 {
@@ -20,6 +21,25 @@ class ArchitectureNsfGovernanceCheckCommand extends Command
 
     protected $description = 'Read-only NSF-6 governance validation against national scale foundation application rules.';
 
+    /**
+     * Write a diagnostic without ever polluting stdout in JSON mode.
+     */
+    private function writeDiagnostic(string $message): void
+    {
+        $output = $this->getOutput()->getOutput();
+
+        if ($output instanceof ConsoleOutputInterface) {
+            $output->getErrorOutput()->writeln($message);
+
+            return;
+        }
+
+        // Buffered/non-console output has no separate error stream. Nothing was
+        // written to stdout on this path, so the caller still never sees
+        // malformed JSON, and the non-zero exit code carries the failure.
+        $output->writeln($message);
+    }
+
     public function handle(NsfApplicationRulesService $service): int
     {
         $report = $service->collect([
@@ -35,7 +55,25 @@ class ArchitectureNsfGovernanceCheckCommand extends Command
             return self::UNSAFE_EXIT;
         }
 
-        $payload = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        /*
+         * Encoding must be checked, never assumed.
+         *
+         * json_encode() returns false on failure, and `$this->line(false)`
+         * emits an empty line while the command still exits 0 — a silent
+         * success that hands the caller an empty string to decode. JSON mode
+         * must emit valid JSON or fail loudly; it must never emit malformed or
+         * partial JSON, and never report success having emitted nothing.
+         */
+        try {
+            $payload = json_encode(
+                $report,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+            );
+        } catch (\JsonException $exception) {
+            $this->writeDiagnostic('Failed to encode the governance report as JSON: '.$exception->getMessage());
+
+            return self::UNSAFE_EXIT;
+        }
 
         if ($this->option('json')) {
             $this->line($payload);

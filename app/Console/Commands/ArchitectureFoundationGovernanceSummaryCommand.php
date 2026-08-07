@@ -4,10 +4,27 @@ namespace App\Console\Commands;
 
 use App\Services\Architecture\FoundationGovernanceSummaryService;
 use Illuminate\Console\Command;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 
 class ArchitectureFoundationGovernanceSummaryCommand extends Command
 {
     private const UNSAFE_EXIT = 10;
+
+    /**
+     * Write a diagnostic without ever polluting stdout in JSON mode.
+     */
+    private function writeDiagnostic(string $message): void
+    {
+        $output = $this->getOutput()->getOutput();
+
+        if ($output instanceof ConsoleOutputInterface) {
+            $output->getErrorOutput()->writeln($message);
+
+            return;
+        }
+
+        $output->writeln($message);
+    }
 
     protected $signature = 'architecture:foundation-governance-summary
         {--json : Output JSON report}
@@ -25,7 +42,22 @@ class ArchitectureFoundationGovernanceSummaryCommand extends Command
             return self::UNSAFE_EXIT;
         }
 
-        $payload = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        /*
+         * Encoding must be checked, never assumed. json_encode() returns false
+         * on failure and `$this->line(false)` emits an empty line while the
+         * command still exits 0 — a silent success that hands the caller an
+         * empty string to decode. JSON mode emits valid JSON or fails loudly.
+         */
+        try {
+            $payload = json_encode(
+                $report,
+                JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+            );
+        } catch (\JsonException $exception) {
+            $this->writeDiagnostic('Failed to encode the governance summary as JSON: '.$exception->getMessage());
+
+            return self::UNSAFE_EXIT;
+        }
 
         if ($this->option('json')) {
             $this->line($payload);
