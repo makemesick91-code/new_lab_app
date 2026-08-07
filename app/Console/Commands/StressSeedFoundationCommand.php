@@ -18,6 +18,7 @@ class StressSeedFoundationCommand extends Command
     {
         if (! app()->environment('stress')) {
             $this->error('This command only runs in APP_ENV=stress.');
+
             return self::FAILURE;
         }
 
@@ -157,6 +158,7 @@ class StressSeedFoundationCommand extends Command
 
             if ($roleName === 'Super Admin') {
                 $role->syncPermissions($permissions);
+
                 continue;
             }
 
@@ -168,6 +170,7 @@ class StressSeedFoundationCommand extends Command
                     'view_rme_payment_reports',
                     'export_report',
                 ]);
+
                 continue;
             }
 
@@ -182,6 +185,7 @@ class StressSeedFoundationCommand extends Command
                     'view_rme_patient_reports',
                     'view_rme_payment_reports',
                 ]);
+
                 continue;
             }
 
@@ -193,6 +197,7 @@ class StressSeedFoundationCommand extends Command
                     'view_treatment_worklist',
                     'view_rme_patient_reports',
                 ]);
+
                 continue;
             }
 
@@ -202,6 +207,7 @@ class StressSeedFoundationCommand extends Command
                     'view_clinic_visits',
                     'manage_clinic_visits',
                 ]);
+
                 continue;
             }
 
@@ -213,6 +219,7 @@ class StressSeedFoundationCommand extends Command
                     'manage_odontograms',
                     'view_treatment_worklist',
                 ]);
+
                 continue;
             }
 
@@ -223,6 +230,7 @@ class StressSeedFoundationCommand extends Command
                     'manage_rme_billing',
                     'view_rme_payment_reports',
                 ]);
+
                 continue;
             }
 
@@ -232,6 +240,7 @@ class StressSeedFoundationCommand extends Command
                     'view_lab_orders',
                     'manage_lab_orders',
                 ]);
+
                 continue;
             }
 
@@ -240,6 +249,7 @@ class StressSeedFoundationCommand extends Command
                     'view dashboard',
                     'view_lab_orders',
                 ]);
+
                 continue;
             }
 
@@ -282,7 +292,7 @@ class StressSeedFoundationCommand extends Command
                         'name' => sprintf('%s %03d', $group['name'], $i),
                         'password' => $password,
                         'email_verified_at' => $now,
-                        'phone' => '0800' . str_pad((string) $i, 8, '0', STR_PAD_LEFT),
+                        'phone' => '0800'.str_pad((string) $i, 8, '0', STR_PAD_LEFT),
                         'is_active' => true,
                         'updated_at' => $now,
                         'created_at' => $now,
@@ -453,5 +463,4 @@ class StressSeedFoundationCommand extends Command
             );
         }
     }
-
 }
