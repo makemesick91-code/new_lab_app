@@ -39,6 +39,7 @@ CI_DB_NAME="${CI_RUNNER_DB_NAME:-daengtisia_ci}"
 CI_DB_HOST="${CI_RUNNER_DB_HOST:-127.0.0.1}"
 CI_DB_PORT="${CI_RUNNER_DB_PORT:-5433}"
 CI_DB_MAJOR="${CI_RUNNER_DB_MAJOR:-16}"
+CI_DB_USER="${CI_RUNNER_DB_USER:-daengtisia_ci_user}"
 CI_PHP_IMAGE="${CI_PHP_IMAGE:-localhost/daengtisia-ci-php:8.3}"
 
 PASS_COUNT=0
@@ -154,8 +155,18 @@ fi
 # 5. CI database — local, reachable, and NOT production.
 # ---------------------------------------------------------------------------
 if have psql; then
-    ACTUAL_PG="$(PGCONNECT_TIMEOUT=5 psql -h "$CI_DB_HOST" -p "$CI_DB_PORT" -d "$CI_DB_NAME" -tAc 'SHOW server_version' 2>/dev/null | cut -d. -f1 | tr -d ' ')"
-    if [ -n "$ACTUAL_PG" ]; then
+    # `|| true` is essential: under `set -euo pipefail` a failing psql makes the
+    # whole command substitution non-zero and would abort the health check
+    # before it printed anything. The password comes from the job environment
+    # when present; this script never stores a credential of its own.
+    ACTUAL_PG="$(PGPASSWORD="${DB_PASSWORD:-}" PGCONNECT_TIMEOUT=5 \
+        psql -h "$CI_DB_HOST" -p "$CI_DB_PORT" -U "${CI_DB_USER}" -d "$CI_DB_NAME" \
+        -tAc 'SHOW server_version' 2>/dev/null | cut -d. -f1 | tr -d ' ' || true)"
+
+    if [ -z "$ACTUAL_PG" ] && [ -z "${DB_PASSWORD:-}" ]; then
+        # Run outside a CI job: no credential available, so this is not a fault.
+        record WARN "ci_database" "CI database not probed: DB_PASSWORD is not set in this shell (expected outside a CI job)."
+    elif [ -n "$ACTUAL_PG" ]; then
         record PASS "ci_database" "CI database '${CI_DB_NAME}' reachable on ${CI_DB_HOST}:${CI_DB_PORT} (PostgreSQL ${ACTUAL_PG})."
         if [ "$ACTUAL_PG" = "$CI_DB_MAJOR" ]; then
             record PASS "ci_database_version" "PostgreSQL ${ACTUAL_PG} matches the authoritative gate's major version."

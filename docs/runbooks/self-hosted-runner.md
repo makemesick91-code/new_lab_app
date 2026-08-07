@@ -130,22 +130,69 @@ systemctl status sleep.target suspend.target hibernate.target
 Disable automatic suspend/sleep/hibernate and lid-close suspend. Prefer
 Ethernet. Ensure PostgreSQL and the runner service are enabled at boot.
 
-### 3.4 CI PostgreSQL (local, loopback only)
+### 3.4 CI PostgreSQL — pinned `postgres:16`, NOT the host PostgreSQL
 
-The self-hosted job uses the runner's **local** PostgreSQL, not a Docker service
-container.
+The authoritative gate runs `postgres:16`. The runner host ships PostgreSQL 18,
+and that version difference produced **7 self-hosted-only test failures**
+(aborted-transaction cascades out of `Dq1AuditService`). The CI database is
+therefore pinned to the gate's major version, supplied the same way the PHP
+runtime is: a digest-pinned image under **rootless Podman**.
 
-```bash
-sudo -u postgres createuser --no-superuser --no-createrole --no-createdb daengtisia_ci_user
-sudo -u postgres createdb --owner=daengtisia_ci_user daengtisia_ci
-sudo -u postgres psql -c "ALTER USER daengtisia_ci_user WITH PASSWORD '<generated>';"
+**The host's own PostgreSQL is deliberately left untouched** — a co-tenant
+project on this machine may depend on it — so the CI database listens on **5433**
+and never collides with 5432.
+
+It runs as a systemd **user** service via Quadlet at
+`~/.config/containers/systemd/ci-pg16.container`:
+
+```ini
+[Container]
+Image=docker.io/library/postgres:16@sha256:<digest>
+ContainerName=ci-pg16
+Network=host
+Exec=postgres -c listen_addresses=127.0.0.1 -c port=5433
+Environment=POSTGRES_USER=daengtisia_ci_user
+Environment=POSTGRES_DB=daengtisia_ci
+Environment=PGPORT=5433
+Environment=POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+Environment="POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256"
+EnvironmentFile=%h/.config/ci-pg16.env
+Volume=ci-pg16-data:/var/lib/postgresql/data
 ```
 
-- The password goes into the GitHub Actions repository secret `CI_DB_PASSWORD`.
-  Never commit it, never echo it, never put it in the application environment
-  file.
-- Confirm PostgreSQL listens on loopback only (`listen_addresses = 'localhost'`);
-  the health script fails if it is published to the network.
+```bash
+sudo runuser -u github-runner -- env XDG_RUNTIME_DIR=/run/user/1001 \
+    systemctl --user daemon-reload
+sudo runuser -u github-runner -- env XDG_RUNTIME_DIR=/run/user/1001 \
+    systemctl --user start ci-pg16.service
+```
+
+**Three traps worth knowing:**
+
+1. `POSTGRES_HOST_AUTH_METHOD` alone is **not enough**. It only sets the image's
+   appended catch-all line; `initdb` still writes `127.0.0.1/32 trust`, which
+   matches first — so a *wrong password would connect*. `POSTGRES_INITDB_ARGS`
+   with `--auth-host`/`--auth-local` is what actually controls the generated
+   `pg_hba.conf`.
+2. systemd `Environment=` **splits on whitespace** unless quoted. Without the
+   quotes above, `--auth-host=…` becomes a separate malformed entry and is
+   silently ignored.
+3. Both only take effect at **initdb**. Changing them on an existing volume does
+   nothing — you must remove the container *first*, then the volume, then start
+   the service (`podman volume rm` fails while a container still references it).
+
+Verify auth is genuinely enforced:
+
+```bash
+PGPASSWORD=deliberately-wrong psql -h 127.0.0.1 -p 5433 \
+    -U daengtisia_ci_user -d daengtisia_ci -tAc 'select 1'   # must FAIL
+```
+
+- The password lives in `~/.config/ci-pg16.env` (mode `0600`, owned by the
+  service user) and in the GitHub Actions secret `CI_DB_PASSWORD`. Never commit
+  it, never echo it, never put it in the application environment file.
+- The health check reports the CI database's **major version** and FAILS on a
+  mismatch, so this divergence cannot silently return.
 - This database is disposable CI state. It must never hold production data.
 
 ### 3.4b Rootless Podman and the pinned PHP 8.3 CI image
