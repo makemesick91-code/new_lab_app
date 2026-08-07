@@ -356,7 +356,16 @@ jobs:
       APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
-      DB_PORT: 5432
+      # Port 5433 is the pinned postgres:16 CI database (systemd unit
+      # ci-pg16.service, rootless Podman, host-networked, loopback-only).
+      #
+      # The runner host's own PostgreSQL 18 on 5432 is deliberately NOT used:
+      # the authoritative gate runs postgres:16, and the version difference
+      # produced 7 self-hosted-only failures (aborted-transaction cascades out
+      # of Dq1AuditService). On postgres:16 the self-hosted failure SET is
+      # identical to the GitHub-hosted one. The host PostgreSQL is left
+      # untouched for the co-tenant project on this machine.
+      DB_PORT: 5433
       DB_DATABASE: daengtisia_ci
       DB_USERNAME: daengtisia_ci_user
       DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}

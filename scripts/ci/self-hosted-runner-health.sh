@@ -37,6 +37,8 @@ MIN_AVAILABLE_RAM_MB="${CI_RUNNER_MIN_AVAILABLE_RAM_MB:-4096}"
 REQUIRED_PHP_VERSION="${CI_RUNNER_PHP_VERSION:-8.3}"
 CI_DB_NAME="${CI_RUNNER_DB_NAME:-daengtisia_ci}"
 CI_DB_HOST="${CI_RUNNER_DB_HOST:-127.0.0.1}"
+CI_DB_PORT="${CI_RUNNER_DB_PORT:-5433}"
+CI_DB_MAJOR="${CI_RUNNER_DB_MAJOR:-16}"
 CI_PHP_IMAGE="${CI_PHP_IMAGE:-localhost/daengtisia-ci-php:8.3}"
 
 PASS_COUNT=0
@@ -152,10 +154,16 @@ fi
 # 5. CI database — local, reachable, and NOT production.
 # ---------------------------------------------------------------------------
 if have psql; then
-    if PGCONNECT_TIMEOUT=5 psql -h "$CI_DB_HOST" -d "$CI_DB_NAME" -tAc 'SELECT 1' >/dev/null 2>&1; then
-        record PASS "ci_database" "CI database '${CI_DB_NAME}' reachable on ${CI_DB_HOST}."
+    ACTUAL_PG="$(PGCONNECT_TIMEOUT=5 psql -h "$CI_DB_HOST" -p "$CI_DB_PORT" -d "$CI_DB_NAME" -tAc 'SHOW server_version' 2>/dev/null | cut -d. -f1 | tr -d ' ')"
+    if [ -n "$ACTUAL_PG" ]; then
+        record PASS "ci_database" "CI database '${CI_DB_NAME}' reachable on ${CI_DB_HOST}:${CI_DB_PORT} (PostgreSQL ${ACTUAL_PG})."
+        if [ "$ACTUAL_PG" = "$CI_DB_MAJOR" ]; then
+            record PASS "ci_database_version" "PostgreSQL ${ACTUAL_PG} matches the authoritative gate's major version."
+        else
+            record FAIL "ci_database_version" "PostgreSQL ${ACTUAL_PG} does not match the gate's required major ${CI_DB_MAJOR}; results will diverge."
+        fi
     else
-        record FAIL "ci_database" "CI database '${CI_DB_NAME}' is not reachable on ${CI_DB_HOST} for ${CURRENT_USER}."
+        record FAIL "ci_database" "CI database '${CI_DB_NAME}' is not reachable on ${CI_DB_HOST}:${CI_DB_PORT} for ${CURRENT_USER}."
     fi
 fi
 

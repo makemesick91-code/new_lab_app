@@ -266,6 +266,8 @@ return [
         'engine' => 'podman',
         'rootless' => true,
         'image' => env('CI_DB_IMAGE', 'docker.io/library/postgres:16'),
+        // Resolved 2026-08-07; PostgreSQL 16.14, the same major production runs.
+        'image_digest' => 'sha256:670391653713782e51974845b217c56fed4dd8729142299c43c919a8d3e15e00',
         'service_unit' => 'ci-pg16.service',
         'host' => env('CI_RUNNER_DB_HOST', '127.0.0.1'),
         'port' => (int) env('CI_RUNNER_DB_PORT', 5433),
