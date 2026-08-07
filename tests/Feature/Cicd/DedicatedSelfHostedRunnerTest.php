@@ -415,16 +415,165 @@ it('runs the self-hosted gate through the pinned runtime, never the host PHP', f
     }
 });
 
-it('forbids docker and sudo for the runner service user', function () {
+it('forbids docker, sudo and lxd for the runner service user', function () {
     $forbidden = config('ci_runner.ci_runtime.forbidden_service_user_groups');
 
-    // The docker group is root-equivalent.
-    expect($forbidden)->toContain('docker')->toContain('sudo');
+    // docker and lxd both grant root-equivalent control of the host; sudo is
+    // direct escalation.
+    expect($forbidden)->toContain('docker')->toContain('sudo')->toContain('lxd');
 
     $wrapper = (string) file_get_contents(base_path('scripts/ci/self-hosted-php.sh'));
     expect($wrapper)->toContain('--userns=keep-id')
         ->and($wrapper)->toContain('podman run')
         ->and($wrapper)->not->toMatch('/^\s*(exec\s+)?docker\s/m');
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * CICD-CTRL-3 correction — a missing container runtime must never suppress a
+ * security finding.
+ *
+ * The original health script evaluated the docker-group check inside
+ * `if have podman`. On a host without Podman the check silently vanished: the
+ * gate reported NO-GO for the missing tool and said nothing whatsoever about
+ * the runtime user sitting in sudo/docker/lxd. These tests execute the real
+ * script against a synthesised bare host to prove the finding survives.
+ * ---------------------------------------------------------------------------
+ */
+
+/**
+ * Build a PATH containing only the coreutils the health script needs, so that
+ * podman, psql and ss are genuinely absent no matter what the test host has
+ * installed. This is a real bare-host simulation, not a mocked one.
+ */
+function bareHostBinDir(): string
+{
+    $dir = sys_get_temp_dir().'/ci-bare-host-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0700, true);
+
+    foreach (['bash', 'id', 'df', 'awk', 'hostname', 'grep', 'tr', 'cut', 'tail', 'basename', 'sed'] as $binary) {
+        $resolved = trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
+        if ($resolved !== '' && is_file($resolved)) {
+            symlink($resolved, $dir.'/'.$binary);
+        }
+    }
+
+    return $dir;
+}
+
+/**
+ * Run the real health script with the given environment and decode its JSON.
+ *
+ * @param  array<string, string>  $env
+ * @return array<string, mixed>
+ */
+function runRunnerHealthOnBareHost(array $env = []): array
+{
+    $bin = bareHostBinDir();
+    $bash = trim((string) shell_exec('command -v bash'));
+
+    $result = Process::path(base_path())
+        ->env(array_merge(['PATH' => $bin], $env))
+        ->run([$bash, 'scripts/ci/self-hosted-runner-health.sh', '--json']);
+
+    $decoded = json_decode($result->output(), true);
+
+    expect($decoded)->toBeArray(
+        'health script did not emit valid JSON on a bare host: '.$result->output().$result->errorOutput()
+    );
+
+    return $decoded;
+}
+
+/**
+ * @param  array<string, mixed>  $report
+ * @return list<array<string, string>>
+ */
+function healthChecksNamed(array $report, string $name): array
+{
+    return array_values(array_filter(
+        $report['checks'] ?? [],
+        fn (array $check): bool => ($check['check'] ?? null) === $name
+    ));
+}
+
+it('always evaluates root-equivalent group checks on a host with no podman', function () {
+    $report = runRunnerHealthOnBareHost();
+
+    // Precondition: this really is a bare host — no container runtime was found,
+    // so the old nesting bug would have emitted no group finding at all.
+    expect(healthChecksNamed($report, 'podman_rootless'))->toBeEmpty(
+        'expected podman to be absent from the synthesised bare host'
+    );
+
+    foreach (['group_docker', 'group_sudo', 'group_lxd'] as $check) {
+        $emitted = healthChecksNamed($report, $check);
+
+        // Exactly one result — never zero (suppressed) and never duplicated.
+        expect($emitted)->toHaveCount(1, "'{$check}' must emit exactly one result on a bare host")
+            ->and($emitted[0]['status'])->toBeIn(['PASS', 'WARN', 'FAIL']);
+    }
+});
+
+it('reports a forbidden group as FAIL even when no container runtime is installed', function () {
+    // The test process cannot join the docker group, so drive the check with a
+    // group this user provably IS in. The detection path is identical.
+    $primaryGroup = trim((string) shell_exec('id -gn'));
+    expect($primaryGroup)->not->toBe('');
+
+    $report = runRunnerHealthOnBareHost(['CI_RUNNER_FORBIDDEN_GROUPS' => $primaryGroup]);
+
+    $emitted = healthChecksNamed($report, "group_{$primaryGroup}");
+
+    expect($emitted)->toHaveCount(1)
+        ->and($emitted[0]['status'])->toBe('FAIL')
+        ->and($report['decision'])->toBe('NO-GO');
+});
+
+it('rejects a health script that hides group checks behind a container-runtime probe', function () {
+    // Reconstruct the original defect and prove the scanner now catches it.
+    $regressed = <<<'SH'
+        #!/usr/bin/env bash
+        set -euo pipefail
+        record PASS "runtime_user" "ok"
+        record PASS "disk_free" "ok"
+        record PASS "ram_available" "ok"
+        record PASS "production_isolation" "ok"
+        record PASS "ci_database" "ok"
+        if have podman; then
+            record PASS "group_docker" "not in docker"
+            record PASS "group_sudo" "not in sudo"
+            record PASS "group_lxd" "not in lxd"
+        fi
+        SH;
+
+    $relative = 'storage/framework/testing/regressed-runner-health.sh';
+    $absolute = base_path($relative);
+    @mkdir(dirname($absolute), 0755, true);
+    file_put_contents($absolute, $regressed);
+
+    try {
+        config(['ci_runner.files.runner_health_script' => $relative]);
+
+        $posture = app(SelfHostedRunnerScanner::class)->healthScriptPosture();
+
+        expect($posture['ok'])->toBeFalse();
+
+        $issues = implode("\n", $posture['issues']);
+        foreach (['group_docker', 'group_sudo', 'group_lxd'] as $marker) {
+            expect($issues)->toContain($marker);
+        }
+        expect($issues)->toContain('must run unconditionally');
+    } finally {
+        @unlink($absolute);
+    }
+});
+
+it('keeps the shipped health script free of the container-runtime nesting defect', function () {
+    $posture = app(SelfHostedRunnerScanner::class)->healthScriptPosture();
+
+    expect($posture['exists'])->toBeTrue()
+        ->and($posture['ok'])->toBeTrue(implode("\n", $posture['issues']));
 });
 
 it('does not regress the CICD-CTRL-1 safe runtime control contract', function () {

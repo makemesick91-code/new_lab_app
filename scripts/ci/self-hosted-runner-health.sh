@@ -42,6 +42,11 @@ CI_DB_MAJOR="${CI_RUNNER_DB_MAJOR:-16}"
 CI_DB_USER="${CI_RUNNER_DB_USER:-daengtisia_ci_user}"
 CI_PHP_IMAGE="${CI_PHP_IMAGE:-localhost/daengtisia-ci-php:8.3}"
 
+# Groups that are privileged or outright root-equivalent. The CI runtime user
+# must be in none of them. Mirrors config/ci_runner.php
+# ci_runtime.forbidden_service_user_groups.
+FORBIDDEN_GROUPS="${CI_RUNNER_FORBIDDEN_GROUPS:-docker sudo lxd wheel root adm disk shadow}"
+
 PASS_COUNT=0
 FAIL_COUNT=0
 WARN_COUNT=0
@@ -86,20 +91,41 @@ for tool in node npm psql git podman; do
 done
 
 # ---------------------------------------------------------------------------
-# 2b. Container runtime — rootless Podman, never rootful Docker.
+# 2b. Privileged group membership — ALWAYS evaluated, on every host.
+#
+# SECURITY INVARIANT: these checks must NEVER be nested under a container
+# runtime probe.
+#
+# A previous revision evaluated the docker-group check inside `if have podman`.
+# On a host without Podman the root-equivalence finding silently disappeared:
+# the gate reported NO-GO for the missing tool while saying nothing at all about
+# the runtime user sitting in sudo/docker/lxd. A missing tool must never be able
+# to suppress a security finding.
+#
+# Every group below therefore emits exactly one PASS or FAIL on every run, on
+# every host, whether or not any container runtime is installed.
+# ---------------------------------------------------------------------------
+CURRENT_GROUPS="$(id -nG "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' || true)"
+
+for group in $FORBIDDEN_GROUPS; do
+    if printf '%s\n' "$CURRENT_GROUPS" | grep -qx -- "$group"; then
+        record FAIL "group_${group}" "${CURRENT_USER} is in the '${group}' group, which is privileged/root-equivalent and is forbidden for the CI runtime user."
+    else
+        record PASS "group_${group}" "${CURRENT_USER} is not in the '${group}' group."
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# 2c. Container runtime posture — evaluated only when a container runtime is
+# actually present. Absence is not a security finding: the security verdict is
+# owned by 2b above, which always runs, and the capability verdict by the tool
+# checks in section 2.
 # ---------------------------------------------------------------------------
 if have podman; then
     if [ "$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null)" = "true" ]; then
         record PASS "podman_rootless" "Podman is running rootless as ${CURRENT_USER}."
     else
         record FAIL "podman_rootless" "Podman is not rootless; the CI runtime must never run rootful."
-    fi
-
-    # The docker group is root-equivalent and is forbidden for the runner user.
-    if id -nG "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' | grep -qx docker; then
-        record FAIL "docker_group" "${CURRENT_USER} is in the docker group, which is root-equivalent and forbidden."
-    else
-        record PASS "docker_group" "${CURRENT_USER} is not in the docker group."
     fi
 
     # The authoritative PHP runtime comes from the pinned image, not the host.

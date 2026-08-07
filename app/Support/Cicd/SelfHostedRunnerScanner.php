@@ -234,6 +234,63 @@ class SelfHostedRunnerScanner
             }
         }
 
+        /*
+         * Mandatory root-equivalence checks, and — critically — proof that they
+         * are evaluated unconditionally.
+         *
+         * A previous revision nested the docker-group check inside
+         * `if have podman`, so a host without Podman emitted no group finding at
+         * all. A missing tool must never suppress a security finding, so every
+         * mandatory group check has to appear BEFORE the first container-runtime
+         * probe in the script, outside any runtime branch.
+         */
+        /*
+         * Locate the container-runtime probe as an EXECUTABLE line, not a raw
+         * substring: the script documents the original defect in its own
+         * comments, and a comment mentioning the probe would otherwise skew
+         * every ordering comparison below.
+         */
+        $runtimeProbe = preg_match('/^[ \t]*if have podman/m', $script, $probeMatch, PREG_OFFSET_CAPTURE) === 1
+            ? $probeMatch[0][1]
+            : false;
+
+        $mandatoryGroups = ['docker', 'sudo', 'lxd'];
+
+        // The emission loop itself must sit ahead of any container-runtime probe.
+        $groupLoop = strpos($script, 'for group in $FORBIDDEN_GROUPS');
+
+        if ($groupLoop === false) {
+            $issues[] = 'health script does not evaluate forbidden-group membership in an unconditional loop';
+        } elseif ($runtimeProbe !== false && $groupLoop > $runtimeProbe) {
+            $issues[] = 'health script evaluates forbidden-group membership behind a container-runtime probe; '
+                .'root-equivalence checks must run unconditionally';
+        }
+
+        // The loop names its groups through a variable, so the mandatory set is
+        // verified against the declared default rather than by literal search.
+        if (preg_match('/FORBIDDEN_GROUPS="\$\{CI_RUNNER_FORBIDDEN_GROUPS:-([^}]*)\}"/', $script, $matches) === 1) {
+            $declared = preg_split('/\s+/', trim($matches[1])) ?: [];
+
+            foreach ($mandatoryGroups as $group) {
+                if (! in_array($group, $declared, true)) {
+                    $issues[] = "health script default forbidden-group list is missing '{$group}'";
+                }
+            }
+        } else {
+            $issues[] = 'health script does not declare a default forbidden-group list';
+        }
+
+        // Belt and braces: catch the original defect shape too, where a group
+        // check was written literally inside the container-runtime branch.
+        foreach ($mandatoryGroups as $group) {
+            $literal = strpos($script, "group_{$group}");
+
+            if ($literal !== false && $runtimeProbe !== false && $literal > $runtimeProbe) {
+                $issues[] = "health script evaluates 'group_{$group}' behind a container-runtime probe; "
+                    .'root-equivalence checks must run unconditionally';
+            }
+        }
+
         // The health check reports; it never repairs.
         foreach (['rm -rf /', 'chmod 777', 'migrate:fresh', 'db:wipe', 'DROP DATABASE'] as $destructive) {
             if (str_contains($script, $destructive)) {
@@ -266,7 +323,9 @@ class SelfHostedRunnerScanner
             $issues[] = 'the CI runtime must be declared rootless';
         }
 
-        foreach (['docker', 'sudo'] as $group) {
+        // docker and lxd both grant root-equivalent control of the host; sudo is
+        // direct escalation. None may ever be held by the runner service user.
+        foreach (['docker', 'sudo', 'lxd'] as $group) {
             if (! in_array($group, (array) ($runtime['forbidden_service_user_groups'] ?? []), true)) {
                 $issues[] = "group '{$group}' must be forbidden for the runner service user";
             }

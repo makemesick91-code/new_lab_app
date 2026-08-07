@@ -245,8 +245,29 @@ return [
          */
         'required_binaries' => ['pdfinfo', 'pdftoppm'],
 
-        // Group membership that must never be granted to the service user.
-        'forbidden_service_user_groups' => ['docker', 'sudo'],
+        /*
+         * Group membership that must never be granted to the service user.
+         *
+         * These are checked unconditionally by the health script — never behind
+         * a container-runtime probe, because a missing tool must not be able to
+         * suppress a root-equivalence finding.
+         *
+         * docker / lxd  : both hand out root-equivalent control of the host.
+         * sudo / wheel  : direct privilege escalation.
+         * root          : membership in the root group.
+         * adm / disk / shadow : privileged read of logs, raw devices, and the
+         *                 password database respectively.
+         */
+        'forbidden_service_user_groups' => [
+            'docker',
+            'sudo',
+            'lxd',
+            'wheel',
+            'root',
+            'adm',
+            'disk',
+            'shadow',
+        ],
     ],
 
     /*
