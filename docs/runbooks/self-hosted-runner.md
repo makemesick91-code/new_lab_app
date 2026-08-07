@@ -26,28 +26,36 @@ Actions outage.
 
 ## 2. Prerequisites
 
-### 2.1 Operating system — must provide the CI PHP version natively
+### 2.1 The authoritative PHP runtime is containerised, not the host PHP
 
 The self-hosted gate is only a valid substitute for the GitHub-hosted gate if it
-runs the **same PHP version** (`config/ci_runner.php` → `required_php_version`,
-currently **8.3**). `composer.lock` is resolved against that version, and a
-green run on a different PHP does not prove the authoritative gate passes.
+runs the **same PHP major.minor** (`config/ci_runner.php` →
+`required_php_version`, currently **8.3**, matching all six `setup-php` blocks
+in the workflow). A green run on a different PHP does not prove the
+authoritative gate passes.
 
-**Use Ubuntu 24.04 LTS**, which ships PHP 8.3 natively — no PPA, no source
-build, no mixed-release packages.
+The runner host is **Ubuntu 26.04, which ships only PHP 8.5**. Rather than
+reinstall the host or weaken the authoritative requirement, the self-hosted
+variant runs every `php` / `composer` / `artisan` command **inside a pinned
+container image** via **rootless Podman**, through
+`scripts/ci/self-hosted-php.sh`. The host PHP is never authoritative and is not
+even a host requirement.
 
-Verified 2026-08-07, so nobody repeats the investigation:
+Options evaluated 2026-08-07, so nobody repeats the investigation:
 
 | Option | Result |
 |---|---|
-| Ubuntu 24.04 LTS (`noble`) | **PHP 8.3 native.** Use this. |
-| Ubuntu 26.04 (`resolute`) | Ships **only** PHP 8.5. No 8.3/8.4 in its repos. |
+| **Rootless Podman + pinned PHP 8.3 image** | **Chosen.** Exact runtime parity, host untouched, no root-equivalent privilege. |
+| Ubuntu 26.04 native packages | Ships **only** PHP 8.5. No 8.3/8.4 in its repos. |
 | `ondrej/php` PPA on 26.04 | **No `resolute` build** — the PPA stops at `noble` (HTTP 404 for `resolute`). |
-| ondrej `noble` packages on 26.04 | Mixed-release install. Do **not** do this: conflicting `libssl`/`libc` dependencies risk destabilising the machine and are hard to unwind. |
+| ondrej `noble` packages on 26.04 | Mixed-release install; conflicting `libssl`/`libc`. Rejected. |
+| Reinstall host as Ubuntu 24.04 LTS | Would give PHP 8.3 natively, but is unnecessary given the container approach. |
+| Run the gate on host PHP 8.5 | **Rejected** — breaks equivalence (rule CICDCTRL3-R009). |
+| Rootful Docker / `container:` job | **Forbidden** — needs the service user in the `docker` group, which is root-equivalent. |
 
-If a future runner OS cannot supply the CI PHP version, do not silently run a
-different one — either change the OS or raise it as an explicit divergence,
-because it weakens rule CICDCTRL3-R009 (equivalent fallback).
+If a future runner cannot supply the CI PHP version through the pinned image, do
+not silently run a different one — fix the image or raise it as an explicit
+divergence.
 
 ### 2.2 Access and hardware
 
@@ -83,19 +91,25 @@ root-equivalent, and this runner deliberately has no Docker (see §3.4).
 
 Install the runtimes so CI jobs never need sudo at run time:
 
-On Ubuntu 24.04 LTS every runtime comes from the distribution repositories:
+The **host** provides only the tooling that does not need version parity. PHP,
+Composer and Poppler come from the pinned CI image instead (§3.5).
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git curl unzip zip poppler-utils postgresql \
-    php8.3-cli php8.3-dom php8.3-curl php8.3-xml php8.3-mbstring php8.3-zip \
-    php8.3-pcntl php8.3-pgsql php8.3-bcmath php8.3-gd php8.3-sqlite3 \
-    composer nodejs npm
+sudo apt-get install -y --no-install-recommends \
+    git curl unzip zip ca-certificates \
+    nodejs npm poppler-utils \
+    postgresql postgresql-client \
+    podman uidmap slirp4netns fuse-overlayfs passt
 ```
 
-The extension set mirrors the CI gate (`dom curl libxml mbstring zip pcntl pdo
-pdo_pgsql bcmath gd exif`; `exif` is bundled with `php8.3-cli` on Ubuntu). Node
-must match the workflow's `setup-node` version (currently 22).
+Node must match the workflow's `setup-node` version (currently 22).
+
+> **Mirror gotcha (hit 2026-08-07):** `id.archive.ubuntu.com` served HTTP 403 for
+> `libgpgmepp7`, a dependency of `libpoppler156`, which blocked the whole
+> install. Fixed by pointing `/etc/apt/sources.list.d/ubuntu.sources` at
+> `archive.ubuntu.com` (backup kept as `ubuntu.sources.cicd-ctrl-3.bak`). If
+> package installs start failing with 403, check the mirror before anything else.
 
 Verify:
 
@@ -133,6 +147,48 @@ sudo -u postgres psql -c "ALTER USER daengtisia_ci_user WITH PASSWORD '<generate
 - Confirm PostgreSQL listens on loopback only (`listen_addresses = 'localhost'`);
   the health script fails if it is published to the network.
 - This database is disposable CI state. It must never hold production data.
+
+### 3.4b Rootless Podman and the pinned PHP 8.3 CI image
+
+The service user must be able to run containers **rootless**. It must never be
+in the `docker` group, and rootful Docker is never used — the `docker` group is
+root-equivalent.
+
+```bash
+# subuid/subgid ranges are required for rootless user namespaces
+grep -E '^github-runner:' /etc/subuid /etc/subgid
+
+# keep the user's systemd/podman session alive without an interactive login
+sudo loginctl enable-linger github-runner
+
+# the service user must NOT be in docker or sudo
+sudo gpasswd -d github-runner docker || true
+sudo gpasswd -d github-runner sudo   || true
+id -nG github-runner        # expect: github-runner users
+```
+
+Verify rootlessness, then build the image:
+
+```bash
+sudo runuser -l github-runner -c 'podman info --format "{{.Host.Security.Rootless}}"'   # expect: true
+
+# built from the repo's Containerfile; base pinned by digest, never a floating tag
+sudo runuser -l github-runner -c \
+  'cd ~/ci-runtime && podman build -t daengtisia-ci-php:8.3 -f Containerfile.php83 .'
+```
+
+The Containerfile lives at `.github/ci-runtime/Containerfile.php83` and **fails
+the build** if any required extension or Poppler binary is missing, so the image
+can never silently ship a runtime that would make tests skip.
+
+Every CI command then goes through `scripts/ci/self-hosted-php.sh`, which runs
+`podman run --network=host --userns=keep-id`. `keep-id` maps the container user
+to the host `github-runner` UID, so files the container writes are owned by
+`github-runner` and the persistent workspace never accumulates root-owned
+residue. `--network=host` reaches only the loopback-bound local CI database.
+
+**Updating the image:** pull the new tag, record its digest, update the `FROM`
+line in a reviewed commit, rebuild. Never switch to a floating tag.
 
 ### 3.5 Register the runner
 

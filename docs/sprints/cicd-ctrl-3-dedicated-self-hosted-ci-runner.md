@@ -161,39 +161,59 @@ process), so adopting it does not disturb the co-tenant *aish-pos* project. A
 `github-runner` user (uid 1001) already exists. Production isolation is clean: no
 DaengtisiaMS SSH key and no production application path.
 
-### Blocker — operating system cannot supply the CI PHP version
+### PHP parity — solved with an isolated runtime, not an OS change
 
-The host runs **Ubuntu 26.04**, whose repositories ship **only PHP 8.5**. The CI
-gate uses **PHP 8.3**, and `composer.lock` is resolved against it. Verified
+The host runs **Ubuntu 26.04**, whose repositories ship **only PHP 8.5**, while
+all six `setup-php` blocks in the workflow pin **PHP 8.3**. Options evaluated
 2026-08-07:
 
-- Ubuntu 26.04 (`resolute`): no `php8.3-*` or `php8.4-*` packages at all.
-- `ondrej/php` PPA: **no `resolute` build** (HTTP 404); it stops at `noble`.
-- Installing ondrej's `noble` packages on 26.04 would be a mixed-release install
-  with conflicting `libssl`/`libc` dependencies — rejected as destabilising.
+| Option | Outcome |
+|---|---|
+| **Rootless Podman + digest-pinned PHP 8.3 image** | **Chosen.** Exact runtime parity, host untouched, no root-equivalent privilege. |
+| Ubuntu 26.04 native packages | No `php8.3-*` / `php8.4-*` at all. |
+| `ondrej/php` PPA | **No `resolute` build** (HTTP 404); stops at `noble`. |
+| ondrej `noble` packages on 26.04 | Mixed-release, conflicting `libssl`/`libc`. Rejected. |
+| Reinstall host as Ubuntu 24.04 LTS | Viable but unnecessary once the container approach was proven. |
+| Run the gate on host PHP 8.5 | **Rejected** — a green self-hosted run would no longer prove the authoritative 8.3 gate passes (CICDCTRL3-R009). |
+| Rootful Docker / `container:` job | **Forbidden** — requires the service user in the root-equivalent `docker` group. |
 
-Running the self-hosted gate on PHP 8.5 was rejected because it breaks the
-property that makes the gate worth having: a green self-hosted run would no
-longer prove the authoritative 8.3 gate passes (rule CICDCTRL3-R009).
+Note on an earlier imprecision: `composer.lock`'s platform is `{"php": "^8.2"}`,
+so the dependency graph itself would install on 8.5. The binding requirement is
+**runtime equivalence with the authoritative gate**, not a composer constraint.
 
-**Resolution chosen: reinstall the runner as Ubuntu 24.04 LTS**, which ships PHP
-8.3 natively — no PPA, no source build, no mixed-release packages. The machine
-holds almost nothing (8 GB used, no runner, no data), so the reinstall is cheap.
+Secondary divergence, recorded rather than ignored: the runner's PostgreSQL is
+18 while the GitHub-hosted gate uses `postgres:16`. Much lower risk than a PHP
+mismatch, but it is a real difference.
 
-Secondary divergence to track once provisioned: the host offers PostgreSQL 18
-while the GitHub-hosted gate uses `postgres:16`. Far lower risk than a PHP
-mismatch, but it is a real difference and is recorded rather than ignored.
+### Security findings on the host
 
-No machine was provisioned, no runner was registered, and no registration token
-was minted.
+- The pre-existing `github-runner` account was in **both the `docker` and `sudo`
+  groups** — both root-equivalent. Nothing depended on them (no runner service,
+  no processes, no crontab, no containers), so both were removed. The account is
+  now `github-runner users`.
+- `runner_dms` required interactive authentication for every `sudo`, so
+  provisioning used a **temporary** `NOPASSWD` sudoers entry
+  (`/etc/sudoers.d/99-cicd-ctrl-3-temp`), removed as the final step. The
+  `github-runner` service user gets **no** sudo at any point.
+- The apt mirror `id.archive.ubuntu.com` served HTTP 403 for `libgpgmepp7` (a
+  `libpoppler156` dependency), blocking installs. Switched to
+  `archive.ubuntu.com`; backup kept at `ubuntu.sources.cicd-ctrl-3.bak`.
 
-### Privilege
+### Silent-skip defect found by running it
 
-`runner_dms` is in the `sudo` group but every invocation requires interactive
-authentication, so no privileged provisioning step could run. The agreed
-approach is a **temporary** `NOPASSWD` sudoers entry for `runner_dms`, removed as
-the final provisioning step. The `github-runner` service user gets **no** sudo at
-any point.
+Routing a real run to the self-hosted runner exposed a defect introduced by this
+sprint: `release_safety_gate` depended only on `critical_test_gate`. Exactly one
+critical-gate variant runs and the other is **skipped**, and GitHub skips any job
+whose `needs` were skipped — so routing heavy CI to the self-hosted runner
+**silently skipped NSF-9 and, transitively, NSF-10**.
+
+That is precisely the silent-pass class this sprint exists to prevent. Fixed:
+NSF-9 and the full-suite fallback now depend on **both** variants and require
+that **one actually succeeded**, so a failing critical gate still blocks them
+while a skipped sibling does not. Guarded by a test over every dependent of the
+critical gate and by a scanner check.
+
+Inspection alone did not catch this; only executing the routing did.
 
 ---
 
