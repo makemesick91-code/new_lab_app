@@ -338,3 +338,38 @@ rule (e.g. `variant="gold"`, `teal-*`).
 
 Enforced by `architecture:ui-governance-check --strict` (soft closure signals) and
 `tests/Feature/Ui/EnterpriseCleanUiUxFinalClosureUixTest.php`.
+
+## Signal classes — the decision is about the tracked source tree (CICD-FIX-3, 2026-08-08)
+
+`architecture:ui-governance-check` reports three channels. Only the first two decide.
+
+| Channel | Meaning | Decides? |
+|---|---|---|
+| `errors` | a governance rule is violated | yes → `FAIL` (non-zero always) |
+| `warnings` | soft signal over **tracked source** | yes → `WATCH` (non-zero with `--strict`) |
+| `advisories` | observation about the **environment** this run sits in (generated, gitignored state) | **no** |
+
+**Rule.** The decision must be reproducible in any clean checkout. A signal may only
+decide if every input it reads is tracked in git. Generated, gitignored state —
+`public/build`, caches, local tooling output — belongs in `advisories`: it is reported,
+never suppressed, but it never turns the decision non-GO on its own.
+
+**Why.** `public/build/manifest.json` is Vite output. It is gitignored and no test gate
+builds it, so it is absent in every clean checkout. While it fed `warnings`, `--strict`
+reported WATCH purely because the working tree happened not to have been built, and ~19
+UIX tests asserting "UI governance is clean" were really asserting "and somebody ran
+`npm run build` here". That is the same coupling CICD-FIX-1 removed from the PHP feature
+tests, and it contradicted UIX-18's own owner test, which already skips its bundle budget
+when the manifest is absent.
+
+**Enforcing the asset baseline.** `--require-build-manifest` promotes a missing manifest
+back to a real warning. Use it in any context that genuinely builds first (VPS deploy,
+release evidence, the NSF-R012 quality gate). The payload also carries
+`build_manifest_present` so the state is always visible either way.
+
+**Do not** add an `npm` step to a PHP test gate to satisfy a governance rule, commit build
+output, fake a manifest, or suppress a rule to make a gate green.
+
+Enforced by `tests/Feature/Ui/UiGovernanceFreshCheckoutContractTest.php`, which pins both
+directions — a clean unbuilt checkout is GO, and a genuinely missing `x-ui` component is
+still a hard FAIL — so the check can never degrade into reporting GO for every state.
