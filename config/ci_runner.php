@@ -133,12 +133,32 @@ return [
      * safety-critical, so each must either declare `shell: bash` (which adds
      * `-o pipefail`) or capture PIPESTATUS explicitly. Evidence is never
      * dropped to work around this — it is preserved and the status propagated.
+     *
+     * CICD-CTRL-3B extends the list to the NSF-9 and NSF-10 producers. That gap
+     * is why the defect survived CICD-CTRL-3A: the check below was already
+     * correct, but it only ran against the steps named here, and the release
+     * gates were not among them. Every one of these producers exits non-zero
+     * for exactly one reason — the governance decision is FAIL (GO and WATCH
+     * both exit 0) — so a swallowed status turned a release-blocking NO-GO into
+     * a green required check.
      */
     'strict_pipeline_steps' => [
+        // CICD-CTRL-3A — self-hosted runner and critical regression gate.
         'Runner health check (CICD-CTRL-3)',
         'Assert authoritative PHP runtime (CICD-CTRL-3)',
         'Self-hosted runner smoke evidence (CICD-CTRL-3)',
         'Run critical regression tests',
+
+        // CICD-CTRL-3B — NSF-9 release safety & automated smoke gate.
+        'Foundation roadmap check',
+        'Feature flags governance',
+        'Release safety check',
+        'Automated smoke (command-readiness only, no base URL in CI)',
+
+        // CICD-CTRL-3B — NSF-10 release evidence gate.
+        'Capture NSF-10 release evidence (ci profile)',
+        'Check NSF-10 release evidence (ci profile)',
+        'Release safety check (ci profile)',
     ],
 
     /*

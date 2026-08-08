@@ -741,11 +741,35 @@ jobs:
       - name: Run migrations
         run: php artisan migrate --force
 
+      # CICD-CTRL-3B strict exit propagation — applies to every `| tee` step in
+      # this gate. A pipeline reports the status of its LAST command, so
+      # `producer | tee evidence` reported tee's success and discarded the
+      # producer's failure. These producers exit non-zero for exactly one
+      # reason: the governance decision is FAIL (GO and WATCH both exit 0), so a
+      # swallowed status turned a release-blocking NO-GO into a green gate.
+      #
+      # The pattern is the one CICD-CTRL-3A proved on the health gate:
+      # `shell: bash` for -o pipefail, PIPESTATUS to capture the producer's own
+      # status, and an explicit exit with it. Evidence is written by tee first,
+      # so nothing is traded away to recover the status.
       - name: Foundation roadmap check
-        run: php artisan architecture:foundation-roadmap-check 2>&1 | tee storage/ci-evidence/nsf-9-roadmap-check.txt
+        shell: bash
+        run: |
+          set +e
+          php artisan architecture:foundation-roadmap-check 2>&1 | tee storage/ci-evidence/nsf-9-roadmap-check.txt
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Feature flags governance
-        run: php artisan foundation:feature-flags --json 2>&1 | tee storage/ci-evidence/nsf-9-feature-flags.json
+        # Strict exit propagation — see "Foundation roadmap check" above.
+        shell: bash
+        run: |
+          set +e
+          php artisan foundation:feature-flags --json 2>&1 | tee storage/ci-evidence/nsf-9-feature-flags.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Cache governance check
         run: |
@@ -816,10 +840,24 @@ jobs:
           php artisan foundation:reporting-summary-refresh --dry-run --json > storage/ci-evidence/reporting-summary-refresh-dry-run.json
 
       - name: Release safety check
-        run: php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
+        # Strict exit propagation — see "Foundation roadmap check" above.
+        shell: bash
+        run: |
+          set +e
+          php artisan foundation:release-safety-check --json 2>&1 | tee storage/ci-evidence/nsf-9-release-safety.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Automated smoke (command-readiness only, no base URL in CI)
-        run: php artisan release:automated-smoke --json 2>&1 | tee storage/ci-evidence/nsf-9-automated-smoke.json
+        # Strict exit propagation — see "Foundation roadmap check" above.
+        shell: bash
+        run: |
+          set +e
+          php artisan release:automated-smoke --json 2>&1 | tee storage/ci-evidence/nsf-9-automated-smoke.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Write NSF-9 evidence summary
         run: |
@@ -898,14 +936,41 @@ jobs:
       - name: Run migrations
         run: php artisan migrate --force
 
+      # CICD-CTRL-3B strict exit propagation — same contract as the NSF-9 gate:
+      # `producer | tee evidence` reported tee's status, so a FAIL decision from
+      # the evidence chain rendered as a green step. These three producers are
+      # the release-evidence gate itself, so a swallowed status meant NSF-10
+      # could pass while the required evidence was missing, empty, unsafe or
+      # stale. Evidence is written by tee first, then the producer's own status
+      # propagates.
       - name: Capture NSF-10 release evidence (ci profile)
-        run: php artisan release:evidence-capture --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-capture.json
+        shell: bash
+        run: |
+          set +e
+          php artisan release:evidence-capture --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-capture.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Check NSF-10 release evidence (ci profile)
-        run: php artisan release:evidence-check --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-check.json
+        # Strict exit propagation — see "Capture NSF-10 release evidence" above.
+        shell: bash
+        run: |
+          set +e
+          php artisan release:evidence-check --profile=ci --json | tee storage/ci-evidence/nsf-10-evidence-check.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Release safety check (ci profile)
-        run: php artisan foundation:release-safety-check --profile=ci --json | tee storage/ci-evidence/nsf-10-release-safety-check.json
+        # Strict exit propagation — see "Capture NSF-10 release evidence" above.
+        shell: bash
+        run: |
+          set +e
+          php artisan foundation:release-safety-check --profile=ci --json | tee storage/ci-evidence/nsf-10-release-safety-check.json
+          STATUS="${PIPESTATUS[0]}"
+          set -e
+          exit "$STATUS"
 
       - name: Write NSF-10 evidence gate summary
         run: |
