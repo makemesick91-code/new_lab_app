@@ -102,6 +102,46 @@ final class SchemaFacts
     }
 
     /**
+     * Every foreign key on a table, normalised to
+     * {name, columns, foreign_table, foreign_columns}.
+     *
+     * CICD-FIX-4 — the last raw-`PRAGMA foreign_key_list()` assertion skipped
+     * itself on any non-SQLite driver, so the "branch_id references
+     * mst_branches" contract was never verified on the authoritative
+     * PostgreSQL connection. Reading through Laravel's own
+     * `Schema::getForeignKeys()` verifies the same contract on every supported
+     * driver instead of silently skipping it.
+     *
+     * @return list<array{name: string, columns: list<string>, foreign_table: string, foreign_columns: list<string>}>
+     */
+    public static function foreignKeys(string $table): array
+    {
+        self::driver();
+
+        return array_map(static fn (array $foreignKey): array => [
+            'name' => (string) ($foreignKey['name'] ?? ''),
+            'columns' => array_values(array_map('strval', (array) ($foreignKey['columns'] ?? []))),
+            'foreign_table' => (string) ($foreignKey['foreign_table'] ?? ''),
+            'foreign_columns' => array_values(array_map('strval', (array) ($foreignKey['foreign_columns'] ?? []))),
+        ], Schema::getForeignKeys($table));
+    }
+
+    /**
+     * The table a single-column foreign key points at, or null when the column
+     * declares no foreign key at all.
+     */
+    public static function foreignKeyTargetFor(string $table, string $column): ?string
+    {
+        foreach (self::foreignKeys($table) as $foreignKey) {
+            if ($foreignKey['columns'] === [$column]) {
+                return $foreignKey['foreign_table'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * A column's default, normalised to the value itself.
      *
      * PostgreSQL reports `'draft'::character varying` and SQLite reports
