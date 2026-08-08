@@ -36,7 +36,7 @@ jobs:
     # any other runner on the account pick this up.
     runs-on: [self-hosted, linux, x64, daengtisia-ci]
     env:
-      CANDIDATE_SHA: 7d8ecd48a3c73c828656956a0bf831e7653921e0
+      CANDIDATE_SHA: 59b702cc0b3211b0c559eac108fd4c7a44fe0db6
       APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
       APP_DEBUG: 'false'
       DB_CONNECTION: pgsql
@@ -53,7 +53,7 @@ jobs:
       # under test must be the candidate's code, byte for byte.
       - uses: actions/checkout@v4
         with:
-          ref: 7d8ecd48a3c73c828656956a0bf831e7653921e0
+          ref: 59b702cc0b3211b0c559eac108fd4c7a44fe0db6
           clean: true
 
       - name: Prove the checkout is the exact candidate
@@ -181,3 +181,112 @@ jobs:
           bash scripts/ci/self-hosted-php.sh php artisan ci:assert-non-production-database
           bash scripts/ci/self-hosted-php.sh php artisan migrate --force
           echo "positive_control=guard_passed_and_migration_ran" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # CICD-CTRL-3A — the health gate must fail CLOSED.
+  #
+  # The defect this proves is gone: the health check printed `DECISION: NO-GO`,
+  # exited 1, and the step still went green because `health.sh | tee` reports
+  # tee's status. A fail-open defect can only be closed by demonstrating the
+  # failing path in a real Actions job, so this job runs both directions.
+  #
+  # The negative case is produced entirely by a health-check INPUT
+  # (CI_RUNNER_DB_MAJOR), never by weakening the runner: no group is granted, no
+  # key is planted, no service is altered.
+  health_gate_fail_closed:
+    name: CICD-CTRL-3A Health Gate Fail-Closed Proof (self-hosted)
+    runs-on: [self-hosted, linux, x64, daengtisia-ci]
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ vars.CI_DB_PORT || '5432' }}
+      DB_DATABASE: daengtisia_ci
+      DB_USERNAME: daengtisia_ci_user
+      DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+      CI_RUNTIME_MODE: ${{ vars.CI_RUNTIME_MODE || 'auto' }}
+      CI_PHP_IMAGE: localhost/daengtisia-ci-php:8.3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 59b702cc0b3211b0c559eac108fd4c7a44fe0db6
+          clean: true
+
+      - name: Prove the checkout is the exact candidate
+        run: |
+          echo "candidate=$(git rev-parse HEAD)"
+          echo "runner_host=$(hostname)"
+          test "$(git rev-parse HEAD)" = "59b702cc0b3211b0c559eac108fd4c7a44fe0db6"
+
+      - name: Report the resolved runtime (must not claim an absent engine)
+        shell: bash
+        run: bash scripts/ci/self-hosted-php.sh --print-runtime | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # POSITIVE: a healthy runner must reach GO *and* must actually verify the
+      # database major version. Before the fix the probe hit a port the job
+      # never uses, so this check silently never ran.
+      - name: Health gate positive — GO and PostgreSQL major verified
+        shell: bash
+        run: |
+          set +e
+          bash scripts/ci/self-hosted-runner-health.sh 2>&1 | tee /tmp/health-positive.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          HEALTH_STATUS="${PIPESTATUS[0]}"
+          set -e
+          echo "runner_health_exit_status=${HEALTH_STATUS}"
+          grep -qE '\[PASS\] ci_database ' /tmp/health-positive.txt \
+            || { echo "::error::the CI database was never verified"; exit 1; }
+          grep -qE '\[PASS\] ci_database_version' /tmp/health-positive.txt \
+            || { echo "::error::the PostgreSQL major-version check did not execute"; exit 1; }
+          grep -q 'DECISION: GO' /tmp/health-positive.txt \
+            || { echo "::error::health decision is not GO"; exit 1; }
+          {
+            echo "health_positive_decision=GO"
+            grep -E '\[PASS\] ci_database' /tmp/health-positive.txt
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$HEALTH_STATUS"
+
+      # NEGATIVE: the same step pattern, given a requirement the runner cannot
+      # meet. `continue-on-error` records a REAL failed step outcome without
+      # aborting the evidence job, so the failure is auditable after the fact.
+      - name: Health gate negative — controlled NO-GO must FAIL the step
+        id: health_negative
+        continue-on-error: true
+        shell: bash
+        env:
+          CI_RUNNER_DB_MAJOR: '99'
+        run: |
+          set +e
+          bash scripts/ci/self-hosted-runner-health.sh 2>&1 | tee /tmp/health-negative.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          HEALTH_STATUS="${PIPESTATUS[0]}"
+          set -e
+          echo "runner_health_exit_status=${HEALTH_STATUS}"
+          exit "$HEALTH_STATUS"
+
+      - name: Prove the NO-GO failed the step and blocked migration and Pest
+        shell: bash
+        env:
+          CI_RUNNER_DB_MAJOR: '99'
+        run: |
+          echo "health_negative_step_outcome=${{ steps.health_negative.outcome }}"
+          if [ "${{ steps.health_negative.outcome }}" != "failure" ]; then
+            echo "::error::a NO-GO health verdict did NOT fail the step — the gate is still fail-open"
+            exit 1
+          fi
+          grep -q 'DECISION: NO-GO' /tmp/health-negative.txt \
+            || { echo "::error::expected a NO-GO verdict in the negative case"; exit 1; }
+
+          # Chain proof: everything the gate protects sits behind `&&`, so a
+          # non-zero health status makes migration and Pest unreachable.
+          set +e
+          bash scripts/ci/self-hosted-runner-health.sh >/dev/null 2>&1 \
+            && REACHED=yes || REACHED=no
+          set -e
+          {
+            echo "health_negative_decision=NO-GO"
+            echo "health_negative_step_outcome=${{ steps.health_negative.outcome }}"
+            echo "migration_reached=${REACHED}"
+            echo "pest_reached=${REACHED}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$REACHED" = "no" ]
