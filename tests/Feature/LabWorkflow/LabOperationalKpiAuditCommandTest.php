@@ -14,7 +14,8 @@ function auditCleanOrder(): LabOrder
 {
     $order = LabOrder::factory()->create([
         'workflow_version' => LabOrder::WORKFLOW_V2,
-        'branch_id' => 1,
+        // A real parent branch, not the hardcoded id 1 PostgreSQL rejects.
+        'branch_id' => labOpsBranch()->id,
         'due_date' => now()->addDays(3)->toDateString(),
         'status' => LabWorkflowState::QC_PENDING,
         'order_date' => now()->toDateString(),
@@ -23,7 +24,8 @@ function auditCleanOrder(): LabOrder
         'lab_order_id' => $order->id,
         'old_status' => LabWorkflowState::STEP_4_COMPLETED,
         'new_status' => LabWorkflowState::QC_PENDING,
-        'changed_by' => 1,
+        // changed_by is a NOT NULL FK to users; id 1 is not guaranteed to exist.
+        'changed_by' => labOpsActor()->id,
         'changed_at' => now(),
     ]);
 
@@ -55,7 +57,7 @@ it('go-no-go command exits 0 on GO and prints GO', function () {
 it('is NO_GO when a V2 order carries an unknown workflow status', function () {
     LabOrder::factory()->create([
         'workflow_version' => LabOrder::WORKFLOW_V2,
-        'branch_id' => 1,
+        'branch_id' => labOpsBranch()->id,
         'status' => 'NOT_A_REAL_STATUS',
         'order_date' => now()->toDateString(),
     ]);

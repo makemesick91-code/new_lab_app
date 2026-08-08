@@ -29,7 +29,8 @@ function opV2Order(array $attrs = []): LabOrder
 {
     return LabOrder::factory()->create(array_merge([
         'workflow_version' => LabOrder::WORKFLOW_V2,
-        'branch_id' => 1,
+        // A real parent branch, not the hardcoded id 1 PostgreSQL rejects.
+        'branch_id' => labOpsBranch()->id,
         'order_date' => now()->toDateString(),
         'status' => LabWorkflowState::RECEIVED_AT_LAB,
     ], $attrs));
@@ -41,7 +42,8 @@ function opLog(LabOrder $order, string $new, $changedAt): void
         'lab_order_id' => $order->id,
         'old_status' => LabWorkflowState::RECEIVED_AT_LAB,
         'new_status' => $new,
-        'changed_by' => 1,
+        // changed_by is a NOT NULL FK to users; id 1 is not guaranteed to exist.
+        'changed_by' => labOpsActor()->id,
         'changed_at' => $changedAt,
     ]);
 }
@@ -70,7 +72,7 @@ it('counts orders received in the period and ignores legacy + out-of-period', fu
     opV2Order(['order_date' => now()->toDateString()]);
     opV2Order(['order_date' => now()->toDateString()]);
     opV2Order(['order_date' => now()->subYears(2)->toDateString()]); // out of month period
-    LabOrder::factory()->create(['workflow_version' => LabOrder::WORKFLOW_LEGACY, 'branch_id' => 1, 'order_date' => now()->toDateString()]);
+    LabOrder::factory()->create(['workflow_version' => LabOrder::WORKFLOW_LEGACY, 'branch_id' => labOpsBranch()->id, 'order_date' => now()->toDateString()]);
 
     expect(opAnalytics()['kpi']['orders_received'])->toBe(2);
 });
@@ -159,9 +161,9 @@ it('QC first-pass yield and rework rate use the first QC attempt', function () {
 
 it('internal vs external counts analysis decisions in period', function () {
     $i = opV2Order();
-    LabModelAnalysis::create(['lab_order_id' => $i->id, 'decision' => 'INTERNAL', 'reason' => 'test', 'analyzed_by' => 1, 'analyzed_at' => now()]);
+    LabModelAnalysis::create(['lab_order_id' => $i->id, 'decision' => 'INTERNAL', 'reason' => 'test', 'analyzed_by' => labOpsActor()->id, 'analyzed_at' => now()]);
     $e = opV2Order();
-    LabModelAnalysis::create(['lab_order_id' => $e->id, 'decision' => 'EXTERNAL', 'reason' => 'test', 'analyzed_by' => 1, 'analyzed_at' => now()]);
+    LabModelAnalysis::create(['lab_order_id' => $e->id, 'decision' => 'EXTERNAL', 'reason' => 'test', 'analyzed_by' => labOpsActor()->id, 'analyzed_at' => now()]);
 
     $ie = opAnalytics()['kpi']['internal_vs_external'];
 
@@ -177,7 +179,7 @@ it('external turnaround median comes from sent_at/returned_at', function () {
         'status' => 'RETURNED',
         'sent_at' => now()->subDays(4),
         'returned_at' => now(),
-        'created_by' => 1,
+        'created_by' => labOpsActor()->id,
     ]);
 
     expect(opAnalytics()['kpi']['external_turnaround']['median_days'])->toBeGreaterThanOrEqual(3.9);

@@ -84,7 +84,7 @@ it('branch operator cannot leak another branch via a forced branch filter', func
 
 it('exports a PII-free CSV with the same authorization and no KTP', function () use ($exportUrl) {
     $tech = Technician::factory()->create(['is_active' => true, 'name' => 'Teknisi CSV']);
-    $order = LabOrder::factory()->create(['workflow_version' => LabOrder::WORKFLOW_V2, 'branch_id' => 1, 'status' => LabWorkflowState::STEP_2_TEETH_SETUP, 'order_date' => now()->toDateString()]);
+    $order = LabOrder::factory()->create(['workflow_version' => LabOrder::WORKFLOW_V2, 'branch_id' => labOpsBranch()->id, 'status' => LabWorkflowState::STEP_2_TEETH_SETUP, 'order_date' => now()->toDateString()]);
     LabOrderAssignment::factory()->create(['lab_order_id' => $order->id, 'technician_id' => $tech->id, 'assigned_at' => now()]);
 
     $response = $this->actingAs(userWith(['view_lab_operational_analytics']))->get($exportUrl);
