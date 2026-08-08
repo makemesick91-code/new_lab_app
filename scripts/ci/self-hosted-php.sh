@@ -31,6 +31,13 @@
 # Usage:
 #   scripts/ci/self-hosted-php.sh php artisan test --filter=...
 #   scripts/ci/self-hosted-php.sh composer install --no-interaction
+#   scripts/ci/self-hosted-php.sh --print-runtime
+#
+# `--print-runtime` reports the RESOLVED runtime as key=value evidence and runs
+# nothing else. CI evidence must describe what actually executed: a previous
+# revision printed "engine=rootless podman" unconditionally, producing a run
+# whose own log read `container_engine=` (empty) while claiming Podman on a host
+# that has none. The mode is derived here so no caller has to assume it.
 #
 set -euo pipefail
 
@@ -110,6 +117,40 @@ resolve_mode() {
 }
 
 MODE="$(resolve_mode)"
+
+# Evidence-only mode: describe the resolved runtime, execute nothing. Emitted as
+# key=value so CI evidence, the step summary and tests all read the same facts.
+if [ "$1" = "--print-runtime" ]; then
+    case "$MODE" in
+        native)
+            echo "runtime_mode=native"
+            echo "container_engine=none"
+            echo "php_source=host"
+            echo "php_version=$(host_php_version || echo unknown)"
+            ;;
+        podman)
+            echo "runtime_mode=container"
+            echo "container_engine=podman"
+            echo "container_rootless=$(podman info --format '{{.Host.Security.Rootless}}' 2>/dev/null || echo unknown)"
+            echo "php_source=image"
+            echo "container_image=${CI_PHP_IMAGE}"
+            ;;
+        *)
+            # No runtime satisfies the contract. Report it and fail: an
+            # inconsistent runtime must never be described as usable.
+            echo "runtime_mode=unsatisfied"
+            echo "container_engine=none"
+            echo "php_source=none"
+            ;;
+    esac
+
+    if [ "$MODE" = "native" ] || [ "$MODE" = "podman" ]; then
+        exit 0
+    fi
+
+    echo "CICD-CTRL-3: no runtime satisfies the authoritative contract on this host." >&2
+    exit 1
+fi
 
 case "$MODE" in
     native)

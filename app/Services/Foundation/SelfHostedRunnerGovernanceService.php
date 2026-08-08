@@ -130,6 +130,16 @@ class SelfHostedRunnerGovernanceService
             ? $this->pass('CICDCTRL3-HEALTH-SCRIPT', 'Runner health script exists, fails fast, checks production isolation, and mutates nothing.')
             : $this->fail('CICDCTRL3-HEALTH-SCRIPT', 'Health script posture failed: '.implode('; ', $health['issues']).'.');
 
+        $pipeline = $this->scanner->pipelineExitPosture();
+        $checks[] = $pipeline['ok']
+            ? $this->pass('CICDCTRL3-PIPELINE-EXIT', 'Safety-critical steps propagate the producer exit status through their evidence pipe; a NO-GO health verdict fails the job.')
+            : $this->fail('CICDCTRL3-PIPELINE-EXIT', 'Pipeline exit posture failed: '.implode('; ', $pipeline['issues']).'.');
+
+        $evidence = $this->scanner->runtimeEvidencePosture();
+        $checks[] = $evidence['ok']
+            ? $this->pass('CICDCTRL3-RUNTIME-EVIDENCE', 'Runtime evidence is derived from the resolved runtime mode, never asserted as a fixed engine.')
+            : $this->fail('CICDCTRL3-RUNTIME-EVIDENCE', 'Runtime evidence posture failed: '.implode('; ', $evidence['issues']).'.');
+
         $runtime = $this->scanner->ciRuntimePosture();
         $checks[] = $runtime['ok']
             ? $this->pass('CICDCTRL3-CI-RUNTIME', 'Authoritative CI runtime is a digest-pinned image executed through rootless Podman, with the full extension set.')
@@ -158,6 +168,9 @@ class SelfHostedRunnerGovernanceService
             'workflow_ok' => $workflow['ok'],
             'deploy_isolation_ok' => $deploy['ok'],
             'health_script_ok' => $health['ok'],
+            'pipeline_exit_ok' => $pipeline['ok'],
+            'pipeline_exit_unprotected' => $pipeline['unprotected'],
+            'runtime_evidence_ok' => $evidence['ok'],
             'ci_runtime_ok' => $runtime['ok'],
             'ci_runtime_digest_pinned' => $runtime['digest_pinned'],
             'ci_runtime_image' => (string) config('ci_runner.ci_runtime.image', ''),

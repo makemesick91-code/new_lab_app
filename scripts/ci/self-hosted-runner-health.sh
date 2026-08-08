@@ -36,11 +36,31 @@ MIN_FREE_DISK_GB="${CI_RUNNER_MIN_FREE_DISK_GB:-15}"
 MIN_AVAILABLE_RAM_MB="${CI_RUNNER_MIN_AVAILABLE_RAM_MB:-2048}"
 REQUIRED_PHP_VERSION="${CI_RUNNER_PHP_VERSION:-8.3}"
 REQUIRED_EXTENSIONS="${CI_RUNTIME_REQUIRED_EXTENSIONS:-dom curl libxml mbstring zip pcntl pdo pdo_pgsql bcmath gd exif}"
-CI_DB_NAME="${CI_RUNNER_DB_NAME:-daengtisia_ci}"
-CI_DB_HOST="${CI_RUNNER_DB_HOST:-127.0.0.1}"
-CI_DB_PORT="${CI_RUNNER_DB_PORT:-5433}"
+# CI database connection contract.
+#
+# ONE contract, three tiers of precedence:
+#   1. CI_RUNNER_DB_* — explicit override, for a host whose CI database is not
+#      the one the job connects to (e.g. a pinned postgres:16 container on 5433
+#      when the host's own PostgreSQL is a different major).
+#   2. DB_*           — what the JOB actually connects to. This is the default
+#      because the health check must verify the database the tests will really
+#      use; verifying a different endpoint proves nothing.
+#   3. canonical defaults.
+#
+# A previous revision defaulted the port to 5433 (one host's container layout)
+# while the workflow exposed DB_PORT=5432. The probe therefore hit a closed
+# port, `ci_database` FAILed, and — critically — the PostgreSQL major-version
+# equivalence check never executed at all. That check exists to prevent the
+# exact PG-major divergence that once produced self-hosted-only failures, so it
+# must never be skipped by a defaulting mismatch.
+CI_DB_NAME="${CI_RUNNER_DB_NAME:-${DB_DATABASE:-daengtisia_ci}}"
+CI_DB_HOST="${CI_RUNNER_DB_HOST:-${DB_HOST:-127.0.0.1}}"
+CI_DB_PORT="${CI_RUNNER_DB_PORT:-${DB_PORT:-5432}}"
+CI_DB_USER="${CI_RUNNER_DB_USER:-${DB_USERNAME:-daengtisia_ci_user}}"
+# The required major is a POLICY constant pinned to the authoritative gate's
+# service image — deliberately NOT derived from the environment, so a
+# misconfigured runner cannot lower the bar it is being measured against.
 CI_DB_MAJOR="${CI_RUNNER_DB_MAJOR:-16}"
-CI_DB_USER="${CI_RUNNER_DB_USER:-daengtisia_ci_user}"
 CI_PHP_IMAGE="${CI_PHP_IMAGE:-localhost/daengtisia-ci-php:8.3}"
 
 # Groups that are privileged or outright root-equivalent. The CI runtime user

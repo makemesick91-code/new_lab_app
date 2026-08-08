@@ -394,15 +394,38 @@ jobs:
         with:
           clean: true
 
+      # CICD-CTRL-3A strict exit propagation. This step used to be
+      # `health.sh | tee`, and a pipeline reports the status of its LAST command:
+      # the health script could print `DECISION: NO-GO` and exit 1 while `tee`
+      # exited 0, so the step went green and the job continued to migrations and
+      # Pest on an unverified runner. That defeated the entire fail-closed claim.
+      #
+      # `shell: bash` runs with `-eo pipefail`; the producer status is captured
+      # explicitly via PIPESTATUS so the evidence is still written to the step
+      # summary before the status propagates — the same pattern the critical
+      # test steps already use.
       - name: Runner health check (CICD-CTRL-3)
+        shell: bash
         run: |
           chmod +x scripts/ci/self-hosted-runner-health.sh scripts/ci/self-hosted-php.sh
+          set +e
           bash scripts/ci/self-hosted-runner-health.sh 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          HEALTH_STATUS="${PIPESTATUS[0]}"
+          set -e
+          echo "runner_health_exit_status=${HEALTH_STATUS}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$HEALTH_STATUS" -ne 0 ]; then
+            echo "::error::Runner health check returned NO-GO (exit ${HEALTH_STATUS}); refusing to run migrations or tests on this runner."
+          fi
+          exit "$HEALTH_STATUS"
 
-      # Equivalence proof: the authoritative gate pins PHP 8.3, and the host
-      # here ships 8.5, so the runtime MUST come from the pinned image. This
-      # step fails the job rather than let a divergent PHP run the suite.
+      # Equivalence proof: the authoritative gate pins PHP 8.3, and the runtime
+      # MUST provide exactly that. WHERE it comes from is a property of the host
+      # — a host shipping 8.3 serves it natively, a host that cannot must supply
+      # the pinned image — so the evidence below reports the RESOLVED mode
+      # rather than asserting one. This step fails the job rather than let a
+      # divergent PHP run the suite.
       - name: Assert authoritative PHP runtime (CICD-CTRL-3)
+        shell: bash
         run: |
           ACTUAL="$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')"
           FULL="$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_VERSION;')"
@@ -415,13 +438,14 @@ jobs:
           {
             echo "CICD-CTRL-3 runtime equivalence"
             echo "required=${REQUIRED_PHP} actual=${ACTUAL} (${FULL})"
-            echo "engine=rootless podman, image=${CI_PHP_IMAGE}"
+            bash scripts/ci/self-hosted-php.sh --print-runtime
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
       # CICD-CTRL-3 self-hosted smoke evidence. Prints the acceptance proof
       # points into the job log and step summary so a run can be audited after
       # the fact. Prints no secret and no database credential.
       - name: Self-hosted runner smoke evidence (CICD-CTRL-3)
+        shell: bash
         run: |
           {
             echo "CICD-CTRL-3 self-hosted smoke"
@@ -429,12 +453,17 @@ jobs:
             echo "runner_user=$(id -un) uid=$(id -u)"
             echo "is_root=$([ "$(id -u)" -eq 0 ] && echo yes || echo no)"
             echo "groups=$(id -nG)"
-            echo "container_engine=$(podman --version) rootless=$(podman info --format '{{.Host.Security.Rootless}}')"
+            # Runtime facts come from the wrapper's RESOLVED mode. Naming a
+            # container engine unconditionally produced evidence that claimed
+            # "rootless podman" on a host that has no Podman and ran natively.
+            bash scripts/ci/self-hosted-php.sh --print-runtime
             echo "ci_php=$(bash scripts/ci/self-hosted-php.sh php -r 'echo PHP_VERSION;')"
             echo "ci_composer=$(bash scripts/ci/self-hosted-php.sh composer --version --no-interaction 2>/dev/null | head -1)"
             echo "ci_pdfinfo=$(bash scripts/ci/self-hosted-php.sh sh -c 'pdfinfo -v 2>&1 | head -1')"
             echo "host_node=$(node --version) host_npm=$(npm --version)"
-            echo "postgres_local=$(psql --version)"
+            # Client version only — the SERVER major is verified by the health
+            # check, which is the gate that protects result equivalence.
+            echo "psql_client=$(psql --version)"
           } | tee -a "$GITHUB_STEP_SUMMARY"
           # Must be false: the docker group is root-equivalent.
           if id -nG | tr ' ' '\n' | grep -qx docker; then

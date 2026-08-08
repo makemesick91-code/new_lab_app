@@ -215,6 +215,136 @@ class SelfHostedRunnerScanner
      *
      * @return array{ok: bool, exists: bool, issues: list<string>}
      */
+    /**
+     * Safety-critical steps must not let a pipe swallow a failure.
+     *
+     * `producer | tee evidence` reports tee's status, so a producer that exits
+     * non-zero renders as a green step. The runner health check shipped that
+     * way and a real run proved it: `DECISION: NO-GO`, exit 1, step success,
+     * migrations and Pest executed anyway.
+     *
+     * A step is considered protected when it declares `shell: bash` (adding
+     * `-o pipefail`) or captures PIPESTATUS explicitly. Scoped to the configured
+     * safety-critical steps so this reports a real gating defect rather than
+     * every incidental log pipe in the workflow.
+     *
+     * @return array{ok: bool, issues: list<string>, unprotected: list<string>, checked: list<string>}
+     */
+    public function pipelineExitPosture(): array
+    {
+        $issues = [];
+        $unprotected = [];
+        $checked = [];
+
+        $workflow = $this->readFile('ci_workflow');
+        if ($workflow === null) {
+            return ['ok' => false, 'issues' => ['CI workflow file is missing'], 'unprotected' => [], 'checked' => []];
+        }
+
+        foreach ($this->workflowSteps($workflow) as $step) {
+            if (! in_array($step['name'], (array) config('ci_runner.strict_pipeline_steps', []), true)) {
+                continue;
+            }
+
+            $checked[] = $step['name'];
+
+            if (! str_contains($step['body'], '| tee')) {
+                // Nothing piped, nothing to mask.
+                continue;
+            }
+
+            $declaresBashShell = preg_match('/^\s*shell:\s*bash\s*$/m', $step['body']) === 1;
+            $capturesPipeStatus = str_contains($step['body'], 'PIPESTATUS');
+
+            if (! $declaresBashShell && ! $capturesPipeStatus) {
+                $unprotected[] = $step['name'];
+                $issues[] = "step '{$step['name']}' pipes into tee without propagating the producer exit status; "
+                    .'declare `shell: bash` or capture PIPESTATUS';
+            }
+        }
+
+        foreach ((array) config('ci_runner.strict_pipeline_steps', []) as $required) {
+            if (is_string($required) && $required !== '' && ! in_array($required, $checked, true)) {
+                $issues[] = "strict-pipeline step '{$required}' was not found in the workflow";
+            }
+        }
+
+        return ['ok' => $issues === [], 'issues' => $issues, 'unprotected' => $unprotected, 'checked' => $checked];
+    }
+
+    /**
+     * Runtime evidence must be derived from the resolved mode, never asserted.
+     *
+     * @return array{ok: bool, issues: list<string>, forbidden_present: list<string>}
+     */
+    public function runtimeEvidencePosture(): array
+    {
+        $issues = [];
+        $forbiddenPresent = [];
+
+        $workflow = $this->readFile('ci_workflow');
+        if ($workflow === null) {
+            return ['ok' => false, 'issues' => ['CI workflow file is missing'], 'forbidden_present' => []];
+        }
+
+        $contract = (array) config('ci_runner.runtime_evidence', []);
+
+        $required = (string) ($contract['required_marker'] ?? '');
+        if ($required !== '' && ! str_contains($workflow, $required)) {
+            $issues[] = "runtime evidence must be derived from the wrapper via '{$required}'";
+        }
+
+        foreach ((array) ($contract['forbidden_markers'] ?? []) as $marker) {
+            if (is_string($marker) && $marker !== '' && str_contains($workflow, $marker)) {
+                $forbiddenPresent[] = $marker;
+                $issues[] = "runtime evidence asserts a fixed engine: '{$marker}'";
+            }
+        }
+
+        // The wrapper has to be able to answer the question the workflow asks.
+        $wrapper = $this->readFile('ci_runtime_wrapper');
+        if ($wrapper === null) {
+            $issues[] = 'the CI runtime wrapper is missing';
+        } elseif ($required !== '' && ! str_contains($wrapper, $required)) {
+            $issues[] = "the CI runtime wrapper does not implement '{$required}'";
+        }
+
+        return ['ok' => $issues === [], 'issues' => $issues, 'forbidden_present' => $forbiddenPresent];
+    }
+
+    /**
+     * Split a workflow into its named steps.
+     *
+     * @return list<array{name: string, body: string}>
+     */
+    private function workflowSteps(string $workflow): array
+    {
+        $lines = preg_split('/\r?\n/', $workflow) ?: [];
+        $steps = [];
+        $current = null;
+
+        foreach ($lines as $line) {
+            if (preg_match('/^\s+- name:\s*(.+?)\s*$/', $line, $m) === 1) {
+                if ($current !== null) {
+                    $steps[] = $current;
+                }
+                $current = ['name' => trim($m[1]), 'body' => ''];
+
+                continue;
+            }
+
+            if ($current !== null) {
+                $current['body'] .= $line."\n";
+            }
+        }
+
+        if ($current !== null) {
+            $steps[] = $current;
+        }
+
+        return $steps;
+    }
+
     public function healthScriptPosture(): array
     {
         $issues = [];

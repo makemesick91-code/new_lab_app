@@ -35,6 +35,7 @@ return [
         'deploy_workflow' => '.github/workflows/deploy-vps.yml',
         'runner_health_script' => 'scripts/ci/self-hosted-runner-health.sh',
         'classifier_script' => 'scripts/ci/resolve-gates.sh',
+        'ci_runtime_wrapper' => 'scripts/ci/self-hosted-php.sh',
     ],
 
     // Identity of the dedicated runner. Registration uses exactly this name so
@@ -116,6 +117,49 @@ return [
     'forbidden_workflow_markers' => [
         'runs-on: self-hosted',
         'paths-ignore',
+    ],
+
+    /*
+     * Steps whose exit status MUST survive a pipe.
+     *
+     * A shell pipeline reports the status of its LAST command, so
+     * `producer | tee evidence` reports tee's success and discards the
+     * producer's failure. The runner health check was written that way: it
+     * printed `DECISION: NO-GO`, exited 1, and the step still went green —
+     * migrations and Pest then ran on a runner that had just failed its own
+     * safety check.
+     *
+     * Every step named here writes evidence through a pipe AND gates something
+     * safety-critical, so each must either declare `shell: bash` (which adds
+     * `-o pipefail`) or capture PIPESTATUS explicitly. Evidence is never
+     * dropped to work around this — it is preserved and the status propagated.
+     */
+    'strict_pipeline_steps' => [
+        'Runner health check (CICD-CTRL-3)',
+        'Assert authoritative PHP runtime (CICD-CTRL-3)',
+        'Self-hosted runner smoke evidence (CICD-CTRL-3)',
+        'Run critical regression tests',
+    ],
+
+    /*
+     * Runtime evidence must describe what actually executed.
+     *
+     * The self-hosted evidence used to name a container engine unconditionally,
+     * so a run on a host with no Podman — executing the native runtime — still
+     * reported "engine=rootless podman" while its own smoke line read
+     * `container_engine=` (empty). Evidence that contradicts itself is worse
+     * than no evidence, because it gets quoted in closure reports.
+     */
+    'runtime_evidence' => [
+        // The wrapper resolves and reports the mode; the workflow must ask it
+        // rather than assert a mode of its own.
+        'required_marker' => '--print-runtime',
+
+        // Claims that assert one specific engine unconditionally.
+        'forbidden_markers' => [
+            'engine=rootless podman',
+            'container_engine=$(podman --version)',
+        ],
     ],
 
     /*
