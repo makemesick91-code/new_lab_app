@@ -162,9 +162,14 @@ if [ "$EFFECTIVE_MODE" = "native" ]; then
         record FAIL "ci_runtime_php" "Host provides PHP ${HOST_PHP_VERSION:-none}; the authoritative gate requires ${REQUIRED_PHP_VERSION}."
     fi
 
+    # Captured once and matched without a pipeline — same SIGPIPE race as the
+    # wrapper's parity assertion (see scripts/ci/self-hosted-php.sh). Here it
+    # would report a false NO-GO and take the runner out of service for an
+    # extension that is actually installed.
     MISSING_EXTENSIONS=""
+    PHP_MODULES="$(php -m 2>/dev/null || true)"
     for extension in $REQUIRED_EXTENSIONS; do
-        php -m 2>/dev/null | grep -qix "$extension" || MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${extension}"
+        grep -qix "$extension" <<<"$PHP_MODULES" || MISSING_EXTENSIONS="${MISSING_EXTENSIONS} ${extension}"
     done
     if [ -z "$MISSING_EXTENSIONS" ]; then
         record PASS "ci_runtime_extensions" "All authoritative PHP extensions are present."
@@ -197,7 +202,11 @@ fi
 CURRENT_GROUPS="$(id -nG "$CURRENT_USER" 2>/dev/null | tr ' ' '\n' || true)"
 
 for group in $FORBIDDEN_GROUPS; do
-    if printf '%s\n' "$CURRENT_GROUPS" | grep -qx -- "$group"; then
+    # Here-string, not a pipeline: the same early-exit SIGPIPE race would make a
+    # spurious pipeline failure read as "not in the group" and record PASS. This
+    # check decides whether the runtime user holds root-equivalent membership,
+    # so its race must not fail open.
+    if grep -qx -- "$group" <<<"$CURRENT_GROUPS"; then
         record FAIL "group_${group}" "${CURRENT_USER} is in the '${group}' group, which is privileged/root-equivalent and is forbidden for the CI runtime user."
     else
         record PASS "group_${group}" "${CURRENT_USER} is not in the '${group}' group."
@@ -304,7 +313,12 @@ esac
 
 # PostgreSQL must not be published to the network.
 if have ss; then
-    if ss -tulpn 2>/dev/null | grep -E ':5432\b' | grep -qvE '127\.0\.0\.1|\[?::1\]?'; then
+    # Listener list captured once; the second grep is a here-string so an
+    # early exit cannot SIGPIPE the first and read as "not exposed".
+    # The emptiness test comes first: a here-string of "" still presents one
+    # empty line, which `grep -qv` would match and read as "exposed".
+    POSTGRES_LISTENERS="$(ss -tulpn 2>/dev/null | grep -E ':5432\b' || true)"
+    if [ -n "$POSTGRES_LISTENERS" ] && grep -qvE '127\.0\.0\.1|\[?::1\]?' <<<"$POSTGRES_LISTENERS"; then
         record FAIL "postgres_exposure" "PostgreSQL is listening on a non-loopback address."
     else
         record PASS "postgres_exposure" "PostgreSQL is not exposed beyond loopback."

@@ -69,9 +69,19 @@ assert_native_parity() {
         return 1
     fi
 
-    local missing=""
+    # The module list is captured ONCE and matched without a pipeline.
+    #
+    # `php -m | grep -qix "$ext"` looks equivalent but races: `grep -q` exits at
+    # the first match, `php -m` then dies of SIGPIPE, and `set -o pipefail`
+    # reports the pipeline as failed even though the extension WAS found — so a
+    # present extension is recorded as missing. Measured on the CI host, `gd`
+    # (14th of 53 modules, early enough for grep to exit first) was falsely
+    # reported missing in 1 of 40 trials; across 11 extensions that failed a
+    # required gate. A here-string has no pipeline and no such race.
+    local modules missing=""
+    modules="$(php -m)"
     for extension in $REQUIRED_EXTENSIONS; do
-        php -m | grep -qix "$extension" || missing="${missing} ${extension}"
+        grep -qix "$extension" <<<"$modules" || missing="${missing} ${extension}"
     done
     if [ -n "$missing" ]; then
         echo "CICD-CTRL-3: host PHP is missing required extension(s):${missing}" >&2
