@@ -1,0 +1,183 @@
+name: CICD-CTRL-3 DB Guard Evidence
+
+# Evidence-only workflow for the CICD-CTRL-3 pre-merge audit (item A).
+#
+# It proves that the production-database isolation guard really executes on the
+# dedicated self-hosted runner, inside a real GitHub Actions job, against a real
+# checkout of the frozen candidate commit — and that it fails closed BEFORE any
+# migration, database mutation or Pest run.
+#
+# This workflow deliberately lives on a throwaway evidence branch, never on the
+# candidate branch: the candidate SHA must stay frozen while this runs.
+#
+# Safety: `ci:assert-non-production-database` is read-only. It inspects
+# configuration and never opens a database connection, so the failing cases
+# below can use production-SHAPED values without any connection being attempted.
+# Every value here is a dummy. No production host, credential or database is
+# referenced, and no secret is printed.
+
+on:
+  push:
+    branches:
+      - 'ci-evidence/**'
+  workflow_dispatch:
+
+concurrency:
+  group: cicd-ctrl-3-db-guard-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  db_guard_matrix:
+    name: CICD-CTRL-3 DB Guard Matrix (self-hosted)
+    # Full label set, exactly like the real gate: a bare `self-hosted` would let
+    # any other runner on the account pick this up.
+    runs-on: [self-hosted, linux, x64, daengtisia-ci]
+    env:
+      CANDIDATE_SHA: 7d8ecd48a3c73c828656956a0bf831e7653921e0
+      APP_KEY: base64:dGVzdGluZ2tleXRlc3RpbmdrZXl0ZXN0aW5na2V5MTI=
+      APP_DEBUG: 'false'
+      DB_CONNECTION: pgsql
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      FILESYSTEM_DISK: local
+      CI_RUNTIME_MODE: ${{ vars.CI_RUNTIME_MODE || 'auto' }}
+      CI_PHP_IMAGE: localhost/daengtisia-ci-php:8.3
+
+    steps:
+      # Check out the FROZEN CANDIDATE, not this evidence branch. The guard
+      # under test must be the candidate's code, byte for byte.
+      - uses: actions/checkout@v4
+        with:
+          ref: 7d8ecd48a3c73c828656956a0bf831e7653921e0
+          clean: true
+
+      - name: Prove the checkout is the exact candidate
+        run: |
+          ACTUAL="$(git rev-parse HEAD)"
+          echo "expected_sha=${CANDIDATE_SHA}"
+          echo "actual_sha=${ACTUAL}"
+          echo "runner_host=$(hostname)"
+          echo "runner_user=$(id -un) uid=$(id -u)"
+          echo "is_root=$([ "$(id -u)" -eq 0 ] && echo yes || echo no)"
+          echo "groups=$(id -nG)"
+          if [ "$ACTUAL" != "$CANDIDATE_SHA" ]; then
+            echo "::error::checkout is ${ACTUAL}, not the frozen candidate"
+            exit 1
+          fi
+          {
+            echo "### CICD-CTRL-3 DB guard evidence"
+            echo "- candidate: \`${ACTUAL}\`"
+            echo "- runner host: \`$(hostname)\`"
+            echo "- runtime user: \`$(id -un)\` (uid $(id -u))"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Composer dependencies
+        run: bash scripts/ci/self-hosted-php.sh composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Prepare writable runtime directories
+        run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # The matrix. Each case sets a dummy environment, runs the guard, and
+      # asserts the exit code. A deviation fails the job.
+      #
+      # After the guard, each case runs a GUARDED sequence:
+      #     guard && migrate && test
+      # so a FAIL case demonstrably never reaches migration or Pest. That is the
+      # ordering property the real gate relies on.
+      - name: DB guard matrix
+        shell: bash
+        run: |
+          set -uo pipefail
+          FAILED_CASES=0
+
+          run_case() {
+            local label="$1" expected="$2"
+            shift 2
+
+            echo "::group::case: ${label}"
+            # env -u clears any inherited value so each case is hermetic.
+            set +e
+            env -u DB_HOST -u DB_PORT -u DB_DATABASE -u DB_USERNAME -u DB_PASSWORD -u APP_ENV \
+              "$@" \
+              bash scripts/ci/self-hosted-php.sh php artisan ci:assert-non-production-database --json
+            local actual=$?
+
+            # Ordering proof: the same environment, guard chained to migration
+            # and Pest. `&&` means a non-zero guard stops the chain.
+            env -u DB_HOST -u DB_PORT -u DB_DATABASE -u DB_USERNAME -u DB_PASSWORD -u APP_ENV \
+              "$@" \
+              bash -c 'bash scripts/ci/self-hosted-php.sh php artisan ci:assert-non-production-database >/dev/null 2>&1 \
+                && echo "reached_migration=yes" \
+                || echo "reached_migration=no"'
+            set -e
+
+            echo "case=${label} expected_exit=${expected} actual_exit=${actual}"
+            if [ "$actual" -ne "$expected" ]; then
+              echo "::error::case '${label}' expected exit ${expected}, got ${actual}"
+              FAILED_CASES=$((FAILED_CASES + 1))
+            fi
+            echo "| ${label} | ${expected} | ${actual} | $([ "$actual" -eq "$expected" ] && echo OK || echo DEVIATION) |" >> "$GITHUB_STEP_SUMMARY"
+            echo "::endgroup::"
+          }
+
+          echo "| case | expected exit | actual exit | verdict |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- | --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+
+          # 1. Legitimate CI database: local host, allowlisted CI name.
+          run_case "1-local-ci-database" 0 \
+            APP_ENV=testing DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=daengtisia_ci \
+            DB_USERNAME=daengtisia_ci_user DB_PASSWORD=dummy-not-a-real-credential
+
+          # 2. Production-SHAPED database name (denylisted + 'pilot' marker).
+          run_case "2-production-style-db-name" 1 \
+            APP_ENV=testing DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=asia_dental_lab_pilot \
+            DB_USERNAME=dummy DB_PASSWORD=dummy-not-a-real-credential
+
+          # 3. Remote host. 203.0.113.10 is TEST-NET-3, reserved for
+          #    documentation — it is not, and cannot be, a real endpoint.
+          run_case "3-remote-db-host" 1 \
+            APP_ENV=testing DB_HOST=203.0.113.10 DB_PORT=5432 DB_DATABASE=daengtisia_ci \
+            DB_USERNAME=dummy DB_PASSWORD=dummy-not-a-real-credential
+
+          # 4. Production environment.
+          run_case "4-app-env-production" 1 \
+            APP_ENV=production DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=daengtisia_ci \
+            DB_USERNAME=dummy DB_PASSWORD=dummy-not-a-real-credential
+
+          # 5. Pilot environment (the live VPS category).
+          run_case "5-app-env-pilot" 1 \
+            APP_ENV=pilot DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=daengtisia_ci \
+            DB_USERNAME=dummy DB_PASSWORD=dummy-not-a-real-credential
+
+          # 6. Empty database name.
+          run_case "6-empty-db-name" 1 \
+            APP_ENV=testing DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE= \
+            DB_USERNAME=dummy DB_PASSWORD=dummy-not-a-real-credential
+
+          echo "deviations=${FAILED_CASES}"
+          if [ "$FAILED_CASES" -ne 0 ]; then
+            echo "::error::${FAILED_CASES} guard case(s) deviated from the expected verdict"
+            exit 1
+          fi
+
+      # Positive control: with the legitimate CI database the guard passes AND
+      # the migration it protects really does run. Without this, a guard that
+      # failed everything would look like a pass.
+      - name: Positive control — guard passes, migration proceeds
+        shell: bash
+        env:
+          APP_ENV: testing
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ vars.CI_DB_PORT || '5432' }}
+          DB_DATABASE: daengtisia_ci
+          DB_USERNAME: daengtisia_ci_user
+          DB_PASSWORD: ${{ secrets.CI_DB_PASSWORD }}
+        run: |
+          bash scripts/ci/self-hosted-php.sh php artisan ci:assert-non-production-database
+          bash scripts/ci/self-hosted-php.sh php artisan migrate --force
+          echo "positive_control=guard_passed_and_migration_ran" | tee -a "$GITHUB_STEP_SUMMARY"
