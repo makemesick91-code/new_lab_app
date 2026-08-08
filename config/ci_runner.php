@@ -175,10 +175,28 @@ return [
         // rather than assert a mode of its own.
         'required_marker' => '--print-runtime',
 
-        // Claims that assert one specific engine unconditionally.
+        /*
+         * Claims that assert one specific engine unconditionally.
+         *
+         * These ban HARD-CODED engine claims, not legitimate resolved output.
+         * The resolver emits `container_engine=podman` for a real container-mode
+         * runner and that must keep working; what is forbidden is a literal
+         * baked into the workflow, which stays fixed while the runtime changes
+         * underneath it.
+         *
+         * CICD-CTRL-3C adds the third such literal. CICD-CTRL-3A derived the
+         * smoke and PHP-assertion steps from the resolver and banned the two
+         * markers below, but the NSF-R011 evidence-summary step still asserted
+         * an engine and image of its own, and none of the existing markers
+         * matched its wording. It shipped a self-hosted artifact claiming a
+         * container runtime on a host with no container engine, contradicting
+         * the same job's log. The literal is assembled here rather than written
+         * out so this registry does not itself become a match for the scan.
+         */
         'forbidden_markers' => [
             'engine=rootless podman',
             'container_engine=$(podman --version)',
+            'runtime='.'rootless-podman',
         ],
     ],
 

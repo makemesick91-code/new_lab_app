@@ -523,6 +523,16 @@ jobs:
         run: bash scripts/ci/self-hosted-php.sh bash scripts/ci/foundation-evidence-gates.sh --critical-only
 
       - name: Write NSF-R011 critical evidence summary
+        # CICD-CTRL-3C: the runtime facts in this artifact are DERIVED from the
+        # canonical resolver, never asserted. This step used to name a container
+        # engine and image unconditionally, so on a host that has none — and ran
+        # the host PHP directly — the uploaded artifact contradicted its own job
+        # log, which reported the native mode correctly two steps earlier. The
+        # artifact is what gets quoted in closure reports, so it is the one that
+        # must not lie. The resolver is the same one the health check, the PHP
+        # assertion and the smoke evidence already use, so all four agree by
+        # construction and this stays correct on a future container-mode runner.
+        shell: bash
         run: |
           {
             echo "NSF-R011 Critical Regression Evidence Gate"
@@ -532,8 +542,8 @@ jobs:
             echo "commit=${{ github.sha }}"
             echo "gate=critical_test_gate"
             echo "runner=self-hosted/daengtisia-ci"
-            echo "runtime=rootless-podman ${CI_PHP_IMAGE}"
-            echo "php=${REQUIRED_PHP}"
+            bash scripts/ci/self-hosted-php.sh --print-runtime
+            echo "php_required=${REQUIRED_PHP}"
             echo "result=passed"
           } > storage/ci-evidence/nsf-r011-critical-tests.txt
 
