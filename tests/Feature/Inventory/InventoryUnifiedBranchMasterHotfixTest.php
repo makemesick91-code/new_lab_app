@@ -36,6 +36,7 @@ use App\Modules\Inventory\Requests\InventoryAnalyticsFilterRequest;
 use App\Modules\Inventory\Requests\InventoryReportFilterRequest;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
+use Tests\Support\Database\SchemaFacts;
 
 /**
  * The forbidden, module-specific branch master tables that must never exist.
@@ -134,21 +135,21 @@ it('no migration ever creates a module-specific branch master table', function (
 });
 
 it('every branch-scoped inventory table has a branch_id foreign key to mst_branches', function () {
-    if (DB::getDriverName() !== 'sqlite') {
-        $this->markTestSkipped('Foreign-key introspection assertion targets the sqlite test connection.');
-    }
-
+    // CICD-FIX-4 — this assertion used raw `PRAGMA foreign_key_list()` and so
+    // skipped itself on every non-SQLite driver, which meant the branch-master
+    // foreign-key contract was NEVER verified on the authoritative PostgreSQL
+    // connection. It now reads through the portable SchemaFacts introspection
+    // (CICD-FIX-2), so the same contract is enforced on both drivers.
     foreach (INVENTORY_BRANCH_SCOPED_TABLES as $table) {
         expect(DB::getSchemaBuilder()->hasTable($table))->toBeTrue("Expected inventory table [{$table}] to exist.");
         expect(DB::getSchemaBuilder()->hasColumn($table, 'branch_id'))
             ->toBeTrue("Inventory table [{$table}] must carry a branch_id column.");
 
-        $foreignKeys = collect(DB::select("PRAGMA foreign_key_list('{$table}')"));
-        $branchForeignKey = $foreignKeys->firstWhere('from', 'branch_id');
+        $branchForeignKeyTarget = SchemaFacts::foreignKeyTargetFor($table, 'branch_id');
 
-        expect($branchForeignKey)->not->toBeNull("Inventory table [{$table}] must declare a foreign key on branch_id.");
-        expect($branchForeignKey->table)
-            ->toBe(UNIFIED_BRANCH_MASTER_TABLE, "Inventory table [{$table}].branch_id must reference mst_branches, got [{$branchForeignKey->table}].");
+        expect($branchForeignKeyTarget)->not->toBeNull("Inventory table [{$table}] must declare a foreign key on branch_id.");
+        expect($branchForeignKeyTarget)
+            ->toBe(UNIFIED_BRANCH_MASTER_TABLE, "Inventory table [{$table}].branch_id must reference mst_branches, got [{$branchForeignKeyTarget}].");
     }
 });
 

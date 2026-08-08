@@ -1,25 +1,26 @@
-# Active sprint manifest — LEGACY-RME-PDF-1A
+# Active sprint manifest — CICD-CTRL-3
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-1A
-type: MODULE_SPRINT
-module: LegacyRme
-title: "Legacy RME PDF archive foundation — schema, permissions, policies and date rules (feature flag OFF; no upload/publish runtime, no HTTP surface)"
+id: CICD-CTRL-3
+type: INFRA_RELEASE
+module: Cicd
+title: "Dedicated self-hosted GitHub Actions runner — hybrid CI routing, production isolation guard, explicit fallback (runner_mode defaults to github-hosted; self-hosted path inert until an operator opts in)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new bounded context: models, repositories, date resolver + rule service, audit facade, feature guard
-schema_change: true             # 4 additive migrations (2 staging + 2 archive tables); no native RME table altered
-frontend_change: false          # foundation only — no route, no controller, no Blade view in 1A
-security_impact: true           # 5 new permissions, 2 policies, fail-closed branch scope, PII-free audit payload policy
-branch_isolation_impact: true   # legacy rows scoped server-side from BranchContext / the RME-enabled branch set; origin branch is provenance, never authorization
+runtime_change: true            # new artisan guard command, posture scanner, governance service — CI-facing only, no product runtime path
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
+security_impact: true           # production database isolation guard, untrusted-fork routing, runner production-material isolation
+branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true
-browser_required: false         # no UI surface ships in this sprint
+deploy_required: false          # CI-only change; nothing to deploy to the VPS
+browser_required: false         # no UI surface
 
 test_profiles:
-  - rme
-  - access_control
+  - cicd
   - security
 
-go_tag: legacy-rme-pdf-1a-schema-permission-date-rules-go
+# No go_tag yet: a GO tag requires a registered, online runner that actually
+# executed a heavy CI job. See docs/sprints/cicd-ctrl-3-dedicated-self-hosted-ci-runner.md §7.
+go_tag: null

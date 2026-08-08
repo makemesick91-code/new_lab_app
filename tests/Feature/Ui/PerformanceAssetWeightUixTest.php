@@ -96,8 +96,18 @@ it('keeps the built asset bundle within the weight budget when built', function 
 });
 
 it('passes the UIX-18 performance/asset rules in the UI governance check', function () {
-    $exit = Artisan::call('architecture:ui-governance-check', ['--strict' => true]);
+    // Assert on the rule channels (errors/warnings), not on raw output. The
+    // command also emits an environment advisory naming UIX-18 when assets are
+    // not built here — that is the same environment-scoped condition the budget
+    // test above skips on, not a rule violation, so a raw substring match would
+    // make this test depend on whether `npm run build` happened to have run.
+    $exit = Artisan::call('architecture:ui-governance-check', ['--json' => true, '--strict' => true]);
+    $report = json_decode(Artisan::output(), true);
 
     expect($exit)->toBe(0);
-    expect(Artisan::output())->not->toContain('UIX-18');
+    expect($report['decision'])->toBe('GO');
+
+    foreach ([...$report['errors'], ...$report['warnings']] as $entry) {
+        expect($entry)->not->toContain('UIX-18');
+    }
 });

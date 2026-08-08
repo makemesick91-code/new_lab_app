@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\User;
 use App\Modules\Satusehat\Models\SatusehatRolloutWave;
 use App\Modules\Satusehat\Models\SatusehatWaveBranchMembership;
 use App\Modules\Satusehat\Services\Pilot\SatusehatBranchReadinessProfileService;

@@ -12,6 +12,15 @@ use Spatie\Permission\Models\Permission;
  */
 class PermissionRepository implements PermissionRepositoryInterface
 {
+    /**
+     * Alphabetical, paginated permission listing.
+     *
+     * CICD-FIX-4 — `name` is NOT unique on its own: the permissions table is
+     * unique on (name, guard_name), so two rows can legitimately share a name.
+     * Ordering by `name` alone therefore leaves the relative order of those rows
+     * undefined, and a row could be served on two pages or on none. `id` is the
+     * stable unique tie-breaker; the business ordering stays alphabetical.
+     */
     public function paginate(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $search = $filters['search'] ?? null;
@@ -20,6 +29,7 @@ class PermissionRepository implements PermissionRepositoryInterface
             ->withCount('roles')
             ->when($search, fn ($query, $search) => $query->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($search).'%']))
             ->orderBy('name')
+            ->orderBy('id')
             ->paginate($perPage)
             ->withQueryString();
     }

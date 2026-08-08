@@ -1,0 +1,79 @@
+# CICD-CTRL-3 — authoritative PHP 8.3 CI runtime for the self-hosted runner.
+#
+# The self-hosted NSF-R011 variant is only a valid substitute for the
+# GitHub-hosted one if it runs the SAME PHP major.minor and the SAME extension
+# set. This image reproduces what `shivammathur/setup-php@v2` provides in the
+# GitHub-hosted critical gate:
+#
+#   php-version: '8.3'
+#   extensions:  dom, curl, libxml, mbstring, zip, pcntl, pdo, pdo_pgsql,
+#                bcmath, gd, exif
+#
+# dom / curl / libxml / mbstring / pdo are already compiled into the official
+# php:8.3-cli image; the rest are installed below.
+#
+# poppler-utils is included deliberately: the critical filter covers LegacyRme,
+# whose Poppler suite SKIPS when pdfinfo/pdftoppm are missing. GitHub-hosted
+# runners ship Poppler, so leaving it out would silently make the self-hosted
+# gate weaker than the authoritative one.
+#
+# Built and run ROOTLESS under the dedicated github-runner user via Podman.
+# There is no Docker here and github-runner is not in the docker group.
+#
+# The base is pinned by digest, not by a floating tag, so the authoritative
+# runtime cannot drift under us. To update: pull the new tag, record its digest,
+# and change it here in a reviewed commit.
+#
+#   php:8.3-cli  ->  PHP 8.3.33  (resolved 2026-08-07)
+FROM docker.io/library/php:8.3-cli@sha256:450d778f41d54f2f626a3e4e36e8e50e60b08bf370ddc58cb120a28f79283360
+
+# Composer is pinned to a minor tag from the official image.
+COPY --from=docker.io/library/composer:2.8 /usr/bin/composer /usr/bin/composer
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        git \
+        unzip \
+        zip \
+        poppler-utils \
+        libpq-dev \
+        libzip-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libfreetype6-dev \
+    ; \
+    docker-php-ext-configure gd --with-freetype --with-jpeg; \
+    docker-php-ext-install -j"$(nproc)" \
+        pdo_pgsql \
+        zip \
+        pcntl \
+        bcmath \
+        gd \
+        exif \
+    ; \
+    rm -rf /var/lib/apt/lists/*
+
+# Runtime parity with the GitHub-hosted gate.
+#
+# The official php:8.3-cli image defaults to memory_limit=128M, while
+# shivammathur/setup-php runs with memory_limit=-1. Without this the Pest suite
+# dies with "Allowed memory size ... exhausted" inside TestSuiteLoader before a
+# single test executes — which is exactly what happened on the first real
+# self-hosted run.
+RUN printf 'memory_limit=-1\n' > /usr/local/etc/php/conf.d/zz-ci-parity.ini
+
+# Fail the build rather than ship a runtime that silently lacks a required
+# extension — a missing extension would make tests skip instead of run.
+RUN set -eux; \
+    php -v; \
+    for ext in dom curl libxml mbstring zip pcntl pdo pdo_pgsql bcmath gd exif; do \
+        php -m | grep -qix "$ext" || { echo "MISSING REQUIRED EXTENSION: $ext" >&2; exit 1; }; \
+    done; \
+    command -v pdfinfo >/dev/null || { echo "MISSING pdfinfo" >&2; exit 1; }; \
+    command -v pdftoppm >/dev/null || { echo "MISSING pdftoppm" >&2; exit 1; }; \
+    [ "$(php -r 'echo ini_get("memory_limit");')" = "-1" ] \
+        || { echo "memory_limit is not unlimited; Pest will OOM" >&2; exit 1; }; \
+    composer --version
+
+WORKDIR /workspace

@@ -68,12 +68,17 @@ run_critical_governance() {
         echo ""
         echo "--- architecture:foundation-governance-summary ---"
         php artisan architecture:foundation-governance-summary
-        if php artisan list --raw 2>/dev/null | grep -q '^architecture:dmo-governance-check$'; then
+        # Command list captured once and matched without a pipeline: `grep -q`
+        # exits at the first match, the producer dies of SIGPIPE, and pipefail
+        # then reports the pipeline as failed even on a match — which here would
+        # silently SKIP a governance command that does exist.
+        AVAILABLE_COMMANDS="$(php artisan list --raw 2>/dev/null || true)"
+        if grep -q '^architecture:dmo-governance-check$' <<<"$AVAILABLE_COMMANDS"; then
             echo ""
             echo "--- architecture:dmo-governance-check ---"
             php artisan architecture:dmo-governance-check
         fi
-        if php artisan list --raw 2>/dev/null | grep -q '^architecture:nsf-governance-check$'; then
+        if grep -q '^architecture:nsf-governance-check$' <<<"$AVAILABLE_COMMANDS"; then
             echo ""
             echo "--- architecture:nsf-governance-check (CI-safe; no --include-observability) ---"
             php artisan architecture:nsf-governance-check
