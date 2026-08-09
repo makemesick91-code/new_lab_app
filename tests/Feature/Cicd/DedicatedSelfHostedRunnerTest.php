@@ -681,3 +681,65 @@ it('does not regress the CICD-CTRL-1 safe runtime control contract', function ()
         ->and($report['workflow_ok'])->toBeTrue()
         ->and($report['safety_invariant_ok'])->toBeTrue();
 });
+
+// ---------------------------------------------------------------------------
+// CICD-CTRL-3D — the CI system's own tests run inside a required gate
+// ---------------------------------------------------------------------------
+
+it('selects the CI regression tests in every critical gate variant', function () {
+    $posture = app(SelfHostedRunnerScanner::class)->criticalGateSelfTestPosture();
+
+    expect($posture['ok'])->toBeTrue(implode('; ', $posture['issues']))
+        ->and($posture['issues'])->toBe([])
+        ->and($posture['required'])->toContain('Cicd')
+        // One filter per critical variant: GitHub-hosted and self-hosted.
+        ->and($posture['critical_filters'])->toHaveCount(2);
+
+    foreach ($posture['critical_filters'] as $filter) {
+        expect(str_contains($filter, 'Cicd'))
+            ->toBeTrue('a critical gate variant does not select tests/Feature/Cicd');
+    }
+});
+
+it('selects this suite by the directory the required filter names', function () {
+    // PHPUnit matches --filter against the fully-qualified test name, so the
+    // declared token has to correspond to this suite's own path segment.
+    // Asserting the relationship keeps the config and the directory from
+    // drifting apart if either is renamed.
+    $posture = app(SelfHostedRunnerScanner::class)->criticalGateSelfTestPosture();
+
+    $selected = false;
+    foreach ($posture['required'] as $token) {
+        if (str_contains(__FILE__, DIRECTORY_SEPARATOR.$token.DIRECTORY_SEPARATOR)) {
+            $selected = true;
+        }
+    }
+
+    expect($selected)->toBeTrue('this suite is not selected by any required critical-gate filter');
+});
+
+it('goes red when a critical gate variant stops selecting the CI regression tests', function () {
+    // Negative proof. Coverage asserted only positively can regress silently —
+    // which is precisely how tests/Feature/Cicd came to be absent from every
+    // required gate. One variant keeps the token, the other drops it, and the
+    // contract must fail rather than average the two.
+    $workflow = <<<'YAML'
+        jobs:
+          critical_test_gate:
+            steps:
+              - run: php artisan test --filter='FoundationGovernance|LegacyRme|Cicd'
+          critical_test_gate_self_hosted:
+            steps:
+              - run: php artisan test --filter='FoundationGovernance|LegacyRme'
+        YAML;
+
+    $rel = 'storage/framework/ctl3d-wf-'.bin2hex(random_bytes(6)).'.yml';
+    file_put_contents(base_path($rel), $workflow);
+    config()->set('ci_runner.files.ci_workflow', $rel);
+
+    $posture = app(SelfHostedRunnerScanner::class)->criticalGateSelfTestPosture();
+    @unlink(base_path($rel));
+
+    expect($posture['ok'])->toBeFalse()
+        ->and(implode(' ', $posture['issues']))->toContain("does not select 'Cicd'");
+});
