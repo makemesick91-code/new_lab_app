@@ -1,7 +1,8 @@
 # CICD-CTRL-3 — Dedicated Self-Hosted GitHub Actions Runner
 
-**Branch:** `feature/cicd-ctrl-3-dedicated-self-hosted-ci-runner`
-**Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` @ `0b37ce4` (do NOT target `main`)
+**Branch:** `feature/cicd-ctrl-3-dedicated-self-hosted-ci-runner` (merged), closed out by
+`feature/cicd-ctrl-3d-ci-self-test-gating-delivered-architecture-doc-closure`
+**Base:** `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` (do NOT target `main`)
 **Type:** CI/CD control sprint — not a product feature sprint
 
 **Status:**
@@ -9,22 +10,27 @@
 ```
 CICD-CTRL-3:
 IMPLEMENTED / RUNNER OPERATIONAL / EQUIVALENCE PROVEN
-WATCH — PRE-EXISTING AUTHORITATIVE CI FAILURES
+CI SELF-TESTS GATED / DELIVERED ARCHITECTURE DOCUMENTED
+RESIDUAL: PRE-EXISTING FULL-SUITE APPLICATION DEBT (9 failures, out of scope)
 ```
 
 | Dimension | Verdict |
 |---|---|
-| **RUNNER RESULT EQUIVALENCE** | **PASS** — GitHub-hosted and self-hosted produce identical failure sets |
-| **APPLICATION / TEST GATE** | **RED** — 62 pre-existing Vite-manifest failures, plus 3 files failing `pint --test` |
+| **RUNNER RESULT EQUIVALENCE** | **PASS** — GitHub-hosted and self-hosted produced identical results on the same commit |
+| **CI SELF-TEST GATING** | **PASS** — `tests/Feature/Cicd` runs inside both required critical gate variants (CTRL-3D) |
+| **REQUIRED PR GATES** | **PASS** — Classifier, Quality, Critical, Selective, NSF-9, NSF-10 |
+| **FULL SUITE** | **RED — pre-existing** — 9 application failures that predate this sprint; 0 introduced by it |
 
-> **No GO tag. PR #267 not merged.** The runner is operational and its results
-> are proven equivalent to the authoritative gate, but the application test gate
-> is red for reasons that pre-date this sprint by eleven days. Those are handed
-> to **CICD-FIX-1** (`docs/sprints/cicd-fix-1-vite-manifest-test-environment-recovery.md`)
-> and are explicitly NOT fixed here. Closure resumes once CICD-FIX-1 is green.
+> **The Full Suite red is this sprint working, not a regression.** Before
+> CICD-CTRL-3, `php artisan test … | tee` reported *tee's* exit status, so the
+> gate went green regardless. The last "successful" Full Suite before the merge
+> (run `29592369812`, 2026-07-17) is recorded by GitHub as **success** while its
+> own log reads `Tests: 1202 failed, 4223 warnings, 13 passed`. Strict exit
+> propagation removed that mask. After CICD-FIX-1..5 the same gate now reports
+> **10 failures**, of which **9 are proven pre-existing** and one — this
+> sprint's own `SelfHostedHealthFailClosedTest` — was fixed in CTRL-3D.
 
 ---
-
 ## 1. Purpose
 
 Route heavy CI to a dedicated self-hosted GitHub Actions runner without letting
@@ -154,10 +160,17 @@ in both directions**.
 the entire gap; on PostgreSQL 16 the runner is indistinguishable from the
 authoritative gate.
 
-## 2c. Application test gate — RED, pre-existing
+## 2c. Application test gate — RED at the time, since resolved
 
 Strict exit propagation made two bodies of long-standing CI debt visible. Both
-pre-date this sprint and neither is fixed here.
+pre-date this sprint and neither was fixed here.
+
+> **Resolved by CICD-FIX-1..5.** Debt A and Debt B below are recorded as they
+> stood when this sprint first went to WATCH. They were handed to the CICD-FIX
+> series and closed there: the required Classifier, Quality, Critical,
+> Selective, NSF-9 and NSF-10 gates are green on the merge commit. What remains
+> is a separate residual — 9 pre-existing **Full Suite** application failures,
+> catalogued in §10 and out of scope for CICD-CTRL-3.
 
 ### Proof they pre-date CICD-CTRL-3
 
@@ -217,40 +230,51 @@ actually detect problems rather than rubber-stamping.
 
 ## 4. Runner — provisioned and operational
 
-The runner host is **`aishrunner`** (Dell Inspiron 14-3467 laptop, tailnet
-`100.74.126.71`), reached via the dedicated key `~/.ssh/daengtisia_runner_ed25519`
-(alias `daengtisia-runner`, user `runner_dms`). The production VPS key was
-deliberately **not** reused and the private key is never committed.
+The runner in service is **`daengtisia-ci-biznet-01`** on host
+**`daengtisia-ci-biznet`**, a Biznet Gio **NEO Lite MM 8.8** instance reached
+over Tailscale at `100.121.146.97` (ssh alias `daengtisia-ci-biznet`, admin user
+`daengtisiams`). Its public IPv4 is `103.89.5.23` with SSH blocked by UFW. The
+production VPS key is deliberately **not** reused and no private key is
+committed.
 
-**Hardware matches the approved specification:** Intel Core i3-7020U @2.30GHz
-(2 cores / 4 threads), 14 GiB usable RAM, SSD with ~211 GB free, laptop chassis.
+It is a **native** runner: Ubuntu 24.04 ships PHP 8.3 and PostgreSQL 16, so the
+host itself provides the authoritative runtime and no container engine is
+installed. This is a supported mode of `scripts/ci/self-hosted-php.sh`, not a
+deviation — the contract is semantic runtime equivalence, not a particular
+engine.
 
 | Property | Verified |
 |---|---|
-| Runner | `daengtisia-ci-01` — online, labels `self-hosted, Linux, X64, daengtisia-ci` |
-| Service | systemd, enabled + active, user `github-runner` (uid 1001), **never root** |
-| Interactive `run.sh` | **none** — service cgroup holds only `runsvc.sh`, `RunnerService.js`, `Runner.Listener` |
-| Privilege | `github-runner` groups = `github-runner users` — **docker and sudo removed** |
-| Container engine | **rootless** Podman 5.7.0, user socket, no Docker involved |
-| PHP runtime | **8.3.33** from a **digest-pinned** image, full extension set + Poppler, `memory_limit=-1` |
-| CI database | pinned **`postgres:16`** (16.14), rootless, systemd `ci-pg16.service`, **loopback `127.0.0.1:5433` only** |
-| Host PostgreSQL 18 | **untouched** on 5432 — a co-tenant project may depend on it |
-| File ownership | `--userns=keep-id`; container writes owned by `github-runner`, **no root-owned residue** |
+| Runner | `daengtisia-ci-biznet-01` — online, labels `self-hosted, Linux, X64, daengtisia-ci` |
+| Hardware | 8 vCPU / ~8 GB RAM, Ubuntu 24.04 LTS |
+| Service | systemd, enabled + active, user `github-runner` (uid 1002), **never root** |
+| Privilege | `github-runner` groups = `github-runner` only — no sudo, docker, lxd, adm, wheel, root, disk or shadow |
+| Runtime mode | **`native`** — `runtime_mode=native / container_engine=none / php_source=host / php_version=8.3` |
+| Container engine | **none** — podman and docker are not installed on the host |
+| PHP runtime | host **8.3.6**, full extension set + Poppler, `memory_limit=-1` |
+| CI database | **native** PostgreSQL **16.14**, database `daengtisia_ci`, **loopback only** |
 | Production isolation | no production environment file, database credential, SSH key, or application path |
+| Network | Tailscale active and enabled at boot; UFW active, default deny in, SSH only on `tailscale0`; public `103.89.5.23:22` blocked |
 | NSF-9 / NSF-10 | **executed** (not skipped) under self-hosted routing |
 | Fallback | flipping `CI_RUNNER_MODE` reroutes with no code change; full GitHub-hosted run succeeded |
 
+The health gate on this host reports `passed=32 warnings=0 failed=0`,
+`DECISION: GO`, including `ci_database … (PostgreSQL 16)` probed through the
+real CI connection path and `postgres_exposure` confined to loopback.
+
 ### Host findings during provisioning
 
-- The pre-existing `github-runner` account was in **both the `docker` and `sudo`
-  groups** — both root-equivalent. Nothing depended on them (no runner service,
-  no processes, no crontab, no containers); both were removed.
-- `runner_dms` requires interactive authentication for `sudo`, so provisioning
-  uses a **temporary** `NOPASSWD` entry (`/etc/sudoers.d/99-cicd-ctrl-3-temp`),
-  to be revoked at closure. `github-runner` gets **no** sudo at any point.
 - The apt mirror `id.archive.ubuntu.com` served HTTP 403 for `libgpgmepp7` (a
   `libpoppler156` dependency), blocking installs. Switched to
   `archive.ubuntu.com`; backup kept as `ubuntu.sources.cicd-ctrl-3.bak`.
+- No temporary CICD sudo grant exists on this host: `/etc/sudoers.d/` contains
+  only `90-cloud-init-users` (the `daengtisiams` administrative break-glass
+  account) and the stock README. No sudoers entry names `github-runner`.
+- The first runner instance ran on a laptop (`aishrunner`) under rootless Podman
+  with a containerised PostgreSQL 16; it was retired for being ~1.34× slower
+  than GitHub-hosted. That host, and the container-mode provisioning it
+  required, are documented as history in Appendix A of
+  `docs/runbooks/self-hosted-runner.md`. Do not follow it for this runner.
 
 ## 5. Defects found and fixed during this sprint
 
@@ -289,98 +313,80 @@ This is what exposed the pre-existing debt in §2c. It is **not** rolled back to
 obtain a green gate, and the self-hosted variant is **not** made stricter than
 the GitHub-hosted one.
 
-## 6. Benchmark — hardware capacity evidence only
+## 6. Measured performance and the routing decision
 
-Pest worker benchmark on `aishrunner`, identical workload, sequential authoritative
-mode unchanged:
+Benchmarks here are **capacity evidence**, not a gate. Pest `--parallel` is
+deliberately **not** enabled on any gate.
 
-| Workers | Duration | Speedup | Peak swap | Min available RAM | Load after | Result |
-|---|---|---|---|---|---|---|
-| 1 | 326 s | 1.00× | 0 MB | 13994 MB | 1.14 | 69 failed / 256 passed / 1080 assertions |
-| 2 | 206 s | 1.58× | 0 MB | 13896 MB | 2.48 | identical |
-| 3 | 162 s | 2.01× | 0 MB | 13749 MB | 2.87 | identical |
+### Critical-gate duration — the valid like-for-like comparison
 
-All three produced **identical results**, so parallelism does not perturb
-outcomes on this hardware. No swap, no OOM.
+Same commit (`a1c51aa`), both green, sequential Pest on both sides, PHP 8.3 and
+PostgreSQL 16 on both sides:
 
-> **`--parallel` is NOT enabled on the authoritative gate** and will not be while
-> the GitHub-hosted gate is sequential. These numbers are capacity evidence only.
-
-> **THERMAL METRIC = UNRELIABLE.** The probe returned exactly 25.0 °C in every
-> configuration, which is not a credible CPU package reading. `lm-sensors` is not
-> installed. No no-throttling claim is made from this data.
-
-### Critical-gate duration — valid comparison
-
-Both sides doing **identical work** (same commit, PHP 8.3, PostgreSQL 16,
-identical filter, sequential, identical 62-failure result):
-
-| Environment | Database | Critical-gate duration | Work done |
+| Runner | NSF-R011 Critical Test Gate | Result | Evidence |
 |---|---|---|---|
-| GitHub-hosted | `postgres:16` service container | **1347 s** (22m27s) | 62 failed / 1106 assertions |
-| `aishrunner` | pinned `postgres:16` | **1808 s** (30m08s) | 62 failed / 1106 assertions |
-| ~~`aishrunner`~~ | ~~host PostgreSQL 18~~ | ~~307 s~~ | **INVALID — 69 failed / 1080 assertions** |
+| GitHub-hosted `ubuntu-latest` | **18m52s** | success | run `31268973659` |
+| Biznet `daengtisia-ci-biznet-01` | **57m16s** | success | run `31270364926` |
 
-**`aishrunner` is 1.34× SLOWER than GitHub-hosted** for the same work
-(−34.2% time change). That is expected: an i3-7020U with 2 physical cores at
-2.3 GHz against GitHub's cloud runners.
+**≈3.04× slower on Biznet for that comparison.** Treat it as one measured data
+point rather than a constant: GitHub-hosted wall-clock varies run to run, so the
+ratio moves. The conclusion that holds, and the one acted on, is directional:
 
-> **Retracted measurement.** The 307 s figure was reported earlier in this sprint
-> as the runner's heavy-CI duration. It is **not valid**: on the host's
-> PostgreSQL 18 the expensive governance tests short-circuited on aborted
-> transactions — `fg1 ci check` took **0.21 s** there versus **68.37 s** on
-> GitHub-hosted — so the suite was doing materially less work. A faster wall
-> clock there measured broken behaviour, not speed. Only the PostgreSQL 16
-> figure is comparable.
->
-> Database performance is **not** the cause of the 1808 s: a direct probe shows
-> the PG16 container is marginally *faster* than the host PG18 (bulk insert 84 ms
-> vs 95 ms; connect+commit 459 ms vs 632 ms), and every relevant PostgreSQL
-> setting is identical between them. The difference is CPU-bound test execution.
+> Biznet is **consistently slower** than GitHub-hosted for the current
+> sequential Pest workload. GitHub-hosted stays primary heavy CI; Biznet is
+> secondary and manual-overflow capacity.
 
-Queue wait, runner assignment delay, persistent-cache benefit, and the
-setup/composer/npm/cleanup breakdown are **not yet measured** and are marked
-`N/A — not measured`. They matter for the final decision, because a self-hosted
-runner can reduce queue delay without being faster at compute.
+Its 8 vCPU do not change this — a single sequential Pest process is bound by
+per-core speed, not core count.
+
+### Retired host — historical only
+
+The first runner, `daengtisia-ci-01` on the laptop `aishrunner` (i3-7020U, 2
+cores), measured **1808 s vs 1347 s GitHub-hosted, ≈1.34× slower**, at equal
+work. That figure describes `aishrunner` alone and **must not** be quoted for
+Biznet. Full history in Appendix A of `docs/runbooks/self-hosted-runner.md`.
+
+A retracted figure worth remembering: an earlier "307 s on the runner" claim was
+**invalid** — measured while that host still ran PostgreSQL 18, where governance
+tests short-circuited on aborted transactions and the suite simply did less
+work. Never trust a wall-clock without checking the work done.
 
 ### Environment comparison status
 
-A full GitHub-hosted vs `aishrunner` vs VPS timing table is **deferred** until
-CICD-FIX-1 is green, because a performance comparison is only meaningful once
-both runners produce the same result — and today both are red for the same
-pre-existing reason.
+The production VPS is **production** (real clinical data) and is never a CI
+runner; any VPS figure is historical evidence about deployment, never CI
+performance. Queue wait, assignment delay and cache benefit remain
+`N/A — not measured`.
 
-**The VPS cannot be a live comparison point.** `srv1730088` is production
-(`APP_ENV=pilot`, `asia_dental_lab_pilot`, **32 patients / 26 clinic visits of
-real clinical data**, 2 vCPU, 7.8 GiB). It gets no heavy CI, no full Pest, no
-DB-heavy tests, no CPU benchmark. Any figure from it is
-`SOURCE = HISTORICAL EVIDENCE`, never a live identical benchmark. There is **no
-separate dedicated CI VPS**. It also runs **PHP 8.5.8**, so even hypothetically
-it would be a `NON-EQUIVALENT PERFORMANCE REFERENCE` for a gate pinned to 8.3.
+---
 
-Deployment timing (`scripts/deploy-vps-runner.sh`) is
-**PRODUCTION DEPLOYMENT PERFORMANCE** and must never be reported as CI runner
-performance.
+## 7. Closure sequence — completed
 
-## 7. Closure sequence — blocked on CICD-FIX-1
+1. CICD-FIX-1..5 — the pre-existing Vite-manifest and PostgreSQL-portability
+   debt that blocked the required gates. **Done.**
+2. CTRL-3A — health gate fails closed; runtime evidence tells the truth.
+3. CTRL-3B — NSF-9 / NSF-10 fail-closed exit propagation; dependency fix.
+4. CTRL-3C — runtime evidence truthfulness, deterministic detection under
+   `pipefail`.
+5. Authoritative CI on the exact candidate `a1c51aa` — PR-event run
+   `31268973659`, all six required gates green.
+6. Outage-queueing validation — dispatch `31280434071` with the runner stopped:
+   the self-hosted variant **queued** and its dependents were cancelled. No
+   automatic failover, no false green.
+7. Merge PR #267 → squash commit `9484dd9`. Candidate tree proven identical to
+   the merge tree (`git diff` empty) — under this repository's squash convention
+   a candidate is never a literal git ancestor of its merge commit.
+8. Post-merge validation — required gates green; runner online, non-root,
+   loopback-only PostgreSQL 16, public SSH blocked, Tailscale up.
+9. **CTRL-3D** — the post-merge Full Suite exposed that this sprint's own
+   `SelfHostedHealthFailClosedTest` was environment-dependent, and that
+   `tests/Feature/Cicd` was in **no** required gate. Both fixed; see §9.
+10. Immutable GO tag on the CTRL-3D closure commit.
 
-Nothing below may proceed until **CICD-FIX-1** proves 62 failures → 0 without
-weakening coverage:
+No temporary CICD sudo grant exists on the Biznet host, so there is nothing to
+revoke at closure.
 
-1. Authoritative CI on the exact candidate SHA
-2. Outage-queueing validation (stop the runner service; the job must **queue**,
-   never pass)
-3. Final GitHub-hosted vs `aishrunner` timing comparison
-4. Historical VPS timing comparison where valid, clearly labelled
-5. Merge PR #267
-6. Post-merge runner validation
-7. Revoke the temporary `NOPASSWD` sudoers entry
-8. Clean temporary state (containers, scratch scripts, evidence staging)
-9. Immutable GO tag
-
-Until then the temporary sudo entry and all runtime evidence are **deliberately
-preserved** so the environment stays reproducible for CICD-FIX-1.
-
+---
 
 ## 8. Rollback
 
@@ -389,3 +395,107 @@ CI returns to GitHub-hosted immediately with no code change and no redeploy.
 Reverting this branch additionally removes the routing, the guard, and the
 governance surface; the runner host, if provisioned, can be decommissioned
 separately per the runbook §8.
+
+---
+
+## 9. CTRL-3D — CI self-test gating and delivered-architecture documentation
+
+### 9.1 The gate could not fail on its own tooling
+
+`SelfHostedHealthFailClosedTest` asserted that an unsuitable host PHP with no
+container fallback reports `runtime_mode=unsatisfied` and exits non-zero. It
+established "no container fallback" by setting `PATH=/usr/bin:/bin` — the host's
+real bin directories. GitHub-hosted images ship `/usr/bin/podman`, so `auto`
+correctly resolved **podman**, printed `runtime_mode=container` and exited 0.
+
+The resolver was right; the test's environment assumption was wrong. It passed
+on the dedicated runner and on a developer machine — neither has podman — and
+failed only on GitHub-hosted.
+
+The fix is a deterministic PATH seam (`stubRuntimeBin()`): a throwaway directory
+containing only the commands the probe may reach, with `bash` and `php`
+symlinked to the real binaries. Both halves of the contract are now stated
+explicitly and tested as a pair, so making the fail-closed branch deterministic
+cannot silently disable the legitimate container fallback:
+
+| Condition | Expected |
+|---|---|
+| Host PHP unsuitable, **no** engine reachable | `runtime_mode=unsatisfied`, exit ≠ 0 |
+| Host PHP unsuitable, podman reachable | `runtime_mode=container`, exit 0 |
+
+Verified with podman genuinely reachable on PATH: the old probe returns
+`runtime_mode=container` / exit 0 (the merged bug reproduced), the new probe
+returns `runtime_mode=unsatisfied` / exit 1 on the same host.
+
+### 9.2 The CI system's own tests were gated by nothing
+
+The critical filter is a fixed allowlist and the selective gate covers only
+Inventory / Lab / Ui / Permission / AccessControl. Neither matched
+`tests/Feature/Cicd`, so this sprint's regression tests ran **only** in the
+~3.5-hour Full Suite. A broken CI self-test could therefore reach the base
+branch with every required gate green — which is exactly what happened.
+
+`Cicd` is now a declared member of `ci_runner.critical_gate_required_filters`
+and appears in the filter of **both** critical gate variants, so the coverage
+holds whichever runner the job routes to. `SelfHostedRunnerScanner::criticalGateSelfTestPosture()`
+enforces it, and the contract is tested positively *and* negatively — a workflow
+where one variant drops the token must fail the check.
+
+Proven end-to-end: with a deliberately failing CICD test present, the exact
+critical filter selected it and the gate exited **1**. Removed immediately; no
+failing test is committed.
+
+
+---
+
+## 10. Residual Full Suite debt — PRE-EXISTING, OUT OF SCOPE
+
+The post-merge Full Suite on `9484dd9` reported
+`10 failed, 5637 warnings, 1 risky, 13 passed (26587 assertions)`. One
+(`SelfHostedHealthFailClosedTest`) belonged to this sprint and is fixed in
+CTRL-3D. The other **nine are pre-existing** and are deliberately **not**
+touched here — not repaired, not weakened, not skipped.
+
+**Attribution method.** Each failing test name was grepped in the log of the
+last "successful" Full Suite before the merge (run `29592369812`, 2026-07-17 —
+recorded `success` while reporting 1202 failures). All nine were already failing
+there; `SelfHostedHealthFailClosedTest` scored zero hits because it did not yet
+exist. Their test files are also **unchanged** by the merge diff.
+
+| # | Test | Failure | Root cause | Present 2026-07-17 |
+|---|---|---|---|---|
+| 1 | `Architecture\Cache1GovernanceIntegrationTest` | `'GO'` vs `'WATCH'` | `release:evidence-check --profile=ci` returns WATCH — the Full Suite job never captures evidence artifacts | yes |
+| 2 | `Architecture\Dbperf1GovernanceIntegrationTest` | same | same | yes |
+| 3 | `Architecture\Dbperf2GovernanceIntegrationTest` | same | same | yes |
+| 4 | `Architecture\Queue1GovernanceIntegrationTest` | same | same | yes |
+| 5 | `Architecture\Rpt1GovernanceIntegrationTest` | same | same | yes |
+| 6 | `Foundation\ReleaseSafetyEvidenceClosureTest` | same | same | yes (×2) |
+| 7 | `Foundation\ReleaseSafetyEvidenceClosureTest` | same | same | yes |
+| 8 | `Performance\Nsf21SqliteMigrationCompatibilityTest` | `'sqlite'` vs `'pgsql'` | the test assumes SQLite; the Full Suite job runs against the PostgreSQL service | yes |
+| 9 | `Pilot\RmeSmokeTestRouteTest` | 302 vs 200 | Sprint 66 `EnsureRmeOnlineContext` redirect; the smoke seeder sets no Perawat context | yes (4 → now 1) |
+
+Two job-shape gaps sit behind most of these and belong to a separate sprint:
+
+- **Only `quality_gate` builds frontend assets.** `critical_test_gate`,
+  `selective_module_gate` and `full_suite_gate` run no `npm ci` / `npm run
+  build`, so `public/build/manifest.json` is absent and every test that renders
+  a Blade layout emits a `file_get_contents` warning (~1143 in the full suite).
+  PHPUnit downgrades those tests from *passed* to *warning*, which is why the
+  critical gate's summary line reads `479 warnings (2014 assertions)` with a
+  **zero passed count**. That is a reporting artifact, not a skip: the tests
+  execute and assert.
+- The Full Suite job captures **no** foundation evidence artifacts, so any test
+  asserting `release:evidence-check … === 'GO'` sees `WATCH` by construction.
+
+**Warnings do not mask failures.** A genuinely failing test is still counted and
+still reddens the gate — the post-merge full suite reported `10 failed` beside
+its 5637 warnings and its conclusion was `failure`, and one of those ten was
+`SelfHostedHealthFailClosedTest`, a `tests/Feature/Cicd` test. Gating is
+therefore unaffected by the downgrade; only the readability of the summary line
+suffers. Restoring a build step to the test gates belongs to the same follow-up
+sprint.
+
+**Recommendation.** Open a dedicated corrective sprint (`CICD-FIX-6`) to close
+the Full Suite job shape and then re-attribute anything that survives. Do not
+convert these to green by weakening, skipping or deleting the tests: the whole
+value CICD-CTRL-3 delivered is that this gate now reports the truth.

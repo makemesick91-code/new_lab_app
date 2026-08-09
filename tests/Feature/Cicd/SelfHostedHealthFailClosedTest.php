@@ -3,6 +3,7 @@
 use App\Services\Foundation\SelfHostedRunnerGovernanceService;
 use App\Support\Cicd\SelfHostedRunnerScanner;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Process\ExecutableFinder;
 
 uses()->group('Cicd', 'Ci', 'SelfHostedRunner', 'FoundationGovernance');
 
@@ -57,6 +58,46 @@ function stubPsqlBin(string $reportedVersion): string
         exit 0
         SH);
     chmod($dir.'/psql', 0o755);
+
+    return $dir;
+}
+
+/**
+ * Build a throwaway bin directory that is the ENTIRE PATH for a runtime probe.
+ *
+ * `resolve_mode` in `auto` mode branches on which binaries PATH can reach, so a
+ * probe pointed at the host's real bin directories asserts whatever that host
+ * happens to ship. GitHub-hosted images include /usr/bin/podman, so "no
+ * container engine available" silently became "podman available" there and the
+ * fail-closed branch was never exercised — the assertion passed on the
+ * dedicated runner and on a developer machine, and failed only in the full
+ * suite. Naming the reachable commands explicitly makes every branch behave
+ * identically on any host, with or without a container engine installed.
+ *
+ * `bash` and `php` are symlinked to the real binaries because the probe must
+ * run the genuine interpreter. Anything in $stubs is written as a shell stub,
+ * which lets a test make a command reachable without installing it.
+ *
+ * @param  array<string, string>  $stubs  command name => bash body
+ */
+function stubRuntimeBin(array $stubs = []): string
+{
+    $dir = sys_get_temp_dir().'/ctl3d-bin-'.bin2hex(random_bytes(6));
+    mkdir($dir, 0o777, true);
+
+    $real = [
+        'bash' => (new ExecutableFinder)->find('bash', '/bin/bash'),
+        'php' => PHP_BINARY,
+    ];
+
+    foreach ($real as $name => $target) {
+        symlink($target, $dir.'/'.$name);
+    }
+
+    foreach ($stubs as $name => $body) {
+        file_put_contents($dir.'/'.$name, "#!/usr/bin/env bash\n".$body."\n");
+        chmod($dir.'/'.$name, 0o755);
+    }
 
     return $dir;
 }
@@ -365,14 +406,40 @@ it('reports the native runtime without claiming a container engine', function ()
 });
 
 it('fails and reports an unsatisfied runtime rather than describing it as usable', function () {
+    // The only combination that may report `unsatisfied`: the host PHP does not
+    // match the authoritative version AND no container engine is reachable.
+    // Both halves are stated explicitly — an earlier revision passed PATH
+    // '/usr/bin:/bin' and so depended on the host not shipping podman.
+    $bin = stubRuntimeBin();
+
     [$code, $out] = runShell(
         'bash scripts/ci/self-hosted-php.sh --print-runtime',
-        ['CI_RUNTIME_MODE' => 'auto', 'CI_RUNNER_PHP_VERSION' => '5.6', 'PATH' => '/usr/bin:/bin']
+        ['CI_RUNTIME_MODE' => 'auto', 'CI_RUNNER_PHP_VERSION' => '5.6', 'PATH' => $bin]
     );
 
     expect($code)->not->toBe(0)
         ->and($out)->toContain('runtime_mode=unsatisfied')
-        ->and($out)->toContain('container_engine=none');
+        ->and($out)->toContain('container_engine=none')
+        ->and($out)->toContain('php_source=none');
+});
+
+it('falls back to the container runtime when the host PHP is unsuitable but podman is reachable', function () {
+    // The complement of the assertion above, and the reason it must be written
+    // as a pair: making the fail-closed branch deterministic must not silently
+    // disable the legitimate container fallback. Same unsuitable host PHP, one
+    // difference — podman is reachable — so `auto` must resolve to a container.
+    $bin = stubRuntimeBin(['podman' => 'echo true']);
+
+    [$code, $out] = runShell(
+        'bash scripts/ci/self-hosted-php.sh --print-runtime',
+        ['CI_RUNTIME_MODE' => 'auto', 'CI_RUNNER_PHP_VERSION' => '5.6', 'PATH' => $bin]
+    );
+
+    expect($code)->toBe(0)
+        ->and($out)->toContain('runtime_mode=container')
+        ->and($out)->toContain('container_engine=podman')
+        ->and($out)->toContain('php_source=image')
+        ->and($out)->not->toContain('runtime_mode=unsatisfied');
 });
 
 it('never asserts a fixed container engine in the workflow evidence', function () {

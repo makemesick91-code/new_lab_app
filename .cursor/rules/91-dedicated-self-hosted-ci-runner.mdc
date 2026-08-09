@@ -66,6 +66,28 @@ Verify with `php artisan foundation:self-hosted-runner-check --strict`.
     `tests/Feature/Cicd/DedicatedSelfHostedRunnerTest.php`, and a passing
     `foundation:self-hosted-runner-check`.
 
+15. **The CI system's own tests run in a required gate.** `tests/Feature/Cicd`
+    must be selected by the filter of **both** critical gate variants, declared
+    in `ci_runner.critical_gate_required_filters` and enforced by
+    `SelfHostedRunnerScanner::criticalGateSelfTestPosture()`. A gate that cannot
+    fail on its own tooling is not a gate: before CICD-CTRL-3D these tests ran
+    only in the ~3.5-hour full suite, so a broken CI self-test reached the base
+    branch with every required gate green.
+16. **A runtime probe states its environment; it never inherits one.**
+    Assertions about which runtime the resolver picks must build an explicit
+    PATH (see `stubRuntimeBin()`), never point at the host's real bin
+    directories. The fail-closed test once used `PATH=/usr/bin:/bin` and so
+    silently depended on the host lacking podman — it passed on the dedicated
+    runner and on developer machines, and failed only on GitHub-hosted images
+    that ship `/usr/bin/podman`. Test both halves as a pair: no engine reachable
+    → `unsatisfied` + non-zero exit; engine reachable → `container` + exit 0.
+17. **The runner in service is native, not containerised.**
+    `daengtisia-ci-biznet-01` (Biznet Gio, Ubuntu 24.04) resolves
+    `runtime_mode=native` with host PHP 8.3 and native PostgreSQL 16; podman and
+    docker are not installed. Container mode remains supported for a host whose
+    OS cannot ship the pinned PHP. Never quote the retired `aishrunner` laptop's
+    1.34× figure for this host — the measured comparison is ~3.04× slower.
+
 ## Files
 
 - Contract: `config/ci_runner.php`

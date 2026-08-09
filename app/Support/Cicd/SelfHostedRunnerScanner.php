@@ -313,6 +313,80 @@ class SelfHostedRunnerScanner
     }
 
     /**
+     * The critical gate selects the CI system's own regression tests.
+     *
+     * CICD-CTRL-3D. The critical filter is a fixed allowlist, so a test suite
+     * that is not named in it never runs in any required gate — it waits for
+     * the three-and-a-half-hour full suite. That is how a broken
+     * tests/Feature/Cicd assertion reached the base branch with every required
+     * gate green. Both critical variants are checked: the coverage must hold
+     * whichever runner the job routes to.
+     *
+     * @return array{ok: bool, exists: bool, issues: list<string>, required: list<string>, critical_filters: list<string>}
+     */
+    public function criticalGateSelfTestPosture(): array
+    {
+        $required = array_values(array_filter(array_map(
+            'strval',
+            (array) config('ci_runner.critical_gate_required_filters', [])
+        )));
+
+        $workflow = $this->readFile('ci_workflow');
+
+        if ($workflow === null) {
+            return [
+                'ok' => false,
+                'exists' => false,
+                'issues' => ['the CI workflow is missing'],
+                'required' => $required,
+                'critical_filters' => [],
+            ];
+        }
+
+        $issues = [];
+
+        if ($required === []) {
+            $issues[] = 'no critical-gate filter coverage is declared';
+        }
+
+        // Every `--filter='...'` in the workflow, narrowed to the critical
+        // gate's own filter by its anchor token. Matching on the anchor rather
+        // than on job names keeps this working if a variant is renamed.
+        preg_match_all('/--filter=\'([^\']+)\'/', $workflow, $matches);
+        $allFilters = $matches[1] ?? [];
+        $criticalFilters = array_values(array_filter(
+            $allFilters,
+            static fn (string $filter): bool => str_contains($filter, 'FoundationGovernance')
+        ));
+
+        $variants = count((array) config('ci_runner.self_hosted_heavy_jobs', [])) + 1;
+
+        if (count($criticalFilters) < $variants) {
+            $issues[] = sprintf(
+                'expected %d critical gate filter(s), found %d — a variant is missing its test filter',
+                $variants,
+                count($criticalFilters)
+            );
+        }
+
+        foreach ($criticalFilters as $index => $filter) {
+            foreach ($required as $token) {
+                if (! str_contains($filter, $token)) {
+                    $issues[] = "critical gate filter #{$index} does not select '{$token}'";
+                }
+            }
+        }
+
+        return [
+            'ok' => $issues === [],
+            'exists' => true,
+            'issues' => $issues,
+            'required' => $required,
+            'critical_filters' => $criticalFilters,
+        ];
+    }
+
+    /**
      * Split a workflow into its named steps.
      *
      * @return list<array{name: string, body: string}>

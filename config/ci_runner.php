@@ -120,6 +120,27 @@ return [
     ],
 
     /*
+     * Filter tokens the NSF-R011 critical gate MUST select — CICD-CTRL-3D.
+     *
+     * The critical filter is a fixed allowlist and the selective gate covers
+     * only Inventory/Lab/Ui/Permission/AccessControl, so nothing required ever
+     * executed tests/Feature/Cicd. The CI system's own regression tests could
+     * therefore break while every required PR gate stayed green — which is
+     * exactly what happened: SelfHostedHealthFailClosedTest asserted "no
+     * container engine reachable" by pointing PATH at the host's real bin
+     * directories, passed on the dedicated runner and on a developer machine,
+     * and failed only on GitHub-hosted images that ship /usr/bin/podman. It
+     * surfaced three and a half hours later in the full suite, after the merge.
+     *
+     * A gate that cannot fail on its own tooling is not a gate. Every token
+     * here must appear in the filter of BOTH critical gate variants, so the
+     * coverage holds whichever runner the job is routed to.
+     */
+    'critical_gate_required_filters' => [
+        'Cicd',
+    ],
+
+    /*
      * Steps whose exit status MUST survive a pipe.
      *
      * A shell pipeline reports the status of its LAST command, so

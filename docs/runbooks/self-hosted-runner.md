@@ -26,55 +26,61 @@ Actions outage.
 
 ## 2. Prerequisites
 
-### 2.1 The authoritative PHP runtime is containerised, not the host PHP
+### 2.1 The authoritative runtime is whatever provides PHP parity
 
-The self-hosted gate is only a valid substitute for the GitHub-hosted gate if it
-runs the **same PHP major.minor** (`config/ci_runner.php` →
-`required_php_version`, currently **8.3**, matching all six `setup-php` blocks
-in the workflow). A green run on a different PHP does not prove the
-authoritative gate passes.
+The contract is **semantic runtime equivalence** — the same PHP major.minor, the
+same extension set and the same Poppler binaries as the GitHub-hosted critical
+gate. *How* that runtime is supplied is a property of the host, and
+`scripts/ci/self-hosted-php.sh` resolves it:
 
-The runner host is **Ubuntu 26.04, which ships only PHP 8.5**. Rather than
-reinstall the host or weaken the authoritative requirement, the self-hosted
-variant runs every `php` / `composer` / `artisan` command **inside a pinned
-container image** via **rootless Podman**, through
-`scripts/ci/self-hosted-php.sh`. The host PHP is never authoritative and is not
-even a host requirement.
+| Mode | When it applies | What executes the command |
+|---|---|---|
+| `native` | The host OS ships the pinned PHP (Ubuntu 24.04 ships 8.3) | Host PHP |
+| `podman` | The host OS cannot supply it (Ubuntu 26.04 ships only 8.5) | Digest-pinned image, rootless |
+| `auto` (default) | Prefers a matching host PHP, falls back to podman | Either of the above |
 
-Options evaluated 2026-08-07, so nobody repeats the investigation:
+**The runner in service today resolves `native`.** Never assume the mode — ask
+the resolver, which is also what CI evidence records:
 
-| Option | Result |
+```bash
+bash scripts/ci/self-hosted-php.sh --print-runtime
+# runtime_mode=native
+# container_engine=none
+# php_source=host
+# php_version=8.3
+```
+
+Docker is forbidden in both modes: the `docker` group is root-equivalent.
+
+### 2.2 The runner in service
+
+| Property | Value |
 |---|---|
-| **Rootless Podman + pinned PHP 8.3 image** | **Chosen.** Exact runtime parity, host untouched, no root-equivalent privilege. |
-| Ubuntu 26.04 native packages | Ships **only** PHP 8.5. No 8.3/8.4 in its repos. |
-| `ondrej/php` PPA on 26.04 | **No `resolute` build** — the PPA stops at `noble` (HTTP 404 for `resolute`). |
-| ondrej `noble` packages on 26.04 | Mixed-release install; conflicting `libssl`/`libc`. Rejected. |
-| Reinstall host as Ubuntu 24.04 LTS | Would give PHP 8.3 natively, but is unnecessary given the container approach. |
-| Run the gate on host PHP 8.5 | **Rejected** — breaks equivalence (rule CICDCTRL3-R009). |
-| Rootful Docker / `container:` job | **Forbidden** — needs the service user in the `docker` group, which is root-equivalent. |
+| Provider / plan | Biznet Gio — NEO Lite MM 8.8 |
+| Hostname | `daengtisia-ci-biznet` |
+| Runner name | `daengtisia-ci-biznet-01` |
+| OS | Ubuntu 24.04 LTS |
+| CPU / RAM | 8 vCPU / ~8 GB |
+| Runtime mode | `native` — host PHP 8.3.6 |
+| Container engine | **none** — podman and docker are not installed |
+| CI database | **native** PostgreSQL 16.14, loopback only, database `daengtisia_ci` |
+| Labels | `self-hosted`, `Linux`, `X64`, `daengtisia-ci` |
+| Actions user | `github-runner` — non-root, no sudo, no docker, no lxd |
+| Admin user | `daengtisiams` — sudo via cloud-init, break-glass only |
+| Administrative access | Tailscale `100.121.146.97` |
+| Public IPv4 | `103.89.5.23` — SSH blocked by UFW |
 
-If a future runner cannot supply the CI PHP version through the pinned image, do
-not silently run a different one — fix the image or raise it as an explicit
-divergence.
-
-### 2.2 Access and hardware
-
-- A dedicated Linux machine that is not the production VPS.
-- SSH access as a provisioning admin using a key in `~/.ssh` on the workstation.
-  **Never** put an SSH password or private key in the application environment
-  file, and never copy the production VPS key to the runner.
-- Repository admin rights on GitHub (needed once, to mint a runner registration
-  token).
-
-Resource floor for heavy CI (enforced by the health script):
-
-- **≥ 40 GB** free disk on the runner's work volume
-- **≥ 4 GB** available RAM
-- PHP version matching the CI gate (`config/ci_runner.php` → `required_php_version`)
+Podman is **not required** on this host and installing it to satisfy an older
+revision of this runbook would add a container stack nothing uses. `auto`
+resolves `native`, and the health gate asserts real parity rather than taking
+the mode's word for it.
 
 ---
 
 ## 3. Provisioning
+
+These steps provision a **native** runner, which is the supported shape for any
+host whose OS ships the pinned PHP. For a host that cannot, see Appendix A.
 
 ### 3.1 Service user
 
@@ -84,26 +90,35 @@ The runner never executes CI as root and gets no unrestricted sudo.
 sudo adduser --disabled-password --gecos "" github-runner
 ```
 
-Do **not** add `github-runner` to the `docker` group — that group is
-root-equivalent, and this runner deliberately has no Docker (see §3.4).
+Do **not** add `github-runner` to `docker`, `lxd`, `sudo`, `adm`, `wheel`,
+`root`, `disk` or `shadow`. The health script fails closed on each of them.
 
-### 3.2 Runtime
+### 3.2 Runtime — host PHP 8.3 and its parity set
 
-Install the runtimes so CI jobs never need sudo at run time:
-
-The **host** provides only the tooling that does not need version parity. PHP,
-Composer and Poppler come from the pinned CI image instead (§3.5).
+Install everything CI needs so jobs never require sudo at run time. On Ubuntu
+24.04 the distribution PHP is already 8.3, which is what makes `native` correct
+here:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
     git curl unzip zip ca-certificates \
     nodejs npm poppler-utils \
-    postgresql postgresql-client \
-    podman uidmap slirp4netns fuse-overlayfs passt
+    php-cli php-dom php-curl php-xml php-mbstring php-zip php-pcntl \
+    php-pgsql php-bcmath php-gd \
+    postgresql postgresql-client
 ```
 
-Node must match the workflow's `setup-node` version (currently 22).
+Composer is installed separately (official installer, checksum-verified) to
+`/usr/local/bin/composer`. Node must match the workflow's `setup-node` version
+(currently 22).
+
+`memory_limit` must be unlimited for the CLI, or Pest exhausts the default 128M
+inside `TestSuiteLoader` before a single test runs:
+
+```bash
+echo 'memory_limit = -1' | sudo tee /etc/php/8.3/cli/conf.d/99-ci.ini
+```
 
 > **Mirror gotcha (hit 2026-08-07):** `id.archive.ubuntu.com` served HTTP 403 for
 > `libgpgmepp7`, a dependency of `libpoppler156`, which blocked the whole
@@ -111,133 +126,50 @@ Node must match the workflow's `setup-node` version (currently 22).
 > `archive.ubuntu.com` (backup kept as `ubuntu.sources.cicd-ctrl-3.bak`). If
 > package installs start failing with 403, check the mirror before anything else.
 
-Verify:
+Verify — the health script checks all of this, but check it by hand once:
 
 ```bash
 php -v && php -m && composer --version && node --version && npm --version
 psql --version && pdfinfo -v && pdftoppm -v
+bash scripts/ci/self-hosted-php.sh --print-runtime   # expect runtime_mode=native
 ```
 
-### 3.3 Laptop power settings (if the runner is a laptop)
+### 3.3 CI PostgreSQL — native, loopback only
 
-A CI runner that suspends is a CI runner that silently stops taking jobs.
+The CI database major version **must** match the authoritative gate. A mismatch
+does not merely differ, it produces different results: a host running
+PostgreSQL 18 against a gate pinned to 16 caused seven self-hosted-only
+failures (`SQLSTATE[25P02]` cascades from aborted transactions).
+
+Ubuntu 24.04 ships PostgreSQL 16, so the distribution package is the CI
+database. No container is involved.
 
 ```bash
-systemctl status sleep.target suspend.target hibernate.target
-# Back up /etc/systemd/logind.conf before changing lid-close behaviour.
+sudo apt-get install -y postgresql postgresql-client
+psql --version                       # client
+sudo -u postgres psql -tAc 'SHOW server_version'   # server — this is the one that matters
 ```
 
-Disable automatic suspend/sleep/hibernate and lid-close suspend. Prefer
-Ethernet. Ensure PostgreSQL and the runner service are enabled at boot.
-
-### 3.4 CI PostgreSQL — pinned `postgres:16`, NOT the host PostgreSQL
-
-The authoritative gate runs `postgres:16`. The runner host ships PostgreSQL 18,
-and that version difference produced **7 self-hosted-only test failures**
-(aborted-transaction cascades out of `Dq1AuditService`). The CI database is
-therefore pinned to the gate's major version, supplied the same way the PHP
-runtime is: a digest-pinned image under **rootless Podman**.
-
-**The host's own PostgreSQL is deliberately left untouched** — a co-tenant
-project on this machine may depend on it — so the CI database listens on **5433**
-and never collides with 5432.
-
-It runs as a systemd **user** service via Quadlet at
-`~/.config/containers/systemd/ci-pg16.container`:
-
-```ini
-[Container]
-Image=docker.io/library/postgres:16@sha256:<digest>
-ContainerName=ci-pg16
-Network=host
-Exec=postgres -c listen_addresses=127.0.0.1 -c port=5433
-Environment=POSTGRES_USER=daengtisia_ci_user
-Environment=POSTGRES_DB=daengtisia_ci
-Environment=PGPORT=5433
-Environment=POSTGRES_HOST_AUTH_METHOD=scram-sha-256
-Environment="POSTGRES_INITDB_ARGS=--auth-local=scram-sha-256 --auth-host=scram-sha-256"
-EnvironmentFile=%h/.config/ci-pg16.env
-Volume=ci-pg16-data:/var/lib/postgresql/data
-```
+Create the CI role and database. The name must stay non-production; the
+`ci:assert-non-production-database` guard rejects anything that looks like the
+production or pilot database:
 
 ```bash
-sudo runuser -u github-runner -- env XDG_RUNTIME_DIR=/run/user/1001 \
-    systemctl --user daemon-reload
-sudo runuser -u github-runner -- env XDG_RUNTIME_DIR=/run/user/1001 \
-    systemctl --user start ci-pg16.service
+sudo -u postgres createuser --pwprompt daengtisia_ci_user
+sudo -u postgres createdb --owner=daengtisia_ci_user daengtisia_ci
 ```
 
-**Three traps worth knowing:**
-
-1. `POSTGRES_HOST_AUTH_METHOD` alone is **not enough**. It only sets the image's
-   appended catch-all line; `initdb` still writes `127.0.0.1/32 trust`, which
-   matches first — so a *wrong password would connect*. `POSTGRES_INITDB_ARGS`
-   with `--auth-host`/`--auth-local` is what actually controls the generated
-   `pg_hba.conf`.
-2. systemd `Environment=` **splits on whitespace** unless quoted. Without the
-   quotes above, `--auth-host=…` becomes a separate malformed entry and is
-   silently ignored.
-3. Both only take effect at **initdb**. Changing them on an existing volume does
-   nothing — you must remove the container *first*, then the volume, then start
-   the service (`podman volume rm` fails while a container still references it).
-
-Verify auth is genuinely enforced:
+Keep the server bound to loopback (the default). The health script fails closed
+if PostgreSQL is reachable beyond `127.0.0.1`:
 
 ```bash
-PGPASSWORD=deliberately-wrong psql -h 127.0.0.1 -p 5433 \
-    -U daengtisia_ci_user -d daengtisia_ci -tAc 'select 1'   # must FAIL
+ss -ltn | grep 5432        # expect 127.0.0.1:5432 and [::1]:5432 only
 ```
 
-- The password lives in `~/.config/ci-pg16.env` (mode `0600`, owned by the
-  service user) and in the GitHub Actions secret `CI_DB_PASSWORD`. Never commit
-  it, never echo it, never put it in the application environment file.
-- The health check reports the CI database's **major version** and FAILS on a
-  mismatch, so this divergence cannot silently return.
-- This database is disposable CI state. It must never hold production data.
+The password is supplied to CI as the repository secret `CI_DB_PASSWORD` and is
+never written into the workflow, this runbook, or any evidence file.
 
-### 3.4b Rootless Podman and the pinned PHP 8.3 CI image
-
-The service user must be able to run containers **rootless**. It must never be
-in the `docker` group, and rootful Docker is never used — the `docker` group is
-root-equivalent.
-
-```bash
-# subuid/subgid ranges are required for rootless user namespaces
-grep -E '^github-runner:' /etc/subuid /etc/subgid
-
-# keep the user's systemd/podman session alive without an interactive login
-sudo loginctl enable-linger github-runner
-
-# the service user must NOT be in docker or sudo
-sudo gpasswd -d github-runner docker || true
-sudo gpasswd -d github-runner sudo   || true
-id -nG github-runner        # expect: github-runner users
-```
-
-Verify rootlessness, then build the image:
-
-```bash
-sudo runuser -l github-runner -c 'podman info --format "{{.Host.Security.Rootless}}"'   # expect: true
-
-# built from the repo's Containerfile; base pinned by digest, never a floating tag
-sudo runuser -l github-runner -c \
-  'cd ~/ci-runtime && podman build -t daengtisia-ci-php:8.3 -f Containerfile.php83 .'
-```
-
-The Containerfile lives at `.github/ci-runtime/Containerfile.php83` and **fails
-the build** if any required extension or Poppler binary is missing, so the image
-can never silently ship a runtime that would make tests skip.
-
-Every CI command then goes through `scripts/ci/self-hosted-php.sh`, which runs
-`podman run --network=host --userns=keep-id`. `keep-id` maps the container user
-to the host `github-runner` UID, so files the container writes are owned by
-`github-runner` and the persistent workspace never accumulates root-owned
-residue. `--network=host` reaches only the loopback-bound local CI database.
-
-**Updating the image:** pull the new tag, record its digest, update the `FROM`
-line in a reviewed commit, rebuild. Never switch to a floating tag.
-
-### 3.5 Register the runner
+### 3.4 Register the runner
 
 Mint a **registration token** (short-lived, single-use) from
 `Settings → Actions → Runners → New self-hosted runner`, or via the API with an
@@ -250,7 +182,7 @@ checksum, then:
 ```bash
 ./config.sh --url https://github.com/<owner>/<repo> \
             --token <REGISTRATION_TOKEN> \
-            --name daengtisia-ci-01 \
+            --name daengtisia-ci-biznet-01 \
             --labels daengtisia-ci \
             --work _work \
             --unattended
@@ -259,7 +191,7 @@ checksum, then:
 Built-in labels (`self-hosted`, `linux`, `x64`) are added automatically; the
 custom `daengtisia-ci` label is what makes DaengtisiaMS jobs unambiguous.
 
-### 3.6 Managed service
+### 3.5 Managed service
 
 ```bash
 sudo ./svc.sh install github-runner
@@ -270,20 +202,35 @@ systemctl status 'actions.runner.*'
 An interactive `./run.sh` is acceptable only while troubleshooting and must be
 stopped afterwards. The permanent runner is always the systemd service.
 
+### 3.6 Network posture
+
+Administrative access is over Tailscale; public SSH stays closed.
+
+```bash
+sudo ufw default deny incoming
+sudo ufw allow in on tailscale0 to any port 22 proto tcp comment 'SSH via Tailscale'
+sudo ufw allow 41641/udp comment 'Tailscale direct connections'
+sudo ufw enable
+sudo systemctl enable --now tailscaled
+```
+
+Verify from outside the tailnet that `103.89.5.23:22` does **not** answer.
+
 ### 3.7 Acceptance
 
 Do not consider the runner ready until **all** hold:
 
-1. GitHub shows `daengtisia-ci-01` as Online/Idle.
+1. GitHub shows `daengtisia-ci-biznet-01` as Online/Idle.
 2. Labels include `self-hosted`, `linux`, `x64`, `daengtisia-ci`.
-3. The service runs as `github-runner`, not root.
-4. The systemd unit is enabled **and** active, and survives a restart.
-5. `scripts/ci/self-hosted-runner-health.sh` reports **GO**.
-6. A real GitHub Actions job is assigned to the runner and its hostname matches.
-7. No interactive `run.sh` process remains.
+3. The service runs as `github-runner`, not root, and is enabled **and** active.
+4. `scripts/ci/self-hosted-php.sh --print-runtime` reports the mode the host
+   actually provides — `native` here — and never names an engine it lacks.
+5. `sudo -u postgres psql -tAc 'SHOW server_version'` reports major 16.
+6. `scripts/ci/self-hosted-runner-health.sh` reports **GO** with `failed=0`.
+7. A real GitHub Actions job is assigned to the runner and its hostname matches.
+8. No interactive `run.sh` process remains.
 
 ---
-
 ## 4. Routing and fallback
 
 Routing is decided by the `classify` job, which always runs GitHub-hosted.
@@ -370,3 +317,85 @@ sudo ./svc.sh uninstall
 
 3. Remove the runner directory. Dropping the CI database is a separate, explicit
    decision; nothing here deletes data automatically.
+
+---
+
+## 9. Measured performance and why GitHub-hosted stays primary
+
+Like-for-like, on the **same commit**, both green, sequential Pest on both
+sides, PHP 8.3 and PostgreSQL 16 on both sides:
+
+| Runner | NSF-R011 Critical Test Gate | Result |
+|---|---|---|
+| GitHub-hosted `ubuntu-latest` | **18m52s** | success |
+| Biznet `daengtisia-ci-biznet-01` | **57m16s** | success |
+
+That is **≈3.04× slower** on Biznet *for that comparison*. Treat it as one
+measured data point, not a constant: GitHub-hosted wall-clock varies run to run,
+so the ratio moves. The conclusion that does hold, and the one this project acts
+on, is directional and repeatable:
+
+> **Biznet is consistently slower than GitHub-hosted for the current sequential
+> Pest workload.** GitHub-hosted therefore remains primary heavy CI; Biznet is
+> secondary and manual-overflow capacity.
+
+The 8 vCPU count does not change this. The workload is a single sequential Pest
+process, so it is bound by per-core speed rather than core count, and
+`--parallel` is deliberately **not** enabled on the gate — parallel workers were
+benchmarked as hardware capacity evidence only.
+
+Do not quote the retired laptop's 1.34× figure for this host (Appendix A).
+
+---
+
+## Appendix A — Historical: the containerised runner on `aishrunner` (RETIRED)
+
+**Status: RETIRED / HISTORICAL. Do not follow this section to provision or
+operate the runner in service.** It is kept because the container path remains a
+supported mode of `scripts/ci/self-hosted-php.sh` and will be the correct choice
+again on any host whose OS cannot ship the pinned PHP.
+
+The first runner instance was `daengtisia-ci-01` on **`aishrunner`**, a Dell
+Inspiron 14-3467 laptop (Intel Core i3-7020U, 2 cores / 4 threads, 14 GiB RAM),
+reached over Tailscale at `100.74.126.71`. It ran **Ubuntu 26.04**, which ships
+only PHP 8.5 — there is no 8.3 build in its repositories and `ondrej/php` has no
+`resolute` build either. The host therefore could not provide the authoritative
+runtime, so the wrapper ran every php/composer/artisan call inside a
+**digest-pinned PHP 8.3 image under rootless Podman** built from
+`.github/ci-runtime/Containerfile.php83`, with `--userns=keep-id` so container
+writes stayed owned by `github-runner` and left no root-owned residue.
+
+Its CI database was a pinned **`postgres:16` container** under rootless Podman,
+managed as the systemd Quadlet unit `ci-pg16.service` and bound to
+`127.0.0.1:5433`, because the host's own PostgreSQL was 18 and a major-version
+mismatch produced seven self-hosted-only failures.
+
+Because it was a laptop, it also needed lid-close behaviour changed in
+`/etc/systemd/logind.conf` so closing it did not suspend CI.
+
+Lessons carried forward from that host, all still enforced in code:
+
+- The `php:8.3-cli` base image defaults to `memory_limit=128M`; Pest exhausted it
+  inside `TestSuiteLoader` before running a single test. The image build now
+  fails unless the limit is unlimited, and §3.2 sets the same for a native host.
+- Poppler must be present or the LegacyRme suite silently **skips** rather than
+  fails, which would make the self-hosted gate weaker than the authoritative one.
+- `POSTGRES_HOST_AUTH_METHOD` alone leaves initdb's `127.0.0.1/32 trust` rule
+  matching first, so a wrong password still connects. Use `POSTGRES_INITDB_ARGS`
+  with `--auth-host`/`--auth-local`, quoted, since systemd splits `Environment=`
+  on whitespace. Both apply only at initdb.
+- The service user had been in both `docker` and `sudo`, which is
+  root-equivalent. Nothing depended on either; both were removed. The health
+  script now fails closed on those groups.
+
+**Why it was retired.** At equal work — same commit, same PHP 8.3, same
+PostgreSQL 16, same filter, sequential both sides — the laptop measured
+**1808 s against GitHub-hosted's 1347 s (≈1.34× slower)**, which is expected of
+two physical cores. That figure describes `aishrunner` only and must never be
+quoted as the current runner's number; see §9 for the Biznet measurement.
+
+A retracted measurement worth remembering: an earlier "307 s on the runner"
+figure was **invalid**. It was taken while the host still used PostgreSQL 18,
+where governance tests short-circuited on aborted transactions and the suite
+simply did less work (`fg1 ci check` took 0.21 s there versus 68.37 s
+GitHub-hosted). Never trust a wall-clock without checking the work done.
