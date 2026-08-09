@@ -180,6 +180,22 @@ return [
         'Capture NSF-10 release evidence (ci profile)',
         'Check NSF-10 release evidence (ci profile)',
         'Release safety check (ci profile)',
+
+        /*
+         * CICD-FIX-6 — NSF-R011 full suite gate.
+         *
+         * This is the step the false-green problem is named after: a run once
+         * logged `Tests: 1202 failed` and still concluded `success`, because
+         * `php artisan test | tee ...` reports tee's status under GitHub's
+         * default `bash -e` shell, which carries no `-o pipefail`.
+         *
+         * CICD-CTRL-3 repaired the step by declaring `shell: bash`, but never
+         * added it here — and the scanner only inspects steps named in this
+         * list. So the longest and most expensive gate in the pipeline was the
+         * one gate its own guard could not see: deleting that `shell: bash`
+         * line would silently restore a green full suite over a red one.
+         */
+        'Run full Pest suite',
     ],
 
     /*
