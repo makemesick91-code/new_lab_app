@@ -476,11 +476,24 @@ exist. Their test files are also **unchanged** by the merge diff.
 
 Two job-shape gaps sit behind most of these and belong to a separate sprint:
 
-- The Full Suite job runs **no** `npm ci` / `npm run build`, so the Vite manifest
-  is absent and ~1143 `file_get_contents` warnings are emitted. CICD-FIX-1 fixed
-  this for the **critical** gate only.
+- **Only `quality_gate` builds frontend assets.** `critical_test_gate`,
+  `selective_module_gate` and `full_suite_gate` run no `npm ci` / `npm run
+  build`, so `public/build/manifest.json` is absent and every test that renders
+  a Blade layout emits a `file_get_contents` warning (~1143 in the full suite).
+  PHPUnit downgrades those tests from *passed* to *warning*, which is why the
+  critical gate's summary line reads `479 warnings (2014 assertions)` with a
+  **zero passed count**. That is a reporting artifact, not a skip: the tests
+  execute and assert.
 - The Full Suite job captures **no** foundation evidence artifacts, so any test
   asserting `release:evidence-check … === 'GO'` sees `WATCH` by construction.
+
+**Warnings do not mask failures.** A genuinely failing test is still counted and
+still reddens the gate — the post-merge full suite reported `10 failed` beside
+its 5637 warnings and its conclusion was `failure`, and one of those ten was
+`SelfHostedHealthFailClosedTest`, a `tests/Feature/Cicd` test. Gating is
+therefore unaffected by the downgrade; only the readability of the summary line
+suffers. Restoring a build step to the test gates belongs to the same follow-up
+sprint.
 
 **Recommendation.** Open a dedicated corrective sprint (`CICD-FIX-6`) to close
 the Full Suite job shape and then re-attribute anything that survives. Do not
