@@ -152,6 +152,15 @@ class RmeSmokeTestSeeder extends Seeder
             'Perawat'
         );
 
+        // RME-BRANCH-SUN4 — Perawat now needs a branch-only online context before
+        // any RME route, exactly like the Doctor session started above. Without it
+        // the seeded smoke account is redirected to the context selector and cannot
+        // exercise the visit routes it exists to smoke-test.
+        app(UserOnlineContextService::class)->startPerawatSession(
+            $perawatUser,
+            (int) $branch->id,
+        );
+
         $kasirUser = $this->seedUser(
             self::KASIR_USER_EMAIL,
             self::KASIR_USER_NAME,
