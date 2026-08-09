@@ -15,12 +15,26 @@ use Illuminate\Console\Command;
  *  - GO    → 0
  *  - FAIL  → non-zero always
  *  - WATCH → 0 by default; non-zero with --strict
+ *
+ * Signal classes — the decision is a statement about the TRACKED SOURCE TREE,
+ * so it must be reproducible in any clean checkout:
+ *
+ *  - errors     → a governance rule is violated. Always FAIL.
+ *  - warnings   → a soft governance signal over tracked source. WATCH.
+ *  - advisories → an observation about the *environment* this command happens
+ *                 to run in (generated, gitignored build state). Reported, but
+ *                 never decides on its own: a fresh checkout has no build
+ *                 output, and "assets were not built here" is not a defect in
+ *                 the source tree. `--require-build-manifest` opts a context
+ *                 that genuinely builds first (deploy / release evidence) into
+ *                 enforcing it as a real warning.
  */
 class ArchitectureUiGovernanceCheckCommand extends Command
 {
     protected $signature = 'architecture:ui-governance-check
         {--json : Output JSON report}
-        {--strict : Exit non-zero on warnings as well}';
+        {--strict : Exit non-zero on warnings as well}
+        {--require-build-manifest : Treat a missing Vite build manifest as a warning (for contexts that run `npm run build` first)}';
 
     protected $description = 'Read-only UIX-1 design-system governance check (docs, tokens, x-ui components, gold-CTA rule).';
 
@@ -47,6 +61,7 @@ class ArchitectureUiGovernanceCheckCommand extends Command
 
         $errors = [];
         $warnings = [];
+        $advisories = [];
 
         foreach ($requiredDocs as $doc) {
             if (! is_file($base.'/'.$doc)) {
@@ -1238,10 +1253,29 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             }
         }
 
-        // Built asset manifest is the asset-baseline evidence signal (soft): a UI
+        // Built asset manifest is the asset-baseline evidence signal: a UI
         // foundation change should ship with a fresh `npm run build`.
-        if (! is_file($base.'/public/build/manifest.json')) {
-            $warnings[] = 'Vite build manifest missing (public/build/manifest.json) — run `npm run build` to refresh the asset baseline (UIX-18).';
+        //
+        // This is an ENVIRONMENT observation, not a source-tree defect.
+        // public/build is generated output and is gitignored, so it is absent in
+        // every clean checkout — including the CI gates that install Composer
+        // only. Feeding it into the decision made `--strict` report WATCH purely
+        // because the working tree happened not to have been built, which is the
+        // same coupling CICD-FIX-1 removed from the PHP feature tests, and which
+        // the UIX-18 owner test (PerformanceAssetWeightUixTest) already treats as
+        // environment-scoped ("enforced wherever `npm run build` has run").
+        //
+        // It stays reported as an advisory, and --require-build-manifest promotes
+        // it to a real warning for contexts that do build before checking.
+        $buildManifestPresent = is_file($base.'/public/build/manifest.json');
+        if (! $buildManifestPresent) {
+            $message = 'Vite build manifest missing (public/build/manifest.json) — run `npm run build` to refresh the asset baseline (UIX-18).';
+
+            if ($this->option('require-build-manifest')) {
+                $warnings[] = $message;
+            } else {
+                $advisories[] = $message.' Environment-scoped: generated build output is gitignored and absent in a clean checkout, so it does not change the decision (pass --require-build-manifest to enforce).';
+            }
         }
 
         // Design system doc should document the UIX-18 performance/asset standard.
@@ -1505,6 +1539,8 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             $warnings[] = 'UIX-22 closure evidence doc is missing (docs/sprints/uix-22-enterprise-clean-uiux-final-closure.md).';
         }
 
+        // Advisories describe the environment, never the tracked source, so they
+        // deliberately do not participate in the decision.
         $decision = $errors !== [] ? 'FAIL' : ($warnings !== [] ? 'WATCH' : 'GO');
 
         $payload = [
@@ -1513,8 +1549,10 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             'components_checked' => count($requiredComponents),
             'tokens_checked' => count($requiredTokens),
             'forbidden_frontend_deps_checked' => count($forbiddenFrontendDeps),
+            'build_manifest_present' => $buildManifestPresent,
             'errors' => $errors,
             'warnings' => $warnings,
+            'advisories' => $advisories,
         ];
 
         if ($this->option('json')) {
@@ -1526,6 +1564,9 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             }
             foreach ($warnings as $w) {
                 $this->warn("  ! {$w}");
+            }
+            foreach ($advisories as $a) {
+                $this->line("  ~ [environment] {$a}");
             }
             if ($errors === [] && $warnings === []) {
                 $this->line('  ✓ docs, tokens, and x-ui components present; gold-CTA rule holds.');

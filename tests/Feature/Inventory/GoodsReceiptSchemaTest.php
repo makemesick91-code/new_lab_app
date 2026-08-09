@@ -1,27 +1,24 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\Database\SchemaFacts;
 
 /**
  * @return array<int, string>
  */
 function goodsReceiptTableIndexes(string $table): array
 {
-    return collect(DB::select('PRAGMA index_list('.DB::getPdo()->quote($table).')'))
-        ->pluck('name')
-        ->all();
+    return SchemaFacts::indexNames($table);
 }
 
 /**
  * @return array<int, string>
  */
-function goodsReceiptIndexColumns(string $indexName): array
+function goodsReceiptIndexColumns(string $table, string $indexName): array
 {
-    return collect(DB::select('PRAGMA index_info('.DB::getPdo()->quote($indexName).')'))
-        ->sortBy('seqno')
-        ->pluck('name')
-        ->all();
+    // PRAGMA index_info() looked indexes up globally; the portable API needs the
+    // owning table, so every call site names it explicitly.
+    return SchemaFacts::indexColumns($table, $indexName);
 }
 
 it('creates trx_goods_receipts table with required columns', function () {
@@ -96,27 +93,19 @@ it('adds requires_batch_tracking to inv_products', function () {
 it('adds quantity_received to trx_purchase_order_items', function () {
     expect(Schema::hasColumn('trx_purchase_order_items', 'quantity_received'))->toBeTrue();
 
-    $column = collect(DB::select('PRAGMA table_info(trx_purchase_order_items)'))
-        ->firstWhere('name', 'quantity_received');
+    $default = SchemaFacts::columnDefault('trx_purchase_order_items', 'quantity_received');
 
-    expect($column)->not->toBeNull()
-        ->and(trim((string) $column->dflt_value, "'"))->toBe('0');
+    // The contract is "defaults to zero". SQLite spells that `0` and PostgreSQL
+    // may spell it `0` or `0.0000`, so compare the value, not the spelling.
+    expect($default)->not->toBeNull()
+        ->and((float) $default)->toBe(0.0);
 });
 
 it('enforces unique receipt_number on trx_goods_receipts', function () {
-    $indexes = goodsReceiptTableIndexes('trx_goods_receipts');
-
-    $uniqueNumberIndexes = collect($indexes)
-        ->filter(function (string $indexName): bool {
-            $info = DB::select('PRAGMA index_list('.DB::getPdo()->quote('trx_goods_receipts').')');
-
-            return collect($info)->firstWhere('name', $indexName)?->unique === 1
-                && goodsReceiptIndexColumns($indexName) === ['receipt_number'];
-        })
-        ->values()
-        ->all();
-
-    expect($uniqueNumberIndexes)->not->toBeEmpty();
+    // Same contract, driver-independent: a unique index covering exactly
+    // [receipt_number]. SQLite and PostgreSQL name such indexes differently, so
+    // the assertion is on the index's shape rather than on its name.
+    expect(SchemaFacts::hasUniqueIndexOn('trx_goods_receipts', ['receipt_number']))->toBeTrue();
 });
 
 it('creates required indexes on trx_goods_receipts', function () {
@@ -136,9 +125,9 @@ it('creates required indexes on trx_goods_receipts', function () {
         expect($indexes)->toContain($indexName);
     }
 
-    expect(goodsReceiptIndexColumns('trx_goods_receipts_branch_status_index'))->toBe(['branch_id', 'status'])
-        ->and(goodsReceiptIndexColumns('trx_goods_receipts_branch_date_index'))->toBe(['branch_id', 'receipt_date'])
-        ->and(goodsReceiptIndexColumns('trx_goods_receipts_branch_po_index'))->toBe(['branch_id', 'purchase_order_id']);
+    expect(goodsReceiptIndexColumns('trx_goods_receipts', 'trx_goods_receipts_branch_status_index'))->toBe(['branch_id', 'status'])
+        ->and(goodsReceiptIndexColumns('trx_goods_receipts', 'trx_goods_receipts_branch_date_index'))->toBe(['branch_id', 'receipt_date'])
+        ->and(goodsReceiptIndexColumns('trx_goods_receipts', 'trx_goods_receipts_branch_po_index'))->toBe(['branch_id', 'purchase_order_id']);
 });
 
 it('creates required indexes on trx_goods_receipt_items', function () {
@@ -158,8 +147,8 @@ it('creates required indexes on trx_goods_receipt_items', function () {
         expect($indexes)->toContain($indexName);
     }
 
-    expect(goodsReceiptIndexColumns('trx_gr_items_receipt_po_item_index'))->toBe(['goods_receipt_id', 'purchase_order_item_id'])
-        ->and(goodsReceiptIndexColumns('trx_gr_items_receipt_product_index'))->toBe(['goods_receipt_id', 'product_id']);
+    expect(goodsReceiptIndexColumns('trx_goods_receipt_items', 'trx_gr_items_receipt_po_item_index'))->toBe(['goods_receipt_id', 'purchase_order_item_id'])
+        ->and(goodsReceiptIndexColumns('trx_goods_receipt_items', 'trx_gr_items_receipt_product_index'))->toBe(['goods_receipt_id', 'product_id']);
 });
 
 it('does not add forbidden mutable stock columns to goods receipt tables', function () {
@@ -181,11 +170,9 @@ it('does not add forbidden mutable stock columns to goods receipt tables', funct
 });
 
 it('defaults goods receipt status to draft', function () {
-    $status = collect(DB::select('PRAGMA table_info(trx_goods_receipts)'))
-        ->firstWhere('name', 'status');
-
-    expect($status)->not->toBeNull()
-        ->and($status->dflt_value)->toBe("'draft'");
+    // PostgreSQL reports this as `'draft'::character varying`, SQLite as
+    // `'draft'`; both mean the column defaults to draft.
+    expect(SchemaFacts::columnDefault('trx_goods_receipts', 'status'))->toBe('draft');
 });
 
 it('does not create inventory movements from goods receipt schema migrations alone', function () {

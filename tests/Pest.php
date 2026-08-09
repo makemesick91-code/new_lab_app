@@ -95,6 +95,51 @@ function receivedOrder(): LabOrder
 }
 
 /**
+ * The shared parent Branch that Lab operational-analytics fixtures belong to.
+ *
+ * CICD-FIX-4 — those fixtures used to hardcode `branch_id => 1`. Both drivers
+ * declare AND enforce `trx_lab_orders_branch_id_foreign`, so this was never a
+ * missing-constraint difference; it was a surrogate-id assumption:
+ *
+ *   LabOrder::factory() -> Doctor::factory() -> Branch::factory()
+ *
+ * creates a branch as a side effect. Under SQLite each test runs in a
+ * transaction that is rolled back, so rowids restart and that incidental branch
+ * lands on id 1 — making `branch_id => 1` resolve by accident. PostgreSQL does
+ * not roll sequences back, so from the second test onward the branch is id 2,
+ * 3, ... and id 1 no longer exists:
+ * `Key (branch_id)=(1) is not present in table "mst_branches"`.
+ *
+ * So this returns a branch the fixture owns explicitly, resolved by code rather
+ * than memoised in a `static` so it stays valid after RefreshDatabase rolls back
+ * between tests, and so every default-scoped order inside one test still shares
+ * ONE branch. The id is whatever the database assigns; no test may depend on it
+ * being 1.
+ */
+function labOpsBranch(): Branch
+{
+    return Branch::query()->firstWhere('code', 'LABOPS')
+        ?? Branch::factory()->create(['code' => 'LABOPS', 'is_active' => true]);
+}
+
+/**
+ * The shared actor that Lab operational-analytics fixtures attribute writes to.
+ *
+ * CICD-FIX-4 — `trx_lab_order_status_logs.changed_by`,
+ * `trx_lab_orders.created_by`, `trx_lab_model_analyses.analyzed_by` and
+ * `trx_lab_external_dispatches.created_by` are all NOT NULL foreign keys to
+ * `users`. Hardcoding `=> 1` only worked for the same reason as the branch: in a
+ * rolled-back SQLite test the first factory-made user receives id 1, whereas on
+ * PostgreSQL the sequence keeps climbing across tests in the same process, so
+ * id 1 no longer exists.
+ */
+function labOpsActor(): User
+{
+    return User::query()->firstWhere('email', 'lab-ops-fixture@example.test')
+        ?? User::factory()->create(['email' => 'lab-ops-fixture@example.test']);
+}
+
+/**
  * Assign a technician to an order through the real service (management actor).
  */
 function assignOrder(LabOrder $order, ?Technician $technician = null, ?User $actor = null): LabOrderAssignment

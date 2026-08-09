@@ -16,7 +16,7 @@ use App\Modules\Inventory\Services\StockTransferService;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
+use Tests\Support\Database\SchemaFacts;
 
 beforeEach(function () {
     $this->withoutMiddleware(ValidateCsrfToken::class);
@@ -199,12 +199,15 @@ it('keeps ledger stock as sum of quantity in minus quantity out for decimal move
 });
 
 it('stores inventory quantity columns as numeric 18 4 in the database', function () {
-    if (DB::getDriverName() !== 'pgsql') {
-        expect(DB::getDriverName())->toBe('sqlite');
-
-        return;
-    }
-
+    /*
+     * This ran on no driver at all before: it returned early on SQLite, and on
+     * PostgreSQL it asserted the type string 'decimal' — which PostgreSQL never
+     * reports, because its native spelling is 'numeric'. It also never checked
+     * the 18,4 its own name promises.
+     *
+     * It now runs on both supported drivers and proves the full contract:
+     * canonical type, precision AND scale.
+     */
     $columns = [
         ['trx_inventory_movements', 'quantity_in'],
         ['trx_purchase_request_items', 'quantity_requested'],
@@ -215,9 +218,40 @@ it('stores inventory quantity columns as numeric 18 4 in the database', function
         ['inv_products', 'minimum_stock'],
     ];
 
-    foreach ($columns as [$table, $column]) {
-        $type = Schema::getColumnType($table, $column);
+    /*
+     * Precision and scale are a PostgreSQL-only contract, for two independent
+     * and verified reasons:
+     *
+     * 1. The widening to NUMERIC(18,4) lives in
+     *    2026_06_07_160000_alter_inventory_quantity_columns_to_decimal_18_4,
+     *    which returns early unless the driver is pgsql.
+     * 2. SQLite cannot express it at all: SQLiteGrammar::typeDecimal() emits a
+     *    bare `numeric`, while PostgresGrammar emits `decimal(total, places)`.
+     *
+     * So both drivers are asserted against the contract each can actually hold.
+     * Nothing is skipped — SQLite is asserted too, including the explicit fact
+     * that it carries no precision — and PostgreSQL, the authoritative driver,
+     * gets the strict 18,4 assertion this test is named for and never had.
+     */
+    $isPostgres = DB::getDriverName() === 'pgsql';
 
-        expect($type)->toBe('decimal', "Expected {$table}.{$column} to be decimal");
+    foreach ($columns as [$table, $column]) {
+        // Canonical type on both drivers: PostgreSQL's native spelling is
+        // "numeric", never "decimal". Compare meaning, not driver spelling.
+        expect(SchemaFacts::columnTypeName($table, $column))
+            ->toBe('decimal', "Expected {$table}.{$column} to be a decimal column");
+
+        $numeric = SchemaFacts::numericPrecisionScale($table, $column);
+
+        if ($isPostgres) {
+            expect($numeric['precision'])->toBe(18, "Expected {$table}.{$column} precision 18")
+                ->and($numeric['scale'])->toBe(4, "Expected {$table}.{$column} scale 4");
+
+            continue;
+        }
+
+        expect($numeric['precision'])
+            ->toBeNull("SQLite cannot record precision for {$table}.{$column}; it stores a bare numeric")
+            ->and($numeric['scale'])->toBeNull();
     }
 });

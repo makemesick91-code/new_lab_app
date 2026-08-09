@@ -1,27 +1,24 @@
 <?php
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\Database\SchemaFacts;
 
 /**
  * @return array<int, string>
  */
 function purchaseOrderTableIndexes(string $table): array
 {
-    return collect(DB::select('PRAGMA index_list('.DB::getPdo()->quote($table).')'))
-        ->pluck('name')
-        ->all();
+    return SchemaFacts::indexNames($table);
 }
 
 /**
  * @return array<int, string>
  */
-function purchaseOrderIndexColumns(string $indexName): array
+function purchaseOrderIndexColumns(string $table, string $indexName): array
 {
-    return collect(DB::select('PRAGMA index_info('.DB::getPdo()->quote($indexName).')'))
-        ->sortBy('seqno')
-        ->pluck('name')
-        ->all();
+    // PRAGMA index_info() looked indexes up globally; the portable API needs the
+    // owning table, so every call site names it explicitly.
+    return SchemaFacts::indexColumns($table, $indexName);
 }
 
 it('creates trx_purchase_orders table with required columns', function () {
@@ -92,27 +89,17 @@ it('stores supplier snapshot and reference fields on purchase order header', fun
 it('stores currency on purchase order header with IDR default', function () {
     expect(Schema::hasColumn('trx_purchase_orders', 'currency'))->toBeTrue();
 
-    $currency = collect(DB::select('PRAGMA table_info(trx_purchase_orders)'))
-        ->firstWhere('name', 'currency');
-
-    expect($currency)->not->toBeNull()
-        ->and($currency->dflt_value)->toBe("'IDR'");
+    // PostgreSQL reports `'IDR'::character varying`, SQLite `'IDR'`; both mean
+    // the column defaults to IDR.
+    expect(SchemaFacts::columnDefault('trx_purchase_orders', 'currency'))->toBe('IDR');
 });
 
 it('enforces unique purchase_order_number', function () {
     $indexes = purchaseOrderTableIndexes('trx_purchase_orders');
 
-    $uniqueNumberIndexes = collect($indexes)
-        ->filter(function (string $indexName): bool {
-            $info = DB::select('PRAGMA index_list('.DB::getPdo()->quote('trx_purchase_orders').')');
-
-            return collect($info)->firstWhere('name', $indexName)?->unique === 1
-                && purchaseOrderIndexColumns($indexName) === ['purchase_order_number'];
-        })
-        ->values()
-        ->all();
-
-    expect($uniqueNumberIndexes)->not->toBeEmpty();
+    // Same contract, driver-independent: a unique index covering exactly
+    // [purchase_order_number], asserted by shape rather than by index name.
+    expect(SchemaFacts::hasUniqueIndexOn('trx_purchase_orders', ['purchase_order_number']))->toBeTrue();
 });
 
 it('creates required indexes on trx_purchase_orders', function () {
@@ -133,10 +120,10 @@ it('creates required indexes on trx_purchase_orders', function () {
         expect($indexes)->toContain($indexName);
     }
 
-    expect(purchaseOrderIndexColumns('trx_purchase_orders_branch_status_index'))->toBe(['branch_id', 'status'])
-        ->and(purchaseOrderIndexColumns('trx_purchase_orders_branch_date_index'))->toBe(['branch_id', 'order_date'])
-        ->and(purchaseOrderIndexColumns('trx_purchase_orders_branch_supplier_index'))->toBe(['branch_id', 'supplier_id'])
-        ->and(purchaseOrderIndexColumns('trx_purchase_orders_branch_pr_index'))->toBe(['branch_id', 'purchase_request_id']);
+    expect(purchaseOrderIndexColumns('trx_purchase_orders', 'trx_purchase_orders_branch_status_index'))->toBe(['branch_id', 'status'])
+        ->and(purchaseOrderIndexColumns('trx_purchase_orders', 'trx_purchase_orders_branch_date_index'))->toBe(['branch_id', 'order_date'])
+        ->and(purchaseOrderIndexColumns('trx_purchase_orders', 'trx_purchase_orders_branch_supplier_index'))->toBe(['branch_id', 'supplier_id'])
+        ->and(purchaseOrderIndexColumns('trx_purchase_orders', 'trx_purchase_orders_branch_pr_index'))->toBe(['branch_id', 'purchase_request_id']);
 });
 
 it('creates required indexes on trx_purchase_order_items', function () {
@@ -152,7 +139,7 @@ it('creates required indexes on trx_purchase_order_items', function () {
         expect($indexes)->toContain($indexName);
     }
 
-    expect(purchaseOrderIndexColumns('trx_po_items_order_product_index'))->toBe(['purchase_order_id', 'product_id']);
+    expect(purchaseOrderIndexColumns('trx_purchase_order_items', 'trx_po_items_order_product_index'))->toBe(['purchase_order_id', 'product_id']);
 });
 
 it('does not add forbidden stock or total columns to purchase order tables', function () {
@@ -207,11 +194,7 @@ it('creates goods receipt tables in sprint 16.3 schema', function () {
 it('limits sprint 16.2 purchase order status column to string workflow field without receiving columns', function () {
     expect(Schema::hasColumn('trx_purchase_orders', 'status'))->toBeTrue();
 
-    $status = collect(DB::select('PRAGMA table_info(trx_purchase_orders)'))
-        ->firstWhere('name', 'status');
-
-    expect($status)->not->toBeNull()
-        ->and($status->dflt_value)->toBe("'draft'");
+    expect(SchemaFacts::columnDefault('trx_purchase_orders', 'status'))->toBe('draft');
 
     $allowedStatuses = [
         'draft',

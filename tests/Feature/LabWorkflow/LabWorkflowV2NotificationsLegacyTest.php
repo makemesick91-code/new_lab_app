@@ -7,8 +7,9 @@ use App\Modules\LabOrder\Services\LabWorkflowStateMachine;
 use App\Modules\LabOrder\Workflow\LabWorkflowState;
 use App\Modules\Production\Models\LabOrderAssignment;
 use App\Modules\Technician\Models\Technician;
+use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Notifications\DatabaseNotification;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -88,9 +89,32 @@ it('notifies QC holders when work is sent to QC', function () {
         ->count())->toBe(1);
 });
 
-it('never blocks the workflow when notification insert fails', function () {
-    // Drop the notifications table to force a notification failure.
-    Schema::drop('notifications');
+it('never blocks the workflow when notification dispatch fails', function () {
+    // CICD-FIX-5 — the failure used to be injected by dropping the notifications
+    // table. That is database-destructive failure injection, and it made the test
+    // unrunnable on PostgreSQL: the resulting real SQL error (42P01) happens
+    // inside the outer transaction RefreshDatabase opens, PostgreSQL then marks
+    // that transaction aborted, and every later statement — including this
+    // test's own $order->refresh() — dies with 25P02. Catching the exception
+    // cannot undo that; only ROLLBACK TO SAVEPOINT can. SQLite simply tolerates
+    // a failed statement, which is why the technique appeared to work.
+    //
+    // It also modelled something production cannot do. submitForPickup()
+    // dispatches notifications AFTER its DB::transaction has committed — all
+    // nine Lab notification call sites are post-commit — so in production the
+    // insert runs with no open transaction and a failure there poisons nothing.
+    //
+    // Inject the failure at the real notification-dispatch boundary instead.
+    // Notifiable::notify() resolves this contract from the container, so the
+    // throw happens exactly where LabWorkflowNotificationService guards it with
+    // try/catch(\Throwable) — the actual business contract under test — and it
+    // behaves identically on both drivers.
+    Log::spy();
+
+    $this->instance(NotificationDispatcher::class, Mockery::mock(NotificationDispatcher::class, function ($mock) {
+        $mock->shouldReceive('send')->andThrow(new RuntimeException('notification store unavailable'));
+        $mock->shouldReceive('sendNow')->andThrow(new RuntimeException('notification store unavailable'));
+    }));
 
     $order = p5DraftWithPhotos();
     userWith(['manage_lab_pickups']);
@@ -100,7 +124,18 @@ it('never blocks the workflow when notification insert fails', function () {
         ->assertRedirect()
         ->assertSessionDoesntHaveErrors();
 
+    // The workflow transition still committed despite the notification failure.
     expect($order->refresh()->status)->toBe(LabWorkflowState::WAITING_PICKUP);
+
+    // ...and no notification was persisted, so the failure was real, not a no-op.
+    expect(DatabaseNotification::query()->count())->toBe(0);
+
+    // The failure is recorded rather than silently swallowed.
+    Log::shouldHaveReceived('warning')
+        ->withArgs(fn ($message, $context = []) => str_contains(
+            (string) $message,
+            'gagal mengirim notifikasi in-app'
+        ));
 });
 
 // ---------------------------------------------------------------------------
