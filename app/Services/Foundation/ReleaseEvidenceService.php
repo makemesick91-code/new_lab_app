@@ -312,6 +312,52 @@ class ReleaseEvidenceService
                 'command' => 'foundation:enterprise-closure-check',
                 'arguments' => ['--json' => true],
             ],
+            /*
+             * POST-ENT runtime hardening evidence.
+             *
+             * These three artifacts were registered as OPTIONAL for the ci and
+             * vps profiles by the POST-ENT sprint, and both shell evidence
+             * flows already produce them — scripts/deploy-vps.sh for the vps
+             * directory and scripts/ci/foundation-evidence-gates.sh for the ci
+             * directory. The capture job map was the one place they were never
+             * wired, so `release:evidence-capture` — the canonical producer the
+             * NSF-10 gate actually runs — could not emit them at all.
+             *
+             * The consequence was not cosmetic. A missing OPTIONAL artifact is
+             * a warning, and one warning downgrades the decision to WATCH, so a
+             * completely healthy capture (exit 0, decision GO, 26 artifacts
+             * written) still produced `release:evidence-check --profile=ci` =
+             * WATCH with exactly three "Optional artifact missing" warnings.
+             * The ci evidence chain could therefore never reach GO no matter
+             * how healthy the release was, which is what the five governance
+             * integration suites and both ReleaseSafetyEvidenceClosureTest GO
+             * cases were failing on.
+             *
+             * It also broke POST-ENT rule PEH-R009 — "optional evidence is
+             * non-blocking but never silently skipped" — because the capture
+             * path skipped them silently rather than attempting the producer.
+             *
+             * These stay OPTIONAL. Wiring the producer does not change the
+             * non-blocking semantics: if a producer genuinely cannot emit its
+             * artifact, the artifact is still absent and the existing WATCH
+             * behaviour still applies. The only thing that changes is that the
+             * evidence is now actually attempted instead of silently skipped.
+             *
+             * Commands are taken from the authoritative evidence flows above,
+             * not inferred from the artifact filenames.
+             */
+            'ent-1-4-audit-check.json' => [
+                'command' => 'foundation:ent-1-4-audit-check',
+                'arguments' => ['--json' => true],
+            ],
+            'queue-worker-runtime-check.json' => [
+                'command' => 'foundation:queue-worker-runtime-check',
+                'arguments' => ['--json' => true],
+            ],
+            'runtime-hardening-check.json' => [
+                'command' => 'foundation:runtime-hardening-check',
+                'arguments' => ['--json' => true],
+            ],
             'devflow-check.json' => [
                 'command' => 'foundation:devflow-check',
                 'arguments' => ['--json' => true],
