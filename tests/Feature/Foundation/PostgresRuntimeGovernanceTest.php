@@ -131,6 +131,64 @@ it('config denies alter_system, restart, and routing changes', function () {
     );
 });
 
+/*
+ * CICD-FIX-6 Phase A2 — the runtime settings probe must not poison its caller.
+ *
+ * Every audited name is read with `SHOW <name>`, so every name must be a real
+ * PostgreSQL configuration parameter. `version` is not one — it is a function —
+ * so `SHOW version` raised SQLSTATE 42704.
+ *
+ * Outside a transaction that is harmless: autocommit means the failed statement
+ * fails alone, which is why deploys and CLI runs never surfaced it. Inside a
+ * transaction PostgreSQL aborts the WHOLE transaction and rejects every later
+ * statement with SQLSTATE 25P02 until rollback, and catching the PDO exception
+ * in PHP does not undo that. Every Pest feature test runs inside a
+ * RefreshDatabase transaction, so one bad probe silently broke every later
+ * query — which is how the vps release-evidence capture (the only profile that
+ * passes --include-db-stats) lost the REQUIRED foundation-governance-summary
+ * artifact and decided FAIL.
+ */
+
+it('never probes a name that is not a real postgres configuration parameter', function () {
+    $settings = (array) config('postgres_runtime_governance.postgres_runtime_audit.settings');
+
+    expect($settings)->toContain('server_version');
+
+    // `toContain` is variadic — extra arguments are additional needles, not a
+    // failure message — so the reason goes in an explicit assertion.
+    expect(in_array('version', $settings, true))->toBeFalse(
+        '`SHOW version` is invalid (version is a function, not a parameter) and aborts a PostgreSQL transaction'
+    );
+});
+
+it('leaves an enclosing postgres transaction usable after reading runtime settings', function () {
+    $connection = DB::connection();
+
+    if ($connection->getDriverName() !== 'pgsql') {
+        // The contract under test is PostgreSQL-specific: only PostgreSQL
+        // aborts an entire transaction on a statement error. On another driver
+        // there is nothing to prove here, and the name contract is pinned by
+        // the driver-independent test above.
+        expect($connection->getDriverName())->not->toBe('pgsql');
+
+        return;
+    }
+
+    // RefreshDatabase already holds the transaction this probe must not break.
+    expect($connection->transactionLevel())->toBeGreaterThan(0);
+
+    $report = app(PostgresRuntimeGovernanceService::class)->collect(includeDbStats: true);
+
+    // The probe must actually have read the server version, not silently
+    // degrade to null the way the invalid parameter name did.
+    expect($report['db_stats']['settings']['server_version'] ?? null)
+        ->not->toBeNull('server_version was not read from PostgreSQL');
+
+    // The real assertion: the surrounding transaction is still usable. If the
+    // probe had aborted it, this raises SQLSTATE 25P02 and the test fails.
+    expect($connection->select('select 1 as ok'))->not->toBeEmpty();
+});
+
 it('recommendations include rollback note and restart classification', function () {
     $report = app(PostgresRuntimeGovernanceService::class)->collect();
 

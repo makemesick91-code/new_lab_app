@@ -101,8 +101,26 @@ return [
     ],
 
     'postgres_runtime_audit' => [
+        // Every name here is read with `SHOW <name>`, so every name must be a
+        // real PostgreSQL configuration parameter.
+        //
+        // `version` is NOT one — it is a function, `version()`. `SHOW version`
+        // therefore raises SQLSTATE 42704 "unrecognized configuration
+        // parameter". Outside a transaction that is harmless (autocommit: the
+        // statement fails alone), which is why it survived unnoticed in deploys
+        // and CLI runs. Inside a transaction PostgreSQL aborts the ENTIRE
+        // transaction and rejects every later statement with SQLSTATE 25P02
+        // until rollback — and catching the PDO exception in PHP does not undo
+        // that. Every Pest feature test runs inside a RefreshDatabase
+        // transaction, so this silently poisoned the rest of the test: the vps
+        // evidence capture (the only profile that passes --include-db-stats)
+        // then could not produce the required foundation-governance-summary
+        // artifact, and the vps release-safety decision was FAIL.
+        //
+        // `server_version` is the actual parameter, and is what the CI runner
+        // health check already probes.
         'settings' => [
-            'version',
+            'server_version',
             'max_connections',
             'shared_buffers',
             'effective_cache_size',

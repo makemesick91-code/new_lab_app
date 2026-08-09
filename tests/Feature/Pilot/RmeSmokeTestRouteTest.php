@@ -3,6 +3,7 @@
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Database\Seeders\BranchSeeder;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RmeSmokeTestSeeder;
@@ -43,6 +44,17 @@ it('allows smoke-test Perawat to access visit support routes but not cashier', f
     $this->actingAs($perawat)->get(route('rme.visits.create'))->assertOk();
     $this->actingAs($perawat)->get(route('rme.visits.show', $this->clinicalVisit))->assertOk();
     $this->actingAs($perawat)->get(route('rme.cashier.index'))->assertForbidden();
+});
+
+it('still redirects the smoke-test Perawat once the online context is released', function () {
+    $perawat = smokeUser(RmeSmokeTestSeeder::PERAWAT_USER_EMAIL);
+
+    // Release the seeded context through the same service the application uses.
+    app(UserOnlineContextService::class)->markOffline($perawat);
+
+    $this->actingAs($perawat)
+        ->get(route('rme.visits.index'))
+        ->assertRedirect(route('rme.online-context.select'));
 });
 
 it('allows smoke-test Kasir to access cashier routes but not visit creation', function () {

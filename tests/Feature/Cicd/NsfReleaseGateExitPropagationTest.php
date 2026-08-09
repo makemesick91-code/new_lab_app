@@ -264,6 +264,127 @@ it('declares shell bash on every strict pipeline step so pipefail is in force', 
 })->with(nsfBlockingSteps());
 
 // ---------------------------------------------------------------------------
+// NSF-R011 full suite — the step the false-green defect is named after
+// ---------------------------------------------------------------------------
+
+/*
+ * CICD-FIX-6 — `Run full Pest suite` was the original victim of this defect and
+ * the last blocking producer left outside the scanner's reach.
+ *
+ * A run once logged `Tests: 1202 failed` and still concluded `success`: the
+ * step was `php artisan test | tee ...` under the default `bash -e` shell, so
+ * the pipeline returned tee's status and 1202 real failures were reported as a
+ * green full suite. CICD-CTRL-3 fixed the step by declaring `shell: bash`, but
+ * left it out of `ci_runner.strict_pipeline_steps` — and the scanner only
+ * inspects steps named there. Deleting that one line would have silently
+ * restored the bug, on the gate least likely to be re-read.
+ *
+ * These tests run the REAL step body with a stubbed producer, because asserting
+ * that `shell: bash` appears in the YAML would also pass for a step that still
+ * swallowed the status.
+ */
+
+/** @return list<array{0: string, 1: string}> [job, step name] */
+function nsfFullSuiteStep(): array
+{
+    return [['full_suite_gate', 'Run full Pest suite']];
+}
+
+it('fails the full suite step when Pest fails rather than reporting tee success', function (string $job, string $step) {
+    [$code, $output, $evidence] = runNsfStepBody($job, $step, producerExit: 1);
+
+    expect($code)->not->toBe(0, "step '{$step}' swallowed a failing Pest run — 1202 failures were once green this way");
+
+    // The log the gate uploads as evidence must survive the failure.
+    expect(file_exists($evidence))->toBeTrue("step '{$step}' lost its evidence log on failure")
+        ->and(file_get_contents($evidence))->toContain('STUB-PRODUCER-OUTPUT')
+        ->and($output)->toContain('STUB-PRODUCER-OUTPUT');
+})->with(nsfFullSuiteStep());
+
+it('passes the full suite step and keeps its log when Pest succeeds', function (string $job, string $step) {
+    [$code, $output, $evidence] = runNsfStepBody($job, $step, producerExit: 0);
+
+    expect($code)->toBe(0, "step '{$step}' failed on a successful Pest run")
+        ->and(file_exists($evidence))->toBeTrue()
+        ->and(file_get_contents($evidence))->toContain('STUB-PRODUCER-OUTPUT')
+        ->and($output)->toContain('STUB-PRODUCER-OUTPUT');
+})->with(nsfFullSuiteStep());
+
+it('would report the full suite green if its strict shell were removed', function () {
+    // Regression control: proves the tests above can actually tell a protected
+    // step from a vulnerable one. The real body is run under GitHub's DEFAULT
+    // shell — exactly what the step used before CICD-CTRL-3 — and the failing
+    // producer is masked. If this ever stops masking, the positive tests above
+    // stop proving anything.
+    $body = nsfStepBody('full_suite_gate', 'Run full Pest suite');
+    $patched = preg_replace('/php artisan [^\n|]*/', '(echo "STUB"; exit 1) ', $body, 1);
+
+    $workdir = sys_get_temp_dir().'/fix6-fullsuite-'.bin2hex(random_bytes(6));
+    mkdir($workdir.'/storage/ci-evidence', 0o777, true);
+
+    $argv = nsfShellArgv(null);
+    $argv[] = (string) $patched;
+
+    $result = Process::path($workdir)
+        ->env(['PATH' => getenv('PATH')])
+        ->run($argv);
+
+    expect($result->exitCode())->toBe(0, 'the unprotected form no longer masks a failure; the guard tests need rewriting');
+});
+
+it('registers the full suite step so the scanner can see it at all', function () {
+    // The gap CICD-CTRL-3 left: the step was fixed but never registered, so
+    // pipelineExitPosture() skipped it entirely.
+    expect(in_array('Run full Pest suite', (array) config('ci_runner.strict_pipeline_steps'), true))
+        ->toBeTrue('the full suite gate is not covered by the scanner');
+
+    $posture = app(SelfHostedRunnerScanner::class)->pipelineExitPosture();
+
+    expect($posture['checked'])->toContain('Run full Pest suite')
+        ->and($posture['unprotected'])->toBe([])
+        ->and($posture['ok'])->toBeTrue();
+});
+
+it('declares shell bash on the full suite step so pipefail is in force', function () {
+    expect(nsfStepShell('full_suite_gate', 'Run full Pest suite'))->toBe('bash');
+});
+
+it('turns the scanner red if the full suite step loses its strict shell', function () {
+    // Synthetic regression against a COPY of the real workflow — the canonical
+    // file is never mutated. Only the strict shell of the full suite step is
+    // removed, which is precisely the edit that would reintroduce the defect.
+    $workflow = file_get_contents(nsfWorkflowPath());
+
+    $vulnerable = preg_replace(
+        '/(- name: Run full Pest suite\n)(.*?)^(\s*)shell: bash\n/ms',
+        '$1$2',
+        $workflow,
+        1
+    );
+
+    expect($vulnerable)->not->toBe($workflow, 'the strict shell line was not found to remove');
+
+    $relative = 'storage/framework/testing/fix6-vulnerable-workflow-'.bin2hex(random_bytes(6)).'.yml';
+    $absolute = base_path($relative);
+    @mkdir(dirname($absolute), 0o777, true);
+    file_put_contents($absolute, $vulnerable);
+
+    try {
+        config()->set('ci_runner.files.ci_workflow', $relative);
+
+        $posture = app(SelfHostedRunnerScanner::class)->pipelineExitPosture();
+
+        expect($posture['ok'])->toBeFalse('the scanner accepted an unprotected full suite step')
+            ->and($posture['unprotected'])->toContain('Run full Pest suite');
+
+        // The scanner must name the offending step, not just fail somewhere.
+        expect(implode("\n", $posture['issues']))->toContain('Run full Pest suite');
+    } finally {
+        @unlink($absolute);
+    }
+});
+
+// ---------------------------------------------------------------------------
 // No weakening — the failure must not be recovered by hiding it
 // ---------------------------------------------------------------------------
 
