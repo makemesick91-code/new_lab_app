@@ -364,19 +364,19 @@ return [
             'rollback_action' => 'Set env override to false to relax the requirement (not recommended).',
         ],
 
-        // --- LEGACY-RME-PDF-1A — legacy RME PDF archive (foundation only) ---
+        // --- LEGACY-RME-PDF — legacy RME PDF archive (runtime shipped, stays OFF) ---
 
         'rme.legacy_pdf_archive' => [
             'name' => 'Legacy RME PDF Archive',
-            'description' => 'Import and read-only archive of a patient historical RME documents (LEGACY-RME-PDF-1A foundation; upload/publish runtime lands in a follow-up sprint).',
+            'description' => 'Import, review, controlled publish and read-only private archive of a patient historical RME documents: LEGACY-RME-PDF-1A shipped the schema, permissions and date rules, 1B the private upload runtime and Poppler page rendering, 1C the human review gate, the atomic idempotent publish into an immutable legacy record and the patient RME history integration behind a private viewer. The runtime exists but stays OFF in production until an explicit controlled-rollout decision; while it is off every legacy import, review, publish, archive-viewer and page route answers 404 server-side and the patient history card renders nothing.',
             'default' => false,
             'env_key' => 'FEATURE_RME_LEGACY_PDF_ARCHIVE',
             'owner' => 'rme',
             'risk_level' => 'high',
-            'rollout_status' => 'foundation',
-            'review_target' => 'LEGACY-RME-PDF-1B',
+            'rollout_status' => 'implemented',
+            'review_target' => 'LEGACY-RME-PDF-1C',
             'dependencies' => [],
-            'rollback_action' => 'Set the env override to false and clear the config cache; the schema stays in place and nothing is imported or published.',
+            'rollback_action' => 'Set the env override to false and clear the config cache; every legacy import/review/publish/viewer route becomes inaccessible again. Nothing is deleted — the schema, already imported staging rows, published legacy records and their files on the private disk all stay exactly as they are. Disabling hides the runtime, it never erases an archive.',
         ],
     ],
 ];
