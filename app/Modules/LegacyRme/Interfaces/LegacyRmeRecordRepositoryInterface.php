@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Interfaces;
 
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
+use App\Modules\LegacyRme\Models\LegacyRmeRecordPage;
 use Illuminate\Support\Collection;
 
 /**
@@ -48,4 +49,30 @@ interface LegacyRmeRecordRepositoryInterface
      * @param  array<string, mixed>  $attributes
      */
     public function create(array $attributes): LegacyRmeRecord;
+
+    /*
+    |--------------------------------------------------------------------------
+    | LEGACY-RME-PDF-1C — controlled publish and the published-record viewer
+    |--------------------------------------------------------------------------
+    |
+    | Still no update and no delete: a published record stays immutable. The
+    | additions below only create the record's pages at publish time and read
+    | them back for the policy-gated viewer.
+    */
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    public function createPage(LegacyRmeRecord $record, array $attributes): LegacyRmeRecordPage;
+
+    /**
+     * @return Collection<int, LegacyRmeRecordPage>
+     */
+    public function pagesFor(LegacyRmeRecord $record): Collection;
+
+    /**
+     * Nested lookup: a page is always resolved THROUGH its record, so a page
+     * number can never reach another record's rendered output.
+     */
+    public function findPage(LegacyRmeRecord $record, int $pageNumber): ?LegacyRmeRecordPage;
 }

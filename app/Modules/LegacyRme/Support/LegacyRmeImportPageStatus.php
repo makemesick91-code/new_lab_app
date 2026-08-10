@@ -40,6 +40,23 @@ final class LegacyRmeImportPageStatus
         self::READY,
     ];
 
+    /**
+     * LEGACY-RME-PDF-1C — statuses whose rendered image may still be streamed
+     * from the STAGING screen.
+     *
+     * Deliberately wider than PUBLISHABLE: once an import is published its
+     * pages become PUBLISHED, and the staging detail screen is the operator's
+     * evidence of what was reviewed. Keeping that readable is an audit
+     * property; it must not be conflated with "may be published again", which
+     * stays READY-only.
+     *
+     * @var list<string>
+     */
+    public const VIEWABLE = [
+        self::READY,
+        self::PUBLISHED,
+    ];
+
     private function __construct() {}
 
     public static function isValid(?string $status): bool
@@ -50,5 +67,10 @@ final class LegacyRmeImportPageStatus
     public static function isPublishable(?string $status): bool
     {
         return $status !== null && in_array($status, self::PUBLISHABLE, true);
+    }
+
+    public static function isViewable(?string $status): bool
+    {
+        return $status !== null && in_array($status, self::VIEWABLE, true);
     }
 }

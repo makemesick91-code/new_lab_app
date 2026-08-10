@@ -163,17 +163,22 @@ it('shows an import to a super admin regardless of origin branch', function () {
         ->assertOk();
 });
 
-it('never exposes a publish action in 1B', function () {
+it('offers no publish action on an import that has not been reviewed', function () {
+    // 1B asserted the publish route did not exist at all. LEGACY-RME-PDF-1C
+    // ships it, so the boundary that actually holds now is the STATE gate: a
+    // document sitting at READY_FOR_REVIEW offers no publish form, because
+    // publishing is only reachable once a human has reviewed it.
     $import = lrme1bImport();
 
-    $response = $this->actingAs(superAdmin())
-        ->get(route('settings.rme.legacy-imports.show', $import->getKey()));
+    expect($import->status)->toBe(LegacyRmeImportStatus::READY_FOR_REVIEW);
 
-    $response->assertOk()
+    $this->actingAs(superAdmin())
+        ->get(route('settings.rme.legacy-imports.show', $import->getKey()))
+        ->assertOk()
         ->assertDontSee('legacy-imports/'.$import->getKey().'/publish')
-        ->assertDontSee('Publikasikan');
+        ->assertDontSee('Publikasikan Arsip');
 
-    expect(Route::has('settings.rme.legacy-imports.publish'))->toBeFalse();
+    expect(Route::has('settings.rme.legacy-imports.publish'))->toBeTrue();
 });
 
 it('never renders a patient KTP anywhere in the workspace', function () {

@@ -1,9 +1,14 @@
 {{--
     LEGACY-RME-PDF-1B — processing status and rendered result of one staged
     document.
+    LEGACY-RME-PDF-1C — review-before-publish, and the link to the published
+    archive once this import has produced one.
 
-    There is deliberately NO publish action here: publishing a legacy record is
-    a later sprint. The furthest a document goes in 1B is READY_FOR_REVIEW.
+    Review and publish are two separate, separately permissioned actions: the
+    1A transition map only allows PUBLISHED from REVIEWED, so an operator must
+    have looked at the rendered pages before the archive becomes permanent. The
+    buttons below are convenience only — the route middleware, the policy and
+    the service each re-check independently.
 
     Every file link points at the policy-gated streaming route; no storage path
     is ever rendered, and KTP/NIK never appears.
@@ -11,7 +16,10 @@
 @php
     $isProcessing = in_array($import->status, ['UPLOADED', 'QUEUED', 'PROCESSING'], true);
     $isReady = $import->status === 'READY_FOR_REVIEW';
+    $isReviewed = $import->status === 'REVIEWED';
     $isFailed = $import->status === 'FAILED';
+    $isPublished = $import->status === 'PUBLISHED';
+    $publishedRecord = $import->record;
 @endphp
 
 <x-settings-shell title="Arsip RME Lama">
@@ -42,6 +50,21 @@
 
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('settings.rme.legacy-imports.index')">Kembali</x-ui.button>
+
+                @if ($isPublished && $publishedRecord)
+                    <x-ui.button variant="primary" :href="route('rme.legacy-records.show', $publishedRecord->getKey())">
+                        Lihat Arsip Final
+                    </x-ui.button>
+                @endif
+
+                @can('review', $import)
+                    @if ($isReady)
+                        <form method="POST" action="{{ route('settings.rme.legacy-imports.review', $import->getKey()) }}">
+                            @csrf
+                            <x-ui.button type="submit" variant="primary">Tandai Sudah Ditinjau</x-ui.button>
+                        </form>
+                    @endif
+                @endcan
 
                 @can('retry', $import)
                     @if ($isFailed || $import->status === 'PROCESSING')
@@ -132,9 +155,54 @@
 
         @if ($isReady)
             <x-ui.alert variant="success" title="Siap ditinjau">
-                Dokumen berhasil dirender. Tahap peninjauan dan publikasi arsip berada pada sprint berikutnya —
-                arsip ini <strong>belum</strong> menjadi rekam medis final pasien.
+                Dokumen berhasil dirender. Periksa seluruh halaman dan tanggal dokumen di bawah, lalu tandai
+                <strong>Sudah Ditinjau</strong>. Arsip ini <strong>belum</strong> menjadi rekam medis final pasien.
             </x-ui.alert>
+        @endif
+
+        @if ($isPublished)
+            <x-ui.alert variant="success" title="Arsip sudah dipublikasikan">
+                Dokumen ini sudah menjadi arsip RME final dan muncul pada riwayat rekam medis pasien.
+                Arsip final bersifat permanen — koreksi dilakukan dengan membatalkan (VOID) arsip lalu mengimpor ulang.
+            </x-ui.alert>
+        @endif
+
+        @if ($isReviewed)
+            @can('publish', $import)
+                <x-ui.card title="Publikasikan Arsip">
+                    <x-ui.alert variant="warning" title="Tindakan permanen">
+                        Setelah dipublikasikan, arsip menjadi rekam medis historis pasien yang bersifat
+                        <strong>final dan tidak dapat diubah</strong>. Publikasi tidak membuat kunjungan, tagihan,
+                        pembayaran, maupun order lab.
+                    </x-ui.alert>
+
+                    <form
+                        method="POST"
+                        action="{{ route('settings.rme.legacy-imports.publish', $import->getKey()) }}"
+                        class="mt-4 space-y-4"
+                        onsubmit="return confirm('Publikasikan arsip ini ke riwayat rekam medis pasien? Tindakan ini tidak dapat dibatalkan.');"
+                    >
+                        @csrf
+
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <x-ui.input
+                                name="title"
+                                label="Judul Arsip"
+                                :value="old('title', 'Arsip RME Lama')"
+                                maxlength="150"
+                            />
+                            <x-ui.input
+                                name="description"
+                                label="Keterangan (opsional)"
+                                :value="old('description')"
+                                maxlength="2000"
+                            />
+                        </div>
+
+                        <x-ui.button type="submit" variant="primary">Publikasikan Arsip</x-ui.button>
+                    </form>
+                </x-ui.card>
+            @endcan
         @endif
 
         <x-ui.card title="Dokumen Sumber">

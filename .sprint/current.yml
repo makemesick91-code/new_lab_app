@@ -1,17 +1,17 @@
-# Active sprint manifest — LEGACY-RME-PDF-1B
+# Active sprint manifest — LEGACY-RME-PDF-1C
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-1B
+id: LEGACY-RME-PDF-1C
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Legacy RME PDF archive — private upload runtime, PDF validation, queue processing, page rendering and thumbnails (feature flag OFF; no review/publish runtime)"
+title: "Legacy RME PDF archive — review-before-publish, atomic idempotent publish, immutable published record, private published viewer and patient RME history integration (feature flag OFF)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # upload service, queued rasterization job, private streaming, HTTP surface
-schema_change: false            # 1A already shipped every column this sprint writes to
-frontend_change: true           # 3 new Blade views + sidebar entry (Alpine only; no JS/CSS bundle source change)
-security_impact: true           # private disk, policy abilities, IDOR boundaries, process execution, malware scan hook
-branch_isolation_impact: true   # every staged row resolved through the repository with the server-resolved branch scope
+runtime_change: true            # review/publish services, published-record viewer, patient timeline
+schema_change: false            # 1A already shipped every column and constraint this sprint writes to
+frontend_change: true           # published viewer + patient RME timeline Blade views (no JS/CSS bundle source change)
+security_impact: true           # new policy abilities, private published-file streaming, IDOR + feature-flag boundaries
+branch_isolation_impact: true   # every import/record resolved through the repository with the server-resolved branch scope
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true
@@ -22,4 +22,4 @@ test_profiles:
   - access_control
   - security
 
-go_tag: legacy-rme-pdf-1b-private-upload-rendering-go
+go_tag: legacy-rme-pdf-1c-controlled-publish-patient-history-go

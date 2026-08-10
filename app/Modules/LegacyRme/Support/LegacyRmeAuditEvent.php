@@ -51,6 +51,17 @@ final class LegacyRmeAuditEvent
 
     public const PAGE_VIEWED = 'LEGACY_RME_PAGE_VIEWED';
 
+    // LEGACY-RME-PDF-1C — review, publish and the published-record viewer.
+    // PUBLISHED / PUBLISH_REJECTED were already declared by 1A and are reused
+    // verbatim rather than duplicated under a second name.
+    public const IMPORT_REVIEWED = 'LEGACY_RME_IMPORT_REVIEWED';
+
+    public const RECORD_VIEWED = 'LEGACY_RME_RECORD_VIEWED';
+
+    public const RECORD_SOURCE_VIEWED = 'LEGACY_RME_RECORD_SOURCE_VIEWED';
+
+    public const RECORD_PAGE_VIEWED = 'LEGACY_RME_RECORD_PAGE_VIEWED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -68,6 +79,10 @@ final class LegacyRmeAuditEvent
         self::IMPORT_CANCELLED,
         self::SOURCE_VIEWED,
         self::PAGE_VIEWED,
+        self::IMPORT_REVIEWED,
+        self::RECORD_VIEWED,
+        self::RECORD_SOURCE_VIEWED,
+        self::RECORD_PAGE_VIEWED,
     ];
 
     /**

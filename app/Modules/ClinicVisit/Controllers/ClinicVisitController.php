@@ -12,6 +12,7 @@ use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
@@ -41,6 +42,7 @@ class ClinicVisitController extends Controller
         private readonly KtpScanService $ktpScans,
         private readonly UserOnlineContextService $onlineContext,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly LegacyRmePatientHistoryService $legacyHistory,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -271,6 +273,16 @@ class ClinicVisitController extends Controller
         return view('rme.visits.show', [
             'visit' => $clinicVisit,
             'patientVisitHistory' => $patientVisitHistory,
+            // LEGACY-RME-PDF-1C — native RME history merged with the patient's
+            // PUBLISHED legacy archive. The service resolves the legacy side
+            // under its own feature flag, permission and branch scope, so this
+            // is an empty collection (and the card is not rendered at all)
+            // whenever the archive is off or the operator may not see it.
+            'rmeTimeline' => $this->legacyHistory->timelineFor(
+                request()->user(),
+                (int) $clinicVisit->patient_id,
+                $patientVisitHistory,
+            ),
             'doctorAccessSummary' => $clinicVisit->patient
                 ? $this->doctorScope->doctorsWithAccessSummary($clinicVisit->patient)
                 : [],

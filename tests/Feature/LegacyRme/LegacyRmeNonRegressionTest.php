@@ -91,12 +91,11 @@ it('keeps the legacy archive out of the native RME sheet history', function () {
     expect(MedicalRecord::where('patient_id', $patient->id)->count())->toBe(1);
 });
 
-it('exposes only the staging surface and never a review or publish endpoint', function () {
-    // 1A asserted that NO endpoint existed at all. 1B ships the staging surface
-    // (upload, status, private streaming, retry, cancel), so that assertion is
-    // replaced by the boundary that actually holds now: review and publish
-    // still have no endpoint, because a staged document may not become an
-    // archived record in this sprint.
+it('exposes exactly the staging surface plus review and publish, and nothing else', function () {
+    // 1A asserted that NO endpoint existed at all. 1B replaced that with the
+    // staging surface. 1C adds review and publish — and nothing more: `approve`
+    // and `void` still have no endpoint (void is its own later capability), and
+    // no route can mutate a document any other way.
     $names = collect(app('router')->getRoutes()->getRoutes())
         ->map(fn ($route) => (string) $route->getName())
         ->filter(fn (string $name) => str_starts_with($name, 'settings.rme.legacy-imports.'))
@@ -112,10 +111,29 @@ it('exposes only the staging surface and never a review or publish endpoint', fu
         'settings.rme.legacy-imports.pages.show',
         'settings.rme.legacy-imports.retry',
         'settings.rme.legacy-imports.cancel',
+        'settings.rme.legacy-imports.review',
+        'settings.rme.legacy-imports.publish',
     ]);
 
-    foreach (['publish', 'review', 'approve', 'void'] as $forbidden) {
+    foreach (['approve', 'void'] as $forbidden) {
         expect($names->contains('settings.rme.legacy-imports.'.$forbidden))->toBeFalse();
+    }
+});
+
+it('exposes a read-only published archive surface with no write route', function () {
+    // LEGACY-RME-PDF-1C. A published legacy record is immutable clinical
+    // evidence: the viewer may only ever be read.
+    $routes = collect(app('router')->getRoutes()->getRoutes())
+        ->filter(fn ($route) => str_starts_with((string) $route->getName(), 'rme.legacy-records.'));
+
+    expect($routes->pluck('action.as')->values()->all())->toEqualCanonicalizing([
+        'rme.legacy-records.show',
+        'rme.legacy-records.source',
+        'rme.legacy-records.pages.show',
+    ]);
+
+    foreach ($routes as $route) {
+        expect(array_diff($route->methods(), ['GET', 'HEAD']))->toBe([]);
     }
 });
 

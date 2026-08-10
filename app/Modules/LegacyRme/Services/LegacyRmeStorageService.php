@@ -28,6 +28,34 @@ class LegacyRmeStorageService
         return Storage::disk($this->diskName());
     }
 
+    /**
+     * LEGACY-RME-PDF-1C — the disk a specific stored row lives on.
+     *
+     * A published record persists the disk it was written to, so streaming must
+     * honour that value rather than whatever the config happens to point at
+     * today; otherwise repointing `legacy_rme.storage.disk` would silently 404
+     * every historical archive. The named disk is still asserted private before
+     * a single byte is read — an old row can never re-open a public door.
+     *
+     * A blank/absent value falls back to the configured disk, which is what
+     * every row written so far actually used.
+     */
+    public function diskFor(?string $disk): Filesystem
+    {
+        if (! is_string($disk) || $disk === '') {
+            return $this->disk();
+        }
+
+        $this->assertPrivateDisk($disk);
+
+        return Storage::disk($disk);
+    }
+
+    public function existsOn(?string $disk, string $path): bool
+    {
+        return $this->diskFor($disk)->exists($path);
+    }
+
     public function diskName(): string
     {
         $disk = config('legacy_rme.storage.disk');
