@@ -1,25 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-1C
+# Active sprint manifest — LEGACY-RME-PDF-ROLL-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-1C
-type: MODULE_SPRINT
-module: LegacyRme
-title: "Legacy RME PDF archive — review-before-publish, atomic idempotent publish, immutable published record, private published viewer and patient RME history integration (feature flag OFF)"
+id: LEGACY-RME-PDF-ROLL-1
+type: FOUNDATION_SPRINT
+module: Foundation
+title: "Feature flag runtime override & controlled enablement readiness — make a declared env_key actually govern the flag under config:cache, fail closed on an invalid value, and make an uncaptured override impossible to reintroduce"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # review/publish services, published-record viewer, patient timeline
-schema_change: false            # 1A already shipped every column and constraint this sprint writes to
-frontend_change: true           # published viewer + patient RME timeline Blade views (no JS/CSS bundle source change)
-security_impact: true           # new policy abilities, private published-file streaming, IDOR + feature-flag boundaries
-branch_isolation_impact: true   # every import/record resolved through the repository with the server-resolved branch scope
+runtime_change: true            # FeatureFlagService resolution + config capture + governance checks
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
+security_impact: true           # decides whether a risky capability can be switched on at runtime
+branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true
-browser_required: false
+deploy_required: true           # config + service resolution changes must reach the VPS
+browser_required: false         # no UI surface
 
 test_profiles:
-  - rme
-  - access_control
+  - foundation
   - security
 
-go_tag: legacy-rme-pdf-1c-controlled-publish-patient-history-go
+go_tag: legacy-rme-pdf-roll-1-feature-flag-runtime-readiness-go

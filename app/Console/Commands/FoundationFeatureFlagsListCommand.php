@@ -51,12 +51,16 @@ class FoundationFeatureFlagsListCommand extends Command
 
         foreach ($flags as $key => $flag) {
             $this->line(sprintf(
-                '  %-55s enabled=%-5s default=%-5s risk=%-8s status=%s',
+                '  %-55s enabled=%-5s default=%-5s risk=%-8s status=%-12s via=%-24s captured=%s',
                 $key,
                 $flag['enabled'] ? 'true' : 'false',
                 $flag['default'] ? 'true' : 'false',
                 $flag['risk_level'],
                 $flag['rollout_status'],
+                // LEGACY-RME-PDF-ROLL-1 — how the effective value was reached,
+                // so a rollout can be debugged without guessing at the runtime.
+                $flag['env_resolution'],
+                $flag['env_captured'] ? 'yes' : 'no',
             ));
         }
 

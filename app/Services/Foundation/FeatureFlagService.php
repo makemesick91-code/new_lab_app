@@ -136,6 +136,26 @@ class FeatureFlagService
             ? $this->pass('FLAG-RISKY-NOT-ENABLED', 'No risky future infra flag is currently enabled.')
             : $this->warn('FLAG-RISKY-NOT-ENABLED', 'Risky flags currently enabled via env override: '.implode(', ', $riskyEnabled));
 
+        // LEGACY-RME-PDF-ROLL-1 — a declared env_key that was never captured at
+        // config-BUILD time is an INERT override: it works while config is
+        // uncached and silently stops working the moment a deployment runs
+        // config:cache. That is a broken promise, so it fails the registry.
+        $uncaptured = collect($flags)
+            ->filter(fn (array $flag) => $flag['env_key'] !== '' && $flag['env_captured'] === false)
+            ->keys()
+            ->all();
+        $checks[] = $uncaptured === []
+            ? $this->pass('FLAG-ENV-CAPTURE', 'Every flag declaring an env_key captures its override at config-build time (config:cache safe).')
+            : $this->fail('FLAG-ENV-CAPTURE', 'Flags declare an env_key with no config-build-time env_value capture, so the override is ignored under config:cache: '.implode(', ', $uncaptured));
+
+        $invalidOverrides = collect($flags)
+            ->filter(fn (array $flag) => $flag['env_resolution'] === 'invalid_fallback_default')
+            ->keys()
+            ->all();
+        $checks[] = $invalidOverrides === []
+            ? $this->pass('FLAG-ENV-VALUE-VALID', 'All configured feature flag overrides parse as booleans.')
+            : $this->fail('FLAG-ENV-VALUE-VALID', 'Feature flag overrides are not parseable booleans and fell back to the declared default: '.implode(', ', $invalidOverrides));
+
         $errors = count(array_filter($checks, fn (array $c) => $c['status'] === 'failed'));
         $warnings = count(array_filter($checks, fn (array $c) => $c['status'] === 'warning'));
         $passed = count(array_filter($checks, fn (array $c) => $c['status'] === 'passed'));
@@ -166,21 +186,7 @@ class FeatureFlagService
         $default = (bool) ($definition['default'] ?? false);
         $envKey = (string) ($definition['env_key'] ?? '');
 
-        // Env override resolution order:
-        //  1. `env_value` captured in the config file at config-BUILD time —
-        //     the only form that survives `config:cache` (runtime env() reads
-        //     nothing once config is cached, so cached deployments would
-        //     silently ignore a pure runtime env override).
-        //  2. Runtime env($envKey) for uncached (local/test) environments.
-        //  3. The declared default.
-        $override = $definition['env_value'] ?? null;
-        if ($override === null && $envKey !== '') {
-            $override = env($envKey);
-        }
-
-        $enabled = $override !== null
-            ? filter_var($override, FILTER_VALIDATE_BOOLEAN)
-            : $default;
+        $resolution = $this->resolveOverride($definition, $envKey, $default);
 
         return [
             'key' => $key,
@@ -195,8 +201,66 @@ class FeatureFlagService
             'review_target' => $definition['review_target'] ?? null,
             'dependencies' => array_values((array) ($definition['dependencies'] ?? [])),
             'rollback_action' => (string) ($definition['rollback_action'] ?? ''),
-            'enabled' => $enabled,
+            // LEGACY-RME-PDF-ROLL-1 runtime-override evidence. `env_value` is a
+            // normalized bool/null/'invalid' — never the raw environment string,
+            // so a misconfigured value can never be echoed into evidence JSON.
+            'env_captured' => $resolution['captured'],
+            'env_value' => $resolution['value'],
+            'env_resolution' => $resolution['source'],
+            'enabled' => $resolution['enabled'],
         ];
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-1 — the one place a flag's effective value is decided.
+     *
+     * Resolution order:
+     *  1. `env_value` captured in the config file at config-BUILD time. This is
+     *     the only form that survives `config:cache`: once config is cached
+     *     Laravel skips loading the environment file altogether, so a runtime
+     *     env() call returns null and a pure runtime override is silently lost.
+     *  2. Runtime env($envKey), which still works on uncached (local/test)
+     *     environments and keeps the historical behaviour for definitions that
+     *     were built by hand without a capture.
+     *  3. The declared default.
+     *
+     * Fail-closed rules:
+     *  - An unset OR blank override is "not configured" and yields the declared
+     *     default. Blank is deliberately not read as false: for a default-true
+     *     safety flag, falling to the default keeps the safety gate ON.
+     *  - An unparseable override yields the declared default too, and is
+     *     reported as `invalid` so governance can FAIL on it. It is never read
+     *     as the enabled interpretation, so a typo can never switch a risky
+     *     default-off capability on.
+     *
+     * @param  array<string, mixed>  $definition
+     * @return array{captured: bool, value: bool|string|null, source: string, enabled: bool}
+     */
+    private function resolveOverride(array $definition, string $envKey, bool $default): array
+    {
+        $captured = array_key_exists('env_value', $definition);
+
+        $raw = $definition['env_value'] ?? null;
+        if ($raw === null && $envKey !== '') {
+            $raw = env($envKey);
+        }
+
+        if ($raw === null || (is_string($raw) && trim($raw) === '')) {
+            return ['captured' => $captured, 'value' => null, 'source' => 'default', 'enabled' => $default];
+        }
+
+        $parsed = filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        if ($parsed === null) {
+            return [
+                'captured' => $captured,
+                'value' => 'invalid',
+                'source' => 'invalid_fallback_default',
+                'enabled' => $default,
+            ];
+        }
+
+        return ['captured' => $captured, 'value' => $parsed, 'source' => 'env', 'enabled' => $parsed];
     }
 
     private function pass(string $id, string $message): array
