@@ -59,6 +59,26 @@ final class LegacyRmePdfFailure
 
     public const IMPORT_NOT_CANCELLABLE = 'IMPORT_NOT_CANCELLABLE';
 
+    /*
+    |--------------------------------------------------------------------------
+    | LEGACY-RME-PDF-1C — review and publish
+    |--------------------------------------------------------------------------
+    |
+    | Same vocabulary class on purpose: these are workflow refusals in exactly
+    | the same domain, and a second failure family would only give callers two
+    | places to look for one concept.
+    */
+
+    public const IMPORT_NOT_REVIEWABLE = 'IMPORT_NOT_REVIEWABLE';
+
+    public const IMPORT_NOT_PUBLISHABLE = 'IMPORT_NOT_PUBLISHABLE';
+
+    public const RENDERED_PAGES_MISSING = 'RENDERED_PAGES_MISSING';
+
+    public const PAGE_FILE_MISSING = 'PAGE_FILE_MISSING';
+
+    public const PAGE_COUNT_MISMATCH = 'PAGE_COUNT_MISMATCH';
+
     /** @var list<string> */
     public const ALL = [
         self::INVALID_PDF,
@@ -83,6 +103,11 @@ final class LegacyRmePdfFailure
         self::IMPORT_NOT_PROCESSABLE,
         self::IMPORT_NOT_RETRYABLE,
         self::IMPORT_NOT_CANCELLABLE,
+        self::IMPORT_NOT_REVIEWABLE,
+        self::IMPORT_NOT_PUBLISHABLE,
+        self::RENDERED_PAGES_MISSING,
+        self::PAGE_FILE_MISSING,
+        self::PAGE_COUNT_MISMATCH,
     ];
 
     /** @var array<string, string> */
@@ -109,6 +134,11 @@ final class LegacyRmePdfFailure
         self::IMPORT_NOT_PROCESSABLE => 'Impor ini tidak berada pada status yang dapat diproses.',
         self::IMPORT_NOT_RETRYABLE => 'Impor ini tidak dapat diproses ulang.',
         self::IMPORT_NOT_CANCELLABLE => 'Impor ini tidak dapat dibatalkan.',
+        self::IMPORT_NOT_REVIEWABLE => 'Impor ini tidak berada pada status yang dapat ditinjau.',
+        self::IMPORT_NOT_PUBLISHABLE => 'Impor ini tidak berada pada status yang dapat dipublikasikan.',
+        self::RENDERED_PAGES_MISSING => 'Hasil render halaman belum lengkap, arsip belum dapat dipublikasikan.',
+        self::PAGE_FILE_MISSING => 'Berkas gambar halaman tidak ditemukan pada penyimpanan.',
+        self::PAGE_COUNT_MISMATCH => 'Jumlah halaman siap tidak sesuai dengan jumlah halaman dokumen.',
     ];
 
     private function __construct() {}

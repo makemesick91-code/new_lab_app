@@ -40,6 +40,26 @@ class LegacyRmeRecordPolicy
     }
 
     /**
+     * LEGACY-RME-PDF-1C — streaming the published record's private source PDF
+     * or one of its rendered pages.
+     *
+     * Same boundary as `view` — reading the archive bytes is exactly as
+     * sensitive as reading the row, and the file route must never be a weaker
+     * door than the viewer page — plus one additional restriction: a VOIDed
+     * record no longer streams.
+     *
+     * VOID exists precisely for a mis-filed archive (the canonical example is a
+     * document attached to the WRONG patient), so continuing to serve those
+     * bytes under that patient's record would keep serving the very leak the
+     * void was meant to retract. The row itself stays readable — retracted, not
+     * erased — so the metadata and the void reason remain auditable.
+     */
+    public function viewFile(User $user, LegacyRmeRecord $record): bool
+    {
+        return $this->view($user, $record) && $record->isPublished();
+    }
+
+    /**
      * Explicitly denied for everyone: a published legacy record is never edited
      * in place and never hard-deleted. Corrections go through void() plus a
      * fresh import.

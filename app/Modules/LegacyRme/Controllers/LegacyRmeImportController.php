@@ -9,11 +9,13 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
+use App\Modules\LegacyRme\Requests\PublishLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Requests\StoreLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientLookupService;
+use App\Modules\LegacyRme\Services\LegacyRmePublishService;
 use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
@@ -48,6 +50,7 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeImportRepositoryInterface $imports,
         private readonly LegacyRmeImportService $importService,
         private readonly LegacyRmeImportProcessingService $processing,
+        private readonly LegacyRmePublishService $publishing,
         private readonly LegacyRmePatientLookupService $patients,
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeWorkspaceScope $scope,
@@ -154,7 +157,14 @@ class LegacyRmeImportController extends Controller
         $this->authorize('view', $record);
 
         return view('settings.rme.legacy-imports.show', [
-            'import' => $record->load(['patient:id,name,medical_record_number', 'originBranch:id,name,code', 'uploadedBy:id,name']),
+            // `record` (LEGACY-RME-PDF-1C) is the published archive this import
+            // produced, if any — used only to link to the final viewer.
+            'import' => $record->load([
+                'patient:id,name,medical_record_number',
+                'originBranch:id,name,code',
+                'uploadedBy:id,name',
+                'record:id,source_import_id,status',
+            ]),
             'pages' => $this->imports->pagesFor($record),
         ]);
     }
@@ -218,7 +228,10 @@ class LegacyRmeImportController extends Controller
         $pageRecord = $this->imports->findPage($record, $page);
 
         abort_if($pageRecord === null, 404);
-        abort_unless(LegacyRmeImportPageStatus::isPublishable($pageRecord->status), 404);
+        // LEGACY-RME-PDF-1C: viewable, not publishable. A published import's
+        // pages move to PUBLISHED, and this screen is the operator's evidence
+        // of what was reviewed — it must stay readable afterwards.
+        abort_unless(LegacyRmeImportPageStatus::isViewable($pageRecord->status), 404);
 
         $wantsThumbnail = $request->string('variant')->toString() === 'thumbnail';
         $path = $this->resolvePagePath($pageRecord, $wantsThumbnail);
@@ -264,6 +277,53 @@ class LegacyRmeImportController extends Controller
         return redirect()
             ->route('settings.rme.legacy-imports.show', $record->getKey())
             ->with('status', 'Impor dibatalkan.');
+    }
+
+    /**
+     * LEGACY-RME-PDF-1C — mark a rendered import as reviewed by a human.
+     *
+     * The 1A transition map makes this a real gate: PUBLISHED is only reachable
+     * from REVIEWED, so an unreviewed document can never be published.
+     */
+    public function review(Request $request, int $import): RedirectResponse
+    {
+        $this->assertFeatureEnabled();
+
+        $record = $this->resolve($request, $import);
+        $this->authorize('review', $record);
+
+        $this->publishing->review($record, $request->user());
+
+        return redirect()
+            ->route('settings.rme.legacy-imports.show', $record->getKey())
+            ->with('status', 'Dokumen ditandai sudah ditinjau dan siap dipublikasikan.');
+    }
+
+    /**
+     * LEGACY-RME-PDF-1C — publish a reviewed import as an immutable legacy RME
+     * record.
+     *
+     * Everything that decides the outcome (patient, branch, historical date,
+     * source file, rendered pages, status) is read from the staged row inside
+     * the service's locked transaction; the request contributes only the two
+     * optional archive labels.
+     */
+    public function publish(PublishLegacyRmeImportRequest $request, int $import): RedirectResponse
+    {
+        $this->assertFeatureEnabled();
+
+        $record = $this->resolve($request, $import);
+        $this->authorize('publish', $record);
+
+        $published = $this->publishing->publish(
+            $record,
+            $request->archiveAttributes(),
+            $request->user(),
+        );
+
+        return redirect()
+            ->route('rme.legacy-records.show', $published->getKey())
+            ->with('status', 'Arsip RME lama berhasil dipublikasikan ke riwayat pasien.');
     }
 
     /**

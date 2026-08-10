@@ -316,6 +316,12 @@
             'statusLabels' => $statusLabels,
         ])
 
+        {{-- LEGACY-RME-PDF-1C — renders nothing unless the patient has a
+             published legacy archive this operator may see. --}}
+        @include('rme.visits.partials.patient-rme-timeline', [
+            'rmeTimeline' => $rmeTimeline ?? collect(),
+        ])
+
         <div>
             <a href="{{ route('rme.visits.index') }}" class="text-sm text-gray-500 hover:text-gray-700">&larr; Kembali ke daftar</a>
         </div>

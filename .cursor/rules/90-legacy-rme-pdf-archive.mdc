@@ -164,3 +164,78 @@ alwaysApply: false
 35. `poppler-utils` (`pdfinfo`, `pdftoppm`) is a runtime dependency of any host
     that processes documents. Tests use deterministic fakes; the one real-Poppler
     suite **skips** when the binaries are absent — it never silently passes.
+
+## LEGACY-RME-PDF-1C — controlled publish and patient history
+
+36. A staged import becomes an archive only through **REVIEW then PUBLISH**. The
+    1A transition map is the contract and is never widened: `READY_FOR_REVIEW →
+    REVIEWED` (permission `review_legacy_rme_imports`) and `REVIEWED →
+    PUBLISHED` (permission `publish_legacy_rme_imports`). `PUBLISHED` is
+    terminal — there is no republish and no `PUBLISHED → PROCESSING` edge.
+37. **A policy is not a boundary for Super Admin.** The single global
+    `Gate::before` grants Super Admin every ability, and Super Admin is the only
+    role holding the legacy permissions — so every rule that must actually hold
+    is enforced again in the service (status, date, pages, source file) or the
+    controller (VOID streaming, feature flag). Tests assert each one *as a Super
+    Admin*, not only as a permission holder.
+38. Publishing runs in **one `DB::transaction` opened with `lockForUpdate`** on
+    the staging row, re-reads its status under that lock, and is idempotent: an
+    existing record for the `source_import_id` short-circuits to that record.
+    `UNIQUE(source_import_id)` on `trx_rme_legacy_records` is the independent
+    database-level defence behind it. A disabled button is never the protection.
+39. The 1A date rules are **re-validated at publish time** against a freshly
+    resolved cutoff. `earliest_native_rme_date_snapshot` is evidence of what was
+    checked at intake, never the authority for a permanent record.
+40. Publishing **promotes metadata and moves no bytes**. 1B already wrote the
+    source PDF and the rendered pages into an opaque, private, per-import
+    directory that is never rewritten. Nothing is copied, so a rolled-back
+    publish cannot orphan a file and a retry cannot duplicate one.
+41. Publishing refuses an incomplete archive with a stable, path-free code:
+    `RENDERED_PAGES_MISSING`, `PAGE_COUNT_MISMATCH`, `PAGE_FILE_MISSING`,
+    `SOURCE_FILE_MISSING`, `IMPORT_NOT_PUBLISHABLE`, `IMPORT_NOT_REVIEWABLE`.
+    Fewer rendered pages than the document declares would silently truncate a
+    clinical record and is always refused.
+42. **A refusal is audited AFTER the transaction unwinds.** An audit row written
+    inside the failing transaction is rolled back with it and the trail vanishes.
+    `LegacyRmePublishRefusal` carries the field and the PII-free metadata out of
+    the transaction, and is converted to a `ValidationException` at the boundary
+    — the internal refusal type never escapes as a 500.
+43. A published legacy record is **immutable**: no update route, no delete route,
+    no republish route, and `LegacyRmeRecordPolicy::update`/`delete` are
+    hard-wired `false`. The only correction is VOID plus a fresh import.
+44. **Only PUBLISHED records reach the patient's history.** Staged, failed,
+    cancelled and VOIDed rows are work in progress or retracted evidence and
+    never appear there.
+45. Legacy and native RME stay **separate domain entities**. Publishing creates
+    no `ClinicVisit`, `MedicalRecord`, invoice, payment, consent, odontogram, lab
+    candidate/order or SATUSEHAT candidate, and never changes a visit status. The
+    merged timeline is a presentation projection only.
+46. The timeline is ordered by the **clinical** date (`rme_date` for legacy,
+    `visit_date` for native), never by upload or creation time, with a
+    deterministic tie-break. Legacy rows are visually distinct from native rows.
+    With the flag off, without the permission, or with no archive, the merged
+    card renders nothing at all.
+47. A **VOIDed archive stops streaming its bytes** (404, enforced in the
+    controller so `Gate::before` cannot bypass it). VOID exists for a mis-filed
+    archive — canonically one attached to the WRONG patient — so serving those
+    bytes on would keep serving the leak the void retracted. The row itself stays
+    readable: retracted, not erased.
+48. `LegacyRmeImportPageStatus::VIEWABLE` is deliberately wider than
+    `PUBLISHABLE`: a published import's pages become `PUBLISHED` and the staging
+    screen — the operator's evidence of what was reviewed — must stay readable.
+    Publishing stays `READY`-only.
+49. Streaming honours the **disk stored on the row** (`diskFor()`, which
+    re-asserts the disk is private) rather than whatever the config points at
+    today, so repointing the configured disk cannot silently 404 history.
+50. Review is a mandatory **state** gate, not a second-person control:
+    `publish()` deliberately does not require a different actor than
+    `reviewed_by`, because only Super Admin currently holds either permission. If
+    four-eyes becomes a requirement, enforce it in the service and grant the two
+    permissions to different roles.
+51. Gallery thumbnails are **not** audited — opening an archive already writes
+    `RECORD_VIEWED`, and a row per thumbnail would bury the real events. A real
+    page view still writes `RECORD_PAGE_VIEWED`.
+52. Production deploys keep `FEATURE_RME_LEGACY_PDF_ARCHIVE` **OFF** unless an
+    explicit rollout phase authorizes enabling it. Before it is ever enabled the
+    `legacy-rme-documents` queue must be served by the managed worker and
+    `poppler-utils` must be present.

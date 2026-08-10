@@ -35,7 +35,50 @@ declare(strict_types=1);
 
 return [
 
-    'sprint' => 'LEGACY-RME-PDF-1A',
+    'sprint' => 'LEGACY-RME-PDF-1C',
+
+    /*
+    |--------------------------------------------------------------------------
+    | LEGACY-RME-PDF-1C — controlled publish and patient history
+    |--------------------------------------------------------------------------
+    |
+    | DOCUMENTATION OF INVARIANTS, NOT TOGGLES. Every property below is enforced
+    | in code (LegacyRmePublishService, LegacyRmePatientHistoryService, the
+    | policies and the 1A transition map) and asserted by tests. They are listed
+    | here so the publish contract has one readable home; making any of them
+    | switchable would turn a clinical guarantee into a foot-gun.
+    */
+    'publish_invariants' => [
+        // Publishing is only ever reachable through REVIEWED, so a human has
+        // always looked at the rendered pages first.
+        'requires_review' => true,
+
+        // The 1A date rules are re-evaluated against a freshly resolved cutoff
+        // at publish time; the upload-time snapshot is evidence, not authority.
+        'revalidates_date_on_publish' => true,
+
+        // One locked transaction plus UNIQUE(source_import_id) — a double click
+        // or a concurrent operator can never produce a second record.
+        'atomic_and_idempotent' => true,
+
+        // Publishing promotes metadata; it moves no bytes. The private paths
+        // written by 1B are already final, so a rolled-back publish can leave
+        // no orphan file behind.
+        'promotes_metadata_only' => true,
+
+        // A published record is immutable: no edit, no hard delete, no
+        // republish. The only correction is VOID plus a fresh import.
+        'published_record_immutable' => true,
+
+        // Only PUBLISHED records reach the patient's history. Staged, failed,
+        // cancelled and VOIDed rows never appear there.
+        'history_shows_published_only' => true,
+
+        // A legacy record is an archive, never an encounter: publishing creates
+        // no visit, medical record, invoice, payment, consent, odontogram, lab
+        // candidate/order or SATUSEHAT candidate.
+        'creates_no_downstream_transaction' => true,
+    ],
 
     /*
     | Convenience mirror of the feature flag. Services MUST resolve the flag

@@ -59,6 +59,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
+use App\Modules\LegacyRme\Controllers\LegacyRmeRecordController;
 use App\Modules\MedicalRecord\Controllers\ClinicalDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\DiagnosisRolloutController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
@@ -257,6 +258,20 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             Route::post('{import}/retry', [LegacyRmeImportController::class, 'retry'])->name('retry')->whereNumber('import');
             Route::post('{import}/cancel', [LegacyRmeImportController::class, 'cancel'])->name('cancel')->whereNumber('import');
         });
+
+        // LEGACY-RME-PDF-1C — review-before-publish. Each stage carries its own
+        // named permission so reviewing and publishing are separable duties;
+        // the policy then adds the per-row branch scope and the 1A transition
+        // gate (PUBLISHED is only reachable from REVIEWED).
+        Route::post('{import}/review', [LegacyRmeImportController::class, 'review'])
+            ->name('review')
+            ->whereNumber('import')
+            ->middleware('permission:review_legacy_rme_imports');
+
+        Route::post('{import}/publish', [LegacyRmeImportController::class, 'publish'])
+            ->name('publish')
+            ->whereNumber('import')
+            ->middleware('permission:publish_legacy_rme_imports');
     });
 
     // Lab Services (TASK-0204)
@@ -328,6 +343,28 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
 | Sprint 20 — RME: Clinic Visit Queue
 |--------------------------------------------------------------------------
 */
+// LEGACY-RME-PDF-1C — the published legacy archive itself.
+//
+// A published record belongs to the patient's CLINICAL history, so the viewer
+// lives under /rme rather than under Master Data (which owns the intake side).
+// Its own group, declared BEFORE the general `rme.` group, so `legacy-records`
+// is never captured by another route's wildcard segment.
+//
+// Read-only by design: no update, no delete and no republish route exists. A
+// published legacy record is immutable clinical evidence, and its source PDF
+// and rendered pages stay private — these policy-gated streaming routes are the
+// ONLY way to reach those bytes.
+Route::middleware('auth')->prefix('rme/legacy-records')->name('rme.legacy-records.')->group(function () {
+    // `permission:` is applied INSIDE the auth group, never chained alongside
+    // it: a guest must be sent to the login screen, not told 403 by a
+    // permission check that ran before authentication.
+    Route::middleware('permission:view_legacy_rme_imports')->group(function () {
+        Route::get('{record}', [LegacyRmeRecordController::class, 'show'])->name('show')->whereNumber('record');
+        Route::get('{record}/source', [LegacyRmeRecordController::class, 'source'])->name('source')->whereNumber('record');
+        Route::get('{record}/pages/{page}', [LegacyRmeRecordController::class, 'page'])->name('pages.show')->whereNumber('record')->whereNumber('page');
+    });
+});
+
 Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // Sprint 66.0 — Doctor/Admin online context (before permission gates).
     Route::get('online-context/select', [OnlineContextController::class, 'select'])
