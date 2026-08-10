@@ -251,6 +251,24 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # LEGACY-RME-PDF-1B — Poppler is a RUNTIME DEPENDENCY of this gate, not an
+      # optional extra: the LegacyRme selection exercises the real pdfinfo and
+      # pdftoppm adapters. The self-hosted variant inherits both binaries from
+      # its pinned container runtime, so the GitHub-hosted image must install
+      # them explicitly or the two runners are not equivalent.
+      #
+      # Fails closed: `shell: bash` runs with `-eo pipefail`, so a failed
+      # install or a missing binary aborts the job. Never softened.
+      - name: Install and verify Poppler (LEGACY-RME-PDF-1B)
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          command -v pdfinfo
+          command -v pdftoppm
+          pdfinfo -v
+          pdftoppm -v
+
       # CICD-CTRL-3 — hard production-database isolation guard. Runs BEFORE any
       # migration. Fails closed unless the active database is local and carries
       # a CI/test name.
@@ -1058,6 +1076,19 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # LEGACY-RME-PDF-1B — the full suite includes the real Poppler adapter
+      # tests, so the same runtime dependency the critical gate installs is
+      # mandatory here too. Fails closed; never softened.
+      - name: Install and verify Poppler (LEGACY-RME-PDF-1B)
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+          command -v pdfinfo
+          command -v pdftoppm
+          pdfinfo -v
+          pdftoppm -v
 
       # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
       - name: Assert non-production database (CICD-CTRL-3)

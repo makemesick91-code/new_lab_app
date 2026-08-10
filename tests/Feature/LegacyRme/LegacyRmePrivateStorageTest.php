@@ -6,9 +6,11 @@
  */
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfRasterizerInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Repositories\LegacyRmeImportRepository;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
@@ -17,7 +19,6 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -202,19 +203,41 @@ it('cleans up the stored source when the staging row cannot be created', functio
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     // Make the staging INSERT fail after the bytes are already on disk.
-    Schema::drop('stg_rme_legacy_imports');
+    //
+    // The failure is injected at the repository seam the service already
+    // depends on, overriding exactly one method. Dropping the staging table is
+    // NOT a portable way to do this: on PostgreSQL the DROP itself aborts with
+    // SQLSTATE[2BP01], because `stg_rme_legacy_import_pages` and
+    // `trx_rme_legacy_records` still reference it — so the test failed on the
+    // setup instead of exercising the cleanup it exists to prove. Every other
+    // repository method keeps its real behaviour, so the duplicate precheck
+    // that runs before this point is untouched.
+    $repository = new class extends LegacyRmeImportRepository
+    {
+        /** @var array<int, string> */
+        public array $storedAtInsert = [];
 
-    try {
-        app(LegacyRmeImportService::class)->createFromUpload(
-            $patient,
-            '2020-05-01',
-            null,
-            legacyRmePdfUpload(),
-            superAdmin(),
-        );
-    } catch (Throwable) {
-        // expected
-    }
+        public function create(array $attributes): LegacyRmeImport
+        {
+            // Captured BEFORE the failure: without this the cleanup assertion
+            // could pass simply because the bytes were never written at all.
+            $this->storedAtInsert = Storage::disk('legacy_rme_private')->allFiles();
 
-    expect(Storage::disk('legacy_rme_private')->allFiles())->toBe([]);
+            throw new RuntimeException('staging insert failed');
+        }
+    };
+
+    app()->instance(LegacyRmeImportRepositoryInterface::class, $repository);
+
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        null,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    ))->toThrow(RuntimeException::class, 'staging insert failed');
+
+    // The source really was stored first, and nothing survived the failure.
+    expect($repository->storedAtInsert)->not->toBe([])
+        ->and(Storage::disk('legacy_rme_private')->allFiles())->toBe([]);
 });

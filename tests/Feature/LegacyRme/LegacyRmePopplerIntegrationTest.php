@@ -22,6 +22,18 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
 
+/**
+ * A binary counts as available only when it actually RAN successfully.
+ *
+ * `Process::run()` does not throw for a missing executable — the shell simply
+ * exits 127 — so probing without inspecting the exit status reported Poppler as
+ * present on an image that does not ship it. The tests below then executed and
+ * failed with a confusing "PDF is unreadable" error instead of skipping.
+ *
+ * Both binaries exit 0 for `-v`, so a non-zero status genuinely means unusable.
+ * On the authoritative CI runners this must never return false: both install
+ * and verify Poppler explicitly before the suite runs.
+ */
 function popplerAvailable(): bool
 {
     foreach (['pdfinfo', 'pdftoppm'] as $binary) {
@@ -31,6 +43,10 @@ function popplerAvailable(): bool
         try {
             $process->run();
         } catch (Throwable) {
+            return false;
+        }
+
+        if (! $process->isSuccessful()) {
             return false;
         }
     }
