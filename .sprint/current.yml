@@ -1,26 +1,25 @@
-# Active sprint manifest — CICD-CTRL-3
+# Active sprint manifest — LEGACY-RME-PDF-1B
 # Validated by: php artisan sprint:manifest-check
 
-id: CICD-CTRL-3
-type: INFRA_RELEASE
-module: Cicd
-title: "Dedicated self-hosted GitHub Actions runner — hybrid CI routing, production isolation guard, explicit fallback (runner_mode defaults to github-hosted; self-hosted path inert until an operator opts in)"
+id: LEGACY-RME-PDF-1B
+type: MODULE_SPRINT
+module: LegacyRme
+title: "Legacy RME PDF archive — private upload runtime, PDF validation, queue processing, page rendering and thumbnails (feature flag OFF; no review/publish runtime)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new artisan guard command, posture scanner, governance service — CI-facing only, no product runtime path
-schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # production database isolation guard, untrusted-fork routing, runner production-material isolation
-branch_isolation_impact: false  # no BranchContext / branch-scoped query change
+runtime_change: true            # upload service, queued rasterization job, private streaming, HTTP surface
+schema_change: false            # 1A already shipped every column this sprint writes to
+frontend_change: true           # 3 new Blade views + sidebar entry (Alpine only; no JS/CSS bundle source change)
+security_impact: true           # private disk, policy abilities, IDOR boundaries, process execution, malware scan hook
+branch_isolation_impact: true   # every staged row resolved through the repository with the server-resolved branch scope
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: false          # CI-only change; nothing to deploy to the VPS
-browser_required: false         # no UI surface
+deploy_required: true
+browser_required: false
 
 test_profiles:
-  - cicd
+  - rme
+  - access_control
   - security
 
-# No go_tag yet: a GO tag requires a registered, online runner that actually
-# executed a heavy CI job. See docs/sprints/cicd-ctrl-3-dedicated-self-hosted-ci-runner.md §7.
-go_tag: null
+go_tag: legacy-rme-pdf-1b-private-upload-rendering-go

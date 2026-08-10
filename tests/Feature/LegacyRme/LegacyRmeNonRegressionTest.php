@@ -12,14 +12,22 @@
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
+use App\Modules\LegacyRme\Interfaces\LegacyRmePdfRasterizerInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecordPage;
+use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
+use App\Modules\LegacyRme\Services\LegacyRmeImportService;
+use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
+use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
+use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Storage;
 
 it('creates no visit, invoice, payment, lab or SATUSEHAT row when a legacy record is archived', function () {
     $patient = Patient::factory()->create();
@@ -83,15 +91,82 @@ it('keeps the legacy archive out of the native RME sheet history', function () {
     expect(MedicalRecord::where('patient_id', $patient->id)->count())->toBe(1);
 });
 
-it('registers no HTTP route for the legacy RME archive in this sprint', function () {
-    // Sprint 1A is a foundation: schema, permissions, policies and the date
-    // rules only. Upload, review, publish and the viewer ship separately, so no
-    // endpoint may be exposed here.
-    $routes = collect(app('router')->getRoutes()->getRoutes())
-        ->map(fn ($route) => (string) $route->getName().'|'.$route->uri())
-        ->filter(fn (string $descriptor) => str_contains($descriptor, 'legacy-rme')
-            || str_contains($descriptor, 'legacy_rme')
-            || str_contains($descriptor, 'rme-legacy'));
+it('exposes only the staging surface and never a review or publish endpoint', function () {
+    // 1A asserted that NO endpoint existed at all. 1B ships the staging surface
+    // (upload, status, private streaming, retry, cancel), so that assertion is
+    // replaced by the boundary that actually holds now: review and publish
+    // still have no endpoint, because a staged document may not become an
+    // archived record in this sprint.
+    $names = collect(app('router')->getRoutes()->getRoutes())
+        ->map(fn ($route) => (string) $route->getName())
+        ->filter(fn (string $name) => str_starts_with($name, 'settings.rme.legacy-imports.'))
+        ->values();
 
-    expect($routes->all())->toBe([]);
+    expect($names->all())->toEqualCanonicalizing([
+        'settings.rme.legacy-imports.index',
+        'settings.rme.legacy-imports.create',
+        'settings.rme.legacy-imports.store',
+        'settings.rme.legacy-imports.show',
+        'settings.rme.legacy-imports.status',
+        'settings.rme.legacy-imports.source',
+        'settings.rme.legacy-imports.pages.show',
+        'settings.rme.legacy-imports.retry',
+        'settings.rme.legacy-imports.cancel',
+    ]);
+
+    foreach (['publish', 'review', 'approve', 'void'] as $forbidden) {
+        expect($names->contains('settings.rme.legacy-imports.'.$forbidden))->toBeFalse();
+    }
+});
+
+it('creates no visit, invoice, payment, lab or SATUSEHAT row when a document is uploaded and rendered', function () {
+    seedAccessControl();
+    legacyRmeArchiveFlag(true);
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
+
+    app()->instance(
+        LegacyRmePdfInspectorInterface::class,
+        (new FakeLegacyRmePdfInspector)->withPages(2),
+    );
+    app()->instance(
+        LegacyRmePdfRasterizerInterface::class,
+        (new FakeLegacyRmePdfRasterizer)->withPages(2),
+    );
+
+    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $visit = legacyRmeNativeVisit($patient, '2022-03-10');
+
+    $baseline = [
+        'visits' => ClinicVisit::count(),
+        'medical_records' => MedicalRecord::count(),
+        'invoices' => RmeInvoice::count(),
+        'payments' => RmePayment::count(),
+        'lab_candidates' => LabCaseCandidate::count(),
+        'lab_orders' => LabOrder::count(),
+        'satusehat_candidates' => SatusehatCandidate::count(),
+    ];
+    $visitStatus = $visit->status;
+
+    $import = app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        null,
+        legacyRmePdfUpload('arsip.pdf', 2),
+        superAdmin(),
+    );
+
+    app(LegacyRmeImportProcessingService::class)->process($import->getKey());
+
+    expect(ClinicVisit::count())->toBe($baseline['visits'])
+        ->and(MedicalRecord::count())->toBe($baseline['medical_records'])
+        ->and(RmeInvoice::count())->toBe($baseline['invoices'])
+        ->and(RmePayment::count())->toBe($baseline['payments'])
+        ->and(LabCaseCandidate::count())->toBe($baseline['lab_candidates'])
+        ->and(LabOrder::count())->toBe($baseline['lab_orders'])
+        ->and(SatusehatCandidate::count())->toBe($baseline['satusehat_candidates'])
+        ->and($visit->refresh()->status)->toBe($visitStatus)
+        // The archive lands in its own staging tables and nowhere else.
+        ->and(LegacyRmeImport::count())->toBe(1)
+        ->and(LegacyRmeRecord::count())->toBe(0);
 });

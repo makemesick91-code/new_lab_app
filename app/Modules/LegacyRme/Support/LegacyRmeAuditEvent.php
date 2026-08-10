@@ -32,6 +32,25 @@ final class LegacyRmeAuditEvent
 
     public const VOIDED = 'LEGACY_RME_VOIDED';
 
+    // LEGACY-RME-PDF-1B — upload runtime, queue processing and private access.
+    public const PDF_UPLOADED = 'LEGACY_RME_PDF_UPLOADED';
+
+    public const PROCESSING_QUEUED = 'LEGACY_RME_PROCESSING_QUEUED';
+
+    public const PROCESSING_STARTED = 'LEGACY_RME_PROCESSING_STARTED';
+
+    public const PROCESSING_COMPLETED = 'LEGACY_RME_PROCESSING_COMPLETED';
+
+    public const PROCESSING_FAILED = 'LEGACY_RME_PROCESSING_FAILED';
+
+    public const PROCESSING_RETRIED = 'LEGACY_RME_PROCESSING_RETRIED';
+
+    public const IMPORT_CANCELLED = 'LEGACY_RME_IMPORT_CANCELLED';
+
+    public const SOURCE_VIEWED = 'LEGACY_RME_SOURCE_VIEWED';
+
+    public const PAGE_VIEWED = 'LEGACY_RME_PAGE_VIEWED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -40,6 +59,15 @@ final class LegacyRmeAuditEvent
         self::DUPLICATE_DETECTED,
         self::PUBLISHED,
         self::VOIDED,
+        self::PDF_UPLOADED,
+        self::PROCESSING_QUEUED,
+        self::PROCESSING_STARTED,
+        self::PROCESSING_COMPLETED,
+        self::PROCESSING_FAILED,
+        self::PROCESSING_RETRIED,
+        self::IMPORT_CANCELLED,
+        self::SOURCE_VIEWED,
+        self::PAGE_VIEWED,
     ];
 
     /**
@@ -62,6 +90,20 @@ final class LegacyRmeAuditEvent
         'normalized_content_hash',
         'actor_id',
         'timestamp',
+        // LEGACY-RME-PDF-1B. Still structure only: a failure code, a page
+        // number, a byte count, a declared MIME type and the ids of colliding
+        // rows. Never a filename, a path, a process command line, a stack
+        // trace, or any clinical/patient content.
+        'failure_code',
+        'page_number',
+        'size_bytes',
+        'mime_type',
+        'dpi',
+        'malware_scanned',
+        'duplicate_import_id',
+        'duplicate_record_id',
+        'duplicate_patient_id',
+        'variant',
     ];
 
     private function __construct() {}

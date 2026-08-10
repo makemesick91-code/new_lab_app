@@ -74,6 +74,33 @@ class LegacyRmeImportPolicy
             && $import->canTransitionTo(LegacyRmeImportStatus::CANCELLED);
     }
 
+    /**
+     * LEGACY-RME-PDF-1B — reprocessing a staged import. Same permission as
+     * creating one (it re-runs the operator's own intake), still branch-scoped,
+     * and only from a status the 1A transition map allows to reach QUEUED.
+     */
+    public function retry(User $user, LegacyRmeImport $import): bool
+    {
+        return $user->can('create_legacy_rme_imports')
+            && $this->inScope($user, $import)
+            && (
+                $import->canTransitionTo(LegacyRmeImportStatus::QUEUED)
+                || $import->status === LegacyRmeImportStatus::PROCESSING
+            );
+    }
+
+    /**
+     * LEGACY-RME-PDF-1B — streaming the private source PDF or a rendered page.
+     *
+     * Deliberately the same boundary as `view`: reading the archive bytes is
+     * exactly as sensitive as reading the row, and the file route must never be
+     * a weaker door than the detail page.
+     */
+    public function viewFile(User $user, LegacyRmeImport $import): bool
+    {
+        return $this->view($user, $import);
+    }
+
     private function inScope(User $user, LegacyRmeImport $import): bool
     {
         return $this->scope->allows(

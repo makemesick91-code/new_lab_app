@@ -767,7 +767,7 @@
                 <p class="menu-group-title pt-2">Administrasi Sistem</p>
             @endif
 
-            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
+            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data', 'view_legacy_rme_imports', 'create_legacy_rme_imports'])
                 @unless($user?->hasRole('Admin Klinik'))
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
@@ -792,6 +792,15 @@
                             <a href="{{ route('settings.patients.import.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Impor Pasien Legacy</a>
                         @endcan
+                        {{-- LEGACY-RME-PDF-1B. Gated by its own permissions, and hidden entirely
+                             while the archive feature flag is off. The sidebar is never the
+                             security boundary — the routes are permission-gated server-side. --}}
+                        @canany(['view_legacy_rme_imports', 'create_legacy_rme_imports'])
+                            @if (app(\App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard::class)->enabled())
+                                <a href="{{ route('settings.rme.legacy-imports.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-imports.*') ? $linkActive : $linkIdle }}">Impor Arsip RME Lama</a>
+                            @endif
+                        @endcanany
                         @can('manage lab services')
                             <a href="{{ route('settings.lab-services.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.lab-services.*') ? $linkActive : $linkIdle }}">Layanan Lab</a>

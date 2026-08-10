@@ -77,6 +77,25 @@ return [
             'visibility' => 'private',
         ],
 
+        // LEGACY-RME-PDF-1B — private storage for legacy RME archive documents
+        // (source PDFs, rendered page images, thumbnails).
+        //
+        // Deliberately rooted OUTSIDE storage/app/private (the `local` disk
+        // root) and with `serve` disabled: the framework registers a
+        // `storage.local` route for the `local` disk, so any file living under
+        // its root could in principle be served by a signed framework URL.
+        // Clinical archive pages must only ever be reachable through the
+        // policy-gated streaming route, so they get their own root that no
+        // framework route can address.
+        'legacy_rme_private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/legacy-rme-private'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*

@@ -121,3 +121,59 @@ controller or view, and the capability sits behind the default-off feature flag
 - **Allow patients with no native RME through the regular path.** Rejected: it
   would create an unbounded import path by default. It stays an explicit,
   separate mode.
+
+---
+
+# Amendment — LEGACY-RME-PDF-1B (upload runtime, queue, page rendering)
+
+**Status:** Accepted. Extends this ADR; no 1A decision is reversed.
+
+## Additional decisions
+
+- **A dedicated private disk, rooted outside the `local` disk root.** Laravel
+  registers a `storage.{disk}` route for a local disk with `serve => true`, so
+  everything under `storage/app/private` is in principle addressable by a signed
+  framework URL. Legacy pages are clinical evidence that must only ever be
+  reachable through the policy-gated streaming controller, so `legacy_rme_private`
+  gets its own root and `serve => false`. Reusing `local` was rejected: the
+  signature requirement is a control we would be *relying* on rather than a
+  boundary we own.
+- **Rendering is queue-only.** No HTTP request executes Poppler. The job carries
+  only the import id, so a queued payload can never hold clinical bytes.
+- **Poppler via argument arrays, never a shell string.** Symfony `Process`
+  `execve`s the binary directly, so there is no shell to inject into. Binary
+  names come from config; every path is server-constructed and absolute.
+- **Thumbnails come from Poppler `-scale-to`, not a PHP image extension.**
+  Rejected alternative: GD/Imagick. The local dev machine has no GD, and adding
+  an image dependency for a downscale `pdftoppm` already performs would make
+  rendering environment-dependent. Consequence: thumbnails are PNG rather than
+  WebP — a deliberate portability trade.
+- **Queue retries do not drive domain failure.** A failure lands the import in
+  `FAILED` with a stable code and stops; the operator's explicit Retry
+  (`FAILED → QUEUED`, already legal in the 1A map) is the recovery path, keeping
+  a human in the loop. Queue-level retries still cover a worker that dies before
+  recording anything. Rejected alternative: auto-retrying domain failures, which
+  burns attempts on deterministic errors and hides them from the operator.
+- **No `READY_FOR_REVIEW → QUEUED` transition was invented.** The 1A map has no
+  such edge, and abusing `FAILED` to fake one would make a good render look like
+  a failure in the audit trail. A rendered document is corrected by cancelling
+  and re-uploading.
+- **A VOID record does not block a duplicate import.** 1A defines correction as
+  "VOID plus a fresh import"; blocking on VOID would make that impossible. The
+  collision is audited instead.
+- **`origin_branch_id` is validated against the uploader's own scope.** 1A
+  described this column as "provenance, never authorization". That description
+  was incomplete: repository listings filter on it and the policy scopes on it,
+  so it decides which branch owns the row. Left unchecked, a scoped operator
+  could file a document into a branch they have no authority over and then 404
+  on their own row. The rule mirror (rule 14) has been corrected accordingly.
+
+## Consequences
+
+- `poppler-utils` becomes a runtime dependency of any host that processes
+  documents. The one real-Poppler test suite skips (never silently passes) when
+  the binaries are absent; every other test uses deterministic fakes.
+- The `legacy-rme-documents` queue must be served by the managed worker before
+  the feature flag is enabled.
+- A staged document stops at `READY_FOR_REVIEW`. It is not yet part of the
+  patient's archive, and no publish endpoint exists.
