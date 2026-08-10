@@ -18,8 +18,20 @@
  *    only because the corresponding capability is implemented in NSF-9.
  *  - This file never toggles business behavior on its own — services must
  *    explicitly call FeatureFlagService::enabled() to branch on a flag.
+ *
+ * LEGACY-RME-PDF-ROLL-1 — runtime override capture.
+ *  - `env_key` alone is NOT enough to make an override work. Once a deployment
+ *    runs `config:cache`, Laravel stops loading the environment file entirely,
+ *    so a runtime env() call inside FeatureFlagService reads nothing and the
+ *    declared default silently wins. The override has to be CAPTURED into the
+ *    config array while this config file is being built.
+ *  - Capture is therefore applied systematically at the bottom of this file to
+ *    every flag that declares an `env_key`, instead of being hand-written per
+ *    flag (which is how 25 of 28 flags ended up with an inert `env_key`).
+ *  - FeatureFlagService::validateGovernance() FAILS on any flag that declares
+ *    an `env_key` without a captured `env_value`, so the gap cannot come back.
  */
-return [
+$registry = [
     'flags' => [
 
         // --- Future foundation infra readiness flags (risky, default OFF) ---
@@ -380,3 +392,25 @@ return [
         ],
     ],
 ];
+
+/*
+|--------------------------------------------------------------------------
+| LEGACY-RME-PDF-ROLL-1 — config-BUILD-time runtime override capture
+|--------------------------------------------------------------------------
+|
+| This runs while the config file is being built, which is the only moment the
+| environment is still readable on a `config:cache`d deployment. The resolved
+| value is a plain scalar, so the array stays var_export()-safe for caching.
+|
+| An explicit `env_value` written on a flag definition still wins, so a flag can
+| opt out of the generic capture if it ever needs a computed override.
+*/
+foreach ($registry['flags'] as $key => $definition) {
+    $envKey = $definition['env_key'] ?? null;
+
+    if (is_string($envKey) && $envKey !== '' && ! array_key_exists('env_value', $definition)) {
+        $registry['flags'][$key]['env_value'] = env($envKey);
+    }
+}
+
+return $registry;

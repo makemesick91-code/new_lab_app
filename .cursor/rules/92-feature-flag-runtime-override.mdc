@@ -1,0 +1,66 @@
+---
+description: Feature flag runtime override contract — config:cache-safe capture, fail-closed resolution, and the rule that code readiness is not production rollout.
+globs:
+  - "config/feature_flags.php"
+  - "app/Services/Foundation/FeatureFlagService.php"
+  - "app/Modules/**/Support/*FeatureGuard.php"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-ROLL-1 — Feature flag runtime override contract
+
+1. **One registry, one resolver.** Every feature flag is defined in
+   `config/feature_flags.php` and resolved through
+   `App\Services\Foundation\FeatureFlagService`. Never build a second flag
+   system, and never resolve a flag with a dotted key through
+   `config('feature_flags.flags.<a>.<b>')` — the dots are literal array keys,
+   so dot-notation traversal silently returns `null`.
+
+2. **A declared `env_key` is a promise; capture is what keeps it.** An override
+   only works if its value is captured into the config array while the config
+   file is being built. Once a deployment runs `config:cache`, Laravel stops
+   loading the environment file entirely, so a runtime `env()` read returns
+   nothing and the declared default silently wins. `config/feature_flags.php`
+   therefore captures `env_value` for every flag that declares an `env_key`,
+   systematically, at the bottom of the file.
+
+3. **The gap cannot come back.** `FeatureFlagService::validateGovernance()`
+   FAILS (`FLAG-ENV-CAPTURE`) when any flag declares an `env_key` without a
+   captured `env_value`. A new flag that forgets capture fails the registry,
+   `foundation:feature-flags`, and the release gates.
+
+4. **Resolution order.** Captured `env_value` → runtime `env()` (uncached
+   environments only) → declared default.
+
+5. **Fail closed, in both directions.** An unset *or blank* override means "not
+   configured" and yields the declared default — blank is deliberately not read
+   as `false`, so a default-true safety flag keeps its gate ON. An unparseable
+   override also yields the declared default, is reported as `invalid`, and
+   FAILS governance (`FLAG-ENV-VALUE-VALID`). A typo can never switch a risky
+   default-off capability on.
+
+6. **Never echo the raw override.** Evidence exposes a normalized
+   `env_value` (`true` / `false` / `null` / the literal `'invalid'`), never the
+   raw environment string.
+
+7. **Server-side only.** No request parameter, query string, header, session,
+   user preference or browser state may influence a flag. Flags come from
+   trusted server configuration and nothing else.
+
+8. **Risky flags default OFF.** Any high/critical flag must declare
+   `default => false`. Enabling one is a WATCH (a deliberate, visible posture),
+   never a silent GO.
+
+9. **Rollback is deterministic and non-destructive.** Setting the override to
+   `false` and rebuilding the config cache turns the capability off. It never
+   requires a schema rollback and never deletes data.
+
+10. **Code readiness ≠ production rollout.** A GO tag means the capability is
+    implemented, gated and safe to *ship disabled*. Turning a flag on in
+    production is a separate, explicit rollout decision. `rollout_status:
+    implemented` describes the code, not the production switch.
+
+11. **Legacy RME.** The archive runtime is reached only through
+    `App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard`, which delegates to
+    `FeatureFlagService`. It stays OFF in production; while it is off every
+    legacy route answers 404 server-side.

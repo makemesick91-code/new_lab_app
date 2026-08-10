@@ -290,7 +290,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver|Cicd' \
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver|FeatureFlag|Cicd' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -512,7 +512,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver|Cicd' \
+          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|PatientEarliestNativeRmeDateResolver|FeatureFlag|Cicd' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
