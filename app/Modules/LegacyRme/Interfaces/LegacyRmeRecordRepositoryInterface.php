@@ -75,4 +75,31 @@ interface LegacyRmeRecordRepositoryInterface
      * number can never reach another record's rendered output.
      */
     public function findPage(LegacyRmeRecord $record, int $pageNumber): ?LegacyRmeRecordPage;
+
+    /*
+    |--------------------------------------------------------------------------
+    | LEGACY-RME-PDF-1D — VOID, the single exception to immutability
+    |--------------------------------------------------------------------------
+    |
+    | Still no generic update() and still no delete(). Reopening a general
+    | update path would quietly restore in-place mutation of clinical evidence,
+    | which every prior sprint deliberately refused.
+    |
+    | Instead exactly one narrow, named transition is exposed. markVoided()
+    | writes ONLY the four void columns; it cannot touch the patient, the date,
+    | the file, the hashes or the pages, so a "correction" can never be smuggled
+    | in as a void. A corrected archive is still a VOID plus a fresh import.
+    */
+
+    /**
+     * Re-read a record under a row lock so the VOID transition can re-assert
+     * its status inside the transaction that performs it.
+     */
+    public function lockForUpdate(int $id): ?LegacyRmeRecord;
+
+    /**
+     * Retract a published record. Writes ONLY status / voided_by / voided_at /
+     * void_reason — never any other column.
+     */
+    public function markVoided(LegacyRmeRecord $record, ?int $actorId, string $reason): LegacyRmeRecord;
 }

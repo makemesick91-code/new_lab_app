@@ -203,6 +203,18 @@ class PermissionSeeder extends Seeder
         'review_legacy_rme_imports',
         'publish_legacy_rme_imports',
         'void_legacy_rme_imports',
+
+        // LEGACY-RME-PDF-1D — clinical READ of a published archive.
+        //
+        // A separate permission on purpose. The five above are the INTAKE side
+        // (upload, review, publish, retract) held by the Super Admin operator;
+        // granting one of them to a doctor just so the archive is readable
+        // would hand out archive management with it. This one grants reading
+        // and nothing else, and it is deliberately NOT in
+        // LegacyRmeWorkspaceScope::GOVERNANCE_PERMISSIONS, so its holder stays
+        // pinned to their own BranchContext branch instead of widening to
+        // every RME branch.
+        'view_legacy_rme_archive',
     ];
 
     public function run(): void

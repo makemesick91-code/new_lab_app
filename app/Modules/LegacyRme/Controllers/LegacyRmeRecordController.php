@@ -8,13 +8,19 @@ use App\Http\Controllers\Controller;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecordPage;
+use App\Modules\LegacyRme\Requests\VoidLegacyRmeRecordRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
 use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
+use App\Modules\LegacyRme\Services\LegacyRmeVoidService;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -38,6 +44,16 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 class LegacyRmeRecordController extends Controller
 {
     use AuthorizesRequests;
+
+    /**
+     * LEGACY-RME-PDF-1D — how many rendered pages one PDF export may inline.
+     *
+     * Each page is a full-resolution PNG embedded as a data URI, so an
+     * unbounded archive would build a very large dompdf document in memory.
+     * The complete document always stays available through the `source` route,
+     * which streams the original PDF without re-rendering anything.
+     */
+    private const MAX_EXPORT_PAGES = 30;
 
     public function __construct(
         private readonly LegacyRmeRecordRepositoryInterface $records,
@@ -126,6 +142,138 @@ class LegacyRmeRecordController extends Controller
             'Cache-Control' => 'private, no-store',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+    }
+
+    /**
+     * LEGACY-RME-PDF-1D — retract a published archive.
+     *
+     * The record is resolved through the caller's branch scope FIRST, so an
+     * out-of-scope id is a 404 and never a 403 that would confirm it exists.
+     * Only then is the policy ability checked, and only then does the service
+     * re-assert the transition under a row lock.
+     */
+    public function void(VoidLegacyRmeRecordRequest $request, LegacyRmeVoidService $voider, int $record): RedirectResponse
+    {
+        $this->assertFeatureEnabled();
+
+        $legacyRecord = $this->resolve($request, $record);
+        $this->authorize('void', $legacyRecord);
+
+        $voided = $voider->void($legacyRecord, $request->reason(), $request->user());
+
+        return redirect()
+            ->route('rme.legacy-records.show', $voided->getKey())
+            ->with('status', 'Arsip RME lama dibatalkan (VOID). Dokumen tetap tersimpan sebagai bukti, tetapi tidak lagi menjadi bagian dari riwayat aktif pasien.');
+    }
+
+    /**
+     * LEGACY-RME-PDF-1D — printable view of a published archive.
+     *
+     * The page images are REFERENCED through the existing policy-gated page
+     * route rather than embedded, so printing never becomes a second, weaker
+     * door to the private disk: the browser re-requests each page with the
+     * caller's own session and every request goes through the same policy.
+     */
+    public function print(Request $request, int $record): View
+    {
+        $this->assertFeatureEnabled();
+
+        $legacyRecord = $this->resolve($request, $record);
+        $this->authorize('view', $legacyRecord);
+        $this->assertStreamable($legacyRecord);
+
+        $this->audit->logRecordEvent(LegacyRmeAuditEvent::RECORD_PRINTED, $legacyRecord, [], $request->user());
+
+        return view('rme.legacy-records.print', [
+            'record' => $legacyRecord->load([
+                'patient:id,name,medical_record_number',
+                'originBranch:id,name,code',
+                'publishedBy:id,name',
+            ]),
+            'pages' => $this->records->pagesFor($legacyRecord),
+        ]);
+    }
+
+    /**
+     * LEGACY-RME-PDF-1D — PDF export of a published archive.
+     *
+     * dompdf cannot fetch the policy-gated page route (it carries no session
+     * and remote fetching stays off), so the pages are embedded as data URIs
+     * read back THROUGH the storage abstraction. The absolute filesystem path
+     * therefore stays inside the storage service, exactly as everywhere else
+     * here, and no path reaches the template.
+     *
+     * The export is bounded: a long archive would otherwise inline dozens of
+     * full-resolution PNGs into one dompdf run and exhaust memory. Past the cap
+     * the document still renders, says plainly that it is truncated, and points
+     * the reader at the complete source PDF.
+     */
+    public function export(Request $request, int $record): Response
+    {
+        $this->assertFeatureEnabled();
+
+        $legacyRecord = $this->resolve($request, $record);
+        $this->authorize('view', $legacyRecord);
+        $this->assertStreamable($legacyRecord);
+
+        $pages = $this->records->pagesFor($legacyRecord);
+        $embedded = $this->embedPages($pages);
+
+        $this->audit->logRecordEvent(LegacyRmeAuditEvent::RECORD_EXPORTED, $legacyRecord, [
+            'export_format' => 'pdf',
+            'page_count' => count($embedded),
+        ], $request->user());
+
+        $pdf = Pdf::loadView('rme.legacy-records.export-pdf', [
+            'record' => $legacyRecord->load([
+                'patient:id,name,medical_record_number',
+                'originBranch:id,name,code',
+                'publishedBy:id,name',
+            ]),
+            'pages' => $embedded,
+            'truncated' => $pages->count() > count($embedded),
+            'totalPages' => $pages->count(),
+        ]);
+
+        // A generic filename: the download name must never carry the patient's
+        // name or medical-record number out into the reader's file system.
+        return $pdf->download('arsip-rme-lama-'.$legacyRecord->getKey().'.pdf');
+    }
+
+    /**
+     * Read each rendered page back through the disk abstraction and inline it.
+     *
+     * @param  Collection<int, LegacyRmeRecordPage>  $pages
+     * @return list<array{page_number: int, data_uri: string}>
+     */
+    private function embedPages(Collection $pages): array
+    {
+        $embedded = [];
+
+        foreach ($pages as $page) {
+            if (count($embedded) >= self::MAX_EXPORT_PAGES) {
+                break;
+            }
+
+            $path = is_string($page->background_path) ? $page->background_path : '';
+
+            if ($path === '') {
+                continue;
+            }
+
+            $disk = $this->storage->diskFor($page->background_disk);
+
+            if (! $disk->exists($path)) {
+                continue;
+            }
+
+            $embedded[] = [
+                'page_number' => (int) $page->page_number,
+                'data_uri' => 'data:image/png;base64,'.base64_encode((string) $disk->get($path)),
+            ];
+        }
+
+        return $embedded;
     }
 
     /**

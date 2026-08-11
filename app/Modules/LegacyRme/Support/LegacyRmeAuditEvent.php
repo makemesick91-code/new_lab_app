@@ -62,6 +62,12 @@ final class LegacyRmeAuditEvent
 
     public const RECORD_PAGE_VIEWED = 'LEGACY_RME_RECORD_PAGE_VIEWED';
 
+    // LEGACY-RME-PDF-1D — clinical read/print of a published archive.
+    // VOIDED was already declared by 1A and is reused verbatim.
+    public const RECORD_PRINTED = 'LEGACY_RME_RECORD_PRINTED';
+
+    public const RECORD_EXPORTED = 'LEGACY_RME_RECORD_EXPORTED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -80,6 +86,8 @@ final class LegacyRmeAuditEvent
         self::SOURCE_VIEWED,
         self::PAGE_VIEWED,
         self::IMPORT_REVIEWED,
+        self::RECORD_PRINTED,
+        self::RECORD_EXPORTED,
         self::RECORD_VIEWED,
         self::RECORD_SOURCE_VIEWED,
         self::RECORD_PAGE_VIEWED,
@@ -119,6 +127,13 @@ final class LegacyRmeAuditEvent
         'duplicate_record_id',
         'duplicate_patient_id',
         'variant',
+        // LEGACY-RME-PDF-1D. The void REASON itself is deliberately absent: it
+        // is operator free text that may name a patient, and this allow-list is
+        // structure-only. Its permanent home is the record's own void_reason
+        // column, which is where a reader looks anyway. Only its length is
+        // recorded, so the trail still shows a real explanation was given.
+        'void_reason_length',
+        'export_format',
     ];
 
     private function __construct() {}

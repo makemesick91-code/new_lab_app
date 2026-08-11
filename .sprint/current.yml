@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-ROLL-1
+# Active sprint manifest — LEGACY-RME-PDF-1D
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-ROLL-1
-type: FOUNDATION_SPRINT
-module: Foundation
-title: "Feature flag runtime override & controlled enablement readiness — make a declared env_key actually govern the flag under config:cache, fail closed on an invalid value, and make an uncaptured override impossible to reintroduce"
+id: LEGACY-RME-PDF-1D
+type: MODULE_SPRINT
+module: LegacyRme
+title: "VOID and clinical read/print completion — terminal reasoned VOID that retracts without erasing, a doctor-facing read-only archive viewer under a new least-privilege permission, and authorized private print/PDF export"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # FeatureFlagService resolution + config capture + governance checks
-schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # decides whether a risky capability can be switched on at runtime
-branch_isolation_impact: false  # no BranchContext / branch-scoped query change
+runtime_change: true            # void service, doctor viewer, print/export routes and controller actions
+schema_change: false            # voided_by / voided_at / void_reason already exist since 1A — no migration
+frontend_change: false          # Blade only; no JS/CSS/Vite entry change
+security_impact: true           # new permission, policy change, doctor access boundary, private file exposure surface
+branch_isolation_impact: true   # doctor viewer resolves branch scope server-side via LegacyRmeWorkspaceScope
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # config + service resolution changes must reach the VPS
-browser_required: false         # no UI surface
+deploy_required: true           # runtime + permission seeding must reach the VPS
+browser_required: false         # print is a Blade view; verified by test, not by an interactive browser
 
 test_profiles:
-  - foundation
+  - rme
   - security
 
-go_tag: legacy-rme-pdf-roll-1-feature-flag-runtime-readiness-go
+go_tag: legacy-rme-pdf-1d-void-clinical-read-print-go

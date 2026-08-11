@@ -97,6 +97,30 @@ class LegacyRmeRecordRepository implements LegacyRmeRecordRepositoryInterface
             ->get();
     }
 
+    /**
+     * LEGACY-RME-PDF-1D — the only write path other than create().
+     *
+     * Deliberately not a generic update(): the column list is hard-coded here
+     * so no caller can widen a void into an edit of the patient, the date, the
+     * file or the hashes.
+     */
+    public function lockForUpdate(int $id): ?LegacyRmeRecord
+    {
+        return LegacyRmeRecord::query()->lockForUpdate()->find($id);
+    }
+
+    public function markVoided(LegacyRmeRecord $record, ?int $actorId, string $reason): LegacyRmeRecord
+    {
+        $record->forceFill([
+            'status' => LegacyRmeRecord::STATUS_VOID,
+            'voided_by' => $actorId,
+            'voided_at' => now(),
+            'void_reason' => $reason,
+        ])->save();
+
+        return $record->refresh();
+    }
+
     public function findPage(LegacyRmeRecord $record, int $pageNumber): ?LegacyRmeRecordPage
     {
         return LegacyRmeRecordPage::query()
