@@ -174,8 +174,15 @@ return [
         // or runbook section). Never a patient name or number.
         'approval_reference' => (string) env('LEGACY_RME_PILOT_APPROVAL_REFERENCE', ''),
 
-        // Branch code the pilot is confined to, e.g. LDK2. MAIN is never a
+        // Branch code the pilot is confined to, e.g. TKM1. MAIN is never a
         // clinic pilot branch and a non-RME branch cannot hold RME history.
+        //
+        // LEGACY-RME-PDF-FIX-ROLL2-1: the branch an archive actually lands in
+        // is DERIVED from the branch code in the patient's Nomor RM and cannot
+        // be overridden by the operator. This value records which branch the
+        // owner APPROVED, so it must match the RM-derived branch of the
+        // patients in scope — otherwise the gate would report an approval for
+        // one branch while imports land in another.
         'branch_code' => (string) env('LEGACY_RME_PILOT_BRANCH_CODE', ''),
 
         'forbidden_branch_codes' => ['MAIN'],

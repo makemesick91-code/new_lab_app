@@ -75,3 +75,36 @@ alwaysApply: false
     all patients, not bulk or background import, not permanent enablement, not
     skipping review, not SATUSEHAT submission. Widening is a separate approved
     stage.
+
+## Resumed pilot (LEGACY-RME-PDF-FIX-ROLL2-1 prerequisite)
+
+16. **ROLL-2 requires the FIX-ROLL2-1 GO** tag
+    (`legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch-go`) in its
+    base. The pilot was correctly stopped before that corrective existed; do not
+    run it from a base without it.
+
+17. **The approved pilot branch must match the RM-derived branch.**
+    `LEGACY_RME_PILOT_BRANCH_CODE` records the owner's approval, while the
+    branch an archive lands in is derived from the patient's Nomor RM and cannot
+    be overridden. If the two disagree the gate reports an approval for one
+    branch while imports land in another — correct the approval, never the
+    derivation. For the `DG-TKM1-…` pilot the approved scope is `TKM1`; the
+    earlier `LDK2` scope is superseded for it.
+
+18. **A pilot patient with no native RME is valid** and is imported as
+    `NO_NATIVE_REFERENCE`. Never create a visit or medical record to make a
+    pilot import eligible.
+
+19. **Multi-date pilot documents** use the earliest clinical date as
+    `selected_rme_date` and the latest as `latest_rme_date`; publish
+    re-validates the whole range against a freshly resolved native boundary.
+
+20. **There is no OCR.** The system cannot detect an under-declared latest date,
+    so the reviewer must visually confirm the declared latest date against the
+    document. Never claim OCR enforcement exists in pilot evidence.
+
+21. **The sidebar entry is feature-gated, not just permission-gated.** "Impor
+    Arsip RME Lama" renders only when the operator holds a legacy permission AND
+    `LegacyRmeFeatureGuard` is enabled, so it appears on enablement and
+    disappears on rollback. It remains a convenience, never the security
+    boundary — the routes fail closed independently.

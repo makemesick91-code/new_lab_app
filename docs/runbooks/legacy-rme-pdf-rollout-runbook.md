@@ -87,7 +87,7 @@ Record the approval as environment settings before enabling:
 |---|---|
 | `LEGACY_RME_PILOT_APPROVED` | `true` only when a human approved a specific pilot |
 | `LEGACY_RME_PILOT_APPROVAL_REFERENCE` | Non-PHI governance reference (decision id / runbook section) |
-| `LEGACY_RME_PILOT_BRANCH_CODE` | The single branch the pilot is confined to, e.g. `LDK2` |
+| `LEGACY_RME_PILOT_BRANCH_CODE` | The single branch the pilot is confined to, e.g. `TKM1`. Since FIX-ROLL2-1 the branch an archive lands in is **derived from the patient's Nomor RM**, so this approved scope must match that derived branch |
 
 Deliberately **not** stored anywhere in config: the patient identifier, the
 document path, any name. Patient ownership and the historical-date rule are
