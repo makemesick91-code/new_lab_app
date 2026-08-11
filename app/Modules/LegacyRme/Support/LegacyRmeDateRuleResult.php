@@ -46,6 +46,22 @@ final class LegacyRmeDateRuleResult
     }
 
     /**
+     * LEGACY-RME-PDF-FIX-ROLL2-1 — which reference the decision was made
+     * against: `BEFORE_NATIVE_RME` when the patient already has a native RME
+     * that bounds the archive, `NO_NATIVE_REFERENCE` when they have none.
+     *
+     * The second is a normal, expected migration case — NOT an error. It is
+     * surfaced so the evidence trail can distinguish the two, which is exactly
+     * the distinction the old (removed) refusal used to destroy by refusing.
+     */
+    public function referenceMode(): ?string
+    {
+        $mode = $this->context['reference_mode'] ?? null;
+
+        return is_string($mode) ? $mode : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toArray(): array

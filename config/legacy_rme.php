@@ -20,8 +20,15 @@ declare(strict_types=1);
 |  - The legacy RME date is chosen MANUALLY by the operator from what is
 |    visible on the document. It is never derived from the upload time, the
 |    file metadata, or OCR.
-|  - The legacy RME date must be STRICTLY EARLIER than the patient's earliest
-|    NATIVE RME date (the first medical record produced by this system).
+|  - A document may represent SEVERAL clinical dates. The representative date
+|    is always the EARLIEST one; the LATEST one is the safety bound.
+|  - WHEN the patient has a native RME, EVERY date the document represents must
+|    be STRICTLY EARLIER than the patient's earliest NATIVE RME date (the first
+|    medical record produced by this system). WHEN the patient has none, there
+|    is no such bound — that is a valid migration case, and a native encounter
+|    is never manufactured to create one.
+|  - The archive's branch is DERIVED from the branch code in the patient's
+|    Nomor RM and can never be chosen or overridden by the operator.
 |  - A published legacy record is immutable; corrections go through VOID plus
 |    a fresh import.
 |  - Full KTP/NIK is never rendered, exported, or written into an audit payload.
@@ -125,10 +132,64 @@ return [
 
         // A legacy date equal to the patient's birth date is accepted; earlier is not.
         'allow_same_day_as_birth_date' => true,
+    ],
 
-        // Regular import mode refuses a patient that has no native RME to compare
-        // against. A dedicated migration mode is out of scope for this sprint.
-        'require_native_reference' => true,
+    /*
+    | LEGACY-RME-PDF-FIX-ROLL2-1 — the native reference is a BOUND, never a
+    | PREREQUISITE. DOCUMENTATION OF INVARIANTS, NOT TOGGLES.
+    |
+    | The removed `dates.require_native_reference` switch refused any patient
+    | with no native RME. That was wrong for the case the archive exists to
+    | serve: most patients carried over from the old system have no native RME
+    | at all, and requiring one would have forced an operator to manufacture a
+    | clinical encounter just to unlock an import. Both properties below are
+    | therefore hard-coded — making either switchable would reintroduce exactly
+    | the foot-gun this corrective removed.
+    |
+    | `LegacyRmeDateRuleService` records which of the two reference modes a
+    | decision was made under (BEFORE_NATIVE_RME / NO_NATIVE_REFERENCE), so the
+    | evidence trail keeps the distinction the old refusal used to destroy.
+    */
+    'reference_invariants' => [
+        'no_native_rme_is_valid' => true,
+        'never_manufacture_native_rme' => true,
+    ],
+
+    /*
+    | LEGACY-RME-PDF-FIX-ROLL2-1 — a document is a date RANGE, not a date.
+    | DOCUMENTATION OF INVARIANTS, NOT TOGGLES.
+    |
+    | One historical PDF often carries several clinical dates. The operator
+    | declares the earliest and the latest; the system infers neither, because
+    | it does not read dates out of a PDF (no OCR, no metadata parsing) and must
+    | never pretend otherwise.
+    |
+    | The REPRESENTATIVE date is always the EARLIEST one, while the SAFETY bound
+    | is checked against the LATEST one — validating only the representative
+    | date would let a document whose later entries overlap the native RME era
+    | slip through behind its oldest date.
+    */
+    'document_date_range_invariants' => [
+        'representative_date_is_earliest' => true,
+        'safety_bound_uses_latest' => true,
+        'dates_are_operator_declared_never_ocr' => true,
+    ],
+
+    /*
+    | LEGACY-RME-PDF-FIX-ROLL2-1 — the archive branch is DERIVED from the
+    | patient's Nomor RM. DOCUMENTATION OF INVARIANTS, NOT TOGGLES.
+    |
+    | `DG-TKM1-2024-9985` → `TKM1` → Cabang Telkomas. `origin_branch_id` decides
+    | row visibility (LegacyRmeImportRepository::scoped() filters on it), so it
+    | is a security property and never operator input. There is no fallback: not
+    | the acting user's branch, not BranchContext, not the first RME-enabled
+    | branch, and never a value submitted with the request.
+    */
+    'branch_resolution_invariants' => [
+        'branch_derived_from_medical_record_number' => true,
+        'operator_cannot_override_branch' => true,
+        'no_fallback_branch' => true,
+        'unknown_or_inactive_branch_fails_closed' => true,
     ],
 
     /*

@@ -11,6 +11,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
+use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
@@ -62,6 +63,7 @@ class LegacyRmePublishService
         private readonly LegacyRmeImportRepositoryInterface $imports,
         private readonly LegacyRmeRecordRepositoryInterface $records,
         private readonly LegacyRmeDateRuleService $dateRules,
+        private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeAuditService $audit,
     ) {}
@@ -193,6 +195,7 @@ class LegacyRmePublishService
             // Re-run the 1A date rules against a freshly resolved cutoff. The
             // upload-time snapshot is evidence, never the authority.
             $this->assertDateStillValid($locked);
+            $this->assertBranchStillValid($locked);
 
             $pages = $this->imports->pagesFor($locked);
 
@@ -203,6 +206,7 @@ class LegacyRmePublishService
                 'patient_id' => $locked->patient_id,
                 'origin_branch_id' => $locked->origin_branch_id,
                 'rme_date' => $locked->selected_rme_date,
+                'latest_rme_date' => $locked->latest_rme_date ?? $locked->selected_rme_date,
                 'title' => $this->normalizeTitle($attributes['title'] ?? null),
                 'description' => $this->normalizeDescription($attributes['description'] ?? null),
                 'source_disk' => $this->resolveDisk($locked->source_disk),
@@ -260,13 +264,67 @@ class LegacyRmePublishService
             $this->refuse(LegacyRmePdfFailure::IMPORT_NOT_PUBLISHABLE);
         }
 
-        $result = $this->dateRules->evaluate($patient, $import->selected_rme_date?->toDateString());
+        // FIX-ROLL2-1: revalidate the WHOLE declared range, not just the
+        // representative date. This is the race that matters — an import may
+        // have been staged for a patient with no native RME at all (a valid
+        // migration case), and a real encounter may have been recorded for that
+        // patient since. The cutoff is resolved fresh inside evaluate(), so a
+        // document that now overlaps the native era is refused here rather than
+        // becoming a permanent record.
+        $result = $this->dateRules->evaluate(
+            $patient,
+            $import->selected_rme_date?->toDateString(),
+            $import->latest_rme_date?->toDateString(),
+        );
 
         if ($result->failed()) {
             throw LegacyRmePublishRefusal::dateRule(
                 (string) $result->code,
                 $result->message ?? 'Tanggal arsip tidak lagi valid.',
                 LegacyRmeDateRuleService::FIELD,
+            );
+        }
+    }
+
+    /**
+     * FIX-ROLL2-1 — the branch a legacy archive belongs to is derived from the
+     * patient's Nomor RM, so it is re-derived here and compared with what was
+     * staged.
+     *
+     * `origin_branch_id` decides who can read the published record. If the
+     * patient's RM changed after staging, the staged branch is stale and
+     * publishing it would freeze the wrong owner into an immutable row. The
+     * operator re-imports instead.
+     *
+     * The actor is deliberately NOT passed to the resolver: this check is about
+     * the document still belonging where it was filed, not about who is
+     * pressing publish (that is the policy's job).
+     *
+     * @throws LegacyRmePublishRefusal
+     */
+    private function assertBranchStillValid(LegacyRmeImport $import): void
+    {
+        $patient = $import->patient;
+
+        if ($patient === null) {
+            $this->refuse(LegacyRmePdfFailure::IMPORT_NOT_PUBLISHABLE);
+        }
+
+        $staged = $import->origin_branch_id !== null ? (int) $import->origin_branch_id : null;
+
+        // A pre-FIX-ROLL2-1 row may carry no branch at all. It is not made
+        // worse by publishing, and inventing one now would be a guess.
+        if ($staged === null) {
+            return;
+        }
+
+        $resolution = $this->branchResolver->resolveForPatient($patient);
+
+        if ($resolution->failed() || $resolution->branchId !== $staged) {
+            throw LegacyRmePublishRefusal::dateRule(
+                LegacyRmeBranchResolution::CODE_BRANCH_CONFLICT,
+                'Cabang asal arsip tidak lagi sesuai dengan Nomor RM pasien. Batalkan impor ini dan ulangi dengan data pasien yang benar.',
+                'origin_branch_id',
             );
         }
     }

@@ -48,7 +48,7 @@ function lrmeVisitWithRecord(Patient $patient, string $visitDate, array $overrid
 }
 
 it('returns the earliest native RME date, not the most recent one', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     lrmeVisitWithRecord($patient, '2024-05-10');
     lrmeVisitWithRecord($patient, '2022-01-03');
@@ -58,14 +58,14 @@ it('returns the earliest native RME date, not the most recent one', function () 
 });
 
 it('returns null when the patient has no native RME at all', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     expect(lrmeResolver()->resolve($patient->id))->toBeNull()
         ->and(lrmeResolver()->hasNativeRme($patient->id))->toBeFalse();
 });
 
 it('ignores visits that have no medical record', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     // Earliest visit exists but never produced a medical record.
     ClinicVisit::factory()->create([
@@ -79,7 +79,7 @@ it('ignores visits that have no medical record', function () {
 });
 
 it('ignores cancelled visits even when they carry a medical record', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     lrmeVisitWithRecord($patient, '2018-03-03', ['status' => ClinicVisit::STATUS_CANCELLED]);
     lrmeVisitWithRecord($patient, '2020-09-09');
@@ -88,7 +88,7 @@ it('ignores cancelled visits even when they carry a medical record', function ()
 });
 
 it('ignores soft-deleted visits and soft-deleted medical records', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $deletedVisit = lrmeVisitWithRecord($patient, '2017-01-01');
     $deletedVisit->delete();
@@ -102,7 +102,7 @@ it('ignores soft-deleted visits and soft-deleted medical records', function () {
 });
 
 it('never treats a legacy staging row or a legacy record as native RME', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     LegacyRmeImport::factory()->create([
         'patient_id' => $patient->id,
@@ -123,7 +123,7 @@ it('never treats a legacy staging row or a legacy record as native RME', functio
 });
 
 it('never treats a voided legacy record as native RME', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     LegacyRmeRecord::factory()->voided()->create([
         'patient_id' => $patient->id,
@@ -134,7 +134,7 @@ it('never treats a voided legacy record as native RME', function () {
 });
 
 it('breaks same-day ties on id so the result is stable', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $first = lrmeVisitWithRecord($patient, '2022-02-02');
     $second = lrmeVisitWithRecord($patient, '2022-02-02');
@@ -144,7 +144,7 @@ it('breaks same-day ties on id so the result is stable', function () {
 });
 
 it('scans every branch so the cutoff is the earliest possible bound', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $disabledBranch = lrmeRmeBranch(['is_rme_enabled' => false, 'is_active' => false]);
     $activeBranch = lrmeRmeBranch();
@@ -159,8 +159,8 @@ it('scans every branch so the cutoff is the earliest possible bound', function (
 });
 
 it('does not leak another patient native RME into the cutoff', function () {
-    $patient = Patient::factory()->create();
-    $other = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
+    $other = legacyRmeArchivablePatient();
 
     lrmeVisitWithRecord($other, '2015-01-01');
     lrmeVisitWithRecord($patient, '2021-01-01');
@@ -169,7 +169,7 @@ it('does not leak another patient native RME into the cutoff', function () {
 });
 
 it('resolves from a patient model as well as a patient id', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     lrmeVisitWithRecord($patient, '2020-07-07');
 
     expect(lrmeResolver()->resolveForPatient($patient)?->toDateString())->toBe('2020-07-07');

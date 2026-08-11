@@ -24,14 +24,20 @@ alwaysApply: false
    on the document. Never from the upload time, `created_at`, the file date, PDF
    metadata or OCR. It lives in `selected_rme_date` / `rme_date`, separate from
    `uploaded_at` and `published_at`.
-6. **The bound:** `legacy date < earliest_native_rme_date` — STRICTLY earlier.
-   Equal is refused. Also `legacy date < today` (today is refused), and
-   `patient birth date <= legacy date` when a birth date exists (equal to the
+6. **The bound (corrected by FIX-ROLL2-1 — see rule 95):** a document is a date
+   RANGE. `selected_rme_date` is the EARLIEST clinical date, `latest_rme_date`
+   the latest. WHEN the patient has a native RME, EVERY date the document
+   represents must be STRICTLY earlier than it (`latest < earliest native RME`;
+   equal is refused). Also `latest < today` (today is refused), and
+   `patient birth date <= earliest` when a birth date exists (equal to the
    birth date is accepted; `date_of_birth` is nullable, so a missing value skips
    that rule and is never invented).
-7. In regular mode, a patient with **no native RME is refused**
-   (`PATIENT_HAS_NO_NATIVE_RME`). No hidden exception. A migration mode is a
-   separate, explicit sprint.
+7. **A patient with NO native RME is ELIGIBLE** (corrected by FIX-ROLL2-1). The
+   native RME is a BOUND, not a PREREQUISITE: most migrated patients have no
+   native RME at all. Never manufacture a visit or medical record to create a
+   comparison date. The old `PATIENT_HAS_NO_NATIVE_RME` refusal is REMOVED; the
+   fact is kept as evidence in the reference mode (`BEFORE_NATIVE_RME` /
+   `NO_NATIVE_REFERENCE`).
 8. `earliest_native_rme_date` comes from **`trx_clinic_visits.visit_date`** via
    the visit that owns the medical record — never `trx_medical_records`'
    `created_at`, `finalized_at` or `canonical_visit_id`, and never
@@ -47,10 +53,10 @@ alwaysApply: false
     move the bound later and admit an overlapping document. Do not "fix" this to
     match `PatientRmWorkspaceResolver`.
 12. All date rules live in `LegacyRmeDateRuleService` with stable codes:
-    `PATIENT_HAS_NO_NATIVE_RME`, `LEGACY_DATE_NOT_BEFORE_NATIVE_RME`,
-    `LEGACY_DATE_IN_FUTURE`, `LEGACY_DATE_BEFORE_PATIENT_BIRTH`,
-    `LEGACY_DATE_INVALID`. Branch on the code, never on the message. The cutoff
-    is always recomputed server-side; a client-supplied snapshot is never
+    `LEGACY_DATE_NOT_BEFORE_NATIVE_RME`, `LEGACY_DATE_IN_FUTURE`,
+    `LEGACY_DATE_BEFORE_PATIENT_BIRTH`, `LEGACY_DATE_INVALID`,
+    `LEGACY_DATE_RANGE_INVALID`. Branch on the code, never on the message. The
+    cutoff is always recomputed server-side; a client-supplied snapshot is never
     trusted.
 13. A **published** legacy record is immutable: no in-place edit of patient,
     date, file, hash or pages, and no hard delete (the published tables carry no

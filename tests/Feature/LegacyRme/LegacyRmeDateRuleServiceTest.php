@@ -39,7 +39,7 @@ function lrmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
 }
 
 it('accepts a legacy date one day before the earliest native RME date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     $result = lrmeDateRules()->evaluate($patient, '2022-03-09');
@@ -50,7 +50,7 @@ it('accepts a legacy date one day before the earliest native RME date', function
 });
 
 it('rejects a legacy date equal to the earliest native RME date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     $result = lrmeDateRules()->evaluate($patient, '2022-03-10');
@@ -60,7 +60,7 @@ it('rejects a legacy date equal to the earliest native RME date', function () {
 });
 
 it('rejects a legacy date after the earliest native RME date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     $result = lrmeDateRules()->evaluate($patient, '2022-03-11');
@@ -69,18 +69,121 @@ it('rejects a legacy date after the earliest native RME date', function () {
         ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_RME);
 });
 
-it('rejects a patient that has no native RME to compare against', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+// LEGACY-RME-PDF-FIX-ROLL2-1 — this used to be a refusal. It is now the normal
+// migration case: a patient carried over from the old system usually has no
+// native RME at all, and demanding one would have forced an operator to invent
+// a clinical encounter just to unlock the import.
+it('accepts a patient that has no native RME to compare against', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 
     $result = lrmeDateRules()->evaluate($patient, '2015-01-01');
 
+    expect($result->passed)->toBeTrue()
+        ->and($result->code)->toBeNull()
+        ->and($result->context['earliest_native_rme_date'])->toBeNull()
+        // The absence of a bound is recorded as evidence, not silently dropped.
+        ->and($result->referenceMode())->toBe(LegacyRmeDateRuleService::REFERENCE_MODE_NO_NATIVE_REFERENCE);
+});
+
+it('marks a decision bounded by a native RME with the other reference mode', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    lrmeNativeVisit($patient, '2022-03-10');
+
+    $result = lrmeDateRules()->evaluate($patient, '2015-01-01');
+
+    expect($result->passed)->toBeTrue()
+        ->and($result->referenceMode())->toBe(LegacyRmeDateRuleService::REFERENCE_MODE_BEFORE_NATIVE_RME);
+});
+
+it('still refuses a future date for a patient with no native RME', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $tomorrow = CarbonImmutable::now(lrmeDateRules()->timezone())->addDay()->toDateString();
+
+    $result = lrmeDateRules()->evaluate($patient, $tomorrow);
+
     expect($result->failed())->toBeTrue()
-        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_PATIENT_HAS_NO_NATIVE_RME)
-        ->and($result->context['earliest_native_rme_date'])->toBeNull();
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_IN_FUTURE);
+});
+
+// ── Multi-date documents ────────────────────────────────────────────────────
+// The representative date is the EARLIEST one; the safety bound is the LATEST.
+
+it('accepts a multi-date document whose whole range precedes the native RME', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    lrmeNativeVisit($patient, '2025-01-01');
+
+    $result = lrmeDateRules()->evaluate($patient, '2024-01-28', '2024-08-31');
+
+    expect($result->passed)->toBeTrue()
+        ->and($result->context['selected_rme_date'])->toBe('2024-01-28')
+        ->and($result->context['latest_rme_date'])->toBe('2024-08-31');
+});
+
+// The case the representative date alone would have hidden: the oldest entry
+// predates the native RME, but a later entry on the SAME document does not.
+it('refuses a multi-date document whose latest date crosses the native RME', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    lrmeNativeVisit($patient, '2024-06-01');
+
+    $result = lrmeDateRules()->evaluate($patient, '2024-01-28', '2024-08-31');
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_RME);
+});
+
+it('refuses a latest date equal to the native RME date', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    lrmeNativeVisit($patient, '2024-08-31');
+
+    $result = lrmeDateRules()->evaluate($patient, '2024-01-28', '2024-08-31');
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_RME);
+});
+
+it('refuses a reversed range', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $result = lrmeDateRules()->evaluate($patient, '2024-08-31', '2024-01-28');
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_RANGE_INVALID);
+});
+
+it('refuses a future latest date even when the earliest date is historical', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $tomorrow = CarbonImmutable::now(lrmeDateRules()->timezone())->addDay()->toDateString();
+
+    $result = lrmeDateRules()->evaluate($patient, '2015-01-01', $tomorrow);
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_IN_FUTURE);
+});
+
+it('collapses a single-date document onto the representative date', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $result = lrmeDateRules()->evaluate($patient, '2015-01-01');
+
+    expect($result->passed)->toBeTrue()
+        ->and($result->context['latest_rme_date'])->toBe('2015-01-01');
+});
+
+// A blank latest date means "single-date document". A NON-blank unparseable one
+// must not silently collapse into the earliest date, which would drop the bound.
+it('refuses an unparseable latest date rather than ignoring it', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $result = lrmeDateRules()->evaluate($patient, '2015-01-01', 'bukan-tanggal');
+
+    expect($result->failed())->toBeTrue()
+        ->and($result->code)->toBe(LegacyRmeDateRuleService::CODE_LEGACY_DATE_INVALID);
 });
 
 it('rejects today as a legacy date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 
     // The native RME sits in the future relative to "today" so the native rule
     // passes and the today-rule is the one under test.
@@ -95,7 +198,7 @@ it('rejects today as a legacy date', function () {
 });
 
 it('rejects a future legacy date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 
     $future = CarbonImmutable::now(lrmeDateRules()->timezone())->addDays(10);
     lrmeNativeVisit($patient, $future->addDays(5)->toDateString());
@@ -107,7 +210,7 @@ it('rejects a future legacy date', function () {
 });
 
 it('rejects a legacy date earlier than the patient birth date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '2000-06-15']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '2000-06-15']);
     lrmeNativeVisit($patient, '2022-01-01');
 
     $result = lrmeDateRules()->evaluate($patient, '2000-06-14');
@@ -118,7 +221,7 @@ it('rejects a legacy date earlier than the patient birth date', function () {
 });
 
 it('accepts a legacy date equal to the patient birth date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '2000-06-15']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '2000-06-15']);
     lrmeNativeVisit($patient, '2022-01-01');
 
     expect(lrmeDateRules()->evaluate($patient, '2000-06-15')->passed)->toBeTrue();
@@ -127,7 +230,7 @@ it('accepts a legacy date equal to the patient birth date', function () {
 it('rejects a legacy date equal to the birth date when the same-day allowance is off', function () {
     config()->set('legacy_rme.dates.allow_same_day_as_birth_date', false);
 
-    $patient = Patient::factory()->create(['date_of_birth' => '2000-06-15']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '2000-06-15']);
     lrmeNativeVisit($patient, '2022-01-01');
 
     expect(lrmeDateRules()->evaluate($patient, '2000-06-15')->code)
@@ -138,7 +241,7 @@ it('rejects a legacy date equal to the birth date when the same-day allowance is
 it('skips the birth-date rule when the patient has no recorded birth date', function () {
     // date_of_birth is nullable by design; the service never invents one and
     // never blocks the import on a missing value.
-    $patient = Patient::factory()->create(['date_of_birth' => null]);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => null]);
     lrmeNativeVisit($patient, '2022-01-01');
 
     $result = lrmeDateRules()->evaluate($patient, '1899-01-01');
@@ -148,7 +251,7 @@ it('skips the birth-date rule when the patient has no recorded birth date', func
 });
 
 it('rejects an unparseable or empty legacy date', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     lrmeNativeVisit($patient, '2022-01-01');
 
     expect(lrmeDateRules()->evaluate($patient, null)->code)
@@ -158,7 +261,7 @@ it('rejects an unparseable or empty legacy date', function () {
 });
 
 it('handles a leap day and accepts a Carbon instance as input', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2021-01-01');
 
     $result = lrmeDateRules()->evaluate($patient, CarbonImmutable::parse('2020-02-29'));
@@ -168,7 +271,7 @@ it('handles a leap day and accepts a Carbon instance as input', function () {
 });
 
 it('compares calendar dates only, ignoring any time component', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     // 23:59 on the day before the cutoff is still the day before.
@@ -179,7 +282,7 @@ it('compares calendar dates only, ignoring any time component', function () {
 });
 
 it('recomputes the cutoff server-side and never trusts a supplied snapshot', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     // Even if a caller believed the cutoff was far in the past, the service
@@ -191,7 +294,7 @@ it('recomputes the cutoff server-side and never trusts a supplied snapshot', fun
 });
 
 it('is unaffected by an existing legacy record for the same patient', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     LegacyRmeRecord::factory()->create([
@@ -208,7 +311,7 @@ it('is unaffected by an existing legacy record for the same patient', function (
 });
 
 it('is unaffected by the origin branch of the import', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     // Origin branch is provenance metadata; it never changes the date bound.
@@ -216,7 +319,7 @@ it('is unaffected by the origin branch of the import', function () {
 });
 
 it('throws a validation exception on assert and returns the result on success', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     lrmeNativeVisit($patient, '2022-03-10');
 
     expect(lrmeDateRules()->assert($patient, '2022-03-09')->passed)->toBeTrue();
@@ -233,7 +336,7 @@ it('never leaks patient identity into the rule context', function () {
     // Built at runtime so no KTP-shaped literal ever sits in the source tree.
     $ktp = '7371'.str_repeat('9', 12);
 
-    $patient = Patient::factory()->create([
+    $patient = legacyRmeArchivablePatient([
         'date_of_birth' => '1990-01-01',
         'ktp_number' => $ktp,
     ]);

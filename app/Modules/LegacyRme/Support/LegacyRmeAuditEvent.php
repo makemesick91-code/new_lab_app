@@ -68,6 +68,16 @@ final class LegacyRmeAuditEvent
 
     public const RECORD_EXPORTED = 'LEGACY_RME_RECORD_EXPORTED';
 
+    /**
+     * LEGACY-RME-PDF-FIX-ROLL2-1 — an intake refused before any staging row
+     * existed, because the archive's branch could not be derived from the
+     * patient's Nomor RM (or a request tried to override it).
+     *
+     * It is a distinct action rather than a reused IMPORT_CREATED: nothing was
+     * created, and a trail that says otherwise is a lie.
+     */
+    public const IMPORT_BRANCH_REJECTED = 'LEGACY_RME_IMPORT_BRANCH_REJECTED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -91,6 +101,7 @@ final class LegacyRmeAuditEvent
         self::RECORD_VIEWED,
         self::RECORD_SOURCE_VIEWED,
         self::RECORD_PAGE_VIEWED,
+        self::IMPORT_BRANCH_REJECTED,
     ];
 
     /**
@@ -134,6 +145,16 @@ final class LegacyRmeAuditEvent
         // recorded, so the trail still shows a real explanation was given.
         'void_reason_length',
         'export_format',
+        // LEGACY-RME-PDF-FIX-ROLL2-1. Still structure only. `latest_rme_date`
+        // is the other end of the operator-declared clinical range;
+        // `reference_mode` records whether the decision was bounded by a native
+        // RME (BEFORE_NATIVE_RME) or made without one (NO_NATIVE_REFERENCE) —
+        // the distinction the removed refusal used to destroy. `branch_code` is
+        // an operational label such as `TKM1`, taken from the patient's own
+        // Nomor RM; it is not patient data and never the full Nomor RM.
+        'latest_rme_date',
+        'reference_mode',
+        'branch_code',
     ];
 
     private function __construct() {}

@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Controllers;
 
 use App\Http\Controllers\Controller;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
 use App\Modules\LegacyRme\Requests\PublishLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Requests\StoreLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
+use App\Modules\LegacyRme\Services\LegacyRmeBranchResolver;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientLookupService;
@@ -56,7 +56,7 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeWorkspaceScope $scope,
         private readonly LegacyRmeAuditService $audit,
         private readonly LegacyRmeFeatureGuard $feature,
-        private readonly BranchService $branches,
+        private readonly LegacyRmeBranchResolver $branchResolver,
     ) {}
 
     public function index(Request $request): View
@@ -104,8 +104,16 @@ class LegacyRmeImportController extends Controller
         // weaker door into patient data than the search that produced the link.
         $patient = $this->patients->findSelectable($request->user(), $request->integer('patient_id'));
 
+        $branchResolution = null;
+
         if ($patient !== null) {
             $summary = $this->patients->summarize($patient);
+
+            // FIX-ROLL2-1: the branch is DERIVED from the patient's Nomor RM,
+            // so the screen only ever DISPLAYS it. There is no branch picker to
+            // populate any more — the same resolver runs again server-side on
+            // store(), and that call is the boundary.
+            $branchResolution = $this->branchResolver->resolveForPatient($patient, $request->user());
         }
 
         return view('settings.rme.legacy-imports.create', [
@@ -113,15 +121,12 @@ class LegacyRmeImportController extends Controller
             'rm' => $rm,
             'patient' => $patient,
             'summary' => $summary,
-            // Only branches this operator may actually file an archive into —
-            // `origin_branch_id` decides row ownership, so offering more would
-            // invite a row the uploader could never manage. The server re-checks
-            // regardless; this select is convenience, not the boundary.
-            'branches' => $this->branches->listRmeEnabled()
-                ->whereIn('id', $this->scope->branchIdsFor($request->user()))
-                ->values(),
-            // A convenience bound for the date picker only. The server
-            // re-evaluates every rule regardless of what the browser allowed.
+            'branchResolution' => $branchResolution,
+            // A convenience bound for the date picker only, and only when the
+            // patient actually HAS a native RME — a patient without one has no
+            // upper bound beyond "before today", which the server enforces.
+            // Every rule is re-evaluated server-side regardless of what the
+            // browser allowed.
             'maxSelectableDate' => $summary['earliest_native_rme_date'] ?? null,
         ]);
     }
@@ -136,12 +141,17 @@ class LegacyRmeImportController extends Controller
 
         abort_if($patient === null, 404);
 
+        $latestRmeDate = $request->string('latest_rme_date')->toString();
+
         $import = $this->importService->createFromUpload(
             $patient,
             $request->string('selected_rme_date')->toString(),
+            // Passed only so a mismatch with the RM-derived branch is rejected
+            // explicitly. It is never used as the answer.
             $request->input('origin_branch_id') !== null ? $request->integer('origin_branch_id') : null,
             $request->file('document'),
             $request->user(),
+            $latestRmeDate !== '' ? $latestRmeDate : null,
         );
 
         return redirect()

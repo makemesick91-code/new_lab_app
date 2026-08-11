@@ -9,6 +9,7 @@
  */
 
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
 use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
@@ -18,6 +19,7 @@ use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
+use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
@@ -33,7 +35,7 @@ beforeEach(function () {
 
 function lrmeUploadPatient(string $nativeVisitDate = '2022-03-10'): Patient
 {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, $nativeVisitDate);
 
     return $patient;
@@ -136,16 +138,46 @@ it('refuses a legacy date of today', function () {
 });
 
 it('refuses a legacy date before the patient birth date', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     expect(fn () => lrmeUpload($patient, null, '1989-12-31'))->toThrow(ValidationException::class);
 });
 
-it('refuses a patient with no native RME at all', function () {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+// LEGACY-RME-PDF-FIX-ROLL2-1 — a patient with no native RME is the ordinary
+// migration case and is accepted. No native encounter is manufactured for them.
+it('accepts a patient with no native RME at all', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 
-    expect(fn () => lrmeUpload($patient, null, '2015-01-01'))->toThrow(ValidationException::class);
+    $import = lrmeUpload($patient, null, '2015-01-01');
+
+    expect($import->status)->toBe(LegacyRmeImportStatus::QUEUED)
+        ->and($import->selected_rme_date?->toDateString())->toBe('2015-01-01')
+        // No native RME means no cutoff to snapshot — recorded as null, not faked.
+        ->and($import->earliest_native_rme_date_snapshot)->toBeNull()
+        // And the archive still creates no clinical encounter for the patient:
+        // the patient has no native RME before the import and none after it.
+        ->and(ClinicVisit::where('patient_id', $patient->getKey())->count())->toBe(0)
+        ->and(MedicalRecord::where('patient_id', $patient->getKey())->count())->toBe(0);
+});
+
+it('stores the declared date range and collapses a single-date document', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+
+    $multi = app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2024-01-28',
+        null,
+        legacyRmePdfUpload('multi.pdf'),
+        superAdmin(),
+        '2024-08-31',
+    );
+
+    $single = lrmeUpload($patient, legacyRmePdfUpload('single.pdf', 2), '2015-01-01');
+
+    expect($multi->selected_rme_date?->toDateString())->toBe('2024-01-28')
+        ->and($multi->latest_rme_date?->toDateString())->toBe('2024-08-31')
+        ->and($single->latest_rme_date?->toDateString())->toBe('2015-01-01');
 });
 
 it('snapshots the server-computed cutoff rather than anything supplied', function () {

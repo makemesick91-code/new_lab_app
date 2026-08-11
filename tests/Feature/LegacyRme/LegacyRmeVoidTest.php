@@ -25,7 +25,6 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
-use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +45,7 @@ function lrme1dPublished(int $pages = 2): LegacyRmeRecord
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages($pages));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages($pages));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(

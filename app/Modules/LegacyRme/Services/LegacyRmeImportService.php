@@ -5,17 +5,16 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Services;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
 use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
+use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
-use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +28,7 @@ use Illuminate\Validation\ValidationException;
  *
  *   feature flag
  *   → date rules (1A service, never re-derived here)
- *   → origin branch validation
+ *   → origin branch DERIVED from the patient's Nomor RM (FIX-ROLL2-1)
  *   → structural file validation + server-side SHA-256
  *   → exact-file duplicate precheck
  *   → optional malware scan
@@ -54,11 +53,13 @@ class LegacyRmeImportService
         private readonly LegacyRmeAuditService $audit,
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeMalwareScannerInterface $malware,
-        private readonly BranchService $branches,
-        private readonly LegacyRmeWorkspaceScope $scope,
+        private readonly LegacyRmeBranchResolver $branchResolver,
     ) {}
 
     /**
+     * @param  string|null  $latestRmeDate  the LATEST clinical date the document
+     *                                      represents; null means a single-date document
+     *
      * @throws ValidationException
      */
     public function createFromUpload(
@@ -67,14 +68,29 @@ class LegacyRmeImportService
         ?int $originBranchId,
         UploadedFile $document,
         User $actor,
+        ?string $latestRmeDate = null,
     ): LegacyRmeImport {
         $this->feature->assertEnabled();
 
-        // 1A owns the date domain. Never re-derive a bound here.
-        $this->dateRules->assert($patient, $selectedRmeDate);
+        // 1A owns the date domain. Never re-derive a bound here. The whole
+        // declared range is validated, not just the representative date.
+        $dateResult = $this->dateRules->assert(
+            $patient,
+            $selectedRmeDate,
+            LegacyRmeDateRuleService::FIELD,
+            $latestRmeDate,
+        );
         $cutoff = $this->dateRules->snapshotCutoff($patient);
 
-        $originBranchId = $this->resolveOriginBranch($originBranchId, $actor);
+        // A single-date document stores the same value at both ends, so the
+        // persisted range is always complete and publish-time revalidation
+        // never has to guess what the operator meant.
+        $latestRmeDate = (string) ($dateResult->context['latest_rme_date'] ?? $selectedRmeDate);
+
+        // FIX-ROLL2-1: the branch is DERIVED from the patient's Nomor RM. The
+        // submitted value is only compared, never used as the answer.
+        $branch = $this->resolveOriginBranch($patient, $originBranchId, $actor);
+        $originBranchId = $branch->branchId;
 
         try {
             $this->assertUploadedPdf($document);
@@ -127,6 +143,7 @@ class LegacyRmeImportService
                 'patient_id' => (int) $patient->getKey(),
                 'origin_branch_id' => $originBranchId,
                 'selected_rme_date' => $selectedRmeDate,
+                'latest_rme_date' => $latestRmeDate,
                 'earliest_native_rme_date_snapshot' => $cutoff,
                 'original_filename' => $this->safeFilename($document),
                 'source_disk' => $this->storage->diskName(),
@@ -148,7 +165,12 @@ class LegacyRmeImportService
         $this->audit->logImportEvent(LegacyRmeAuditEvent::IMPORT_CREATED, $import, [
             'source_pdf_sha256' => $sha256,
             'selected_rme_date' => $selectedRmeDate,
+            'latest_rme_date' => $latestRmeDate,
             'earliest_native_rme_date' => $cutoff,
+            // Evidence for the two migration cases: bounded by a native RME, or
+            // legitimately unbounded because the patient has none.
+            'reference_mode' => $dateResult->referenceMode(),
+            'branch_code' => $branch->branchCode,
         ], $actor);
 
         $this->audit->logImportEvent(LegacyRmeAuditEvent::PDF_UPLOADED, $import, [
@@ -188,48 +210,47 @@ class LegacyRmeImportService
     }
 
     /**
-     * Resolve the origin branch of a staged document.
+     * Resolve the origin branch of a staged document — FIX-ROLL2-1.
      *
      * IMPORTANT — this field is NOT merely descriptive. `origin_branch_id` is
      * the column row visibility keys off: LegacyRmeImportRepository::scoped()
      * filters on it and LegacyRmeImportPolicy::inScope() evaluates it against
-     * the caller's scope. A request-supplied value therefore decides which
-     * branch owns and can see the resulting row, so it is validated against the
-     * UPLOADER'S OWN scope, not just the global RME-enabled set.
+     * the caller's scope. It therefore decides which branch owns and can see
+     * the resulting row, which makes it a security property.
      *
-     * Without that check a branch-scoped operator could file a document into a
-     * branch they have no authority over — and then lose access to their own
-     * row, because every later read would 404 for them.
+     * Because it is a security property it is DERIVED, not chosen: the branch
+     * comes from the branch-code segment of the patient's own Nomor RM
+     * (`DG-TKM1-2024-9985` → `TKM1` → Cabang Telkomas). The previous behaviour
+     * — trust a submitted id, or silently anchor a blank one to the uploader's
+     * first branch — could file a patient's history under a branch that does
+     * not own that patient, and quietly change who could read it afterwards.
+     *
+     * There is no fallback. An unresolvable, unknown, ambiguous, inactive,
+     * non-RME or out-of-scope branch fails closed so the operator fixes the
+     * patient master data, rather than the archive landing somewhere plausible
+     * but wrong.
+     *
+     * @throws ValidationException
      */
-    private function resolveOriginBranch(?int $originBranchId, User $actor): ?int
+    private function resolveOriginBranch(Patient $patient, ?int $submittedBranchId, User $actor): LegacyRmeBranchResolution
     {
-        // A row with no origin branch is visible to the governance tier only.
-        if ($originBranchId === null) {
-            if ($this->scope->includesUnscopedRowsFor($actor)) {
-                return null;
-            }
+        $resolution = $this->branchResolver->resolveForPatient($patient, $actor);
+        $resolution = $this->branchResolver->assertNoConflict($resolution, $submittedBranchId);
 
-            // A scoped operator must not create a row they could never manage;
-            // anchor it to their own branch instead.
-            $own = $this->scope->branchIdsFor($actor);
+        if ($resolution->failed()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::IMPORT_BRANCH_REJECTED,
+                null,
+                $resolution->auditContext() + ['patient_id' => (int) $patient->getKey()],
+                $actor,
+            );
 
-            if ($own === []) {
-                throw ValidationException::withMessages([
-                    'origin_branch_id' => 'Cabang asal tidak dapat ditentukan untuk akun ini.',
-                ]);
-            }
-
-            return (int) $own[0];
-        }
-
-        if (! in_array((int) $originBranchId, $this->branches->rmeEnabledIds(), true)
-            || ! $this->scope->allows($actor, (int) $originBranchId)) {
             throw ValidationException::withMessages([
-                'origin_branch_id' => 'Cabang asal tidak valid.',
+                'origin_branch_id' => (string) $resolution->message,
             ]);
         }
 
-        return (int) $originBranchId;
+        return $resolution;
     }
 
     /**

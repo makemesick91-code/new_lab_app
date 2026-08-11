@@ -17,7 +17,6 @@ use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\Process\Process;
@@ -158,7 +157,7 @@ it('normalizes page numbering for a document with more than nine pages', functio
 it('processes a real pdf end to end into private page images', function () {
     config()->set('legacy_rme.processing.dpi', 72);
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(

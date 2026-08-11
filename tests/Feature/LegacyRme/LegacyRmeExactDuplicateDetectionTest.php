@@ -32,7 +32,7 @@ beforeEach(function () {
 
 function lrmeDupPatient(): Patient
 {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     return $patient;

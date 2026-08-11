@@ -22,7 +22,6 @@ use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
-use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
@@ -30,7 +29,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 
 it('creates no visit, invoice, payment, lab or SATUSEHAT row when a legacy record is archived', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $baseline = [
         'visits' => ClinicVisit::count(),
@@ -61,7 +60,7 @@ it('creates no visit, invoice, payment, lab or SATUSEHAT row when a legacy recor
 });
 
 it('does not change an existing visit status when a legacy record is archived', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $visit = ClinicVisit::factory()->create([
         'patient_id' => $patient->id,
@@ -74,7 +73,7 @@ it('does not change an existing visit status when a legacy record is archived', 
 });
 
 it('keeps the legacy archive out of the native RME sheet history', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $visit = ClinicVisit::factory()->create(['patient_id' => $patient->id, 'visit_date' => '2023-01-01']);
     MedicalRecord::factory()->create([
@@ -174,7 +173,7 @@ it('creates no visit, invoice, payment, lab or SATUSEHAT row when a document is 
         (new FakeLegacyRmePdfRasterizer)->withPages(2),
     );
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     $visit = legacyRmeNativeVisit($patient, '2022-03-10');
 
     $baseline = [

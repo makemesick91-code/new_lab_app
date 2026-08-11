@@ -20,7 +20,6 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
-use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +37,7 @@ function lrme1cHttpReviewed(int $pages = 2): LegacyRmeImport
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages($pages));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages($pages));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
@@ -69,7 +68,7 @@ it('lets a super admin review then publish and lands on the published archive', 
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(2));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages(2));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
@@ -97,7 +96,7 @@ it('refuses a publish over HTTP when the import was never reviewed', function ()
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(1));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages(1));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(

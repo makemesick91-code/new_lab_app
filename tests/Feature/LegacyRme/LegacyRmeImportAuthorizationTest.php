@@ -12,7 +12,6 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
-use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Route;
@@ -182,7 +181,7 @@ it('offers no publish action on an import that has not been reviewed', function 
 });
 
 it('never renders a patient KTP anywhere in the workspace', function () {
-    $patient = Patient::factory()->create(['ktp_number' => '7371'.str_repeat('9', 12)]);
+    $patient = legacyRmeArchivablePatient(['ktp_number' => '7371'.str_repeat('9', 12)]);
     $import = lrme1bImport(['patient_id' => $patient->id]);
 
     $this->actingAs(superAdmin())
@@ -246,7 +245,7 @@ it('refuses an origin branch outside the uploader own scope', function () {
     $user = userWith(['create_legacy_rme_imports']);
     $user->forceFill(['branch_id' => $ownBranch->id])->save();
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
@@ -260,36 +259,18 @@ it('refuses an origin branch outside the uploader own scope', function () {
     expect(LegacyRmeImport::whereNotNull('source_pdf_sha256')->count())->toBe(0);
 });
 
-it('anchors a scoped operator upload to their own branch when none is given', function () {
+// ── LEGACY-RME-PDF-FIX-ROLL2-1: the branch is DERIVED, never chosen ─────────
+// The three tests replaced here pinned the previous contract: a submitted id
+// was trusted, a blank one was anchored to the uploader's own branch, and a
+// governance-tier upload produced a branchless row. All three let a patient's
+// history be filed under a branch that does not own that patient — and
+// `origin_branch_id` is what decides who can read it afterwards.
+
+it('derives the origin branch from the patient Nomor RM', function () {
     Storage::fake('legacy_rme_private');
     Bus::fake();
 
-    $ownBranch = Branch::factory()->create(['is_rme_enabled' => true, 'is_active' => true]);
-
-    $user = userWith(['create_legacy_rme_imports']);
-    $user->forceFill(['branch_id' => $ownBranch->id])->save();
-
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
-    legacyRmeNativeVisit($patient, '2022-03-10');
-
-    $import = app(LegacyRmeImportService::class)->createFromUpload(
-        $patient,
-        '2020-05-01',
-        null,
-        legacyRmePdfUpload(),
-        $user,
-    );
-
-    // A branchless row would be governance-tier only — invisible to its own
-    // uploader — so it is anchored to their branch instead.
-    expect($import->origin_branch_id)->toBe($ownBranch->id);
-});
-
-it('lets the governance tier file an archive with no origin branch', function () {
-    Storage::fake('legacy_rme_private');
-    Bus::fake();
-
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
@@ -300,26 +281,123 @@ it('lets the governance tier file an archive with no origin branch', function ()
         superAdmin(),
     );
 
-    expect($import->origin_branch_id)->toBeNull();
+    // DG-TKM1-…  →  TKM1  →  Cabang Telkomas. Never null, never the actor's.
+    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
 });
 
-it('offers only in-scope branches on the upload form', function () {
-    $ownBranch = Branch::factory()->create(['is_rme_enabled' => true, 'is_active' => true, 'name' => 'Cabang Milik Sendiri']);
-    $otherBranch = Branch::factory()->create(['is_rme_enabled' => true, 'is_active' => true, 'name' => 'Cabang Orang Lain']);
+it('ignores nothing and refuses a submitted branch that contradicts the Nomor RM', function () {
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
 
-    $user = userWith(['create_legacy_rme_imports']);
-    $user->forceFill(['branch_id' => $ownBranch->id])->save();
-
-    // The branch selector only renders once a patient is chosen (step 2), so
-    // the request has to reach that step for the assertion to mean anything.
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
-    $this->actingAs($user)
+    $otherBranch = legacyRmeBranch('LDK2', 'Cabang Landak');
+
+    // A conflicting value is REJECTED explicitly rather than silently dropped,
+    // so an inconsistent operator sees the problem instead of a surprise owner.
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        $otherBranch->id,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    ))->toThrow(ValidationException::class);
+
+    expect(LegacyRmeImport::whereNotNull('source_pdf_sha256')->count())->toBe(0);
+});
+
+it('accepts a submitted branch that matches the RM-derived one', function () {
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
+
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    legacyRmeNativeVisit($patient, '2022-03-10');
+
+    $import = app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        legacyRmeBranch('TKM1')->id,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    );
+
+    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
+});
+
+it('fails closed when the patient Nomor RM names an unknown branch', function () {
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
+
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    $patient->forceFill(['medical_record_number' => 'DG-ZZZ9-2024-0001'])->save();
+    legacyRmeNativeVisit($patient, '2022-03-10');
+
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        null,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    ))->toThrow(ValidationException::class);
+
+    expect(LegacyRmeImport::whereNotNull('source_pdf_sha256')->count())->toBe(0);
+});
+
+it('fails closed when the patient Nomor RM is not in the canonical format', function () {
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
+
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
+    $patient->forceFill(['medical_record_number' => 'MRN-ABCDEFGH'])->save();
+    legacyRmeNativeVisit($patient, '2022-03-10');
+
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        null,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    ))->toThrow(ValidationException::class);
+});
+
+it('fails closed when the RM-derived branch is outside the uploader scope', function () {
+    Storage::fake('legacy_rme_private');
+    Bus::fake();
+
+    // The patient belongs to TKM1; the operator is pinned to LDK2. Filing it
+    // anyway would hand them a row they could never read back.
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    legacyRmeNativeVisit($patient, '2022-03-10');
+
+    $user = userWith(['create_legacy_rme_imports']);
+    $user->forceFill(['branch_id' => legacyRmeBranch('LDK2', 'Cabang Landak')->id])->save();
+
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2020-05-01',
+        null,
+        legacyRmePdfUpload(),
+        $user,
+    ))->toThrow(ValidationException::class);
+});
+
+it('shows the RM-derived branch read-only on the upload form', function () {
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    legacyRmeNativeVisit($patient, '2022-03-10');
+
+    $response = $this->actingAs(superAdmin())
         ->get(route('settings.rme.legacy-imports.create', ['patient_id' => $patient->id]))
         ->assertOk()
-        ->assertSee('Cabang Milik Sendiri')
-        ->assertDontSee('Cabang Orang Lain');
+        ->assertSee('Cabang Telkomas')
+        ->assertSee('TKM1');
+
+    // There is no branch picker any more, and the misleading "just a note" copy
+    // is gone: the field is a security property, not operator metadata.
+    $html = $response->getContent();
+
+    expect($html)->not->toContain('name="origin_branch_id"')
+        ->and($html)->not->toContain('hanya catatan asal arsip');
 });
 
 it('keeps every legacy archive route behind a POST or GET verb only', function () {

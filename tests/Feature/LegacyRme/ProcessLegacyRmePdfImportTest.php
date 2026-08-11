@@ -20,7 +20,6 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
@@ -42,7 +41,7 @@ function lrmeFakePipeline(int $pages = 3): void
 
 function lrmeQueuedImport(int $pages = 3, string $date = '2020-05-01'): LegacyRmeImport
 {
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     return app(LegacyRmeImportService::class)->createFromUpload(
