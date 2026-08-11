@@ -1,0 +1,77 @@
+---
+description: Legacy RME archive controlled rollout — enablement is an explicit approved decision, never a side effect; rollback must be provable before the switch is thrown and never destroys evidence.
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "config/legacy_rme_rollout.php"
+  - "config/feature_flags.php"
+  - "docs/runbooks/legacy-rme-pdf-rollout-runbook.md"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-ROLL-2 — controlled pilot enablement
+
+1. **Shipping code is not authorization to enable.** A GO tag, a passing test
+   suite and a successful deploy say the runtime is *correct*; they say nothing
+   about whether it may be switched ON. Enablement is a separate, explicit,
+   recorded human decision taken against a green readiness report.
+
+2. **`rme.legacy_pdf_archive` defaults OFF and returns to OFF.** Unless a
+   sustained enablement was explicitly authorized, OFF is the resting state of
+   every environment, including after a successful pilot.
+
+3. **The flag is read only through `LegacyRmeFeatureGuard` → `FeatureFlagService`.**
+   Never `config('feature_flags.flags.rme.legacy_pdf_archive')` — the dotted key
+   traverses as nesting and silently returns null. No request, session, user or
+   query parameter may override a server-side flag.
+
+4. **Enablement and rollback are proven, not assumed.** Run
+   `legacy-rme:rollout-readiness --expect=off --strict` before switching on and
+   `--expect=on --strict` immediately after. An override that is set but does not
+   resolve means the OFF path is equally broken — stop rather than proceed.
+
+5. **The readiness gate is read-only and fails closed.** It never enables the
+   feature, never writes a clinical row, never repairs what it finds. FAIL and
+   UNKNOWN both block; "we could not evaluate it" is never a basis for switching
+   a clinical feature on.
+
+6. **A pilot runs only against an approved scope.** An approval is a recorded
+   human decision naming the branch, with a non-PHI reference. Never infer
+   authorization from the existence of code, a Super Admin, or a prior GO.
+   Unapproved scope is a hard FAIL, not a warning.
+
+7. **Never invent pilot clinical data.** No fabricated patient, no fabricated
+   historical document, no borrowed unrelated patient. If no approved dataset
+   exists, the pilot does not run.
+
+8. **The document date comes from the document.** Never the upload time, never
+   `created_at`, never today. Patient ownership and the historical-date rule are
+   revalidated server-side per import and again at publish.
+
+9. **Roles stay separate during a pilot.** The Master Data operator imports,
+   reviews, publishes and VOIDs; a doctor reads, prints and exports only. Never
+   widen a permission to make a pilot step pass.
+
+10. **Correction is VOID + fresh import.** A published record is immutable.
+    Never edit published or voided evidence into corrected content.
+
+11. **Rollback preserves everything.** Switching OFF hides the runtime. It never
+    drops the schema, deletes staging rows, published or voided records, or any
+    file on the private disk, and it never touches native RME.
+
+12. **A legacy action never creates a native artifact.** No clinic visit, no
+    native medical record, no invoice, payment, consent, odontogram, prescription,
+    lab order or SATUSEHAT candidate. Verify this by comparing counts around the
+    pilot, not by assumption.
+
+13. **Evidence carries no PHI.** Readiness output, logs, audit payloads and
+    release records never contain a patient identifier, a KTP/NIK, document
+    contents, a private storage path or a credential.
+
+14. **Never enable by editing the server.** No source edits on the host, no
+    hand-patching the cached config file. Use the canonical environment and
+    config-rebuild mechanism.
+
+15. **A green pilot authorizes nothing beyond its scope.** Not all branches, not
+    all patients, not bulk or background import, not permanent enablement, not
+    skipping review, not SATUSEHAT submission. Widening is a separate approved
+    stage.

@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-1D
+# Active sprint manifest — LEGACY-RME-PDF-ROLL-2
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-1D
+id: LEGACY-RME-PDF-ROLL-2
 type: MODULE_SPRINT
 module: LegacyRme
-title: "VOID and clinical read/print completion — terminal reasoned VOID that retracts without erasing, a doctor-facing read-only archive viewer under a new least-privilege permission, and authorized private print/PDF export"
+title: "Controlled pilot enablement and operational readiness — a read-only, fail-closed gate that decides whether this deployment may switch the legacy RME archive ON, and proves it can be switched back OFF"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # void service, doctor viewer, print/export routes and controller actions
-schema_change: false            # voided_by / voided_at / void_reason already exist since 1A — no migration
-frontend_change: false          # Blade only; no JS/CSS/Vite entry change
-security_impact: true           # new permission, policy change, doctor access boundary, private file exposure surface
-branch_isolation_impact: true   # doctor viewer resolves branch scope server-side via LegacyRmeWorkspaceScope
+runtime_change: true            # new readiness service and artisan gate command
+schema_change: false            # no migration; ROLL-2 adds no table or column
+frontend_change: false          # no Blade, JS, CSS or Vite entry change
+security_impact: true           # governs enablement of a clinical feature and its rollback path
+branch_isolation_impact: false  # the pilot branch is validated, not resolved from a request
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # runtime + permission seeding must reach the VPS
-browser_required: false         # print is a Blade view; verified by test, not by an interactive browser
+deploy_required: true           # the gate must be runnable on the VPS before enablement
+browser_required: false         # console gate; verified by test and by CLI on the host
 
 test_profiles:
   - rme
   - security
 
-go_tag: legacy-rme-pdf-1d-void-clinical-read-print-go
+go_tag: legacy-rme-pdf-roll-2-controlled-pilot-enablement-go
