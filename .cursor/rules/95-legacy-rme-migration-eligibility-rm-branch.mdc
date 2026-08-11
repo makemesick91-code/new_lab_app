@@ -1,0 +1,99 @@
+---
+description: LEGACY-RME-PDF-FIX-ROLL2-1 — legacy migration eligibility, multi-date documents and RM-derived branch resolution
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/Patient/Services/PatientMedicalRecordNumberService.php"
+  - "app/Modules/Patient/Support/MedicalRecordNumberParts.php"
+  - "database/migrations/*rme_legacy*"
+  - "tests/Feature/LegacyRme/**"
+  - "config/legacy_rme.php"
+  - "resources/views/settings/rme/legacy-imports/**"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-FIX-ROLL2-1 — eligibility, multi-date & RM branch (permanent)
+
+Corrects three rules from LEGACY-RME-PDF-1A. Where this file and rule 90
+disagree, **this file wins** (rule 90 items 6, 7 and 12 were updated to match).
+
+## Eligibility — the native RME is a bound, not a prerequisite
+
+1. A legacy RME is HISTORICAL EVIDENCE of a patient's old record. Absence of a
+   native RME is **valid** for legacy migration and must never block an import.
+2. When the patient HAS a native RME it is a **boundary**. When they have none
+   there is simply no boundary — not an error.
+3. **Never manufacture a native RME** (visit, medical record, or any fake
+   clinical encounter) to unlock a legacy import or satisfy a date rule.
+4. Do not reintroduce `PATIENT_HAS_NO_NATIVE_RME` as a refusal, and do not add a
+   config switch that restores it. `legacy_rme.reference_invariants` documents
+   this as a hard invariant, not a toggle.
+5. The two cases are distinguished as EVIDENCE, never as a failure:
+   `BEFORE_NATIVE_RME` vs `NO_NATIVE_REFERENCE`.
+
+## Multi-date documents
+
+6. **Single date** → `selected_rme_date` = that date.
+7. **Multiple dates** → `selected_rme_date` = the **EARLIEST / OLDEST** clinical
+   date on the document. This is the representative date and the one the
+   patient's history displays.
+8. Never reinterpret the representative date as the latest date, the upload
+   date, PDF metadata, today, `created_at` or `registered_at`.
+9. **Safety bound:** when a native RME exists, EVERY date the document
+   represents must precede it — `MAX(document dates) < earliest native RME`.
+   Validating only the representative date is unsafe: a document whose later
+   entries overlap the native era would hide behind its oldest date.
+10. Both ends are **operator-declared**. The system does not read dates from a
+    PDF — no OCR, no metadata parsing — and must never pretend it can.
+11. A blank latest date means "single-date document". A non-blank unparseable
+    one is an ERROR and must not silently collapse onto the earliest date.
+12. `latest_rme_date` is PERSISTED on both the staging and published tables,
+    because publish-time revalidation cannot re-check a range it does not have.
+
+## Branch is derived from the Nomor RM
+
+13. The archive's branch comes from the branch-code segment of the patient's
+    canonical Nomor RM: `DG-TKM1-2024-9985` → `TKM1` → Cabang Telkomas.
+14. Parse ONLY through `PatientMedicalRecordNumberService::parse()` /
+    `branchCodeFrom()` — the inverse of the composer, living beside it. Never
+    add a regex for this format to a controller, form request, service or view.
+15. Resolve ONLY through `LegacyRmeBranchResolver`. "Active and RME-enabled"
+    comes from `BranchService::rmeEnabledIds()`; MAIN is excluded by definition.
+16. **The operator cannot override the resolved branch.** A submitted
+    `origin_branch_id` is never the answer — it is only compared, and a mismatch
+    is rejected explicitly (`BRANCH_CONFLICT`) rather than silently discarded.
+    A hidden or read-only form field is never the security boundary.
+17. **Fail closed, no fallback.** Missing RM, malformed RM, unknown code,
+    ambiguous code, inactive branch, non-RME branch, or a branch outside the
+    actor's scope → refuse. Never fall back to the acting user's branch,
+    `BranchContext`, the first RME-enabled branch, a pilot branch, or a request
+    value.
+18. `origin_branch_id` is **security/visibility scope**, not descriptive
+    metadata: the repository filters rows on it and the policy evaluates it. Any
+    UI copy calling it "just a note" is wrong and must not return.
+
+## Publish
+
+19. Publish re-validates the CURRENT state, never the staging snapshot: the whole
+    persisted range against a freshly resolved cutoff, plus a re-derivation of
+    the branch.
+20. If a native RME appears between staging and publish and the declared range
+    crosses it, publishing is REFUSED — the operator re-imports.
+21. If the patient's Nomor RM no longer resolves to the staged branch,
+    publishing is REFUSED: a stale owner must not be frozen into an immutable
+    record.
+
+## Unchanged invariants
+
+22. A published legacy record stays immutable; correction is VOID + fresh import.
+23. A legacy import/publish creates NO clinic visit, medical record, invoice,
+    payment, consent, odontogram, prescription, lab order/candidate or SATUSEHAT
+    candidate — asserted for BOTH the native and the no-native patient.
+24. Files stay private; KTP/NIK and full Nomor RM never reach an audit payload
+    (`branch_code` is an operational label and is allowed).
+25. Migrations stay additive. Never `migrate:fresh` or `db:wipe`.
+
+## Rollout
+
+26. A FIX-ROLL2-1 GO **unblocks** ROLL-2; it is not a pilot GO. The feature flag
+    stays OFF at FIX closure, no pilot PDF is uploaded, and no ROLL-2 GO tag is
+    created by this corrective.

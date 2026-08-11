@@ -12,7 +12,6 @@ use App\Modules\LegacyRme\Models\LegacyRmeImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Models\LegacyRmeRecordPage;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Schema;
 
@@ -129,7 +128,7 @@ it('allows at most one published record per staging import', function () {
 });
 
 it('keeps origin branch optional on both staging and published rows', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
 
     $import = LegacyRmeImport::factory()->create([
         'patient_id' => $patient->id,

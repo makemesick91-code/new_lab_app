@@ -21,13 +21,12 @@ use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
-use App\Modules\Patient\Models\Patient;
 use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Validation\ValidationException;
 
 it('casts dates and relations on the staging import model', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     $branch = Branch::factory()->create();
 
     $import = LegacyRmeImport::factory()->create([
@@ -54,14 +53,14 @@ it('casts dates and relations on the staging import model', function () {
 
 it('generates a uuid for staging imports and published records automatically', function () {
     $import = new LegacyRmeImport([
-        'patient_id' => Patient::factory()->create()->id,
+        'patient_id' => legacyRmeArchivablePatient()->id,
         'selected_rme_date' => '2015-01-01',
         'status' => LegacyRmeImport::STATUS_DRAFT,
     ]);
     $import->save();
 
     $record = new LegacyRmeRecord([
-        'patient_id' => Patient::factory()->create()->id,
+        'patient_id' => legacyRmeArchivablePatient()->id,
         'rme_date' => '2015-01-01',
         'source_disk' => 'local',
         'source_pdf_path' => 'rme-legacy/x/source.pdf',
@@ -157,7 +156,7 @@ it('binds both legacy RME repositories to their interfaces', function () {
 });
 
 it('fails closed when a repository is queried with an empty branch scope', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     $branch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
 
     LegacyRmeImport::factory()->create(['patient_id' => $patient->id, 'origin_branch_id' => $branch->id]);
@@ -173,7 +172,7 @@ it('fails closed when a repository is queried with an empty branch scope', funct
 });
 
 it('excludes voided records from the published archive listing', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     $branch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
 
     LegacyRmeRecord::factory()->create(['patient_id' => $patient->id, 'origin_branch_id' => $branch->id]);
@@ -185,7 +184,7 @@ it('excludes voided records from the published archive listing', function () {
 });
 
 it('orders the patient archive chronologically', function () {
-    $patient = Patient::factory()->create();
+    $patient = legacyRmeArchivablePatient();
     $branch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
 
     foreach (['2018-01-01', '2012-06-06', '2015-03-03'] as $date) {

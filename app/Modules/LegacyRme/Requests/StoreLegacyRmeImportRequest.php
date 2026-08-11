@@ -42,7 +42,22 @@ class StoreLegacyRmeImportRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_patients', 'id')->whereNull('deleted_at'),
             ],
+            // The EARLIEST clinical date the document shows — the
+            // representative date. See LegacyRmeDateRuleService.
             'selected_rme_date' => ['required', 'date'],
+            // The LATEST clinical date the document shows. Optional: a
+            // single-date document simply omits it and the server collapses the
+            // range onto the representative date. The ordering rule
+            // (earliest <= latest) and the native-RME bound are BOTH enforced
+            // in the date-rule service, not here — a `after_or_equal` rule in a
+            // form request would only cover what the client chose to send.
+            'latest_rme_date' => ['nullable', 'date'],
+            // FIX-ROLL2-1: the archive's branch is DERIVED from the patient's
+            // Nomor RM and is never operator input. This field is still
+            // accepted so a mismatched value can be REJECTED explicitly rather
+            // than silently discarded, but it is never the source of the
+            // answer — LegacyRmeBranchResolver decides, and the service only
+            // compares what was sent against it.
             'origin_branch_id' => [
                 'nullable',
                 'integer',
@@ -71,7 +86,8 @@ class StoreLegacyRmeImportRequest extends FormRequest
     {
         return [
             'patient_id' => 'pasien',
-            'selected_rme_date' => 'tanggal RME lama',
+            'selected_rme_date' => 'tanggal RME paling awal',
+            'latest_rme_date' => 'tanggal RME paling akhir',
             'origin_branch_id' => 'cabang asal',
             'document' => 'dokumen PDF',
             'patient_confirmation' => 'konfirmasi pasien',

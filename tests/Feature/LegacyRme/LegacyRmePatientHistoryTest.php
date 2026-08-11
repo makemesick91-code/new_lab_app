@@ -27,7 +27,7 @@ beforeEach(function () {
 
 function lrme1cHistoryPatient(): Patient
 {
-    return Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    return legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
 }
 
 function lrme1cPublishedRecord(Patient $patient, string $date, array $overrides = []): LegacyRmeRecord

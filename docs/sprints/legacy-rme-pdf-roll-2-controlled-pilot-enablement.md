@@ -9,6 +9,39 @@
 
 ---
 
+## 0. STATUS — PAUSED before the clinical pilot
+
+The pre-pilot ROLL-2 work is merged, deployed and smoke-verified, and the ON/OFF
+rollback mechanism is proven. The **clinical pilot itself has not run**: the
+feature is OFF in production and no ROLL-2 GO tag exists.
+
+**Blocked pending LEGACY-RME-PDF-FIX-ROLL2-1.** Preparing the real pilot document
+for RM `DG-TKM1-2024-9985` exposed three domain defects that would have made the
+pilot either impossible or wrong: a patient with no native RME was refused, a
+multi-date document had no defined representative date (and its later dates were
+never checked against the native bound), and the archive's branch was operator
+input rather than derived from the patient's own Nomor RM.
+
+ROLL-2 may resume only from a base containing the corrective's GO tag
+`legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch-go`. See
+`docs/sprints/legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch.md`.
+
+Post-corrective pilot expectations:
+
+| | |
+|---|---|
+| RM | `DG-TKM1-2024-9985` |
+| Resolved branch | `TKM1` / Cabang Telkomas (derived, not chosen) |
+| Native RME | none — **valid** for legacy migration |
+| PDF clinical dates | 28-01-2024, 31-08-2024 |
+| `selected_rme_date` | **28-01-2024** (earliest) |
+| `latest_rme_date` | 31-08-2024 |
+
+A corrective GO **unblocks** ROLL-2; it is not itself a pilot GO. Enabling the
+flag and uploading the document remain separate, user-controlled steps.
+
+---
+
 ## 1. Objective
 
 1A–1D delivered the legacy RME archive runtime; ROLL-1 made its feature flag's

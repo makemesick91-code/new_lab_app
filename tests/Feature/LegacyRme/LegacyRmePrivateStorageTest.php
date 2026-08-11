@@ -17,7 +17,6 @@ use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
-use App\Modules\Patient\Models\Patient;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 
@@ -34,7 +33,7 @@ function lrmeStoredImport(int $pages = 2): LegacyRmeImport
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages($pages));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages($pages));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
@@ -86,7 +85,7 @@ it('refuses to use a public disk for the archive', function () {
 });
 
 it('builds opaque storage paths with no patient identity in them', function () {
-    $patient = Patient::factory()->create([
+    $patient = legacyRmeArchivablePatient([
         'name' => 'Budi Santoso',
         'ktp_number' => '7371'.str_repeat('9', 12),
     ]);
@@ -199,7 +198,7 @@ it('never puts the storage path or original filename in a response header', func
 it('cleans up the stored source when the staging row cannot be created', function () {
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(1));
 
-    $patient = Patient::factory()->create(['date_of_birth' => '1990-01-01']);
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01']);
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     // Make the staging INSERT fail after the bytes are already on disk.

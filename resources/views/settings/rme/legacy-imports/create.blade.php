@@ -114,15 +114,39 @@
                     </div>
                 </dl>
 
-                @unless ($summary['has_native_rme'])
-                    <x-ui.alert variant="danger" title="Pasien belum memiliki RME di sistem">
-                        Tidak ada tanggal RME pembanding, sehingga arsip lama belum dapat diimpor untuk pasien ini.
+                {{--
+                    LEGACY-RME-PDF-FIX-ROLL2-1 — a patient WITHOUT a native RME
+                    is a normal migration case, not an error, so the import is
+                    no longer blocked here. What genuinely blocks it is a branch
+                    that cannot be derived from the patient's Nomor RM: the
+                    branch decides who can read the archive afterwards, so it
+                    fails closed rather than guessing.
+                --}}
+                @if ($branchResolution === null || $branchResolution->failed())
+                    <x-ui.alert variant="danger" title="Cabang arsip tidak dapat ditentukan">
+                        {{ $branchResolution?->message ?? 'Cabang arsip tidak dapat ditentukan untuk pasien ini.' }}
+                        Cabang arsip diambil dari kode cabang pada Nomor RM pasien dan tidak dapat dipilih manual.
                     </x-ui.alert>
                 @else
-                    <x-ui.alert variant="warning" title="Tanggal ditentukan manual">
-                        Tanggal arsip harus <strong>lebih awal</strong> dari
-                        {{ $summary['earliest_native_rme_date'] }} dan bukan hari ini. Sistem tidak membaca tanggal
-                        dari isi PDF — masukkan sesuai yang tertulis pada dokumen.
+                    @if ($summary['has_native_rme'])
+                        <x-ui.alert variant="warning" title="Tanggal ditentukan manual">
+                            Seluruh tanggal RME pada dokumen harus <strong>lebih awal</strong> dari
+                            {{ $summary['earliest_native_rme_date'] }} dan bukan hari ini. Sistem tidak membaca tanggal
+                            dari isi PDF — masukkan sesuai yang tertulis pada dokumen.
+                        </x-ui.alert>
+                    @else
+                        <x-ui.alert variant="info" title="Pasien belum memiliki RME di sistem">
+                            Ini normal untuk pasien migrasi dari sistem lama dan <strong>tidak menghalangi</strong> impor
+                            arsip. Karena tidak ada RME pembanding, tanggal cukup lebih awal dari hari ini. Jangan
+                            membuat kunjungan atau rekam medis baru hanya untuk memenuhi aturan tanggal.
+                        </x-ui.alert>
+                    @endif
+
+                    <x-ui.alert variant="info" title="Dokumen dengan lebih dari satu tanggal">
+                        Jika dokumen memiliki lebih dari satu tanggal RME, gunakan tanggal RME
+                        <strong>paling awal</strong> yang tercantum pada dokumen sebagai tanggal utama, dan isi
+                        tanggal RME paling akhir sesuai yang tertulis. Jika dokumen hanya memuat satu tanggal,
+                        biarkan kolom tanggal paling akhir kosong.
                     </x-ui.alert>
 
                     <form
@@ -138,19 +162,40 @@
                             <x-ui.input
                                 type="date"
                                 name="selected_rme_date"
-                                label="Tanggal RME Lama"
+                                label="Tanggal RME Paling Awal"
                                 :value="old('selected_rme_date')"
                                 :max="$maxSelectableDate"
                                 required
-                                help="Sesuai tanggal yang tertulis pada dokumen."
+                                help="Tanggal RME paling awal yang tertulis pada dokumen. Ini menjadi tanggal arsip."
                             />
 
-                            <x-ui.select name="origin_branch_id" label="Cabang Asal" help="Opsional — hanya catatan asal arsip.">
-                                <option value="">Tidak dicatat</option>
-                                @foreach ($branches as $branch)
-                                    <option value="{{ $branch->id }}" @selected(old('origin_branch_id') == $branch->id)>{{ $branch->name }}</option>
-                                @endforeach
-                            </x-ui.select>
+                            <x-ui.input
+                                type="date"
+                                name="latest_rme_date"
+                                label="Tanggal RME Paling Akhir"
+                                :value="old('latest_rme_date')"
+                                :max="$maxSelectableDate"
+                                help="Kosongkan jika dokumen hanya memuat satu tanggal RME."
+                            />
+                        </div>
+
+                        {{--
+                            Cabang asal is NOT operator input: it is derived from
+                            the branch code in the patient's Nomor RM and decides
+                            who can see this archive. It is displayed read-only,
+                            and the server re-derives it on submit regardless.
+                        --}}
+                        <div class="rounded-lg border border-hairline bg-surface p-4">
+                            <p class="text-xs uppercase tracking-wide text-ink-muted">Cabang Asal Arsip</p>
+                            <p class="mt-1 font-semibold text-navy">
+                                {{ $branchResolution->branchName }}
+                                <span class="text-ink-muted">({{ $branchResolution->branchCode }})</span>
+                            </p>
+                            <p class="mt-1 text-xs text-ink-muted">
+                                Ditentukan otomatis dari kode cabang pada Nomor RM pasien dan tidak dapat diubah manual.
+                                Cabang ini menentukan siapa yang dapat melihat arsip.
+                            </p>
+                            @error('origin_branch_id')<p class="mt-1 text-sm text-danger">{{ $message }}</p>@enderror
                         </div>
 
                         <div>
@@ -174,7 +219,10 @@
                             </label>
                             <label class="flex items-start gap-3 text-sm text-ink">
                                 <input type="checkbox" name="date_confirmation" value="1" class="mt-0.5 rounded border-hairline text-brand-600 focus:ring-brand-500" required>
-                                <span>Saya memastikan tanggal yang dipilih sama dengan tanggal RME yang tertulis pada PDF.</span>
+                                <span>
+                                    Saya memastikan tanggal yang diisi sama dengan tanggal RME yang tertulis pada PDF,
+                                    dan tanggal paling awal adalah tanggal RME tertua pada dokumen.
+                                </span>
                             </label>
                         </div>
 
@@ -183,7 +231,7 @@
                             <x-ui.button type="submit">Unggah &amp; Proses</x-ui.button>
                         </div>
                     </form>
-                @endunless
+                @endif
             </x-ui.card>
         @endif
     </div>

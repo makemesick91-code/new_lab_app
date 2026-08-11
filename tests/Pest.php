@@ -576,6 +576,52 @@ function legacyRmeArchiveFlag(bool $enabled): void
 }
 
 /**
+ * LEGACY-RME-PDF-FIX-ROLL2-1 — an RME-enabled branch identified by its business
+ * code, created once per test.
+ *
+ * The branch CODE matters now: a legacy archive's owning branch is derived from
+ * the branch-code segment of the patient's Nomor RM, so a fixture branch has to
+ * be reachable by that code.
+ */
+function legacyRmeBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'): Branch
+{
+    $branch = Branch::withTrashed()->firstOrNew(['code' => $code]);
+
+    $branch->forceFill([
+        'name' => $branch->exists ? $branch->name : $name,
+        'is_active' => true,
+        'is_rme_enabled' => true,
+        'deleted_at' => null,
+    ])->save();
+
+    return $branch->refresh();
+}
+
+/**
+ * LEGACY-RME-PDF-FIX-ROLL2-1 — a patient whose Nomor RM is in the CANONICAL
+ * format the archive resolves a branch from.
+ *
+ * PatientFactory's default (`MRN-XXXXXXXX`) is a generic placeholder and is
+ * deliberately left alone — other suites pin it. Real patients, however, carry
+ * `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}` (the pilot's own patient is
+ * `DG-TKM1-2024-9985`), and that is what the legacy archive reads to decide
+ * which branch owns the document. A fixture that used the placeholder would be
+ * testing a patient shape production does not have.
+ */
+function legacyRmeArchivablePatient(array $attributes = [], string $branchCode = 'TKM1'): Patient
+{
+    $branch = legacyRmeBranch($branchCode);
+
+    static $sequence = 0;
+    $sequence++;
+
+    return Patient::factory()->create($attributes + [
+        'branch_id' => $branch->id,
+        'medical_record_number' => sprintf('DG-%s-2024-%04d', $branchCode, $sequence),
+    ]);
+}
+
+/**
  * LEGACY-RME-PDF-1B — give a patient a NATIVE RME encounter, which is what the
  * 1A date rules compare a legacy date against.
  */
