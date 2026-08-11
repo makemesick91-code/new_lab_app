@@ -256,18 +256,25 @@ it('requires authentication for the published viewer', function () {
         ->assertRedirect(route('login'));
 });
 
-it('rejects a role that holds no legacy archive permission', function () {
+it('rejects a role that holds no legacy archive permission', function (string $role) {
+    // LEGACY-RME-PDF-1D supersedes the original form of this test, which also
+    // asserted 403 for Doctor. Doctor now holds `view_legacy_rme_archive` — the
+    // clinical READ permission — so it is no longer a role that holds nothing.
+    // Its access is bounded by BRANCH SCOPE rather than by a flat refusal, which
+    // is asserted in LegacyRmeClinicalReadPrintTest. Every role that genuinely
+    // holds no legacy permission is still refused here.
     $record = lrme1cHttpPublished(1);
 
-    $this->actingAs(userInRole('Kasir'))
+    $this->actingAs(userInRole($role))
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.legacy-records.show', $record->getKey()))
         ->assertForbidden();
 
-    $this->actingAs(userInRole('Doctor'))
+    $this->actingAs(userInRole($role))
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.legacy-records.source', $record->getKey()))
         ->assertForbidden();
-});
+})->with(['Kasir', 'Perawat', 'Admin Lab']);
 
 it('404s an archive whose origin branch is outside the caller scope', function () {
     $record = lrme1cHttpPublished(1);

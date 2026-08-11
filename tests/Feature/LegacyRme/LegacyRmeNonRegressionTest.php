@@ -120,9 +120,14 @@ it('exposes exactly the staging surface plus review and publish, and nothing els
     }
 });
 
-it('exposes a read-only published archive surface with no write route', function () {
-    // LEGACY-RME-PDF-1C. A published legacy record is immutable clinical
-    // evidence: the viewer may only ever be read.
+it('exposes a read-only published archive surface plus exactly one retraction route', function () {
+    // LEGACY-RME-PDF-1C asserted this surface was entirely read-only.
+    // LEGACY-RME-PDF-1D supersedes that by exactly one route: VOID.
+    //
+    // The 1C intent is preserved rather than relaxed — a published record is
+    // still never edited, never deleted and never republished. VOID retracts it
+    // without erasing anything, so it is the ONLY write here and every other
+    // route stays GET/HEAD.
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(fn ($route) => str_starts_with((string) $route->getName(), 'rme.legacy-records.'));
 
@@ -130,11 +135,28 @@ it('exposes a read-only published archive surface with no write route', function
         'rme.legacy-records.show',
         'rme.legacy-records.source',
         'rme.legacy-records.pages.show',
+        'rme.legacy-records.print',
+        'rme.legacy-records.export',
+        'rme.legacy-records.void',
     ]);
 
     foreach ($routes as $route) {
-        expect(array_diff($route->methods(), ['GET', 'HEAD']))->toBe([]);
+        $writeMethods = array_diff($route->methods(), ['GET', 'HEAD']);
+
+        if ($route->getName() === 'rme.legacy-records.void') {
+            // The single exception, and it is a POST — never PUT/PATCH/DELETE,
+            // which would imply an edit or an erasure.
+            expect($writeMethods)->toBe(['POST']);
+
+            continue;
+        }
+
+        expect($writeMethods)->toBe([]);
     }
+
+    // Still no update, delete or republish route anywhere on the surface.
+    expect($routes->pluck('action.as')->values()->all())
+        ->not->toContain('rme.legacy-records.update', 'rme.legacy-records.destroy', 'rme.legacy-records.republish');
 });
 
 it('creates no visit, invoice, payment, lab or SATUSEHAT row when a document is uploaded and rendered', function () {

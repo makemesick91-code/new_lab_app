@@ -227,6 +227,12 @@ class RoleSeeder extends Seeder
             // override on a pilot_enforced branch so patient care is never
             // blocked; the missing-diagnosis issue stays open for review.
             'override_diagnosis_requirement',
+            // LEGACY-RME-PDF-1D — a doctor may READ a patient's published
+            // historical archive while treating them, scoped to their own
+            // branch. Read only: this grants no upload, review, publish or
+            // void, and it is not a governance permission, so it never widens
+            // the doctor beyond their own BranchContext branch.
+            'view_legacy_rme_archive',
         ],
         // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)
         'Owner' => [

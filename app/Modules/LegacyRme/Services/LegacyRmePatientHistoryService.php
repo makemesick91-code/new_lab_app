@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
+use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeTimelineEntry;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
@@ -52,7 +53,10 @@ class LegacyRmePatientHistoryService
      */
     public function publishedRecordsFor(?User $user, int $patientId): Collection
     {
-        if ($user === null || ! $this->feature->enabled() || ! $user->can('view_legacy_rme_imports')) {
+        // LEGACY-RME-PDF-1D — the intake operator OR a clinical reader (doctor).
+        // The permission set is taken from the policy so the timeline and the
+        // viewer can never disagree about who may read an archive.
+        if ($user === null || ! $this->feature->enabled() || ! $user->canAny(LegacyRmeRecordPolicy::READ_PERMISSIONS)) {
             return collect();
         }
 

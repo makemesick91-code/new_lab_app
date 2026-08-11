@@ -358,10 +358,26 @@ Route::middleware('auth')->prefix('rme/legacy-records')->name('rme.legacy-record
     // `permission:` is applied INSIDE the auth group, never chained alongside
     // it: a guest must be sent to the login screen, not told 403 by a
     // permission check that ran before authentication.
-    Route::middleware('permission:view_legacy_rme_imports')->group(function () {
+    // LEGACY-RME-PDF-1D — reading is open to the intake operator OR a clinical
+    // reader (doctor). Neither implies the other and neither implies
+    // review/publish/void; branch scope still decides WHICH records are
+    // reachable, so a doctor only ever sees their own branch's archive.
+    Route::middleware('permission:view_legacy_rme_imports|view_legacy_rme_archive')->group(function () {
         Route::get('{record}', [LegacyRmeRecordController::class, 'show'])->name('show')->whereNumber('record');
         Route::get('{record}/source', [LegacyRmeRecordController::class, 'source'])->name('source')->whereNumber('record');
         Route::get('{record}/pages/{page}', [LegacyRmeRecordController::class, 'page'])->name('pages.show')->whereNumber('record')->whereNumber('page');
+
+        // Print is a Blade view for window.print(); export streams a dompdf
+        // download. Both are GET reads of an archive the caller may already
+        // open, and both refuse a VOIDed record exactly like `source`.
+        Route::get('{record}/print', [LegacyRmeRecordController::class, 'print'])->name('print')->whereNumber('record');
+        Route::get('{record}/export', [LegacyRmeRecordController::class, 'export'])->name('export')->whereNumber('record');
+    });
+
+    // Retracting is a state change with its own named permission — never
+    // folded into the read group.
+    Route::middleware('permission:void_legacy_rme_imports')->group(function () {
+        Route::post('{record}/void', [LegacyRmeRecordController::class, 'void'])->name('void')->whereNumber('record');
     });
 });
 

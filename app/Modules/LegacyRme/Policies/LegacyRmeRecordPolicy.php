@@ -22,9 +22,28 @@ class LegacyRmeRecordPolicy
         private readonly LegacyRmeWorkspaceScope $scope,
     ) {}
 
+    /**
+     * LEGACY-RME-PDF-1D — two different actors read a published archive.
+     *
+     * `view_legacy_rme_imports` is the INTAKE operator (Master Data RME), and
+     * `view_legacy_rme_archive` is the clinical reader (a doctor treating the
+     * patient). Either one may READ; neither implies the other, and neither
+     * implies review/publish/void, which keep their own named permissions.
+     *
+     * Branch scope still decides WHICH records: only the intake permissions are
+     * governance-tier in LegacyRmeWorkspaceScope, so a clinical reader stays
+     * pinned to their own branch.
+     *
+     * @var list<string>
+     */
+    public const READ_PERMISSIONS = [
+        'view_legacy_rme_imports',
+        'view_legacy_rme_archive',
+    ];
+
     public function viewAny(User $user): bool
     {
-        return $user->can('view_legacy_rme_imports');
+        return $user->canAny(self::READ_PERMISSIONS);
     }
 
     public function view(User $user, LegacyRmeRecord $record): bool

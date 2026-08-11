@@ -17,14 +17,39 @@
             <x-slot:breadcrumb>RME / Riwayat Pasien / Arsip RME Lama</x-slot:breadcrumb>
 
             <x-slot:actions>
-                <x-ui.button
-                    variant="secondary"
-                    :href="route('rme.legacy-records.source', $record->getKey())"
-                    target="_blank"
-                    rel="noopener"
-                >
-                    Buka PDF Arsip
-                </x-ui.button>
+                {{--
+                    LEGACY-RME-PDF-1D — a VOIDed archive stops serving its bytes,
+                    so the actions that open or reproduce those bytes are hidden
+                    once it is retracted. The server enforces this too (the
+                    controller refuses a non-published record); hiding a button
+                    is presentation, never the boundary.
+                --}}
+                @if (! $record->isVoided())
+                    <x-ui.button
+                        variant="secondary"
+                        :href="route('rme.legacy-records.source', $record->getKey())"
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        Buka PDF Arsip
+                    </x-ui.button>
+
+                    <x-ui.button
+                        variant="secondary"
+                        :href="route('rme.legacy-records.print', $record->getKey())"
+                        target="_blank"
+                        rel="noopener"
+                    >
+                        Cetak
+                    </x-ui.button>
+
+                    <x-ui.button
+                        variant="secondary"
+                        :href="route('rme.legacy-records.export', $record->getKey())"
+                    >
+                        Unduh PDF
+                    </x-ui.button>
+                @endif
             </x-slot:actions>
         </x-ui.page-header>
 
@@ -115,5 +140,51 @@
                 </div>
             @endif
         </x-ui.card>
+
+        {{--
+            LEGACY-RME-PDF-1D — retraction.
+
+            Shown only to a holder of the void permission, and only while the
+            archive is still published. VOID is terminal and there is no un-void
+            button, because a published record is evidence: the correction path
+            is this retraction plus a FRESH import, never an edit.
+        --}}
+        @if (! $record->isVoided() && auth()->user()?->can('void_legacy_rme_imports'))
+            <x-ui.card>
+                <h2 class="text-sm font-semibold text-navy">Batalkan Arsip (VOID)</h2>
+
+                <x-ui.alert variant="warning" class="mt-3">
+                    Pembatalan bersifat <strong>permanen dan tidak dapat dibatalkan</strong>. Arsip tetap
+                    tersimpan sebagai bukti beserta alasannya, tetapi berhenti tampil di riwayat aktif
+                    pasien dan berkasnya berhenti dapat dibuka. Untuk memperbaiki arsip yang salah,
+                    batalkan arsip ini lalu lakukan impor ulang.
+                </x-ui.alert>
+
+                <form
+                    method="POST"
+                    action="{{ route('rme.legacy-records.void', $record->getKey()) }}"
+                    class="mt-4 space-y-3"
+                    onsubmit="return confirm('Batalkan arsip RME lama ini? Tindakan ini tidak dapat dibatalkan.');"
+                >
+                    @csrf
+
+                    <x-ui.textarea
+                        name="void_reason"
+                        label="Alasan pembatalan"
+                        rows="3"
+                        required
+                        maxlength="500"
+                        placeholder="Contoh: dokumen ini milik pasien lain dan salah dilampirkan pada rekam medis ini."
+                        :value="old('void_reason')"
+                    />
+
+                    <p class="text-xs text-ink-muted">
+                        Alasan wajib diisi minimal 10 karakter dan tersimpan permanen pada arsip.
+                    </p>
+
+                    <x-ui.button type="submit" variant="danger">Batalkan Arsip</x-ui.button>
+                </form>
+            </x-ui.card>
+        @endif
     </div>
 </x-settings-shell>

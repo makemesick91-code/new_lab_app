@@ -1,0 +1,80 @@
+---
+description: Legacy RME VOID semantics and the clinical read/print/export surface — retract without erasing, read-only doctor access, private authorized output.
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "resources/views/rme/legacy-records/**"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-1D — VOID and clinical read/print
+
+1. **VOID retracts, it never erases.** The row, its pages and its files on the
+   private disk all survive. Only `status`, `voided_by`, `voided_at` and
+   `void_reason` are written; patient, date, file, checksums and pages are never
+   touched, so a "correction" can never be smuggled in as a void.
+
+2. **VOID is terminal.** `PUBLISHED → VOID` and nothing out of VOID. There is no
+   un-void, no republish and no delete route, because a published archive is
+   clinical evidence.
+
+3. **Correction is a fresh import.** Retract the wrong archive, then import the
+   right one. Never edit a published record in place.
+
+4. **A reason is mandatory** (min 10 characters), enforced in the FormRequest
+   *and* again in the service, since a FormRequest only guards the HTTP door.
+   The reason is stored on the record. It is deliberately **not** written into
+   the audit payload — it is operator free text that may name a patient, and the
+   audit allow-list is structure-only (`void_reason_length` records that a real
+   explanation was given).
+
+5. **Atomic and idempotent.** One transaction opening with a row lock that
+   re-reads the status. A second void is a no-op that preserves the FIRST reason
+   and actor, and writes no second audit row.
+
+6. **No downstream side effects.** Voiding writes to one table. It creates no
+   visit, medical record, invoice, payment, consent, odontogram, lab
+   candidate/order or SATUSEHAT candidate, and never touches a visit status.
+
+7. **A VOIDed archive stops serving bytes.** Source, pages, print and export all
+   refuse it. The row itself stays readable so the metadata and the reason
+   remain auditable — retracted, not erased.
+
+8. **Reading is a different permission from operating.**
+   `view_legacy_rme_imports` is the intake operator; `view_legacy_rme_archive`
+   is the clinical reader (doctor). Either may READ; neither implies the other,
+   and neither implies review/publish/void.
+
+9. **The clinical read permission is never governance tier.** It must stay out
+   of `LegacyRmeWorkspaceScope::GOVERNANCE_PERMISSIONS`, or a doctor would widen
+   from their own branch to every RME branch. Rows with no branch provenance
+   stay governance-only.
+
+10. **Out of scope is 404, never 403.** A reader must not be able to probe which
+    archive ids exist in a branch they cannot see.
+
+11. **Enforce state in the controller, not only the policy.** The single global
+    `Gate::before` grants Super Admin every ability, and Super Admin is exactly
+    who operates this capability, so a policy-only rule is no rule at all for
+    the actor that matters. The policy keeps the same check as defence in depth.
+
+12. **Print and export are never a weaker door.** Both sit behind auth, the
+    permission, the policy and the feature flag; both refuse a VOIDed record.
+    Print REFERENCES pages through the policy-gated page route (the browser
+    re-requests each with the caller's own session); export embeds them through
+    the storage abstraction. No absolute path, no public URL, no signed direct
+    link, no storage symlink.
+
+13. **Output is visibly a legacy archive.** Print and export both carry
+    "ARSIP RME LAMA — DOKUMEN HISTORIS (HANYA BACA)" and state that it is not a
+    visit, bill, payment or lab order. It must never read as native RME output.
+
+14. **Never render an identity field.** KTP/NIK never appears in the viewer,
+    print or export, and the download filename is generic — no patient name and
+    no medical-record number.
+
+15. **dompdf output stays table-based** (no flexbox/grid, no external asset) and
+    the export is bounded; past the cap it says so and points at the source PDF.
+    Rendering embedded pages requires the GD extension.
+
+16. **The feature flag still governs everything.** With
+    `rme.legacy_pdf_archive` off, every 1D route answers 404 server-side.
