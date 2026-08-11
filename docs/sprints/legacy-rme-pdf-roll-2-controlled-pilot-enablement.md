@@ -9,36 +9,56 @@
 
 ---
 
-## 0. STATUS — PAUSED before the clinical pilot
+## 0. STATUS — RESUMED, pilot-ready
 
-The pre-pilot ROLL-2 work is merged, deployed and smoke-verified, and the ON/OFF
-rollback mechanism is proven. The **clinical pilot itself has not run**: the
-feature is OFF in production and no ROLL-2 GO tag exists.
+**Prerequisite satisfied.** ROLL-2 was previously PAUSED before the clinical
+pilot because preparing the real pilot document for RM `DG-TKM1-2024-9985`
+exposed three domain defects that would have made the pilot impossible or
+wrong: a patient with no native RME was refused, a multi-date document had no
+defined representative date (and its later dates were never checked against the
+native bound), and the archive's branch was operator input rather than derived
+from the patient's own Nomor RM.
 
-**Blocked pending LEGACY-RME-PDF-FIX-ROLL2-1.** Preparing the real pilot document
-for RM `DG-TKM1-2024-9985` exposed three domain defects that would have made the
-pilot either impossible or wrong: a patient with no native RME was refused, a
-multi-date document had no defined representative date (and its later dates were
-never checked against the native bound), and the archive's branch was operator
-input rather than derived from the patient's own Nomor RM.
+Those are corrected and GO-tagged by **LEGACY-RME-PDF-FIX-ROLL2-1**
+(`legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch-go` @
+`f37301115226b4f20710e247a51c51c1980662b1`), which is an ancestor of this base.
+See `docs/sprints/legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch.md`.
 
-ROLL-2 may resume only from a base containing the corrective's GO tag
-`legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch-go`. See
-`docs/sprints/legacy-rme-pdf-fix-roll2-1-eligibility-multidate-rm-branch.md`.
+A corrective GO **unblocks** ROLL-2; it is not itself a pilot GO. Enabling the
+flag and uploading the document remain separate, user-controlled steps, and the
+ROLL-2 GO tag is created only after the pilot AND the rollback both pass.
 
-Post-corrective pilot expectations:
+### Pilot scope (post-corrective)
 
 | | |
 |---|---|
 | RM | `DG-TKM1-2024-9985` |
-| Resolved branch | `TKM1` / Cabang Telkomas (derived, not chosen) |
-| Native RME | none — **valid** for legacy migration |
-| PDF clinical dates | 28-01-2024, 31-08-2024 |
-| `selected_rme_date` | **28-01-2024** (earliest) |
-| `latest_rme_date` | 31-08-2024 |
+| Resolved branch | `TKM1` / Cabang Telkomas — **derived from the RM, never chosen** |
+| Native RME | none — **valid** for legacy migration (`NO_NATIVE_REFERENCE`) |
+| PDF clinical dates | 28-01-2024 **and** 31-08-2024 |
+| `selected_rme_date` | **28-01-2024** (earliest = representative) |
+| `latest_rme_date` | **31-08-2024** (safety boundary) |
 
-A corrective GO **unblocks** ROLL-2; it is not itself a pilot GO. Enabling the
-flag and uploading the document remain separate, user-controlled steps.
+### The pilot branch must match the RM-derived branch
+
+`LEGACY_RME_PILOT_BRANCH_CODE` records *which branch the owner approved*. Since
+FIX-ROLL2-1 the branch an archive actually lands in is **derived from the
+patient's Nomor RM** and cannot be overridden. Those two must therefore agree,
+or the readiness gate would report an approval for one branch while imports land
+in another.
+
+For this pilot the approved scope is **`TKM1`**, because `DG-`**`TKM1`**`-2024-9985`
+resolves there. The earlier `LDK2` scope predates the corrective and is
+superseded for this pilot.
+
+### Human verification limit (recorded deliberately)
+
+The system does **not** read dates out of a PDF — there is no OCR, by design. It
+enforces ordering, the native bound, the today bound and the birth-date bound,
+but it cannot detect an operator who *under-declares* the latest date. The
+reviewer must therefore visually confirm that `latest_rme_date = 31-08-2024`
+matches the newest date actually visible in the document. This is a standing
+limitation of the pilot, not a defect introduced by it.
 
 ---
 
