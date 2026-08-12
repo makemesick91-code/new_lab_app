@@ -89,6 +89,34 @@ session, `BranchContext` selection or operator branch can influence it.
 | `BRANCH_FORBIDDEN` | MAIN — never a clinical migration branch |
 | `BRANCH_UNRESOLVED` | no branch derivable from the Nomor RM |
 
+### The wave's own approval (corrective, found at the Wave-1 checkpoint)
+
+An admitted set is only authorized when the **current wave** has an approval
+record that covers it. Two config values, both captured at config-build time:
+
+| Key | Env | Meaning |
+|---|---|---|
+| `admission.approval_reference` | `LEGACY_RME_ADMISSION_APPROVAL_REFERENCE` | non-PHI governance reference for this wave |
+| `admission.approved_branch_codes` | `LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES` | the exact branch set that approval covers |
+
+Rule: a non-empty admitted set requires a non-blank reference **and** every
+admitted branch must appear in the approved set. Otherwise the branch is refused
+at runtime with `WAVE_NOT_APPROVED`, and `branch_admission` FAILs the gate.
+
+**Why the scope binding, not just a non-empty string.** A reference alone proves
+only that *some* approval exists. Adding a fourth branch to a three-branch wave
+would silently inherit the older, narrower decision. Recording the approved
+scope makes that drift fail closed: the new branch is refused while the genuinely
+approved ones keep working.
+
+**What this fixed.** At the Wave-1 checkpoint, production carried ROLL-2's
+approval (`ROLL-2-OWNER-APPROVAL-2026-08-11`, branch `TKM1`) while Wave-1 was
+about to admit `ATG3`/`LDK2`/`SUN4`. Enforcement would have been correct, but the
+readiness gate would have printed **GO** beside an approval record naming a
+branch that was not in the wave — the same "config nobody enforces" defect ROLL-3
+exists to remove, one level up. ROLL-2's `pilot_scope` is left **untouched** as
+historical evidence and is never consulted by the admission gate.
+
 ### Storage — config/env allowlist (ROLL-1 capture pattern)
 
 `env()` is read **only** while `config/legacy_rme_rollout.php` is built, so the

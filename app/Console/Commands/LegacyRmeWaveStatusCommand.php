@@ -54,6 +54,11 @@ class LegacyRmeWaveStatusCommand extends Command
                 'enforced' => $admission->enforced(),
                 'wave' => $admission->wave(),
                 'admitted_branch_codes' => $admission->admittedBranchCodes(),
+                // The approval and the scope it covers sit beside the admitted
+                // set so a reader can see whether they agree without inferring.
+                'approval_reference' => $admission->approvalReference() !== '' ? $admission->approvalReference() : null,
+                'approved_branch_codes' => $admission->approvedBranchCodes(),
+                'unapproved_admitted' => $admission->unapprovedAdmittedBranchCodes(),
             ],
             'capacity' => [
                 'enforced' => $capacity->enforced(),
@@ -84,6 +89,23 @@ class LegacyRmeWaveStatusCommand extends Command
             'Admitted branches',
             $admitted === [] ? '(none — closed)' : implode(', ', $admitted),
         );
+        $this->components->twoColumnDetail(
+            'Wave approval',
+            $report['admission']['approval_reference'] ?? '(none recorded)',
+        );
+        $this->components->twoColumnDetail(
+            'Approved scope',
+            $report['admission']['approved_branch_codes'] === []
+                ? '(none)'
+                : implode(', ', $report['admission']['approved_branch_codes']),
+        );
+
+        if ($report['admission']['unapproved_admitted'] !== []) {
+            $this->components->twoColumnDetail(
+                '<fg=red>Admitted WITHOUT approval</>',
+                implode(', ', $report['admission']['unapproved_admitted']),
+            );
+        }
         $this->components->twoColumnDetail(
             'Pipeline',
             $measured->available ? 'has room' : sprintf('SATURATED (%s)', $measured->code),

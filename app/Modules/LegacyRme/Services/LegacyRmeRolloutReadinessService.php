@@ -852,11 +852,21 @@ class LegacyRmeRolloutReadinessService
                 true,
             );
 
+            $approvalReference = $this->admission->approvalReference();
+            $approved = $this->admission->approvedBranchCodes();
+            $unapproved = $this->admission->unapprovedAdmittedBranchCodes();
+
             $context = [
                 'enforced' => $enforced,
                 'admitted_branch_codes' => implode(',', $admitted),
                 'admitted_count' => count($admitted),
                 'wave' => $wave,
+                // Presence only for the reference itself is not enough evidence,
+                // so the approved SCOPE is reported beside the admitted set —
+                // a reader can see at a glance whether they agree.
+                'approval_reference_present' => $approvalReference !== '',
+                'approval_reference' => $approvalReference !== '' ? $approvalReference : null,
+                'approved_branch_codes' => implode(',', $approved),
                 'environment' => $environment,
             ];
 
@@ -907,6 +917,34 @@ class LegacyRmeRolloutReadinessService
                     'The admission allowlist names a branch that is not an active RME-enabled branch on this deployment.',
                     $context + ['unknown_declared' => implode(',', $unknown)],
                     'Correct the branch code, or activate and RME-enable that branch.',
+                );
+            }
+
+            // THE WAVE'S OWN APPROVAL. A non-empty admitted set must carry a
+            // current approval reference AND that approval must cover every
+            // admitted branch.
+            //
+            // Without this, admitting three branches while the only approval on
+            // record was ROLL-2's single-branch pilot produced a GREEN report
+            // that misdescribed what was authorized — the same "config nobody
+            // enforces" defect ROLL-3 exists to remove, one level up. ROLL-2's
+            // pilot_scope is left untouched as historical evidence and is
+            // deliberately never consulted here.
+            if ($admitted !== [] && $approvalReference === '') {
+                return LegacyRmeRolloutCheck::fail(
+                    'branch_admission',
+                    'Branches are admitted but the wave carries no approval reference of its own.',
+                    $context,
+                    'Record the current wave approval reference, or clear the admitted branch set.',
+                );
+            }
+
+            if ($unapproved !== []) {
+                return LegacyRmeRolloutCheck::fail(
+                    'branch_admission',
+                    'The admitted branch set contains a branch the current wave approval does not cover.',
+                    $context + ['unapproved_admitted' => implode(',', $unapproved)],
+                    'Widen the approved scope to match the admitted set, or remove the unapproved branch.',
                 );
             }
 
