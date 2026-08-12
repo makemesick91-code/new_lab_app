@@ -81,13 +81,27 @@ declare(strict_types=1);
 | all. That is the documented fail-closed default: capability without admission
 | migrates nothing.
 */
-$legacyRmeAdmittedBranchCodes = array_values(array_unique(array_filter(
-    array_map(
-        static fn (string $code): string => strtoupper(trim($code)),
-        preg_split('/[\s,;]+/', (string) env('LEGACY_RME_ADMITTED_BRANCH_CODES', '')) ?: [],
-    ),
-    static fn (string $code): bool => $code !== '',
-)));
+$legacyRmeNormalizeBranchCodes = static function (string $declared): array {
+    return array_values(array_unique(array_filter(
+        array_map(
+            static fn (string $code): string => strtoupper(trim($code)),
+            preg_split('/[\s,;]+/', $declared) ?: [],
+        ),
+        static fn (string $code): bool => $code !== '',
+    )));
+};
+
+$legacyRmeAdmittedBranchCodes = $legacyRmeNormalizeBranchCodes(
+    (string) env('LEGACY_RME_ADMITTED_BRANCH_CODES', '')
+);
+
+/*
+| The exact branch set the current approval covers. Normalized the same way, so
+| the approved and admitted sets are compared as canonical tokens.
+*/
+$legacyRmeApprovedBranchCodes = $legacyRmeNormalizeBranchCodes(
+    (string) env('LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES', '')
+);
 
 return [
 
@@ -309,6 +323,38 @@ return [
         | patient identifier.
         */
         'wave' => strtoupper(trim((string) env('LEGACY_RME_WAVE', ''))),
+
+        /*
+        | THE WAVE'S OWN APPROVAL RECORD.
+        |
+        | ROLL-2's `pilot_scope` records a SINGLE approved branch. A ROLL-3 wave
+        | admits several, so pilot_scope cannot describe it: admitting three
+        | branches while the approval record still named ROLL-2's one branch
+        | produced a GREEN readiness report that misdescribed what was actually
+        | authorized — the exact "config nobody enforces" failure ROLL-3 exists
+        | to remove, resurfacing one level up.
+        |
+        | So an admitted set now requires its own non-PHI governance reference
+        | (a ticket or decision id, never a patient identifier). Admitting a
+        | branch without one FAILS the readiness gate AND is refused at runtime:
+        | an unrecorded approval is not an approval.
+        |
+        | ROLL-2's pilot_scope is left untouched as the historical record of the
+        | single-branch pilot; the two are deliberately separate.
+        */
+        'approval_reference' => trim((string) env('LEGACY_RME_ADMISSION_APPROVAL_REFERENCE', '')),
+
+        /*
+        | THE SCOPE THAT APPROVAL COVERS.
+        |
+        | A reference alone would only prove that SOME approval exists, not that
+        | it covers the branches currently admitted — so adding a fourth branch
+        | to a three-branch wave would inherit the old approval untouched. The
+        | approved set is therefore recorded explicitly, and every admitted
+        | branch must appear in it. Widening the admitted set without widening
+        | the approval fails closed, at runtime and in the readiness gate.
+        */
+        'approved_branch_codes' => $legacyRmeApprovedBranchCodes,
 
         /*
         | MAIN is an administrative branch, never a clinic that owns RME

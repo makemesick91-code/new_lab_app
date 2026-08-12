@@ -109,6 +109,50 @@ class LegacyRmeBranchAdmissionService
         ));
     }
 
+    /**
+     * The governance reference for the CURRENT wave's approval.
+     *
+     * ROLL-2's `pilot_scope.approval_reference` is deliberately NOT consulted:
+     * it records a historical single-branch pilot and must never authorize a
+     * later multi-branch wave.
+     */
+    public function approvalReference(): string
+    {
+        return trim((string) config('legacy_rme_rollout.admission.approval_reference', ''));
+    }
+
+    /**
+     * The exact branch set the current approval covers.
+     *
+     * @return list<string>
+     */
+    public function approvedBranchCodes(): array
+    {
+        $codes = config('legacy_rme_rollout.admission.approved_branch_codes', []);
+
+        if (! is_array($codes)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(static fn ($code): string => strtoupper(trim((string) $code)), $codes),
+            static fn (string $code): bool => $code !== '',
+        )));
+    }
+
+    /**
+     * Admitted branches the current approval does NOT cover.
+     *
+     * Non-empty means the allowlist was widened without widening the approval,
+     * which fails closed rather than inheriting the older, narrower decision.
+     *
+     * @return list<string>
+     */
+    public function unapprovedAdmittedBranchCodes(): array
+    {
+        return array_values(array_diff($this->admittedBranchCodes(), $this->approvedBranchCodes()));
+    }
+
     /** A non-PHI wave label recorded alongside admitted ingestion. */
     public function wave(): ?string
     {
@@ -181,6 +225,31 @@ class LegacyRmeBranchAdmissionService
             return LegacyRmeAdmissionDecision::deny(
                 LegacyRmeAdmissionDecision::CODE_BRANCH_NOT_ADMITTED,
                 sprintf('Cabang %s belum termasuk dalam gelombang migrasi arsip RME lama yang sedang berjalan.', $branchCode),
+                $branchCode,
+                $wave,
+            );
+        }
+
+        // The wave must carry its OWN approval. Being on the allowlist proves
+        // someone edited the config; it does not prove an owner authorized this
+        // branch. ROLL-2's historical single-branch approval is never consulted
+        // here, so it can never stretch to cover a later multi-branch wave.
+        if ($this->approvalReference() === '') {
+            return LegacyRmeAdmissionDecision::deny(
+                LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED,
+                'Gelombang migrasi arsip RME lama belum memiliki referensi persetujuan yang tercatat.',
+                $branchCode,
+                $wave,
+            );
+        }
+
+        // ...and that approval must cover THIS branch. Widening the allowlist
+        // without widening the approval fails closed instead of inheriting the
+        // older, narrower decision.
+        if (! in_array($branchCode, $this->approvedBranchCodes(), true)) {
+            return LegacyRmeAdmissionDecision::deny(
+                LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED,
+                sprintf('Cabang %s tidak tercakup dalam persetujuan gelombang migrasi yang berlaku saat ini.', $branchCode),
                 $branchCode,
                 $wave,
             );

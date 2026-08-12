@@ -60,6 +60,7 @@ it('denies an admitted branch while the capability is off', function () {
 
 it('admits a branch that is on the allowlist while the capability is on', function () {
     legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave('ROLL-3-TEST-APPROVAL', ['TKM1']);
 
     $decision = admissionService()->decide(admissionResolutionFor('TKM1'));
 
@@ -114,6 +115,7 @@ it('denies when the branch could not be derived from the Nomor RM', function () 
 
 it('matches an admitted branch code exactly and rejects prefixes or extensions', function (string $admitted, string $candidate, bool $expected) {
     legacyRmeAdmittedBranches([$admitted]);
+    legacyRmeApproveWave('ROLL-3-TEST-APPROVAL', [$admitted]);
 
     expect(admissionService()->decide(admissionResolutionFor($candidate))->admitted)->toBe($expected);
 })->with([
@@ -301,6 +303,7 @@ it('refuses to re-queue a retry for a branch that was drained out of the wave', 
 
 it('separates emergency stop from drain: the capability switch withdraws everything', function () {
     legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave('ROLL-3-TEST-APPROVAL', ['TKM1']);
 
     expect(admissionService()->decide(admissionResolutionFor('TKM1'))->admitted)->toBeTrue();
 
@@ -334,4 +337,119 @@ it('resolves the allowlist from config rather than reading the environment at ru
     // the value would silently fall back to the default and the gate would
     // quietly change behaviour on a cached deployment.
     expect($source)->not->toContain('env(');
+});
+
+// ---------------------------------------------------------------------------
+// ROLL-3 CORRECTIVE — a wave must carry its OWN approval, bound to its scope.
+//
+// Found during the Wave-1 checkpoint: admitting ATG3/LDK2/SUN4 while the only
+// approval on record was ROLL-2's single-branch TKM1 pilot produced a GREEN
+// readiness report that misdescribed what was authorized. That is the same
+// "config nobody enforces" defect ROLL-3 exists to remove, one level up.
+// ---------------------------------------------------------------------------
+
+// (A) no admitted branches + no approval reference → the closed state is valid
+it('needs no wave approval while nothing is admitted', function () {
+    legacyRmeAdmittedBranches([]);
+    legacyRmeApproveWave('', []);
+
+    $decision = admissionService()->decide(admissionResolutionFor('TKM1'));
+
+    // Denied because nothing is admitted — never because approval is missing.
+    expect($decision->code)->toBe(LegacyRmeAdmissionDecision::CODE_NO_BRANCH_ADMITTED);
+});
+
+// (B) admitted branches + blank approval → FAIL CLOSED
+it('refuses an admitted branch when the wave has no approval reference', function () {
+    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave('', ['TKM1']);
+
+    $decision = admissionService()->decide(admissionResolutionFor('TKM1'));
+
+    expect($decision->admitted)->toBeFalse()
+        ->and($decision->code)->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED);
+});
+
+// (C) whitespace-only approval is not an approval
+it('treats a whitespace-only approval reference as absent', function () {
+    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave("   \t  ", ['TKM1']);
+
+    expect(admissionService()->approvalReference())->toBe('')
+        ->and(admissionService()->decide(admissionResolutionFor('TKM1'))->code)
+        ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED);
+});
+
+// (D) admitted + current approval covering it → PASS
+it('admits a branch covered by the current wave approval', function () {
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
+    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3', 'LDK2', 'SUN4']);
+
+    foreach (['ATG3', 'LDK2', 'SUN4'] as $code) {
+        expect(admissionService()->decide(admissionResolutionFor($code))->admitted)->toBeTrue();
+    }
+});
+
+// (E) ROLL-2's historical single-branch approval must not authorize a later wave
+it('never lets the historical ROLL-2 pilot approval authorize a different wave', function () {
+    // Exactly the production state found at the Wave-1 checkpoint.
+    config()->set('legacy_rme_rollout.pilot_scope.approved', true);
+    config()->set('legacy_rme_rollout.pilot_scope.approval_reference', 'ROLL-2-OWNER-APPROVAL-2026-08-11');
+    config()->set('legacy_rme_rollout.pilot_scope.branch_code', 'TKM1');
+
+    // Wave-1 admits three OTHER branches and records no approval of its own.
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
+    legacyRmeApproveWave('', []);
+
+    foreach (['ATG3', 'LDK2', 'SUN4'] as $code) {
+        expect(admissionService()->decide(admissionResolutionFor($code))->code)
+            ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED);
+    }
+
+    // Even pasting the ROLL-2 reference does not help: its scope is TKM1.
+    legacyRmeApproveWave('ROLL-2-OWNER-APPROVAL-2026-08-11', ['TKM1']);
+
+    expect(admissionService()->decide(admissionResolutionFor('ATG3'))->code)
+        ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED);
+});
+
+// (F) widening the admitted set after approval → FAIL CLOSED for the new branch
+it('fails closed when the admitted set is widened beyond the approved scope', function () {
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2']);
+    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3', 'LDK2']);
+
+    expect(admissionService()->decide(admissionResolutionFor('ATG3'))->admitted)->toBeTrue();
+
+    // A fourth branch is slipped into the allowlist; the approval is untouched.
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
+
+    expect(admissionService()->unapprovedAdmittedBranchCodes())->toBe(['SUN4'])
+        // The new branch is refused...
+        ->and(admissionService()->decide(admissionResolutionFor('SUN4'))->code)
+        ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED)
+        // ...while the genuinely approved ones keep working.
+        ->and(admissionService()->decide(admissionResolutionFor('ATG3'))->admitted)->toBeTrue();
+});
+
+it('refuses an upload for an admitted but unapproved branch, storing nothing', function () {
+    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave('', []);
+
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $patient,
+        '2019-04-02',
+        null,
+        legacyRmePdfUpload(),
+        superAdmin(),
+    ))->toThrow(ValidationException::class);
+
+    expect(LegacyRmeImport::query()->count())->toBe(0);
+});
+
+it('ships with no wave approval recorded by default', function () {
+    $shipped = require base_path('config/legacy_rme_rollout.php');
+
+    expect($shipped['admission']['approval_reference'])->toBe('')
+        ->and($shipped['admission']['approved_branch_codes'])->toBe([]);
 });

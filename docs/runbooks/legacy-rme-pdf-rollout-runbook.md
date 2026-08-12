@@ -168,15 +168,30 @@ cannot be chosen by an operator or supplied by a request.
 
 ### Admitting a wave
 
+Every wave needs **its own** approval, and that approval must name the exact
+branches it covers. ROLL-2's `pilot_scope` is historical evidence of the original
+single-branch pilot and authorizes nothing here — do not reuse its reference.
+
 1. Confirm the branch codes with the rollout owner. Use real codes from the
    branch registry — never assume a code from an earlier sprint.
-2. Set them in the environment file, comma-separated, exact codes only:
-   `LEGACY_RME_ADMITTED_BRANCH_CODES=TKM1,LDK2` and, optionally,
-   `LEGACY_RME_WAVE=WAVE-1`.
-3. Rebuild the config cache through the canonical mechanism.
-4. Prove it took effect: `php artisan legacy-rme:wave-status`.
-5. Confirm the readiness gate is still green:
+2. Obtain the owner's approval reference for **this** wave (a ticket or decision
+   id — never a patient identifier).
+3. Set all four values in the environment file, exact codes only:
+   - `LEGACY_RME_ADMITTED_BRANCH_CODES=ATG3,LDK2,SUN4`
+   - `LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES=ATG3,LDK2,SUN4`
+   - `LEGACY_RME_ADMISSION_APPROVAL_REFERENCE=<owner approval id>`
+   - optionally `LEGACY_RME_WAVE=WAVE-1`
+4. Rebuild the config cache through the canonical mechanism.
+5. Prove it took effect: `php artisan legacy-rme:wave-status` — check that
+   **Wave approval** is populated and **Approved scope** matches **Admitted
+   branches** exactly. A red `Admitted WITHOUT approval` row means stop.
+6. Confirm the readiness gate is still green:
    `php artisan legacy-rme:rollout-readiness --expect=on --strict`.
+
+> **Adding a branch mid-wave.** Widen `LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES`
+> *and* the admitted list together, against a fresh owner approval. Widening only
+> the admitted list fails closed: the new branch is refused at runtime and
+> `branch_admission` FAILs, while the already-approved branches keep working.
 
 Matching is exact. `TKM` does **not** admit `TKM1`, and `TKM1-EXTRA` is a
 different branch entirely.

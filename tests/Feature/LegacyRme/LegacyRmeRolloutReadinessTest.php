@@ -363,3 +363,81 @@ it('clears to GO on a fully ready deployment with an approved pilot', function (
     $this->artisan('legacy-rme:rollout-readiness', ['--expect' => 'off', '--strict' => true])
         ->assertExitCode(0);
 });
+
+// ---------------------------------------------------------------------------
+// LEGACY-RME-PDF-ROLL-3 CORRECTIVE — the readiness gate must refuse an admitted
+// set that carries no approval of its own, and must refuse one that has drifted
+// wider than the approval covers.
+// ---------------------------------------------------------------------------
+
+it('stays valid in the closed state with no admitted branches and no wave approval', function () {
+    legacyRmeArchiveFlag(false);
+    legacyRmeAdmittedBranches([]);
+    legacyRmeApproveWave('', []);
+
+    $check = collect(app(LegacyRmeRolloutReadinessService::class)->report('off')['checks'])
+        ->firstWhere('id', 'branch_admission');
+
+    expect($check['status'])->toBe(LegacyRmeRolloutReadinessService::STATUS_GO);
+});
+
+it('fails the rollout when branches are admitted without a wave approval reference', function () {
+    legacyRmeBranch('TKM1');
+    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeApproveWave('', []);
+
+    $check = collect(app(LegacyRmeRolloutReadinessService::class)->report()['checks'])
+        ->firstWhere('id', 'branch_admission');
+
+    expect($check['status'])->toBe(LegacyRmeRolloutReadinessService::STATUS_FAIL)
+        ->and($check['context']['approval_reference_present'])->toBeFalse();
+});
+
+it('fails the rollout when the admitted set drifts wider than the approved scope', function () {
+    legacyRmeBranch('ATG3', 'Cabang Antang');
+    legacyRmeBranch('LDK2', 'Cabang Landak');
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2']);
+    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3']);
+
+    $check = collect(app(LegacyRmeRolloutReadinessService::class)->report()['checks'])
+        ->firstWhere('id', 'branch_admission');
+
+    expect($check['status'])->toBe(LegacyRmeRolloutReadinessService::STATUS_FAIL)
+        ->and($check['context']['unapproved_admitted'])->toBe('LDK2');
+});
+
+it('clears branch admission when the wave approval covers every admitted branch', function () {
+    legacyRmeBranch('ATG3', 'Cabang Antang');
+    legacyRmeBranch('LDK2', 'Cabang Landak');
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2']);
+    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3', 'LDK2']);
+
+    $check = collect(app(LegacyRmeRolloutReadinessService::class)->report()['checks'])
+        ->firstWhere('id', 'branch_admission');
+
+    expect($check['status'])->toBe(LegacyRmeRolloutReadinessService::STATUS_GO)
+        ->and($check['context']['approval_reference'])->toBe('ROLL-3-WAVE-1-OWNER-APPROVAL')
+        ->and($check['context']['admitted_branch_codes'])->toBe('ATG3,LDK2');
+});
+
+it('never lets the historical ROLL-2 pilot approval satisfy a different wave in the gate', function () {
+    legacyRmeBranch('TKM1');
+    legacyRmeBranch('ATG3', 'Cabang Antang');
+
+    // Production state at the Wave-1 checkpoint: ROLL-2's approval is on record.
+    config()->set('legacy_rme_rollout.pilot_scope.approved', true);
+    config()->set('legacy_rme_rollout.pilot_scope.approval_reference', 'ROLL-2-OWNER-APPROVAL-2026-08-11');
+    config()->set('legacy_rme_rollout.pilot_scope.branch_code', 'TKM1');
+
+    legacyRmeAdmittedBranches(['ATG3']);
+    legacyRmeApproveWave('', []);
+
+    $report = app(LegacyRmeRolloutReadinessService::class)->report();
+    $check = collect($report['checks'])->firstWhere('id', 'branch_admission');
+
+    // The ROLL-2 record stays valid as history, and the wave still fails.
+    expect(collect($report['checks'])->firstWhere('id', 'pilot_scope_approved')['status'])
+        ->toBe(LegacyRmeRolloutReadinessService::STATUS_GO)
+        ->and($check['status'])->toBe(LegacyRmeRolloutReadinessService::STATUS_FAIL)
+        ->and($report['decision'])->toBe(LegacyRmeRolloutReadinessService::DECISION_NO_GO);
+});
