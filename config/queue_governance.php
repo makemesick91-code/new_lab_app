@@ -214,6 +214,11 @@ return [
             'reports',
             'notifications',
             'maintenance',
+            // LEGACY-RME-PDF-ROLL-2: dedicated queue for legacy archive page
+            // rasterization, so a multi-minute render never blocks default
+            // work. A queue the worker does not consume is a silently stuck
+            // pipeline, so this list and the worker unit must stay in step.
+            'legacy-rme-documents',
         ],
 
         // Per-environment queue connection policy. sync is a local/testing

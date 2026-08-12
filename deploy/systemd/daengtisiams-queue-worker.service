@@ -24,7 +24,7 @@ WorkingDirectory=/var/www/asia-dental-lab-v2
 # allowed_queue_names). tries/backoff/timeout match the ENT-5 retry standard.
 # --max-time recycles the process hourly; --rest keeps it gentle.
 ExecStart=/usr/bin/php /var/www/asia-dental-lab-v2/artisan queue:work database \
-    --queue=default,reports,notifications,maintenance \
+    --queue=default,reports,notifications,maintenance,legacy-rme-documents \
     --sleep=3 \
     --tries=3 \
     --backoff=10,60,180 \

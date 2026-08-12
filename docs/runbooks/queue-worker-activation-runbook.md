@@ -26,6 +26,33 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now daengtisiams-queue-worker.service
 ```
 
+## The tracked unit changed — RE-INSTALL IT
+
+**The deploy does not install this unit.** By ENT-5 design the deploy script
+never installs or starts a worker, so editing
+`deploy/systemd/daengtisiams-queue-worker.service` in the repository and
+deploying changes **nothing** on the host: systemd keeps running the previously
+installed copy.
+
+That is how a queue can silently lose its consumer. If the unit's `--queue=`
+list changed — for example when a module adds a dedicated queue — copy it again:
+
+```bash
+sudo cp deploy/systemd/daengtisiams-queue-worker.service \
+  /etc/systemd/system/daengtisiams-queue-worker.service
+sudo systemctl daemon-reload
+sudo systemctl restart daengtisiams-queue-worker.service
+```
+
+Then confirm what systemd actually runs, not what the repository says:
+
+```bash
+systemctl cat daengtisiams-queue-worker.service | grep -- --queue
+```
+
+`legacy-rme:rollout-readiness` reads the INSTALLED unit first for exactly this
+reason and falls back to the tracked file only when it is absent.
+
 ## Restart after a code deploy
 
 The deploy signals a graceful restart; the running worker finishes its current

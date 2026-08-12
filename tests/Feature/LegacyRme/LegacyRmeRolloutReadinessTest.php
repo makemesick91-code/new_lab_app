@@ -173,6 +173,114 @@ it('blocks a deployment that would render pages inline instead of on a worker', 
     expect($check['status'])->toBe('FAIL');
 });
 
+/*
+|--------------------------------------------------------------------------
+| LEGACY-RME-PDF-ROLL-2 pilot finding — a usable connection is not a usable
+| pipeline.
+|--------------------------------------------------------------------------
+| The first real pilot upload sat at QUEUED forever: rasterization is
+| dispatched to a DEDICATED queue and the deployed worker did not consume it.
+| There was no failed job and no error — and this very check reported GO,
+| because it only asked whether the CONNECTION was something other than `sync`.
+*/
+
+it('blocks a deployment whose worker does not consume the rendering queue', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    // A queue no worker unit lists — the shape of the real pilot defect.
+    config()->set('legacy_rme.processing.queue', 'queue-nobody-consumes');
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    expect($check['status'])->toBe('FAIL')
+        ->and($check['context']['render_queue'])->toBe('queue-nobody-consumes');
+});
+
+it('accepts the real rendering queue because the tracked worker unit consumes it', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    expect($check['status'])->toBe('GO')
+        ->and($check['context']['render_queue'])->toBe('legacy-rme-documents')
+        ->and($check['context']['worker_unit_readable'])->toBeTrue()
+        ->and($check['context']['queue_name_approved'])->toBeTrue();
+});
+
+// A substring match would accept `legacy-rme-documents-archive` for
+// `legacy-rme-documents`; the unit's comma-separated list is compared exactly.
+it('does not accept a worker queue whose name merely contains the rendering queue', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    config()->set('legacy_rme.processing.queue', 'legacy-rme-doc');
+
+    expect(roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract')['status'])
+        ->toBe('FAIL');
+});
+
+it('fails closed when the worker unit cannot be read', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    config()->set('legacy_rme_rollout.queue.worker_unit_file', 'deploy/systemd/does-not-exist.service');
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    expect($check['status'])->toBe('FAIL')
+        ->and($check['context']['worker_unit_readable'])->toBeFalse();
+});
+
+it('refuses a rendering queue that is not an approved ENT-5 queue name', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    config()->set('queue_governance.ent5_retry_failed_job.allowed_queue_names', ['default']);
+
+    expect(roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract')['status'])
+        ->toBe('FAIL');
+});
+
+// The deploy never installs the unit (ENT-5), so the tracked file and what
+// systemd actually runs can diverge. Reading only the tracked file would report
+// GO for a production worker that still ignores the render queue.
+it('prefers the installed worker unit over the tracked one', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+
+    // An "installed" unit that predates the fix: it does not consume the queue.
+    $stale = tempnam(sys_get_temp_dir(), 'unit');
+    file_put_contents($stale, "ExecStart=/usr/bin/php artisan queue:work database \\\n    --queue=default,reports \\\n");
+    config()->set('legacy_rme_rollout.queue.installed_worker_unit_file', $stale);
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    // The tracked file DOES consume it — the gate must not be fooled by that.
+    expect($check['status'])->toBe('FAIL')
+        ->and($check['context']['worker_unit_source'])->toBe('installed');
+
+    unlink($stale);
+});
+
+it('falls back to the tracked unit when none is installed', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    config()->set('legacy_rme_rollout.queue.installed_worker_unit_file', '/etc/systemd/system/not-installed-here.service');
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    expect($check['status'])->toBe('GO')
+        ->and($check['context']['worker_unit_source'])->toBe('tracked');
+});
+
+it('keeps the rendering queue and the worker unit in step', function () {
+    // The two sides that drifted apart in production.
+    $unit = file_get_contents(base_path(config('legacy_rme_rollout.queue.worker_unit_file')));
+
+    expect(config('legacy_rme.processing.queue'))->toBe('legacy-rme-documents')
+        ->and($unit)->toContain('legacy-rme-documents')
+        ->and(config('queue_governance.ent5_retry_failed_job.allowed_queue_names'))
+        ->toContain('legacy-rme-documents');
+});
+
 it('requires a rehearsed rollback path to exist', function () {
     expect(roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'rollback_contract')['status'])
         ->toBe('GO');

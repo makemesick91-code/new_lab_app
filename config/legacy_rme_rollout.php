@@ -125,6 +125,32 @@ return [
         'forbidden_connections' => ['sync'],
         // Environments where a real background worker is expected to exist.
         'worker_required_environments' => ['pilot', 'staging', 'production'],
+
+        /*
+        | LEGACY-RME-PDF-ROLL-2 pilot finding. Checking only that the queue
+        | CONNECTION is not `sync` is not enough: rasterization is dispatched to
+        | a DEDICATED queue, and a worker that does not consume that queue
+        | leaves every import stuck at QUEUED forever with no failed job and no
+        | error to notice. That is exactly what happened on the first pilot
+        | upload — the readiness gate reported GO while the pipeline could not
+        | render at all.
+        |
+        | So the gate now reads the deployed worker unit and asserts it actually
+        | consumes the queue the job is dispatched to. The unit is tracked in
+        | this repository, which makes the assertion real rather than a config
+        | agreeing with itself.
+        */
+        'worker_unit_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
+
+        // The unit systemd ACTUALLY runs. The deploy never installs or starts a
+        // worker (ENT-5), so this can lag the tracked file — an operator who
+        // edits the tracked unit, deploys and restarts still runs the OLD one.
+        // The gate reads this first and only falls back to the tracked file
+        // when it is absent (local, CI, a host without the unit installed).
+        'installed_worker_unit_file' => env(
+            'LEGACY_RME_INSTALLED_WORKER_UNIT',
+            '/etc/systemd/system/daengtisiams-queue-worker.service',
+        ),
     ],
 
     /*
