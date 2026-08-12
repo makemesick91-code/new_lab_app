@@ -127,6 +127,27 @@
                         {{ $branchResolution?->message ?? 'Cabang arsip tidak dapat ditentukan untuk pasien ini.' }}
                         Cabang arsip diambil dari kode cabang pada Nomor RM pasien dan tidak dapat dipilih manual.
                     </x-ui.alert>
+                @elseif ($admissionDecision !== null && $admissionDecision->denied())
+                    {{--
+                        LEGACY-RME-PDF-ROLL-3. The branch RESOLVED cleanly, but the
+                        rollout has not admitted it to the running wave. That is a
+                        rollout decision, not a data problem, so it is worded as one
+                        — the operator must not "fix" the patient's Nomor RM in
+                        response. The server re-decides on store(); this panel only
+                        explains the refusal before a document is prepared.
+                    --}}
+                    <x-ui.alert variant="warning" title="Cabang belum masuk gelombang migrasi">
+                        {{ $admissionDecision->message }}
+                        @if ($admissionDecision->wave)
+                            <span class="block mt-1 text-ink-muted">
+                                Gelombang aktif: {{ $admissionDecision->wave }}.
+                            </span>
+                        @endif
+                        <span class="block mt-1 text-ink-muted">
+                            Hubungi penanggung jawab rollout untuk memasukkan cabang ini ke gelombang berikutnya.
+                            Data pasien tidak perlu diubah.
+                        </span>
+                    </x-ui.alert>
                 @else
                     @if ($summary['has_native_rme'])
                         <x-ui.alert variant="warning" title="Tanggal ditentukan manual">

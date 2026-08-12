@@ -151,12 +151,94 @@ editing the published evidence.
 
 The voided record and its files remain. VOID retracts; it never erases.
 
-## 9. Rollback to OFF
+## 8b. LEGACY-RME-PDF-ROLL-3 — multi-branch wave operations
+
+### The two gates
+
+A branch may start new migration work only when **both** pass:
+
+- **CAPABILITY** — `FEATURE_RME_LEGACY_PDF_ARCHIVE=true` (the whole runtime).
+- **ADMISSION** — the branch code appears in `LEGACY_RME_ADMITTED_BRANCH_CODES`.
+
+Capability ON with an empty allowlist migrates nothing. That is the intended
+closed default, not a misconfiguration.
+
+The code checked is always the one **derived from the patient's Nomor RM**. It
+cannot be chosen by an operator or supplied by a request.
+
+### Admitting a wave
+
+1. Confirm the branch codes with the rollout owner. Use real codes from the
+   branch registry — never assume a code from an earlier sprint.
+2. Set them in the environment file, comma-separated, exact codes only:
+   `LEGACY_RME_ADMITTED_BRANCH_CODES=TKM1,LDK2` and, optionally,
+   `LEGACY_RME_WAVE=WAVE-1`.
+3. Rebuild the config cache through the canonical mechanism.
+4. Prove it took effect: `php artisan legacy-rme:wave-status`.
+5. Confirm the readiness gate is still green:
+   `php artisan legacy-rme:rollout-readiness --expect=on --strict`.
+
+Matching is exact. `TKM` does **not** admit `TKM1`, and `TKM1-EXTRA` is a
+different branch entirely.
+
+### Monitoring a wave
+
+```bash
+php artisan legacy-rme:wave-status            # admitted branches, backlog, headroom
+php artisan legacy-rme:wave-status --json     # evidence for the release record
+```
+
+Watch three numbers:
+
+- **pending render jobs** — approaching `LEGACY_RME_MAX_PENDING_JOBS` means new
+  uploads will start being refused. That is the ceiling working, not a fault.
+- **oldest awaiting review (hours)** — growing means the wave has outrun its
+  human reviewers. Add reviewers or slow intake; do not add capacity.
+- **free disk** — falling toward `LEGACY_RME_MIN_FREE_DISK_BYTES` stops
+  ingestion before a render can exhaust the volume.
+
+If ingestion is being refused, let the queue drain. It reopens by itself; there
+is no latch to clear.
+
+### NORMAL DRAIN — routine wave rollback (one branch)
+
+Use when a branch should stop taking new work: the wave is complete, the
+reviewers are saturated, or the owner has paused that clinic.
+
+1. Remove the branch code from `LEGACY_RME_ADMITTED_BRANCH_CODES`.
+2. Rebuild the config cache.
+3. Prove new intake is refused for that branch (attempt the create screen for a
+   patient of that branch — it shows "Cabang belum masuk gelombang migrasi").
+4. Prove the other admitted branches are unaffected.
+
+**What DRAIN does:** stops new uploads and retry re-queues for that branch.
+
+**What DRAIN deliberately does NOT do:** it does not block publishing an import
+that is already staged and human-reviewed. Those finish their lifecycle, and
+publish still performs the full canonical revalidation — permission, patient,
+RM-derived branch, date range, native boundary and state machine. Nothing is
+deleted, and no queued job is touched.
+
+> **DRAIN is the normal controlled-wave rollback. It is NOT incident
+> containment.** If an incident requires all Legacy mutations to stop —
+> including publish — use the EMERGENCY STOP in §9.
+
+### EMERGENCY STOP
+
+See §9. It is the capability switch, it withdraws publish as well, and the
+admission report will read `FEATURE_DISABLED` rather than a wave reason so the
+distinction is visible in evidence.
+
+## 9. Rollback to OFF (EMERGENCY STOP / end-of-wave close)
 
 1. Set `FEATURE_RME_LEGACY_PDF_ARCHIVE=false` in the environment file.
 2. Rebuild the config cache through the canonical mechanism.
 3. Prove it: `legacy-rme:rollout-readiness --expect=off --strict` exits `0`.
 4. Spot-check that the operator and clinical archive routes now answer `404`.
+
+For a full close, also clear `LEGACY_RME_ADMITTED_BRANCH_CODES` so the
+deployment returns to *capability off, no branch admitted* — the state ROLL-3
+expects between waves.
 
 **Rollback preserves everything.** Disabling the feature hides the runtime; it
 does not delete the schema, the staged imports, the published or voided records,

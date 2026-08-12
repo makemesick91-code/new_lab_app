@@ -78,6 +78,26 @@ final class LegacyRmeAuditEvent
      */
     public const IMPORT_BRANCH_REJECTED = 'LEGACY_RME_IMPORT_BRANCH_REJECTED';
 
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — an intake refused because the RM-derived branch
+     * is not admitted to the running migration wave (or the capability is off).
+     *
+     * Distinct from IMPORT_BRANCH_REJECTED: there the branch could not be
+     * DERIVED, which is a patient master-data problem; here it derived cleanly
+     * and the ROLLOUT declined it. Conflating them would hide which of the two
+     * an operator has to fix.
+     */
+    public const IMPORT_ADMISSION_REJECTED = 'LEGACY_RME_IMPORT_ADMISSION_REJECTED';
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — an intake refused because the rendering pipeline
+     * was saturated (queue depth, a stalled queue, or low disk).
+     *
+     * Recorded so a wave that slows down leaves evidence of WHY, instead of
+     * operators seeing sporadic upload failures with no explanation.
+     */
+    public const INGESTION_THROTTLED = 'LEGACY_RME_INGESTION_THROTTLED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -102,6 +122,8 @@ final class LegacyRmeAuditEvent
         self::RECORD_SOURCE_VIEWED,
         self::RECORD_PAGE_VIEWED,
         self::IMPORT_BRANCH_REJECTED,
+        self::IMPORT_ADMISSION_REJECTED,
+        self::INGESTION_THROTTLED,
     ];
 
     /**
@@ -155,6 +177,12 @@ final class LegacyRmeAuditEvent
         'latest_rme_date',
         'reference_mode',
         'branch_code',
+        // LEGACY-RME-PDF-ROLL-3. Still structure only. `wave` is a non-PHI
+        // rollout label such as `WAVE-1`, so a refused or accepted intake can
+        // be attributed to the stage that authorized it; `pending_jobs` is an
+        // infrastructure depth, never anything about a patient or a document.
+        'wave',
+        'pending_jobs',
     ];
 
     private function __construct() {}

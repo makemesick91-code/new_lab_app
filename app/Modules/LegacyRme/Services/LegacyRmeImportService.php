@@ -54,6 +54,8 @@ class LegacyRmeImportService
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeMalwareScannerInterface $malware,
         private readonly LegacyRmeBranchResolver $branchResolver,
+        private readonly LegacyRmeBranchAdmissionService $admission,
+        private readonly LegacyRmeIngestionCapacityService $capacity,
     ) {}
 
     /**
@@ -91,6 +93,13 @@ class LegacyRmeImportService
         // submitted value is only compared, never used as the answer.
         $branch = $this->resolveOriginBranch($patient, $originBranchId, $actor);
         $originBranchId = $branch->branchId;
+
+        // ROLL-3: the branch must additionally be ADMITTED to the running
+        // migration wave, and the pipeline must have room. Both are checked
+        // here — before a single byte is stored — so a refused intake leaves no
+        // staging row, no orphan file and no queued job behind.
+        $this->assertBranchAdmitted($branch, $patient, $actor);
+        $this->assertIngestionCapacity($branch, $patient, $actor);
 
         try {
             $this->assertUploadedPdf($document);
@@ -190,6 +199,16 @@ class LegacyRmeImportService
      */
     public function queue(LegacyRmeImport $import, ?User $actor = null, bool $isRetry = false): LegacyRmeImport
     {
+        // ROLL-3: a RETRY starts new render work and therefore consumes fresh
+        // capacity, so it is ingestion and passes the same gate. The initial
+        // dispatch from createFromUpload was already admitted a few lines
+        // earlier and is not re-checked — re-deciding there could only differ
+        // if the config changed mid-request, and refusing then would strand a
+        // stored file with no staging row.
+        if ($isRetry) {
+            $this->assertRetryAdmitted($import, $actor);
+        }
+
         $import = $this->imports->update($import, [
             'status' => LegacyRmeImportStatus::QUEUED,
             'failure_code' => null,
@@ -251,6 +270,113 @@ class LegacyRmeImportService
         }
 
         return $resolution;
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — the branch must be admitted to the running wave.
+     *
+     * Capability (the feature flag) and admission (this wave) are separate
+     * gates and both must pass. The value checked is the RM-DERIVED branch, so
+     * no request field can influence the outcome.
+     *
+     * A refusal is audited as its own action: nothing was created, and reusing
+     * IMPORT_CREATED would put a lie in the trail.
+     *
+     * @throws ValidationException
+     */
+    private function assertBranchAdmitted(LegacyRmeBranchResolution $branch, Patient $patient, User $actor): void
+    {
+        $decision = $this->admission->decide($branch);
+
+        if ($decision->denied()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::IMPORT_ADMISSION_REJECTED,
+                null,
+                $decision->auditContext() + ['patient_id' => (int) $patient->getKey()],
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_admission' => (string) $decision->message,
+            ]);
+        }
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — a retry restarts migration work, so the branch
+     * must still be admitted and the pipeline must still have room.
+     *
+     * The branch code comes from the row's own `origin_branch_id`, which was
+     * derived from the patient's Nomor RM when the import was created. It is
+     * re-read here rather than trusted from the caller.
+     *
+     * @throws ValidationException
+     */
+    private function assertRetryAdmitted(LegacyRmeImport $import, ?User $actor): void
+    {
+        $branchCode = $import->originBranch?->code;
+
+        $decision = $this->admission->decideForBranchCode(
+            is_string($branchCode) ? $branchCode : null,
+        );
+
+        if ($decision->denied()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::IMPORT_ADMISSION_REJECTED,
+                $import,
+                $decision->auditContext(),
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_admission' => (string) $decision->message,
+            ]);
+        }
+
+        $capacity = $this->capacity->evaluate();
+
+        if ($capacity->isSaturated()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::INGESTION_THROTTLED,
+                $import,
+                $capacity->auditContext(),
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_capacity' => (string) $capacity->message,
+            ]);
+        }
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — the rendering pipeline must have room.
+     *
+     * Backpressure throttles NEW intake only. Nothing already queued is
+     * cancelled, re-prioritised or touched: a saturated pipeline is a reason to
+     * stop adding work, never a reason to operate on clinical jobs in flight.
+     *
+     * @throws ValidationException
+     */
+    private function assertIngestionCapacity(LegacyRmeBranchResolution $branch, Patient $patient, User $actor): void
+    {
+        $capacity = $this->capacity->evaluate();
+
+        if ($capacity->isSaturated()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::INGESTION_THROTTLED,
+                null,
+                $capacity->auditContext() + [
+                    'patient_id' => (int) $patient->getKey(),
+                    'branch_code' => $branch->branchCode,
+                ],
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_capacity' => (string) $capacity->message,
+            ]);
+        }
     }
 
     /**

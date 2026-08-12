@@ -11,6 +11,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeImportPage;
 use App\Modules\LegacyRme\Requests\PublishLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Requests\StoreLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
+use App\Modules\LegacyRme\Services\LegacyRmeBranchAdmissionService;
 use App\Modules\LegacyRme\Services\LegacyRmeBranchResolver;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
@@ -57,6 +58,7 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeAuditService $audit,
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeBranchResolver $branchResolver,
+        private readonly LegacyRmeBranchAdmissionService $admission,
     ) {}
 
     public function index(Request $request): View
@@ -105,6 +107,7 @@ class LegacyRmeImportController extends Controller
         $patient = $this->patients->findSelectable($request->user(), $request->integer('patient_id'));
 
         $branchResolution = null;
+        $admissionDecision = null;
 
         if ($patient !== null) {
             $summary = $this->patients->summarize($patient);
@@ -114,6 +117,13 @@ class LegacyRmeImportController extends Controller
             // populate any more — the same resolver runs again server-side on
             // store(), and that call is the boundary.
             $branchResolution = $this->branchResolver->resolveForPatient($patient, $request->user());
+
+            // ROLL-3: show whether the RESOLVED branch is admitted to the
+            // running wave, so a blocked operator reads why here instead of
+            // discovering it after preparing and uploading a document. This is
+            // presentation only — store() re-decides server-side, and that call
+            // is the boundary.
+            $admissionDecision = $this->admission->decide($branchResolution);
         }
 
         return view('settings.rme.legacy-imports.create', [
@@ -122,6 +132,7 @@ class LegacyRmeImportController extends Controller
             'patient' => $patient,
             'summary' => $summary,
             'branchResolution' => $branchResolution,
+            'admissionDecision' => $admissionDecision,
             // A convenience bound for the date picker only, and only when the
             // patient actually HAS a native RME — a patient without one has no
             // upper bound beyond "before today", which the server enforces.
