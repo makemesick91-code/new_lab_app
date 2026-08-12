@@ -125,6 +125,22 @@ return [
         'forbidden_connections' => ['sync'],
         // Environments where a real background worker is expected to exist.
         'worker_required_environments' => ['pilot', 'staging', 'production'],
+
+        /*
+        | LEGACY-RME-PDF-ROLL-2 pilot finding. Checking only that the queue
+        | CONNECTION is not `sync` is not enough: rasterization is dispatched to
+        | a DEDICATED queue, and a worker that does not consume that queue
+        | leaves every import stuck at QUEUED forever with no failed job and no
+        | error to notice. That is exactly what happened on the first pilot
+        | upload — the readiness gate reported GO while the pipeline could not
+        | render at all.
+        |
+        | So the gate now reads the deployed worker unit and asserts it actually
+        | consumes the queue the job is dispatched to. The unit is tracked in
+        | this repository, which makes the assertion real rather than a config
+        | agreeing with itself.
+        */
+        'worker_unit_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
     ],
 
     /*
