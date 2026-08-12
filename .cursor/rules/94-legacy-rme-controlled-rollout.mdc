@@ -123,3 +123,29 @@ alwaysApply: false
 23. **Never force a stuck import forward.** A stuck lifecycle is a defect to fix
     in the pipeline, never a row to hand-edit into `READY_FOR_REVIEW`. Fix the
     cause, redeploy, and let the real job run.
+
+24. **Legacy RME must never widen clinical visibility compared with native RME.**
+    This is the governing rule for every legacy read surface. A legacy archive
+    is the patient's own old record: if a clinician may not see the patient
+    natively, they may not see the patient's archive either.
+
+25. **Branch match alone does NOT authorize a doctor.** Branch is wider than a
+    doctor's native reach. `LegacyRmeRecordPolicy::view` and
+    `LegacyRmePatientHistoryService::publishedRecordsFor` additionally require
+    the canonical native scope — `DoctorPatientScopeService`, which admits a
+    patient only through an active patient-doctor assignment or a visit with
+    that doctor. Found in production: a same-branch doctor with no relationship
+    to the patient was refused the native record and could still open the legacy
+    one.
+
+26. **Reuse the native scope service; never re-implement it.** A parallel
+    "legacy doctor scope" would drift from the native definition of who is
+    treating whom, and the drift would always fail open. Non-doctor actors are
+    unaffected: intake and governance tiers keep branch scope plus their own
+    named permissions, so import/review/publish/VOID are untouched.
+
+27. **A migrated patient with no visit is legitimately invisible to doctors.**
+    A legacy-only patient has no clinical relationship yet, so no doctor can
+    discover or open their archive. That is the correct negative authorization
+    result, not a pilot failure — and it is never repaired by manufacturing a
+    visit, an assignment, a branch pin or a permission.

@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 
 /**
  * LEGACY-RME-PDF-1A — authorization for published legacy RME records.
@@ -20,6 +22,7 @@ class LegacyRmeRecordPolicy
 {
     public function __construct(
         private readonly LegacyRmeWorkspaceScope $scope,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -48,7 +51,9 @@ class LegacyRmeRecordPolicy
 
     public function view(User $user, LegacyRmeRecord $record): bool
     {
-        return $this->viewAny($user) && $this->inScope($user, $record);
+        return $this->viewAny($user)
+            && $this->inScope($user, $record)
+            && $this->withinClinicalScope($user, $record);
     }
 
     public function void(User $user, LegacyRmeRecord $record): bool
@@ -99,5 +104,39 @@ class LegacyRmeRecordPolicy
             $user,
             $record->origin_branch_id !== null ? (int) $record->origin_branch_id : null,
         );
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-2 pilot finding — a legacy archive must never be
+     * MORE visible to a clinician than the patient's native record.
+     *
+     * Branch scope alone was the whole boundary here, but a doctor's native
+     * access is narrower than their branch: DoctorPatientScopeService admits a
+     * patient only through a real clinical relationship (an active
+     * patient-doctor assignment, or a visit with that doctor). A same-branch
+     * doctor with no relationship to the patient is refused the native record
+     * and was still able to open the legacy one — the archive was the broader
+     * door.
+     *
+     * The canonical native scope is reused verbatim rather than reimplemented,
+     * so the two can never drift into disagreeing about who is treating whom.
+     * Non-doctor actors are unaffected: the intake and governance tiers keep
+     * branch scope plus their own named permissions.
+     */
+    private function withinClinicalScope(User $user, LegacyRmeRecord $record): bool
+    {
+        if (! $this->doctorScope->shouldApplyDoctorScope($user)) {
+            return true;
+        }
+
+        $patient = $record->relationLoaded('patient')
+            ? $record->patient
+            : Patient::query()->find($record->patient_id);
+
+        if (! $patient instanceof Patient) {
+            return false;
+        }
+
+        return $this->doctorScope->doctorCanAccessPatient($user, $patient);
     }
 }

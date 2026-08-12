@@ -12,6 +12,8 @@ use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeTimelineEntry;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Route;
 
@@ -44,6 +46,7 @@ class LegacyRmePatientHistoryService
         private readonly LegacyRmeRecordRepositoryInterface $records,
         private readonly LegacyRmeWorkspaceScope $scope,
         private readonly LegacyRmeFeatureGuard $feature,
+        private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
     /**
@@ -58,6 +61,19 @@ class LegacyRmePatientHistoryService
         // viewer can never disagree about who may read an archive.
         if ($user === null || ! $this->feature->enabled() || ! $user->canAny(LegacyRmeRecordPolicy::READ_PERMISSIONS)) {
             return collect();
+        }
+
+        // LEGACY-RME-PDF-ROLL-2 pilot finding: the timeline must not be a
+        // weaker door than the viewer policy. A doctor reaches a patient only
+        // through a real clinical relationship, so the archive of a patient
+        // they are not treating is not theirs to list either — branch scope
+        // alone would make the legacy history broader than the native one.
+        if ($this->doctorScope->shouldApplyDoctorScope($user)) {
+            $patient = Patient::query()->find($patientId);
+
+            if (! $patient instanceof Patient || ! $this->doctorScope->doctorCanAccessPatient($user, $patient)) {
+                return collect();
+            }
         }
 
         return $this->records->listPublishedForPatientInBranches(

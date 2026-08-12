@@ -12,6 +12,8 @@
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
+use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfRasterizerInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
@@ -26,6 +28,7 @@ use App\Modules\LegacyRme\Services\Pdf\FakeLegacyRmePdfRasterizer;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\RME\Models\PatientDoctorAssignment;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +102,33 @@ function lrme1dDoctor(?int $branchId): User
     return $doctor->refresh();
 }
 
+/**
+ * LEGACY-RME-PDF-ROLL-2 — a doctor USER linked to a real doctor record, plus an
+ * active assignment to the record's patient.
+ *
+ * Branch alone no longer authorizes a clinical read: a legacy archive must
+ * never be more visible to a doctor than the patient's native record, and
+ * native access requires a real clinical relationship. Establishing one is
+ * therefore part of the positive fixture, not incidental setup.
+ */
+function lrme1dTreatingDoctor(?int $branchId, LegacyRmeRecord $record): User
+{
+    $user = lrme1dDoctor($branchId);
+
+    $doctor = Doctor::factory()->create([
+        'user_id' => $user->getKey(),
+        'is_active' => true,
+    ]);
+
+    PatientDoctorAssignment::factory()->create([
+        'patient_id' => $record->patient_id,
+        'doctor_id' => $doctor->getKey(),
+        'unassigned_at' => null,
+    ]);
+
+    return $user->refresh();
+}
+
 /*
 |--------------------------------------------------------------------------
 | The permission is real, separate, and least-privilege
@@ -134,7 +164,7 @@ it('keeps the clinical read permission out of the governance tier', function () 
 it('lets a doctor read a published archive from their own branch', function () {
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
-    $doctor = lrme1dDoctor((int) $branch->getKey());
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
 
     $this->actingAs($doctor)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -190,7 +220,7 @@ it('hides an archive with no branch provenance from a clinical reader', function
 it('refuses every write action from a doctor', function () {
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
-    $doctor = lrme1dDoctor((int) $branch->getKey());
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
 
     $this->actingAs($doctor)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -203,7 +233,7 @@ it('refuses every write action from a doctor', function () {
 it('shows a doctor the archive in the patient history', function () {
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
-    $doctor = lrme1dDoctor((int) $branch->getKey());
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
 
     expect(app(LegacyRmePatientHistoryService::class)->publishedRecordsFor($doctor, (int) $record->patient_id))
         ->toHaveCount(1);
@@ -254,7 +284,7 @@ it('never renders a storage path or a KTP in the print view', function () {
 it('lets a doctor print their own branch archive', function () {
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
-    $doctor = lrme1dDoctor((int) $branch->getKey());
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
 
     $this->actingAs($doctor)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -390,3 +420,125 @@ it('refuses print and export from a user with no legacy permission at all', func
     'export' => ['rme.legacy-records.export'],
     'show' => ['rme.legacy-records.show'],
 ]);
+
+/*
+|--------------------------------------------------------------------------
+| LEGACY-RME-PDF-ROLL-2 pilot finding — Legacy must never widen clinical
+| visibility compared with native RME.
+|--------------------------------------------------------------------------
+| Found in production: a same-branch doctor with NO clinical relationship to
+| the patient was refused the native record but could still open the patient's
+| legacy archive. Branch scope alone was the whole boundary, and branch is
+| wider than a doctor's native reach.
+*/
+
+// CASE A — same branch, no doctor-patient relationship → DENIED.
+it('refuses a same-branch doctor who is not treating the patient', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $doctor = lrme1dDoctor((int) $branch->getKey());
+
+    Doctor::factory()->create(['user_id' => $doctor->getKey(), 'is_active' => true]);
+
+    expect($doctor->can('view', $record))->toBeFalse()
+        ->and($doctor->can('viewFile', $record))->toBeFalse();
+
+    // In-branch but not treating is a 403: the branch-scoped repository finds
+    // the row, and the policy is what refuses it. A wrong-branch record is a
+    // 404 instead (case B) because the scope never surfaces it at all.
+    $this->actingAs($doctor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.legacy-records.show', $record))
+        ->assertForbidden();
+});
+
+// CASE B — wrong branch → DENIED (unchanged, still enforced).
+it('refuses a treating doctor whose branch does not own the archive', function () {
+    $branch = lrme1dRmeBranch();
+    $other = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $doctor = lrme1dTreatingDoctor((int) $other->getKey(), $record);
+
+    expect($doctor->can('view', $record))->toBeFalse();
+
+    $this->actingAs($doctor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.legacy-records.show', $record))
+        ->assertNotFound();
+});
+
+// CASE C — real clinical relationship + right branch → ALLOWED, read-only.
+it('allows a treating doctor in the owning branch to read the archive', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
+
+    expect($doctor->can('view', $record))->toBeTrue();
+
+    $this->actingAs($doctor)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.legacy-records.show', $record))
+        ->assertOk();
+});
+
+// A visit with that doctor is the other canonical relationship native RME uses.
+it('accepts a visit with that doctor as the clinical relationship', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $user = lrme1dDoctor((int) $branch->getKey());
+    $doctor = Doctor::factory()->create(['user_id' => $user->getKey(), 'is_active' => true]);
+
+    expect($user->can('view', $record))->toBeFalse();
+
+    ClinicVisit::factory()->create([
+        'patient_id' => $record->patient_id,
+        'doctor_id' => $doctor->getKey(),
+    ]);
+
+    expect($user->refresh()->can('view', $record))->toBeTrue();
+});
+
+// CASE D — an authorized reader is still only a reader.
+it('keeps an authorized treating doctor read-only', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $doctor = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
+
+    expect($doctor->can('view', $record))->toBeTrue()
+        ->and($doctor->can('void', $record))->toBeFalse()
+        ->and($doctor->can('update', $record))->toBeFalse()
+        ->and($doctor->can('delete', $record))->toBeFalse()
+        ->and($doctor->can('viewAny', LegacyRmeImport::class))->toBeFalse()
+        ->and($doctor->can('create', LegacyRmeImport::class))->toBeFalse()
+        ->and($doctor->can('publish_legacy_rme_imports'))->toBeFalse()
+        ->and($doctor->can('void_legacy_rme_imports'))->toBeFalse();
+});
+
+// CASE E — role/Gate::before must not widen a doctor. The governance tier is
+// unaffected, which is what keeps import/review/publish/VOID working.
+it('does not widen a doctor through role or Gate::before, and leaves governance intact', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $doctor = lrme1dDoctor((int) $branch->getKey());
+
+    expect($doctor->can('view', $record))->toBeFalse();
+
+    // Super Admin keeps full access: the clinical scope applies to doctors only.
+    expect(superAdmin()->can('view', $record))->toBeTrue();
+});
+
+// The timeline must not be a weaker door than the viewer policy.
+it('hides the archive from the patient history of a non-treating doctor', function () {
+    $branch = lrme1dRmeBranch();
+    $record = lrme1dPublishedInBranch($branch);
+    $service = app(LegacyRmePatientHistoryService::class);
+
+    $stranger = lrme1dDoctor((int) $branch->getKey());
+    Doctor::factory()->create(['user_id' => $stranger->getKey(), 'is_active' => true]);
+
+    expect($service->publishedRecordsFor($stranger, (int) $record->patient_id))->toBeEmpty();
+
+    $treating = lrme1dTreatingDoctor((int) $branch->getKey(), $record);
+
+    expect($service->publishedRecordsFor($treating, (int) $record->patient_id))->toHaveCount(1);
+});
