@@ -614,16 +614,93 @@ class LegacyRmeRolloutReadinessService
                 );
             }
 
+            // LEGACY-RME-PDF-ROLL-2 pilot finding: a usable CONNECTION is not a
+            // usable PIPELINE. Rasterization is dispatched to a dedicated queue,
+            // and a worker that does not consume that queue leaves every import
+            // stuck at QUEUED — no failed job, no error, nothing to notice. The
+            // first pilot upload hit exactly that while this check said GO.
+            $renderQueue = (string) config('legacy_rme.processing.queue', 'legacy-rme-documents');
+            $context['render_queue'] = $renderQueue;
+
+            $unitPath = (string) config('legacy_rme_rollout.queue.worker_unit_file', '');
+            $unitAbsolute = $unitPath !== '' ? base_path($unitPath) : '';
+            $unitContents = ($unitAbsolute !== '' && is_file($unitAbsolute) && is_readable($unitAbsolute))
+                ? (string) file_get_contents($unitAbsolute)
+                : null;
+
+            $context['worker_unit_file'] = $unitPath;
+            $context['worker_unit_readable'] = $unitContents !== null;
+
+            if ($workerExpected) {
+                if ($unitContents === null) {
+                    return LegacyRmeRolloutCheck::fail(
+                        'queue_contract',
+                        'The queue worker unit could not be read, so it is unknown whether the rendering queue is consumed.',
+                        $context,
+                        'Restore the tracked worker unit file before enabling the archive.',
+                    );
+                }
+
+                if (! $this->workerUnitConsumesQueue($unitContents, $renderQueue)) {
+                    return LegacyRmeRolloutCheck::fail(
+                        'queue_contract',
+                        sprintf('The queue worker does not consume the "%s" queue, so no import would ever be rendered.', $renderQueue),
+                        $context,
+                        sprintf('Add "%s" to the worker unit --queue list and restart the worker.', $renderQueue),
+                    );
+                }
+
+                // The name must also be an approved ENT-5 queue, otherwise the
+                // worker and the queue governance contract disagree.
+                $allowed = (array) config('queue_governance.ent5_retry_failed_job.allowed_queue_names', []);
+                $context['queue_name_approved'] = in_array($renderQueue, $allowed, true);
+
+                if (! $context['queue_name_approved']) {
+                    return LegacyRmeRolloutCheck::fail(
+                        'queue_contract',
+                        sprintf('The rendering queue "%s" is not an approved queue name.', $renderQueue),
+                        $context,
+                        'Declare the queue in the ENT-5 allowed queue names before enabling the archive.',
+                    );
+                }
+            }
+
             if (Schema::hasTable('failed_jobs')) {
                 $context['failed_jobs'] = DB::table('failed_jobs')->count();
             }
 
             return LegacyRmeRolloutCheck::go(
                 'queue_contract',
-                'The queue connection can carry the rendering job.',
+                'The queue connection can carry the rendering job, and the worker consumes its queue.',
                 $context,
             );
         });
+    }
+
+    /**
+     * Whether a systemd worker unit actually consumes the given queue.
+     *
+     * The unit lists its queues as a single comma-separated `--queue=` value,
+     * so a substring match would happily accept `legacy-rme-documents-archive`
+     * for `legacy-rme-documents`. The list is split and compared exactly.
+     */
+    private function workerUnitConsumesQueue(string $unitContents, string $queue): bool
+    {
+        if ($queue === '') {
+            return false;
+        }
+
+        if (preg_match_all('/--queue[=\s]+([^\s\\\\]+)/', $unitContents, $matches) !== false) {
+            foreach (($matches[1] ?? []) as $list) {
+                foreach (explode(',', $list) as $name) {
+                    if (trim($name) === $queue) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
     }
 
     private function checkRollbackContract(): LegacyRmeRolloutCheck

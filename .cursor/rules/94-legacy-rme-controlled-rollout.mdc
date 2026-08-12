@@ -108,3 +108,18 @@ alwaysApply: false
     `LegacyRmeFeatureGuard` is enabled, so it appears on enablement and
     disappears on rollback. It remains a convenience, never the security
     boundary — the routes fail closed independently.
+
+22. **A usable queue CONNECTION is not a usable queue PIPELINE.** Rasterization
+    is dispatched to the dedicated `legacy-rme-documents` queue. A worker that
+    does not consume that queue leaves every import stuck at `QUEUED` forever —
+    no failed job, no error, nothing to notice. The first real pilot upload hit
+    exactly that while `queue_contract` reported GO. The gate now reads the
+    tracked worker unit and asserts it consumes the rendering queue, and that
+    the queue is an approved ENT-5 name; it fails closed if the unit is
+    unreadable. Keep `config/legacy_rme.php` `processing.queue`,
+    `queue_governance` `allowed_queue_names` and the worker unit's `--queue=`
+    list in step — adding a dedicated queue means updating all three.
+
+23. **Never force a stuck import forward.** A stuck lifecycle is a defect to fix
+    in the pipeline, never a row to hand-edit into `READY_FOR_REVIEW`. Fix the
+    cause, redeploy, and let the real job run.
