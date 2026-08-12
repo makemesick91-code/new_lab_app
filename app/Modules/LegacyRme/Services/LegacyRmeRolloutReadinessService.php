@@ -622,13 +622,36 @@ class LegacyRmeRolloutReadinessService
             $renderQueue = (string) config('legacy_rme.processing.queue', 'legacy-rme-documents');
             $context['render_queue'] = $renderQueue;
 
+            // Prefer the INSTALLED unit over the tracked one. The deploy script
+            // deliberately never installs or starts a worker (ENT-5), so the
+            // repository file and what systemd actually runs can diverge: an
+            // operator who edits the tracked unit, deploys and restarts still
+            // runs the OLD unit. Reading only the tracked file would report GO
+            // for a production worker that still ignores the render queue —
+            // the same false GO this check was written to remove.
             $unitPath = (string) config('legacy_rme_rollout.queue.worker_unit_file', '');
-            $unitAbsolute = $unitPath !== '' ? base_path($unitPath) : '';
-            $unitContents = ($unitAbsolute !== '' && is_file($unitAbsolute) && is_readable($unitAbsolute))
-                ? (string) file_get_contents($unitAbsolute)
-                : null;
+            $installedPath = (string) config('legacy_rme_rollout.queue.installed_worker_unit_file', '');
+
+            $unitContents = null;
+            $unitSource = null;
+
+            foreach ([['installed', $installedPath, false], ['tracked', $unitPath, true]] as [$label, $path, $relative]) {
+                if ($path === '') {
+                    continue;
+                }
+
+                $absolute = $relative ? base_path($path) : $path;
+
+                if (is_file($absolute) && is_readable($absolute)) {
+                    $unitContents = (string) file_get_contents($absolute);
+                    $unitSource = $label;
+                    break;
+                }
+            }
 
             $context['worker_unit_file'] = $unitPath;
+            $context['installed_worker_unit_file'] = $installedPath;
+            $context['worker_unit_source'] = $unitSource;
             $context['worker_unit_readable'] = $unitContents !== null;
 
             if ($workerExpected) {

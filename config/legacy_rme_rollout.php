@@ -141,6 +141,16 @@ return [
         | agreeing with itself.
         */
         'worker_unit_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
+
+        // The unit systemd ACTUALLY runs. The deploy never installs or starts a
+        // worker (ENT-5), so this can lag the tracked file — an operator who
+        // edits the tracked unit, deploys and restarts still runs the OLD one.
+        // The gate reads this first and only falls back to the tracked file
+        // when it is absent (local, CI, a host without the unit installed).
+        'installed_worker_unit_file' => env(
+            'LEGACY_RME_INSTALLED_WORKER_UNIT',
+            '/etc/systemd/system/daengtisiams-queue-worker.service',
+        ),
     ],
 
     /*

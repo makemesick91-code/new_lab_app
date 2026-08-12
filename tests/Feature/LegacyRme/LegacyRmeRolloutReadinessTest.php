@@ -239,6 +239,38 @@ it('refuses a rendering queue that is not an approved ENT-5 queue name', functio
         ->toBe('FAIL');
 });
 
+// The deploy never installs the unit (ENT-5), so the tracked file and what
+// systemd actually runs can diverge. Reading only the tracked file would report
+// GO for a production worker that still ignores the render queue.
+it('prefers the installed worker unit over the tracked one', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+
+    // An "installed" unit that predates the fix: it does not consume the queue.
+    $stale = tempnam(sys_get_temp_dir(), 'unit');
+    file_put_contents($stale, "ExecStart=/usr/bin/php artisan queue:work database \\\n    --queue=default,reports \\\n");
+    config()->set('legacy_rme_rollout.queue.installed_worker_unit_file', $stale);
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    // The tracked file DOES consume it — the gate must not be fooled by that.
+    expect($check['status'])->toBe('FAIL')
+        ->and($check['context']['worker_unit_source'])->toBe('installed');
+
+    unlink($stale);
+});
+
+it('falls back to the tracked unit when none is installed', function () {
+    config()->set('queue.default', 'database');
+    config()->set('legacy_rme_rollout.queue.worker_required_environments', [app()->environment()]);
+    config()->set('legacy_rme_rollout.queue.installed_worker_unit_file', '/etc/systemd/system/not-installed-here.service');
+
+    $check = roll2Check(app(LegacyRmeRolloutReadinessService::class)->report(), 'queue_contract');
+
+    expect($check['status'])->toBe('GO')
+        ->and($check['context']['worker_unit_source'])->toBe('tracked');
+});
+
 it('keeps the rendering queue and the worker unit in step', function () {
     // The two sides that drifted apart in production.
     $unit = file_get_contents(base_path(config('legacy_rme_rollout.queue.worker_unit_file')));
