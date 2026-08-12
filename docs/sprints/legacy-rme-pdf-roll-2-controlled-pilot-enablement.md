@@ -9,7 +9,56 @@
 
 ---
 
-## 0. STATUS — RESUMED, pilot-ready
+## 0. STATUS — PILOT COMPLETE (feature returned to OFF)
+
+The controlled pilot ran end to end on the VPS against RM `DG-TKM1-2024-9985`
+(patient 36, branch TKM1, no native RME, dates 28-01-2024 / 31-08-2024) and
+**found two real production defects that only a live run could surface**. Both
+were fixed through the full release cycle before the pilot continued.
+
+**Defect 1 — the render queue had no consumer.** The job is dispatched to the
+dedicated queue `legacy-rme-documents`; the systemd worker consumed only
+`default,reports,notifications,maintenance`. The import sat at `QUEUED` with no
+rendered page, and because the job was never *reserved* it never failed either:
+no failed job, no error, no log line. `queue_contract` reported GO because it
+only asked whether the connection was something other than `sync`. Fixed in
+PR #278 (merge `a548ee0`): the queue was added to the ENT-5 registry and the
+worker unit, and the gate now reads the **installed** unit and fails closed
+unless it genuinely consumes the rendering queue.
+
+*The first version of that fix had the same blind spot it was removing* — it
+read the tracked unit, and the deploy never installs units, so it would have
+reported GO for a host still running the old worker. Production then proved the
+point: after deploying `a548ee0` the gate correctly returned `FAIL / NO_GO`
+because the installed unit was still stale.
+
+**Defect 2 — legacy reads outranked native RME.** The viewer policy and the
+patient-history timeline were scoped by **branch only**, while native RME scopes
+a doctor by clinical relationship. A same-branch doctor with no relationship to
+the patient was refused the native record and could still open the patient's
+legacy archive (production: HTTP 200). Fixed in PR #279 (merge `7d0b5c0`) by
+reusing `DoctorPatientScopeService` verbatim; the same doctor now receives 403
+on every legacy surface.
+
+**Pilot result:** two complete lifecycles. The original import was consumed
+naturally by the repaired worker (~18 s, no redispatch, no state surgery),
+reviewed, published, then VOIDed; the same approved PDF was re-imported as the
+fresh correction — canonically permitted, since a VOID record does not block its
+own checksum — and published as record 2. Zero unintended native artifacts
+across nine clinical and financial tables in both lifecycles. The feature was
+then rolled back to **OFF** and every legacy surface fails closed.
+
+**Doctor read-only, stated precisely.** Negative authorization is proven in
+production: patient 36 has no clinical relationship, so every doctor surface
+returns 403 and the archive never appears in a doctor's history. That is the
+correct result, not a gap. A **positive** production doctor read is
+**NOT APPLICABLE** — the only published archive belongs to a patient no doctor
+is treating, and no visit, assignment, branch pin or permission was manufactured
+to create one. The positive contract is proven by the automated matrix instead.
+
+---
+
+## 0.1 Resume record (superseded by §0 above)
 
 **Prerequisite satisfied.** ROLL-2 was previously PAUSED before the clinical
 pilot because preparing the real pilot document for RM `DG-TKM1-2024-9985`
