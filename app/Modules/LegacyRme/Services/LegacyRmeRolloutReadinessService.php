@@ -51,6 +51,8 @@ class LegacyRmeRolloutReadinessService
         private readonly FeatureFlagService $flags,
         private readonly LegacyRmeFeatureGuard $guard,
         private readonly BranchService $branches,
+        private readonly LegacyRmeBranchAdmissionService $admission,
+        private readonly LegacyRmeIngestionCapacityService $capacity,
     ) {}
 
     /**
@@ -75,6 +77,8 @@ class LegacyRmeRolloutReadinessService
             $this->checkQueueContract(),
             $this->checkRollbackContract(),
             $this->checkPilotScopeApproved(),
+            $this->checkBranchAdmission(),
+            $this->checkIngestionCapacity(),
         ];
 
         $checks = array_map(static fn (LegacyRmeRolloutCheck $c) => $c->toArray(), $checks);
@@ -821,6 +825,170 @@ class LegacyRmeRolloutReadinessService
                     'approval_reference' => $reference,
                     'branch_code' => (string) $branch->code,
                 ],
+            );
+        });
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — is branch admission a real gate on this
+     * deployment, and does the declared wave point at branches that can
+     * actually receive an archive?
+     *
+     * ROLL-2 shipped `pilot_scope.branch_code` that only this report ever read,
+     * so the runtime admitted every RME branch. This check exists to make sure
+     * that can never silently return: it verifies the gate is ENFORCED, and
+     * that every admitted code resolves to a real, active, RME-enabled branch.
+     */
+    private function checkBranchAdmission(): LegacyRmeRolloutCheck
+    {
+        return $this->guarded('branch_admission', function (): LegacyRmeRolloutCheck {
+            $enforced = $this->admission->enforced();
+            $admitted = $this->admission->admittedBranchCodes();
+            $wave = $this->admission->wave();
+            $environment = (string) app()->environment();
+            $realDeployment = in_array(
+                $environment,
+                (array) config('legacy_rme_rollout.queue.worker_required_environments', []),
+                true,
+            );
+
+            $context = [
+                'enforced' => $enforced,
+                'admitted_branch_codes' => implode(',', $admitted),
+                'admitted_count' => count($admitted),
+                'wave' => $wave,
+                'environment' => $environment,
+            ];
+
+            // A production-like deployment with the gate switched off is the
+            // pre-ROLL-3 defect restored on purpose. It is never a warning.
+            if (! $enforced && $realDeployment) {
+                return LegacyRmeRolloutCheck::fail(
+                    'branch_admission',
+                    'Branch admission is not enforced on a deployment that runs real migrations, so every RME branch could import.',
+                    $context,
+                    'Set the admission enforcement switch back on and rebuild the config cache.',
+                );
+            }
+
+            if (! $enforced) {
+                return LegacyRmeRolloutCheck::watch(
+                    'branch_admission',
+                    'Branch admission is not enforced in this environment.',
+                    $context,
+                    'Enforcement may only be off in local or CI environments.',
+                );
+            }
+
+            $forbidden = LegacyRmeBranchAdmissionService::forbiddenBranchCodes();
+            $declaredForbidden = array_values(array_intersect($admitted, $forbidden));
+
+            if ($declaredForbidden !== []) {
+                return LegacyRmeRolloutCheck::fail(
+                    'branch_admission',
+                    'A branch that may never host a clinical migration is declared in the admission allowlist.',
+                    $context + ['forbidden_declared' => implode(',', $declaredForbidden)],
+                    'Remove the administrative branch from the allowlist.',
+                );
+            }
+
+            // Every admitted code must name a branch that can actually own RME
+            // history. A typo that admits nothing is worse than an empty list,
+            // because the operator believes a branch is live when it is not.
+            $known = $this->branches->listRmeEnabled()
+                ->map(static fn ($branch): string => strtoupper((string) $branch->code))
+                ->all();
+
+            $unknown = array_values(array_diff($admitted, $known));
+
+            if ($unknown !== []) {
+                return LegacyRmeRolloutCheck::fail(
+                    'branch_admission',
+                    'The admission allowlist names a branch that is not an active RME-enabled branch on this deployment.',
+                    $context + ['unknown_declared' => implode(',', $unknown)],
+                    'Correct the branch code, or activate and RME-enable that branch.',
+                );
+            }
+
+            // Capability ON with nothing admitted is safe but useless, and
+            // usually means a wave was declared without its allowlist.
+            if ($admitted === [] && $this->guard->enabled()) {
+                return LegacyRmeRolloutCheck::watch(
+                    'branch_admission',
+                    'The archive is switched on but no branch is admitted, so no migration can start.',
+                    $context,
+                    'Declare the wave branch codes, or switch the capability back off.',
+                );
+            }
+
+            if ($admitted === []) {
+                return LegacyRmeRolloutCheck::go(
+                    'branch_admission',
+                    'Branch admission is enforced and no branch is admitted — the closed, pre-wave state.',
+                    $context,
+                );
+            }
+
+            return LegacyRmeRolloutCheck::go(
+                'branch_admission',
+                'Branch admission is enforced and every admitted branch is an active RME-enabled branch.',
+                $context,
+            );
+        });
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-3 — does the rendering pipeline have room, and is
+     * backpressure configured at all?
+     *
+     * Saturation is reported as WATCH rather than FAIL: a deep queue is a
+     * transient operational condition that resolves itself as the worker
+     * drains, and refusing a deploy over it would be the wrong response. What
+     * matters at release time is that the ceiling EXISTS.
+     */
+    private function checkIngestionCapacity(): LegacyRmeRolloutCheck
+    {
+        return $this->guarded('ingestion_capacity', function (): LegacyRmeRolloutCheck {
+            $capacity = $this->capacity->evaluate();
+            $context = $capacity->measurements;
+
+            if (! $this->capacity->enforced()) {
+                return LegacyRmeRolloutCheck::watch(
+                    'ingestion_capacity',
+                    'Ingestion backpressure is disabled, so a saturated pipeline would not refuse new uploads.',
+                    $context,
+                    'Enable capacity enforcement before running a multi-branch wave.',
+                );
+            }
+
+            $thresholds = [
+                (int) config('legacy_rme_rollout.capacity.max_pending_jobs', 0),
+                (int) config('legacy_rme_rollout.capacity.max_oldest_pending_seconds', 0),
+                (int) config('legacy_rme_rollout.capacity.min_free_disk_bytes', 0),
+            ];
+
+            if (array_sum(array_map(static fn (int $v): int => $v > 0 ? 1 : 0, $thresholds)) === 0) {
+                return LegacyRmeRolloutCheck::watch(
+                    'ingestion_capacity',
+                    'Every backpressure threshold is disabled, so ingestion has no ceiling.',
+                    $context,
+                    'Configure at least one capacity threshold before running a multi-branch wave.',
+                );
+            }
+
+            if ($capacity->isSaturated()) {
+                return LegacyRmeRolloutCheck::watch(
+                    'ingestion_capacity',
+                    'The rendering pipeline is currently saturated, so new uploads are being refused.',
+                    $context + ['rule_code' => $capacity->code],
+                    'Let the queue drain, or investigate the worker if it is not draining.',
+                );
+            }
+
+            return LegacyRmeRolloutCheck::go(
+                'ingestion_capacity',
+                'Ingestion backpressure is configured and the rendering pipeline has room.',
+                $context,
             );
         });
     }

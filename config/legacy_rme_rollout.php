@@ -28,7 +28,66 @@ declare(strict_types=1);
 |
 | Enabling the feature is an explicit operator decision taken against a GREEN
 | readiness report — it is never a side effect of a deploy.
+|
+|--------------------------------------------------------------------------
+| LEGACY-RME-PDF-ROLL-3 — controlled multi-branch migration rollout
+|--------------------------------------------------------------------------
+|
+| ROLL-2 proved ONE branch could migrate safely. It did so with a single
+| `pilot_scope.branch_code` string that only the readiness REPORT ever read —
+| no runtime path consulted it. With the flag ON, every RME-enabled branch was
+| therefore free to import, and single-branch confinement rested on operator
+| discipline rather than on the server.
+|
+| ROLL-3 closes that gap by separating two concerns that ROLL-2 conflated:
+|
+|   CAPABILITY  — is the legacy archive runtime switched on at all?
+|                 Owned by the feature flag `rme.legacy_pdf_archive`.
+|
+|   ADMISSION   — is THIS branch cleared to start new migration work?
+|                 Owned by the `admission` block below.
+|
+| Both must pass. Capability ON with no admitted branch imports nothing.
+|
+| TWO SEPARATE OPERATIONAL CONTROLS — do not confuse them:
+|
+|   NORMAL DRAIN (this block). Removing a branch code from the allowlist stops
+|   NEW ingestion for that branch. Imports already staged and human-reviewed
+|   keep their existing lifecycle and may still be published — publish runs the
+|   full canonical revalidation (permission, patient, RM-derived branch, date
+|   range, native boundary, state machine) every time. Nothing is deleted and
+|   no queued job is corrupted. This is the routine wave-rollback control.
+|
+|   EMERGENCY STOP. If an incident requires ALL legacy mutations to cease at
+|   once, use the global capability switch (feature flag OFF) — that is the
+|   emergency control, and it withdraws publish too. Draining a branch is NOT
+|   an incident-containment mechanism and must never be used as one.
+|
+| The allowlist is normalized ONCE, here, at config-build time (the ROLL-1
+| capture rule: `env()` is read only while this file is built, so the value
+| survives `config:cache`; nothing reads the environment at runtime).
 */
+
+/*
+| Normalize the declared allowlist into exact, canonical, upper-case branch-code
+| tokens. Splitting happens here and nowhere else, so no service ever re-parses
+| an operator string.
+|
+| Matching is EXACT-TOKEN by construction: `TKM1` admits `TKM1` and nothing
+| else. `TKM` does not admit `TKM1`, and `TKM1-EXTRA` is a different token that
+| admits neither — a substring or prefix must never widen a clinical rollout.
+|
+| An unset or blank declaration yields an EMPTY list, which admits no branch at
+| all. That is the documented fail-closed default: capability without admission
+| migrates nothing.
+*/
+$legacyRmeAdmittedBranchCodes = array_values(array_unique(array_filter(
+    array_map(
+        static fn (string $code): string => strtoupper(trim($code)),
+        preg_split('/[\s,;]+/', (string) env('LEGACY_RME_ADMITTED_BRANCH_CODES', '')) ?: [],
+    ),
+    static fn (string $code): bool => $code !== '',
+)));
 
 return [
 
@@ -212,5 +271,80 @@ return [
         'branch_code' => (string) env('LEGACY_RME_PILOT_BRANCH_CODE', ''),
 
         'forbidden_branch_codes' => ['MAIN'],
+    ],
+
+    /*
+    | LEGACY-RME-PDF-ROLL-3 — BRANCH ADMISSION.
+    |
+    | The server-side answer to "may THIS branch start new migration work?".
+    | Enforced in the ingestion path, not merely reported: see
+    | App\Modules\LegacyRme\Services\LegacyRmeBranchAdmissionService.
+    |
+    | The value checked is ALWAYS the branch DERIVED from the patient's Nomor RM
+    | (FIX-ROLL2-1). A request body, a query string, a session, a BranchContext
+    | selection or an operator's own branch can never influence admission — if
+    | they could, admission would be advisory again, which is the exact defect
+    | ROLL-3 exists to remove.
+    */
+    'admission' => [
+        /*
+        | Enforcement is ON by default and stays on. The switch exists so a
+        | local or CI environment can exercise the pre-ROLL-3 path in a test,
+        | never so a production deployment can opt out of the gate. Turning it
+        | off in a `worker_required_environments` deployment is reported by the
+        | readiness gate as a FAIL, not a warning.
+        */
+        'enforced' => (bool) env('LEGACY_RME_ADMISSION_ENFORCED', true),
+
+        /*
+        | Exact canonical branch-code tokens cleared for new ingestion,
+        | normalized above at config-build time. EMPTY = no branch admitted.
+        */
+        'admitted_branch_codes' => $legacyRmeAdmittedBranchCodes,
+
+        /*
+        | A non-PHI label for the wave these branches belong to (for example
+        | `WAVE-1`). It is recorded in evidence and audit context so an import
+        | can be attributed to the rollout stage that authorized it. Never a
+        | patient identifier.
+        */
+        'wave' => strtoupper(trim((string) env('LEGACY_RME_WAVE', ''))),
+
+        /*
+        | MAIN is an administrative branch, never a clinic that owns RME
+        | history. It can never be admitted, even if it is declared.
+        */
+        'forbidden_branch_codes' => ['MAIN'],
+    ],
+
+    /*
+    | LEGACY-RME-PDF-ROLL-3 — INGESTION CAPACITY (backpressure).
+    |
+    | Multi-branch migration multiplies render load on ONE worker. Without a
+    | ceiling, several branches uploading at once can grow the queue faster
+    | than Poppler can drain it, and a full disk during rasterization is a
+    | far worse failure than a refused upload.
+    |
+    | So admission ALSO closes when the pipeline is saturated. This throttles
+    | NEW ingestion only: work already queued keeps running to completion, and
+    | no in-flight job is ever cancelled to free capacity.
+    |
+    | A threshold of 0 disables that individual probe.
+    */
+    'capacity' => [
+        'enforced' => (bool) env('LEGACY_RME_CAPACITY_ENFORCED', true),
+
+        // Pending jobs on the dedicated render queue before new uploads are
+        // refused. Sized for a single worker draining one document at a time.
+        'max_pending_jobs' => (int) env('LEGACY_RME_MAX_PENDING_JOBS', 25),
+
+        // Age of the OLDEST pending job, in seconds. A queue that is not
+        // draining is a stalled worker, and piling more onto it hides the
+        // stall instead of surfacing it.
+        'max_oldest_pending_seconds' => (int) env('LEGACY_RME_MAX_OLDEST_PENDING_SECONDS', 1800),
+
+        // Free space the private disk must retain. Rendering a large document
+        // can add hundreds of MiB, so ingestion stops well before exhaustion.
+        'min_free_disk_bytes' => (int) env('LEGACY_RME_MIN_FREE_DISK_BYTES', 2147483648), // 2 GiB
     ],
 ];

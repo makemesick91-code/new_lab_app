@@ -594,7 +594,51 @@ function legacyRmeBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'
         'deleted_at' => null,
     ])->save();
 
+    // LEGACY-RME-PDF-ROLL-3 — a fixture branch is also ADMITTED to the running
+    // migration wave, mirroring production, where an operator admits exactly
+    // the branch they are about to migrate.
+    //
+    // Admission enforcement deliberately stays ON for the whole suite: the
+    // alternative (disabling the gate in phpunit.xml) would leave every
+    // ingestion test silently bypassing it, which is how ROLL-2 shipped an
+    // advisory pilot scope in the first place. Tests that need a DENIAL clear
+    // or rewrite the allowlist explicitly via legacyRmeAdmittedBranches().
+    legacyRmeAdmitBranch($code);
+
     return $branch->refresh();
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-3 — add one branch code to the admission allowlist.
+ */
+function legacyRmeAdmitBranch(string $code): void
+{
+    $admitted = (array) config('legacy_rme_rollout.admission.admitted_branch_codes', []);
+    $admitted[] = strtoupper(trim($code));
+
+    config()->set(
+        'legacy_rme_rollout.admission.admitted_branch_codes',
+        array_values(array_unique(array_filter($admitted))),
+    );
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-3 — set the admission allowlist to exactly these codes.
+ *
+ * Pass an empty array to prove the fail-closed default: capability on, no
+ * branch admitted, nothing may be ingested anywhere.
+ *
+ * @param  list<string>  $codes
+ */
+function legacyRmeAdmittedBranches(array $codes): void
+{
+    config()->set(
+        'legacy_rme_rollout.admission.admitted_branch_codes',
+        array_values(array_unique(array_map(
+            static fn (string $code): string => strtoupper(trim($code)),
+            $codes,
+        ))),
+    );
 }
 
 /**

@@ -1,0 +1,108 @@
+---
+description: Legacy RME multi-branch controlled migration — capability vs branch admission, RM-derived branch authority, exact-token allowlist, NORMAL DRAIN vs EMERGENCY STOP, and ingestion backpressure.
+globs:
+  - "config/legacy_rme_rollout.php"
+  - "app/Modules/LegacyRme/**"
+  - "tests/Feature/LegacyRme/**"
+  - "docs/runbooks/legacy-rme-pdf-rollout-runbook.md"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-ROLL-3 — Multi-branch controlled migration
+
+1. **ROLL-3 is controlled multi-branch migration, not global authorization.** A
+   ROLL-3 GO authorizes the named wave and nothing beyond it. It never means
+   "every branch may now migrate".
+
+2. **ROLL-2 is an immutable prerequisite.** `legacy-rme-pdf-roll-2-controlled-pilot-enablement-go`
+   (`3e9a06d9…`) is never reopened, moved or re-cut.
+
+3. **Capability and admission are separate gates, and both must pass.**
+   *Capability* is the feature flag `rme.legacy_pdf_archive`, resolved through
+   `LegacyRmeFeatureGuard`. *Admission* is `legacy_rme_rollout.admission`,
+   resolved through `LegacyRmeBranchAdmissionService`. Capability ON with an
+   empty allowlist migrates nothing.
+
+4. **The RM-derived branch is authoritative.** Admission is always decided on the
+   branch derived from the patient's Nomor RM (`DG-TKM1-2024-9985 → TKM1`), never
+   on a submitted `origin_branch_id`, a query string, a session, a `BranchContext`
+   selection, or the operator's own branch.
+
+5. **Admission cannot be client-overridden.** `decide()` accepts a resolved
+   `LegacyRmeBranchResolution` only. A submitted branch that disagrees with the
+   RM-derived one is rejected before admission is even consulted.
+
+6. **A non-admitted branch fails closed**, and so does an empty allowlist, an
+   unresolvable branch, an unknown/inactive/non-RME branch, and MAIN. There is no
+   "probably fine" path and no fallback.
+
+7. **Matching is exact-token.** The allowlist is normalized once, at config-build
+   time, into canonical upper-case tokens. `TKM` never admits `TKM1`; `TKM1` never
+   admits `TKM1-EXTRA`. Partial, prefix and substring matching are forbidden.
+
+8. **Config capture, never runtime `env()`.** The allowlist is read from the
+   environment only while `config/legacy_rme_rollout.php` is built, so it survives
+   `config:cache` (the ROLL-1 rule). No service in `app/` may call `env()` for it.
+
+9. **Super Admin cannot bypass the domain invariants.** `Gate::before` grants
+   permissions; it does not override the RM-derived branch or branch admission.
+
+10. **Real approved documents only.** Never fabricate a patient, a clinic visit, a
+    native RME, a doctor-patient relationship or a historical PDF to make a
+    rollout pass. A patient with no native RME is a valid migration case; never
+    manufacture native RME to permit an import.
+
+11. **Multi-date rules stay canonical.** `selected_rme_date` is the earliest
+    declared clinical date, `latest_rme_date` the newest, and when a native RME
+    exists the latest must be strictly before the earliest native RME.
+
+12. **Publish revalidates.** Every publish re-checks permission, patient,
+    RM-derived branch, date range, native boundary and state — including a
+    publish that happens after its branch was drained.
+
+13. **Human date verification remains required.** There is no OCR and no automated
+    clinical-date enforcement. Never describe the date as system-verified.
+
+14. **NORMAL DRAIN ≠ EMERGENCY STOP.** Removing a branch from the allowlist stops
+    NEW ingestion (upload and retry re-queue) for that branch while letting
+    already staged, human-reviewed imports finish their lifecycle. To stop
+    everything including publish, switch the CAPABILITY off — that is the
+    emergency control. Draining is never an incident-containment mechanism.
+
+15. **Rollback preserves evidence.** Withdrawing admission or capability never
+    deletes or corrupts a source PDF, a rendered page, a staging row, a published
+    or VOID record, or an audit entry.
+
+16. **Never state-surgery live work.** Queued and processing jobs are never
+    cancelled, advanced, re-prioritised or hand-edited to make a rollout or a
+    rollback look clean.
+
+17. **Backpressure throttles intake only.** Admission also closes on queue depth,
+    a stalled queue, or low disk. It refuses new uploads; it never touches work in
+    flight, and it reopens by itself as the queue drains.
+
+18. **Queue contract unchanged.** Producer `legacy-rme-documents` must equal the
+    approved ENT-5 registry entry and the **installed** worker unit. `failed_jobs = 0`
+    alone is not proof of a healthy pipeline.
+
+19. **Branch visibility never widens clinical scope.** Doctor access stays
+    `DoctorPatientScope`-limited. `origin_branch_id` is a security scope, not a
+    bypass.
+
+20. **Legacy creates no native artefact** — no clinic visit, native medical
+    record, invoice, payment, consent, odontogram, prescription, lab order or
+    SATUSEHAT candidate, and no contribution to visit/revenue KPI.
+
+21. **Published evidence is immutable.** Correction is VOID plus a fresh import,
+    never an in-place edit and never a hard delete.
+
+22. **No automatic or bulk publish.** Every publish is a human decision on a
+    human-reviewed document.
+
+23. **Operations telemetry is PII-free.** Import ids, branch codes, statuses,
+    counts, timings and error codes only — never a patient name, Nomor RM,
+    KTP/NIK, filename or document path.
+
+24. **Default production state is closed.** Capability OFF and no branch admitted,
+    unless the owner explicitly and separately authorizes sustained operation.
+    A GO tag is never authorization to leave the rollout enabled.
