@@ -103,7 +103,13 @@ function lrmeh1Doctor(Patient $patient, bool $treating): User
     $user = User::factory()->create(['branch_id' => $patient->branch_id]);
     $user->assignRole('Doctor');
 
-    $doctor = Doctor::factory()->create(['user_id' => $user->getKey(), 'is_active' => true]);
+    // HISTORY-1B — the doctor master states the practice branch; the doctor's
+    // legacy branch scope now comes from that assignment, not from the user row.
+    $doctor = Doctor::factory()->create([
+        'user_id' => $user->getKey(),
+        'branch_id' => $patient->branch_id,
+        'is_active' => true,
+    ]);
 
     if ($treating) {
         PatientDoctorAssignment::factory()->create([

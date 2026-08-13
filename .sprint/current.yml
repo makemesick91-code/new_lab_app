@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1A
+# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1B
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-HISTORY-1A
+id: LEGACY-RME-PDF-HISTORY-1B
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Published legacy clinical read availability & read/write capability separation — the legacy feature flag governs MIGRATION only, so an already-PUBLISHED archive stays readable to an authorized clinical reader while ingestion is off"
+title: "Doctor clinical branch context & production read UAT — a doctor's legacy branch scope is their canonical assigned practice set (mst_doctor_branches ∩ active RME-enabled), not an ephemeral BranchContext pin, so a treating doctor can read their patient's published archive while the treating-relationship and branch-isolation gates both stay enforced"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # feature-guard semantics, record-controller read gates, history read model
-schema_change: false            # no migration, no table, no column
-frontend_change: false          # Blade comment only; no markup, no JS/CSS, no Vite entry
-security_impact: true           # decides which clinical archive a doctor may read, and which mutations stay blocked
-branch_isolation_impact: true   # legacy branch scope stays the read boundary and is re-asserted by tests
+runtime_change: true            # new doctor branch resolver + legacy branch-scope wiring
+schema_change: false            # no migration; mst_doctor_branches already exists and is populated
+frontend_change: false          # no Blade markup, no JS/CSS, no Vite entry
+security_impact: true           # decides which branches' clinical archive a doctor may read
+branch_isolation_impact: true   # redefines the doctor branch scope; isolation is re-asserted by tests
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
 deploy_required: true           # the read-path change ships to the VPS pilot
-browser_required: false         # verified by feature tests through the real HTTP routes
+browser_required: false         # verified by feature tests through the real HTTP routes, plus production UAT
 
 test_profiles:
   - rme
   - security
 
-go_tag: legacy-rme-pdf-history-1a-published-read-write-capability-separation-go
+go_tag: legacy-rme-pdf-history-1b-doctor-clinical-branch-context-production-read-uat-go

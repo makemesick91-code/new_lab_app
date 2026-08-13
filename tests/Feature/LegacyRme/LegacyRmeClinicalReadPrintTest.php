@@ -115,8 +115,15 @@ function lrme1dTreatingDoctor(?int $branchId, LegacyRmeRecord $record): User
 {
     $user = lrme1dDoctor($branchId);
 
+    // LEGACY-RME-PDF-HISTORY-1B — the doctor MASTER must state where this
+    // doctor practises. The branch this fixture is handed is that branch, so
+    // the practice-branch pivot is seeded from it (DoctorFactory::configure).
+    // Previously only the USER row carried a branch, which made the fixture
+    // depend on BranchContext's session/column fallback rather than on the
+    // doctor's own assignment.
     $doctor = Doctor::factory()->create([
         'user_id' => $user->getKey(),
+        'branch_id' => $branchId,
         'is_active' => true,
     ]);
 
@@ -443,7 +450,14 @@ it('refuses a same-branch doctor who is not treating the patient', function () {
     $record = lrme1dPublishedInBranch($branch);
     $doctor = lrme1dDoctor((int) $branch->getKey());
 
-    Doctor::factory()->create(['user_id' => $doctor->getKey(), 'is_active' => true]);
+    // HISTORY-1B — genuinely SAME-branch: this doctor practises in the branch
+    // that owns the archive, so the row really is inside their scope and the
+    // refusal below can only come from the missing clinical relationship.
+    Doctor::factory()->create([
+        'user_id' => $doctor->getKey(),
+        'branch_id' => $branch->getKey(),
+        'is_active' => true,
+    ]);
 
     expect($doctor->can('view', $record))->toBeFalse()
         ->and($doctor->can('viewFile', $record))->toBeFalse();
@@ -491,7 +505,11 @@ it('accepts a visit with that doctor as the clinical relationship', function () 
     $branch = lrme1dRmeBranch();
     $record = lrme1dPublishedInBranch($branch);
     $user = lrme1dDoctor((int) $branch->getKey());
-    $doctor = Doctor::factory()->create(['user_id' => $user->getKey(), 'is_active' => true]);
+    $doctor = Doctor::factory()->create([
+        'user_id' => $user->getKey(),
+        'branch_id' => $branch->getKey(),
+        'is_active' => true,
+    ]);
 
     expect($user->can('view', $record))->toBeFalse();
 
@@ -539,7 +557,11 @@ it('hides the archive from the patient history of a non-treating doctor', functi
     $service = app(LegacyRmePatientHistoryService::class);
 
     $stranger = lrme1dDoctor((int) $branch->getKey());
-    Doctor::factory()->create(['user_id' => $stranger->getKey(), 'is_active' => true]);
+    Doctor::factory()->create([
+        'user_id' => $stranger->getKey(),
+        'branch_id' => $branch->getKey(),
+        'is_active' => true,
+    ]);
 
     expect($service->publishedRecordsFor($stranger, (int) $record->patient_id))->toBeEmpty();
 
