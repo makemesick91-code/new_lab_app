@@ -98,6 +98,36 @@ final class LegacyRmeAuditEvent
      */
     public const INGESTION_THROTTLED = 'LEGACY_RME_INGESTION_THROTTLED';
 
+    /**
+     * LEGACY-RME-PDF-ROLL-4 — an intake refused by the OPERATIONS layer, after
+     * ROLL-3 had already admitted the branch.
+     *
+     * Distinct from IMPORT_ADMISSION_REJECTED on purpose: there, the rollout
+     * declined the branch. Here the branch is admitted and something
+     * operational refused — the wave is paused, the operator is not assigned,
+     * the daily quota is spent. Those have completely different remedies, and a
+     * shared action would leave an operator unable to tell which one they are
+     * looking at.
+     */
+    public const IMPORT_OPERATIONS_REJECTED = 'LEGACY_RME_IMPORT_OPERATIONS_REJECTED';
+
+    // LEGACY-RME-PDF-ROLL-4 — governance of a migration wave. Every state
+    // change a wave, a branch enrollment or an operator assignment can undergo
+    // leaves one of these behind.
+    public const WAVE_REGISTERED = 'LEGACY_RME_WAVE_REGISTERED';
+
+    public const WAVE_TRANSITIONED = 'LEGACY_RME_WAVE_TRANSITIONED';
+
+    public const WAVE_BRANCH_TRANSITIONED = 'LEGACY_RME_WAVE_BRANCH_TRANSITIONED';
+
+    public const WAVE_BRANCH_COMPLETED = 'LEGACY_RME_WAVE_BRANCH_COMPLETED';
+
+    public const WAVE_OPERATOR_ASSIGNED = 'LEGACY_RME_WAVE_OPERATOR_ASSIGNED';
+
+    public const WAVE_OPERATOR_REVOKED = 'LEGACY_RME_WAVE_OPERATOR_REVOKED';
+
+    public const WAVE_QUOTA_CHANGED = 'LEGACY_RME_WAVE_QUOTA_CHANGED';
+
     /** @var list<string> */
     public const ACTIONS = [
         self::IMPORT_CREATED,
@@ -124,6 +154,14 @@ final class LegacyRmeAuditEvent
         self::IMPORT_BRANCH_REJECTED,
         self::IMPORT_ADMISSION_REJECTED,
         self::INGESTION_THROTTLED,
+        self::IMPORT_OPERATIONS_REJECTED,
+        self::WAVE_REGISTERED,
+        self::WAVE_TRANSITIONED,
+        self::WAVE_BRANCH_TRANSITIONED,
+        self::WAVE_BRANCH_COMPLETED,
+        self::WAVE_OPERATOR_ASSIGNED,
+        self::WAVE_OPERATOR_REVOKED,
+        self::WAVE_QUOTA_CHANGED,
     ];
 
     /**
@@ -183,6 +221,16 @@ final class LegacyRmeAuditEvent
         // infrastructure depth, never anything about a patient or a document.
         'wave',
         'pending_jobs',
+        // LEGACY-RME-PDF-ROLL-4. Still structure only. `operator_user_id` is the
+        // id of the user an assignment covers — the trail already records the
+        // ACTOR separately, and an assignment is meaningless without naming who
+        // it is for. An id, never a name or an email. `daily_quota` is an
+        // operational ceiling; `reason_length` records that a real explanation
+        // was given without copying operator free text (which may name a
+        // patient) into the payload, exactly as 1D does for `void_reason_length`.
+        'operator_user_id',
+        'daily_quota',
+        'reason_length',
     ];
 
     private function __construct() {}

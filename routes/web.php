@@ -59,6 +59,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
+use App\Modules\LegacyRme\Controllers\LegacyRmeMigrationOperationsController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeRecordController;
 use App\Modules\MedicalRecord\Controllers\ClinicalDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\DiagnosisRolloutController;
@@ -272,6 +273,60 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->name('publish')
             ->whereNumber('import')
             ->middleware('permission:publish_legacy_rme_imports');
+    });
+
+    // LEGACY-RME-PDF-ROLL-4 — Operasi Migrasi Arsip RME Lama.
+    //
+    // The control plane for a wave-based migration: register a wave, enroll the
+    // approved branches, assign operators, set quotas, pause/resume/drain, and
+    // sign a branch off against its reconciliation.
+    //
+    // Its own permissions, deliberately separate from the import lifecycle:
+    // running a rollout is a governance duty, not an intake duty, and an owner
+    // who wants oversight should be able to read this without gaining any
+    // ability to upload, review or publish a clinical document.
+    //
+    // The static `waves` segment is declared before the numeric `{wave}` routes
+    // so it is never captured as an id. The controller independently re-checks
+    // the feature flag (404 while the capability is off) and the policy.
+    Route::prefix('rme/migration-operations')->name('rme.migration-operations.')->group(function () {
+        Route::get('/', [LegacyRmeMigrationOperationsController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:view_legacy_rme_migration_operations|manage_legacy_rme_migration_operations');
+
+        Route::post('waves', [LegacyRmeMigrationOperationsController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:manage_legacy_rme_migration_operations');
+
+        Route::get('waves/{wave}', [LegacyRmeMigrationOperationsController::class, 'show'])
+            ->name('show')
+            ->whereNumber('wave')
+            ->middleware('permission:view_legacy_rme_migration_operations|manage_legacy_rme_migration_operations');
+
+        // Approval carries its OWN permission so it can be held by someone who
+        // does not manage the rollout — that separation is what the
+        // approver-is-not-creator rule enforces on top of.
+        Route::post('waves/{wave}/approve', [LegacyRmeMigrationOperationsController::class, 'approve'])
+            ->name('approve')
+            ->whereNumber('wave')
+            ->middleware('permission:approve_legacy_rme_migration_wave');
+
+        Route::middleware('permission:manage_legacy_rme_migration_operations')->group(function () {
+            Route::post('waves/{wave}/activate', [LegacyRmeMigrationOperationsController::class, 'activate'])
+                ->name('activate')->whereNumber('wave');
+
+            Route::post('waves/{wave}/transition', [LegacyRmeMigrationOperationsController::class, 'transition'])
+                ->name('transition')->whereNumber('wave');
+
+            Route::post('waves/{wave}/branches/{branch}', [LegacyRmeMigrationOperationsController::class, 'updateBranch'])
+                ->name('branches.update')->whereNumber('wave')->whereNumber('branch');
+
+            Route::post('waves/{wave}/operators', [LegacyRmeMigrationOperationsController::class, 'assignOperator'])
+                ->name('operators.assign')->whereNumber('wave');
+
+            Route::post('waves/{wave}/operators/{assignment}/revoke', [LegacyRmeMigrationOperationsController::class, 'revokeOperator'])
+                ->name('operators.revoke')->whereNumber('wave')->whereNumber('assignment');
+        });
     });
 
     // Lab Services (TASK-0204)

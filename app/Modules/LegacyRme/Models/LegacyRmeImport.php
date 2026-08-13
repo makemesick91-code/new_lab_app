@@ -62,6 +62,12 @@ class LegacyRmeImport extends Model
         'uuid',
         'patient_id',
         'origin_branch_id',
+        // LEGACY-RME-PDF-ROLL-4 — which migration wave accepted this document.
+        // Operational provenance, NOT an authorization field: unlike
+        // `origin_branch_id`, no policy or repository scope reads it. It exists
+        // so reconciliation can state which documents a wave is answerable for
+        // instead of inferring it from a branch plus a date window.
+        'migration_wave_id',
         'selected_rme_date',
         'latest_rme_date',
         'earliest_native_rme_date_snapshot',

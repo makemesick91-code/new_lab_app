@@ -141,8 +141,10 @@ use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfRasterizerInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Policies\LegacyRmeImportPolicy;
+use App\Modules\LegacyRme\Policies\LegacyRmeMigrationWavePolicy;
 use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
 use App\Modules\LegacyRme\Repositories\LegacyRmeImportRepository;
 use App\Modules\LegacyRme\Repositories\LegacyRmeRecordRepository;
@@ -434,6 +436,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImport::class => LegacyRmeImportPolicy::class,
         LegacyRmeRecord::class => LegacyRmeRecordPolicy::class,
+        // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
+        LegacyRmeMigrationWave::class => LegacyRmeMigrationWavePolicy::class,
     ];
 
     public function register(): void
