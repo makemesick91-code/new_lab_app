@@ -128,7 +128,42 @@ defect, expressed as tests):
 Mutation-side flag-off tests (review/publish, void, admission, upload
 validation, rollout readiness) were left untouched and still pass.
 
-## 8. Scope boundary
+## 8. A pre-existing test flake this sprint surfaced and fixed
+
+The first authoritative CI run went **red** on the NSF-R011 critical gate with two
+`LegacyRmeBranchAdmissionTest` upload failures:
+
+```
+Tanggal RME lama (02-04-2019) tidak boleh mendahului tanggal lahir pasien (09-03-2020).
+Tanggal RME lama (02-04-2019) tidak boleh mendahului tanggal lahir pasien (01-12-2019).
+```
+
+Two different birth dates in one run — a random fixture, not a regression. Root
+cause: `legacyRmeArchivablePatient()` did not pin `date_of_birth`, so
+`PatientFactory` fell back to `fake()->dateTimeBetween('-80 years', '-5 years')`
+(observed range 1946-08-24 … 2021-08-01). About **3.7%** of generated patients
+were therefore born *after* the hardcoded legacy date `2019-04-02`, and the 1A
+rule "patient birth date ≤ legacy date" correctly refused the upload.
+
+With 9 unpinned patients in that one file the failure probability was **~28.5%
+per run** — so the critical gate had been non-deterministic for some time, and
+earlier greens (HISTORY-1's included) were partly luck.
+
+Not caused by this sprint: `LegacyRmeDateRuleService`, `PatientFactory`,
+`tests/Pest.php` and `LegacyRmeBranchAdmissionTest` were all untouched by the
+HISTORY-1A diff. Adding a test file merely shifted faker's sequence enough to
+expose it.
+
+Fixed at the source by pinning the helper default to `1990-01-01` — earlier than
+every legacy date these suites use, and the value the majority of call sites
+already passed explicitly. Callers that care still win: PHP's `+` keeps the left
+operand, so an explicit `date_of_birth` (including an explicit `null`, which
+exercises the "no recorded birth date" path) still overrides it. Re-ran the
+previously flaky file 6/6 clean, and the whole `tests/Feature/LegacyRme` suite
+returned an identical 483 passed / 5 skipped, so nothing depended on the
+randomness.
+
+## 9. Scope boundary
 
 HISTORY-1A authorizes **no** rollout. Production stays:
 

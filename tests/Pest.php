@@ -676,6 +676,22 @@ function legacyRmeAdmittedBranches(array $codes): void
  * `DG-TKM1-2024-9985`), and that is what the legacy archive reads to decide
  * which branch owns the document. A fixture that used the placeholder would be
  * testing a patient shape production does not have.
+ *
+ * LEGACY-RME-PDF-HISTORY-1A — the birth date is PINNED, and that is not
+ * cosmetic. PatientFactory defaults it to
+ * `fake()->dateTimeBetween('-80 years', '-5 years')`, so roughly 3.7% of
+ * generated patients were born AFTER the hardcoded legacy dates these suites
+ * use (most commonly `2019-04-02`). The 1A rule "patient birth date <= legacy
+ * date" then correctly refused the upload and the test failed — with a real
+ * ~28% chance per run in LegacyRmeBranchAdmissionTest alone, which is exactly
+ * how it surfaced: a red NSF-R011 critical gate on a change that touched
+ * neither the date rules nor this fixture.
+ *
+ * 1990-01-01 is early enough for every legacy date in these suites and matches
+ * what the majority of call sites already pass explicitly. A caller that cares
+ * about the birth date still wins: PHP's `+` keeps the LEFT operand, so an
+ * explicit `date_of_birth` (including an explicit `null`, which exercises the
+ * "no recorded birth date" path) overrides this default.
  */
 function legacyRmeArchivablePatient(array $attributes = [], string $branchCode = 'TKM1'): Patient
 {
@@ -687,6 +703,7 @@ function legacyRmeArchivablePatient(array $attributes = [], string $branchCode =
     return Patient::factory()->create($attributes + [
         'branch_id' => $branch->id,
         'medical_record_number' => sprintf('DG-%s-2024-%04d', $branchCode, $sequence),
+        'date_of_birth' => '1990-01-01',
     ]);
 }
 
