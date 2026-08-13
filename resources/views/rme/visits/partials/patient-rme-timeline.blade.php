@@ -37,7 +37,10 @@
                 <tbody class="divide-y divide-hairline">
                     @foreach ($rmeTimeline as $entry)
                         <tr @class(['bg-warning-50/40' => $entry->isLegacy()])>
-                            <td class="px-3 py-2 text-ink">{{ $entry->date?->format('d/m/Y') ?? '—' }}</td>
+                            {{-- LEGACY-RME-PDF-HISTORY-1 — an archive covering
+                                 several clinical dates renders its earliest–latest
+                                 range, so one PDF is never mistaken for one visit. --}}
+                            <td class="px-3 py-2 text-ink">{{ $entry->dateLabel() }}</td>
                             <td class="px-3 py-2">
                                 @if ($entry->isLegacy())
                                     <x-ui.badge tone="warning">ARSIP LAMA</x-ui.badge>

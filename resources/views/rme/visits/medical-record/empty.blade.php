@@ -84,6 +84,13 @@
             @endif
         </x-ui.card>
 
+        {{-- LEGACY-RME-PDF-HISTORY-1 — a patient may already hold a published
+             legacy archive while having no native RM sheet yet. That archive IS
+             the patient's clinical history, so it stays visible here. --}}
+        @include('rme.visits.partials.patient-rme-clinical-history', [
+            'clinicalHistory' => $clinicalHistory ?? collect(),
+        ])
+
         <div>
             <a href="{{ route('rme.visits.show', $sourceVisit ?? $workspaceVisit) }}" class="text-sm text-ink-soft hover:text-ink">&larr; Kembali ke detail kunjungan</a>
         </div>

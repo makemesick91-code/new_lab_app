@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-ROLL-2
+# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-ROLL-2
+id: LEGACY-RME-PDF-HISTORY-1
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Controlled pilot enablement and operational readiness — a read-only, fail-closed gate that decides whether this deployment may switch the legacy RME archive ON, and proves it can be switched back OFF"
+title: "Patient-centric clinical history integration — the RME workspace shows the current RME, the earlier native RME and the PUBLISHED legacy archive as one read-only history, without converting a legacy record into a native one"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new readiness service and artisan gate command
-schema_change: false            # no migration; ROLL-2 adds no table or column
-frontend_change: false          # no Blade, JS, CSS or Vite entry change
-security_impact: true           # governs enablement of a clinical feature and its rollback path
-branch_isolation_impact: false  # the pilot branch is validated, not resolved from a request
+runtime_change: true            # history read model + the RME workspace controller
+schema_change: false            # no migration; every column already existed since 1A
+frontend_change: true           # new read-only Blade partial in the RME workspace
+security_impact: true           # governs which clinical archive a doctor may see
+branch_isolation_impact: true   # legacy branch scope is re-checked on the read path
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the gate must be runnable on the VPS before enablement
-browser_required: false         # console gate; verified by test and by CLI on the host
+deploy_required: true           # the workspace change ships to the VPS pilot
+browser_required: false         # verified by feature tests rendering the workspace
 
 test_profiles:
   - rme
   - security
 
-go_tag: legacy-rme-pdf-roll-2-controlled-pilot-enablement-go
+go_tag: legacy-rme-pdf-history-1-patient-centric-clinical-history-integration-go
