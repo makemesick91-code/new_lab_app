@@ -9,7 +9,6 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeRecordRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
-use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeTimelineEntry;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use App\Modules\Patient\Models\Patient;
@@ -36,16 +35,31 @@ use Illuminate\Support\Facades\Route;
  * document from years ago and must sort where it clinically belongs.
  *
  * ACCESS. Branch scope is resolved server-side from the caller
- * (LegacyRmeWorkspaceScope) and the archive is behind its feature flag; with
- * the flag off or the permission missing the legacy side is simply empty, so
- * the native history renders exactly as it did before this sprint.
+ * (LegacyRmeWorkspaceScope); with the permission missing or the patient outside
+ * the reader's clinical scope the legacy side is simply empty, so the native
+ * history renders exactly as it did before this sprint.
+ *
+ * LEGACY-RME-PDF-HISTORY-1A — NOT GATED ON THE MIGRATION CAPABILITY.
+ *
+ * This projection deliberately does NOT consult LegacyRmeFeatureGuard. That
+ * flag switches legacy MIGRATION (upload, processing, review, publish, void,
+ * branch admission) on and off; it is not a statement about whether evidence
+ * that was already published is part of the patient's history. It is, so a
+ * doctor treating this patient keeps reading it when they come in for a new
+ * visit, with migration switched off and no branch admitted.
+ *
+ * The read boundary is unchanged and complete without the flag: the repository
+ * returns PUBLISHED records only, the caller must hold a read permission from
+ * LegacyRmeRecordPolicy::READ_PERMISSIONS, branch scope is server-resolved, and
+ * a doctor additionally has to have a real clinical relationship with the
+ * patient (DoctorPatientScopeService) — so the archive can never be a wider
+ * door than the patient's native record.
  */
 class LegacyRmePatientHistoryService
 {
     public function __construct(
         private readonly LegacyRmeRecordRepositoryInterface $records,
         private readonly LegacyRmeWorkspaceScope $scope,
-        private readonly LegacyRmeFeatureGuard $feature,
         private readonly DoctorPatientScopeService $doctorScope,
     ) {}
 
@@ -59,7 +73,7 @@ class LegacyRmePatientHistoryService
         // LEGACY-RME-PDF-1D — the intake operator OR a clinical reader (doctor).
         // The permission set is taken from the policy so the timeline and the
         // viewer can never disagree about who may read an archive.
-        if ($user === null || ! $this->feature->enabled() || ! $user->canAny(LegacyRmeRecordPolicy::READ_PERMISSIONS)) {
+        if ($user === null || ! $user->canAny(LegacyRmeRecordPolicy::READ_PERMISSIONS)) {
             return collect();
         }
 

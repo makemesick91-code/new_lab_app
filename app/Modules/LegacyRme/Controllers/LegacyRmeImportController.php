@@ -381,12 +381,19 @@ class LegacyRmeImportController extends Controller
     }
 
     /**
-     * The archive is behind a feature flag that defaults to OFF. While it is
-     * off the capability simply does not exist — a 404, not a 403, so the
-     * disabled surface reveals nothing about itself.
+     * The migration capability is behind a feature flag that defaults to OFF.
+     * While it is off the capability simply does not exist — a 404, not a 403,
+     * so the disabled surface reveals nothing about itself.
+     *
+     * LEGACY-RME-PDF-HISTORY-1A — this whole controller IS the migration
+     * workspace (upload, staging, processing, retry, cancel, review, publish),
+     * so every action here is correctly gated, including the staging reads: a
+     * staged import is work in progress, not published clinical evidence. The
+     * published archive a doctor reads lives in LegacyRmeRecordController and is
+     * deliberately NOT gated on this flag.
      */
     private function assertFeatureEnabled(): void
     {
-        abort_unless($this->feature->enabled(), 404);
+        abort_unless($this->feature->migrationEnabled(), 404);
     }
 }

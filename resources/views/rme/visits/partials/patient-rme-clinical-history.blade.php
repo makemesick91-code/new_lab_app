@@ -15,8 +15,14 @@
     ORDERING is newest first (the doctor reads from the current encounter into
     the past) and is computed server-side from the CLINICAL date, never from
     upload time. The filter below is presentation only: every row was already
-    resolved under the caller's feature flag, permission, branch scope and
-    doctor clinical scope before it reached this template.
+    resolved under the caller's permission, branch scope and doctor clinical
+    scope before it reached this template.
+
+    LEGACY-RME-PDF-HISTORY-1A — a legacy row appears here whenever the record is
+    PUBLISHED and the reader is authorized, INDEPENDENTLY of the legacy
+    migration capability. That flag stops new documents entering the archive; it
+    is not a statement that evidence already published stopped being part of
+    this patient's history.
 
     KTP/NIK never appears here, and no storage path is ever rendered.
 --}}

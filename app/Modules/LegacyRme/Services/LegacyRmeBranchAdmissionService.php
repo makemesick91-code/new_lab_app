@@ -172,7 +172,7 @@ class LegacyRmeBranchAdmissionService
     {
         $wave = $this->wave();
 
-        if (! $this->feature->enabled()) {
+        if (! $this->feature->migrationEnabled()) {
             return LegacyRmeAdmissionDecision::deny(
                 LegacyRmeAdmissionDecision::CODE_FEATURE_DISABLED,
                 'Fitur arsip RME lama belum diaktifkan.',

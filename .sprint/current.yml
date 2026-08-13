@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1
+# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1A
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-HISTORY-1
+id: LEGACY-RME-PDF-HISTORY-1A
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Patient-centric clinical history integration — the RME workspace shows the current RME, the earlier native RME and the PUBLISHED legacy archive as one read-only history, without converting a legacy record into a native one"
+title: "Published legacy clinical read availability & read/write capability separation — the legacy feature flag governs MIGRATION only, so an already-PUBLISHED archive stays readable to an authorized clinical reader while ingestion is off"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # history read model + the RME workspace controller
-schema_change: false            # no migration; every column already existed since 1A
-frontend_change: true           # new read-only Blade partial in the RME workspace
-security_impact: true           # governs which clinical archive a doctor may see
-branch_isolation_impact: true   # legacy branch scope is re-checked on the read path
+runtime_change: true            # feature-guard semantics, record-controller read gates, history read model
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # Blade comment only; no markup, no JS/CSS, no Vite entry
+security_impact: true           # decides which clinical archive a doctor may read, and which mutations stay blocked
+branch_isolation_impact: true   # legacy branch scope stays the read boundary and is re-asserted by tests
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the workspace change ships to the VPS pilot
-browser_required: false         # verified by feature tests rendering the workspace
+deploy_required: true           # the read-path change ships to the VPS pilot
+browser_required: false         # verified by feature tests through the real HTTP routes
 
 test_profiles:
   - rme
   - security
 
-go_tag: legacy-rme-pdf-history-1-patient-centric-clinical-history-integration-go
+go_tag: legacy-rme-pdf-history-1a-published-read-write-capability-separation-go

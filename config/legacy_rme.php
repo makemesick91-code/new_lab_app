@@ -12,8 +12,26 @@ declare(strict_types=1);
 | record produced by the live RME examination workflow.
 |
 | SAFETY INVARIANTS (enforced in code + tests, mirrored in the sprint rules):
-|  - Disabled by default. The runtime switch is the feature flag
-|    `rme.legacy_pdf_archive` (see config/feature_flags.php).
+|  - Legacy MIGRATION is disabled by default. The runtime switch is the feature
+|    flag `rme.legacy_pdf_archive` (see config/feature_flags.php).
+|  - LEGACY-RME-PDF-HISTORY-1A — that flag governs MIGRATION / INGESTION /
+|    WRITE ONLY (upload, processing, retry, review, publish, void, branch
+|    admission). It is an emergency stop for legacy MUTATIONS; it is NOT a
+|    switch that hides already-PUBLISHED clinical evidence. With migration OFF
+|    and no branch admitted, an already-published archive REMAINS READABLE to a
+|    properly authorized clinical reader, because that evidence is the patient's
+|    real medical history and the treating doctor needs it at the next visit.
+|  - Published clinical read is therefore governed by the record's own state
+|    (PUBLISHED, never staged/failed/cancelled/VOID) plus canonical
+|    authorization — read permission, server-resolved branch scope, and for a
+|    doctor the DoctorPatientScopeService treating relationship — and by the
+|    private disk reachable only through policy-gated stream actions. Read
+|    availability is NEVER public availability.
+|  - Containing a READ incident uses the mechanisms that exist: revoke
+|    `view_legacy_rme_archive` / `view_legacy_rme_imports`, and/or VOID the
+|    record (its bytes stop streaming immediately, the row stays auditable).
+|    There is no separate read kill switch and one must not be invented as a
+|    side effect of the migration flag.
 |  - A legacy RME never creates a clinic visit, invoice, payment, consent,
 |    odontogram, lab candidate/order, or a SATUSEHAT submission, and never
 |    contributes to visit/revenue KPI.
