@@ -228,10 +228,18 @@ class RoleSeeder extends Seeder
             // blocked; the missing-diagnosis issue stays open for review.
             'override_diagnosis_requirement',
             // LEGACY-RME-PDF-1D — a doctor may READ a patient's published
-            // historical archive while treating them, scoped to their own
-            // branch. Read only: this grants no upload, review, publish or
-            // void, and it is not a governance permission, so it never widens
-            // the doctor beyond their own BranchContext branch.
+            // historical archive while treating them, scoped to the branches
+            // they practise in. Read only: this grants no upload, review,
+            // publish or void, and it is not a governance permission.
+            //
+            // LEGACY-RME-PDF-HISTORY-1B — that branch scope is the doctor's
+            // assigned practice set (mst_doctor_branches ∩ active RME-enabled
+            // branches), not a single BranchContext branch: doctors are
+            // multi-branch, and resolving them through the operator's current
+            // working branch both denied real reads (no online session falls
+            // back to MAIN) and ignored their other practice branches. The
+            // treating-relationship gate still applies on top, so this is never
+            // wider than the patient's native record.
             'view_legacy_rme_archive',
         ],
         // Sprint 22 Phase 22.1 — Pilot clinic roles (least-privilege hardening)

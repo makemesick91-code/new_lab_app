@@ -130,7 +130,14 @@ function h1aDoctor(Patient $patient, bool $treating): User
     $user->assignRole('Doctor');
     $user->givePermissionTo('view_legacy_rme_archive');
 
-    $doctor = Doctor::factory()->create(['user_id' => $user->getKey(), 'is_active' => true]);
+    // HISTORY-1B — the doctor's legacy branch scope is their assigned practice
+    // set, so the master (not just the user row) has to name the patient's
+    // branch for this fixture to describe a doctor who really works there.
+    $doctor = Doctor::factory()->create([
+        'user_id' => $user->getKey(),
+        'branch_id' => $patient->branch_id,
+        'is_active' => true,
+    ]);
 
     if ($treating) {
         PatientDoctorAssignment::factory()->create([

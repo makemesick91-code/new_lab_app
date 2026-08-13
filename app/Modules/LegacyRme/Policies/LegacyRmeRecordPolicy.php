@@ -34,8 +34,11 @@ class LegacyRmeRecordPolicy
      * implies review/publish/void, which keep their own named permissions.
      *
      * Branch scope still decides WHICH records: only the intake permissions are
-     * governance-tier in LegacyRmeWorkspaceScope, so a clinical reader stays
-     * pinned to their own branch.
+     * governance-tier in LegacyRmeWorkspaceScope, so a clinical reader never
+     * sees the whole RME branch set. For a doctor that scope is their assigned
+     * practice branches (LEGACY-RME-PDF-HISTORY-1B) — doctors are multi-branch,
+     * so pinning them to one operator-style working branch was both too narrow
+     * and, with no online session, resolved to MAIN and denied everything.
      *
      * @var list<string>
      */

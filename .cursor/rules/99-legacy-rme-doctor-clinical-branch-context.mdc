@@ -1,0 +1,91 @@
+---
+description: LEGACY-RME-PDF-HISTORY-1B — the doctor's canonical clinical branch context for reading a published legacy archive
+globs:
+  - "app/Modules/Doctor/**"
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/Branch/Services/BranchContext.php"
+  - "app/Modules/RME/Services/DoctorPatientScopeService.php"
+  - "tests/Feature/LegacyRme/**"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-HISTORY-1B — Doctor clinical branch context (permanent rules)
+
+1. A doctor reads a published legacy archive only when **BOTH** gates pass:
+   a canonical treating relationship (`DoctorPatientScopeService`) **AND** a
+   valid clinical **branch** context. Neither gate alone ever authorizes.
+
+2. **Same branch is never authorization.** A doctor who practises in the branch
+   that owns the archive but has no treating relationship with the patient is
+   refused (403 — in scope, not authorized).
+
+3. **A treating relationship never bypasses branch isolation.** A doctor who
+   treats the patient but does not practise in the archive's origin branch is
+   refused (404 — outside scope, which is also the anti-enumeration boundary).
+
+4. The canonical clinical branch context of a doctor is **server-derived** as:
+
+   ```
+   mst_doctor_branches (Cabang Praktik yang Diizinkan)
+       ∩ active, RME-enabled branches
+   ```
+
+   resolved by `App\Modules\Doctor\Services\DoctorClinicalBranchResolver`. That
+   pivot is the system's own source of truth — `startDoctorSession` refuses any
+   branch outside it — so nothing else may redefine it.
+
+5. **Doctors are multi-branch.** Never model a doctor's clinical authority as a
+   single `users.branch_id`, a single `BranchContext` branch, or the branch of
+   the current visit. Production doctors carry `users.branch_id = NULL`.
+
+6. `BranchContext::forUser()` answers "which branch is this operator working in
+   right now?" and falls back to MAIN. It is correct for operators and **wrong
+   for deciding a doctor's clinical read scope**: with no online session it
+   resolves to a branch the doctor has no relationship with, and MAIN is never
+   RME-enabled, so a genuinely entitled doctor was denied.
+
+7. **Fail closed, never fall back.** No doctor master link, an inactive doctor
+   master, no practice branch, or an empty intersection ⇒ **empty scope ⇒ deny
+   everything**. Never fall back to all branches, the patient's branch, the
+   first active branch, or MAIN.
+
+8. A branch that is deactivated or has RME switched off **drops out** of the
+   set even while the assignment row survives.
+
+9. **The online context never widens the set.** A surviving
+   `trx_user_online_contexts` row pointing at a branch that is no longer in the
+   doctor's practice set grants nothing: revoking a practice branch revokes the
+   reads with it.
+
+10. `origin_branch_id` remains provenance **and** a visibility scope; it is
+    never an authorization bypass, and branch ids are never read from the
+    request.
+
+11. A doctor's legacy reach must stay **strictly narrower** than their native
+    reach. Native access is the clinical relationship across the RME branch
+    set; legacy additionally requires the origin branch to be one they practise
+    in. Any future change that inverts this is a regression.
+
+12. Legacy clinical read stays **read-only**: it never creates a ClinicVisit,
+    MedicalRecord, invoice, payment, consent, odontogram, LabOrder,
+    LabCaseCandidate or SATUSEHAT candidate, and never converts legacy to
+    native.
+
+13. HISTORY-1B changes **read scope only**. With the migration capability OFF
+    every mutation path (upload, processing/retry, review, publish, void,
+    branch admission) stays blocked, and branch admission stays a separate
+    concern from a doctor's clinical branch context.
+
+14. A doctor's practice-branch assignment is **operational configuration**, not
+    a code constant: it is maintained through the doctor master (Master Data →
+    Dokter, `DoctorRepository` syncing `mst_doctor_branches`). Never hardcode
+    doctor ids, patient ids or branch ids into authorization.
+
+15. Test fixtures must state the practice branch on the **doctor master**
+    (`Doctor::factory()->withAllowedBranches([...])` or `branch_id`), not only
+    on the user row. A fixture that sets `users.branch_id` alone no longer
+    describes a doctor who works there.
+
+16. Real production Doctor UAT (treating doctor reads their patient's published
+    archive, plus a same-branch non-treating negative) is required before a
+    HISTORY-1B-class GO. Automated tests alone are not sufficient evidence.
