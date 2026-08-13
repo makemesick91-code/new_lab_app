@@ -314,3 +314,117 @@ branch admission, or `DoctorPatientScope`.
 The final production state after the controlled wave is **capability OFF with no
 branch admitted**, unless the owner separately and explicitly authorizes
 sustained operation.
+
+---
+
+## 15. Wave-1 production evidence (2026-08-13)
+
+Executed on the VPS pilot (`srv1730088`) against **real, owner-approved** patients
+and documents. No data was fabricated, substituted or manufactured at any point.
+
+**Approval:** `ROLL-3-WAVE-1-OWNER-APPROVAL-2026-08-13` — owner approval given in
+session, scope `ATG3,LDK2,SUN4`. Explicitly does **not** authorize other branches,
+global rollout, permanent feature ON, or bulk unattended migration.
+
+### Cases
+
+| Branch | Canonical RM | Patient id | Pages | Earliest | Latest | Reference mode |
+|---|---|---|---|---|---|---|
+| ATG3 | `DG-ATG3-2024-329` | 38 | 1 | 2024-07-19 | 2026-05-21 | `NO_NATIVE_REFERENCE` |
+| LDK2 | `DG-LDK2-2024-2242` | 37 | 1 | 2024-01-31 | 2024-12-19 | `NO_NATIVE_REFERENCE` |
+| SUN4 | `DG-SUN4-2026-564` | 39 | 3 | 2026-08-11 | 2026-08-11 | `NO_NATIVE_REFERENCE` |
+
+All three RM-derived branches matched the approved wave. Dates were declared by
+the owner from the documents — there is still no OCR and no automated
+clinical-date verification. The SUN4 sheet is one day older than "today" and was
+flagged as such; the owner confirmed it deliberately.
+
+Every case is a patient with **no native RME**, which is a valid migration case.
+No native RME was manufactured to create a bound.
+
+### Enablement and negative proof
+
+With capability ON and the wave admitted, `--expect=on --strict` returned **GO,
+exit 0** (`effective_state`, `queue_contract`, `branch_admission`,
+`ingestion_capacity`, `pilot_scope_approved` all GO), admitted set **equal to**
+approved scope, 0 unapproved.
+
+`DG-TKM1-2024-9985` → `BRANCH_NOT_ADMITTED`, **refused**. TKM1 is a real
+RME-enabled branch holding a valid ROLL-2 approval; it was refused purely because
+it was not in this wave. Admission does real work.
+
+### Capacity measured
+
+| Branch | Bytes | Pages | Upload → READY_FOR_REVIEW |
+|---|---|---|---|
+| ATG3 | 414 KB | 1 | 4 s |
+| LDK2 | 589 KB | 1 | 2 s |
+| SUN4 | 223 KB | 3 | 2 s |
+
+Queue depth stayed 0, failed jobs 0, free disk 88.6 GB. This is a **3-document
+observation**, not a throughput benchmark; no imports/hour figure is claimed.
+
+### Cross-branch isolation
+
+Real production user #7 (`Admin Klinik`, branch-scoped to LDK2) resolves to a
+1-branch scope and sees imports from **LDK2 only** — not ATG3, not SUN4. The
+governance tier (review/publish/void) legitimately spans every RME branch by
+design; that is documented, not incidental.
+
+### Native domain — zero side effects
+
+| | Before | After |
+|---|---|---|
+| clinic visits | 26 | 26 |
+| native medical records | 26 | 26 |
+| RME invoices | 19 | 19 |
+| RME payments | 27 | 27 |
+
+Rows created on the wave day: lab orders 0, SATUSEHAT candidates 0, visits 0,
+native MRs 0.
+
+### Rollback drill — NORMAL DRAIN
+
+SUN4 was removed from the admitted set (and from the approved scope with it):
+
+- new ingestion for SUN4 → `BRANCH_NOT_ADMITTED`, refused
+- ATG3 and LDK2 → still `ADMITTED`, unaffected
+- SUN4's published record → still `PUBLISHED` and readable
+- evidence intact: **5/5 page images, 5/5 thumbnails, 3/3 source PDFs**
+
+### Final state
+
+Capability `OFF`, admitted set empty, approved scope empty, approval reference
+cleared. `--expect=off --strict` → **exit 0**. Server-side gate refuses with
+"Fitur arsip RME lama belum diaktifkan." and all three wave patients resolve to
+`FEATURE_DISABLED` — a real gate, not a guest redirect.
+
+Evidence with the feature OFF: 5 published/void records, **7/7 page images,
+5/5 source PDFs**, statuses `PUBLISHED:4, VOID:1` (4 published = 3 Wave-1 + 1
+from ROLL-2; the VOID is ROLL-2's). No 500s on any surface, 0 log errors, no
+failed jobs, worker active.
+
+## 16. Findings recorded during the wave
+
+1. **Wave approval drift (fixed, PR #283).** At the checkpoint, production carried
+   ROLL-2's `TKM1` approval while Wave-1 was about to admit three other branches,
+   and the gate would still have said GO. Fixed by requiring a wave approval bound
+   to its scope. See §"The wave's own approval".
+
+2. **Published-record immutability rests on three layers, not on the policy for
+   Super Admin.** `LegacyRmeRecordPolicy::update()/delete()` return `false`, but
+   `Gate::before` grants Super Admin every ability before any policy runs, so a
+   `Gate::allows` probe reports ALLOWED. In practice immutability holds because
+   (a) the policy denies everyone else, (b) **no update/delete/republish route
+   exists** — the only non-GET route on a published record is `void`, and (c)
+   `trx_rme_legacy_records` has no `deleted_at` column. Pre-existing 1A/1C
+   behaviour, unreachable in practice; recorded rather than silently accepted.
+
+3. **After a squash merge, never continue on the same branch.** PR #282 was
+   reported `CONFLICTING` because #281 had been squash-merged while the branch
+   still carried its pre-merge commit — and GitHub therefore ran **no CI at all**,
+   silently. Re-branch from the merged base (PR #283 did).
+
+4. **ROLL-1 capture outranks `default`.** A simulation that overrides a flag's
+   `default` has no effect on a `config:cache`d deployment, because the captured
+   `env_value` wins. Override `env_value` when simulating.
