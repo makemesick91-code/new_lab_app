@@ -620,6 +620,31 @@ function legacyRmeAdmitBranch(string $code): void
         'legacy_rme_rollout.admission.admitted_branch_codes',
         array_values(array_unique(array_filter($admitted))),
     );
+
+    // ROLL-3 corrective: an admitted set is only authorized when the wave
+    // carries its own approval covering it, so a fixture that admits a branch
+    // approves it too. Denial tests override this explicitly.
+    legacyRmeApproveWave(
+        (string) (config('legacy_rme_rollout.admission.approval_reference') ?: 'TEST-WAVE-APPROVAL'),
+        (array) config('legacy_rme_rollout.admission.admitted_branch_codes', []),
+    );
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-3 — record the current wave's approval.
+ *
+ * @param  list<string>  $codes  the exact branch set the approval covers
+ */
+function legacyRmeApproveWave(string $reference, array $codes): void
+{
+    config()->set('legacy_rme_rollout.admission.approval_reference', $reference);
+    config()->set(
+        'legacy_rme_rollout.admission.approved_branch_codes',
+        array_values(array_unique(array_map(
+            static fn (string $code): string => strtoupper(trim($code)),
+            $codes,
+        ))),
+    );
 }
 
 /**

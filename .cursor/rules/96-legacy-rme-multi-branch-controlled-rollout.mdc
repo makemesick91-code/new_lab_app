@@ -36,6 +36,25 @@ alwaysApply: false
    unresolvable branch, an unknown/inactive/non-RME branch, and MAIN. There is no
    "probably fine" path and no fallback.
 
+6a. **A non-empty admitted set MUST carry its own current wave approval, bound to
+    its scope.** Two things are required together: a non-blank
+    `admission.approval_reference`, and an `admission.approved_branch_codes` set
+    that contains **every** admitted branch. Missing, blank or whitespace-only
+    reference → refused at runtime (`WAVE_NOT_APPROVED`) and FAIL in the
+    readiness gate. Widening the admitted set without widening the approval →
+    the new branch fails closed while the approved ones keep working. Being on
+    the allowlist proves someone edited config; it never proves an owner
+    authorized the branch.
+
+6b. **ROLL-2's `pilot_scope` is immutable historical evidence and authorizes
+    nothing in ROLL-3.** It records a single-branch pilot; a multi-branch wave
+    cannot be described by it. The admission gate never consults it, so the
+    historical TKM1 approval can never stretch to cover a later wave — and
+    pasting that reference into a wave approval still fails unless its approved
+    scope actually contains the admitted branches. This defect was found at the
+    Wave-1 checkpoint: three branches were about to be admitted while the only
+    approval on record named TKM1, and the gate still reported GO.
+
 7. **Matching is exact-token.** The allowlist is normalized once, at config-build
    time, into canonical upper-case tokens. `TKM` never admits `TKM1`; `TKM1` never
    admits `TKM1-EXTRA`. Partial, prefix and substring matching are forbidden.

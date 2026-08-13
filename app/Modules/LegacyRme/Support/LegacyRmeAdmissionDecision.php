@@ -38,6 +38,16 @@ final class LegacyRmeAdmissionDecision
     public const CODE_BRANCH_FORBIDDEN = 'BRANCH_FORBIDDEN';
 
     /**
+     * The branch is on the allowlist, but the current wave carries no approval
+     * record covering it — either no reference at all, or a reference whose
+     * approved scope does not include this branch.
+     *
+     * An unrecorded approval is not an approval, and an approval granted for a
+     * different set of branches does not stretch to cover a wider one.
+     */
+    public const CODE_WAVE_NOT_APPROVED = 'WAVE_NOT_APPROVED';
+
+    /**
      * The branch could not be derived from the patient's Nomor RM, so there is
      * nothing to admit. The underlying reason is carried by the branch
      * resolution itself; admission simply refuses to guess.
@@ -51,6 +61,7 @@ final class LegacyRmeAdmissionDecision
         self::CODE_NO_BRANCH_ADMITTED,
         self::CODE_BRANCH_NOT_ADMITTED,
         self::CODE_BRANCH_FORBIDDEN,
+        self::CODE_WAVE_NOT_APPROVED,
         self::CODE_BRANCH_UNRESOLVED,
     ];
 
