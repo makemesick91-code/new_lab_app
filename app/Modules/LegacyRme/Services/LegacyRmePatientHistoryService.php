@@ -108,31 +108,48 @@ class LegacyRmePatientHistoryService
             return collect();
         }
 
-        $entries = collect();
-
-        foreach ($nativeVisits as $visit) {
-            $entries->push(LegacyRmeTimelineEntry::native(
-                $visit->visit_date,
-                'RME DaengtisiaMS',
-                is_string($visit->visit_number) ? $visit->visit_number : null,
-                $visit->doctor?->name,
-                $this->nativeUrl($visit),
-                (int) $visit->getKey(),
-            ));
-        }
-
-        foreach ($legacyRecords as $record) {
-            $entries->push(LegacyRmeTimelineEntry::legacy(
-                $record->rme_date,
-                'RME Lama (Arsip)',
-                $this->legacyDetail($record),
-                $this->legacyUrl($record),
-                (int) $record->getKey(),
-            ));
-        }
-
-        return $entries
+        return $this->mergeEntries($nativeVisits, $legacyRecords, null)
             ->sortBy(fn (LegacyRmeTimelineEntry $entry): string => $entry->sortKey())
+            ->values();
+    }
+
+    /**
+     * LEGACY-RME-PDF-HISTORY-1 — the patient-centric clinical history the
+     * doctor reads while working inside the RME workspace.
+     *
+     * Same merge and the same authorization as `timelineFor`, with three
+     * differences that belong to the workspace rather than the visit page:
+     *
+     *  - NEWEST FIRST. A doctor opening a new visit reads downward from the
+     *    current encounter into the past; the visit page's ascending card keeps
+     *    its own contract untouched.
+     *  - The current visit is MARKED, so the entry the doctor is standing in is
+     *    never mistaken for one more history row.
+     *  - It is returned even when the patient has NO legacy archive, because
+     *    the workspace has no other native-history surface of its own (the
+     *    visit page does, which is why the ascending card stays legacy-gated).
+     *
+     * Still a read: nothing here converts a legacy record into a ClinicVisit or
+     * a MedicalRecord, and nothing writes.
+     *
+     * @param  iterable<int, ClinicVisit>  $nativeVisits
+     * @return Collection<int, LegacyRmeTimelineEntry>
+     */
+    public function patientClinicalHistoryFor(
+        ?User $user,
+        int $patientId,
+        iterable $nativeVisits,
+        ?int $currentVisitId = null,
+    ): Collection {
+        return $this->mergeEntries(
+            $nativeVisits,
+            $this->publishedRecordsFor($user, $patientId),
+            $currentVisitId,
+        )
+            // sortKey() is a strict total order (clinical date, then kind, then
+            // source id), so reversing it stays fully deterministic — a same-day
+            // collision can never fall back to the database's row order.
+            ->sortByDesc(fn (LegacyRmeTimelineEntry $entry): string => $entry->sortKey())
             ->values();
     }
 
@@ -144,6 +161,51 @@ class LegacyRmePatientHistoryService
     public function hasLegacyHistory(?User $user, int $patientId): bool
     {
         return $this->publishedRecordsFor($user, $patientId)->isNotEmpty();
+    }
+
+    /**
+     * The one place native visits and legacy records become timeline entries,
+     * so the visit page and the RME workspace can never drift into describing
+     * the same history differently.
+     *
+     * @param  iterable<int, ClinicVisit>  $nativeVisits
+     * @param  Collection<int, LegacyRmeRecord>  $legacyRecords
+     * @return Collection<int, LegacyRmeTimelineEntry>
+     */
+    private function mergeEntries(
+        iterable $nativeVisits,
+        Collection $legacyRecords,
+        ?int $currentVisitId,
+    ): Collection {
+        $entries = collect();
+
+        foreach ($nativeVisits as $visit) {
+            $entries->push(LegacyRmeTimelineEntry::native(
+                $visit->visit_date,
+                'RME DaengtisiaMS',
+                is_string($visit->visit_number) ? $visit->visit_number : null,
+                $visit->doctor?->name,
+                $this->nativeUrl($visit),
+                (int) $visit->getKey(),
+                $currentVisitId !== null && (int) $visit->getKey() === $currentVisitId,
+            ));
+        }
+
+        foreach ($legacyRecords as $record) {
+            $entries->push(LegacyRmeTimelineEntry::legacy(
+                $record->rme_date,
+                'RME Lama (Arsip)',
+                $this->legacyDetail($record),
+                $this->legacyUrl($record),
+                (int) $record->getKey(),
+                // A single archive may cover several clinical dates: the
+                // representative date is the earliest, `latest_rme_date` the
+                // last. Both travel so the row can show a truthful range.
+                $record->latest_rme_date,
+            ));
+        }
+
+        return $entries;
     }
 
     private function legacyDetail(LegacyRmeRecord $record): string

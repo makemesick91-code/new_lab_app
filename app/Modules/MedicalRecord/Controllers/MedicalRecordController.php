@@ -4,6 +4,8 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -28,6 +30,13 @@ class MedicalRecordController extends Controller
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly MedicalRecordHandwritingRepositoryInterface $handwritings,
         private readonly DiagnosisRolloutService $diagnosisRollout,
+        // LEGACY-RME-PDF-HISTORY-1 — the patient's clinical history inside the
+        // RME workspace. `$visits` supplies the canonical native side (the same
+        // RME-branch-scoped definition the visit page uses, eager-loaded so the
+        // list costs no per-row query); `$legacyHistory` folds in the published
+        // archive under its own flag, permission, branch and doctor scope.
+        private readonly ClinicVisitService $visits,
+        private readonly LegacyRmePatientHistoryService $legacyHistory,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -82,6 +91,22 @@ class MedicalRecordController extends Controller
         // The visit the doctor opened the workspace from (IDOR-validated).
         $sourceVisit = $workspace->resolveSourceVisit($patientId, $request->integer('source_visit_id') ?: null);
 
+        // LEGACY-RME-PDF-HISTORY-1 — one patient-centric clinical history for
+        // this workspace: the patient's native RME visits with their PUBLISHED
+        // legacy archive folded in, newest first, current encounter marked.
+        //
+        // The patient is the one already resolved from the authorized visit —
+        // never a request parameter — and the legacy side re-checks its own
+        // feature flag, permission, branch scope and doctor clinical scope, so
+        // an operator who may not read the archive simply gets the native
+        // history. Read-only: no visit and no medical record is created here.
+        $clinicalHistory = $this->legacyHistory->patientClinicalHistoryFor(
+            $request->user(),
+            $patientId,
+            $this->visits->patientVisitHistory($patientId),
+            (int) ($sourceVisit?->getKey() ?? $workspaceVisit->getKey()),
+        );
+
         // Sprint 64.0 zero-MR fix — the patient has visits but no RM sheet yet.
         // Render a safe empty-state workspace shell (no $medicalRecord) instead
         // of 404ing, with an opt-in "Buat Lembar RM Pertama" control for users
@@ -99,6 +124,10 @@ class MedicalRecordController extends Controller
                 'addSheetVisit' => $addSheetVisit,
                 'patient' => $addSheetVisit->patient,
                 'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $workspaceVisit]) ?? false,
+                // A patient may hold a published legacy archive while having no
+                // native RM sheet yet — the archive is exactly the history the
+                // doctor needs here, so the empty state still shows it.
+                'clinicalHistory' => $clinicalHistory,
             ]);
         }
 
@@ -199,6 +228,9 @@ class MedicalRecordController extends Controller
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),
+            // LEGACY-RME-PDF-HISTORY-1 — native RME history + published legacy
+            // archive as one read-only patient-centric history.
+            'clinicalHistory' => $clinicalHistory,
         ]);
     }
 

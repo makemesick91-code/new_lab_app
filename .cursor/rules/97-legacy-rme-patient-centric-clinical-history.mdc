@@ -1,0 +1,72 @@
+---
+description: LEGACY-RME-PDF-HISTORY-1 — patient-centric clinical history (native RME + published legacy archive)
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/MedicalRecord/Controllers/MedicalRecordController.php"
+  - "resources/views/rme/visits/partials/patient-rme-*.blade.php"
+  - "resources/views/rme/visits/medical-record/**"
+  - "tests/Feature/LegacyRme/**"
+alwaysApply: false
+---
+
+# LEGACY-RME-PDF-HISTORY-1 — patient-centric clinical history (permanent rules)
+
+Extends rule 90 (legacy archive) and rules 93–96 (VOID, rollout, eligibility,
+multi-branch). Nothing here relaxes any of them.
+
+1. A legacy RME record is a **historical clinical archive**, never a native RME.
+2. A **PUBLISHED** legacy record may appear in the patient-centric clinical
+   history of an **authorized** reader.
+3. A legacy record must never produce a `ClinicVisit`, a native `MedicalRecord`,
+   handwriting, an odontogram, an invoice, a payment, a consent, a prescription,
+   a treatment transaction, a `LabOrder`, a `LabCaseCandidate`, or a SATUSEHAT
+   candidate/submission. Reading history is a **read**: it writes nothing.
+4. Native and legacy history may be unified on the **read/UI** layer only. The
+   persistence and domain models stay separate, and the two are always visually
+   distinguishable (`RME SISTEM` vs `ARSIP RME LAMA`).
+5. Doctor visibility of a legacy archive is decided by the canonical
+   `DoctorPatientScopeService`. **Same branch is not enough** — a real clinical
+   relationship (active patient-doctor assignment, or a visit with that doctor)
+   is required.
+6. A legacy archive must **never widen** a doctor's clinical visibility beyond
+   their native record access. The history listing and the viewer/print/export
+   share one permission set and one clinical scope, so neither can become the
+   wider door.
+7. Direct legacy viewer / page / source / print / export URLs are authorized
+   **server-side** on every request. A hidden button is never the boundary.
+8. Non-PUBLISHED legacy states (uploaded, processing, ready-for-review,
+   reviewed, failed, cancelled) never appear as clinical history.
+9. **VOID** evidence is preserved and auditable but is not active clinical
+   history, and it stops streaming its bytes.
+10. A multi-date archive keeps `rme_date` (earliest, representative) and
+    `latest_rme_date` (latest) and renders an earliest–latest **range**. A latest
+    date equal to or before the earliest one is not a range — never render a
+    backwards or misleading span. Dates stay human-confirmed; OCR is never the
+    clinical-date authority.
+11. **Branch admission governs INGESTION, not reading.** An archive already
+    published stays readable to an authorized reader after a migration wave
+    closes and the admitted branch set is emptied.
+12. The **feature flag `rme.legacy_pdf_archive` is the master switch for the
+    whole capability**, read included. While it is off, every legacy route
+    answers 404 and the history renders nothing. Disabling **hides**, it never
+    erases: the rows, the files and the pages stay exactly as they are. Do not
+    change this semantic without an explicit owner decision.
+13. Legacy clinical history is **read-only**. No edit, convert, overwrite,
+    delete, "generate native RME", auto-publish, billing, lab or SATUSEHAT
+    action exists on it. A correction is VOID plus a fresh import.
+14. History ordering is deterministic and by the **clinical** date, never upload
+    or creation time, with a stable tie-break (date → kind → source id). The RME
+    workspace reads newest-first and marks the current encounter; the visit
+    detail page keeps its ascending, legacy-gated card. Both projections come
+    from **one** merge in `LegacyRmePatientHistoryService` — never a second,
+    divergent definition of the patient's history.
+15. The patient is always resolved from the already-authorized visit/workspace.
+    Never trust `patient_id`, `branch_id` or `legacy_record_id` from the request
+    as an authorization authority.
+16. Private legacy storage stays private: no public disk, no storage symlink, no
+    unguarded URL, no signed link that bypasses the policy.
+17. Full KTP/NIK, storage paths and file checksums are never rendered in the
+    patient history or its viewer.
+18. HISTORY-1 grants **no** rollout, migration-wave or branch-admission
+    approval. Production stays `FEATURE_RME_LEGACY_PDF_ARCHIVE=false` with an
+    empty admitted set until an explicit owner decision says otherwise.

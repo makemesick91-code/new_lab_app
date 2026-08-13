@@ -31,16 +31,34 @@ final class LegacyRmeTimelineEntry
         public readonly ?string $detail,
         public readonly ?string $url,
         public readonly int $sourceId,
+        public readonly ?CarbonInterface $endDate = null,
+        public readonly bool $isCurrent = false,
     ) {}
 
+    /**
+     * LEGACY-RME-PDF-HISTORY-1 — `$endDate` is the archive's LATEST clinical
+     * date (`latest_rme_date`). One legacy PDF may cover several encounters, so
+     * rendering only the representative (earliest) date would claim the
+     * document is a single visit.
+     */
     public static function legacy(
         ?CarbonInterface $date,
         string $label,
         ?string $detail,
         ?string $url,
         int $sourceId,
+        ?CarbonInterface $endDate = null,
     ): self {
-        return new self(self::KIND_LEGACY, $date, $label, null, $detail, $url, $sourceId);
+        return new self(
+            self::KIND_LEGACY,
+            $date,
+            $label,
+            null,
+            $detail,
+            $url,
+            $sourceId,
+            self::normalizeEndDate($date, $endDate),
+        );
     }
 
     public static function native(
@@ -50,13 +68,69 @@ final class LegacyRmeTimelineEntry
         ?string $detail,
         ?string $url,
         int $sourceId,
+        bool $isCurrent = false,
     ): self {
-        return new self(self::KIND_NATIVE, $date, $label, $reference, $detail, $url, $sourceId);
+        return new self(
+            self::KIND_NATIVE,
+            $date,
+            $label,
+            $reference,
+            $detail,
+            $url,
+            $sourceId,
+            null,
+            $isCurrent,
+        );
     }
 
     public function isLegacy(): bool
     {
         return $this->kind === self::KIND_LEGACY;
+    }
+
+    /**
+     * Whether this entry spans several clinical dates rather than one.
+     */
+    public function hasDateRange(): bool
+    {
+        return $this->endDate !== null;
+    }
+
+    /**
+     * The entry's clinical date for display: a single date, or the archive's
+     * earliest–latest range when the document covers several encounters.
+     *
+     * Uses the same `d/m/Y` presentation as the rest of the RME history so a
+     * legacy row and a native row read on one scale.
+     */
+    public function dateLabel(): string
+    {
+        if ($this->date === null) {
+            return '—';
+        }
+
+        $start = $this->date->format('d/m/Y');
+
+        return $this->endDate === null
+            ? $start
+            : $start.' – '.$this->endDate->format('d/m/Y');
+    }
+
+    /**
+     * A latest date is only a RANGE when it is strictly after the earliest one.
+     *
+     * An equal value is a single-date document, and an inverted value (bad or
+     * partially migrated data) would render a backwards range that misstates
+     * the patient's history — in both cases the entry falls back to the single
+     * representative date rather than showing something misleading.
+     */
+    private static function normalizeEndDate(?CarbonInterface $date, ?CarbonInterface $endDate): ?CarbonInterface
+    {
+        if ($date === null || $endDate === null) {
+            return null;
+        }
+
+        return $endDate->greaterThan($date) ? $endDate : null;
     }
 
     /**

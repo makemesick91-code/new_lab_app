@@ -929,6 +929,13 @@
             'canEdit' => auth()->user()?->can('update', $medicalRecord) ?? false,
         ])
 
+        {{-- LEGACY-RME-PDF-HISTORY-1 — the patient's full RME history (native +
+             published legacy archive) right beside the RM book, so the doctor
+             reads the whole clinical story from inside the workspace. --}}
+        @include('rme.visits.partials.patient-rme-clinical-history', [
+            'clinicalHistory' => $clinicalHistory ?? collect(),
+        ])
+
         {{-- FIX-PRE-68-45 Scope A — relocated "Riwayat Pencatatan" metadata card. --}}
         <x-ui.card title="Riwayat Pencatatan">
             <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
