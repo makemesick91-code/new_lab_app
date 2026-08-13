@@ -497,7 +497,13 @@ it('creates no visit, record, invoice, payment, lab or SATUSEHAT row when histor
 |--------------------------------------------------------------------------
 */
 
-it('hides the archive everywhere while the legacy capability is off, without erasing it', function () {
+// LEGACY-RME-PDF-HISTORY-1A — this test previously asserted that switching the
+// capability off HID the archive everywhere. That was the defect this sprint
+// corrects, and it is now the acceptance criterion in the opposite direction:
+// the flag governs MIGRATION, and already-published evidence is the patient's
+// real medical history, so the doctor treating them keeps reading it at the
+// next visit without ingestion being re-opened.
+it('keeps the archive readable while the legacy migration capability is off', function () {
     $patient = lrmeh1Patient();
     $visit = lrmeh1Visit($patient, '2024-06-01');
     lrmeh1Sheet($visit);
@@ -506,20 +512,20 @@ it('hides the archive everywhere while the legacy capability is off, without era
 
     legacyRmeArchiveFlag(false);
 
-    // The capability is the master switch: the archive is unreachable, and the
-    // native history still renders exactly as before.
+    // The workspace still shows the unified history, legacy row included.
     $this->actingAs($user)
         ->get(route('rme.visits.medical-record.show', $visit))
         ->assertOk()
-        ->assertDontSee('ARSIP RME LAMA');
+        ->assertSee('ARSIP RME LAMA');
 
+    // And the private viewer still opens for this authorized reader.
     $this->actingAs($user)
         ->get(route('rme.legacy-records.show', $record->getKey()))
-        ->assertNotFound();
+        ->assertOk();
 
-    expect(lrmeh1History($user, $patient)->where('kind', LegacyRmeTimelineEntry::KIND_LEGACY))->toBeEmpty();
+    expect(lrmeh1History($user, $patient)->where('kind', LegacyRmeTimelineEntry::KIND_LEGACY))->toHaveCount(1);
 
-    // Hidden is not deleted: the published evidence is untouched on disk-of-record.
+    // The published evidence itself is untouched.
     expect(LegacyRmeRecord::query()->find($record->getKey())?->isPublished())->toBeTrue();
 });
 

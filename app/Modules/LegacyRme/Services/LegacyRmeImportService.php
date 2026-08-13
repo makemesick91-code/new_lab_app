@@ -72,7 +72,7 @@ class LegacyRmeImportService
         User $actor,
         ?string $latestRmeDate = null,
     ): LegacyRmeImport {
-        $this->feature->assertEnabled();
+        $this->feature->assertMigrationEnabled();
 
         // 1A owns the date domain. Never re-derive a bound here. The whole
         // declared range is validated, not just the representative date.

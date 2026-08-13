@@ -132,16 +132,21 @@ it('never leaks another patient archive into this patient history', function () 
         ->and($records->first()->patient_id)->toBe($patient->getKey());
 });
 
-it('returns nothing while the feature flag is off', function () {
+// LEGACY-RME-PDF-HISTORY-1A — this test previously asserted the OPPOSITE
+// (an empty history while the flag was off). That coupling was the defect: the
+// flag is the MIGRATION switch, and turning ingestion off must not delete a
+// patient's already-published history out from under the doctor treating them.
+it('still returns published records while the migration capability is off', function () {
     $patient = lrme1cHistoryPatient();
     lrme1cPublishedRecord($patient, '2020-05-01');
 
     legacyRmeArchiveFlag(false);
 
     $service = app(LegacyRmePatientHistoryService::class);
+    $native = collect([legacyRmeNativeVisit($patient, '2024-06-01')]);
 
-    expect($service->publishedRecordsFor(superAdmin(), (int) $patient->getKey()))->toBeEmpty()
-        ->and($service->timelineFor(superAdmin(), (int) $patient->getKey(), collect()))->toBeEmpty();
+    expect($service->publishedRecordsFor(superAdmin(), (int) $patient->getKey()))->toHaveCount(1)
+        ->and($service->timelineFor(superAdmin(), (int) $patient->getKey(), $native))->toHaveCount(2);
 });
 
 it('returns nothing for a user without the archive permission', function () {

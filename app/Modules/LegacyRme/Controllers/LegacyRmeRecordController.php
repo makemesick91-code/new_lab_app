@@ -40,6 +40,23 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * resolved THROUGH its record, so neither an id nor a page number can traverse
  * to another patient's archive. The absolute filesystem path never leaves the
  * storage service, and the download filename is generic.
+ *
+ * LEGACY-RME-PDF-HISTORY-1A — READ IS NOT GATED ON THE MIGRATION CAPABILITY.
+ *
+ * The read actions here (show, source, page, print, export) deliberately do NOT
+ * consult LegacyRmeFeatureGuard. That flag is the migration/ingestion switch;
+ * an already-PUBLISHED record is the patient's real medical history and a
+ * treating doctor must still be able to read it when the patient comes in for a
+ * new visit, without the owner re-opening the ability to import new documents.
+ *
+ * Nothing is loosened by that: every read still passes `resolve()` (branch-
+ * scoped, out-of-scope is a 404), the policy (read permission + branch scope +
+ * the treating doctor's DoctorPatientScopeService relationship) and, for the
+ * byte-streaming actions, `assertStreamable()`.
+ *
+ * `void` is the one action here that CHANGES state, so it stays behind the
+ * migration capability exactly like publish: with the capability off the
+ * archive is frozen — readable, but neither extended nor retracted.
  */
 class LegacyRmeRecordController extends Controller
 {
@@ -65,8 +82,6 @@ class LegacyRmeRecordController extends Controller
 
     public function show(Request $request, int $record): View
     {
-        $this->assertFeatureEnabled();
-
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
 
@@ -84,8 +99,6 @@ class LegacyRmeRecordController extends Controller
 
     public function source(Request $request, int $record): StreamedResponse
     {
-        $this->assertFeatureEnabled();
-
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
         $this->assertStreamable($legacyRecord);
@@ -108,8 +121,6 @@ class LegacyRmeRecordController extends Controller
 
     public function page(Request $request, int $record, int $page): StreamedResponse
     {
-        $this->assertFeatureEnabled();
-
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('viewFile', $legacyRecord);
         $this->assertStreamable($legacyRecord);
@@ -151,10 +162,15 @@ class LegacyRmeRecordController extends Controller
      * out-of-scope id is a 404 and never a 403 that would confirm it exists.
      * Only then is the policy ability checked, and only then does the service
      * re-assert the transition under a row lock.
+     *
+     * LEGACY-RME-PDF-HISTORY-1A — voiding CHANGES the archive, so unlike the
+     * read actions above it stays behind the migration capability. With the
+     * capability off the published archive is frozen: still readable, but
+     * neither extended by a new import nor retracted by a void.
      */
     public function void(VoidLegacyRmeRecordRequest $request, LegacyRmeVoidService $voider, int $record): RedirectResponse
     {
-        $this->assertFeatureEnabled();
+        $this->assertMigrationCapabilityEnabled();
 
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('void', $legacyRecord);
@@ -176,8 +192,6 @@ class LegacyRmeRecordController extends Controller
      */
     public function print(Request $request, int $record): View
     {
-        $this->assertFeatureEnabled();
-
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
         $this->assertStreamable($legacyRecord);
@@ -210,8 +224,6 @@ class LegacyRmeRecordController extends Controller
      */
     public function export(Request $request, int $record): Response
     {
-        $this->assertFeatureEnabled();
-
         $legacyRecord = $this->resolve($request, $record);
         $this->authorize('view', $legacyRecord);
         $this->assertStreamable($legacyRecord);
@@ -327,8 +339,15 @@ class LegacyRmeRecordController extends Controller
         abort_unless($record->isPublished(), 404);
     }
 
-    private function assertFeatureEnabled(): void
+    /**
+     * LEGACY-RME-PDF-HISTORY-1A — for MUTATIONS only.
+     *
+     * A 404 rather than a 403, so a disabled migration capability reveals
+     * nothing about itself. Never call this from a read action: published
+     * clinical evidence stays readable while migration is switched off.
+     */
+    private function assertMigrationCapabilityEnabled(): void
     {
-        abort_unless($this->feature->enabled(), 404);
+        abort_unless($this->feature->migrationEnabled(), 404);
     }
 }

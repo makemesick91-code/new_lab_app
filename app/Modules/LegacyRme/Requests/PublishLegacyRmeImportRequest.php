@@ -39,7 +39,7 @@ class PublishLegacyRmeImportRequest extends FormRequest
      */
     protected function prepareForValidation(): void
     {
-        abort_unless(app(LegacyRmeFeatureGuard::class)->enabled(), 404);
+        abort_unless(app(LegacyRmeFeatureGuard::class)->migrationEnabled(), 404);
     }
 
     /**

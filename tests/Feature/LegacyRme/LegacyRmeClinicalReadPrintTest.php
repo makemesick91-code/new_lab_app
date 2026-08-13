@@ -388,16 +388,21 @@ it('audits an export', function () {
 |--------------------------------------------------------------------------
 */
 
-it('answers 404 for print and export while the feature flag is off', function (string $routeName) {
+// LEGACY-RME-PDF-HISTORY-1A — this test previously asserted a 404 on all three
+// routes while the flag was off. That was the defect being corrected: the flag
+// is the MIGRATION switch, and an already-published archive is the patient's
+// real clinical history, which an authorized reader must keep being able to
+// read (and print, and export) without ingestion being re-opened.
+it('still serves show, print and export while the migration capability is off', function (string $routeName) {
     $record = lrme1dReadPublished();
     legacyRmeArchiveFlag(false);
 
-    $this->actingAs(superAdmin())->get(route($routeName, $record->getKey()))->assertNotFound();
+    $this->actingAs(superAdmin())->get(route($routeName, $record->getKey()))->assertOk();
 })->with([
     'print' => ['rme.legacy-records.print'],
     'export' => ['rme.legacy-records.export'],
     'show' => ['rme.legacy-records.show'],
-]);
+])->skip(fn () => ! extension_loaded('gd'), LRME1D_NO_GD);
 
 it('sends a guest to the login screen rather than answering 403', function (string $routeName) {
     $record = lrme1dReadPublished();

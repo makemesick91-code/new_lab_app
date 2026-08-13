@@ -1,0 +1,96 @@
+---
+description: LEGACY-RME-PDF-HISTORY-1A — legacy RME migration/write capability and PUBLISHED clinical read are separate concerns and must never be re-coupled.
+globs:
+  - app/Modules/LegacyRme/**
+  - app/Console/Commands/LegacyRme*.php
+  - config/legacy_rme*.php
+  - config/feature_flags.php
+  - resources/views/rme/legacy-records/**
+  - resources/views/rme/visits/partials/patient-rme-clinical-history.blade.php
+  - tests/Feature/LegacyRme/**
+alwaysApply: false
+---
+
+# Legacy RME — published clinical read vs migration capability
+
+LEGACY-RME-PDF-HISTORY-1A. These are TWO capabilities, governed separately.
+Re-coupling them is a regression, not a hardening.
+
+## 1. What the feature flag governs
+
+`rme.legacy_pdf_archive` (env `FEATURE_RME_LEGACY_PDF_ARCHIVE`, default OFF) is
+the **MIGRATION / INGESTION / WRITE** switch, resolved ONLY through
+`LegacyRmeFeatureGuard`.
+
+Call it by its explicit name at every mutation boundary:
+
+- `migrationEnabled()` / `assertMigrationEnabled()` — canonical.
+- `enabled()` / `assertEnabled()` — historical aliases, same meaning
+  (migration), kept for the rollout-readiness reporting surface.
+
+With migration OFF these are ALL refused, server-side:
+
+- upload, processing, retry, cancel
+- review, publish
+- **void** (it changes the archive)
+- branch admission
+- the whole `settings.rme.legacy-imports.*` migration workspace, staging reads
+  included (a staged import is work in progress, not clinical evidence)
+
+## 2. What the feature flag must NEVER govern
+
+Reading an **already-PUBLISHED** legacy record. Published evidence is the
+patient's real medical history; a doctor treating that patient must keep reading
+it at the next visit WITHOUT the owner re-opening ingestion.
+
+So with migration OFF **and** branch admission EMPTY, an authorized reader still gets:
+
+- the legacy rows in the patient-centric RME clinical history
+- `rme.legacy-records.show` / `source` / `pages.show`
+- `rme.legacy-records.print` / `export`
+
+Never add a capability check to `LegacyRmePatientHistoryService` or to the read
+actions of `LegacyRmeRecordController`.
+
+## 3. Read availability is NOT public availability
+
+Every read still passes, server-side, all of:
+
+- the record is **PUBLISHED** (staged / failed / cancelled / VOID never appear
+  as ordinary clinical history, and VOID stops streaming bytes)
+- a named read permission (`LegacyRmeRecordPolicy::READ_PERMISSIONS`)
+- server-resolved branch scope (`LegacyRmeWorkspaceScope`) — never a request
+  `branch_id`, never a request `patient_id` as authority
+- for a Doctor, a real treating relationship (`DoctorPatientScopeService`) —
+  **same branch alone never authorizes a legacy read**
+- the private disk, reachable only through policy-gated stream actions; no
+  public URL, no storage symlink, no rendered filesystem path
+
+Canonical status codes, unchanged by this sprint:
+
+- **404** = outside your branch scope (cross-branch anti-enumeration)
+- **403** = inside your branch but not authorized (the treating-doctor gate)
+
+## 4. Containing a READ incident
+
+There is no read kill switch and one must not be invented as a side effect of
+the migration flag. Use what exists and is precise:
+
+- revoke `view_legacy_rme_archive` / `view_legacy_rme_imports` from the actors
+- and/or **VOID** the record — its bytes stop streaming immediately while the
+  row survives as auditable evidence
+
+Turning the migration flag off is an **emergency stop for MUTATIONS**, not
+evidence deletion and not evidence hiding.
+
+## 5. Still true from earlier sprints
+
+- Published legacy records are immutable; correction is VOID + fresh import.
+- A legacy record is never converted into a `ClinicVisit` or a native
+  `MedicalRecord`, and reading one creates no visit, medical record, invoice,
+  payment, lab order/candidate or SATUSEHAT candidate.
+- Multi-date: representative date = earliest (`rme_date`), bound = latest
+  (`latest_rme_date`); a range is shown only when latest > earliest.
+- KTP/NIK is never rendered or exported.
+- HISTORY-1A authorizes NO rollout: migration stays OFF and branch admission
+  stays EMPTY in production until a separate, explicit owner decision.

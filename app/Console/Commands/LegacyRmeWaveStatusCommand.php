@@ -49,7 +49,19 @@ class LegacyRmeWaveStatusCommand extends Command
             'sprint' => 'LEGACY-RME-PDF-ROLL-3',
             'generated_at' => now()->toIso8601String(),
             'environment' => (string) app()->environment(),
-            'capability_enabled' => $feature->enabled(),
+            // LEGACY-RME-PDF-HISTORY-1A — name what the flag actually governs.
+            // `migration_capability_enabled` is the ingestion/write switch; it
+            // is NOT a statement about whether already-published evidence can
+            // be read, so both are reported side by side and neither can be
+            // mistaken for the other. `capability_enabled` is kept as the
+            // historical key so existing tooling keeps parsing.
+            'capability_enabled' => $feature->migrationEnabled(),
+            'migration_capability_enabled' => $feature->migrationEnabled(),
+            // Always true: a PUBLISHED record stays readable to an authorized
+            // clinical reader regardless of the migration switch. Read is
+            // governed by record state plus authorization (permission, branch
+            // scope, treating-doctor scope), never by this flag.
+            'published_clinical_read_available' => true,
             'admission' => [
                 'enforced' => $admission->enforced(),
                 'wave' => $admission->wave(),
@@ -78,11 +90,18 @@ class LegacyRmeWaveStatusCommand extends Command
         }
 
         $this->components->info(sprintf(
-            'Legacy RME wave %s — capability %s, admission %s',
+            'Legacy RME wave %s — migration capability %s, admission %s',
             $report['admission']['wave'] ?? '(unnamed)',
-            $report['capability_enabled'] ? 'ON' : 'OFF',
+            $report['migration_capability_enabled'] ? 'ON' : 'OFF',
             $report['admission']['enforced'] ? 'enforced' : 'NOT enforced',
         ));
+
+        // LEGACY-RME-PDF-HISTORY-1A — say it plainly, so "migration OFF" is
+        // never read as "the archive is gone".
+        $this->components->twoColumnDetail(
+            'Published archive read',
+            'available to authorized clinical readers (independent of the migration switch)',
+        );
 
         $admitted = $report['admission']['admitted_branch_codes'];
         $this->components->twoColumnDetail(

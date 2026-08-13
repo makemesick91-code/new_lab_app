@@ -236,16 +236,20 @@ it('404s a page number that does not exist on the archive', function () {
         ->assertNotFound();
 });
 
-it('hides the whole published viewer while the feature flag is off', function () {
+// LEGACY-RME-PDF-HISTORY-1A — this test previously asserted that the whole
+// viewer disappeared with the flag off. That coupling was the defect: the flag
+// governs MIGRATION, and an already-published archive stays readable to an
+// authorized reader so the doctor still has the patient's history.
+it('keeps the whole published viewer readable while the migration capability is off', function () {
     $record = lrme1cHttpPublished(1);
 
     legacyRmeArchiveFlag(false);
 
     $admin = superAdmin();
 
-    $this->actingAs($admin)->get(route('rme.legacy-records.show', $record->getKey()))->assertNotFound();
-    $this->actingAs($admin)->get(route('rme.legacy-records.source', $record->getKey()))->assertNotFound();
-    $this->actingAs($admin)->get(route('rme.legacy-records.pages.show', [$record->getKey(), 1]))->assertNotFound();
+    $this->actingAs($admin)->get(route('rme.legacy-records.show', $record->getKey()))->assertOk();
+    $this->actingAs($admin)->get(route('rme.legacy-records.source', $record->getKey()))->assertOk();
+    $this->actingAs($admin)->get(route('rme.legacy-records.pages.show', [$record->getKey(), 1]))->assertOk();
 });
 
 it('requires authentication for the published viewer', function () {

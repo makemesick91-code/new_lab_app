@@ -241,11 +241,15 @@ class LegacyRmeRolloutReadinessService
             }
 
             if ($expectState === null) {
+                // LEGACY-RME-PDF-HISTORY-1A — this flag is the MIGRATION
+                // switch. Say so, because "the archive is OFF" would now be
+                // untrue: already-published evidence stays readable to an
+                // authorized clinical reader either way.
                 return LegacyRmeRolloutCheck::go(
                     'effective_state',
                     $enabled
-                        ? 'The legacy archive is currently ON.'
-                        : 'The legacy archive is currently OFF.',
+                        ? 'The legacy migration capability is currently ON.'
+                        : 'The legacy migration capability is currently OFF (published archives stay readable to authorized clinical readers).',
                     $context,
                 );
             }
