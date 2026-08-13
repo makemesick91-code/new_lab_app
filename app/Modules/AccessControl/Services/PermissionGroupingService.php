@@ -63,6 +63,10 @@ class PermissionGroupingService
                 'review_legacy_rme_imports',
                 'publish_legacy_rme_imports',
                 'void_legacy_rme_imports',
+                // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
+                'view_legacy_rme_migration_operations',
+                'manage_legacy_rme_migration_operations',
+                'approve_legacy_rme_migration_wave',
             ],
         ],
         [
@@ -244,6 +248,9 @@ class PermissionGroupingService
         'manage_rme_billing' => 'Kelola penagihan/kasir RME (full payment).',
         'view_rme_patient_reports' => 'Lihat laporan pasien RME.',
         'view_rme_payment_reports' => 'Lihat laporan pembayaran RME.',
+        'view_legacy_rme_migration_operations' => 'Lihat operasi migrasi arsip RME lama (gelombang, kuota, backlog, rekonsiliasi).',
+        'manage_legacy_rme_migration_operations' => 'Kelola gelombang migrasi arsip RME lama: cabang, operator, kuota, jeda dan penyelesaian.',
+        'approve_legacy_rme_migration_wave' => 'Setujui gelombang migrasi arsip RME lama.',
         'manage_lab_orders' => 'Kelola order laboratorium (penuh).',
         'view_lab_orders' => 'Lihat order laboratorium.',
         'create_lab_orders' => 'Buat order laboratorium baru.',

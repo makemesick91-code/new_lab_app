@@ -62,6 +62,11 @@ use App\Modules\Inventory\Models\ProductCategory;
 use App\Modules\Inventory\Models\ProductUnit;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LabService\Models\LabService;
+use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
+use App\Modules\LegacyRme\Models\LegacyRmeWaveBranch;
+use App\Modules\LegacyRme\Models\LegacyRmeWaveOperator;
+use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
+use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Production\Models\LabOrderAssignment;
@@ -605,7 +610,131 @@ function legacyRmeBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'
     // or rewrite the allowlist explicitly via legacyRmeAdmittedBranches().
     legacyRmeAdmitBranch($code);
 
+    // LEGACY-RME-PDF-ROLL-4 — and the branch is ENROLLED in a running
+    // operational wave, for the same reason: the operations layer is enforced
+    // for the whole suite, so a test that ingests has to satisfy it exactly as
+    // production does. Tests that need a ROLL-4 denial pause the wave, drain the
+    // branch or withhold the operator assignment explicitly.
+    legacyRmeMigrationWave([$code]);
+
     return $branch->refresh();
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-4 — declare and register the running migration wave.
+ *
+ * Mirrors what an operator does on a real deployment: config declares the wave
+ * label and the approval, and a matching wave row is registered, approved,
+ * activated and its branches enrolled. Idempotent, so several fixture branches
+ * can join the same wave.
+ *
+ * The wave row MIRRORS config rather than replacing it — the binding check
+ * compares the two, so the fixture has to keep them in step just as production
+ * must.
+ *
+ * @param  list<string>  $branchCodes
+ */
+function legacyRmeMigrationWave(array $branchCodes, string $waveCode = 'TEST-WAVE'): LegacyRmeMigrationWave
+{
+    $waveCode = strtoupper(trim($waveCode));
+    config()->set('legacy_rme_rollout.admission.wave', $waveCode);
+
+    $codes = array_values(array_unique(array_map(
+        static fn (string $code): string => strtoupper(trim($code)),
+        $branchCodes,
+    )));
+
+    /** @var LegacyRmeMigrationWave $wave */
+    $wave = LegacyRmeMigrationWave::query()->firstOrNew(['code' => $waveCode]);
+
+    $wave->forceFill([
+        'name' => $wave->exists ? $wave->name : 'Gelombang Uji',
+        // Only a NEW wave starts ACTIVE. An existing one keeps whatever status
+        // the test put it in: this helper runs again on every
+        // legacyRmeArchivablePatient() call, and resetting the status here would
+        // silently undo the pause or drain the test is asserting on.
+        'status' => $wave->exists ? $wave->status : LegacyRmeWaveStatus::ACTIVE,
+        'approval_reference' => (string) config('legacy_rme_rollout.admission.approval_reference', ''),
+        'approved_branch_codes' => (array) config('legacy_rme_rollout.admission.approved_branch_codes', []),
+        'activated_at' => $wave->activated_at ?? now(),
+    ])->save();
+
+    foreach ($codes as $code) {
+        $branch = Branch::query()->where('code', $code)->first();
+
+        if ($branch === null) {
+            continue;
+        }
+
+        /** @var LegacyRmeWaveBranch $enrollment */
+        $enrollment = LegacyRmeWaveBranch::query()->firstOrNew([
+            'wave_id' => $wave->getKey(),
+            'branch_id' => $branch->getKey(),
+        ]);
+
+        $enrollment->forceFill([
+            'branch_code' => $code,
+            'status' => $enrollment->exists ? $enrollment->status : LegacyRmeWaveBranchStatus::ACTIVE,
+        ])->save();
+    }
+
+    return $wave->refresh();
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-4 — assign a user as a migration operator for a branch.
+ *
+ * ROLL-4 requires an explicit assignment on top of the permission, with no
+ * exemption for Super Admin: `Gate::before` grants permissions, and being
+ * assigned to a clinic's archive is a domain invariant rather than a permission.
+ * Tests that ingest therefore assign their actor, exactly as an operator would
+ * be assigned on a real wave.
+ */
+function legacyRmeAssignOperator(User $user, string $branchCode = 'TKM1', string $waveCode = 'TEST-WAVE'): void
+{
+    $wave = LegacyRmeMigrationWave::query()->where('code', strtoupper(trim($waveCode)))->first();
+    $branch = Branch::query()->where('code', strtoupper(trim($branchCode)))->first();
+
+    if ($wave === null || $branch === null) {
+        return;
+    }
+
+    /** @var LegacyRmeWaveBranch|null $enrollment */
+    $enrollment = LegacyRmeWaveBranch::query()
+        ->where('wave_id', $wave->getKey())
+        ->where('branch_id', $branch->getKey())
+        ->first();
+
+    if ($enrollment === null) {
+        return;
+    }
+
+    LegacyRmeWaveOperator::query()->updateOrCreate(
+        [
+            'wave_id' => $wave->getKey(),
+            'user_id' => $user->getKey(),
+            'branch_id' => $branch->getKey(),
+        ],
+        [
+            'branch_code' => $enrollment->branch_code,
+            'assigned_at' => now(),
+            'revoked_at' => null,
+        ],
+    );
+}
+
+/**
+ * LEGACY-RME-PDF-ROLL-4 — an actor that is BOTH permitted and assigned.
+ *
+ * The common case for an ingestion test: the ROLL-4 layer requires a permission
+ * AND an assignment, so a fixture that supplies only one of them is testing a
+ * denial by accident.
+ */
+function legacyRmeOperator(User $user, string $branchCode = 'TKM1'): User
+{
+    legacyRmeAssignOperator($user, $branchCode);
+
+    return $user;
 }
 
 /**

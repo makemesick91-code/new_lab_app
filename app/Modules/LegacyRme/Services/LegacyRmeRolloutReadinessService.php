@@ -79,6 +79,7 @@ class LegacyRmeRolloutReadinessService
             $this->checkPilotScopeApproved(),
             $this->checkBranchAdmission(),
             $this->checkIngestionCapacity(),
+            $this->checkMigrationOperationsLayer(),
         ];
 
         $checks = array_map(static fn (LegacyRmeRolloutCheck $c) => $c->toArray(), $checks);
@@ -1038,6 +1039,100 @@ class LegacyRmeRolloutReadinessService
     /**
      * @param  callable(): LegacyRmeRolloutCheck  $probe
      */
+    /**
+     * LEGACY-RME-PDF-ROLL-4 — is the migration OPERATIONS layer in a state that
+     * can actually run a controlled wave?
+     *
+     * Three things have to hold together, and each fails for a different reason:
+     *
+     *  1. The layer is ENFORCED. Off is a local/CI posture; off where a real
+     *     worker is expected means quota, operator scoping and pause are all
+     *     inert while appearing configured.
+     *  2. A branch admitted by ROLL-3 has a REGISTERED wave. Without one there
+     *     are no operators, no quota and no completion path — uncontrolled by
+     *     construction.
+     *  3. The wave MIRRORS the deployment's approval. A governance record that
+     *     disagrees with the environment means one of them is describing a
+     *     rollout nobody authorized in that shape.
+     *
+     * An empty admitted set is GO, not a failure: closed admission is the
+     * documented safe resting state, and ROLL-4 does not require a wave to exist
+     * when nothing is being migrated.
+     */
+    private function checkMigrationOperationsLayer(): LegacyRmeRolloutCheck
+    {
+        return $this->guarded('migration_operations_layer', function (): LegacyRmeRolloutCheck {
+            $gate = app(LegacyRmeOperationsGateService::class);
+            $binding = app(LegacyRmeWaveBindingService::class);
+
+            $admitted = $this->admission->admittedBranchCodes();
+            $enforcedEnvironments = (array) config('legacy_rme_rollout.queue.worker_required_environments', []);
+            $expectsRealWorker = in_array((string) app()->environment(), $enforcedEnvironments, true);
+
+            if (! $gate->enforced()) {
+                $context = ['enforced' => false, 'environment' => (string) app()->environment()];
+
+                return $expectsRealWorker
+                    ? LegacyRmeRolloutCheck::fail(
+                        'migration_operations_layer',
+                        'The migration operations layer is disabled on a deployment that runs a real worker.',
+                        $context,
+                        'Set the operations layer back to enforced; it is not a production opt-out.',
+                    )
+                    : LegacyRmeRolloutCheck::watch(
+                        'migration_operations_layer',
+                        'The migration operations layer is not enforced on this environment.',
+                        $context,
+                        'Expected only on a local or CI environment.',
+                    );
+            }
+
+            if ($admitted === []) {
+                // Closed admission is the safe resting state ROLL-4 closure aims
+                // for, so it is reported as ready rather than as a gap.
+                return LegacyRmeRolloutCheck::go(
+                    'migration_operations_layer',
+                    'The operations layer is enforced and no branch is admitted, so no wave is required.',
+                    ['enforced' => true, 'admitted_branch_codes' => []],
+                );
+            }
+
+            $wave = $binding->resolveWave();
+
+            if ($wave === null) {
+                return LegacyRmeRolloutCheck::fail(
+                    'migration_operations_layer',
+                    'Branches are admitted but no operational migration wave is registered.',
+                    [
+                        'admitted_branch_codes' => $admitted,
+                        'declared_wave' => $binding->declaredWaveCode(),
+                    ],
+                    'Register the wave before migrating, otherwise ingestion is refused with WAVE_NOT_REGISTERED.',
+                );
+            }
+
+            if (! $binding->bindingMatches($wave)) {
+                return LegacyRmeRolloutCheck::fail(
+                    'migration_operations_layer',
+                    'The registered wave does not match the approval this deployment carries.',
+                    $binding->bindingReport($wave),
+                    'Reconcile the wave record and the deployment approval; neither is assumed correct.',
+                );
+            }
+
+            return LegacyRmeRolloutCheck::go(
+                'migration_operations_layer',
+                'The operations layer is enforced and the running wave matches the deployment approval.',
+                [
+                    'enforced' => true,
+                    'wave' => $wave->code,
+                    'wave_status' => $wave->status,
+                    'admitted_branch_codes' => $admitted,
+                ],
+            );
+        });
+    }
+
     private function guarded(string $id, callable $probe): LegacyRmeRolloutCheck
     {
         try {

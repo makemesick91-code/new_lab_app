@@ -215,6 +215,27 @@ class PermissionSeeder extends Seeder
         // pinned to their own BranchContext branch instead of widening to
         // every RME branch.
         'view_legacy_rme_archive',
+
+        // LEGACY-RME-PDF-ROLL-4 — migration OPERATIONS (the rollout control
+        // plane), deliberately separate from the import lifecycle above.
+        //
+        // Running a wave is a governance duty, not an intake duty. Keeping them
+        // apart lets an owner read the operational picture — counts, quota,
+        // backlog, reconciliation — without gaining any ability to upload,
+        // review or publish a clinical document, and conversely lets an intake
+        // operator do their job without being able to open a branch or close a
+        // wave.
+        //
+        // `approve` is split from `manage` so separation of duties has
+        // something to enforce: with `require_separate_approver` on, the
+        // approver must also differ from the wave's creator.
+        //
+        // Granted to NO role by default, like the 1A set: the pilot is operated
+        // by Super Admin (who passes via Gate::before), and widening this is an
+        // explicit later decision rather than a side effect of shipping.
+        'view_legacy_rme_migration_operations',
+        'manage_legacy_rme_migration_operations',
+        'approve_legacy_rme_migration_wave',
     ];
 
     public function run(): void

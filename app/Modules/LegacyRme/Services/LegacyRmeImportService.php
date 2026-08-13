@@ -9,10 +9,13 @@ use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
 use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
+use App\Modules\LegacyRme\Models\LegacyRmeWaveBranch;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
+use App\Modules\LegacyRme\Support\LegacyRmeOperationsDecision;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\Patient\Models\Patient;
@@ -56,6 +59,9 @@ class LegacyRmeImportService
         private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeBranchAdmissionService $admission,
         private readonly LegacyRmeIngestionCapacityService $capacity,
+        private readonly LegacyRmeOperationsGateService $operations,
+        private readonly LegacyRmeMigrationQuotaService $quota,
+        private readonly LegacyRmeWaveBindingService $waveBinding,
     ) {}
 
     /**
@@ -100,6 +106,12 @@ class LegacyRmeImportService
         // staging row, no orphan file and no queued job behind.
         $this->assertBranchAdmitted($branch, $patient, $actor);
         $this->assertIngestionCapacity($branch, $patient, $actor);
+
+        // ROLL-4: only NOW, after ROLL-3 has admitted, may the operations layer
+        // speak — and the only thing it can say is "no". Running it last is what
+        // makes "ROLL-4 can only narrow, never widen" true by construction
+        // rather than by inspection.
+        $operations = $this->assertOperationsCleared($branch, $patient, $actor);
 
         try {
             $this->assertUploadedPdf($document);
@@ -147,23 +159,52 @@ class LegacyRmeImportService
         }
 
         try {
-            $import = DB::transaction(fn (): LegacyRmeImport => $this->imports->create([
-                'uuid' => $uuid,
-                'patient_id' => (int) $patient->getKey(),
-                'origin_branch_id' => $originBranchId,
-                'selected_rme_date' => $selectedRmeDate,
-                'latest_rme_date' => $latestRmeDate,
-                'earliest_native_rme_date_snapshot' => $cutoff,
-                'original_filename' => $this->safeFilename($document),
-                'source_disk' => $this->storage->diskName(),
-                'source_pdf_path' => $path,
-                'source_pdf_sha256' => $sha256,
-                'mime_type' => 'application/pdf',
-                'size_bytes' => (int) $document->getSize(),
-                'status' => LegacyRmeImportStatus::UPLOADED,
-                'uploaded_by' => (int) $actor->getKey(),
-                'uploaded_at' => now(),
-            ]));
+            $import = DB::transaction(function () use (
+                $uuid, $patient, $originBranchId, $selectedRmeDate, $latestRmeDate, $cutoff, $document, $path, $sha256, $actor, $operations, $branch
+            ): LegacyRmeImport {
+                /*
+                 * ROLL-4 — the AUTHORITATIVE quota reservation.
+                 *
+                 * Inside this transaction, taking `FOR UPDATE` on the day's
+                 * buckets, and therefore the only quota decision that may be
+                 * trusted: the pre-check before the upload was advisory and
+                 * another operator may have taken the last slot since.
+                 *
+                 * Sharing the transaction with the row it counts is what makes
+                 * the ledger self-correcting — if this insert fails, the
+                 * increment rolls back with it and no compensating write is
+                 * needed.
+                 */
+                if ($operations !== null) {
+                    $this->quota->reserve($operations['wave'], $operations['branch'], $branch->branchCode);
+                }
+
+                return $this->imports->create([
+                    'uuid' => $uuid,
+                    'patient_id' => (int) $patient->getKey(),
+                    'origin_branch_id' => $originBranchId,
+                    // Attribution is RECORDED, not inferred: reconciliation must
+                    // be able to say which documents belonged to this wave
+                    // without guessing from a branch plus a date window. NULL
+                    // only where the operations layer is not enforced, and NULL
+                    // never means "the current wave".
+                    'migration_wave_id' => $operations !== null
+                        ? (int) $operations['wave']->getKey()
+                        : null,
+                    'selected_rme_date' => $selectedRmeDate,
+                    'latest_rme_date' => $latestRmeDate,
+                    'earliest_native_rme_date_snapshot' => $cutoff,
+                    'original_filename' => $this->safeFilename($document),
+                    'source_disk' => $this->storage->diskName(),
+                    'source_pdf_path' => $path,
+                    'source_pdf_sha256' => $sha256,
+                    'mime_type' => 'application/pdf',
+                    'size_bytes' => (int) $document->getSize(),
+                    'status' => LegacyRmeImportStatus::UPLOADED,
+                    'uploaded_by' => (int) $actor->getKey(),
+                    'uploaded_at' => now(),
+                ]);
+            });
         } catch (\Throwable $exception) {
             // The staging row never existed, so the stored bytes are an orphan.
             $this->storage->deleteDirectory($this->storage->importDirectory((int) $patient->getKey(), $uuid));
@@ -347,6 +388,102 @@ class LegacyRmeImportService
                 'legacy_rme_capacity' => (string) $capacity->message,
             ]);
         }
+
+        /*
+         * ROLL-4 — a retry starts migration WORK, so the wave and the branch
+         * must still be running.
+         *
+         * Deliberately NARROWER than the upload gate. Quota is not charged
+         * again: the document was already accepted and already counted, and
+         * billing a transient Poppler failure a second time would silently cost
+         * a branch capacity it never used. The operator assignment is not
+         * re-checked either — re-checking it would strand a reviewed document
+         * because the colleague who uploaded it went on leave.
+         *
+         * What DOES still apply is state: a paused or draining wave means "stop
+         * starting work", and a retry starts work.
+         */
+        $operations = $this->operations->decideForRetry(
+            is_string($branchCode) ? $branchCode : null,
+        );
+
+        if ($operations->denied()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::IMPORT_OPERATIONS_REJECTED,
+                $import,
+                $operations->auditContext(),
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_operations' => (string) $operations->message,
+            ]);
+        }
+    }
+
+    /**
+     * LEGACY-RME-PDF-ROLL-4 — the operations layer must clear this intake.
+     *
+     * Runs AFTER ROLL-3's capability, admission and capacity gates, and can only
+     * refuse: there is no branch here that turns a ROLL-3 denial into an
+     * acceptance. That ordering is the entire "narrow, never widen" guarantee.
+     *
+     * Returns the wave and enrollment the document belongs to so the caller can
+     * reserve quota and record attribution inside its transaction, or NULL when
+     * the layer is not enforced (a local/CI posture the readiness gate FAILs in
+     * any environment that expects a real worker).
+     *
+     * A refusal is audited under its own action. Reusing ROLL-3's
+     * IMPORT_ADMISSION_REJECTED would tell an operator the rollout declined the
+     * branch when in fact the branch is admitted and their assignment, the
+     * wave's pause state or today's quota is what refused — different problems
+     * with different remedies.
+     *
+     * @return array{wave: LegacyRmeMigrationWave, branch: LegacyRmeWaveBranch}|null
+     *
+     * @throws ValidationException
+     */
+    private function assertOperationsCleared(LegacyRmeBranchResolution $branch, Patient $patient, User $actor): ?array
+    {
+        $decision = $this->operations->decide($actor, $branch->branchCode);
+
+        if ($decision->denied()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::IMPORT_OPERATIONS_REJECTED,
+                null,
+                $decision->auditContext() + ['patient_id' => (int) $patient->getKey()],
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                'legacy_rme_operations' => (string) $decision->message,
+            ]);
+        }
+
+        if ($decision->code === LegacyRmeOperationsDecision::CODE_NOT_ENFORCED) {
+            return null;
+        }
+
+        $wave = $this->waveBinding->resolveWave();
+
+        if ($wave === null) {
+            // Only reachable if the wave disappeared between the decision and
+            // here. Fail closed rather than accepting an unattributable
+            // document.
+            throw ValidationException::withMessages([
+                'legacy_rme_operations' => 'Gelombang migrasi tidak lagi tersedia, sehingga dokumen tidak diterima.',
+            ]);
+        }
+
+        $waveBranch = $this->operations->resolveWaveBranch($wave, (string) $branch->branchCode);
+
+        if ($waveBranch === null) {
+            throw ValidationException::withMessages([
+                'legacy_rme_operations' => 'Pendaftaran cabang pada gelombang migrasi tidak lagi tersedia.',
+            ]);
+        }
+
+        return ['wave' => $wave, 'branch' => $waveBranch];
     }
 
     /**

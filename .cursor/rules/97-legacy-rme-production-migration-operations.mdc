@@ -1,0 +1,83 @@
+---
+description: LEGACY-RME-PDF-ROLL-4 — production migration operations (waves, operators, quota, reconciliation, completion)
+globs:
+  - app/Modules/LegacyRme/**
+  - config/legacy_rme_operations.php
+  - config/legacy_rme_rollout.php
+  - database/migrations/*ops_rme_legacy*
+  - tests/Feature/LegacyRme/**
+alwaysApply: false
+---
+
+# Legacy RME production migration operations (ROLL-4)
+
+Builds on ROLL-3 (admission), HISTORY-1/1A/1B (clinical read). Those GO tags are
+immutable and must never be moved, recreated or reopened.
+
+## The composition rule — never break this
+
+**ROLL-4 CAN ONLY NARROW. NEVER WIDEN.**
+
+Ingestion order: capability → date rules → RM-derived branch → ROLL-3 admission →
+ROLL-3 capacity → **ROLL-4 operations gate** → storage → transaction (quota
+reserve + staging row) → after-commit dispatch.
+
+The operations gate is consulted only after admission has admitted, and may only
+refuse. Never add a path where a ROLL-4 decision rescues a ROLL-3 denial.
+
+## Non-negotiables
+
+1. A non-empty admitted set REQUIRES a registered ACTIVE wave
+   (`WAVE_NOT_REGISTERED`). The layer is never opt-in.
+2. Config (`legacy_rme_rollout.admission`) is the AUTHORITY; the wave row is an
+   operational MIRROR. When they disagree, refuse (`WAVE_BINDING_MISMATCH`) —
+   never silently prefer one.
+3. Historical approvals never authorize a new wave. The approved branch set is
+   compared as a SET; extra or missing members fail closed.
+4. The branch checked is always RM-DERIVED. Never a request, session or
+   BranchContext value.
+5. An intake operator needs an explicit, unrevoked assignment for that exact
+   branch. A `manage_legacy_rme_migration_operations` holder is exempt ONLY
+   because they can self-assign unilaterally — every other gate still applies.
+6. Quota counts ACCEPTED-INTO-STAGING, reserved inside the same transaction as
+   the staging row. Retries are NOT charged again. `NULL` ≠ `0`.
+7. Quota concurrency is enforced by locking a pre-existing counter row
+   (`insertOrIgnore` then one ordered `FOR UPDATE`). Never count staging rows.
+8. Completion = reconciliation that balances (`unexplained = 0`,
+   `quota_drift = 0`, zero in-flight, zero unresolved failures) + a sign-off
+   note, recomputed under the lock. An empty queue is NEVER completion, and
+   `failed_jobs = 0` is never queue-health evidence.
+9. Wave completion requires every enrolled branch COMPLETED or CANCELLED.
+10. PAUSE/DRAIN stop new intake and preserve accepted work; publish keeps its
+    full canonical revalidation. Capability OFF is the emergency control.
+11. **No migration state ever removes authorized PUBLISHED clinical read**
+    (HISTORY-1A/1B). Pausing, draining or closing a wave must never hide a
+    patient's history from their treating doctor.
+12. PUBLISHED evidence stays immutable; correction is VOID + fresh import.
+13. Legacy migration creates NO native ClinicVisit / MedicalRecord / invoice /
+    payment / lab / SATUSEHAT artifacts.
+14. Reports never fabricate a number: unmeasurable probes return `null`, not 0;
+    `planned_document_count` stays nullable and `completion_percent` is `null`
+    without it. Stale PROCESSING is surfaced, never auto-mutated.
+15. Audit payloads are structure-only. Free-text reasons are recorded by LENGTH.
+    Never a patient name, Nomor RM, KTP/NIK, filename or document path.
+16. Wave attribution is RECORDED (`migration_wave_id`), never inferred from a
+    branch plus a date window.
+17. Migrations stay additive. Never `migrate:fresh` / `db:wipe` on the VPS.
+18. The CLI authorizes `--actor` through the same policy as HTTP and defaults to
+    dry-run; `--apply` is required for every mutation.
+
+## Commands
+
+- `legacy-rme:migration-status [--wave=] [--json] [--strict]` — read-only.
+- `legacy-rme:wave-admin <action> --wave= --actor= [...] [--apply]` — dry-run
+  unless `--apply`.
+- `legacy-rme:rollout-readiness` — now includes `migration_operations_layer`.
+
+## Safe resting state
+
+```
+capability OFF · admitted branches EMPTY · published read AVAILABLE
+```
+
+ROLL-4 GO does not authorize any branch, global enablement, or a wave.

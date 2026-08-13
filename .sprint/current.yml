@@ -1,24 +1,24 @@
-# Active sprint manifest — LEGACY-RME-PDF-HISTORY-1B
+# Active sprint manifest — LEGACY-RME-PDF-ROLL-4
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-HISTORY-1B
+id: LEGACY-RME-PDF-ROLL-4
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Doctor clinical branch context & production read UAT — a doctor's legacy branch scope is their canonical assigned practice set (mst_doctor_branches ∩ active RME-enabled), not an ephemeral BranchContext pin, so a treating doctor can read their patient's published archive while the treating-relationship and branch-isolation gates both stay enforced"
+title: "Production migration operations & scale-up — an operational control plane for wave-based Legacy RME migration (registered waves bound to the deployment approval, per-branch operator assignment, server-enforced daily quota, pause/drain, reconciliation and completion sign-off) that composes onto ROLL-3 admission so it can only ever narrow, never widen"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new doctor branch resolver + legacy branch-scope wiring
-schema_change: false            # no migration; mst_doctor_branches already exists and is populated
-frontend_change: false          # no Blade markup, no JS/CSS, no Vite entry
-security_impact: true           # decides which branches' clinical archive a doctor may read
-branch_isolation_impact: true   # redefines the doctor branch scope; isolation is re-asserted by tests
+runtime_change: true            # operations gate + quota reservation on the ingestion path
+schema_change: true             # 5 additive migrations (4 ops_* tables + 1 nullable FK column)
+frontend_change: false          # 2 new Blade views only; no JS/CSS/Vite entry change
+security_impact: true           # decides who may migrate which branch, and how much
+branch_isolation_impact: true   # per-branch operator scoping on top of RM-derived admission
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the read-path change ships to the VPS pilot
-browser_required: false         # verified by feature tests through the real HTTP routes, plus production UAT
+deploy_required: true           # migrations + permissions ship to the VPS pilot
+browser_required: false         # verified by feature tests through the real HTTP routes and services
 
 test_profiles:
   - rme
   - security
 
-go_tag: legacy-rme-pdf-history-1b-doctor-clinical-branch-context-production-read-uat-go
+go_tag: legacy-rme-pdf-roll-4-production-migration-operations-scale-up-go
