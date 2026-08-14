@@ -61,6 +61,11 @@ PGPASSWORD="${DB_PASSWORD}" pg_dump \
   > "$BACKUP"
 
 test -s "$BACKUP"
+
+# INFRA-SEC-ENV-1: the dump holds the entire clinical database and pg_dump would
+# otherwise leave it world-readable under the default umask.
+chmod 0640 "$BACKUP"
+
 echo "Backup written: ${BACKUP}"
 
 echo "== Fetch tags/refs =="
@@ -110,6 +115,16 @@ echo "== Permissions =="
 chown -R www-data:www-data storage bootstrap/cache
 find storage bootstrap/cache -type d -exec chmod 775 {} \;
 find storage bootstrap/cache -type f -exec chmod 664 {} \;
+
+# ─── INFRA-SEC-ENV-1 ────────────────────────────────────────────────────────
+# Rolling back to an older ref must never restore a world-readable secret file.
+# Re-assert the invariant here too, fail closed.
+echo "== Harden + verify secret file permissions (INFRA-SEC-ENV-1) =="
+bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group www-data
+if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group www-data; then
+  echo "FATAL: secret file permissions are unsafe after rollback — NOT GO" >&2
+  exit 1
+fi
 
 echo "== Restart services =="
 systemctl restart php8.3-fpm

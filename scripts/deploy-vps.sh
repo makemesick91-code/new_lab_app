@@ -80,6 +80,16 @@ assert_runtime_writable() {
 }
 # ────────────────────────────────────────────────────────────────────────────
 
+# ─── INFRA-SEC-ENV-1 secret-file permission hardening ───────────────────────
+# The production environment file was found world-readable (0644) on a SHARED
+# host. Harden it FIRST — before this script sources it and long before the
+# runtime user rebuilds the config cache from it — so no phase of the deploy
+# ever runs against a world-readable secret. Fail closed: an unsafe secret file
+# aborts the deploy (the helper exits non-zero and `set -e` stops us here).
+echo "== Harden secret file permissions (INFRA-SEC-ENV-1) =="
+bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+# ────────────────────────────────────────────────────────────────────────────
+
 echo "== Current branch =="
 git branch --show-current
 git status -sb
@@ -104,6 +114,11 @@ PGPASSWORD="${DB_PASSWORD}" pg_dump \
   > "$BACKUP"
 
 test -s "$BACKUP"
+
+# INFRA-SEC-ENV-1: `pg_dump > file` creates the dump under the deploy user's
+# umask (022 => world-readable), and this dump contains the ENTIRE clinical
+# database. Close that window immediately, not at the end of the deploy.
+chmod 0640 "$BACKUP"
 
 echo "== Pull approved branch =="
 git checkout "$BRANCH"
@@ -225,6 +240,19 @@ echo "== Re-normalize ownership + mandatory writable gates =="
 normalize_runtime_ownership
 if ! assert_runtime_writable; then
   echo "FATAL: Laravel runtime paths are not writable by ${RUNTIME_USER} — NOT GO" >&2
+  exit 1
+fi
+
+# ─── INFRA-SEC-ENV-1 mandatory fail-closed secret-permission gate ────────────
+# Re-assert AFTER every file-touching phase (composer/npm/migrate/evidence/cache
+# rebuild/ownership normalization) so nothing this deploy did can leave a secret
+# file world-readable. A deploy that cannot prove secure secret permissions is
+# NOT GO — including when the invariant was silently regressed out-of-band since
+# the previous release.
+echo "== Verify secret file permissions (INFRA-SEC-ENV-1) =="
+bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
+  echo "FATAL: secret file permissions are unsafe — NOT GO" >&2
   exit 1
 fi
 

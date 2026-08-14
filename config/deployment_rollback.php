@@ -66,6 +66,11 @@ return [
         'required_markers' => [
             'php artisan release:automated-smoke',
             'chown -R www-data:www-data',
+            // INFRA-SEC-ENV-1: the deploy must harden + fail-closed verify the
+            // secret-bearing environment files on every run. Removing the call
+            // fails this gate in CI and on the VPS, so a future deploy cannot
+            // silently regress to a world-readable secret file.
+            'harden-secret-permissions.sh',
         ],
         // The deploy path must also capture/verify NSF-10 release evidence.
         'required_evidence_markers' => [
@@ -99,6 +104,9 @@ return [
             'php artisan release:automated-smoke',
             'chown -R www-data:www-data',
             'nginx -t',
+            // INFRA-SEC-ENV-1: rolling back to an older ref must not restore a
+            // world-readable secret file either.
+            'harden-secret-permissions.sh',
         ],
         // The rollback path re-verifies the ENT-5..10 foundation stack.
         'required_gate_markers' => [
