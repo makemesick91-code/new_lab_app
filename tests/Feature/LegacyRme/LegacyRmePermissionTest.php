@@ -49,11 +49,26 @@ it('seeds the legacy RME permissions idempotently', function () {
         ->and($before)->toBe(count(LEGACY_RME_PERMISSIONS));
 });
 
-it('grants the legacy RME permissions to no operational role by default', function () {
-    // Super Admin is granted every permission by RoleSeeder ('*') and is the
-    // designated operator of Master Data RME, so it is the single expected
-    // holder. Every other role must stay out until a later sprint grants it
-    // explicitly.
+it('splits the legacy RME import permissions into a maker-checker pair and grants them to nobody else', function () {
+    // LEGACY-RME-PDF-ROLL-4-WAVE-1 changed this contract deliberately. Until
+    // Wave-1 the answer was "no operational role holds any of these", which
+    // left Super Admin as the only possible actor and made separation of
+    // duties impossible to demonstrate.
+    //
+    // Two staffed accounts now exist, so the abilities are split:
+    //   Admin Klinik   — MAKER: files the document (view + create)
+    //   Supervisor RME — CHECKER: certifies it (view + review + publish)
+    //
+    // The assertion is exact, not a subset: a role must hold precisely its
+    // half. That is what stops a future edit from quietly handing `publish` to
+    // the maker or `create` to the checker and collapsing the pair, which is
+    // exactly the failure this split exists to prevent. `void` stays with
+    // neither — it is a correction authority, not a migration one.
+    $expected = [
+        'Admin Klinik' => ['create_legacy_rme_imports', 'view_legacy_rme_imports'],
+        'Supervisor RME' => ['publish_legacy_rme_imports', 'review_legacy_rme_imports', 'view_legacy_rme_imports'],
+    ];
+
     foreach (array_keys(RoleSeeder::ROLE_PERMISSIONS) as $roleName) {
         if ($roleName === 'Super Admin') {
             continue;
@@ -65,12 +80,33 @@ it('grants the legacy RME permissions to no operational role by default', functi
             continue;
         }
 
-        $granted = $role->permissions->pluck('name')->intersect(LEGACY_RME_PERMISSIONS);
+        $granted = $role->permissions->pluck('name')->intersect(LEGACY_RME_PERMISSIONS)->sort()->values()->all();
 
-        expect($granted->values()->all())->toBe(
-            [],
-            "Role {$roleName} must not receive legacy RME permissions by default"
+        expect($granted)->toBe(
+            $expected[$roleName] ?? [],
+            "Role {$roleName} holds an unexpected set of legacy RME import permissions"
         );
+    }
+});
+
+it('never lets one role hold both halves of the legacy import maker-checker pair', function () {
+    // The property that matters, stated independently of who currently holds
+    // what: no single role may both file and publish a legacy archive.
+    foreach (array_keys(RoleSeeder::ROLE_PERMISSIONS) as $roleName) {
+        if ($roleName === 'Super Admin') {
+            continue;
+        }
+
+        $role = Role::where('name', $roleName)->first();
+
+        if ($role === null) {
+            continue;
+        }
+
+        $names = $role->permissions->pluck('name');
+
+        expect($names->contains('create_legacy_rme_imports') && $names->contains('publish_legacy_rme_imports'))
+            ->toBeFalse("Role {$roleName} may not both create and publish a legacy archive");
     }
 });
 

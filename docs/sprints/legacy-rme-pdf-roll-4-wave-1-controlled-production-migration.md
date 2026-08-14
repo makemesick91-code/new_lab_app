@@ -1,11 +1,21 @@
 # LEGACY-RME-PDF-ROLL-4-WAVE-1 — Controlled Production Migration Wave-1
 
-**Status: `WATCH — NOT EXECUTED. NO GENUINE LDK2 CANDIDATE DOCUMENT; NO SEPARATION-OF-DUTIES OPERATOR.`**
+**Status: `RE-ATTEMPT — BOTH BLOCKERS CLEARED; WAVE ENABLEMENT SHIPPED, EXECUTION PENDING.`**
 
-**No GO tag. No production change. No runtime code change. No deploy.**
+The first attempt (recorded below, unchanged) correctly ended WATCH on two
+blockers. Both are now cleared, and this commit ships the second one's fix:
 
-Production was left exactly as found: capability OFF, admission EMPTY, approval
-EMPTY, wave config EMPTY, zero operational wave rows.
+| Blocker | First attempt | Now |
+|---|---|---|
+| 1 — no genuine LDK2 candidate | no document existed | **CLEARED** — owner supplied `RM Landak.pdf`; full preflight passed (§7) |
+| 2 — no separation-of-duties operator | only Super Admin held any migration permission | **CLEARED** — owner-approved least-privilege grant (§8) |
+
+**This commit changes RBAC seeding and tests only.** It does not register a
+wave, does not admit a branch, does not enable the migration capability and does
+not import anything. At the moment it merges, production is still at the safe
+resting state: capability OFF, admission EMPTY, approval EMPTY, wave config
+EMPTY, zero operational wave rows. Wave execution evidence lands in a separate
+follow-up commit, and no GO tag exists until that execution actually succeeds.
 
 | | |
 |---|---|
@@ -241,20 +251,98 @@ must pass before §2 records the approval. See
 
 ---
 
-## 5. What must happen before Wave-1 can be re-attempted
+## 5. What had to happen before Wave-1 could be re-attempted
 
 1. **Owner supplies genuine LDK2 archive PDFs** (1–5 documents) with, for each:
    canonical RM whose branch code resolves to LDK2, correct patient resolution,
    a readable source PDF, and human-verifiable clinical dates (earliest →
    `selected_rme_date`, latest → `latest_rme_date`). OCR is never the date
-   authority.
+   authority. → **DONE**, one document. See §7.
 2. **Owner confirms the intake operator** — Yuni FO (user 7) is the natural
    least-privileged candidate, already pinned to LDK2 — and a **separate**
    approver account. Both grants go through the canonical seeder/permission
-   workflow, never direct SQL.
-3. Re-run this preflight, then follow the runbook from §1a.
+   workflow, never direct SQL. → **DONE**. See §8.
+3. Re-run this preflight, then follow the runbook from §1a. → **DONE**, §7.
 
-Until then production stays at the safe resting state and no wave is registered.
+---
+
+## 7. Candidate preflight — RE-ATTEMPT (2026-08-14)
+
+Owner supplied exactly one document. It was NOT assumed eligible; every gate was
+re-run against production through the canonical services, never a re-derivation.
+
+| Gate | Evidence | Result |
+|---|---|---|
+| File present + valid | `RM Landak.pdf`, 302,655 bytes, `%PDF-1.4`, sha256 `f3cb5eb6…b6f0` | PASS |
+| Page count | `pdfinfo` → `Pages: 1` (matches owner) | PASS |
+| Raw RM | `22681`, owner-confirmed | PASS |
+| Prior visual reading `39681` | probed production: **0 patients match** | correctly REJECTED |
+| Patient resolution | exactly **one** patient, id 40 | PASS |
+| Canonical RM | **`DG-LDK2-2024-22681`** — read from `mst_patients`, never synthesized | PASS |
+| RM-derived branch | `LegacyRmeBranchResolver` → `LDK2` / Cabang Landak / id 2 | PASS |
+| Duplicate | `LegacyRmeDuplicateDetectionService` → not blocked; 0 imports/records for patient 40; 0 rows anywhere with this sha256 | PASS |
+| Native reference | `PatientEarliestNativeRmeDateResolver` → `null`, zero clinic visits → `NO_NATIVE_REFERENCE` | PASS (valid) |
+| Date rule | `LegacyRmeDateRuleService::evaluate(2026-08-13, 2026-08-13)` → passed | PASS |
+
+**Two findings worth recording rather than smoothing over.**
+
+*The canonical RM year is 2024, not 2026.* Composing `DG-LDK2-2026-22681` from
+"Landak + 2026 + 22681" would have produced a patient that does not exist. The
+RM's year segment is the patient's registration year, not the document's
+clinical year, which is exactly why the rule is that canonical RM comes from
+patient data and is never synthesized.
+
+*The date margin is one day, and the clock is UTC.* `clinical_timezone` resolves
+to `UTC` on production, not WITA. The document is dated 2026-08-13 and "today"
+is 2026-08-14, so `latest < today` holds — but it would NOT have held if
+evaluated before ~08:00 WITA on 2026-08-13+1, when UTC was still on the previous
+calendar day. Publish revalidates the date, so this is a live constraint, not a
+one-off: a legacy document dated *yesterday* sits at the very edge of what the
+"an archive is historical" rule permits.
+
+*One data-quality note, non-blocking.* The document's TTL reads `27-07-2006`
+while `mst_patients.date_of_birth` holds `2007-07-27`; the document's own age
+annotation ("20") agrees with 2006. Day and month match exactly and the RM,
+name and branch all resolve to a single patient, so identity is not ambiguous.
+The date rule only requires `birth_date <= selected_rme_date`, which holds
+either way. Recorded for master-data correction, not treated as a mismatch.
+
+---
+
+## 8. Blocker 2 — how separation of duties was actually created
+
+ROLL-4 shipped the *mechanism* (`approve` split from `manage`, plus a
+server-side approver-is-not-creator check) but shipped it switched off, with its
+own note saying to enable it "once two staffed accounts exist". Those accounts
+did not exist: **all five legacy records already in production were imported AND
+published by the same user id 1**, because no operational role held any legacy
+migration permission at all.
+
+The owner confirmed user 7 and user 11 are two different staffed people and
+approved extending the existing roles, using only already-defined permissions:
+
+| Role | Granted | Deliberately withheld | Duty |
+|---|---|---|---|
+| Admin Klinik (user 7, pinned LDK2) | `view_legacy_rme_imports`, `create_legacy_rme_imports` | review, publish, void, all operations, approve | **maker** — files the document |
+| Supervisor RME (user 11) | `view` + `review` + `publish` imports, `view_legacy_rme_migration_operations`, `approve_legacy_rme_migration_wave` | `create`, `manage_legacy_rme_migration_operations` | **checker** — certifies, publishes, approves the wave |
+| Owner | `view_legacy_rme_migration_operations` | everything else | read-only oversight |
+| Super Admin | unchanged | — | wave creator/manager |
+
+Every withheld permission is load-bearing. The checker is denied `create` so it
+cannot be a maker-checker pair of one; it is denied `manage` so it cannot create
+the wave it then approves — with `LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true`,
+`LegacyRmeWaveGovernanceService::approve()` rejects a creator signing their own
+wave server-side.
+
+**A consequence recorded deliberately, not discovered later.**
+`LegacyRmeWorkspaceScope::GOVERNANCE_PERMISSIONS` is `review`/`publish`/`void` —
+holding any one widens the holder to *every* RME-enabled branch. So granting the
+checker `review` + `publish` also grants a cross-branch archive read. That is
+correct for an RME-wide supervisor (the role already has cross-branch RME
+reporting) but it is a real widening, and it is asserted in
+`LegacyRmeWaveSeparationOfDutiesTest` so nobody has to rediscover it. The maker
+holds none of those three and therefore stays pinned to LDK2 by `BranchContext`
+— the property that stops a branch operator reading another branch's archive.
 
 ---
 
