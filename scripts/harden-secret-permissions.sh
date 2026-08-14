@@ -63,6 +63,19 @@ SAFE_MODES_BACKUP="600"
 # `.env.example` ships in git and holds no secret; it is deliberately excluded.
 PUBLIC_ENV_FILE=".env.example"
 
+# Database dumps produced by the deploy/backup automation contain the ENTIRE
+# clinical database (patients, national identity numbers, medical records,
+# invoices). `pg_dump > file` creates them under the deploy user's umask (022 =>
+# 0644) and the runtime-ownership pass then normalises every storage file to
+# 0664 — both world-readable. They are hardened by stripping the "other" bits
+# ONLY: owner and group are left exactly as they are, so root (backup verify,
+# restore, evidence capture) and the runtime user (developer-console backup
+# listing) keep the access they already had, and only unrelated local accounts
+# lose it.
+DATA_BACKUP_DIR="storage/app/backups"
+DATA_BACKUP_MODE="640"
+SAFE_MODES_DATA_BACKUP="600 640"
+
 action="${1:-verify}"
 shift || true
 
@@ -120,6 +133,38 @@ list_secret_files() {
     \( -name '.env' -o -name '.env.*' \) \
     ! -name "$PUBLIC_ENV_FILE" \
     -print 2>/dev/null | sort
+}
+
+# Database dumps / runtime archives produced by the deploy and backup automation.
+list_data_backups() {
+  [ -d "${APP_DIR}/${DATA_BACKUP_DIR}" ] || return 0
+  find "${APP_DIR}/${DATA_BACKUP_DIR}" -type f \
+    \( -name '*.sql' -o -name '*.sql.gz' -o -name '*.dump' -o -name '*.tar.gz' \) \
+    -print 2>/dev/null | sort
+}
+
+# Strip the world/"other" bits from a data backup without touching owner/group,
+# so every account that legitimately reads it today keeps working.
+harden_data_backup() {
+  local file="$1" actual
+  actual="$(stat -c '%a' "$file")"
+  if [ "$actual" != "$DATA_BACKUP_MODE" ] && [ "$actual" != "600" ]; then
+    chmod "0${DATA_BACKUP_MODE}" "$file"
+  fi
+}
+
+verify_data_backup() {
+  local file="$1" actual ok
+  actual="$(stat -c '%a' "$file")"
+  ok=0
+  for m in $SAFE_MODES_DATA_BACKUP; do
+    if [ "$actual" = "$m" ]; then
+      ok=1
+    fi
+  done
+  if [ "$ok" -ne 1 ]; then
+    fail "$(basename "$file") database backup mode 0${actual} is world-readable (allowed: ${SAFE_MODES_DATA_BACKUP// /, })"
+  fi
 }
 
 apply_one() {
@@ -197,6 +242,14 @@ case "$action" in
       apply_one "$file"
     done <<< "$(list_secret_files)"
     [ "$found" = "1" ] || note "no environment file present in ${APP_DIR} — nothing to harden"
+
+    hardened_backups=0
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      harden_data_backup "$file"
+      hardened_backups=$((hardened_backups + 1))
+    done <<< "$(list_data_backups)"
+    [ "$hardened_backups" -eq 0 ] || note "applied 0${DATA_BACKUP_MODE} to ${hardened_backups} database backup file(s)"
     ;;
   verify) ;;
   *)
@@ -213,6 +266,11 @@ while IFS= read -r file; do
   verified=$((verified + 1))
   verify_one "$file"
 done <<< "$(list_secret_files)"
+
+while IFS= read -r file; do
+  [ -n "$file" ] || continue
+  verify_data_backup "$file"
+done <<< "$(list_data_backups)"
 
 if [ "$verified" -eq 0 ]; then
   # Not a failure here: a missing environment file is the deploy's own concern

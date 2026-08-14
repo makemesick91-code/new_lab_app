@@ -24,6 +24,30 @@ deploy prove that on every run instead of trusting historical filesystem state.
 Forbidden for any of the above, permanently: `0644`, `0664`, `0666`, and any mode
 with a read/write bit for *other* or a write bit for *group*.
 
+### Database dumps
+
+`storage/app/backups/**` (`*.sql`, `*.sql.gz`, `*.dump`, `*.tar.gz`) are
+`pg_dump` output — the **entire clinical database**, including national identity
+numbers. They must never be world-readable.
+
+| Property | Value |
+| --- | --- |
+| Mode | `0640` (or tighter) |
+| Owner / group | **left exactly as-is** — the helper changes only the *other* bits |
+
+Owner/group are deliberately untouched so `root` (backup verify, restore,
+restore-rehearsal, evidence capture) and the runtime user (developer-console
+backup listing) keep the access they already had. Only unrelated accounts lose it.
+
+Check them with:
+
+```bash
+find /var/www/asia-dental-lab-v2/storage/app/backups -type f \
+  \( -name '*.sql' -o -name '*.tar.gz' \) -printf '%m\n' | sort | uniq -c
+```
+
+Anything other than `600`/`640` is a violation.
+
 ### Why 0640 and not 0600
 
 This was derived from the real runtime, not assumed. `scripts/deploy-vps.sh`

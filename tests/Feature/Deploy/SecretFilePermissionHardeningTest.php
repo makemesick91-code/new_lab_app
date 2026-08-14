@@ -279,6 +279,80 @@ test('the helper never prints secret file contents', function () {
     removeFixtureDir($dir);
 });
 
+// ─── FUNCTIONAL: database dumps are not world-readable ─────────────────────
+
+/** Create a fixture backup dir with synthetic dump files. */
+function makeBackupFixture(string $dir, array $files): void
+{
+    mkdir($dir.'/storage/app/backups/deploy', 0755, true);
+    foreach ($files as $name => $mode) {
+        $path = $dir.'/storage/app/backups/deploy/'.$name;
+        file_put_contents($path, "-- synthetic dump, no real data\n");
+        chmod($path, $mode);
+    }
+}
+
+test('apply strips world access from database dumps without changing owner or group', function () {
+    $dir = makeSecretFixtureDir(['.env' => 0640]);
+    makeBackupFixture($dir, [
+        'pre_auto_deploy_20260815-000000.sql' => 0664,
+        'pre_auto_deploy_20260815-000001.sql' => 0644,
+        'runtime_files_pre_sprint.tar.gz' => 0664,
+    ]);
+
+    $before = stat($dir.'/storage/app/backups/deploy/pre_auto_deploy_20260815-000000.sql');
+    $result = runHarden('apply', $dir, ['--group' => currentGroup()]);
+    $after = stat($dir.'/storage/app/backups/deploy/pre_auto_deploy_20260815-000000.sql');
+
+    expect($result['exit'])->toBe(0)
+        ->and(fileMode($dir.'/storage/app/backups/deploy/pre_auto_deploy_20260815-000000.sql'))->toBe('640')
+        ->and(fileMode($dir.'/storage/app/backups/deploy/pre_auto_deploy_20260815-000001.sql'))->toBe('640')
+        ->and(fileMode($dir.'/storage/app/backups/deploy/runtime_files_pre_sprint.tar.gz'))->toBe('640')
+        // owner/group deliberately untouched so existing readers keep working
+        ->and($after['uid'])->toBe($before['uid'])
+        ->and($after['gid'])->toBe($before['gid']);
+
+    removeFixtureDir($dir.'/storage/app/backups/deploy');
+    removeFixtureDir($dir);
+});
+
+test('verify rejects a world-readable database dump', function () {
+    $dir = makeSecretFixtureDir(['.env' => 0640]);
+    makeBackupFixture($dir, ['pre_auto_deploy_20260815-000000.sql' => 0664]);
+
+    $result = runHarden('verify', $dir, ['--group' => currentGroup()]);
+
+    expect($result['exit'])->toBe(1)
+        ->and($result['output'])->toContain('world-readable');
+
+    removeFixtureDir($dir.'/storage/app/backups/deploy');
+    removeFixtureDir($dir);
+});
+
+test('an already-tightened 0600 dump is left alone', function () {
+    $dir = makeSecretFixtureDir(['.env' => 0640]);
+    makeBackupFixture($dir, ['pre_auto_deploy_20260815-000000.sql' => 0600]);
+
+    expect(runHarden('apply', $dir, ['--group' => currentGroup()])['exit'])->toBe(0)
+        ->and(fileMode($dir.'/storage/app/backups/deploy/pre_auto_deploy_20260815-000000.sql'))->toBe('600');
+
+    removeFixtureDir($dir.'/storage/app/backups/deploy');
+    removeFixtureDir($dir);
+});
+
+test('the deploy and rollback scripts tighten a dump the moment it is created', function () {
+    foreach (['scripts/deploy-vps.sh', 'scripts/rollback-vps.sh'] as $path) {
+        $script = file_get_contents(base_path($path));
+
+        $dumpAt = strpos($script, 'pg_dump');
+        $chmodAt = strpos($script, 'chmod 0640 "$BACKUP"');
+
+        expect($chmodAt)->not->toBeFalse()
+            ->and($dumpAt)->not->toBeFalse()
+            ->and($dumpAt)->toBeLessThan($chmodAt);
+    }
+});
+
 // ─── STATIC CONTRACT: the helper itself ─────────────────────────────────────
 
 test('the hardening helper is fail-fast and never recursively chmods the app tree', function () {

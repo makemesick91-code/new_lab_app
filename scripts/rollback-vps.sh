@@ -61,6 +61,11 @@ PGPASSWORD="${DB_PASSWORD}" pg_dump \
   > "$BACKUP"
 
 test -s "$BACKUP"
+
+# INFRA-SEC-ENV-1: the dump holds the entire clinical database and pg_dump would
+# otherwise leave it world-readable under the default umask.
+chmod 0640 "$BACKUP"
+
 echo "Backup written: ${BACKUP}"
 
 echo "== Fetch tags/refs =="

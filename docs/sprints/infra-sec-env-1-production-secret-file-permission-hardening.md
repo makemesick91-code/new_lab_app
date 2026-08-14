@@ -77,6 +77,38 @@ The runtime group genuinely requires read access, so:
 `0640` removes read for `other`, which removes `postgres` and every other
 non-`www-data` account on the host.
 
+## 4b. Second finding — world-readable database dumps
+
+Auditing for "other secret files produced by the same deployment path" found a
+larger exposure than the environment file:
+
+```
+storage/app/backups/**    175 files, all mode 0664 (world-readable)
+runuser -u postgres -- test -r <dump>   ->  READABLE
+```
+
+These are `pg_dump` output — the **entire clinical database**: patients, national
+identity numbers, medical records, invoices, payments. Same root cause: `pg_dump
+> file` writes under the deploy user's `umask 022`, and
+`normalize_runtime_ownership` then sets every storage file to `0664`. Nothing
+ever asserted that a database dump is secret-bearing.
+
+In scope because it is *directly caused by the same deployment path*.
+
+**Fix is deliberately `other`-bits-only** — `0664`/`0644` → `0640`, owner and
+group untouched:
+
+- `root` (backup verify, restore, restore-rehearsal, evidence capture) keeps
+  access — unchanged.
+- the runtime user (ENT-7 developer-console backup listing) keeps access — the
+  files stay `www-data:www-data` and the directory stays `2775`.
+- every unrelated local account loses access.
+
+No consumer loses a permission it currently uses, so this cannot break the
+ENT-11 storage contract or the ENT-12 backup/DR chain. The deploy and rollback
+scripts additionally `chmod 0640 "$BACKUP"` immediately after `pg_dump`, closing
+the window between creation and the end-of-deploy sweep.
+
 ## 5. Residual risk — stated, not hidden
 
 **The co-tenant application `aish-pos` runs under the same `www-data` account.**
@@ -102,11 +134,11 @@ before any dedicated-account migration.
 | File | Change |
 | --- | --- |
 | `scripts/harden-secret-permissions.sh` | **new** — idempotent, fail-closed `apply`/`verify` helper |
-| `scripts/deploy-vps.sh` | hardens early (before sourcing) + re-asserts and verifies late, fail-closed |
-| `scripts/rollback-vps.sh` | re-asserts the invariant so a rollback cannot restore an unsafe mode |
+| `scripts/deploy-vps.sh` | hardens early (before sourcing) + re-asserts and verifies late, fail-closed; `chmod 0640` on the dump right after `pg_dump` |
+| `scripts/rollback-vps.sh` | re-asserts the invariant so a rollback cannot restore an unsafe mode; same immediate dump `chmod` |
 | `config/deployment_rollback.php` | `harden-secret-permissions.sh` added to the ENT-11 required markers for **both** deploy and rollback |
 | `.gitignore` | `.env.*` with `!.env.example` — every variant/backup is uncommittable |
-| `tests/Feature/Deploy/SecretFilePermissionHardeningTest.php` | **new** — 21 tests |
+| `tests/Feature/Deploy/SecretFilePermissionHardeningTest.php` | **new** — 25 tests |
 | `docs/runbooks/production-secret-file-permissions-runbook.md` | **new** |
 
 ### Helper safety contract
@@ -127,7 +159,7 @@ one-time `chmod`.
 
 ## 7. Tests
 
-`tests/Feature/Deploy/SecretFilePermissionHardeningTest.php` — 21 tests. The
+`tests/Feature/Deploy/SecretFilePermissionHardeningTest.php` — 25 tests. The
 functional ones execute the real script against synthetic fixtures
 (`APP_KEY=fake-test-value`) in a private `0700` temp dir; no production value
 appears anywhere.
@@ -147,11 +179,15 @@ appears anywhere.
 | rollback script | re-asserts the invariant |
 | ENT-11 config | requires the marker in both script contracts |
 | `.gitignore` | covers every variant except the example |
+| database dumps `0664`/`0644` | tightened to `0640`, owner/group untouched |
+| world-readable dump | rejected by `verify` |
+| dump already `0600` | left alone |
+| deploy + rollback | `chmod` the dump immediately after `pg_dump` |
 
 ## 8. Results
 
 ```
-tests/Feature/Deploy                                  34 passed (93 assertions)
+tests/Feature/Deploy                                  38 passed (109 assertions)
 Ent11DeploymentRollbackAutomationTest                 12 passed (115 assertions)
 Ent10 / Ent12 / Ent15 / SafeCiRuntimeControl          54 passed (519 assertions)
 pint --dirty --test                                   passed

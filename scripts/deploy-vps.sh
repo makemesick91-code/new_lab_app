@@ -115,6 +115,11 @@ PGPASSWORD="${DB_PASSWORD}" pg_dump \
 
 test -s "$BACKUP"
 
+# INFRA-SEC-ENV-1: `pg_dump > file` creates the dump under the deploy user's
+# umask (022 => world-readable), and this dump contains the ENTIRE clinical
+# database. Close that window immediately, not at the end of the deploy.
+chmod 0640 "$BACKUP"
+
 echo "== Pull approved branch =="
 git checkout "$BRANCH"
 git pull --ff-only origin "$BRANCH"
