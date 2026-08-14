@@ -1,21 +1,32 @@
 # LEGACY-RME-PDF-ROLL-4-WAVE-1 — Controlled Production Migration Wave-1
 
-**Status: `RE-ATTEMPT — BOTH BLOCKERS CLEARED; WAVE ENABLEMENT SHIPPED, EXECUTION PENDING.`**
+**Status: `COMPLETE — WAVE EXECUTED, RECONCILED, ROLLED BACK. 1 GENUINE DOCUMENT PUBLISHED.`**
 
 The first attempt (recorded below, unchanged) correctly ended WATCH on two
-blockers. Both are now cleared, and this commit ships the second one's fix:
+blockers. Both were cleared, the wave ran end to end on production, and the
+capability was returned to OFF afterwards.
 
-| Blocker | First attempt | Now |
+| Blocker | First attempt | Resolution |
 |---|---|---|
 | 1 — no genuine LDK2 candidate | no document existed | **CLEARED** — owner supplied `RM Landak.pdf`; full preflight passed (§7) |
 | 2 — no separation-of-duties operator | only Super Admin held any migration permission | **CLEARED** — owner-approved least-privilege grant (§8) |
 
-**This commit changes RBAC seeding and tests only.** It does not register a
-wave, does not admit a branch, does not enable the migration capability and does
-not import anything. At the moment it merges, production is still at the safe
-resting state: capability OFF, admission EMPTY, approval EMPTY, wave config
-EMPTY, zero operational wave rows. Wave execution evidence lands in a separate
-follow-up commit, and no GO tag exists until that execution actually succeeds.
+| | |
+|---|---|
+| Accepted / published | **1 / 1** (ceiling 5, remaining 4) |
+| Maker → checker | user 7 (Admin Klinik, LDK2) → user 11 (Supervisor RME) — **distinct** |
+| Reconciliation | unexplained **0**, quota drift **0** |
+| Native side effects | **zero** on every clinical, billing, lab and SATUSEHAT table |
+| Final production state | capability OFF, admission EMPTY, wave NONE |
+
+**A note on the commit that carries the RBAC change.** The squash merge of
+PR #290 landed as `17d5ccf` but kept the PR's *original* subject —
+"WATCH: Wave-1 not executed (no genuine LDK2 candidate, no separation-of-duties
+operator)". That subject is stale: the diff it carries is the maker/checker RBAC
+split described in §8, not a WATCH determination. The title correction was
+rejected by a GraphQL `projects (classic)` deprecation fault in the `gh` client,
+and rewriting a pushed commit on the shared base branch is forbidden, so the
+record is corrected here instead of by a force-push.
 
 | | |
 |---|---|
@@ -23,13 +34,17 @@ follow-up commit, and no GO tag exists until that execution actually succeeds.
 | Approval reference | `ROLL-4-WAVE-1-OWNER-APPROVAL-2026-08-14` |
 | Approved branch set | `LDK2` (Cabang Landak) — exactly one, no other branch |
 | Accepted-import ceiling | 5 |
-| Accepted imports actually made | **0** |
-| Runtime authority | `88e880b49faf6cd099a4d4fd60200d30097eed17` (ROLL-4 GO) |
-| Determination | **WATCH** |
+| Accepted imports actually made | **1** (published; 4 of the ceiling unused) |
+| Runtime authority | `17d5ccfeec18cdf93ca1393520dd1442f837f814` |
+| Determination | **GO** |
 
 ---
 
-## 1. Why this is WATCH and not GO
+## 1. Why the FIRST attempt was WATCH and not GO
+
+*Historical record, preserved unedited.* Both blockers below were true when
+written; §7 and §8 record how each was cleared, and §9 records the execution
+that followed. Nothing in this section was rewritten to match the outcome.
 
 Two independent blockers. Either alone forbids a GO; both are factual, verified
 on production, and neither can be cleared from this side without the owner.
@@ -352,3 +367,163 @@ Not started, not authorized by this workstream: Wave-2; TKM1 / ATG3 / SUN4
 migration; global rollout; bulk or unattended import; OCR as clinical-date
 authority; conversion of legacy archives into native RME; billing, lab or
 SATUSEHAT generation; RBAC redesign; infrastructure change.
+
+---
+
+## 9. Wave-1 execution — real production evidence (2026-08-14)
+
+Runtime authority `17d5ccfeec18cdf93ca1393520dd1442f837f814`, deployed on
+`srv1730088` (`exit=0`, `DEPLOY OK`, smoke 7/7 GO). Every step below ran through
+the canonical service or CLI; no row was inserted by hand and no status was
+mutated directly.
+
+### 9.1 Order of operations
+
+Approval scope was bound in config *before* the wave was registered, because
+`createWave()` reads the deployment's approved branch codes and refuses anything
+outside them. Admission and the capability were opened last, after the wave was
+already ACTIVE and the operator assigned — so at no point was a branch open to
+ingestion without a wave to govern it.
+
+```
+config binding → register(1) → approve(11) → activate(1) → assign(7@LDK2)
+              → open admission → capability ON → import → publish
+```
+
+### 9.2 Separation of duties, proven by refusal
+
+The wave was created by user 1 — Super Admin, who holds every permission through
+the application's single global `Gate::before` bypass. Approving it as the same
+user was **refused**:
+
+```
+ERROR  wave: Gelombang migrasi harus disetujui oleh pengguna yang berbeda dari pembuatnya.
+```
+
+This is the result that justifies the sprint. A permission bypass grants
+abilities; it cannot satisfy a rule about *identity*, because that rule lives in
+`LegacyRmeWaveGovernanceService::approve()` rather than in the permission table.
+The wave then moved DRAFT → APPROVED under user 11, and ACTIVE under user 1.
+
+### 9.3 Gate decisions (server-side, read-only probes)
+
+| Actor @ branch | Cleared | Code |
+|---|---|---|
+| operator 7 @ **LDK2** | yes | `CLEARED` |
+| operator 7 @ TKM1 / ATG3 / SUN4 | no | `BRANCH_NOT_ENROLLED` |
+| Kasir 8 @ LDK2 | no | `OPERATOR_NOT_ASSIGNED` |
+| approver 11 @ LDK2 | no | `OPERATOR_NOT_ASSIGNED` |
+| operator 7 @ LDK2 while PAUSED | no | `WAVE_PAUSED` |
+| operator 7 @ LDK2 while DRAINING | no | `WAVE_DRAINING` |
+
+The three non-approved branches are refused for the *right* reason — not
+enrolled in this wave — rather than by an unrelated failure. The checker being
+refused ingestion is not a defect: separation holds on the ingestion path too,
+so the account that publishes a document cannot also file one.
+
+### 9.4 Import lifecycle
+
+| Field | Value |
+|---|---|
+| Import id / uuid | 6 / `8c9d6eb1-26d6-4d1a-8d9e-14d4cbef0b3d` |
+| Patient / canonical RM | 40 / `DG-LDK2-2024-22681` |
+| Origin branch | 2 — **derived** from the RM (`null` was submitted) |
+| Dates | `selected` 2026-08-13 = `latest` 2026-08-13 (single date) |
+| Pages | 1 |
+| sha256 | `f3cb5eb6…b6f0` — identical to the owner's file |
+| Lifecycle | QUEUED → PROCESSING → READY_FOR_REVIEW → REVIEWED → PUBLISHED |
+| Queue | depth 0 → 1 → 0; rendered in under 15 s; 0 failed jobs |
+| `imported_by` / `published_by` | **7 / 11** |
+
+`imported_by ≠ published_by` is a first for this system. The five records that
+predate Wave-1 all carry `1 / 1`.
+
+### 9.5 Human review
+
+Reviewed before publication, against the rendered page rather than any extracted
+text — there is no OCR anywhere in this path and none was used. The document's
+own printed header reads **"Cabang Landak"**, which independently corroborates
+the branch the server derived from the patient's Nomor RM. Publication was
+impossible before review: `publish` was denied to the checker while the import
+sat at READY_FOR_REVIEW, and denied to the operator at every stage.
+
+### 9.6 Doctor read — both directions
+
+| Doctor | LDK2 in practice set | Treating? | Wave-1 record 6 | Pre-existing record 4 |
+|---|---|---|---|---|
+| 9 | yes | patient 40 **no**, patient 37 **yes** | denied, absent from history | allowed, present in history |
+| 12 | yes | neither | denied | denied |
+| Kasir 8 | — | — | denied | denied |
+
+**The authorized read could not be demonstrated on RM 22681 itself, and was not
+faked.** Patient 40 has no native visit, so no doctor has ever treated them and
+`DoctorPatientScopeService` correctly denies every doctor. Manufacturing a visit
+to turn that green is precisely what this workstream forbids. The positive case
+is therefore shown on the pre-existing LDK2 record 4, where a real treating
+relationship exists — and RM 22681 becomes the *stronger* negative: a doctor who
+practises at LDK2, holds `view_legacy_rme_archive`, and still sees nothing,
+because same-branch alone has never been sufficient.
+
+### 9.7 Reconciliation, rollback and side effects
+
+```
+accepted 1 = published 1 + cancelled 0 + failed 0 + in-flight 0
+unexplained 0 · quota drift 0 · quota 1 used / 5 · findings none
+```
+
+Wave closed DRAINING → COMPLETED (branch LDK2 completed first). Production was
+then returned to its resting state: capability OFF, admitted branches EMPTY,
+approval reference EMPTY, wave config EMPTY, `rollout-readiness --expect=off
+--strict` → GO.
+
+Native tables, before → after, all unchanged: `trx_clinic_visits` 27→27,
+`trx_medical_records` 27→27, `trx_rme_invoices` 19→19, `trx_rme_payments` 27→27,
+`trx_lab_orders` 13→13, `trx_lab_case_candidates` 8→8,
+`trx_satusehat_candidates` 1→1.
+
+Intended deltas only: legacy imports 5→6, import pages 7→8, records 5→6, record
+pages 7→8, ops wave/branch/operator/quota rows 0→1 each, legacy audit events
+68→83.
+
+### 9.8 Storage — MEASURED, not estimated
+
+| | |
+|---|---|
+| Source PDF | 302,655 bytes |
+| Rendered page PNG (1783×2500) | 881,970 bytes |
+| Thumbnail PNG (229×320) | 33,012 bytes |
+| **Total for one 1-page document** | **1,217,637 bytes** |
+| Legacy private store | 13,372,432 bytes total · disk 89 GB free |
+
+A one-page scan costs roughly **4×** its source size once rendered — the render,
+not the PDF, dominates. Worth carrying into any capacity estimate for a larger
+wave.
+
+### 9.9 Read survives the capability being OFF
+
+With `FEATURE_RME_LEGACY_PDF_ARCHIVE=false` confirmed at runtime: the published
+Wave-1 record is still readable by its authorized governance reader, and the
+treating doctor still reads record 4. Non-treating doctors and the cashier still
+see nothing. Migration capability and published clinical read remain independent,
+exactly as HISTORY-1A/1B specify.
+
+Health after rollback: `/login`, `/health/live`, `/health/ready`, `/health/lb`
+all 200; env pilot; debug OFF; maintenance OFF; queue worker active; no failed
+jobs; no new Laravel errors.
+
+### 9.10 Honest limits of this wave
+
+- **One document, not five.** The ceiling was 5 and exactly one genuine
+  candidate existed. Quota exhaustion was therefore *not* exercised live
+  (`LIVE_EXHAUSTION_TESTED=NO`); it stays covered by the ROLL-4 automated quota
+  tests. No document was duplicated to fill the quota.
+- **Wave-1 completion means this pilot is complete**, not that Cabang Landak's
+  historical archive is migrated. Other LDK2 documents remain un-migrated.
+- **`clinical_timezone` is UTC on production, not WITA.** This document is dated
+  one day before "today", so it passes `latest < today` by a single day and would
+  have failed a few hours earlier. Publish revalidates the date, so the margin is
+  live, not a one-off.
+- **A master-data discrepancy is recorded, not corrected here.** The document
+  shows a birth year of 2006 (and an age of 20 consistent with it); the patient
+  master holds 2007. Identity is unambiguous and the date rule is unaffected.
+- **Wave-1 GO does not authorize Wave-2**, another branch, or a wider set.
