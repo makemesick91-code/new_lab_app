@@ -126,6 +126,22 @@ class RoleSeeder extends Seeder
             'manage_satusehat_branch_remediation',
             // SATUSEHAT-4D — read the comparative multi-branch matrix (own scope).
             'view_satusehat_multi_branch_readiness',
+            // LEGACY-RME-PDF-ROLL-4-WAVE-1 — the branch INTAKE OPERATOR for a
+            // legacy archive migration wave. Upload the historical PDF and see
+            // the imports for the branch this account is pinned to; nothing more.
+            //
+            // Deliberately NOT granted here: review, publish, void, and every
+            // migration-operations permission. Intake is the "maker" half of a
+            // maker-checker pair — the account that files a document must not
+            // also be the one that certifies and publishes it, nor the one that
+            // approves the wave it is filing under.
+            //
+            // This is not the security boundary on its own. A holder still has
+            // to pass, server-side: the feature flag, ROLL-3 branch admission,
+            // the wave operator assignment for the RM-DERIVED branch, the
+            // workspace branch scope, and the date/duplicate rules.
+            'view_legacy_rme_imports',
+            'create_legacy_rme_imports',
         ],
         'Technician' => [
             'view dashboard',
@@ -285,6 +301,14 @@ class RoleSeeder extends Seeder
             // SATUSEHAT-4D — read-only executive/owner aggregate + matrix.
             'view_satusehat_multi_branch_readiness',
             'view_satusehat_executive_readiness',
+            // LEGACY-RME-PDF-ROLL-4-WAVE-1 — read-only oversight of a migration
+            // wave: counts, quotas, branch labels and reconciliation codes. The
+            // operations dashboard carries no clinical content, so this gives an
+            // owner visibility into a rollout without any ability to change it.
+            //
+            // Read only by construction: no upload, no review, no publish, no
+            // void, no wave management, and no approval authority.
+            'view_legacy_rme_migration_operations',
         ],
         'Kasir' => [
             'view dashboard',
@@ -389,6 +413,25 @@ class RoleSeeder extends Seeder
             'promote_satusehat_branch',
             'manage_satusehat_change_control',
             'record_satusehat_uat_signoff',
+            // LEGACY-RME-PDF-ROLL-4-WAVE-1 — the CHECKER half of the legacy
+            // migration maker-checker pair, and the wave's governance approver.
+            //
+            // Reviews and publishes what an intake operator filed, and signs a
+            // wave as governance-approved. `approve_legacy_rme_migration_wave`
+            // is deliberately split from `manage_legacy_rme_migration_operations`
+            // (which this role does NOT get) so the separation-of-duties rule
+            // has something to enforce: with LEGACY_RME_REQUIRE_SEPARATE_APPROVER
+            // on, the approver must differ from the wave's creator, and that is
+            // checked server-side in LegacyRmeWaveGovernanceService::approve().
+            //
+            // Withholding `manage` is the point, not an oversight — a role that
+            // could both create and approve a wave would satisfy the letter of
+            // the rule while defeating it.
+            'view_legacy_rme_imports',
+            'review_legacy_rme_imports',
+            'publish_legacy_rme_imports',
+            'view_legacy_rme_migration_operations',
+            'approve_legacy_rme_migration_wave',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

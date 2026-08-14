@@ -65,18 +65,49 @@ it('rejects a cashier', function () {
         ->assertForbidden();
 });
 
-it('does not grant the archive to Supervisor RME by default', function () {
+it('gives Supervisor RME the checker half only — never the ability to file a document', function () {
+    // LEGACY-RME-PDF-ROLL-4-WAVE-1. Supervisor RME certifies and publishes what
+    // an intake operator filed. Withholding `create` is the whole point: an
+    // account that could both file and publish would be a maker-checker pair of
+    // one.
     $user = userInRole('Supervisor RME');
 
-    expect($user->can('view_legacy_rme_imports'))->toBeFalse()
-        ->and($user->can('create_legacy_rme_imports'))->toBeFalse();
+    expect($user->can('view_legacy_rme_imports'))->toBeTrue()
+        ->and($user->can('review_legacy_rme_imports'))->toBeTrue()
+        ->and($user->can('publish_legacy_rme_imports'))->toBeTrue()
+        ->and($user->can('create_legacy_rme_imports'))->toBeFalse()
+        ->and($user->can('void_legacy_rme_imports'))->toBeFalse();
 });
 
-it('rejects an Admin Klinik', function () {
-    $this->actingAs(userInRole('Admin Klinik'))
+it('gives Admin Klinik the intake half only — the workspace opens but publishing does not', function () {
+    // The maker reaches the workspace (that is what intake means) but holds no
+    // certifying authority. Asserted at the route, because the sidebar is never
+    // the boundary.
+    $operator = userInRole('Admin Klinik');
+
+    $this->actingAs($operator)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('settings.rme.legacy-imports.index'))
-        ->assertForbidden();
+        ->assertOk();
+
+    expect($operator->can('create_legacy_rme_imports'))->toBeTrue()
+        ->and($operator->can('review_legacy_rme_imports'))->toBeFalse()
+        ->and($operator->can('publish_legacy_rme_imports'))->toBeFalse()
+        ->and($operator->can('void_legacy_rme_imports'))->toBeFalse();
+});
+
+it('gives neither half any migration-operations or wave-approval authority', function () {
+    // Shaping the wave is a third, separate duty. Neither the maker nor the
+    // checker may create a wave; only the checker may approve one.
+    $operator = userInRole('Admin Klinik');
+    $approver = userInRole('Supervisor RME');
+
+    expect($operator->can('view_legacy_rme_migration_operations'))->toBeFalse()
+        ->and($operator->can('manage_legacy_rme_migration_operations'))->toBeFalse()
+        ->and($operator->can('approve_legacy_rme_migration_wave'))->toBeFalse();
+
+    expect($approver->can('manage_legacy_rme_migration_operations'))->toBeFalse()
+        ->and($approver->can('approve_legacy_rme_migration_wave'))->toBeTrue();
 });
 
 it('requires authentication', function () {

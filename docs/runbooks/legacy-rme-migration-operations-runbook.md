@@ -39,6 +39,48 @@ approval never authorizes a new one.
 
 ---
 
+## 1a. Candidate and operator preflight — BEFORE recording the approval
+
+A wave that is opened before anyone confirmed it has documents to migrate, or an
+operator allowed to migrate them, opens a write capability on live clinical data
+for nothing. Both checks are cheap, read-only, and must pass first.
+
+**Do the documents exist?** An approved branch with no un-migrated document is
+not a wave — it is WATCH.
+
+```bash
+# Every PDF on the host. Anything already under the private legacy store is
+# ALREADY MIGRATED and is not a candidate.
+find / -xdev -iname '*.pdf' -not -path '*/vendor/*' -not -path '*/node_modules/*' \
+  -not -path '/proc/*' -not -path '/sys/*' -not -path '/usr/*' -not -path '/snap/*'
+
+# Nothing already staged/pending for that branch?
+php artisan legacy-rme:migration-status --json
+```
+
+If object storage is enabled, check it too; `storage:object-readiness-check`
+reporting `disabled_ready` means there is no remote candidate source.
+
+**Do the operators exist?** ROLL-4 separates the approver from the operator on
+purpose. Confirm, as *different* accounts:
+
+- someone holds `create_legacy_rme_imports` (the intake operator), and
+- someone else holds `approve_legacy_rme_migration_wave` (the approver), and
+- someone holds `manage_legacy_rme_migration_operations` (wave governance).
+
+A deployment where the approver/governance permissions are held by **no role**
+cannot satisfy separation of duties. Super Admin's global `Gate::before` bypass
+lets one account do everything, which is exactly the concentration this split
+exists to prevent — it is not a substitute for provisioning the operators.
+
+Prefer a least-privileged branch-pinned operator (`users.branch_id` set to the
+wave's branch) over Super Admin. Grant through the canonical seeder/permission
+workflow, never direct SQL, and record the change.
+
+**Only when both checks pass** do you continue to §2 and record the approval.
+
+---
+
 ## 2. Record the approval on the server (ROLL-3 — the authority)
 
 ```bash
