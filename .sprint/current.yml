@@ -1,24 +1,28 @@
-# Active sprint manifest — LEGACY-RME-PDF-ROLL-4
+# Active sprint manifest — LEGACY-RME-PDF-ROLL-4-WAVE-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PDF-ROLL-4
-type: MODULE_SPRINT
+id: LEGACY-RME-PDF-ROLL-4-WAVE-1
+type: DOCS_ONLY
 module: LegacyRme
-title: "Production migration operations & scale-up — an operational control plane for wave-based Legacy RME migration (registered waves bound to the deployment approval, per-branch operator assignment, server-enforced daily quota, pause/drain, reconciliation and completion sign-off) that composes onto ROLL-3 admission so it can only ever narrow, never widen"
+title: "Controlled production migration Wave-1 (LDK2) — WATCH: no genuine candidate document and no separation-of-duties operator; production left at the safe resting state"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # operations gate + quota reservation on the ingestion path
-schema_change: true             # 5 additive migrations (4 ops_* tables + 1 nullable FK column)
-frontend_change: false          # 2 new Blade views only; no JS/CSS/Vite entry change
-security_impact: true           # decides who may migrate which branch, and how much
-branch_isolation_impact: true   # per-branch operator scoping on top of RM-derived admission
+runtime_change: false           # no app code touched; ROLL-4 control plane used as shipped
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
+security_impact: false          # no permission granted, no role changed, no policy touched
+branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # migrations + permissions ship to the VPS pilot
-browser_required: false         # verified by feature tests through the real HTTP routes and services
+deploy_required: false          # documentation and governance evidence only
+browser_required: false         # no UI surface
 
 test_profiles:
-  - rme
-  - security
+  - docs
 
-go_tag: legacy-rme-pdf-roll-4-production-migration-operations-scale-up-go
+# Outcome: WATCH. No wave registered, no capability enabled, no import accepted,
+# no GO tag. Production verified unchanged: capability OFF, admission EMPTY,
+# approval EMPTY, active wave NONE, zero operational wave rows.
+#
+# Blockers recorded in
+# docs/sprints/legacy-rme-pdf-roll-4-wave-1-controlled-production-migration.md

@@ -1,0 +1,97 @@
+---
+description: LEGACY-RME-PDF-ROLL-4 production migration waves — approval scope, candidate/operator preflight, quota honesty, WATCH vs GO
+globs:
+  - app/Modules/LegacyRme/**
+  - config/legacy_rme_rollout.php
+  - config/legacy_rme_operations.php
+  - docs/runbooks/legacy-rme-migration-operations-runbook.md
+alwaysApply: false
+---
+
+# Production migration waves — operating rules
+
+Operational companion to rule 97 (ROLL-4 control plane). Rule 97 governs the
+code; this one governs running a real wave against live clinical data.
+
+## Approval is scope-bound and single-use
+
+- A wave approval names an **exact** branch set and authorizes **only** that
+  wave. `ROLL-4-WAVE-1-OWNER-APPROVAL-2026-08-14` covers `LDK2` alone —
+  never TKM1, ATG3, SUN4, a later wave, or a widened set.
+- Every future production wave needs a fresh, exact owner approval.
+- Config (`legacy_rme_rollout.admission`) is the AUTHORITY; the wave row is an
+  operational MIRROR. Disagreement fails closed — never silently prefer one.
+
+## Preflight before opening anything
+
+Confirm **both**, read-only, before recording the approval or editing config:
+
+1. **Genuine un-migrated candidate documents exist for the approved branch.**
+   Anything already under the private legacy store is migrated, not a candidate.
+2. **An intake operator and a *different* approver both exist.**
+   `create_legacy_rme_imports` for the operator,
+   `approve_legacy_rme_migration_wave` for the approver,
+   `manage_legacy_rme_migration_operations` for wave governance.
+
+If the approver/governance permissions are held by no role, separation of duties
+is unsatisfiable. Super Admin's `Gate::before` bypass is **not** a substitute —
+it is the concentration the split exists to prevent. Prefer a least-privileged
+branch-pinned operator (`users.branch_id`) over Super Admin. Grants go through
+the canonical seeder/permission workflow, never direct SQL.
+
+Capability and admission are opened **last**, never first.
+
+## Quota honesty
+
+- The wave ceiling is a ceiling, never a target.
+- Fewer genuine documents than the quota is a normal wave — migrate only those.
+- **Zero genuine documents is WATCH, never GO.**
+- Never fabricate a patient, PDF, RM, visit, medical record or archive to reach
+  a quota, and never manipulate quota counters to simulate exhaustion. If live
+  exhaustion was not reached, say so and cite the automated coverage instead.
+- Quota counts ACCEPTED-INTO-STAGING. Retries are not charged again.
+  `NULL` (unlimited) is not `0` (admits nothing).
+
+## Running the wave
+
+- Branch is always **RM-derived** — never a request, session or `BranchContext`
+  value.
+- An operator needs an explicit, unrevoked assignment for that exact branch.
+- Uploads are deliberately serialized and low-volume; no bulk burst.
+- Every published record requires human review first. Never auto-publish.
+- Multi-date documents: earliest → `selected_rme_date`, latest →
+  `latest_rme_date`, both human-confirmed. **OCR is never the date authority.**
+- PUBLISHED is immutable. Correction is **VOID + fresh import**, never an
+  in-place edit and never a hard delete.
+- Status transitions go through the service/CLI/UI. Never direct SQL.
+
+## Stopping
+
+- PAUSE and DRAIN stop **new** intake and preserve accepted work; DRAIN is not
+  resumable and is not an incident-containment mechanism.
+- Capability OFF is the emergency control. It withdraws every legacy mutation.
+- **No migration state ever removes an authorized PUBLISHED clinical read.**
+  Pausing, draining, completing or switching the capability off must never hide
+  a patient's history from their treating doctor.
+
+## Reading a doctor's access correctly
+
+A doctor reaches a legacy archive only through a real treating relationship
+(`DoctorPatientScope`) intersected with their practice branches. **Same branch
+alone is never authorization** — a genuine same-branch doctor who does not treat
+the patient must see zero records and be denied the viewer.
+
+## Closing
+
+- Completion = reconciliation that balances (`unexplained = 0`,
+  `quota_drift = 0`, zero in-flight, zero unresolved failures) plus a sign-off,
+  recomputed under lock. An empty queue is never completion evidence, and
+  `failed_jobs = 0` is never queue-health evidence.
+- Wave completion means *this approved wave* is complete — never that every
+  historical archive for that branch has been migrated.
+- Legacy migration creates **zero** native ClinicVisit / MedicalRecord / invoice
+  / payment / lab / SATUSEHAT artifacts. A non-zero task-created delta is NO-GO.
+- Closure returns production to the safe resting state: capability OFF,
+  admission EMPTY, approval EMPTY, active wave NONE.
+- A wave reaching WATCH creates no GO tag and never moves, recreates or reopens
+  a historical GO tag.
