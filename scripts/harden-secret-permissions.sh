@@ -112,8 +112,14 @@ safe_modes() {
 
 # Enumerate secret-bearing environment files at the application root only
 # (maxdepth 1). Never follows symlinks; never descends into vendor/storage.
+# Restricted to regular files and symlinks so a directory that happens to match
+# the pattern is never chmod'ed (removing +x from a directory breaks traversal).
 list_secret_files() {
-  find "$APP_DIR" -maxdepth 1 \( -name '.env' -o -name '.env.*' \) ! -name "$PUBLIC_ENV_FILE" -print 2>/dev/null | sort
+  find "$APP_DIR" -maxdepth 1 \
+    \( -type f -o -type l \) \
+    \( -name '.env' -o -name '.env.*' \) \
+    ! -name "$PUBLIC_ENV_FILE" \
+    -print 2>/dev/null | sort
 }
 
 apply_one() {
@@ -151,9 +157,13 @@ verify_one() {
   group="$(stat -c '%G' "$file")"
   allowed="$(safe_modes "$file")"
 
+  # Explicit if/then (not `[ ] && ok=1`) so the loop's exit status can never
+  # interact with `set -e` — a security gate must not depend on that subtlety.
   ok=0
   for m in $allowed; do
-    [ "$actual" = "$m" ] && ok=1
+    if [ "$actual" = "$m" ]; then
+      ok=1
+    fi
   done
 
   if [ "$ok" -ne 1 ]; then
