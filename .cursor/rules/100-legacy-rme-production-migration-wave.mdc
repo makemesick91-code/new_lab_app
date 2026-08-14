@@ -95,3 +95,60 @@ the patient must see zero records and be denied the viewer.
   admission EMPTY, approval EMPTY, active wave NONE.
 - A wave reaching WATCH creates no GO tag and never moves, recreates or reopens
   a historical GO tag.
+
+## Separation of duties — established by Wave-1 (2026-08-14)
+
+ROLL-4 built the mechanism but shipped it off, and until Wave-1 no operational
+role held any legacy migration permission — so every earlier migration ran as one
+Super Admin and the rule had nothing to bite on. Wave-1 supplied two staffed
+accounts and turned it on. What that settled, permanently:
+
+- **A wave needs a maker and a checker, and they are different people.** The
+  intake operator holds `view` + `create` imports only. The checker holds `view`
+  + `review` + `publish` plus `approve_legacy_rme_migration_wave`. Neither holds
+  `manage_legacy_rme_migration_operations`, so the account that shapes a wave is
+  never the account that signs it.
+- **`LEGACY_RME_REQUIRE_SEPARATE_APPROVER` stays `true`.** It is hardening, not
+  wave state: closing a wave does not turn it back off.
+- **Super Admin's `Gate::before` bypass does not satisfy separation of duties.**
+  It grants abilities; it cannot make one identity into two. Proven live —
+  registering as user 1 and approving as user 1 is refused server-side.
+- **Do not collapse the roles to make a run go green.** If two staffed accounts
+  do not exist, the honest outcome is WATCH.
+- **Granting `review`/`publish` also widens the holder to every RME-enabled
+  branch**, because `LegacyRmeWorkspaceScope` treats those as governance
+  permissions. That is acceptable for an RME-wide supervisor and unacceptable for
+  a branch operator — which is exactly why the maker holds none of them and stays
+  pinned by `BranchContext`. Check this before adding a permission to either half.
+
+## Candidate preflight — before any capability is opened
+
+- **Canonical RM comes from patient data. Never synthesize it.** The year segment
+  of a Nomor RM is the patient's *registration* year, not the document's clinical
+  year: `RM Landak.pdf` is a 2026 document belonging to `DG-LDK2-2024-22681`.
+  Composing `DG-LDK2-2026-…` from branch + document year + raw RM resolves to no
+  patient at all.
+- **A human-confirmed raw RM beats a visual reading.** Wave-1's document was first
+  misread as `39681`, which matches zero patients; the owner-confirmed `22681`
+  matches exactly one. OCR and visual interpretation are never the authority for
+  the RM or the clinical date.
+- **`clinical_timezone` is UTC on production, not WITA.** A document dated
+  *yesterday* clears `latest < today` by a single day and would fail a few hours
+  earlier. Publish revalidates the date, so the margin stays live — check the
+  frame before promising a same-week archive will import.
+- A patient with **no native RME at all** is a valid migration case
+  (`NO_NATIVE_REFERENCE`); never manufacture a visit to create a boundary.
+
+## When the authorized-doctor read cannot be demonstrated
+
+A patient with no native visit has no treating doctor, so **every** doctor is
+correctly denied their legacy archive — including one who practises at the
+document's own branch. That is the gate working, not a failure. Demonstrate the
+positive read on a record where a treating relationship genuinely exists, report
+the denial plainly, and never create a visit to turn it green.
+
+## Storage cost, measured
+
+One 1-page A4 scan: source 302,655 B + rendered page 881,970 B + thumbnail
+33,012 B = **1,217,637 B**. The render dominates at roughly 4× the source; size a
+wave from the rendered total, not the PDF.

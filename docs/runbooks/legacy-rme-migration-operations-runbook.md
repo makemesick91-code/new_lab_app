@@ -327,3 +327,29 @@ used as one.
 - Edit a published record in place (correction is VOID + fresh import).
 - Run `migrate:fresh` or `db:wipe` on the VPS.
 - Treat the dashboard as an authorization boundary — it is presentation.
+
+---
+
+## 8. Two things Wave-1 (2026-08-14) proved this runbook was missing
+
+**Turning the capability ON has no step here.** §2–§5 open the approval, the
+wave and ROLL-3 admission, and §7 documents turning `FEATURE_RME_LEGACY_PDF_ARCHIVE`
+back *off* — but nothing states when it goes *on*. Wave-1 enabled it last, after
+the wave was ACTIVE, the operator assigned and admission opened, and verified
+with `legacy-rme:rollout-readiness --expect=on --strict` before anyone uploaded.
+Do it in that order: a branch must never be admitted with the capability already
+open and no wave to govern it.
+
+**Separation of duties is now enforced, so the actor flags are not
+interchangeable.** With `LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true`:
+
+```bash
+register  --actor=<wave manager>     # holds manage_…_operations
+approve   --actor=<checker>          # holds approve_…_wave, and is NOT the creator
+activate  --actor=<wave manager>
+assign    --actor=<wave manager> --operator=<maker>
+```
+
+Passing the creator to `approve` is refused server-side — including for Super
+Admin, whose global bypass grants permissions but cannot make one identity into
+two. If only one staffed account exists, stop at WATCH rather than reusing it.
