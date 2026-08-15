@@ -1,0 +1,90 @@
+---
+description: Canonical clinical calendar timezone and clinical date-boundary rules (LEGACY-RME-DATE-TZ-1)
+globs:
+  - "app/**/*.php"
+  - "config/**/*.php"
+  - "tests/**/*.php"
+alwaysApply: true
+---
+
+# LEGACY-RME-DATE-TZ-1 — canonical clinical timezone & date boundaries
+
+## The two semantic domains — never conflate them
+
+| Domain | Example | Frame | Owner |
+|---|---|---|---|
+| **Technical instant** | `2026-08-13T16:00:00Z` | UTC (existing architecture) | `config/app.php`, Carbon `now()` |
+| **Clinical calendar date** | `2026-08-14` | `Asia/Makassar` | `App\Support\Clinical\ClinicalClock` |
+
+`created_at`, `updated_at`, queue timestamps, audit event instants, deployment
+logs and system telemetry are **technical instants** and keep their current
+storage semantics. This sprint did **not** convert them and no future sprint
+should convert them "for consistency".
+
+## Canonical rules
+
+1. The canonical clinical calendar timezone is **`Asia/Makassar`**, declared
+   exactly once in `config/clinical.php` and read only through `ClinicalClock`.
+2. Use the **IANA identifier**. `WITA`, `UTC+8`, `GMT+8`, `+08:00` are rejected
+   by `ClinicalTimezone::isValid()`.
+3. Clinical "today" comes from `ClinicalClock::today()`. Never from
+   `Carbon::today()`, `now()`, `date_default_timezone_get()`, `php.ini`, the OS
+   zone, the CI runner zone, or `config('app.timezone')`.
+4. Clinical date is **never** taken from a browser, device, request parameter,
+   header, cookie or session value. It is server configuration, full stop.
+5. An invalid or blank clinical timezone **fails closed**
+   (`InvalidClinicalTimezoneException`). There is no UTC fallback — the silent
+   fallback *was* the defect.
+6. **Historical DATE values are never timezone-shifted.** `selected_rme_date`,
+   `latest_rme_date`, `rme_date`, `earliest_native_rme_date` and
+   `trx_clinic_visits.visit_date` are calendar dates a human read off a document
+   or the workflow stamped. Timezone derives *today* from an instant; it never
+   mutates a stored date.
+7. `selected_rme_date` remains the **earliest** human-confirmed legacy date;
+   `latest_rme_date` the **latest**. OCR is never a clinical-date authority.
+8. Upload eligibility and publish revalidation use the **same** clock authority.
+   Real time may advance the clinical day between them — that is one clock
+   moving, never two clocks disagreeing.
+9. `latest_rme_date == clinicalToday` is **not yet historical** (the rule is
+   strict `<`). Never relax it to `<=`.
+10. The native RME cutoff is **DATE vs DATE** and is timezone-invariant.
+11. `NO_NATIVE_REFERENCE` remains valid. Never fabricate a ClinicVisit or native
+    RME to manufacture a cutoff anchor.
+12. Do **not** use SQL `CURRENT_DATE` / `NOW()` for clinical eligibility unless
+    its timezone semantics are explicitly canonical. Pass an
+    application-computed clinical date instead.
+13. Do **not** invent per-branch timezone architecture. One global clinical
+    timezone until a separate, explicit product decision says otherwise.
+14. Timezone work never widens authorization: `DoctorPatientScopeService`,
+    RM-derived branch authority and PUBLISHED-only legacy read rules are
+    untouched by it.
+15. In tests, always restore the clock (`Carbon::setTestNow()` with no argument)
+    — a frozen instant must never leak into a sibling test.
+16. Production timezone verification is **read-only**: never change the VPS
+    system clock, never install a global test-now in a long-lived process, never
+    fabricate a clinical document to test a boundary. Use
+    `php artisan clinical:date-diagnose --instant=...`, which computes and
+    persists nothing.
+
+## Where the authority lives
+
+```
+config/clinical.php            'timezone' => env('CLINICAL_TIMEZONE', ClinicalTimezone::DEFAULT)
+App\Support\Clinical\ClinicalTimezone     DEFAULT = 'Asia/Makassar'  (the ONE literal)
+App\Support\Clinical\ClinicalClock        today() / timezone() / toClinicalDate() / inspect()
+```
+
+`config/legacy_rme.php` deliberately has **no** `clinical_timezone` key any
+more; `config/satusehat.php` derives its `clinic_timezone` default from the same
+constant. Two config files that can disagree about what day it is are the
+defect, not the fix — do not reintroduce a second key.
+
+## Verification
+
+```bash
+php artisan clinical:date-diagnose --strict
+php artisan clinical:date-diagnose --instant=2026-08-13T15:59:59Z --instant=2026-08-13T16:00:00Z
+php artisan legacy-rme:rollout-readiness --expect=off --strict   # includes the clinical_timezone check
+```
+
+Expected boundary: `15:59:59Z → 2026-08-13`, `16:00:00Z → 2026-08-14`.

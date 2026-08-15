@@ -6,6 +6,7 @@ namespace App\Modules\LegacyRme\Services;
 
 use App\Modules\LegacyRme\Support\LegacyRmeDateRuleResult;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Validation\ValidationException;
 
@@ -48,10 +49,23 @@ use Illuminate\Validation\ValidationException;
  *     service never invents one). A legacy date equal to the birth date is
  *     accepted; earlier is not.
  *
- * The "today" boundary is evaluated in the configured clinical timezone, which
- * defaults to the application timezone — the same wall clock the RME workflow
- * uses when it stamps trx_clinic_visits.visit_date, so the legacy date and the
- * native cutoff are always compared in one frame.
+ * LEGACY-RME-DATE-TZ-1 — the "today" boundary is evaluated by ClinicalClock,
+ * the single canonical clinical calendar authority (Asia/Makassar), NOT by the
+ * application/PHP/OS timezone. That distinction is load-bearing: between 16:00
+ * and 24:00 UTC the clinic is already living the next calendar day, so a
+ * UTC-anchored "today" refused documents that were genuinely historical and
+ * made the same document produce different answers depending only on the hour
+ * it was submitted.
+ *
+ * Only rule 3 consults a clock at all. Rules 2 and 4 compare stored calendar
+ * DATES against each other and are timezone-invariant by construction — the
+ * dates a human read off a document are never shifted into another zone.
+ *
+ * The same clock instance backs upload validation and publish revalidation
+ * (LegacyRmePublishService::assertDateStillValid re-enters evaluate()), so the
+ * two stages can never disagree about where the day boundary is. Real time may
+ * still legitimately advance between them; that is a clock moving forward, not
+ * two clocks disagreeing.
  */
 class LegacyRmeDateRuleService
 {
@@ -96,6 +110,7 @@ class LegacyRmeDateRuleService
 
     public function __construct(
         private readonly PatientEarliestNativeRmeDateResolver $earliestNativeRmeDate,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -273,18 +288,22 @@ class LegacyRmeDateRuleService
         return $this->earliestNativeRmeDate->resolveAsDateString((int) $patient->getKey());
     }
 
+    /**
+     * Today's CLINICAL calendar date.
+     *
+     * Delegated to ClinicalClock — this service must never re-derive the
+     * clinical day. The previous inline `config('app.timezone', 'UTC')`
+     * fallback is deliberately gone: it silently resolved to UTC in production
+     * and moved this boundary by eight hours.
+     */
     public function today(): CarbonImmutable
     {
-        return CarbonImmutable::now($this->timezone())->startOfDay();
+        return $this->clock->today();
     }
 
     public function timezone(): string
     {
-        $timezone = config('legacy_rme.dates.clinical_timezone');
-
-        return is_string($timezone) && $timezone !== ''
-            ? $timezone
-            : (string) config('app.timezone', 'UTC');
+        return $this->clock->timezone();
     }
 
     private function normalize(\DateTimeInterface|string|null $value): ?CarbonImmutable

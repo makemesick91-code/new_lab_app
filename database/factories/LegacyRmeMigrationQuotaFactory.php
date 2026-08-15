@@ -6,7 +6,7 @@ namespace Database\Factories;
 
 use App\Modules\LegacyRme\Models\LegacyRmeMigrationQuota;
 use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
-use Carbon\CarbonImmutable;
+use App\Support\Clinical\ClinicalClock;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -20,12 +20,10 @@ class LegacyRmeMigrationQuotaFactory extends Factory
     {
         return [
             'wave_id' => LegacyRmeMigrationWave::factory(),
-            // The clinical calendar day, matching the service that writes these
-            // buckets — a UTC-anchored default would land in a different bucket
-            // from the one the quota gate reads.
-            'quota_date' => CarbonImmutable::now(
-                (string) config('legacy_rme.dates.clinical_timezone', config('app.timezone', 'UTC'))
-            )->toDateString(),
+            // The clinical calendar day, taken from the SAME ClinicalClock the
+            // quota gate reads — a UTC-anchored default would land in a
+            // different bucket from the one the service checks.
+            'quota_date' => app(ClinicalClock::class)->todayString(),
             'consumed' => 0,
         ];
     }

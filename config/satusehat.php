@@ -19,6 +19,7 @@
  */
 
 use App\Modules\Satusehat\Gateways\DisabledSatusehatGateway;
+use App\Support\Clinical\ClinicalTimezone;
 
 return [
 
@@ -150,7 +151,12 @@ return [
     ],
 
     // --- Local timezone for UTC normalization (clinic operates in WITA) ---
-    'clinic_timezone' => env('SATUSEHAT_CLINIC_TIMEZONE', 'Asia/Makassar'),
+    // LEGACY-RME-DATE-TZ-1 — the default now comes from the canonical clinical
+    // calendar constant instead of a second hard-coded literal, so this file and
+    // config/clinical.php can never drift apart. The effective value is
+    // unchanged. This key normalizes stored wall-clock INSTANTS into UTC for
+    // FHIR; it is not the clinical calendar authority — ClinicalClock is.
+    'clinic_timezone' => env('SATUSEHAT_CLINIC_TIMEZONE', ClinicalTimezone::DEFAULT),
 
     // --- Privacy / masking ---
     // NIK/KTP is never rendered in full anywhere in the SATUSEHAT surface.

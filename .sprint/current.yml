@@ -1,58 +1,22 @@
-# Active sprint manifest — DEPLOY-HARDEN-1
+# Active sprint manifest — LEGACY-RME-DATE-TZ-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DEPLOY-HARDEN-1
-type: INFRA_RELEASE
-module: Deploy
-title: "Immutable deployment entrypoint & self-update safety — a deployment must never execute from a repository file it is about to rewrite; add an exclusive deploy lock, exact-SHA target pinning and a trusted immutable execution snapshot, and remove the manual pre-pull prerequisite"
+id: LEGACY-RME-DATE-TZ-1
+type: RUNTIME_FIX
+module: Clinical
+title: "Canonical clinical timezone & date-boundary correctness — clinical eligibility must resolve 'today' on the clinic's own calendar (Asia/Makassar), never a silently UTC-defaulted one; declare the clinical calendar once, fail closed on an invalid value, and keep technical instants on their existing UTC architecture"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application code path, controller, service or query changes
-schema_change: false            # no migration, no table, no column
+runtime_change: true            # ClinicalClock is a new clinical decision input
+schema_change: false            # no migration, no table, no column, no data backfill
 frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # deployment payload integrity, lock/snapshot trust boundary, concurrency
+security_impact: true           # clinical timezone is server-authoritative and must never be request-controlled
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the new entrypoint must be proven on the production host
+deploy_required: true           # the effective clinical calendar must be proven on the production host
 browser_required: false         # no UI surface
 
 test_profiles:
-  - deploy
+  - legacy_rme
   - architecture
-
-# ── The defect that triggered this sprint ───────────────────────────────────
-# scripts/deploy-vps.sh was executed straight out of the working tree while,
-# roughly halfway through its own body, it ran:
-#
-#     git checkout "$BRANCH"
-#     git pull --ff-only origin "$BRANCH"
-#
-# bash does not slurp a script. It reads it incrementally and keeps a byte
-# offset into the open file, so rewriting those bytes underneath a running
-# interpreter is undefined behaviour: the shell can resume mid-token at a stale
-# offset and execute a line no author ever wrote. The same applied to every
-# helper the deploy invoked AFTER the pull —
-# scripts/harden-secret-permissions.sh and scripts/verify-runtime-isolation.sh
-# were re-read from the tree the deploy had just rewritten, which is the same
-# defect one indirection removed.
-#
-# Two recent releases had to be rescued with a manual pre-pull. That workaround
-# succeeded but must not become permanent deployment architecture.
-#
-# ── The invariant this sprint locks ─────────────────────────────────────────
-#
-#     RUNNING_DEPLOY_PROGRAM != MUTABLE_REPOSITORY_FILE
-#
-# Once a deployment starts executing its deployment program, that program is
-# immutable for the duration of the run.
-#
-# ── Preserved, not weakened ─────────────────────────────────────────────────
-# INFRA-SEC-ENV-1  (secret file permissions)   remains CLOSED / IMMUTABLE / GO.
-# INFRA-SEC-RUNTIME-1 (dedicated runtime identity, co-tenant isolation)
-#                                              remains CLOSED / IMMUTABLE / GO.
-# Backup-before-migrate stays absolute; migrations stay additive migrate --force
-# with no destructive database command; the ENT-8 cache order and the ENT-11
-# deploy/rollback contract are unchanged. The rollback path is hardened the same
-# way and still takes its snapshot from the CURRENT code, so rolling the
-# application back never rolls the security tooling back.

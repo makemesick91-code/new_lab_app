@@ -8,6 +8,8 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeRolloutCheck;
 use App\Services\Foundation\FeatureFlagService;
+use App\Support\Clinical\ClinicalClock;
+use App\Support\Clinical\ClinicalTimezone;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -53,6 +55,7 @@ class LegacyRmeRolloutReadinessService
         private readonly BranchService $branches,
         private readonly LegacyRmeBranchAdmissionService $admission,
         private readonly LegacyRmeIngestionCapacityService $capacity,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -68,6 +71,7 @@ class LegacyRmeRolloutReadinessService
             $this->checkRuntimeOverrideCapture(),
             $this->checkEffectiveState($expectState),
             $this->checkFlagMetadataCurrent(),
+            $this->checkClinicalTimezone(),
             $this->checkSchema(),
             $this->checkPermissions(),
             $this->checkRoutes(),
@@ -300,6 +304,73 @@ class LegacyRmeRolloutReadinessService
                 'flag_metadata_current',
                 'The flag governance metadata matches the delivered runtime.',
                 ['review_target' => $reviewTarget, 'delivered_sprint' => $delivered],
+            );
+        });
+    }
+
+    /**
+     * LEGACY-RME-DATE-TZ-1 — the clinical calendar timezone must be a valid
+     * IANA identifier before any archive decision is trusted.
+     *
+     * FAIL, not WATCH, when it is unusable: an unresolvable timezone means
+     * every "is this document historical yet?" answer on this deployment is
+     * computed in an unknown frame, and ClinicalClock will refuse outright at
+     * the first clinical decision anyway. Reporting it as merely degraded would
+     * misrepresent a hard stop.
+     *
+     * A valid-but-non-canonical zone is WATCH: it is internally consistent and
+     * the deployment still works, but it is not the value this product declared,
+     * so an operator has to have decided that deliberately.
+     */
+    private function checkClinicalTimezone(): LegacyRmeRolloutCheck
+    {
+        return $this->guarded('clinical_timezone', function (): LegacyRmeRolloutCheck {
+            $posture = $this->clock->inspect();
+
+            if (! $posture['valid']) {
+                return LegacyRmeRolloutCheck::fail(
+                    'clinical_timezone',
+                    'The clinical calendar timezone is not a valid IANA identifier.',
+                    [
+                        'configured' => $posture['configured'],
+                        'expected' => $posture['expected'],
+                        'process_default' => $posture['process_default'],
+                    ],
+                    sprintf(
+                        'Set %s to a valid IANA identifier such as "%s". Clinical date decisions fail closed; they never fall back to UTC.',
+                        ClinicalTimezone::ENV_KEY,
+                        ClinicalTimezone::DEFAULT,
+                    ),
+                );
+            }
+
+            $context = [
+                'clinical_timezone' => $posture['effective'],
+                'expected' => $posture['expected'],
+                // Reported for contrast. A UTC process default alongside a WITA
+                // clinical calendar is the CORRECT posture, not a finding:
+                // technical instants stay UTC, clinical days do not.
+                'process_default' => $posture['process_default'],
+                'clinical_today' => $this->clock->todayString(),
+            ];
+
+            if (! $posture['canonical']) {
+                return LegacyRmeRolloutCheck::watch(
+                    'clinical_timezone',
+                    'The clinical calendar timezone is valid but is not the canonical value for this product.',
+                    $context,
+                    sprintf(
+                        'Confirm this deployment is deliberately running on "%s" rather than "%s".',
+                        (string) $posture['effective'],
+                        ClinicalTimezone::DEFAULT,
+                    ),
+                );
+            }
+
+            return LegacyRmeRolloutCheck::go(
+                'clinical_timezone',
+                'The clinical calendar timezone is the canonical Asia/Makassar.',
+                $context,
             );
         });
     }
