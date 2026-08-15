@@ -1,0 +1,104 @@
+---
+description: INFRA-SEC-RUNTIME-1 — DaengtisiaMS dedicated Unix runtime identity and co-tenant isolation. Applies to deploy/rollback automation, PHP-FPM pools, nginx bindings, systemd units and runtime filesystem ownership.
+globs:
+  - "scripts/deploy-vps.sh"
+  - "scripts/rollback-vps.sh"
+  - "scripts/provision-runtime-identity.sh"
+  - "scripts/verify-runtime-isolation.sh"
+  - "scripts/harden-secret-permissions.sh"
+  - "deploy/**"
+  - "config/deployment_rollback.php"
+  - "config/enterprise_foundation_runtime_hardening.php"
+alwaysApply: false
+---
+
+# Dedicated Runtime Identity & Co-Tenant Isolation (INFRA-SEC-RUNTIME-1)
+
+The production VPS is **shared with a co-tenant application**. DaengtisiaMS used
+to run as `www-data` — the same uid as that co-tenant — so a file mode could not
+stop a same-uid read of this application's secrets or private clinical storage.
+
+Authority: `deploy/runtime-identity.conf`.
+Runbook: `docs/runbooks/dedicated-runtime-identity-runbook.md`.
+Sprint: `docs/sprints/infra-sec-runtime-1-dedicated-runtime-identity-co-tenant-isolation.md`.
+
+## Identity
+
+1. DaengtisiaMS has a **dedicated Unix runtime identity** (`daengtisiams`) and
+   must never share its runtime uid with a co-tenant application.
+2. The identity is an unprivileged **system account**: no password, no home, a
+   no-login shell, no sudo/docker/adm/staff membership.
+3. `www-data` must **never** be a member of the `daengtisiams` group, and a
+   future co-tenant must never be added to it for convenience.
+4. Forbidden runtime identities are declared in
+   `DMS_FORBIDDEN_RUNTIME_USERS` and always include `root` and `www-data`.
+
+## Resolution — the defect that must not come back
+
+5. The runtime user is resolved from **one explicit, application-specific
+   authority**. Never:
+   - the first `user =` line found in `/etc/php/*/fpm/pool.d/`,
+   - the first non-root `php-fpm` process in the process table,
+   - a hardcoded `www-data` default.
+   All three guess, and on a shared host a guess can land on the co-tenant.
+6. Resolution is **fail closed**. Missing authority, undeclared identity,
+   forbidden identity, missing OS account or primary-group mismatch aborts the
+   deploy. There is no fallback of any kind.
+
+## Services
+
+7. The PHP-FPM pool is **application-specific** (`[daengtisiams]`), on its own
+   socket, never the distribution default `[www]` pool.
+8. The DaengtisiaMS nginx site binds the **exact** dedicated socket. A co-tenant
+   must never share it.
+9. nginx keeps running as `www-data` and only *connects* to the socket.
+   Socket-connect permission is NOT secret-read permission — do not "fix" it by
+   giving `www-data` back read access to the secret.
+10. The queue worker and every DaengtisiaMS background/scheduler unit run as the
+    dedicated identity. The **tracked** unit source must declare it, so a
+    reinstall from the repository cannot restore the shared account.
+
+## Filesystem
+
+11. The runtime writes **only** `storage/` and `bootstrap/cache/`.
+12. Application source, deploy scripts and `vendor/` stay deploy/root owned and
+    are **not writable** by the runtime. Never `chown -R` the checkout as a
+    permission fix — that destroys the trust boundary.
+13. The secret file stays `root:<runtime group>` mode `0640` — non-world-readable
+    (INFRA-SEC-ENV-1, still mandatory) **and** not readable by `www-data`.
+14. Private clinical storage and database dumps are not readable by the
+    co-tenant runtime. Application runtime does not need DB backup read.
+15. Never use a world-writable mode. Directories are `2775` (setgid), files
+    `0664`.
+16. ACLs and supplementary groups must not reintroduce cross-application access.
+
+## Verification
+
+17. Secret and private-path access is proven with `test -r` / `test -w` on
+    metadata. **Never** print the contents of a secret or a patient file to prove
+    a permission.
+18. `scripts/verify-runtime-isolation.sh` is read-only and is a **required
+    marker** in `config/deployment_rollback.php` for both the deploy and rollback
+    contracts. Removing the call fails CI and the VPS deploy.
+19. On the production path the verifier runs with `--require-host`, so a host
+    fact it could not inspect is a FAIL, never a silent pass. `--skip-os-account`
+    is a test-fixture flag and is rejected together with `--require-host`.
+20. CI cannot reproduce `/etc/php`, systemd or a real Unix account. CI proves the
+    contract and the logic; the host truth is proven on the VPS. Never fake the
+    host half inside CI.
+
+## Deploy & rollback
+
+21. Deploy-generated cache must not regress to a root-owned, runtime-unwritable
+    state — rebuild the Laravel cache **as** the runtime user.
+22. A rollback must not restore the shared runtime identity or a world-readable
+    secret. `scripts/rollback-vps.sh` resolves the identity **before** the
+    checkout and stages the verifier, because the target ref may predate this
+    sprint.
+23. `scripts/provision-runtime-identity.sh` is idempotent, dry-run by default,
+    validates `php-fpm -t` and `nginx -t` **before** any reload, and never runs a
+    database command.
+24. Emergency `--rollback` to the shared runtime is operational recovery only —
+    it makes INFRA-SEC-RUNTIME-1 **WATCH / NO-GO**, never GO.
+25. `deploy-vps-runner.sh` is started on the production VPS only; a start is not
+    a completion (`exit=0` **and** `DEPLOY OK` required).

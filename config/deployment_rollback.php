@@ -65,12 +65,23 @@ return [
         'backup_before_migrate' => true,
         'required_markers' => [
             'php artisan release:automated-smoke',
-            'chown -R www-data:www-data',
+            // INFRA-SEC-RUNTIME-1: ownership follows the EXPLICITLY resolved
+            // dedicated runtime identity. This replaced the previous
+            // 'chown -R www-data:www-data' literal, which pinned the contract to
+            // the account shared with the co-tenant application on the
+            // production host. The marker now proves the deploy chowns to the
+            // resolved identity rather than to any hardcoded shared account.
+            'chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"',
             // INFRA-SEC-ENV-1: the deploy must harden + fail-closed verify the
             // secret-bearing environment files on every run. Removing the call
             // fails this gate in CI and on the VPS, so a future deploy cannot
             // silently regress to a world-readable secret file.
             'harden-secret-permissions.sh',
+            // INFRA-SEC-RUNTIME-1: the deploy must prove, on the real host, that
+            // the dedicated runtime identity is intact and the co-tenant cannot
+            // read this application's secrets or private clinical storage.
+            // Removing the call fails this gate in CI and on the VPS.
+            'verify-runtime-isolation.sh',
         ],
         // The deploy path must also capture/verify NSF-10 release evidence.
         'required_evidence_markers' => [
@@ -102,11 +113,17 @@ return [
         // Post-rollback runtime hardening + verification.
         'required_markers' => [
             'php artisan release:automated-smoke',
-            'chown -R www-data:www-data',
+            // INFRA-SEC-RUNTIME-1: rolling the CODE back must never roll the
+            // RUNTIME IDENTITY back onto the shared account.
+            'chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}"',
             'nginx -t',
             // INFRA-SEC-ENV-1: rolling back to an older ref must not restore a
             // world-readable secret file either.
             'harden-secret-permissions.sh',
+            // INFRA-SEC-RUNTIME-1: a rollback must not silently drop co-tenant
+            // isolation. The verifier is staged before the checkout so this gate
+            // runs even when the target ref predates this sprint.
+            'verify-runtime-isolation.sh',
         ],
         // The rollback path re-verifies the ENT-5..10 foundation stack.
         'required_gate_markers' => [

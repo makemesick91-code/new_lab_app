@@ -1,41 +1,50 @@
-# Active sprint manifest — INFRA-SEC-ENV-1
+# Active sprint manifest — INFRA-SEC-RUNTIME-1
 # Validated by: php artisan sprint:manifest-check
 
-id: INFRA-SEC-ENV-1
+id: INFRA-SEC-RUNTIME-1
 type: SECURITY_FIX
 module: Deploy
-title: "Production secret file permission hardening — remove world-read from the production environment file and enforce it on every deploy, fail-closed"
+title: "Dedicated runtime identity & co-tenant isolation — move DaengtisiaMS off the shared www-data account onto its own PHP-FPM pool, queue worker and background identity, and resolve the deploy runtime user explicitly instead of by scanning FPM pools"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application code path changes; deploy automation only
+runtime_change: false           # no application code path changes; deploy/host automation only
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # removes a world-readable production secret file
+security_impact: true           # closes same-UID co-tenant read of secrets and private clinical storage
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the invariant must be proven on the production host
+deploy_required: true           # the isolation must be provisioned and proven on the production host
 browser_required: false         # no UI surface
 
 test_profiles:
   - deploy
   - architecture
 
-# Finding that triggered this sprint (production, srv1730088):
-#   the environment file at the application root was mode 0644 (world-readable)
-#   owned root:root, on a host shared with a co-tenant application and a
-#   postgres service account.
+# ── Residual that triggered this sprint ─────────────────────────────────────
+# INFRA-SEC-ENV-1 removed world-read from the production secret file (0644 ->
+# 0640 root:www-data) and explicitly did NOT claim same-UID isolation. This
+# sprint closes that residual.
 #
-# Root cause: NO deploy step had ever asserted a mode on it. The file was created
-# once by hand under the default umask 022 and inherited 0644 permanently; the
-# deploy script only ever hardened storage/ and bootstrap/cache.
+# Production finding (srv1730088):
+#   DaengtisiaMS PHP-FPM pool : www  (uid 33 www-data)  <- distribution default
+#   aish-pos PHP-FPM pool     : aish-pos (uid 33 www-data)
+#   DaengtisiaMS queue worker : www-data
+#   DaengtisiaMS snapshot unit: www-data
+# Same uid => a file mode cannot stop the co-tenant reading this application's
+# secret or its private clinical storage. World isolation PASS, application-to-
+# application isolation NOT PROVIDED.
 #
-# Target mode 0640 root:<runtime group> was derived from the real runtime, not
-# assumed: scripts/deploy-vps.sh rebuilds the config cache AS THE PHP-FPM RUNTIME
-# USER, and phpdotenv's safeLoad() swallows a permission error — so 0600 would
-# silently produce a config cache with an empty application key and empty
-# database credentials. The runtime group genuinely requires read.
+# Second, independent defect found in the same area:
+#   scripts/deploy-vps.sh resolved its runtime user with
+#     grep -r '^user =' /etc/php/*/fpm/pool.d/ | head -1
+#   plus a process-table guess and a hardcoded www-data default. That only ever
+#   looked correct because every pool on the host ran as www-data; the moment
+#   DaengtisiaMS gained a dedicated pool the walk order decided the answer, so
+#   the deploy could have chowned this application's runtime to the CO-TENANT's
+#   identity. Replaced by deploy/runtime-identity.conf, fail closed, no fallback.
 #
-# Explicitly NOT claimed: the co-tenant application runs under the SAME unix
-# account (www-data), so same-UID read is not closed by a file mode. See §
-# "Residual risk" in docs/sprints/infra-sec-env-1-production-secret-file-permission-hardening.md
+# INFRA-SEC-ENV-1 remains CLOSED / IMMUTABLE / GO. Its invariants are preserved
+# and re-asserted here, including across a rollback: the rollback path now
+# follows the dedicated runtime group and can never restore a world-readable
+# secret or hand secret read back to the shared account.

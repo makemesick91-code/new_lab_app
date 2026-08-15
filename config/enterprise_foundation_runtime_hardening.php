@@ -130,7 +130,13 @@ return [
         'service_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
         'service_name' => 'daengtisiams-queue-worker.service',
         'working_directory' => '/var/www/asia-dental-lab-v2',
-        'service_user' => 'www-data',
+        // INFRA-SEC-RUNTIME-1: the worker runs as the DEDICATED DaengtisiaMS
+        // runtime identity. It was www-data — the uid shared with the co-tenant
+        // application on the production host — which meant a worker processing
+        // clinical documents ran under an account another application could also
+        // assume. The authority is deploy/runtime-identity.conf; this value and
+        // the systemd unit must agree with it.
+        'service_user' => 'daengtisiams',
         // Markers the unit MUST contain (safe command + restart-safety + working dir).
         'required_service_markers' => [
             'artisan queue:work',
@@ -140,7 +146,8 @@ return [
             '--max-time=',
             'Restart=',
             'WorkingDirectory=/var/www/asia-dental-lab-v2',
-            'User=www-data',
+            'User=daengtisiams',
+            'Group=daengtisiams',
         ],
         // The unit must run queue:work (NOT queue:listen) and never a destructive
         // queue command. Patterns live here so no script/unit carries them inline.

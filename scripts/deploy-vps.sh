@@ -7,25 +7,52 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 
 cd "$APP_DIR"
 
-# ─── FIX-LOGIN-REDIRECT-RUNTIME-PERMISSIONS ─────────────────────────────────
-# Resolve the PHP-FPM runtime user so every cache/runtime file is created owned
-# by (and writable to) the web SAPI. Root-owned Laravel cache (Spatie permission
-# FileStore, config/route/view cache, logs) is exactly what caused the post-login
-# 500. Fail closed: never treat root as the runtime user.
-RUNTIME_USER="${RUNTIME_USER:-}"
-if [ -z "$RUNTIME_USER" ]; then
-  RUNTIME_USER="$(grep -rhoE '^[[:space:]]*user[[:space:]]*=[[:space:]]*[A-Za-z0-9_.-]+' /etc/php/*/fpm/pool.d/ 2>/dev/null | grep -vE '^[[:space:]]*;' | head -1 | sed -E 's/.*=[[:space:]]*//' || true)"
-fi
-if [ -z "$RUNTIME_USER" ]; then
-  RUNTIME_USER="$(ps -eo user,comm 2>/dev/null | awk '$2 ~ /php-fpm/ && $1 != "root" {print $1; exit}' || true)"
-fi
-[ -n "$RUNTIME_USER" ] || RUNTIME_USER="www-data"
-if [ "$RUNTIME_USER" = "root" ]; then
-  echo "FATAL: refusing to use 'root' as the Laravel runtime cache owner" >&2
+# ─── INFRA-SEC-RUNTIME-1 explicit runtime identity resolution ───────────────
+# The runtime identity is read from ONE explicit, application-specific authority.
+#
+# It used to be discovered by grepping every PHP-FPM pool on the host and taking
+# the FIRST `user =` line. That was only ever "correct" because every pool on
+# this shared VPS ran as www-data; it silently resolved whichever pool the
+# directory walk returned first, so the moment DaengtisiaMS got a dedicated pool
+# the deploy could have adopted the CO-TENANT's identity and chowned this
+# application's runtime to it. The process-table probe and the `www-data`
+# default had the same defect: they guess, and a guess that lands on a shared
+# account is exactly the vulnerability INFRA-SEC-RUNTIME-1 closes.
+#
+# Fail closed. No pool scan, no process scan, no default. A missing authority, a
+# missing OS account, or a forbidden (privileged / co-tenant) identity aborts
+# the deploy.
+RUNTIME_IDENTITY_FILE="${RUNTIME_IDENTITY_FILE:-${APP_DIR}/deploy/runtime-identity.conf}"
+if [ ! -r "$RUNTIME_IDENTITY_FILE" ]; then
+  echo "FATAL: runtime identity authority unreadable: ${RUNTIME_IDENTITY_FILE}" >&2
+  echo "       Refusing to guess the runtime user. Run scripts/provision-runtime-identity.sh first." >&2
   exit 2
 fi
-RUNTIME_GROUP="$(id -gn "$RUNTIME_USER" 2>/dev/null || echo "$RUNTIME_USER")"
-echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP}"
+# shellcheck disable=SC1090
+. "$RUNTIME_IDENTITY_FILE"
+
+RUNTIME_USER="${DMS_RUNTIME_USER:-}"
+RUNTIME_GROUP="${DMS_RUNTIME_GROUP:-}"
+if [ -z "$RUNTIME_USER" ] || [ -z "$RUNTIME_GROUP" ]; then
+  echo "FATAL: identity authority does not declare DMS_RUNTIME_USER/DMS_RUNTIME_GROUP — NOT GO" >&2
+  exit 2
+fi
+for forbidden in ${DMS_FORBIDDEN_RUNTIME_USERS:-root www-data}; do
+  if [ "$RUNTIME_USER" = "$forbidden" ]; then
+    echo "FATAL: declared runtime user '${RUNTIME_USER}' is forbidden (privileged, or shared with a co-tenant application) — NOT GO" >&2
+    exit 2
+  fi
+done
+if ! getent passwd "$RUNTIME_USER" >/dev/null 2>&1; then
+  echo "FATAL: runtime account '${RUNTIME_USER}' does not exist on this host — NOT GO" >&2
+  echo "       Provision it with: bash scripts/provision-runtime-identity.sh --apply" >&2
+  exit 2
+fi
+if [ "$(id -gn "$RUNTIME_USER")" != "$RUNTIME_GROUP" ]; then
+  echo "FATAL: '${RUNTIME_USER}' primary group is '$(id -gn "$RUNTIME_USER")', expected '${RUNTIME_GROUP}' — NOT GO" >&2
+  exit 2
+fi
+echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP} (explicit, from ${RUNTIME_IDENTITY_FILE})"
 
 # Run a command as the PHP-FPM runtime user (direct when already that user).
 as_runtime() {
@@ -47,12 +74,12 @@ mkdir -p \
 # Normalize ownership + safe modes (setgid dirs so new files inherit the group).
 # NEVER use a world-writable (0777) mode.
 normalize_runtime_ownership() {
-  if [ "${RUNTIME_USER}:${RUNTIME_GROUP}" = "www-data:www-data" ]; then
-    # ENT-11 deploy contract marker — default VPS runtime owner.
-    chown -R www-data:www-data storage bootstrap/cache
-  else
-    chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
-  fi
+  # Exactly one owner: the explicitly declared dedicated runtime identity.
+  # There is deliberately no shared-account branch here any more — a deploy that
+  # cannot resolve a dedicated identity has already aborted above.
+  # Only the runtime-writable paths are touched; the application source tree
+  # stays deploy/root owned so the runtime can never rewrite its own code.
+  chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
   find storage bootstrap/cache -type d -exec chmod 2775 {} \;
   find storage bootstrap/cache -type f -exec chmod 0664 {} \;
 }
@@ -253,6 +280,19 @@ echo "== Verify secret file permissions (INFRA-SEC-ENV-1) =="
 bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
 if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
   echo "FATAL: secret file permissions are unsafe — NOT GO" >&2
+  exit 1
+fi
+
+# ─── INFRA-SEC-RUNTIME-1 mandatory fail-closed runtime isolation gate ────────
+# Proves, on the real host, that DaengtisiaMS still runs under its own dedicated
+# Unix identity and that the co-tenant application cannot read this application's
+# secrets or private clinical storage. --require-host means a host fact this
+# gate could not actually inspect is a FAIL, never a silent pass. A deploy that
+# cannot prove runtime isolation is NOT GO — including when the invariant was
+# regressed out-of-band since the previous release.
+echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
+if ! bash scripts/verify-runtime-isolation.sh --app-dir "$APP_DIR" --require-host; then
+  echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
   exit 1
 fi
 

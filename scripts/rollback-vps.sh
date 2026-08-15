@@ -36,6 +36,45 @@ fi
 
 cd "$APP_DIR"
 
+# ─── INFRA-SEC-RUNTIME-1 explicit runtime identity resolution ───────────────
+# Resolved BEFORE the checkout, on purpose. The rollback target may predate this
+# sprint and therefore may not contain deploy/runtime-identity.conf at all — but
+# rolling the CODE back must never roll the RUNTIME IDENTITY back onto the
+# shared www-data account, because that would silently re-open co-tenant read of
+# this application's secrets and private clinical storage. The identity and its
+# verifier are captured here and reused after the checkout.
+RUNTIME_IDENTITY_FILE="${RUNTIME_IDENTITY_FILE:-${APP_DIR}/deploy/runtime-identity.conf}"
+if [ ! -r "$RUNTIME_IDENTITY_FILE" ]; then
+  echo "FATAL: runtime identity authority unreadable: ${RUNTIME_IDENTITY_FILE}" >&2
+  echo "       Refusing to guess the runtime user during a rollback." >&2
+  exit 2
+fi
+# shellcheck disable=SC1090
+. "$RUNTIME_IDENTITY_FILE"
+RUNTIME_USER="${DMS_RUNTIME_USER:?identity authority must declare DMS_RUNTIME_USER}"
+RUNTIME_GROUP="${DMS_RUNTIME_GROUP:?identity authority must declare DMS_RUNTIME_GROUP}"
+for forbidden in ${DMS_FORBIDDEN_RUNTIME_USERS:-root www-data}; do
+  if [ "$RUNTIME_USER" = "$forbidden" ]; then
+    echo "FATAL: declared runtime user '${RUNTIME_USER}' is forbidden — NOT GO" >&2
+    exit 2
+  fi
+done
+getent passwd "$RUNTIME_USER" >/dev/null 2>&1 || {
+  echo "FATAL: runtime account '${RUNTIME_USER}' does not exist on this host — NOT GO" >&2
+  exit 2
+}
+echo "Runtime user: ${RUNTIME_USER}:${RUNTIME_GROUP} (explicit, from ${RUNTIME_IDENTITY_FILE})"
+
+# Stage the isolation verifier + identity authority outside the working tree so
+# the post-rollback gate still runs even when the target ref does not ship them.
+RUNTIME_GUARD_DIR="$(mktemp -d -t infra-sec-runtime-1-XXXXXX)"
+chmod 0700 "$RUNTIME_GUARD_DIR"
+mkdir -p "${RUNTIME_GUARD_DIR}/scripts" "${RUNTIME_GUARD_DIR}/deploy"
+cp scripts/verify-runtime-isolation.sh "${RUNTIME_GUARD_DIR}/scripts/"
+cp "$RUNTIME_IDENTITY_FILE" "${RUNTIME_GUARD_DIR}/deploy/runtime-identity.conf"
+cleanup_runtime_guard() { rm -rf "$RUNTIME_GUARD_DIR"; }
+trap cleanup_runtime_guard EXIT
+
 echo "== Record current ref (pre-rollback state) =="
 CURRENT_HEAD="$(git rev-parse HEAD)"
 CURRENT_REF_DESC="$(git describe --tags --always 2>/dev/null || echo "$CURRENT_HEAD")"
@@ -112,17 +151,33 @@ php artisan view:cache
 php artisan event:cache
 
 echo "== Permissions =="
-chown -R www-data:www-data storage bootstrap/cache
-find storage bootstrap/cache -type d -exec chmod 775 {} \;
-find storage bootstrap/cache -type f -exec chmod 664 {} \;
+# Ownership follows the dedicated runtime identity resolved before the checkout,
+# never a hardcoded shared account.
+chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
+find storage bootstrap/cache -type d -exec chmod 2775 {} \;
+find storage bootstrap/cache -type f -exec chmod 0664 {} \;
 
 # ─── INFRA-SEC-ENV-1 ────────────────────────────────────────────────────────
 # Rolling back to an older ref must never restore a world-readable secret file.
-# Re-assert the invariant here too, fail closed.
+# Re-assert the invariant here too, fail closed. The group is the dedicated
+# runtime group — rolling back the code must not hand secret read back to the
+# shared account.
 echo "== Harden + verify secret file permissions (INFRA-SEC-ENV-1) =="
-bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group www-data
-if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group www-data; then
+bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
   echo "FATAL: secret file permissions are unsafe after rollback — NOT GO" >&2
+  exit 1
+fi
+
+# ─── INFRA-SEC-RUNTIME-1 ────────────────────────────────────────────────────
+# A rollback must not silently drop co-tenant isolation. The verifier was staged
+# before the checkout so this gate runs even when the target ref predates it.
+echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
+if ! bash "${RUNTIME_GUARD_DIR}/scripts/verify-runtime-isolation.sh" \
+      --app-dir "$APP_DIR" \
+      --identity-file "${RUNTIME_GUARD_DIR}/deploy/runtime-identity.conf" \
+      --require-host; then
+  echo "FATAL: runtime identity isolation is broken after rollback — NOT GO" >&2
   exit 1
 fi
 

@@ -16,8 +16,15 @@ After=network.target postgresql.service php8.3-fpm.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
+# INFRA-SEC-RUNTIME-1: the worker runs as the dedicated DaengtisiaMS runtime
+# identity, not the shared www-data account. The worker processes clinical
+# documents (legacy-rme-documents) and reads the application secret, so leaving
+# it on the uid shared with the co-tenant application on this host would keep
+# that material reachable from another application. Must match
+# DMS_RUNTIME_USER / DMS_RUNTIME_GROUP in deploy/runtime-identity.conf;
+# scripts/verify-runtime-isolation.sh fails the deploy if these drift.
+User=daengtisiams
+Group=daengtisiams
 WorkingDirectory=/var/www/asia-dental-lab-v2
 
 # Worker command only. Approved queues only (subset of ENT-5
