@@ -26,7 +26,12 @@ set -euo pipefail
 #   ssh daengtisiams-vps 'cd /var/www/asia-dental-lab-v2 && bash scripts/deploy-vps-runner.sh status'
 
 APP_DIR="${APP_DIR:-/var/www/asia-dental-lab-v2}"
-DEPLOY_SCRIPT="scripts/deploy-vps.sh"
+# DEPLOY-HARDEN-1: overridable so the one-time transition (and any future
+# recovery) can point the runner at a trusted copy of the deploy program taken
+# from a release object, without editing anything inside the checkout. The
+# default remains the in-tree canonical path; that script hands itself over to
+# the immutable-execution bootstrap before it mutates anything.
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT:-scripts/deploy-vps.sh}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 RUN_DIR="storage/logs/deploy-runner"
 DEPLOY_LOG_FILE="${DEPLOY_LOG_FILE:-${RUN_DIR}/deploy-${STAMP}.log}"
@@ -54,8 +59,12 @@ start_detached() {
   ' >/dev/null 2>&1 &
   BG_PID=$!
   echo "deploy-runner: started detached pid=${BG_PID}"
+  echo "deploy-runner: program=${DEPLOY_SCRIPT}"
   echo "deploy-runner: log=${DEPLOY_LOG_FILE}"
   echo "deploy-runner: status=${DEPLOY_STATUS_FILE}"
+  # DEPLOY-HARDEN-1: starting the launcher is NOT a completed deployment. The
+  # authority is the recorded exit code plus the DEPLOY OK marker in the log.
+  echo "deploy-runner: launcher accepted the request — deployment is NOT complete until exit=0 and DEPLOY OK"
 }
 
 follow_until_done() {
