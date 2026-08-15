@@ -8,6 +8,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeMigrationQuota;
 use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Models\LegacyRmeWaveBranch;
 use App\Modules\LegacyRme\Support\LegacyRmeOperationsDecision;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -47,18 +48,23 @@ use Illuminate\Validation\ValidationException;
  */
 class LegacyRmeMigrationQuotaService
 {
+    public function __construct(
+        private readonly ClinicalClock $clock,
+    ) {}
+
     /**
      * The clinical calendar day a document is charged to.
      *
-     * Anchored to `legacy_rme.dates.clinical_timezone` — the same wall clock the
-     * 1A date rules use. A quota that rolled over at UTC midnight would reset in
-     * the middle of an Indonesian working morning.
+     * LEGACY-RME-DATE-TZ-1 — delegated to ClinicalClock, the same canonical
+     * clinical calendar the 1A date rules use, so a document can never be
+     * charged to one day and judged against another. The previous inline
+     * `config('app.timezone', 'UTC')` fallback resolved to UTC in production,
+     * which rolled the quota over at 08:00 WITA — the middle of an Indonesian
+     * working morning.
      */
     public function today(): CarbonImmutable
     {
-        $timezone = (string) config('legacy_rme.dates.clinical_timezone', config('app.timezone', 'UTC'));
-
-        return CarbonImmutable::now($timezone)->startOfDay();
+        return $this->clock->today();
     }
 
     /**

@@ -132,16 +132,28 @@ return [
     ],
 
     /*
-    | Date rules. `clinical_timezone` anchors "today" to the same wall clock the
-    | rest of the RME workflow uses when it stamps trx_clinic_visits.visit_date
-    | (ClinicVisitService writes Carbon::today() in the application timezone), so
-    | the legacy date and the native cutoff are always compared in one frame.
-    | Operators can realign it via env without a code change; changing it shifts
-    | the "today" boundary by at most one calendar day.
+    | Date rules.
+    |
+    | LEGACY-RME-DATE-TZ-1 — `clinical_timezone` USED TO LIVE HERE AND IS GONE
+    | ON PURPOSE. It was declared as
+    |
+    |     env('LEGACY_RME_CLINICAL_TIMEZONE', env('APP_TIMEZONE', 'UTC'))
+    |
+    | but `config/app.php` hard-codes 'UTC' and never reads APP_TIMEZONE, and
+    | neither variable is set in production — so the clinical calendar silently
+    | resolved to UTC and every "is this document historical yet?" decision was
+    | made eight hours out of frame.
+    |
+    | The clinical calendar timezone is now declared exactly once, in
+    | `config/clinical.php`, and is read exclusively through
+    | App\Support\Clinical\ClinicalClock. DO NOT REINTRODUCE A SECOND KEY HERE:
+    | two config files that can disagree about what day it is are the defect,
+    | not the fix.
+    |
+    | The switches below are DATE-vs-DATE comparison rules and carry no timezone
+    | semantics at all.
     */
     'dates' => [
-        'clinical_timezone' => env('LEGACY_RME_CLINICAL_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
-
         // The legacy date must be strictly before the earliest native RME date.
         'require_strictly_before_native' => true,
 
