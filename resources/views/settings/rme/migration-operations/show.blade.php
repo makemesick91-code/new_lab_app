@@ -273,6 +273,38 @@
         @endif
     </x-ui.card>
 
+    {{--
+        APPROVAL LIVES OUTSIDE THE MANAGE-ONLY BLOCK, DELIBERATELY.
+
+        ROLL-4 gives approval its OWN permission so it can be held by someone who
+        does not manage the rollout — that split is what the approver-is-not-creator
+        rule is built on, and the route says so explicitly. The designated approver
+        (Supervisor RME) therefore holds `approve_legacy_rme_migration_wave` and, by
+        design, NOT `manage_legacy_rme_migration_operations`.
+
+        Nesting this form inside `$canManage` made the only human approval path
+        invisible to the single role it exists for: the inner permission check was
+        dead code, and separation of duties could then only be satisfied by a CLI
+        actor rather than by a person in the UI. The gate is the POLICY (`approve`),
+        which is what the controller authorises against, so the button appears
+        exactly when the action would be allowed — never on a terminal wave.
+    --}}
+    @can('approve', $wave)
+        <x-ui.card>
+            <x-slot:header>Persetujuan Gelombang</x-slot:header>
+
+            <p class="mb-3 text-sm text-ink-soft">
+                Status saat ini <strong>{{ $wave->status }}</strong>. Persetujuan harus
+                dilakukan oleh pengguna yang berbeda dari pembuat gelombang.
+            </p>
+
+            <form method="POST" action="{{ route('settings.rme.migration-operations.approve', $wave) }}">
+                @csrf
+                <x-ui.button type="submit" variant="primary">Setujui Gelombang</x-ui.button>
+            </form>
+        </x-ui.card>
+    @endcan
+
     @if ($canManage)
         <x-ui.card>
             <x-slot:header>Tindakan Gelombang</x-slot:header>
@@ -292,13 +324,6 @@
                 </form>
 
                 <div class="space-y-2">
-                    @can('approve_legacy_rme_migration_wave')
-                        <form method="POST" action="{{ route('settings.rme.migration-operations.approve', $wave) }}">
-                            @csrf
-                            <x-ui.button type="submit" variant="primary">Setujui Gelombang</x-ui.button>
-                        </form>
-                    @endcan
-
                     <form method="POST" action="{{ route('settings.rme.migration-operations.activate', $wave) }}">
                         @csrf
                         <x-ui.button type="submit" variant="success">Jalankan Gelombang</x-ui.button>

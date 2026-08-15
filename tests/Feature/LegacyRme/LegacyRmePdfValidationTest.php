@@ -21,6 +21,8 @@ use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
@@ -132,9 +134,16 @@ it('refuses a legacy date that is not strictly before the earliest native RME da
 });
 
 it('refuses a legacy date of today', function () {
-    $patient = lrmeUploadPatient(now()->addDay()->toDateString());
+    // LEGACY-RME-DATE-TZ-1 — "today" is the CLINICAL calendar day (Asia/Makassar),
+    // not the process day. Deriving it from now() re-derived the boundary in the
+    // technical frame, which the rule service is explicitly forbidden from doing,
+    // and made this test fail for the ~8 hours a day when the two dates differ:
+    // it then asserted against clinical YESTERDAY, which the strict `<` rule
+    // correctly accepts, so the expected refusal never came.
+    $clinicalToday = app(ClinicalClock::class)->todayString();
+    $patient = lrmeUploadPatient(CarbonImmutable::parse($clinicalToday)->addDay()->toDateString());
 
-    expect(fn () => lrmeUpload($patient, null, now()->toDateString()))->toThrow(ValidationException::class);
+    expect(fn () => lrmeUpload($patient, null, $clinicalToday))->toThrow(ValidationException::class);
 });
 
 it('refuses a legacy date before the patient birth date', function () {
