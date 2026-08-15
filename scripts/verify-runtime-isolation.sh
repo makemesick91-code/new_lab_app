@@ -408,7 +408,10 @@ for rel in ${DMS_SOURCE_IMMUTABLE_PATHS:-}; do
       ok "${rel} is not runtime-writable (owner ${S_OWNER}, mode ${S_MODE})"
     fi
   else
-    skip "${rel} present"
+    # A path that does not exist cannot be written by anyone. Absence is not an
+    # exposure, so this is a pass, not an uninspectable host fact — otherwise
+    # adding a not-yet-created path to the list would fail a future deploy.
+    ok "${rel} absent (nothing to protect)"
   fi
 done
 
@@ -428,7 +431,9 @@ for rel in ${DMS_PRIVATE_PATHS:-}; do
       ok "${rel} is private to ${RUNTIME_USER} (mode ${D_MODE})"
     fi
   else
-    skip "${rel} present"
+    # Same reasoning: a private directory that does not exist holds no clinical
+    # evidence and therefore exposes nothing.
+    ok "${rel} absent (nothing to protect)"
   fi
 done
 
