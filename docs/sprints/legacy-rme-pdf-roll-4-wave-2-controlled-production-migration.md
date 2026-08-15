@@ -1,30 +1,177 @@
 # LEGACY-RME-PDF-ROLL-4-WAVE-2 — Controlled Production Migration Wave-2
 
-**Status: `WATCH / NO-GO — WAVE EXECUTED AND ABORTED. 0 PUBLISHED. NO GO TAG.`**
+**Status: `COMPLETE — WAVE-2R EXECUTED, RECONCILED, CLOSED. 4 GENUINE DOCUMENTS PUBLISHED.`**
 
-Three attempts are recorded. Attempt 1 stopped with no candidates and no approval.
-Attempt 2 froze a real candidate set and stopped because one human held both the
-maker and checker accounts. Attempt 3 cleared that, opened the wave for real, and
-was aborted by the owner because **every document was filed by `u1` (Super Admin)
-instead of the approved maker `u7`**.
+Four attempts are recorded. The first three failed honestly and are kept below
+unchanged. The fourth — the retry wave `WAVE-2R` — ran end to end on production
+with the approved maker and a separate checker, and published four genuine
+Cabang Landak archive documents.
 
-Nothing was reviewed. Nothing was published. The archive is unchanged at 6
-published legacy records, and every clinical, billing, lab and SATUSEHAT table
-ended exactly where it started.
+| Attempt | Outcome |
+|---|---|
+| 1 | WATCH — no candidates, no approval |
+| 2 | WATCH — one human held both maker and checker accounts |
+| 3 (`WAVE-2`) | **WATCH / NO-GO** — 5 accepted, 0 published; every import filed by `u1` instead of the approved maker `u7`. Wave `CANCELLED`, all imports withdrawn |
+| 4 (`WAVE-2R`) | **GO** — 4 accepted, **4 published**, maker `u7` → checker `u11`, reconciliation balanced |
 
 | | |
 |---|---|
-| Wave reference | `LEGACY-RME-PDF-ROLL-4-WAVE-2` (wave id 2) |
-| Approval | `ROLL-4-WAVE-2-OWNER-APPROVAL-2026-08-16` — LDK2, ceiling 5, maker u7, checker u11 |
-| Accepted into staging | **5** (quota 5/5, exhausted) |
-| Cancelled | 1 (wrong source document) |
-| Left inert `READY_FOR_REVIEW` | 4 |
-| Reviewed / Published | **0 / 0** |
-| Wave final status | `CANCELLED` |
+| Wave reference | `WAVE-2R` (wave id 3) |
+| Approval | `ROLL-4-WAVE-2-RETRY-OWNER-APPROVAL-2026-08-16` — LDK2, ceiling 4, maker u7, checker u11 |
+| Designated set | 5 frozen hashes · **valid 4** · W2-003 explained rejection, **not substituted** |
+| Accepted / Published | **4 / 4** |
+| Maker → Checker | `u7` Yuni FO (Admin Klinik, LDK2) → `u11` Jene Monika (Supervisor RME) — **distinct on every record** |
+| Reconciliation | `unexplained 0`, `quota_drift 0`, `in_flight 0`, `balanced true` |
 | Native / billing / lab / SATUSEHAT delta | **0 on every table** |
-| Determination | **WATCH / NO-GO** |
+| Final production state | capability OFF, admission EMPTY, active wave NONE |
+| Determination | **GO** |
 
 ---
+
+## WAVE-2R — the successful retry (2026-08-16)
+
+### What had to be fixed first
+
+The retry was only possible because attempt 3 exposed, and this workstream
+fixed, a defect that made the approval unreachable: the approve form was nested
+inside the wave view's `@if ($canManage)` block, so the designated approver —
+who by design holds no manage permission — could never see it. Separation of
+duties was satisfiable only by a CLI actor impersonating them.
+
+Fixed in PR #298 (`f28df89` → merged `25dc2b9`, deployed `exit=0` / `DEPLOY OK`)
+with a regression test verified to fail without the fix. Approval now renders in
+its own card outside the manage-only block, gated on the POLICY.
+
+### Order of operations
+
+Admission and the capability were opened last, and the capability was opened and
+closed three times so that a write capability on live clinical data was never
+left waiting on an unscheduled human:
+
+```
+old imports cancelled by u7 → production reverified at rest
+  → config binding (approval reference + approved branch)
+  → register WAVE-2R (u1, DRAFT, ceiling 4)
+  → approval-only capability window → u11 APPROVES in the UI → window closed
+  → activate (u1) → assign u7@LDK2 (u1) → admit LDK2      [all with capability OFF]
+  → capability ON as the final gate
+  → u7 files 4 → maker-identity hard gate → u11 reviews + publishes
+  → drain → branch complete → wave complete → capability OFF, admission EMPTY
+```
+
+Both stop-conditions were tested rather than assumed, and both cleared: closing
+the capability window does **not** invalidate an approval (it is persisted DB
+state, not config), and `activate` / `assign` / `admit` all run correctly with the
+capability OFF.
+
+### Per-record reconciliation
+
+| Import | Record | Patient | Canonical RM | Branch | selected → latest | SHA-256 (16) | Maker | Checker | Status |
+|---|---|---|---|---|---|---|---|---|---|
+| 12 | 7 | 41 | `DG-LDK2-2026-22623` | LDK2 *(derived)* | 2026-08-10 → 2026-08-10 | `02672d5b3afb396a` | u7 | u11 | **PUBLISHED** |
+| 13 | 8 | 42 | `DG-LDK2-2025-12020` | LDK2 *(derived)* | 2025-07-09 → 2026-07-10 | `282c4250eb7c1bca` | u7 | u11 | **PUBLISHED** |
+| 14 | 9 | 46 | `DG-LDK2-2026-22676` | LDK2 *(derived)* | 2026-08-13 → 2026-08-13 | `92502ebc21832948` | u7 | u11 | **PUBLISHED** |
+| 15 | 10 | 45 | `DG-LDK2-2025-8445` | LDK2 *(derived)* | 2025-03-23 → 2026-01-31 | `dcf80ed45f68f885` | u7 | u11 | **PUBLISHED** |
+
+`imported_by ≠ published_by` on all four, and this time the maker is the account
+the approval actually named. Branch was derived from the Nomor RM on every
+record; none was submitted or overridden.
+
+### Aggregate, recomputed by the application under lock
+
+```
+accepted 4   published 4   cancelled 0   failed_unresolved 0   in_flight 0
+unexplained 0   quota_consumed 4   quota_drift 0   stale_processing 0
+published_records 4   void_records 0   balanced true   blockers []
+```
+
+```
+TOTAL_DESIGNATED=5   PREFLIGHT_PASS=4   PREFLIGHT_REJECTED=1
+FROZEN_HASH_MATCH=5/5   ADMITTED=4   PUBLISHED=4   FAILED=0
+DUPLICATE_ADMISSIONS=0  DUPLICATE_PUBLISHED=0  WRONG_BRANCH=0  WRONG_PATIENT=0
+UNAUTHORIZED_PUBLISH=0
+NATIVE_CLINICAL_DELTA=0  BILLING_DELTA=0  LAB_DELTA=0  SATUSEHAT_DELTA=0
+```
+
+Zero side effects, field by field against the frozen baseline: clinic_visits 27,
+medical_records 27, odontograms 27, rme_invoices 19, rme_payments 27,
+lab_orders 13, satusehat_candidates 1 — every one unchanged. Legacy archive rose
+6 → 10 records (9 PUBLISHED, 1 pre-existing VOID), which is the only delta the
+wave was allowed to make.
+
+### W2-003 remains rejected
+
+RM `27541` resolves to no patient (0 matches, re-verified at retry time). The
+one-digit-away `DG-LDK2-2026-22541` (patient 43) was never matched to it, no
+patient was created, and no substitute document was admitted to reach the
+ceiling. The rejected file's hash appears in **zero** live imports.
+
+### History and doctor scope
+
+Each of the four patients carries exactly one published legacy record. All four
+have **0 visits and 0 medical records**, so no treating relationship exists and
+`DoctorPatientScopeService` correctly denies every doctor (active doctors: 9, 12).
+
+```
+POSITIVE_DOCTOR_READ=0 (correctly N/A — no treating relationship exists)
+NEGATIVE_SCOPE_PROOF=4
+```
+
+**The authorised read was not demonstrated and was not faked.** Manufacturing a
+visit to turn it green would have been the exact fabrication this wave forbids.
+
+### Honest limits of this wave
+
+- `LIVE_QUOTA_EXHAUSTION` — the ceiling was **reached exactly** (4/4) by the
+  approved set, but refusal-on-overflow was **not exercised live**; that behaviour
+  rests on the existing automated coverage.
+- `PAUSE_RESUME_LIVE` — exercised during the aborted attempt 3, **not** during
+  `WAVE-2R`.
+- Storage measured: private legacy store 13,372,432 → 26,456,198 bytes, a delta of
+  **13,083,766 B for 4 documents** (~3.27 MB each, render-dominated).
+
+### Final production state
+
+```
+CAPABILITY = OFF     ADMISSION = EMPTY     ACTIVE_WAVE = NONE
+wave WAVE-2R = COMPLETED   branch LDK2 = COMPLETED
+backlog all zero   jobs 0   failed_jobs 0   staged sources removed
+published legacy records = 9 (readable with the capability OFF, by design)
+```
+
+Foundations after closure: `legacy-rme:rollout-readiness --expect=off --strict`
+GO · `foundation:deployment-entrypoint-check` GO · runtime isolation
+70 GO / 0 FAIL / 0 SKIP · secret file `0640 root:daengtisiams` · clinical
+timezone `Asia/Makassar` · health `/login` `/health/live` `/health/ready`
+`/health/lb` all 200 · nginx, php8.3-fpm, queue worker active ·
+`VPS_HEAD = 25dc2b96576d00bc6b6d6e684ed3414cb0d81133`.
+
+---
+
+## Durable rules this wave adds
+
+1. **A permission that no reachable UI exposes is not a control.** Assert
+   reachability for the role that owns an action, not only refusal for everyone
+   else. A service-level test proves a rule cannot be violated and says nothing
+   about whether it can be exercised.
+2. **Verify `uploaded_by` against the approval BEFORE review.** Attempt 3 filed
+   everything as Super Admin and nobody noticed until after four uploads; the
+   retry checked identity first and passed cleanly. Assignment is not
+   participation.
+3. **A cancelled import still consumes quota.** Size a wave with correction
+   headroom, or accept that one mis-file ends it.
+4. **`complete` is refused while a branch is unfinished; `cancel` is the honest
+   terminal state for an aborted wave.** Never force completion to look tidy.
+5. **Import lifecycle actions are UI-only.** There is no CLI for import
+   cancel/review/publish/retry, so an operator aborting a wave over SSH cannot
+   withdraw its staged documents. Report the gap; never substitute SQL or Tinker.
+6. **The admission gate reads as an access problem to the operator.** "Cabang
+   belum masuk gelombang migrasi" is the rollout refusing, not a permission fault
+   — check wave/admission state before investigating the account.
+
+---
+
+# Earlier attempts (unchanged record)
 
 ## Attempt 3 (2026-08-16) — what ran, and why it was aborted
 
