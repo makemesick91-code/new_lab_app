@@ -152,3 +152,49 @@ the denial plainly, and never create a visit to turn it green.
 One 1-page A4 scan: source 302,655 B + rendered page 881,970 B + thumbnail
 33,012 B = **1,217,637 B**. The render dominates at roughly 4× the source; size a
 wave from the rendered total, not the PDF.
+
+## Separation of duties is about people — reinforced by Wave-2 (2026-08-15)
+
+Wave-1 proved two *accounts* can be split. Wave-2 hit the case that actually
+tests the rule: the accounts were correctly provisioned and least-privileged, but
+**one human held both**.
+
+- **Two accounts controlled by one person is not separation of duties.** It
+  satisfies the schema and defeats the control — two attestations signed by the
+  same hand are one attestation. The honest outcome is WATCH.
+- **Never switch accounts to make a run go green.** If no second authorized human
+  is available, stop and require one; do not log in as the maker, then as the
+  checker.
+- **Operator attestations belong to humans.** `patient_confirmation` and
+  `date_confirmation` on intake, and review/publish on the way out, must be made
+  by the actual authorized operator through the canonical UI. An agent must not
+  impersonate the maker or checker or synthesize those confirmations through
+  Tinker or the service layer. That they are a UX speed bump whose every
+  referenced rule is independently server-enforced is **not** a licence to
+  generate them — the attestation is a statement about who looked.
+
+## Candidate identity — reinforced by Wave-2
+
+- **Source identity is the SHA-256, never the filename.** A replacement staged
+  under a normalized name must be identified from its own bytes and rendered
+  content before it is treated as authorized. Freeze every hash before admission.
+- **A superseded candidate is removed, not deprecated.** It stays unauthorized
+  even when a later file reuses its filename.
+- **A supplied hint never overrides the source, and the source never overrides
+  the patient master.** Re-render the field at higher resolution to settle an
+  ambiguous digit. If the RM on paper resolves to no patient, the candidate is
+  **rejected** — never matched to the nearest existing RM, never given a newly
+  created patient.
+- **Preflight rejection is a normal wave outcome.** Fewer approved candidates
+  than the ceiling is fine. A rejected candidate is never replaced to reach the
+  ceiling without fresh owner authorization.
+
+## Opening and cleaning up — reinforced by Wave-2
+
+- **Open the capability last, and only with a human at the keyboard.** Hashing,
+  preflight and staging are read-only and complete first. Never open a write
+  capability on live clinical data to wait for an unscheduled human.
+- **Clean up staged clinical sources when a wave does not proceed.** Frozen
+  hashes plus the owner's originals preserve identity, so PHI need not sit on the
+  host outside the managed private store while nothing is running. Validate the
+  directory contents against the frozen hashes before removing anything.
