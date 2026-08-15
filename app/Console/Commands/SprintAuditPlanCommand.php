@@ -18,6 +18,8 @@ final class SprintAuditPlanCommand extends Command
     protected $signature = 'sprint:audit-plan
         {--manifest= : Path to the sprint manifest}
         {--changed-files= : Comma/newline-separated changed files (overrides git diff)}
+        {--base-sha= : Authoritative exact base commit SHA (overrides remote resolution)}
+        {--base-branch= : Canonical base branch to resolve through the canonical remote}
         {--json : Output JSON}';
 
     protected $description = 'Emit the audit level and inspection checklist scoped to the sprint type + change set.';

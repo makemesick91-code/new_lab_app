@@ -23,6 +23,8 @@ final class SprintTestCommand extends Command
     protected $signature = 'sprint:test
         {--manifest= : Path to the sprint manifest}
         {--changed-files= : Comma/newline-separated changed files (overrides git diff)}
+        {--base-sha= : Authoritative exact base commit SHA (overrides remote resolution)}
+        {--base-branch= : Canonical base branch to resolve through the canonical remote}
         {--plan : Only print the plan; run nothing}
         {--focused : Run only the focused Pest filters}
         {--regression : Run the focused + related regression suites}

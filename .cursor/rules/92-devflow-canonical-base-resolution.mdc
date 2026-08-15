@@ -1,0 +1,103 @@
+---
+description: DEVFLOW canonical base resolution — exact-SHA comparison authority, no stale-local fallback
+globs:
+  - "app/Support/Devflow/**"
+  - "app/Console/Commands/Sprint*.php"
+  - "app/Console/Commands/Devflow*.php"
+  - "scripts/ci/resolve-gates.sh"
+  - ".github/workflows/**"
+  - "config/devflow.php"
+alwaysApply: false
+---
+
+# DEVFLOW-FIX-BASE-REF-1 — Canonical Remote Base Resolution
+
+Durable doc: `docs/architecture` n/a · runbook
+`docs/runbooks/devflow-canonical-base-resolution-runbook.md` · sprint doc
+`docs/sprints/devflow-fix-base-ref-1-canonical-remote-base-resolution.md`.
+
+## Permanent rules (DEVFLOW-R011..R020)
+
+1. **Exact SHA is the comparison authority.** Every DEVFLOW diff/scope/manifest
+   conclusion is computed against an exact commit SHA. A base branch **name** is
+   discovery authority only.
+2. **The canonical remote outranks the local ref.** With no authoritative exact
+   SHA supplied, the base comes from the configured remote-tracking ref after a
+   fetch. A stale / ahead / diverged local branch never changes a result.
+3. **No silent fallback.** Never `refs/heads/<base>`, `main`, `master`, `HEAD`,
+   `HEAD~1`, or the latest tag. Remote or authority failure **fails closed** with
+   an actionable error — never a governance PASS.
+4. **Exact SHAs are validated as commits.** Must match the exact-object-id
+   pattern (40/64 hex) *and* resolve to an existing commit object. Revision
+   expressions (`HEAD`, `HEAD~1`, `ref^{}`), options, abbreviations, trees,
+   blobs and unpeeled tags are rejected.
+5. **Base is pinned per invocation.** Once resolved it is fixed for that run; a
+   remote branch advancing afterwards cannot change it. A new invocation may
+   resolve a newer base.
+6. **Authority is reported.** Tools emit `BASE_SOURCE`, `BASE_BRANCH`,
+   `BASE_SHA`, `HEAD_SHA` (+ `MERGE_BASE_SHA`, `LOCAL_BASE_STALE` when known).
+   Never print a base branch without its exact SHA.
+7. **Right checkout only.** Verify the repository root before comparing. A tool
+   must never silently analyse a different worktree or the primary checkout
+   (`BASE_WRONG_REPOSITORY`).
+8. **CI prefers the immutable event base.** PR runs classify against
+   `github.event.pull_request.base.sha`, not the moving `origin/<base_ref>`.
+9. **Explicit canonical remote.** Named in config; never auto-selected. With
+   `origin` *and* `upstream` present, guessing is forbidden — fail closed.
+10. **Refs never become options.** Validate against an allowlist, pass as git
+    argument-array operands, use `--` on `git diff`. Never interpolate a ref into
+    a shell string.
+
+## Semantics per consumer
+
+| Need | Use |
+|---|---|
+| "changes introduced since the branch point" | `merge-base(BASE_SHA, HEAD)` |
+| "difference against the exact base tip" | `BASE_SHA` |
+
+Compute merge-base **from the pinned canonical SHA** — never replace
+domain-correct merge-base semantics with a raw two-dot range just for
+consistency. Consistency is about *authority*, not identical range syntax.
+
+## Where the base branch name comes from
+
+Single source of truth: `config('devflow.manifest.required_base_branch')`.
+Do not duplicate the branch name into a new authority. `.sprint/current.yml`
+declares it per sprint and the manifest validator compares the two.
+
+## Implementation shape
+
+* `App\Support\Devflow\CanonicalBaseRefResolver` — the only place a base is
+  resolved. Do not add ad-hoc `git diff` / `merge-base` calls elsewhere.
+* `App\Support\Devflow\CanonicalBaseRef` — immutable pinned result + output
+  contract (`toKeyValueLines()`, `toArray()`).
+* `GitChangeInspector` consumes the resolver; it never reads a branch name.
+* `scripts/ci/resolve-gates.sh` validates and pins before diffing; any
+  uncertainty resolves to `unknown_high_risk` (strongest gate).
+
+## Gotchas
+
+* **`git rev-parse -- <rev>` is wrong.** For `rev-parse`, `--` starts *paths*, so
+  it asks about a file named `<rev>` and always fails. Validation — not `--` —
+  blocks option injection there. `git diff` *does* take a trailing `--`.
+* An unresolved base must surface as **unresolved**, not as an empty change set:
+  an empty set passes every contradiction check and silently fakes a GO.
+* CICD-CTRL-1 invariant is untouched: `docs_only` stays the only
+  critical-skipping profile; the default profile stays `unknown_high_risk`.
+
+## Verify
+
+```bash
+php artisan devflow:base-ref-check --strict
+php artisan foundation:devflow-check --strict     # DEVFLOW-BASE-AUTHORITY
+php artisan sprint:manifest-check
+php artisan sprint:scope-audit
+php artisan test --filter='DevflowCanonicalBaseRef|CiClassifierBaseAuthority'
+```
+
+## Out of scope
+
+This sprint changes governance tooling only. It authorizes **no** clinical,
+billing, lab, inventory, SATUSEHAT, branch-isolation or Legacy-RME behaviour
+change, and no deploy/rollback/backup contract change. Historical GO tags remain
+immutable.
