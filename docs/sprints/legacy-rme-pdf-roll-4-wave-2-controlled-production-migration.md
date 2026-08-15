@@ -1,175 +1,244 @@
 # LEGACY-RME-PDF-ROLL-4-WAVE-2 — Controlled Production Migration Wave-2
 
-**Status: READY / WAITING FOR OWNER APPROVAL AND GENUINE INPUT — NOT EXECUTED.**
+**Status: `WATCH — BLOCKED ON SEPARATION OF DUTIES. WAVE NOT OPENED, NOTHING PUBLISHED, NO GO TAG.`**
 
-No wave was opened, no capability enabled, no document admitted, no record
-published, and no GO tag created. Production was read only. This document records
-the verified pre-wave baseline so a future Wave-2 starts from evidence instead of
-re-deriving it.
+Two attempts are recorded. Attempt 1 stopped because there were no candidates and
+no approval. Attempt 2 cleared both of those, froze a real candidate set, and
+stopped at a different and more important boundary: **no second human exists to
+act as checker**, so the maker/checker split could only have been satisfied by
+one person switching accounts. The owner's instruction was explicit — stop rather
+than switch accounts — and that is what happened.
 
-Wave-2 is blocked on two prerequisites that are **not delegable to an agent** and
-were confirmed absent by the owner on 2026-08-15:
-
-1. **No genuine un-migrated candidate documents exist** for any branch.
-2. **No fresh Wave-2 owner approval exists.**
-
-Per `.cursor/rules/100-legacy-rme-production-migration-wave.mdc`: *zero genuine
-documents is WATCH, never GO*, and *every future production wave needs a fresh,
-exact owner approval*. Wave-1's approval
-(`ROLL-4-WAVE-1-OWNER-APPROVAL-2026-08-14`) covers LDK2 **for that wave alone**
-and cannot authorize this one.
+| | |
+|---|---|
+| Wave reference | `LEGACY-RME-PDF-ROLL-4-WAVE-2` |
+| Approved branch set | `LDK2` (Cabang Landak) — single branch |
+| Accepted-import ceiling | 5 (a ceiling, never a target) |
+| Designated sources | 5, frozen by SHA-256 |
+| Preflight approved | **4** |
+| Preflight rejected | **1** (W2-003, `PATIENT_NOT_FOUND` — explained, not substituted) |
+| Admitted / published | **0 / 0** |
+| Production state | capability OFF, admission EMPTY, wave NONE — **never opened** |
+| Determination | **WATCH** |
 
 ---
 
-## Authority
+## Attempt 2 (2026-08-15) — what cleared, what blocked
 
-| Field | Value |
-| --- | --- |
-| `BASE_SOURCE` | canonical remote-tracking ref (DEVFLOW-FIX-BASE-REF-1) |
-| `BASE_BRANCH` | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` |
-| `BASE_SHA` | `6089cbb3f4a56aacd37229ab76a589e473b1ece3` |
-| `RUNTIME_DEPLOYED_SHA` | `6089cbb3f4a56aacd37229ab76a589e473b1ece3` |
-| `CODE_CHANGE_REQUIRED` | NO — no runtime defect found; no deploy manufactured |
-| `GO_TAG` | **none — correctly withheld** |
+| Prerequisite | Attempt 1 | Attempt 2 |
+|---|---|---|
+| Fresh owner approval | absent | **GRANTED** — LDK2, ceiling 5, maker u7, checker u11, this execution only |
+| Genuine candidates | none existed | **SUPPLIED** — 5 designated Cabang Landak PDFs |
+| Separation of duties | staffed (u7 ≠ u11) | **BLOCKED** — one human controls both accounts |
 
-The local base branch was stale at `a3d1723`. The canonical remote ref was used,
-which is exactly the failure DEVFLOW-FIX-BASE-REF-1 exists to prevent. No local
-fallback was accepted.
+### The blocker, precisely
 
-## Immutable authorities — all verified byte-exact
+`u7` (Admin Klinik, LDK2) and `u11` (Supervisor RME) are correctly provisioned as
+distinct least-privilege accounts, and neither holds
+`manage_legacy_rme_migration_operations`. The accounts are not the problem.
 
-| Workstream | Peeled tag SHA | Result |
-| --- | --- | --- |
-| ROLL-4-WAVE-1 | `2ffe00c198eb8a0e78703d8c4555a0f6c5c08744` | intact |
-| INFRA-SEC-ENV-1 | `19d18a41e97a90a54bb8ce4b0145a935545a2a78` | intact |
-| INFRA-SEC-RUNTIME-1 | `acf1e224cbf54d4e201a20fcaae697dc55e01069` | intact |
-| DEPLOY-HARDEN-1 | `b11bbbcffe41599f4a3f9999224f4c7503106bbf` | intact |
-| LEGACY-RME-DATE-TZ-1 | `b8038c567360b323bc56a185cd518ed1c4b41a28` | intact |
-| DEVFLOW-FIX-BASE-REF-1 | `6089cbb3f4a56aacd37229ab76a589e473b1ece3` | intact |
+The problem is that Wave-1 settled this as a rule about **identity, not
+permissions** — *"a wave needs a maker and a checker, and they are different
+people."* One person logging into both accounts satisfies the schema and defeats
+the control. Two attestations signed by the same hand are one attestation.
 
-None was moved, recreated or reopened.
+Import and publish are HTTP-only; `StoreLegacyRmeImportRequest` requires
+`patient_confirmation` and `date_confirmation` as `accepted`. Those are operator
+attestations, and the owner ruled that they must be made by the actual authorized
+humans through the canonical UI — not synthesized by an agent acting as u7/u11
+through Tinker or the service layer. No impersonation was performed.
 
-## Production baseline (srv1730088, `pilot`, read-only, 2026-08-15)
+**To resume:** designate a genuinely separate authorized checker for `u11`. Every
+other input is frozen and ready; nothing needs re-deriving.
 
-`VPS_HEAD` = `6089cbb3` — exact-match tag
-`devflow-fix-base-ref-1-canonical-remote-base-resolution-go`. `APP_ENV=pilot`,
-`APP_DEBUG=false`.
+---
 
-### Resting state — already correct, nothing to restore
+## Frozen source set (SHA-256 is the authority, never the filename)
 
-| Signal | Value |
-| --- | --- |
-| capability enabled | `false` |
-| migration capability enabled | `false` |
-| admission wave | `null` |
-| admitted branch codes | `[]` |
-| approval reference | `null` |
-| approved branch codes | `[]` |
-| wave row registered | `false` |
-| awaiting review / reviewed / processing / queued / failed | `0 / 0 / 0 / 0 / 0` |
-| `failed_jobs` / `jobs` | `0 / 0` |
+Independently verified from the source scans at up to 400 DPI — not from the
+supplied hints, and not by OCR. All five are single-page image-only PDFs whose
+printed template reads **Cabang Landak**.
 
-### Foundation gates
+| SEQ | File | SHA-256 | Bytes | Pages | RM (read from source) | selected → latest |
+|---|---|---|---|---|---|---|
+| W2-001 | RM Landak 1.pdf | `02672d5b3afb396adc9eeb1ddd50af11df7bd5ec76b86fe71851b8d2ed90a8c1` | 326,940 | 1 | 22623 | 2026-08-10 → 2026-08-10 |
+| W2-002 | RM Landak 2.pdf | `282c4250eb7c1bcabada54a53ae0c7797a9f120a87e5db7f30d3fa756756e2cf` | 539,294 | 1 | 12020 | 2025-07-09 → 2026-07-10 |
+| W2-003 | RM Landak 3.pdf | `96c78cc097983275611a5ab96f8ec79d2d9a3d65eb0d58c9e9ffc470335dc05f` | 288,754 | 1 | 27541 | 2026-08-06 → 2026-08-06 |
+| W2-004 | RM Landak 4.pdf | `92502ebc2183294873de4db614ac05f416937c73f3c218a059c960932c726c6e` | 245,915 | 1 | 22676 | 2026-08-13 → 2026-08-13 |
+| W2-005 | RM Landak 5.pdf | `dcf80ed45f68f8856ca61f404c1b6a0e101a84eef8ba362a785e89be8a8aa209` | 382,091 | 1 | 8445 | 2025-03-23 → 2026-01-31 |
 
-| Gate | Result |
-| --- | --- |
-| `legacy-rme:rollout-readiness` | **GO** (16/16, incl. poppler, private disk, queue contract, closed pre-wave admission) |
-| `foundation:deployment-entrypoint-check` | **safe / ENT-11 GO**, exit 0 — snapshot execution, exact-SHA pin, no pre-pull |
-| `clinical:date-diagnose` | clinical timezone `Asia/Makassar`, canonical **yes**; instants stay UTC |
-| health `/login` `/health/live` `/health/ready` `/health/lb` | `200 / 200 / 200 / 200` |
-| nginx / php8.3-fpm / queue worker | active / active / active |
-| free disk | 95 GB (floor 2 GB) |
+W2-002 and W2-005 are multi-date; every encounter date was read and the earliest
+taken as `selected`, the latest as `latest`, per the canonical rule.
 
-### Separation of duties — staffed and satisfiable
-
-Both halves exist as distinct accounts, so the Wave-1 rule has something to bite
-on. Neither holds `manage_legacy_rme_migration_operations` (Super Admin only), so
-the account that shapes a wave is never the account that signs it.
-
-| Half | Account | Scope | Legacy permissions held |
-| --- | --- | --- | --- |
-| maker / intake | user 7 (Admin Klinik) | branch-pinned to LDK2 (`branch_id=2`) | `view_legacy_rme_imports`, `create_legacy_rme_imports` |
-| checker / publisher | user 11 (Supervisor RME) | RME-wide | `view` + `review` + `publish` + `approve_legacy_rme_migration_wave` |
-
-7 ≠ 11, so a live Wave-2 can satisfy separation of duties without Super Admin.
-Super Admin's `Gate::before` bypass remains no substitute — it grants abilities,
-it cannot make one identity into two.
-
-## Candidate inventory — empty, and why
-
-A full read-only sweep of the production filesystem for PDFs found **only the six
-already-migrated sources** under
-`storage/app/legacy-rme-private/rme-legacy/imports/` (patients p36×2, p37, p38,
-p39, p40). Anything already in the private store is *migrated, not a candidate*.
-
-- No intake directory exists on production.
-- No PDFs exist in `/home`, `/root`, `/tmp` or the private import area outside
-  those six.
-- No designated Wave-2 intake directory exists on the operator workstation.
-- The workstation's general `~/Downloads` folder holds unrelated personal files.
-  Two have clinical-sounding names, but neither was designated by the owner as a
-  Wave-2 source, and one maps to ATG3 — outside the recommended single-branch
-  LDK2 scope. **A file found in a general-purpose folder is not an authorized
-  production clinical source.** Neither was opened, hashed into an inventory, or
-  treated as a candidate.
-
-Already-migrated distribution (context only, not candidates): ATG3 1, LDK2 2,
-SUN4 1, TKM1 2 — 6 imports PUBLISHED, 5 records published, 1 void.
-
-Measured store cost: 6 documents, 8 rendered pages, 2,822,525 B source total
-(~470 KB average source per document). Size a future wave from the **rendered**
-total, which historically runs ~4× the source.
-
-## Reconciliation
-
-Every counter is zero because nothing was admitted. These are *not* claims of a
-successful run — they are the untouched baseline.
+### W2-004 — replacement identity established by hash and content, not filename
 
 ```
-TOTAL_APPROVED_CANDIDATES = 0
-ADMITTED = 0      PUBLISHED = 0      REJECTED = 0      FAILED = 0
-UNEXPLAINED = 0   QUOTA_DRIFT = 0 (no quota consumed; no wave registered)
-DUPLICATE_ADMISSIONS = 0             DUPLICATE_PUBLISHED = 0
-WRONG_BRANCH = 0  WRONG_PATIENT = 0  UNAUTHORIZED_PUBLISH = 0
-NATIVE_CLINICAL_DELTA = 0  BILLING_DELTA = 0  LAB_DELTA = 0  SATUSEHAT_DELTA = 0
-LIVE_QUOTA_EXHAUSTION = NOT_EXERCISED
-PAUSE_EXERCISED = NO   RESUME_EXERCISED = NO   QUEUE_DRAINED = N/A (never filled)
+OLD_W2_004 = REMOVED / UNAUTHORIZED   (raw RM 7505, encounter 2026-08-15)
+NEW_W2_004 = USED                     (raw RM 22676, encounter 2026-08-13)
 ```
 
-## Exact prerequisite checklist to start Wave-2
+The authorized replacement is staged under the normalized filename
+`RM Landak 4.pdf`, so identity was established from the file's own bytes and
+rendered content. Two independent corroborations that the correct file is in
+hand:
 
-Blocking, in order. Items 1–2 are the owner's; the rest are already satisfied and
-need only re-verification at execution time.
+1. The rendered header reads `22676`, not `7505`.
+2. Production carries `DG-LDK2-2025-7505` as patient **44** — the removed
+   candidate's patient exists and was correctly left untouched.
 
-1. **Genuine un-migrated LDK2 source documents**, placed in a directory named by
-   the owner. Not copies of a Wave-1 PDF, not edited derivatives, not clones of a
-   database row. Wave-1's published LDK2 record (canonical RM
-   `DG-LDK2-2024-22681`, patient 40) must never be re-imported.
-2. **A fresh, scope-bound Wave-2 owner approval** naming: exact branch (LDK2),
-   maximum candidate count (a ceiling, never a target), execution window, maker,
-   checker/publisher, and stop conditions. Recorded as
-   `legacy_rme_rollout.admission` config — the authority — with the wave row as
-   its operational mirror; disagreement fails closed.
-3. Re-verify the foundation gates above (all currently GO).
-4. Confirm maker 7 / checker 11 are still distinct, active and correctly
-   permissioned.
-5. Read-only candidate preflight per candidate: source integrity, RM resolution,
-   RM-derived branch (operator override forbidden), patient resolution (exact
-   only), date parse, `selected_rme_date` = earliest human-confirmed date,
-   `latest_rme_date` = latest, historical-age gate `latest < clinicalToday`
-   strictly on the Asia/Makassar calendar, native cutoff, duplicate check.
-6. Freeze the approved candidate set and its source hashes before admission.
-7. Only then open capability and admission — last, never first.
+The removed candidate would also have **failed** the historical-age gate on its
+own merits: its encounter date `2026-08-15` equalled the clinical today, and the
+rule is a strict `<`.
 
-## Notes for the next attempt
+---
 
-- The clinical date on the run day was 2026-08-15 (Asia/Makassar). A document
-  whose `latest_rme_date` equals the clinical today is **not** yet historical
-  under the strict `<` rule.
-- `legacy-rme:wave-admin` is dry-run unless `--apply`, and checks the named
-  `--actor`'s real permissions — there is no CLI identity that bypasses
-  authorization. Use it for registration and staffing; do not hand-edit state.
-- Quota counts **accepted-into-staging**; retries are not charged again. `NULL`
-  (unlimited) is not `0` (admits nothing).
-- Do not widen beyond LDK2 without a new approval. Multi-branch scale-up is a
-  later wave.
+## Per-candidate preflight (read-only, against live production)
+
+Clinical today `2026-08-15` (`Asia/Makassar`, canonical). Branch is **derived**
+from the patient's Nomor RM; no branch was submitted or overridden.
+
+| SEQ | RM | Patient | Canonical RM | Branch | Historical age | Native reference | Duplicate | Preflight |
+|---|---|---|---|---|---|---|---|---|
+| W2-001 | 22623 | 41 | `DG-LDK2-2026-22623` | LDK2 | pass | `NO_NATIVE_REFERENCE` | none | **PASS** |
+| W2-002 | 12020 | 42 | `DG-LDK2-2025-12020` | LDK2 | pass | `NO_NATIVE_REFERENCE` | none | **PASS** |
+| W2-003 | 27541 | — | — | — | pass | — | — | **REJECT — `PATIENT_NOT_FOUND`** |
+| W2-004 | 22676 | 46 | `DG-LDK2-2026-22676` | LDK2 | pass | `NO_NATIVE_REFERENCE` | none | **PASS** |
+| W2-005 | 8445 | 45 | `DG-LDK2-2025-8445` | LDK2 | pass | `NO_NATIVE_REFERENCE` | none | **PASS** |
+
+All four approved patients have zero native visits and zero medical records, so
+the native cutoff does not bind and `NO_NATIVE_REFERENCE` is the correct state.
+No visit or medical record was fabricated to create a cutoff anchor.
+
+None of the five source hashes collides with any of the six existing imports, and
+no import exists for any candidate patient. Wave-1's published
+`DG-LDK2-2024-22681` (patient 40) was not touched.
+
+### W2-003 — why it is rejected and not repaired
+
+The No. RM field was re-rendered at 400 DPI to settle the digit: it reads
+**`27541`**, the second digit unmistakably a 7. That agrees with the owner's
+independent reading. **No patient `27541` exists in production.**
+
+A `DG-LDK2-2026-22541` (patient 43) does exist, and the two differ by one digit.
+Matching them would be forcing a patient match to make the candidate pass, which
+is prohibited. Creating patient `27541` to receive the document is equally
+prohibited. The honest outcome is a rejected candidate.
+
+This is the discrepancy path working as designed: a supplied hint was **not**
+allowed to override the source, and the source was **not** allowed to override the
+patient master.
+
+---
+
+## Production evidence (srv1730088, `pilot`, read-only throughout)
+
+`VPS_HEAD` `6089cbb3f4a56aacd37229ab76a589e473b1ece3` — exact-match tag
+`devflow-fix-base-ref-1-canonical-remote-base-resolution-go`. Unchanged by this
+run; no deployment was required or performed (`CODE_CHANGE_REQUIRED=NO`).
+
+### Resting state — never left the safe state
+
+| Signal | Before | After |
+|---|---|---|
+| capability / migration capability | `false` / `false` | `false` / `false` |
+| admission wave | `null` | `null` |
+| admitted branch codes | `[]` | `[]` |
+| approval reference | `null` | `null` |
+| jobs / failed_jobs | `0` / `0` | `0` / `0` |
+
+### Side-effect delta — zero on every table
+
+`legacy_imports` 6, `legacy_records` 6, `clinic_visits` 27, `medical_records` 27,
+`rme_invoices` 19, `rme_payments` 27, `lab_orders` 13, `satusehat_candidates` 1,
+`wave_rows` 1, `quota_rows` 1 — **identical before and after**. The wave row and
+quota row are Wave-1's completed history, not this run.
+
+```
+NATIVE_CLINICAL_DELTA=0  BILLING_DELTA=0  LAB_DELTA=0  SATUSEHAT_DELTA=0
+ADMITTED=0  PUBLISHED=0  QUOTA_CONSUMED=0  QUOTA_DRIFT=0  UNEXPLAINED=0
+```
+
+### Foundations — all GO
+
+`legacy-rme:rollout-readiness` **GO** · `foundation:deployment-entrypoint-check`
+**ENT-11 GO** · `clinical:date-diagnose` `Asia/Makassar`, canonical **yes** ·
+health `/login` `/health/live` `/health/ready` `/health/lb` all **200** ·
+nginx, php8.3-fpm, queue worker **active** · 95 GB free.
+
+All six immutable authority tags peel byte-exact and none was moved:
+`2ffe00c` · `19d18a4` · `acf1e22` · `b11bbbc` · `b8038c5` · `6089cbb`.
+
+### Source staging and its removal
+
+The five sources were staged to `/root/legacy-rme-wave2-input/` (`0700` root-only,
+files `0600`, outside the web root, unreadable by the runtime or co-tenant
+identity) purely for hash re-verification. All five hashes matched byte-for-byte
+after transfer.
+
+They were then **removed**. The wave is blocked with no scheduled resumption, and
+four real patients' records should not sit on a production host outside the
+application's managed private store, unmonitored and with no retention policy,
+while nothing is running. The owner's originals are intact and every hash is
+frozen above, so re-staging is a seconds-long step whenever a checker exists.
+
+---
+
+## Durable rules this wave establishes
+
+1. **A wave needs a maker and a checker who are different *people*.** Two
+   accounts controlled by one human do not satisfy separation of duties. Where
+   only one human is available, the honest outcome is WATCH — never switch
+   accounts to make a run go green.
+2. **Operator attestations belong to humans.** `patient_confirmation` and
+   `date_confirmation` (and review/publish approval) must be made by the actual
+   authorized operator through the canonical UI. An agent must not impersonate
+   the maker or checker, or synthesize those confirmations through Tinker or the
+   service layer — even though the attestations are a UX speed bump whose every
+   referenced rule is independently enforced server-side.
+3. **Source identity is the SHA-256, never the filename.** A replacement staged
+   under a normalized name must be identified from its own bytes and rendered
+   content before it is treated as the authorized candidate.
+4. **A superseded candidate is removed, not merely deprecated.** The old W2-004
+   stays unauthorized regardless of filename collisions.
+5. **A supplied hint never overrides the source, and the source never overrides
+   the patient master.** Where the RM on paper resolves to no patient, the
+   candidate is rejected — not matched to the nearest RM, and not given a newly
+   created patient.
+6. **Preflight rejection is a normal wave outcome.** Fewer approved candidates
+   than the ceiling is fine; a rejected candidate is never replaced to reach the
+   ceiling without fresh owner authorization.
+7. **`NO_NATIVE_REFERENCE` is valid.** Never fabricate a ClinicVisit or
+   MedicalRecord to manufacture a native cutoff anchor.
+8. **Open the capability last, and only with a human at the keyboard.** Preflight,
+   hashing and staging are all read-only and complete before anything is opened;
+   a write capability on live clinical data is never opened to wait for an
+   unscheduled human.
+9. **Staged clinical sources are cleaned up when a wave does not proceed.**
+   Frozen hashes plus the owner's originals preserve identity without leaving PHI
+   on the host.
+
+---
+
+## To resume Wave-2
+
+1. Designate a **genuinely separate** authorized checker for `u11`.
+2. Re-stage the four approved sources (hashes above).
+3. Re-verify foundations and the resting state, then open the bounded wave:
+   register → approve (different actor) → activate → assign `u7@LDK2` → admit
+   LDK2 → capability ON.
+4. Maker `u7` uploads the four through the canonical UI, leaving *Cabang asal*
+   blank so the branch derives from the RM, and personally makes both
+   attestations:
+
+   | SEQ | File | patient_id | Tanggal RME paling awal | Tanggal RME paling akhir |
+   |---|---|---|---|---|
+   | W2-001 | RM Landak 1.pdf | 41 | 2026-08-10 | 2026-08-10 |
+   | W2-002 | RM Landak 2.pdf | 42 | 2025-07-09 | 2026-07-10 |
+   | W2-004 | RM Landak 4.pdf | 46 | 2026-08-13 | 2026-08-13 |
+   | W2-005 | RM Landak 5.pdf | 45 | 2025-03-23 | 2026-01-31 |
+
+5. The separate checker `u11` inspects the rendered pages and publishes.
+6. Reconcile, prove zero side effects, restore OFF/EMPTY/NONE, then tag.
+
+The approval granted for this attempt covers **this execution only**; a resumption
+after a materially different window needs a fresh one.
