@@ -206,3 +206,80 @@ bootstrap. Afterwards the canonical in-tree command is the permanent path.
 
 `TRANSITIONAL_BOOTSTRAP=YES` for the DEPLOY-HARDEN-1 release itself, `NO` for
 every deployment after it.
+
+## 12. Production evidence (2026-08-15)
+
+Merged as `b11bbbcffe41599f4a3f9999224f4c7503106bbf` (PR #294, squash). Exact-SHA
+CI green on the candidate `5a092b5096c215d6492afef7ee7ccf79588f6548`
+(run `31869500182`: classifier, quality, critical, selective, NSF-9, NSF-10 —
+Full Suite skipped on PR events by design).
+
+**Deploy 1 — one-time transition.** The VPS was at `acf1e224`, i.e. **two commits
+behind** the target, which made this a real stale-checkout case rather than a
+manufactured one. The merged payload was extracted with `git archive` into
+`/root/dh1-bootstrap` (0700 root:root) and the canonical runner started from
+there. The working tree was **not** touched by the extraction.
+
+```
+DEPLOY_LOCK_ACQUIRED=YES
+DEPLOY_TARGET_PINNED=b11bbbcffe41599f4a3f9999224f4c7503106bbf
+DEPLOY_RUN_ID=20260815T071015Z-274632-6221
+DEPLOY_SNAPSHOT_CREATED=YES   DEPLOY_SNAPSHOT_TRUSTED=PASS
+DEPLOY_EXECUTION_SOURCE=/run/daengtisiams-deploy/deploy-…/scripts/deploy-vps.sh
+SOURCE_DEPLOY_SCRIPT_SHA256=619761a4…    (the STALE in-tree copy)
+SNAPSHOT_DEPLOY_SCRIPT_SHA256=46f26b6e…  (the TARGET commit object)
+HEAD verified at pinned target: b11bbbc…
+DEPLOY_HEAD_TARGET_MATCH=YES   DEPLOY_SNAPSHOT_CLEANED=YES
+exit=0   DEPLOY OK: 20260815-071016
+```
+
+The two hashes **differ** here, and that is the point: the tree still held the
+old script while the snapshot came from the target object. It is direct evidence
+the payload was never read from the working tree.
+
+**Deploy 2 — canonical in-tree command**, `bash scripts/deploy-vps-runner.sh start`,
+no `DEPLOY_SCRIPT` override, no transition, **no pre-pull**:
+
+```
+SOURCE_DEPLOY_SCRIPT_SHA256=46f26b6e…  ==  SNAPSHOT_DEPLOY_SCRIPT_SHA256=46f26b6e…
+Already up to date.                        (idempotent same-SHA deploy)
+DEPLOY_HEAD_TARGET_MATCH=YES   DEPLOY_SNAPSHOT_CLEANED=YES
+exit=0   DEPLOY OK: 20260815-072058
+```
+
+Here the hashes match — the capture-time equality proof. Together the two runs
+cover both cases.
+
+**Concurrency, proven on the live host** while deploy 2 held the lock (never by
+racing two real migrations):
+
+```
+lock state: HELD          SECOND_DEPLOY_EXIT=75
+"refusing to start a second deploy — no backup, no migration, no checkout was performed"
+challenger: 0 snapshots created, 0 targets pinned, 0 backups taken
+```
+
+**Rollback, proven on the live host** without downgrading production: the
+contract is present on the deployed code; an unresolvable ref fails closed
+(`exit=2`, HEAD unchanged); and the rollback-role mechanism ran end to end with
+its own `rollback.lock`, an exact pinned SHA, `DEPLOY_SNAPSHOT_TRUSTED=PASS`,
+matching source/snapshot hashes, `DEPLOY_SNAPSHOT_CLEANED=YES`, HEAD unchanged
+and zero residue.
+
+**Post-deploy state:** `VPS_HEAD=b11bbbc…`, clean tracked tree; `.env` 640
+root:daengtisiams and secret-permission verify PASS (INFRA-SEC-ENV-1);
+runtime isolation `--require-host` **70 GO / 0 FAIL / 0 SKIP, twice**
+(INFRA-SEC-RUNTIME-1); php8.3-fpm + nginx + queue worker active with the FPM
+pool running as `daengtisiams`; `/login`, `/health/live`, `/health/ready`,
+`/health/lb` all 200; `foundation:deployment-entrypoint-check --strict` GO;
+0 active snapshots, deploy lock free, `/run/daengtisiams-deploy` `drwx------
+root root`, 0 deploy processes; Legacy archive flag false, env pilot, debug off,
+maintenance off; no new Laravel errors and 0 failed jobs.
+
+**Honest note on CI semantics.** The critical gate reports
+`1085 warnings (4012 assertions)` with `critical_test_exit_status=0` — every test
+is classified *warning* rather than *passed*. That is pre-existing and unrelated
+to this sprint: base commit `19d18a41`, before this branch existed, shows the
+same shape (`1030 warnings, 3737 assertions`, exit 0). It belongs to CICD-FIX-1.
+What this sprint can claim is that both `DeployHarden` suites are named in the CI
+log, ran real assertions, and produced zero failures and zero errors.
