@@ -30,6 +30,7 @@
 set -euo pipefail
 
 BASE=""
+BASE_SHA_INPUT=""
 HEAD_REF="HEAD"
 JSON_OUTPUT=false
 GITHUB_OUTPUT_MODE=false
@@ -42,6 +43,12 @@ for ((i = 1; i <= $#; i++)); do
         --base)
             j=$((i + 1)); BASE="${!j:-}"; i=$j ;;
         --base=*) BASE="${arg#*=}" ;;
+        # DEVFLOW-FIX-BASE-REF-1 — authoritative exact base commit SHA. When
+        # supplied (CI passes the immutable PR event base sha) it outranks the
+        # moving branch ref entirely.
+        --base-sha)
+            j=$((i + 1)); BASE_SHA_INPUT="${!j:-}"; i=$j ;;
+        --base-sha=*) BASE_SHA_INPUT="${arg#*=}" ;;
         --head)
             j=$((i + 1)); HEAD_REF="${!j:-HEAD}"; i=$j ;;
         --head=*) HEAD_REF="${arg#*=}" ;;
@@ -54,6 +61,42 @@ for ((i = 1; i <= $#; i++)); do
         *) : ;;
     esac
 done
+
+# ---------------------------------------------------------------------------
+# DEVFLOW-FIX-BASE-REF-1 — base authority.
+#
+# A ref value must never reach git as an option. Validate shape BEFORE use and
+# always separate options from operands with `--`.
+#   exact sha : 40 or 64 lowercase/uppercase hex, nothing else
+#   ref name  : no leading dash, no whitespace, no revision metacharacters
+# Anything that fails validation is treated as unusable -> strongest gate.
+# ---------------------------------------------------------------------------
+BASE_SOURCE="none"
+BASE_SHA=""
+HEAD_SHA=""
+
+is_exact_sha() {
+    [[ "$1" =~ ^[0-9a-fA-F]{40}$ || "$1" =~ ^[0-9a-fA-F]{64}$ ]]
+}
+
+is_safe_ref_name() {
+    local ref="$1"
+    [[ -n "$ref" ]] || return 1
+    [[ "$ref" != -* ]] || return 1
+    [[ "$ref" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+    [[ "$ref" != *".."* ]] || return 1
+    return 0
+}
+
+# Resolve an ALREADY-VALIDATED ref to an exact commit id, or fail.
+#
+# No `--` here on purpose: for `git rev-parse`, `--` marks the start of PATHS,
+# so `rev-parse -- <rev>` would ask about a file named <rev> and always fail.
+# Option injection is instead blocked upstream — every caller runs the value
+# through is_exact_sha/is_safe_ref_name first, and both reject a leading dash.
+resolve_commit() {
+    git rev-parse --verify --quiet "$1^{commit}" 2>/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # Resolve the changed file list.
@@ -74,17 +117,57 @@ elif [[ "$CHANGED_FILES_STDIN" == true ]]; then
     CHANGED_FILES="$(cat)"
     RESOLVE_REASON="changed files from stdin"
 else
-    if [[ -z "$BASE" ]]; then
-        FALLBACK=true
-        RESOLVE_REASON="no --base provided; defaulting to strongest gate"
-    elif ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
-        FALLBACK=true
-        RESOLVE_REASON="base ref '$BASE' unreachable; defaulting to strongest gate"
+    # Authority 1 — explicit exact base SHA (immutable; CI passes the PR event
+    # base sha so a base branch advancing mid-run cannot move this run's base).
+    if [[ -n "$BASE_SHA_INPUT" ]]; then
+        if ! is_exact_sha "$BASE_SHA_INPUT"; then
+            FALLBACK=true
+            RESOLVE_REASON="--base-sha is not an exact commit id; defaulting to strongest gate"
+        elif ! BASE_SHA="$(resolve_commit "$BASE_SHA_INPUT")"; then
+            FALLBACK=true
+            RESOLVE_REASON="--base-sha object missing or not a commit; defaulting to strongest gate"
+        else
+            BASE_SOURCE="explicit_sha"
+        fi
+    # Authority 2 — a validated base ref, pinned to its exact commit id.
+    elif [[ -n "$BASE" ]]; then
+        if is_exact_sha "$BASE"; then
+            if BASE_SHA="$(resolve_commit "$BASE")"; then
+                BASE_SOURCE="explicit_sha"
+            else
+                FALLBACK=true
+                RESOLVE_REASON="base '$BASE' object missing or not a commit; defaulting to strongest gate"
+            fi
+        elif ! is_safe_ref_name "$BASE"; then
+            FALLBACK=true
+            RESOLVE_REASON="base ref rejected as unsafe; defaulting to strongest gate"
+        elif BASE_SHA="$(resolve_commit "$BASE")"; then
+            BASE_SOURCE="remote_tracking_ref"
+        else
+            FALLBACK=true
+            RESOLVE_REASON="base ref '$BASE' unreachable; defaulting to strongest gate"
+        fi
     else
-        if CHANGED_FILES="$(git diff --name-only "$BASE...$HEAD_REF" 2>/dev/null)"; then
-            RESOLVE_REASON="git diff ${BASE}...${HEAD_REF}"
-        elif CHANGED_FILES="$(git diff --name-only "$BASE" "$HEAD_REF" 2>/dev/null)"; then
-            RESOLVE_REASON="git diff ${BASE} ${HEAD_REF} (no merge base)"
+        FALLBACK=true
+        RESOLVE_REASON="no --base or --base-sha provided; defaulting to strongest gate"
+    fi
+
+    if [[ "$FALLBACK" == false ]]; then
+        if ! is_safe_ref_name "$HEAD_REF" && ! is_exact_sha "$HEAD_REF" && [[ "$HEAD_REF" != "HEAD" ]]; then
+            FALLBACK=true
+            RESOLVE_REASON="head ref rejected as unsafe; defaulting to strongest gate"
+        elif ! HEAD_SHA="$(resolve_commit "$HEAD_REF")"; then
+            FALLBACK=true
+            RESOLVE_REASON="head ref '$HEAD_REF' unreachable; defaulting to strongest gate"
+        fi
+    fi
+
+    # All diffs run against the PINNED exact commit ids, never a moving name.
+    if [[ "$FALLBACK" == false ]]; then
+        if CHANGED_FILES="$(git diff --name-only "$BASE_SHA...$HEAD_SHA" -- 2>/dev/null)"; then
+            RESOLVE_REASON="git diff ${BASE_SHA}...${HEAD_SHA} (source=${BASE_SOURCE})"
+        elif CHANGED_FILES="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- 2>/dev/null)"; then
+            RESOLVE_REASON="git diff ${BASE_SHA} ${HEAD_SHA} (no merge base, source=${BASE_SOURCE})"
         else
             FALLBACK=true
             RESOLVE_REASON="git diff failed; defaulting to strongest gate"
@@ -244,6 +327,9 @@ CATS_PRESENT="$(printf '%s ' "${!CATEGORIES[@]}" | sed 's/ $//')"
 {
     echo "CICD-CTRL-1 Safe CI Runtime Control — gate resolution"
     echo "  source            : $RESOLVE_REASON"
+    echo "  BASE_SOURCE       : $BASE_SOURCE"
+    echo "  BASE_SHA          : ${BASE_SHA:-UNRESOLVED}"
+    echo "  HEAD_SHA          : ${HEAD_SHA:-UNKNOWN}"
     echo "  changed files     : $CHANGED_COUNT"
     echo "  categories present: ${CATS_PRESENT:-none}"
     echo "  gate_profile      : $PROFILE"
@@ -275,6 +361,9 @@ run_build=$RUN_BUILD
 run_full_suite=$RUN_FULL_SUITE
 changed_file_count=$CHANGED_COUNT
 classification_reason=$RESOLVE_REASON
+base_source=$BASE_SOURCE
+base_sha=${BASE_SHA:-UNRESOLVED}
+head_sha=${HEAD_SHA:-UNKNOWN}
 EOF
 }
 
@@ -291,7 +380,10 @@ if [[ "$JSON_OUTPUT" == true ]]; then
   "run_build": $RUN_BUILD,
   "run_full_suite": "$RUN_FULL_SUITE",
   "changed_file_count": $CHANGED_COUNT,
-  "classification_reason": "$RESOLVE_REASON"
+  "classification_reason": "$RESOLVE_REASON",
+  "base_source": "$BASE_SOURCE",
+  "base_sha": "${BASE_SHA:-UNRESOLVED}",
+  "head_sha": "${HEAD_SHA:-UNKNOWN}"
 }
 EOF
 else

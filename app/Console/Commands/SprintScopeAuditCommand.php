@@ -18,6 +18,8 @@ final class SprintScopeAuditCommand extends Command
     protected $signature = 'sprint:scope-audit
         {--manifest= : Path to the sprint manifest}
         {--changed-files= : Comma/newline-separated changed files (overrides git diff)}
+        {--base-sha= : Authoritative exact base commit SHA (overrides remote resolution)}
+        {--base-branch= : Canonical base branch to resolve through the canonical remote}
         {--json : Output JSON}
         {--strict : Return non-zero on WATCH as well as NO-GO}';
 
@@ -33,11 +35,40 @@ final class SprintScopeAuditCommand extends Command
         }
 
         $changed = $this->resolveChangedFiles();
+
+        // Fail closed: an unresolved canonical base yields an empty change set,
+        // and an empty change set audits as trivially coherent. Never emit a
+        // scope verdict computed against an unverified base.
+        if (! $changed['resolved']) {
+            if ($this->option('json')) {
+                $this->line((string) json_encode([
+                    'decision' => 'NO-GO',
+                    'module_count' => 0,
+                    'touched_modules' => [],
+                    'reasons' => ['canonical base unresolved: '.$changed['reason']],
+                    'base_authority' => $changed['base_ref']?->toArray(),
+                ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            } else {
+                if ($changed['base_ref'] !== null) {
+                    $this->reportBaseAuthority($changed['base_ref']);
+                }
+                $this->error('Scope audit aborted — '.$changed['reason']);
+                $this->line('Re-run after `git fetch`, or pass --base-sha with an authoritative exact commit SHA.');
+            }
+
+            return self::FAILURE;
+        }
+
         $result = $auditor->audit($manifest, $changed['files']);
 
         if ($this->option('json')) {
-            $this->line((string) json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            $this->line((string) json_encode($result + [
+                'base_authority' => $changed['base_ref']?->toArray(),
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         } else {
+            if ($changed['base_ref'] !== null) {
+                $this->reportBaseAuthority($changed['base_ref']);
+            }
             $this->line('Scope decision: '.$result['decision']);
             $this->line('Modules touched: '.$result['module_count'].' ('.(implode(', ', $result['touched_modules']) ?: 'none').')');
             foreach ($result['reasons'] as $r) {

@@ -1,22 +1,24 @@
-# Active sprint manifest — LEGACY-RME-DATE-TZ-1
+# Active sprint manifest — DEVFLOW-FIX-BASE-REF-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-DATE-TZ-1
+id: DEVFLOW-FIX-BASE-REF-1
 type: RUNTIME_FIX
-module: Clinical
-title: "Canonical clinical timezone & date-boundary correctness — clinical eligibility must resolve 'today' on the clinic's own calendar (Asia/Makassar), never a silently UTC-defaulted one; declare the clinical calendar once, fail closed on an invalid value, and keep technical instants on their existing UTC architecture"
+module: Devflow
+title: "Canonical remote base resolution — exact-SHA comparison authority for every DEVFLOW governance consumer; stale/ahead/diverged local base refs and unrelated checkouts can no longer change a result; remote failure fails closed instead of falling back"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # ClinicalClock is a new clinical decision input
-schema_change: false            # no migration, no table, no column, no data backfill
+runtime_change: true            # new resolver + artisan command + classifier hardening — governance/CI tooling only, no product runtime path
+schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # clinical timezone is server-authoritative and must never be request-controlled
+security_impact: true           # git ref/option injection surface, fail-closed authority, wrong-checkout isolation
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the effective clinical calendar must be proven on the production host
+deploy_required: true           # governance tooling ships to the VPS checkout and is smoke-verified there
 browser_required: false         # no UI surface
 
+go_tag: devflow-fix-base-ref-1-canonical-remote-base-resolution-go
+
 test_profiles:
-  - legacy_rme
-  - architecture
+  - cicd
+  - security

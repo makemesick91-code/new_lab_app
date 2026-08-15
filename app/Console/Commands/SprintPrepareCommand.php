@@ -20,6 +20,8 @@ final class SprintPrepareCommand extends Command
     protected $signature = 'sprint:prepare
         {--manifest= : Path to the sprint manifest}
         {--changed-files= : Comma/newline-separated changed files (overrides git diff)}
+        {--base-sha= : Authoritative exact base commit SHA (overrides remote resolution)}
+        {--base-branch= : Canonical base branch to resolve through the canonical remote}
         {--json : Output JSON}
         {--verbose-tools : Include full tool version detail}
         {--skip-graphify : Skip the graphify presence check}';

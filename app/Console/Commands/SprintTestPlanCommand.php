@@ -18,6 +18,8 @@ final class SprintTestPlanCommand extends Command
     protected $signature = 'sprint:test-plan
         {--manifest= : Path to the sprint manifest}
         {--changed-files= : Comma/newline-separated changed files (overrides git diff)}
+        {--base-sha= : Authoritative exact base commit SHA (overrides remote resolution)}
+        {--base-branch= : Canonical base branch to resolve through the canonical remote}
         {--base= : Base ref to diff against (default: canonical base branch)}
         {--json : Output JSON}';
 

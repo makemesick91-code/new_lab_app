@@ -54,6 +54,10 @@ jobs:
       run_full_suite: ${{ steps.resolve.outputs.run_full_suite }}
       # CICD-CTRL-3 — which runner the heavy gates target for this run.
       runner_mode: ${{ steps.runner.outputs.runner_mode }}
+      # DEVFLOW-FIX-BASE-REF-1 — the pinned base authority for this run.
+      base_source: ${{ steps.resolve.outputs.base_source }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -96,17 +100,56 @@ jobs:
         id: resolve
         run: |
           chmod +x scripts/ci/resolve-gates.sh
+          # DEVFLOW-FIX-BASE-REF-1 — prefer the IMMUTABLE event base SHA.
+          #
+          # `origin/<base_ref>` is a MOVING branch: if the base advances while
+          # this run is in flight, the classification silently changes. The PR
+          # event payload carries the exact base commit for THIS run, so pin it.
+          # A later run legitimately resolves a newer base.
+          BASE_SHA=""
+          BASE_REF_NAME=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" || true
-            BASE="origin/${{ github.base_ref }}"
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            BASE_REF_NAME="origin/${{ github.base_ref }}"
             HEAD_SHA="${{ github.event.pull_request.head.sha }}"
           else
-            BASE="${{ github.event.before }}"
+            BASE_SHA="${{ github.event.before }}"
+            BASE_REF_NAME=""
             HEAD_SHA="${{ github.sha }}"
           fi
-          echo "Resolving gates: event=${{ github.event_name }} base=$BASE head=$HEAD_SHA"
-          bash scripts/ci/resolve-gates.sh --base "$BASE" --head "$HEAD_SHA" --github-output 2>&1 \
+
+          # The checkout is fetch-depth: 0, so the base commit is normally
+          # already present. Fetch the exact object defensively; never treat a
+          # fetch failure as "no changes" — resolve-gates.sh fails closed to the
+          # strongest gate when the base cannot be verified.
+          if [ -n "$BASE_SHA" ] && ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --quiet -- origin "$BASE_SHA" || true
+          fi
+
+          ARGS=""
+          if [ -n "$BASE_SHA" ] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            ARGS="--base-sha $BASE_SHA"
+          elif [ -n "$BASE_REF_NAME" ]; then
+            git fetch --no-tags --quiet -- origin "${{ github.base_ref }}" || true
+            ARGS="--base $BASE_REF_NAME"
+          fi
+
+          echo "Resolving gates: event=${{ github.event_name }} base_sha=${BASE_SHA:-none} head=$HEAD_SHA"
+          # shellcheck disable=SC2086
+          bash scripts/ci/resolve-gates.sh $ARGS --head "$HEAD_SHA" --github-output 2>&1 \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # DEVFLOW-FIX-BASE-REF-1 — the base authority is part of the evidence.
+      # Governance conclusions are only auditable when the exact commit they
+      # were computed against is recorded alongside them.
+      - name: Base authority (DEVFLOW-FIX-BASE-REF-1)
+        run: |
+          {
+            echo "BASE_SOURCE=${{ steps.resolve.outputs.base_source }}"
+            echo "BASE_BRANCH=${{ github.base_ref || github.ref_name }}"
+            echo "BASE_SHA=${{ steps.resolve.outputs.base_sha }}"
+            echo "HEAD_SHA=${{ steps.resolve.outputs.head_sha }}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Gate decision (summary)
         run: |
@@ -290,7 +333,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd' \
+          php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e
@@ -512,7 +555,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd' \
+          bash scripts/ci/self-hosted-php.sh php artisan test --filter='FoundationGovernance|Nsf7|NsfGovernance|DmoGovernance|Dmo3|Dq31|Dq3SourceDocumentBatch|Dq2BatchGovernance|Dq1|RmeDoctorCashierCompletionGate|RmeRoomAssignmentGate|MedicalRecordFinalization|CashierBilling|RmePayment|PatientOutstandingReceivableCarryOver|PatientCentricRmWorkspace|LegacyRme|ClinicalClock|PatientEarliestNativeRmeDateResolver|RuntimeIdentityIsolation|DeployHarden|FeatureFlag|Cicd|Devflow' \
             2>&1 | tee storage/ci-evidence/nsf-r011-critical-tests.log
           TEST_STATUS="${PIPESTATUS[0]}"
           set -e

@@ -64,6 +64,46 @@ return [
         'go_tag_regex' => '/^[a-z0-9]+(?:-[a-z0-9]+)*-go$/',
     ],
 
+    // DEVFLOW-FIX-BASE-REF-1 — canonical base resolution.
+    //
+    // The comparison authority for every DEVFLOW diff is an EXACT commit SHA.
+    // A bare branch name resolves to the LOCAL `refs/heads/<branch>`, which may
+    // be stale, ahead, or diverged — that is the defect this block removes.
+    //
+    // Authority order: explicit exact SHA -> `<remote>/<branch>` -> FAIL CLOSED.
+    // There is no local fallback, and no implicit main/master/HEAD~1/tag.
+    'base_resolution' => [
+        // The canonical remote. Explicit on purpose: with both `origin` and
+        // `upstream` present, auto-selecting "the first remote" is how a tool
+        // ends up comparing against the wrong fork.
+        'remote' => env('DEVFLOW_CANONICAL_REMOTE', 'origin'),
+
+        // Fetch the canonical remote branch before resolving. Disable only for
+        // deliberately offline analysis — resolution then still fails closed
+        // when the remote-tracking ref is absent.
+        'fetch_enabled' => (bool) env('DEVFLOW_BASE_FETCH_ENABLED', true),
+        'fetch_timeout_seconds' => (int) env('DEVFLOW_BASE_FETCH_TIMEOUT', 120),
+
+        // Environment keys carrying an authoritative exact base SHA, checked in
+        // order. CI populates these from the immutable PR event payload.
+        'explicit_sha_env' => ['DEVFLOW_BASE_SHA', 'CI_BASE_SHA'],
+
+        // Exact object id only — 40 hex (sha1) or 64 hex (sha256). Abbreviations
+        // and revision expressions (HEAD, HEAD~1, ref^{}, --option) are rejected.
+        'exact_sha_pattern' => '/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i',
+
+        // Conservative ref-name allowlist. Blocks leading dashes (option
+        // injection), whitespace and revision metacharacters before the value
+        // can reach a git argument list.
+        'safe_branch_pattern' => '/^(?!-)[A-Za-z0-9._\/-]{1,200}$/',
+
+        // Refs that must NEVER become an automatic base authority. Documented
+        // here so the prohibition is auditable, not just implied by code.
+        'forbidden_fallbacks' => [
+            'local_branch_ref', 'main', 'master', 'HEAD', 'HEAD~1', 'latest_tag',
+        ],
+    ],
+
     // Release lock (Phase 20): a single-writer file lock preventing concurrent
     // releases. The wrapper acquires/records/releases it; stale locks are
     // reported, never silently removed.
@@ -84,7 +124,12 @@ return [
     // (never inline in app/) per the config-driven pattern. Each maps a file
     // key (from `files` above) to substrings that MUST be present.
     'required_markers' => [
-        'ci_classifier' => ['unknown_high_risk', 'docs_only', 'run_critical_tests'],
+        'ci_classifier' => [
+            'unknown_high_risk', 'docs_only', 'run_critical_tests',
+            // DEVFLOW-FIX-BASE-REF-1: the classifier must report its authority
+            // and must validate a ref before handing it to git.
+            'BASE_SOURCE', 'base_sha',
+        ],
         'release_wrapper' => ['--dry-run', '--apply', 'set -euo pipefail'],
     ],
 
