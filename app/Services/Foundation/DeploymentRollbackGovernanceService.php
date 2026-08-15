@@ -73,7 +73,7 @@ class DeploymentRollbackGovernanceService
             [
                 'id' => 'ENT11-DR008',
                 'title' => 'Deploy and rollback reset permissions and restart the runtime',
-                'description' => 'Both scripts reset storage/bootstrap-cache ownership to www-data and restart php-fpm + reload nginx (nginx -t first) so the running app matches the deployed/rolled-back code.',
+                'description' => 'Both scripts reset storage/bootstrap-cache ownership to the explicitly declared dedicated runtime identity (INFRA-SEC-RUNTIME-1, never a hardcoded shared account) and restart php-fpm + reload nginx (nginx -t first) so the running app matches the deployed/rolled-back code.',
             ],
             [
                 'id' => 'ENT11-DR009',

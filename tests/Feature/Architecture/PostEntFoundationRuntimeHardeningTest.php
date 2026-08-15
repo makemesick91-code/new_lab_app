@@ -120,7 +120,11 @@ it('defines a safe conservative queue worker systemd unit', function () {
         ->and($unit)->toContain('--max-time=')
         ->and($unit)->toContain('Restart=')
         ->and($unit)->toContain('WorkingDirectory=/var/www/asia-dental-lab-v2')
-        ->and($unit)->toContain('User=www-data');
+        // INFRA-SEC-RUNTIME-1 repin: the worker moved off the shared www-data
+        // account onto the dedicated DaengtisiaMS runtime identity.
+        ->and($unit)->toContain('User=daengtisiams')
+        ->and($unit)->toContain('Group=daengtisiams')
+        ->and($unit)->not->toContain('User=www-data');
 
     // Never a listener/daemon or destructive queue/db command.
     foreach (['queue:listen', '--daemon', 'queue:flush', 'queue:clear', 'migrate:fresh', 'db:wipe', 'schema:drop'] as $forbidden) {

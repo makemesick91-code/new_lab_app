@@ -22,12 +22,23 @@ test('deploy script is fail-fast', function () {
     expect(deployScript())->toContain('set -euo pipefail');
 });
 
-test('deploy script detects the runtime user and fails closed on root', function () {
+test('deploy script resolves the runtime user explicitly and fails closed on root', function () {
     $script = deployScript();
 
+    // INFRA-SEC-RUNTIME-1 repin. This originally asserted the script mentioned
+    // 'php-fpm', because the runtime user was DISCOVERED by scanning the FPM
+    // pool directory and taking the first match. That heuristic was the defect:
+    // on a host shared with a co-tenant it could resolve the wrong application's
+    // identity. Resolution is now an explicit, application-specific authority,
+    // so the pool scan is intentionally absent — while the original intent of
+    // this test (a resolved runtime user, and root refused) still holds.
     expect($script)->toContain('RUNTIME_USER')
-        ->and($script)->toContain('php-fpm')
-        ->and($script)->toContain("refusing to use 'root'");
+        ->and($script)->toContain('deploy/runtime-identity.conf')
+        ->and($script)->toContain('DMS_FORBIDDEN_RUNTIME_USERS');
+
+    // root is still rejected — now via the forbidden-identity list, which the
+    // authority declares and a contract test pins to include root and www-data.
+    expect($script)->toContain('is forbidden (privileged, or shared with a co-tenant application)');
 });
 
 test('deploy script runs cache commands as the runtime user', function () {
