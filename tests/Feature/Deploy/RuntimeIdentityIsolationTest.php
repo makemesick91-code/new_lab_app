@@ -63,8 +63,10 @@ function isoFixture(array $overrides = []): array
     $nginxBind = $overrides['nginx_bind'] ?? $socket;
     $unitUser = $overrides['unit_user'] ?? $user;
     $unitGroup = $overrides['unit_group'] ?? $group;
+    // The fixture's files are all owned by the test user's primary group, so the
+    // secret-group breach case is driven by declaring a DIFFERENT runtime group
+    // rather than by chgrp'ing the file (which an unprivileged test cannot do).
     $runtimeGroup = $overrides['runtime_group'] ?? $group;
-    $envGroup = $overrides['env_group'] ?? $runtimeGroup;
     $envMode = $overrides['env_mode'] ?? 0640;
     $declaredUser = $overrides['declared_user'] ?? $user;
     $privateMode = $overrides['private_mode'] ?? 0770;
@@ -263,6 +265,30 @@ it('chowns only the runtime-writable paths to the resolved identity', function (
         // The application source tree is never recursively chowned.
         expect(preg_match('/chown -R [^\n]*\s(\.|\/var\/www\/asia-dental-lab-v2)\s*$/m', $body))->toBe(0);
     }
+});
+
+it('re-restricts private clinical storage after normalizing ownership', function () {
+    // normalize_runtime_ownership makes the whole storage tree 2775/0664 so the
+    // runtime can work. storage/app/private must NOT inherit that: without the
+    // re-strip, every deploy would silently hand the co-tenant uid read access
+    // to lab workflow evidence and patient documents — the exact exposure this
+    // sprint closes — and would then fail the isolation gate.
+    $deploy = isoRead('scripts/deploy-vps.sh');
+
+    expect($deploy)->toContain('restrict_private_paths')
+        ->and($deploy)->toContain('chmod -R o-rwx')
+        ->and($deploy)->toContain('DMS_PRIVATE_PATHS');
+
+    // It must be invoked from inside the normalizer, not merely defined beside
+    // it, so the two can never drift apart.
+    $start = (int) strpos($deploy, 'normalize_runtime_ownership() {');
+    $end = (int) strpos($deploy, "\n}", $start);
+    $normalizer = substr($deploy, $start, $end - $start);
+    expect($normalizer)->toContain('restrict_private_paths');
+
+    $rollback = isoRead('scripts/rollback-vps.sh');
+    expect($rollback)->toContain('chmod -R o-rwx')
+        ->and($rollback)->toContain('DMS_PRIVATE_PATHS');
 });
 
 it('runs the fail-closed isolation gate in both deploy and rollback', function () {

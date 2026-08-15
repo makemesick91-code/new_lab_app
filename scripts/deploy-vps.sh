@@ -82,6 +82,27 @@ normalize_runtime_ownership() {
   chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
   find storage bootstrap/cache -type d -exec chmod 2775 {} \;
   find storage bootstrap/cache -type f -exec chmod 0664 {} \;
+  restrict_private_paths
+}
+
+# INFRA-SEC-RUNTIME-1: the normalization above deliberately makes the whole
+# storage tree group-writable and world-readable (2775/0664) so the runtime can
+# work — but storage/app/private holds clinical evidence and must NOT inherit
+# that. Re-strip world access for every declared private path.
+#
+# This is called from INSIDE normalize_runtime_ownership, not beside it, because
+# the two must never drift apart: a deploy that normalized ownership without
+# re-restricting would silently hand the co-tenant uid read access to lab
+# workflow evidence, patient documents and the legacy import staging area — the
+# exact exposure this sprint closes — and would then fail the isolation gate
+# below with a confusing message instead of never happening.
+restrict_private_paths() {
+  local rel p
+  for rel in ${DMS_PRIVATE_PATHS:-}; do
+    p="${APP_DIR}/${rel}"
+    [ -d "$p" ] || continue
+    chmod -R o-rwx "$p"
+  done
 }
 
 # Fail-closed writable gate: every runtime path must be writable by the runtime

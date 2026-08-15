@@ -157,6 +157,15 @@ chown -R "${RUNTIME_USER}:${RUNTIME_GROUP}" storage bootstrap/cache
 find storage bootstrap/cache -type d -exec chmod 2775 {} \;
 find storage bootstrap/cache -type f -exec chmod 0664 {} \;
 
+# INFRA-SEC-RUNTIME-1: the normalization above makes the whole storage tree
+# world-readable (2775/0664). Private clinical storage must not inherit that, so
+# re-strip world access — otherwise a rollback would quietly re-expose lab
+# workflow evidence and patient documents to the co-tenant uid.
+for rel in ${DMS_PRIVATE_PATHS:-}; do
+  [ -d "${APP_DIR}/${rel}" ] || continue
+  chmod -R o-rwx "${APP_DIR}/${rel}"
+done
+
 # ─── INFRA-SEC-ENV-1 ────────────────────────────────────────────────────────
 # Rolling back to an older ref must never restore a world-readable secret file.
 # Re-assert the invariant here too, fail closed. The group is the dedicated
