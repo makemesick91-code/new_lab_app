@@ -246,3 +246,39 @@ produced; only a browser session can.
   is OFF, but they **will collide with a retry** that re-admits the same source
   hashes. Cancel them through the UI at the start of the next capability window,
   before the retry admits anything.
+
+## Diagnosing "the operator cannot upload" — reinforced by Wave-2R (2026-08-16)
+
+An operator reporting *"tidak bisa upload / tidak punya akses"* is usually the
+rollout refusing, not a broken account. Check state before you touch the account.
+
+- **"Cabang belum masuk gelombang migrasi" is the ADMISSION gate**, not a
+  permission fault. It appears whenever `admitted_branch_codes` is empty, the wave
+  is not ACTIVE, or the operator is not assigned to that branch. The fix is to open
+  the wave, never to change the account or the patient's Nomor RM — the panel says
+  so itself: *"Data pasien tidak perlu diubah."*
+- **There is no branch field to fill in.** The archive branch is derived from the
+  branch-code segment of the patient's Nomor RM and cannot be picked manually, so
+  "harus memilih cabang" is never a missing form control.
+- **The whole migration surface is hidden while the capability is OFF** — the
+  sidebar entry disappears and the routes 404 rather than 403, deliberately, so a
+  disabled deployment does not advertise a control plane. An operator looking
+  outside a capability window sees exactly what a missing permission looks like.
+- **Order the diagnosis: capability → admission → wave status → operator
+  assignment → permission → policy.** The first four are rollout state and explain
+  almost every report; only then is the account worth inspecting.
+- **Read the actor columns for proof of access.** `cancelled_by`, `uploaded_by`
+  and `published_by` record who actually acted. In Wave-2R the operator's own
+  `cancelled_by` entries proved her access was fine while she still could not
+  upload — which pointed at the gate instead of the account.
+
+## Verify against the deployed tree, not a convenient checkout
+
+A repository with several worktrees will happily answer questions about the wrong
+commit. Grepping a stale checkout during Wave-2R produced a confident and entirely
+false "this feature has no sidebar entry".
+
+- Resolve findings against the **deployed** tree (the VPS checkout at `VPS_HEAD`)
+  or an explicit SHA, never whichever worktree the shell happens to be in.
+- A grep that returns **zero** hits for something you know exists is evidence the
+  tree is wrong, not that the feature is missing. Re-check before reporting.
