@@ -198,3 +198,51 @@ tests the rule: the accounts were correctly provisioned and least-privileged, bu
   hashes plus the owner's originals preserve identity, so PHI need not sit on the
   host outside the managed private store while nothing is running. Validate the
   directory contents against the frozen hashes before removing anything.
+
+## Reachability and operator identity — reinforced by Wave-2 attempt 3 (2026-08-16)
+
+Wave-2 opened for real, accepted five documents, and published none. Two faults,
+both worth keeping.
+
+- **A permission that no reachable UI exposes is not a control.** Splitting
+  `approve_legacy_rme_migration_wave` from `manage_legacy_rme_migration_operations`
+  is only half the work; the holder must be able to exercise it. The approve form
+  sat inside an `@if ($canManage)` block, so the designated approver — who by
+  design holds no manage permission — could never see it, and separation of duties
+  was satisfiable only by a CLI actor impersonating them. Assert **reachability for
+  the role that owns an action**, not merely that everyone else is refused. A
+  service-level test proves the rule cannot be violated and says nothing about
+  whether it can be used.
+- **Gate the action on the POLICY, not the bare permission string,** so a control
+  appears exactly when the action would be authorised and never on a terminal
+  object.
+- **Verify `uploaded_by` on every accepted record against the approval, before
+  review.** The maker/checker split is about *who acted*. Wave-2 filed all five
+  documents as Super Admin while the approval named a branch operator; nothing was
+  breached (filer ≠ publisher) but the wave did not run as approved, and that only
+  surfaced because the identity was checked.
+- **Assignment is not participation.** An operator can be assigned, the gate open
+  to them, and the work still done by somebody else. An assignment proves
+  permission, never that the approved person did it.
+- **A cancelled import still consumes quota.** `reserve()` has no compensating
+  write, so a correction costs a slot. Size a wave with correction headroom, or
+  expect a fresh approval after a mistake.
+- **`complete` is refused while a branch is unfinished; `cancel` is the honest
+  terminal state for an aborted wave.** Never force completion to make a run look
+  tidy.
+
+## Import lifecycle has no operator path — gap recorded, not worked around
+
+`LegacyRmeImportProcessingService::cancel()` is canonical and audit-preserving,
+but its only entry point is HTTP. `legacy-rme:wave-admin` covers wave actions
+only — there is **no CLI for import-level cancel, review, publish or retry**. An
+operator aborting a wave over SSH cannot withdraw the staged documents it
+produced; only a browser session can.
+
+- **Never substitute SQL or Tinker for a missing operator path.** Mutating
+  `status`, `uploaded_by`, quota or ownership directly destroys the audit property
+  that makes the lifecycle meaningful. Report the gap and stop.
+- Unpublished imports left behind by an aborted wave are inert once the capability
+  is OFF, but they **will collide with a retry** that re-admits the same source
+  hashes. Cancel them through the UI at the start of the next capability window,
+  before the retry admits anything.
