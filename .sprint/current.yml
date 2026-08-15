@@ -1,50 +1,58 @@
-# Active sprint manifest — INFRA-SEC-RUNTIME-1
+# Active sprint manifest — DEPLOY-HARDEN-1
 # Validated by: php artisan sprint:manifest-check
 
-id: INFRA-SEC-RUNTIME-1
-type: SECURITY_FIX
+id: DEPLOY-HARDEN-1
+type: INFRA_RELEASE
 module: Deploy
-title: "Dedicated runtime identity & co-tenant isolation — move DaengtisiaMS off the shared www-data account onto its own PHP-FPM pool, queue worker and background identity, and resolve the deploy runtime user explicitly instead of by scanning FPM pools"
+title: "Immutable deployment entrypoint & self-update safety — a deployment must never execute from a repository file it is about to rewrite; add an exclusive deploy lock, exact-SHA target pinning and a trusted immutable execution snapshot, and remove the manual pre-pull prerequisite"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application code path changes; deploy/host automation only
+runtime_change: false           # no application code path, controller, service or query changes
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # closes same-UID co-tenant read of secrets and private clinical storage
+security_impact: true           # deployment payload integrity, lock/snapshot trust boundary, concurrency
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the isolation must be provisioned and proven on the production host
+deploy_required: true           # the new entrypoint must be proven on the production host
 browser_required: false         # no UI surface
 
 test_profiles:
   - deploy
   - architecture
 
-# ── Residual that triggered this sprint ─────────────────────────────────────
-# INFRA-SEC-ENV-1 removed world-read from the production secret file (0644 ->
-# 0640 root:www-data) and explicitly did NOT claim same-UID isolation. This
-# sprint closes that residual.
+# ── The defect that triggered this sprint ───────────────────────────────────
+# scripts/deploy-vps.sh was executed straight out of the working tree while,
+# roughly halfway through its own body, it ran:
 #
-# Production finding (srv1730088):
-#   DaengtisiaMS PHP-FPM pool : www  (uid 33 www-data)  <- distribution default
-#   aish-pos PHP-FPM pool     : aish-pos (uid 33 www-data)
-#   DaengtisiaMS queue worker : www-data
-#   DaengtisiaMS snapshot unit: www-data
-# Same uid => a file mode cannot stop the co-tenant reading this application's
-# secret or its private clinical storage. World isolation PASS, application-to-
-# application isolation NOT PROVIDED.
+#     git checkout "$BRANCH"
+#     git pull --ff-only origin "$BRANCH"
 #
-# Second, independent defect found in the same area:
-#   scripts/deploy-vps.sh resolved its runtime user with
-#     grep -r '^user =' /etc/php/*/fpm/pool.d/ | head -1
-#   plus a process-table guess and a hardcoded www-data default. That only ever
-#   looked correct because every pool on the host ran as www-data; the moment
-#   DaengtisiaMS gained a dedicated pool the walk order decided the answer, so
-#   the deploy could have chowned this application's runtime to the CO-TENANT's
-#   identity. Replaced by deploy/runtime-identity.conf, fail closed, no fallback.
+# bash does not slurp a script. It reads it incrementally and keeps a byte
+# offset into the open file, so rewriting those bytes underneath a running
+# interpreter is undefined behaviour: the shell can resume mid-token at a stale
+# offset and execute a line no author ever wrote. The same applied to every
+# helper the deploy invoked AFTER the pull —
+# scripts/harden-secret-permissions.sh and scripts/verify-runtime-isolation.sh
+# were re-read from the tree the deploy had just rewritten, which is the same
+# defect one indirection removed.
 #
-# INFRA-SEC-ENV-1 remains CLOSED / IMMUTABLE / GO. Its invariants are preserved
-# and re-asserted here, including across a rollback: the rollback path now
-# follows the dedicated runtime group and can never restore a world-readable
-# secret or hand secret read back to the shared account.
+# Two recent releases had to be rescued with a manual pre-pull. That workaround
+# succeeded but must not become permanent deployment architecture.
+#
+# ── The invariant this sprint locks ─────────────────────────────────────────
+#
+#     RUNNING_DEPLOY_PROGRAM != MUTABLE_REPOSITORY_FILE
+#
+# Once a deployment starts executing its deployment program, that program is
+# immutable for the duration of the run.
+#
+# ── Preserved, not weakened ─────────────────────────────────────────────────
+# INFRA-SEC-ENV-1  (secret file permissions)   remains CLOSED / IMMUTABLE / GO.
+# INFRA-SEC-RUNTIME-1 (dedicated runtime identity, co-tenant isolation)
+#                                              remains CLOSED / IMMUTABLE / GO.
+# Backup-before-migrate stays absolute; migrations stay additive migrate --force
+# with no destructive database command; the ENT-8 cache order and the ENT-11
+# deploy/rollback contract are unchanged. The rollback path is hardened the same
+# way and still takes its snapshot from the CURRENT code, so rolling the
+# application back never rolls the security tooling back.

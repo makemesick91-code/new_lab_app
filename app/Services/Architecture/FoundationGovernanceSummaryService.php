@@ -10,6 +10,7 @@ use App\Services\Foundation\CacheRedisGovernanceService;
 use App\Services\Foundation\CicdEnterpriseGateGovernanceService;
 use App\Services\Foundation\DatabaseReplicaGovernanceService;
 use App\Services\Foundation\DbPerformanceGovernanceService;
+use App\Services\Foundation\DeploymentEntrypointGovernanceService;
 use App\Services\Foundation\DeploymentRollbackGovernanceService;
 use App\Services\Foundation\DeveloperConsoleGovernanceService;
 use App\Services\Foundation\DevflowGovernanceService;
@@ -90,6 +91,7 @@ class FoundationGovernanceSummaryService
         private readonly DevflowGovernanceService $devflowGovernance,
         private readonly CicdEnterpriseGateGovernanceService $cicdEnterpriseGateGovernance,
         private readonly DeploymentRollbackGovernanceService $deploymentRollbackGovernance,
+        private readonly DeploymentEntrypointGovernanceService $deploymentEntrypointGovernance,
         private readonly BackupDrGovernanceService $backupDrGovernance,
         private readonly LoadTestBaselineGovernanceService $loadTestBaselineGovernance,
         private readonly LoadTestScaleProjectionGovernanceService $loadTestScaleProjectionGovernance,
@@ -159,6 +161,9 @@ class FoundationGovernanceSummaryService
         $devflowGovernance = $this->devflowGovernance->collect();
         $cicdEnterpriseGateGovernance = $this->cicdEnterpriseGateGovernance->collect();
         $deploymentRollbackGovernance = $this->deploymentRollbackGovernance->collect();
+        $deploymentEntrypointGovernance = $this->deploymentEntrypointGovernance->report(
+            (string) ($deploymentRollbackGovernance['decision'] ?? 'UNKNOWN')
+        );
         $backupDrGovernance = $this->backupDrGovernance->collect();
         $loadTestBaselineGovernance = $this->loadTestBaselineGovernance->collect();
         $loadTestScaleProjectionGovernance = $this->loadTestScaleProjectionGovernance->collect();
@@ -289,6 +294,8 @@ class FoundationGovernanceSummaryService
                 'cicd_enterprise_gate_readiness_status' => $cicdEnterpriseGateGovernance['readiness_status'] ?? 'unknown',
                 'deployment_rollback_governance_decision' => $deploymentRollbackGovernance['decision'] ?? 'UNKNOWN',
                 'deployment_rollback_readiness_status' => $deploymentRollbackGovernance['readiness_status'] ?? 'unknown',
+                'deployment_entrypoint_governance_decision' => $deploymentEntrypointGovernance['decision'] ?? 'UNKNOWN',
+                'deployment_entrypoint_status' => $deploymentEntrypointGovernance['status'] ?? 'unknown',
                 'backup_dr_governance_decision' => $backupDrGovernance['decision'] ?? 'UNKNOWN',
                 'backup_dr_readiness_status' => $backupDrGovernance['readiness_status'] ?? 'unknown',
                 'load_test_baseline_governance_decision' => $loadTestBaselineGovernance['decision'] ?? 'UNKNOWN',
@@ -491,6 +498,24 @@ class FoundationGovernanceSummaryService
                 'checks' => $deploymentRollbackGovernance['checks'] ?? [],
                 'rules' => $deploymentRollbackGovernance['rules'] ?? [],
                 'command' => 'foundation:deployment-rollback-check',
+            ],
+            // DEPLOY-HARDEN-1 — informational, like every sibling foundation
+            // section: NOT wired into the blocking combined decision. The
+            // blocking enforcement lives in the deploy script itself, which
+            // fails closed when it is not running from an immutable snapshot.
+            'deployment_entrypoint_governance' => [
+                'decision' => $deploymentEntrypointGovernance['decision'] ?? 'UNKNOWN',
+                'status' => $deploymentEntrypointGovernance['status'] ?? 'unknown',
+                'enabled' => $deploymentEntrypointGovernance['enabled'] ?? false,
+                'bootstrap_ok' => $deploymentEntrypointGovernance['bootstrap']['ok'] ?? false,
+                'execution_closure_ok' => $deploymentEntrypointGovernance['execution_closure']['ok'] ?? false,
+                'operator_interface_ok' => $deploymentEntrypointGovernance['operator_interface']['ok'] ?? false,
+                'deployment_rollback_governance_decision' => $deploymentEntrypointGovernance['deployment_rollback_governance_decision'] ?? 'UNKNOWN',
+                'mutating_entrypoints' => $deploymentEntrypointGovernance['mutating_entrypoints'] ?? [],
+                'rules' => $deploymentEntrypointGovernance['rules'] ?? [],
+                'errors' => $deploymentEntrypointGovernance['errors'] ?? [],
+                'warnings' => $deploymentEntrypointGovernance['warnings'] ?? [],
+                'command' => 'foundation:deployment-entrypoint-check',
             ],
             'backup_dr_governance' => [
                 'decision' => $backupDrGovernance['decision'] ?? 'UNKNOWN',

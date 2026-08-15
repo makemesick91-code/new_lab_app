@@ -1,0 +1,85 @@
+---
+description: DEPLOY-HARDEN-1 — immutable deployment entrypoint, deploy lock, exact-SHA pinning and self-update safety for DaengtisiaMS deploy/rollback automation.
+globs:
+  - "scripts/deploy-*.sh"
+  - "scripts/rollback-vps.sh"
+  - "scripts/harden-secret-permissions.sh"
+  - "scripts/verify-runtime-isolation.sh"
+  - "config/deployment_entrypoint.php"
+  - "app/Support/Deploy/**"
+  - "app/Services/Foundation/DeploymentEntrypointGovernanceService.php"
+  - "docs/runbooks/vps-deploy-rollback-runbook.md"
+alwaysApply: false
+---
+
+# DEPLOY-HARDEN-1 — Immutable Deployment Entrypoint & Self-Update Safety
+
+Verified by `php artisan foundation:deployment-entrypoint-check --strict`
+(rules **DH1-R001..R012**) and `tests/Feature/Deploy/DeployHarden*Test.php`.
+
+## The invariant
+
+```
+RUNNING_DEPLOY_PROGRAM != MUTABLE_REPOSITORY_FILE
+```
+
+bash reads a script incrementally and keeps a byte offset into the open file. A
+deployment that rewrites its own script mid-run is undefined behaviour. This is
+not theoretical: it cost two production releases a manual pre-pull rescue.
+
+## Permanent rules
+
+1. A running deployment program must never execute from a repository file that
+   can be rewritten during that same deployment.
+2. Deploy and rollback execute from an **immutable trusted snapshot** created by
+   `scripts/deploy-immutable-exec.sh` before any mutation.
+3. The snapshot is exported from a git **object** (`git archive`), never copied
+   from the working tree.
+4. Every script executed across the repository mutation belongs to the snapshot
+   closure. Never `source` or `bash` a helper out of the working tree after the
+   checkout — that is the same defect one indirection removed.
+5. The live `deploy/runtime-identity.conf` is overlaid onto the snapshot: rolling
+   the CODE back must never roll the RUNTIME IDENTITY back (INFRA-SEC-RUNTIME-1).
+6. The deployment target is pinned to an **exact SHA** before any mutation. A
+   remote branch that moves afterwards belongs to a LATER deployment.
+7. `git merge --ff-only "$TARGET_SHA"`, never `git pull` of a moving tip.
+8. HEAD is verified against the pinned target after the checkout **and** as the
+   last gate before `DEPLOY OK`.
+9. Exactly one deployment critical section at a time: `flock` on
+   `/run/daengtisiams-deploy/<role>.lock`. A second attempt fails closed (exit
+   75) before backup, migration or checkout.
+10. Lock and snapshot live under a root-controlled path — **never** under
+    `storage/` or `bootstrap/cache`, which the runtime user can write.
+11. The advisory lock is authoritative. A lock file on disk, or a stale status
+    file, is not. Never delete a lock file to unstick a deploy.
+12. Cleanup is trap-driven and guarded (`rm -rf` only on this run's own snapshot,
+    real directory, no symlink) and never rewrites the exit code.
+13. Backup still runs **before** migration; backup failure aborts the deploy.
+14. `migrate --force` only. Never a destructive database command.
+15. A dirty tracked production checkout fails closed. Never `git reset --hard`,
+    never discard production work to make a deploy pass.
+16. `scripts/deploy-vps-runner.sh` runs **on the production VPS only** — never
+    locally, never on a CI runner, never in a worktree.
+17. Launcher start is not deployment completion. `exit=0` **and** the `DEPLOY OK`
+    marker are the authority.
+18. **A manual pre-pull is never a prerequisite.** If a change reintroduces one,
+    that is a NO-GO — the core defect is back.
+19. Production deploys only merged release authority, never an unmerged
+    candidate SHA.
+20. Rollback obeys all of the above and resolves the operator's tag to one exact
+    commit before mutating; its snapshot comes from the CURRENT code so the
+    modern security gates still run against an older target.
+21. Deployment scripts never print a secret value.
+22. Every new deployment-architecture test must belong to an authoritative CI
+    gate — the `DeployHarden` token in the NSF-R011 critical filter (both the
+    GitHub-hosted and the self-hosted variant).
+
+## Adding to the deployment path
+
+- Put contract literals in `config/deployment_entrypoint.php`, not in the shell
+  scripts or the scanner (ENT-9/ENT-10/ENT-11 config-not-code convention).
+- A new helper invoked after the checkout must be added to
+  `execution_closure.closure_members` and called via `${DEPLOY_TOOLS_DIR}`.
+- Re-run `foundation:deployment-entrypoint-check --strict`,
+  `foundation:deployment-rollback-check`, `foundation:cicd-enterprise-gate-check`
+  and the `DeployHarden` suite before proposing a change.

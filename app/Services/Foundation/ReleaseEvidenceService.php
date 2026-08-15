@@ -292,6 +292,10 @@ class ReleaseEvidenceService
                 'command' => 'foundation:deployment-rollback-check',
                 'arguments' => ['--json' => true],
             ],
+            'deployment-entrypoint-check.json' => [
+                'command' => 'foundation:deployment-entrypoint-check',
+                'arguments' => ['--json' => true],
+            ],
             'backup-dr-check.json' => [
                 'command' => 'foundation:backup-dr-check',
                 'arguments' => ['--json' => true],

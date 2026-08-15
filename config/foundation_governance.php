@@ -159,6 +159,17 @@ return [
                     'php artisan foundation:deployment-rollback-check --json',
                 ],
             ],
+            'DEPLOY-HARDEN-1' => [
+                'classification' => 'automated_ci_gate',
+                'pr_job' => 'release_safety_gate',
+                'artifacts' => [
+                    'storage/ci-evidence/deployment-entrypoint-check.json',
+                ],
+                'local_commands' => [
+                    'php artisan foundation:deployment-entrypoint-check',
+                    'php artisan foundation:deployment-entrypoint-check --json',
+                ],
+            ],
             'ENT-12' => [
                 'classification' => 'automated_ci_gate',
                 'pr_job' => 'release_safety_gate',

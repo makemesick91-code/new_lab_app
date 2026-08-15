@@ -384,10 +384,18 @@ test('the deploy script hardens secrets before sourcing the environment file', f
         ->and($hardenAt)->toBeLessThan($sourceAt);
 });
 
+// DEPLOY-HARDEN-1 repin. These three assertions used to match the unquoted
+// literal `harden-secret-permissions.sh apply|verify`. The helper is now invoked
+// from the immutable execution snapshot — `bash "${DEPLOY_TOOLS_DIR}/scripts/
+// harden-secret-permissions.sh" apply` — so the closing quote sits between the
+// script name and the sub-command. Re-reading the helper out of the working tree
+// the deploy had just rewritten was the self-modification defect one indirection
+// removed. The original intent (deploy and rollback both harden AND fail-closed
+// verify the secret files) is unchanged and still asserted below.
 test('the deploy script fails closed on unsafe secret permissions', function () {
     $script = file_get_contents(base_path('scripts/deploy-vps.sh'));
 
-    expect($script)->toContain('harden-secret-permissions.sh verify')
+    expect($script)->toContain('harden-secret-permissions.sh" verify')
         ->and($script)->toContain('secret file permissions are unsafe')
         ->and($script)->toContain('NOT GO');
 });
@@ -395,8 +403,8 @@ test('the deploy script fails closed on unsafe secret permissions', function () 
 test('the rollback script re-asserts the secret permission invariant', function () {
     $script = file_get_contents(base_path('scripts/rollback-vps.sh'));
 
-    expect($script)->toContain('harden-secret-permissions.sh apply')
-        ->and($script)->toContain('harden-secret-permissions.sh verify');
+    expect($script)->toContain('harden-secret-permissions.sh" apply')
+        ->and($script)->toContain('harden-secret-permissions.sh" verify');
 });
 
 test('the ENT-11 deployment gate requires the hardening call in deploy and rollback', function () {

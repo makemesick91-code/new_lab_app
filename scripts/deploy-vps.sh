@@ -2,10 +2,68 @@
 set -euo pipefail
 
 APP_DIR="/var/www/asia-dental-lab-v2"
+# Inside the immutable snapshot the application root is whatever the trusted
+# bootstrap resolved and exported. Outside it, the hardcoded production path is
+# the only accepted value — an inherited environment variable must never be able
+# to point a deployment at a different tree.
+if [ -n "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ] && [ -n "${DMS_DEPLOY_APP_DIR:-}" ]; then
+  APP_DIR="$DMS_DEPLOY_APP_DIR"
+fi
 BRANCH="feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 cd "$APP_DIR"
+
+# ─── DEPLOY-HARDEN-1 immutable execution bootstrap ──────────────────────────
+# This script rewrites its own working-tree file further down (the checkout that
+# advances the deployed code). Interpreting a file while rewriting it is
+# undefined behaviour, so the deploy must never be executed straight out of the
+# repository. Hand over to the trusted bootstrap, which takes the host deploy
+# lock, pins the exact target commit, exports an immutable snapshot of the
+# deployment payload from the git object, and re-enters this same script from
+# that snapshot. Everything below then runs from bytes no `git checkout` can
+# touch.
+#
+# Fail closed: without the bootstrap there is no safe way to run this script, so
+# a tree that does not carry it aborts rather than falling back to the old
+# self-modifying path.
+if [ -z "${DMS_DEPLOY_SNAPSHOT_DIR:-}" ]; then
+  # Prefer the bootstrap shipped beside this script: it keeps the pre-mutation
+  # execution closure self-contained, so a trusted copy of scripts/ taken from a
+  # release object bootstraps itself without depending on the tree it is about
+  # to replace. Fall back to the application checkout for a normal in-tree run.
+  DEPLOY_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  IMMUTABLE_EXEC="${DEPLOY_SELF_DIR}/deploy-immutable-exec.sh"
+  [ -r "$IMMUTABLE_EXEC" ] || IMMUTABLE_EXEC="${APP_DIR}/scripts/deploy-immutable-exec.sh"
+  if [ ! -r "$IMMUTABLE_EXEC" ]; then
+    echo "FATAL: immutable deployment bootstrap missing: ${IMMUTABLE_EXEC}" >&2
+    echo "       Refusing to deploy from a mutable working-tree script (DEPLOY-HARDEN-1)." >&2
+    exit 2
+  fi
+  exec bash "$IMMUTABLE_EXEC" \
+    --role deploy \
+    --app-dir "$APP_DIR" \
+    --branch "$BRANCH" \
+    --overlay "${APP_DIR}/deploy/runtime-identity.conf:deploy/runtime-identity.conf" \
+    -- scripts/deploy-vps.sh
+fi
+
+# From here on we are the snapshot copy. Assert it rather than assume it: a
+# forged environment variable must not be able to talk this script into running
+# the vulnerable in-tree path.
+case "${BASH_SOURCE[0]}" in
+  "${DMS_DEPLOY_SNAPSHOT_DIR}"/*) ;;
+  *)
+    echo "FATAL: deploy program is not running from the immutable snapshot (${BASH_SOURCE[0]})" >&2
+    exit 2
+    ;;
+esac
+TARGET_SHA="${DMS_DEPLOY_TARGET_SHA:?immutable bootstrap must pin a target commit}"
+DEPLOY_TOOLS_DIR="$DMS_DEPLOY_SNAPSHOT_DIR"
+echo "Deploy run id:     ${DMS_DEPLOY_RUN_ID:-unknown}"
+echo "Execution source:  ${BASH_SOURCE[0]} (immutable snapshot)"
+echo "Pinned target SHA: ${TARGET_SHA}"
+# ────────────────────────────────────────────────────────────────────────────
 
 # ─── INFRA-SEC-RUNTIME-1 explicit runtime identity resolution ───────────────
 # The runtime identity is read from ONE explicit, application-specific authority.
@@ -135,15 +193,27 @@ assert_runtime_writable() {
 # ever runs against a world-readable secret. Fail closed: an unsafe secret file
 # aborts the deploy (the helper exits non-zero and `set -e` stops us here).
 echo "== Harden secret file permissions (INFRA-SEC-ENV-1) =="
-bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
 # ────────────────────────────────────────────────────────────────────────────
 
 echo "== Current branch =="
 git branch --show-current
 git status -sb
 
-echo "== Fetch origin =="
-git fetch --no-tags origin "$BRANCH"
+# DEPLOY-HARDEN-1: the remote was already fetched and the target pinned by the
+# bootstrap, before the lock-protected critical section began. Nothing is
+# re-resolved here, so a branch that moves mid-deploy cannot retarget this run.
+echo "== Pinned deployment target =="
+echo "Target SHA: ${TARGET_SHA}"
+
+# A modified tracked file means the checkout below would either fail or silently
+# deploy something other than the pinned commit. Fail closed and let a human
+# decide; never discard work with a hard reset.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  echo "FATAL: tracked files are modified in the production checkout — NOT GO" >&2
+  git status --porcelain --untracked-files=no >&2
+  exit 1
+fi
 
 echo "== Backup DB =="
 mkdir -p storage/app/backups/deploy
@@ -168,9 +238,20 @@ test -s "$BACKUP"
 # database. Close that window immediately, not at the end of the deploy.
 chmod 0640 "$BACKUP"
 
-echo "== Pull approved branch =="
+echo "== Advance checkout to the pinned target =="
+# Fast-forward the approved branch to the EXACT pinned commit instead of pulling
+# whatever the remote tip happens to be right now. This is the mutation that
+# used to rewrite this very script mid-run; it is safe because the interpreter
+# is reading the immutable snapshot, not the file about to be replaced.
 git checkout "$BRANCH"
-git pull --ff-only origin "$BRANCH"
+git merge --ff-only "$TARGET_SHA"
+
+DEPLOYED_SHA="$(git rev-parse --verify HEAD)"
+if [ "$DEPLOYED_SHA" != "$TARGET_SHA" ]; then
+  echo "FATAL: checkout is at ${DEPLOYED_SHA}, expected the pinned target ${TARGET_SHA} — NOT GO" >&2
+  exit 1
+fi
+echo "HEAD verified at pinned target: ${DEPLOYED_SHA}"
 
 echo "== Composer install =="
 composer install --no-dev --optimize-autoloader
@@ -220,6 +301,8 @@ php artisan foundation:cicd-enterprise-gate-check
 php artisan foundation:cicd-enterprise-gate-check --json > storage/release-evidence/latest/cicd-enterprise-gate-check.json || true
 php artisan foundation:deployment-rollback-check
 php artisan foundation:deployment-rollback-check --json > storage/release-evidence/latest/deployment-rollback-check.json || true
+php artisan foundation:deployment-entrypoint-check
+php artisan foundation:deployment-entrypoint-check --json > storage/release-evidence/latest/deployment-entrypoint-check.json || true
 php artisan foundation:backup-dr-check
 php artisan foundation:backup-dr-check --json > storage/release-evidence/latest/backup-dr-check.json || true
 php artisan foundation:load-test-baseline-check
@@ -297,9 +380,13 @@ fi
 # file world-readable. A deploy that cannot prove secure secret permissions is
 # NOT GO — including when the invariant was silently regressed out-of-band since
 # the previous release.
+#
+# DEPLOY-HARDEN-1: invoked from the immutable snapshot, not from the tree this
+# deploy has just rewritten. Re-reading a helper out of the freshly checked-out
+# working tree is the same self-modification defect one indirection removed.
 echo "== Verify secret file permissions (INFRA-SEC-ENV-1) =="
-bash scripts/harden-secret-permissions.sh apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
-if ! bash scripts/harden-secret-permissions.sh verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
+bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" apply --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"
+if ! bash "${DEPLOY_TOOLS_DIR}/scripts/harden-secret-permissions.sh" verify --app-dir "$APP_DIR" --owner root --group "$RUNTIME_GROUP"; then
   echo "FATAL: secret file permissions are unsafe — NOT GO" >&2
   exit 1
 fi
@@ -312,7 +399,10 @@ fi
 # cannot prove runtime isolation is NOT GO — including when the invariant was
 # regressed out-of-band since the previous release.
 echo "== Verify runtime identity isolation (INFRA-SEC-RUNTIME-1) =="
-if ! bash scripts/verify-runtime-isolation.sh --app-dir "$APP_DIR" --require-host; then
+if ! bash "${DEPLOY_TOOLS_DIR}/scripts/verify-runtime-isolation.sh" \
+      --app-dir "$APP_DIR" \
+      --identity-file "${DEPLOY_TOOLS_DIR}/deploy/runtime-identity.conf" \
+      --require-host; then
   echo "FATAL: runtime identity isolation is broken — NOT GO" >&2
   exit 1
 fi
@@ -325,5 +415,18 @@ systemctl reload nginx
 echo "== Smoke check =="
 as_runtime php artisan about
 as_runtime php artisan release:automated-smoke --base-url=http://127.0.0.1
+
+# ─── DEPLOY-HARDEN-1 fail-closed target verification ────────────────────────
+# Last gate before the success marker: the deployed checkout must still be
+# exactly the commit this run pinned. Anything else — a concurrent mutation, a
+# helper that moved HEAD, an operator switching branches mid-deploy — is NOT GO.
+# `DEPLOY OK` is only ever emitted after every mandatory security, runtime and
+# health gate above has already passed.
+FINAL_HEAD="$(git rev-parse --verify HEAD)"
+if [ "$FINAL_HEAD" != "$TARGET_SHA" ]; then
+  echo "FATAL: final HEAD ${FINAL_HEAD} does not match the pinned target ${TARGET_SHA} — NOT GO" >&2
+  exit 1
+fi
+echo "DEPLOY_HEAD_TARGET_MATCH=YES (${FINAL_HEAD})"
 
 echo "DEPLOY OK: ${STAMP}"

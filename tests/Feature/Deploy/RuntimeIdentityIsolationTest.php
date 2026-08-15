@@ -318,7 +318,16 @@ it('keeps the rollback from restoring the shared runtime identity', function () 
     expect($identityPos)->toBeLessThan($checkoutPos);
 
     // And the verifier is staged so the gate survives that checkout.
-    expect($rollback)->toContain('RUNTIME_GUARD_DIR');
+    //
+    // DEPLOY-HARDEN-1 repin. This originally asserted RUNTIME_GUARD_DIR, the
+    // ad-hoc mktemp directory the rollback used to copy the verifier into. That
+    // protected the verifier but left the rollback script ITSELF mutable while
+    // it ran. The staging directory is now the immutable execution snapshot,
+    // which covers the whole deployment closure, is trust-verified (owner, mode,
+    // symlink) and is cleaned up on every exit path including a crash. The
+    // original intent — the isolation gate survives the checkout — still holds.
+    expect($rollback)->toContain('DEPLOY_TOOLS_DIR')
+        ->and($rollback)->toContain('verify-runtime-isolation.sh');
 });
 
 // ── 3. Contract: pool, unit and governance configs agree ────────────────────

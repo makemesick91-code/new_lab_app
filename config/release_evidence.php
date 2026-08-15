@@ -78,6 +78,10 @@ return [
                 // DEVFLOW-1 sprint acceleration foundation (auditability, non-blocking).
                 'devflow-check.json',
                 'shared-service-audit.json',
+                // DEPLOY-HARDEN-1 immutable deployment entrypoint (auditability,
+                // non-blocking — the blocking enforcement is the pre-deploy gate
+                // and the deploy script's own fail-closed bootstrap).
+                'deployment-entrypoint-check.json',
             ],
         ],
 
@@ -125,6 +129,10 @@ return [
                 // DEVFLOW-1 sprint acceleration foundation (auditability, non-blocking).
                 'devflow-check.json',
                 'shared-service-audit.json',
+                // DEPLOY-HARDEN-1 immutable deployment entrypoint (auditability,
+                // non-blocking — the blocking enforcement is the pre-deploy gate
+                // and the deploy script's own fail-closed bootstrap).
+                'deployment-entrypoint-check.json',
             ],
         ],
     ],

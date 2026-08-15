@@ -38,6 +38,10 @@ return [
         'foundation:security-compliance-check',
         'foundation:cicd-enterprise-gate-check',
         'foundation:deployment-rollback-check',
+        // DEPLOY-HARDEN-1 — the deployment entrypoint must stay immutable,
+        // serialized and exact-SHA pinned. A release that regressed the
+        // entrypoint back to a self-modifying script is NOT safe to deploy.
+        'foundation:deployment-entrypoint-check',
         'foundation:backup-dr-check',
         'foundation:load-test-baseline-check',
         'foundation:load-test-scale-projection-check',
