@@ -934,4 +934,4 @@ Branch `feature/legacy-rme-ops-cli-1-canonical-import-lifecycle-cli-abort-recove
 
 **Forbidden operational recovery (durable):** `UPDATE`/`DELETE` on `stg_rme_legacy_imports`/`trx_rme_legacy_records`, Tinker status edits, hand-editing `uploaded_by`/`published_by`/`reviewed_by`/`cancelled_by`, hand-adjusting a quota bucket, `migrate:fresh`, `db:wipe`. The CLI exists specifically to remove the temptation.
 
-Tests: new `tests/Feature/LegacyRme/LegacyRmeImportLifecycleCliTest.php` (33) + `LegacyRmeImportLifecycleParityTest.php` (25).
+Tests: new `tests/Feature/LegacyRme/LegacyRmeImportLifecycleCliTest.php` (37) + `LegacyRmeImportLifecycleParityTest.php` (25); `tests/Feature/LegacyRme` **662 passed / 5 skipped (Poppler) / 0 failed** (600 baseline + 62 new).

@@ -368,7 +368,9 @@ php artisan legacy-rme:import-admin cancel --import=87 --actor=u7@example --appl
 | `TRANSITION_NOT_ALLOWED` | The import's status cannot reach this action's target. Dry-run only. |
 | `SEPARATION_OF_DUTIES` | The uploader may not publish their own document. Find the checker. |
 | `SERVICE_REFUSED` | The canonical service declined: wrong state, missing source PDF, unusable pages, or a date that no longer holds. |
-| `ACTOR_*` | Missing, unknown, inactive or deleted `--actor`. |
+| `ACTOR_REQUIRED` / `ACTOR_NOT_FOUND` / `ACTOR_INACTIVE` | Missing, unknown, deactivated or deleted `--actor`. Checked **before** anything is resolved. |
+| `UNKNOWN_ACTION` / `IMPORT_REQUIRED` | The action word is not one of the four, or `--import` is missing/not a positive integer. |
+| `INVALID_ARCHIVE_LABEL` | `--title` > 150 or `--description` > 2000 — the same bounds the browser enforces. |
 
 Exit code is `0` only when the requested outcome was reached (or a dry run found
 the action eligible). **Every refusal exits non-zero**, so a wrapper script cannot
