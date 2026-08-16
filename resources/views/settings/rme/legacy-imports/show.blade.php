@@ -58,7 +58,7 @@
                 @endif
 
                 @can('review', $import)
-                    @if ($isReady)
+                    @if ($isReady && ! $separationBlocksReview)
                         <form method="POST" action="{{ route('settings.rme.legacy-imports.review', $import->getKey()) }}">
                             @csrf
                             <x-ui.button type="submit" variant="primary">Tandai Sudah Ditinjau</x-ui.button>
@@ -167,7 +167,21 @@
             </x-ui.alert>
         @endif
 
-        @if ($isReviewed)
+        {{--
+            LEGACY-RME-SOD-1 — separation of duties, explained rather than
+            silently hidden. This is presentation only: the server refuses the
+            same POST twice (lifecycle gate 5, then again under the staging
+            row's lock), so removing this block would change what the operator
+            SEES and nothing about what they can DO.
+        --}}
+        @if ($separationBlocksReview || $separationBlocksPublish)
+            <x-ui.alert variant="warning" title="Pemisahan tugas (maker/checker)">
+                {{ $separationMessage }}
+                Mintalah pemeriksa lain yang berwenang untuk meninjau dan menerbitkan dokumen ini.
+            </x-ui.alert>
+        @endif
+
+        @if ($isReviewed && ! $separationBlocksPublish)
             @can('publish', $import)
                 <x-ui.card title="Publikasikan Arsip">
                     <x-ui.alert variant="warning" title="Tindakan permanen">

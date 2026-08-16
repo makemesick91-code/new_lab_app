@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
+
 /*
 |--------------------------------------------------------------------------
 | LEGACY-RME-PDF-ROLL-4 — production migration operations contract
@@ -130,32 +132,45 @@ return [
     'require_separate_approver' => (bool) env('LEGACY_RME_REQUIRE_SEPARATE_APPROVER', false),
 
     /*
-    | LEGACY-RME-OPS-CLI-1 — document-level separation of duties: the account
-    | that filed a document may not also publish it.
+    | LEGACY-RME-SOD-1 — document-level separation of duties: the account that
+    | filed a document may not also review or publish it. ON BY DEFAULT.
     |
-    | WHAT ALREADY ENFORCES MAKER/CHECKER, RECORDED HONESTLY. The ROLE SPLIT
-    | does, not this switch. Wave-1 gave the maker `create_legacy_rme_imports`
+    | WHAT ALSO ENFORCES MAKER/CHECKER, RECORDED HONESTLY. The ROLE SPLIT does,
+    | and it remains load-bearing. Wave-1 gave the maker `create_legacy_rme_imports`
     | and withheld `review`/`publish`; the checker got `review`+`publish` and was
     | denied `create`. A maker therefore cannot publish anything at all, on any
-    | surface, whatever this is set to — the policy refuses first. That split is
-    | the load-bearing control and OPS-CLI-1 does not change it.
+    | surface, whatever this is set to — the policy refuses first.
     |
     | WHAT THIS ADDS. Defence in depth for the single account that can hold both
     | duties: a Super Admin, whose `Gate::before` bypass makes every policy
     | answer yes. With this on, even that account cannot certify a document it
-    | uploaded itself.
+    | uploaded itself. Both guarded duties tighten together — enforcement lives
+    | in SeparatePublisherGuard, consulted by the shared lifecycle service AND
+    | re-asserted inside the publish/review row lock, so there is deliberately no
+    | way to have this in the browser but not over SSH, or to reach a weaker rule
+    | by calling the publish service directly.
     |
-    | WHY IT DEFAULTS OFF. Enabling it changes BROWSER behaviour on live clinical
-    | data, which is the owner's decision rather than a side effect of shipping a
-    | recovery CLI. Off, both surfaces behave exactly as they do today; on, both
-    | tighten together — enforcement lives in the shared lifecycle service, so
-    | there is deliberately no way to have this in the browser but not over SSH.
+    | WHY IT NOW DEFAULTS ON. OPS-CLI-1 shipped it OFF because switching it on
+    | changes browser behaviour on live clinical data, and that was the owner's
+    | call rather than a side effect of shipping a recovery CLI. SOD-1 IS that
+    | decision: production runs with it on, and the code default matches the
+    | production invariant so a deployment that forgets the environment line is
+    | safe rather than silently unguarded. See
+    | SeparatePublisherGuard::resolveEnabledFromEnv() for why a misspelled or
+    | empty environment key resolves to ENABLED instead of disabling the rule.
     |
     | A staging row with no recorded uploader (pre-attribution) is exempt:
     | refusing it would strand a document nobody could ever publish, and
     | inventing an uploader to compare against would be a guess.
+    |
+    | NOT retroactive: publishing does not additionally demand
+    | `reviewed_by != uploaded_by`, because rows reviewed before activation would
+    | be stranded and their attribution must never be rewritten to satisfy a rule
+    | that did not exist when they were filed.
     */
-    'require_separate_publisher' => (bool) env('LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER', false),
+    'require_separate_publisher' => SeparatePublisherGuard::resolveEnabledFromEnv(
+        env(SeparatePublisherGuard::ENV_KEY)
+    ),
 
     /*
     | Operational thresholds for the read-only dashboard and the reconciliation

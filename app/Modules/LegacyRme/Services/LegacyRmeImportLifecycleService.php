@@ -17,6 +17,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeLifecycleDenied;
 use App\Modules\LegacyRme\Support\LegacyRmeLifecycleOutcome;
 use App\Modules\LegacyRme\Support\LegacyRmeLifecycleRefusal;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Validation\ValidationException;
@@ -64,8 +65,11 @@ use Illuminate\Validation\ValidationException;
  *      it also makes "the CLI carries the same door" assertable in a test.
  *   4. POLICY. LegacyRmeImportPolicy, unchanged: branch scope again, plus the
  *      1A transition gate. A terminal import can never be re-driven.
- *   5. SEPARATION OF DUTIES. Optional, config-gated, applied to BOTH surfaces
- *      identically — see assertSeparationOfDuties().
+ *   5. SEPARATION OF DUTIES. LEGACY-RME-SOD-1: on by default, applied to BOTH
+ *      guarded duties (review and publish) and to BOTH surfaces identically.
+ *      The rule itself lives in SeparatePublisherGuard and is re-asserted by
+ *      LegacyRmePublishService under the row lock, so this gate is the early
+ *      refusal, never the only one — see assertSeparationOfDuties().
  *   6. CANONICAL SERVICE. Only now does anything get written.
  *
  * WHAT IT NEVER DOES. It never writes a status column, never touches a quota
@@ -86,6 +90,7 @@ class LegacyRmeImportLifecycleService
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeAuditService $audit,
         private readonly Gate $gate,
+        private readonly SeparatePublisherGuard $separation,
     ) {}
 
     /**
@@ -180,9 +185,9 @@ class LegacyRmeImportLifecycleService
             );
         }
 
-        if ($action === LegacyRmeLifecycleAction::PUBLISH && $this->violatesSeparationOfDuties($actor, $import)) {
+        if ($this->separation->violates($action, $import, $actor)) {
             $blockers[] = LegacyRmeLifecycleRefusal::SEPARATION_OF_DUTIES;
-            $message ??= self::SEPARATION_MESSAGE;
+            $message ??= $this->separation->message($action);
         }
 
         return LegacyRmeLifecycleOutcome::preview(
@@ -239,10 +244,11 @@ class LegacyRmeImportLifecycleService
             );
         }
 
-        // Gate 5.
-        if ($action === LegacyRmeLifecycleAction::PUBLISH) {
-            $this->assertSeparationOfDuties($actor, $import);
-        }
+        // Gate 5. Applies to review AND publish — both are checker duties the
+        // role split already withholds from the maker. The canonical service
+        // re-asserts the same rule under the row lock, so this is the early,
+        // transaction-free refusal rather than the only one.
+        $this->assertSeparationOfDuties($actor, $import, $action);
 
         // Gate 6. The audit rows the canonical services write inside this
         // closure are tagged with the surface that asked, so a reader can tell
@@ -350,13 +356,19 @@ class LegacyRmeImportLifecycleService
         };
     }
 
-    private const SEPARATION_MESSAGE = 'Akun yang mengunggah dokumen ini tidak boleh menerbitkannya sendiri. Publikasi harus dilakukan oleh pemeriksa yang berbeda.';
-
     /**
      * SEPARATION OF DUTIES — an account-level check, applied identically to
      * every surface.
      *
-     * WHAT ACTUALLY ENFORCES MAKER/CHECKER TODAY, RECORDED HONESTLY. It is the
+     * LEGACY-RME-SOD-1 MOVED THE RULE, NOT THE BEHAVIOUR OF THIS GATE. The
+     * comparison now lives in SeparatePublisherGuard and is ALSO re-asserted by
+     * LegacyRmePublishService under the staging row's lock. This gate stays
+     * because refusing early is what lets the browser and the CLI report a
+     * clean refusal before any transaction opens — but it is no longer the only
+     * thing standing between an uploader and their own document, so a caller
+     * that reaches the publish service by some other route is refused too.
+     *
+     * WHAT ACTUALLY ENFORCES MAKER/CHECKER FIRST, RECORDED HONESTLY. It is the
      * ROLE SPLIT, not this method: Wave-1 gave the maker `create_legacy_rme_imports`
      * and deliberately withheld `review`/`publish`, and gave the checker
      * `review`+`publish` while withholding `create`. A maker therefore cannot
@@ -369,41 +381,15 @@ class LegacyRmeImportLifecycleService
      * answer yes. With this on, even that account cannot certify a document it
      * filed itself.
      *
-     * WHY IT DEFAULTS OFF. Turning it on changes BROWSER behaviour too, on live
-     * clinical data, and that is the owner's call rather than a side effect of
-     * shipping a CLI. It mirrors the existing `require_separate_approver` switch
-     * exactly, including its "turn this on once two staffed accounts exist"
-     * posture. Off, both surfaces behave precisely as they do today; on, both
-     * tighten together — there is deliberately no way to have it in the browser
-     * but not over SSH, or the reverse.
-     *
      * @throws ValidationException
      */
-    private function assertSeparationOfDuties(User $actor, LegacyRmeImport $import): void
+    private function assertSeparationOfDuties(User $actor, LegacyRmeImport $import, string $action): void
     {
-        if ($this->violatesSeparationOfDuties($actor, $import)) {
+        if ($this->separation->violates($action, $import, $actor)) {
             throw ValidationException::withMessages([
-                'actor' => self::SEPARATION_MESSAGE,
+                'actor' => $this->separation->message($action),
             ]);
         }
-    }
-
-    private function violatesSeparationOfDuties(User $actor, LegacyRmeImport $import): bool
-    {
-        if (! (bool) config('legacy_rme_operations.require_separate_publisher', false)) {
-            return false;
-        }
-
-        $uploader = $import->uploaded_by !== null ? (int) $import->uploaded_by : null;
-
-        // A row with no recorded uploader predates attribution. Refusing it
-        // would strand a document nobody can ever publish, and inventing an
-        // uploader to compare against would be a guess about who filed it.
-        if ($uploader === null) {
-            return false;
-        }
-
-        return $uploader === (int) $actor->getKey();
     }
 
     /**

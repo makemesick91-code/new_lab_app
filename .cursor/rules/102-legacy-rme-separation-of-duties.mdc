@@ -1,0 +1,99 @@
+---
+description: LEGACY-RME-SOD-1 — separation of duties on the legacy RME archive. The account that files a document may not review or publish it; the rule has one home, is re-asserted under the row lock, and is ON in production.
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "config/legacy_rme_operations.php"
+  - "resources/views/settings/rme/legacy-imports/**"
+  - "app/Console/Commands/LegacyRmeImportAdminCommand.php"
+alwaysApply: false
+---
+
+# LEGACY-RME-SOD-1 — separation of duties
+
+Durable doc: `docs/sprints/legacy-rme-sod-1-mandatory-separate-publisher-enforcement.md`.
+Builds on LEGACY-RME-OPS-CLI-1 (rule 101), which shipped the switch OFF.
+
+## The invariant
+
+Production legacy RME **review** and **publish** require an account different
+from `uploaded_by`. Enforced server-side, on every surface, ON by default.
+
+```
+imported_by_user_id != acting_user_id
+```
+
+## Non-negotiable rules
+
+1. **One home for the rule.** `App\Modules\LegacyRme\Support\SeparatePublisherGuard`
+   is the only place the comparison and the enablement switch are expressed.
+   `require_separate_publisher` may appear in exactly one file under `app/`.
+   Never restate `uploaded_by === $actor` in a controller, command, FormRequest,
+   policy or Blade view. Two structural tests enforce this.
+
+2. **Enforced at the write, not only above it.** `LegacyRmePublishService`
+   re-asserts the guard against the **locked** row inside the review/publish
+   transaction. The lifecycle service's gate 5 is the early, transaction-free
+   refusal — never the only one. A caller reaching the publish service directly
+   is refused too.
+
+3. **Super Admin is not a bypass.** Separation of duties is a BUSINESS invariant,
+   not a permission check. Holding every permission, and passing `Gate::before`,
+   does not satisfy it. This is the account the role split cannot constrain and
+   the main reason the sprint exists.
+
+4. **HTTP and CLI share the gate.** There is deliberately no way to have the rule
+   in the browser but not over SSH, or the reverse.
+
+5. **Both checker duties, not one.** `GUARDED_ACTIONS = [review, publish]`.
+   `cancel`/`retry` are excluded on purpose — they carry the intake permission
+   and are the maker's own housekeeping.
+
+6. **Not retroactive.** Publishing does NOT additionally require
+   `reviewed_by != uploaded_by`. Rows reviewed before activation keep a lawful
+   way forward. Never rewrite `uploaded_by`, `reviewed_by` or `published_by` to
+   satisfy a rule that did not exist when the row was filed.
+
+7. **Pre-attribution rows are exempt.** A staging row with no recorded uploader
+   is not refused — stranding a document nobody could ever publish, or inventing
+   an uploader to compare against, are both worse than the exemption.
+
+8. **Fail closed on configuration.** The switch resolves through
+   `SeparatePublisherGuard::resolveEnabledFromEnv()`. Unset, empty, whitespace,
+   misspelled or unparseable → **ENABLED**. Only `false`/`0`/`off`/`no` disable
+   it. Never reintroduce `(bool) env(..., false)` — a typo would silently
+   disable a production safety invariant. Runtime code reads `config()`, never
+   `env()`.
+
+9. **Account separation ≠ human separation.** The server can prove two ACCOUNTS
+   touched a document and does. It CANNOT prove two HUMANS hold them. Never
+   claim it does in evidence, a report or a doc. Controlled migration operations
+   still require genuinely separate human operators as an operational governance
+   control with a human attestation. Shared operational accounts must never be
+   used to bypass maker/checker accountability.
+
+10. **A refusal writes nothing.** Zero delta in legacy records, ClinicVisit,
+    MedicalRecord, odontogram, invoice, payment, LabOrder, SATUSEHAT and the
+    queue. Repeating a refused attempt writes nothing either.
+
+11. **The UI explains, it never decides.** Hiding a button is a courtesy. The
+    POST must still be refused server-side.
+
+12. **No new audit event.** Early authorization refusals stay unaudited exactly
+    as `PERMISSION_DENIED`/`POLICY_DENIED` do. A refusal reaching the canonical
+    service is recorded once as `LEGACY_RME_PUBLISH_REJECTED` with the stable
+    failure code and no PII.
+
+13. **Published records stay immutable.** Correction is VOID plus a fresh
+    import — unchanged.
+
+## Production posture
+
+```
+LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER=true      (explicit; code default also true)
+migration capability                            OFF
+branch admission                                EMPTY
+active migration wave                           NONE
+```
+
+Activating separation of duties must never open migration capability, admit a
+branch or create a wave. `ROLL-4-WAVE-3` remains **SKIPPED / NOT REQUIRED**.

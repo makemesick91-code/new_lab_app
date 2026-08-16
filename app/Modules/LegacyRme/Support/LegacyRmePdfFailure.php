@@ -79,6 +79,20 @@ final class LegacyRmePdfFailure
 
     public const PAGE_COUNT_MISMATCH = 'PAGE_COUNT_MISMATCH';
 
+    /*
+    | LEGACY-RME-SOD-1 — separation of duties, re-asserted under the row lock.
+    |
+    | These are the only two refusals here that are about WHO is acting rather
+    | than about the document's state. They live in this vocabulary anyway
+    | because they are raised from the same in-transaction refusal path and
+    | recorded in the same refusal trail; splitting them into a second failure
+    | family would give a reader two places to look for one concept.
+    */
+
+    public const SEPARATE_PUBLISHER_REQUIRED = 'SEPARATE_PUBLISHER_REQUIRED';
+
+    public const SEPARATE_REVIEWER_REQUIRED = 'SEPARATE_REVIEWER_REQUIRED';
+
     /** @var list<string> */
     public const ALL = [
         self::INVALID_PDF,
@@ -108,6 +122,8 @@ final class LegacyRmePdfFailure
         self::RENDERED_PAGES_MISSING,
         self::PAGE_FILE_MISSING,
         self::PAGE_COUNT_MISMATCH,
+        self::SEPARATE_PUBLISHER_REQUIRED,
+        self::SEPARATE_REVIEWER_REQUIRED,
     ];
 
     /** @var array<string, string> */
@@ -139,6 +155,8 @@ final class LegacyRmePdfFailure
         self::RENDERED_PAGES_MISSING => 'Hasil render halaman belum lengkap, arsip belum dapat dipublikasikan.',
         self::PAGE_FILE_MISSING => 'Berkas gambar halaman tidak ditemukan pada penyimpanan.',
         self::PAGE_COUNT_MISMATCH => 'Jumlah halaman siap tidak sesuai dengan jumlah halaman dokumen.',
+        self::SEPARATE_PUBLISHER_REQUIRED => 'Akun yang mengunggah dokumen ini tidak boleh menerbitkannya sendiri. Publikasi harus dilakukan oleh pemeriksa yang berbeda.',
+        self::SEPARATE_REVIEWER_REQUIRED => 'Akun yang mengunggah dokumen ini tidak boleh meninjaunya sendiri. Peninjauan harus dilakukan oleh pemeriksa yang berbeda.',
     ];
 
     private function __construct() {}
