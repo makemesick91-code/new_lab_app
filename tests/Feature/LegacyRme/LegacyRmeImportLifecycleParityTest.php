@@ -82,6 +82,7 @@ function lrmeParityReady(int $pages = 2, string $legacyDate = '2020-05-01'): Leg
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $legacyDate,
+        $patient->medical_record_number,
         null,
         lrmeParityUpload($pages),
         superAdmin(),

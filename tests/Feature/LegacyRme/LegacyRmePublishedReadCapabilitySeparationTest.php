@@ -238,6 +238,7 @@ it('refuses a new upload while migration is off', function () {
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-17',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),

@@ -42,6 +42,22 @@ class StoreLegacyRmeImportRequest extends FormRequest
                 'integer',
                 Rule::exists('mst_patients', 'id')->whereNull('deleted_at'),
             ],
+            // LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM PRINTED ON THE
+            // DOCUMENT, as the operator read it.
+            //
+            // These rules are shape only, and deliberately so. Whether the
+            // number names a patient, WHICH patient, and whether that patient is
+            // the one selected are all decided by
+            // LegacyRmeSourcePatientBindingService — a form request can only see
+            // what the client chose to send, and identity is not something a
+            // client may assert. The service runs on every path (HTTP, CLI,
+            // direct call), so passing this validation proves nothing about the
+            // binding.
+            'source_rm_raw' => [
+                'required',
+                'string',
+                'max:'.max(1, (int) config('legacy_rme.source_rm.max_length', 64)),
+            ],
             // The EARLIEST clinical date the document shows — the
             // representative date. See LegacyRmeDateRuleService.
             'selected_rme_date' => ['required', 'date'],
@@ -76,6 +92,11 @@ class StoreLegacyRmeImportRequest extends FormRequest
             // independently enforced on the server.
             'patient_confirmation' => ['accepted'],
             'date_confirmation' => ['accepted'],
+            // The operator states that the Nomor RM they entered is the one
+            // printed on the document — not the one belonging to the patient
+            // they happened to select. That distinction is the entire point of
+            // the field, so it gets its own attestation.
+            'source_rm_confirmation' => ['accepted'],
         ];
     }
 
@@ -86,12 +107,14 @@ class StoreLegacyRmeImportRequest extends FormRequest
     {
         return [
             'patient_id' => 'pasien',
+            'source_rm_raw' => 'Nomor RM pada dokumen',
             'selected_rme_date' => 'tanggal RME paling awal',
             'latest_rme_date' => 'tanggal RME paling akhir',
             'origin_branch_id' => 'cabang asal',
             'document' => 'dokumen PDF',
             'patient_confirmation' => 'konfirmasi pasien',
             'date_confirmation' => 'konfirmasi tanggal',
+            'source_rm_confirmation' => 'konfirmasi Nomor RM dokumen',
         ];
     }
 
@@ -105,6 +128,8 @@ class StoreLegacyRmeImportRequest extends FormRequest
             'document.max' => 'Ukuran dokumen PDF melebihi batas yang diizinkan.',
             'patient_confirmation.accepted' => 'Konfirmasi kepemilikan dokumen oleh pasien wajib dicentang.',
             'date_confirmation.accepted' => 'Konfirmasi kesesuaian tanggal pada dokumen wajib dicentang.',
+            'source_rm_raw.required' => 'Nomor RM yang tercetak pada dokumen wajib diisi.',
+            'source_rm_confirmation.accepted' => 'Konfirmasi kesesuaian Nomor RM pada dokumen wajib dicentang.',
         ];
     }
 }

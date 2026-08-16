@@ -62,7 +62,7 @@ function lrme1dReadPublished(int $pages = 2): LegacyRmeRecord
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
-        $patient, '2020-05-01', null, legacyRmePdfUpload('arsip.pdf', $pages), superAdmin(),
+        $patient, '2020-05-01', $patient->medical_record_number, null, legacyRmePdfUpload('arsip.pdf', $pages), superAdmin(),
     );
 
     app(LegacyRmeImportProcessingService::class)->process($import->getKey());

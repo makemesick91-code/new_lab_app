@@ -151,6 +151,7 @@ it('refuses a new upload while the pipeline is saturated, without touching queue
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -186,6 +187,7 @@ it('records a throttled intake in the audit trail without patient data', functio
         app(LegacyRmeImportService::class)->createFromUpload(
             $patient,
             '2019-04-02',
+            $patient->medical_record_number,
             null,
             legacyRmePdfUpload(),
             superAdmin(),

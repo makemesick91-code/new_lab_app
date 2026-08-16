@@ -150,6 +150,7 @@ it('ignores a submitted branch id and admits only the RM-derived branch', functi
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         (int) $admittedBranch->getKey(),
         legacyRmePdfUpload(),
         $actor,
@@ -171,6 +172,7 @@ it('refuses an upload for a non-admitted branch and stores nothing at all', func
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         $actor,
@@ -191,6 +193,7 @@ it('records a refused intake as an admission rejection, not as a created import'
         app(LegacyRmeImportService::class)->createFromUpload(
             $patient,
             '2019-04-02',
+            $patient->medical_record_number,
             null,
             legacyRmePdfUpload(),
             superAdmin(),
@@ -213,6 +216,7 @@ it('never writes a patient identifier into the admission audit trail', function 
         app(LegacyRmeImportService::class)->createFromUpload(
             $patient,
             '2019-04-02',
+            $patient->medical_record_number,
             null,
             legacyRmePdfUpload(),
             superAdmin(),
@@ -238,6 +242,7 @@ it('allows an upload once the branch is admitted', function () {
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -257,6 +262,7 @@ it('denies a NEW upload for a branch that was drained out of the wave', function
     app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -270,6 +276,7 @@ it('denies a NEW upload for a branch that was drained out of the wave', function
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $second,
         '2019-05-02',
+        $second->medical_record_number,
         null,
         legacyRmePdfUpload('kedua.pdf'),
         superAdmin(),
@@ -287,6 +294,7 @@ it('refuses to re-queue a retry for a branch that was drained out of the wave', 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -439,6 +447,7 @@ it('refuses an upload for an admitted but unapproved branch, storing nothing', f
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),

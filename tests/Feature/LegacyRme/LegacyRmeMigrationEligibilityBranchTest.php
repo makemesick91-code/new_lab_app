@@ -259,6 +259,7 @@ it('records a PII-free audit entry when a branch cannot be derived', function ()
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient->refresh(),
         '2015-01-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -291,6 +292,7 @@ it('imports for a patient with no native RME without creating any encounter', fu
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2024-01-28',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -326,6 +328,7 @@ function lrmeFixReviewedNoNative(string $earliest = '2024-01-28', ?string $lates
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $earliest,
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', 2),
         superAdmin(),
@@ -423,6 +426,7 @@ it('creates no clinical or financial transaction for either kind of patient', fu
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2024-01-28',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', 1),
         superAdmin(),
@@ -458,6 +462,7 @@ it('keeps an archive visible only to operators of the RM-derived branch', functi
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2015-01-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -495,6 +500,8 @@ it('accepts the declared range through the upload endpoint', function () {
             'document' => legacyRmePdfUpload(),
             'patient_confirmation' => '1',
             'date_confirmation' => '1',
+            'source_rm_raw' => $patient->medical_record_number,
+            'source_rm_confirmation' => '1',
         ])
         ->assertSessionHasNoErrors();
 
@@ -517,6 +524,8 @@ it('rejects a forged origin branch submitted through the upload endpoint', funct
             'document' => legacyRmePdfUpload(),
             'patient_confirmation' => '1',
             'date_confirmation' => '1',
+            'source_rm_raw' => $patient->medical_record_number,
+            'source_rm_confirmation' => '1',
         ])
         ->assertSessionHasErrors('origin_branch_id');
 
@@ -534,6 +543,8 @@ it('rejects a reversed range through the upload endpoint', function () {
             'document' => legacyRmePdfUpload(),
             'patient_confirmation' => '1',
             'date_confirmation' => '1',
+            'source_rm_raw' => $patient->medical_record_number,
+            'source_rm_confirmation' => '1',
         ])
         ->assertSessionHasErrors();
 

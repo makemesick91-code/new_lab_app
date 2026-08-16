@@ -341,8 +341,63 @@ used as one.
 
 ---
 
+## 14a. The Nomor RM printed on the document (SOURCE-RM-BINDING-1)
+
+Since LEGACY-RME-SOURCE-RM-BINDING-1, every upload carries a third mandatory
+answer alongside the patient and the dates: **the Nomor RM printed on the
+document itself**.
+
+**Read it off the paper.** Do not copy it from the patient record you selected,
+and do not accept it from a filename. The whole point is that it is an
+INDEPENDENT statement of who the document is about — the server compares it with
+your patient choice and refuses if they disagree. A number copied from the
+selection can only ever agree, which is how Wave-2's wrong-patient binding
+happened.
+
+The server resolves it **exactly**. `27541` never resolves to `22541`. If it
+resolves to nobody, to more than one patient, or to a different patient than the
+one you selected, the upload is refused and **nothing is created** — no staging
+row, no stored file, no queued job, and no quota is consumed.
+
+### Check a binding without uploading anything
+
+```bash
+# On the VPS, in the app directory. Read-only; creates nothing.
+php artisan legacy-rme:source-rm-binding-check \
+  --source-rm='DG-TKM1-2019-1234' --patient=<PATIENT_ID>
+```
+
+Exit `0` = the document names that patient. Exit `1` = refused, with the reason
+code. Safe to run with the capability OFF and no wave open — it is not migrating
+anything.
+
+To check only how a value normalizes (no patient data touched at all):
+
+```bash
+php artisan legacy-rme:source-rm-binding-check --source-rm=' dg-tkm1-2019-1234 ' --normalize-only
+```
+
+### If a refusal says the RM does not match
+
+Re-read the document first. If the document is right and the patient master is
+wrong, that is a **master-data** correction through canonical registration
+(§`legacy-rme:patient-resolution-audit`) — never a reason to force the upload.
+There is no override, on any surface.
+
+### Imports staged before this rule existed
+
+They carry no source RM, so their patient binding cannot be verified. Review and
+publish refuse them with `SOURCE_RM_CAPTURE_MISSING`. **Cancel and re-import** —
+cancel deliberately still works on them. Do **not** invent a source RM for an old
+row: that would claim a confirmation nobody made.
+
+---
+
 ## 15. Never
 
+- **Copy the selected patient's Nomor RM into the "Nomor RM pada Dokumen" field.**
+- **Type a source RM from a filename, a folder name or an OCR guess.**
+- **Backfill a source RM onto a historical import.**
 - Reuse a historical approval for a new wave.
 - Admit a branch the owner did not approve for **this** wave.
 - Mark a branch complete on an empty queue or `failed_jobs = 0`.

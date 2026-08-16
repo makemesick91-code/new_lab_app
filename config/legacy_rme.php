@@ -252,6 +252,40 @@ return [
     ],
 
     /*
+    |--------------------------------------------------------------------------
+    | LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM printed on the document
+    |--------------------------------------------------------------------------
+    |
+    | INVARIANTS, NOT TOGGLES. There is deliberately NO switch here that turns
+    | the binding gate off, softens a mismatch into a warning, or lets an
+    | operator override a refusal. A document about the wrong patient is not a
+    | configuration question.
+    |
+    | The only tunables are the SHAPE bounds used before the patient master is
+    | consulted at all — a length ceiling and a character allow-list that stop a
+    | pasted sentence or a filename from reaching a LIKE query. Widening them
+    | cannot weaken identity: exact resolution still decides, and it is not
+    | configurable.
+    |
+    | WHAT MAY NEVER BE ADDED TO THIS BLOCK: a fuzzy-distance threshold, an
+    | auto-correct list, an "accept nearest match" flag, an OCR authority
+    | switch, or a filename-derivation option. Each of them re-opens the exact
+    | wrong-patient failure this sprint closed.
+    */
+    'source_rm' => [
+        // Bounds the stored column (VARCHAR(64)) and the pre-resolution shape
+        // check. A real Nomor RM is far shorter; this only rejects obvious
+        // non-RM text.
+        'max_length' => 64,
+
+        // Characters a Nomor RM may plausibly contain once transcription noise
+        // is normalized away: the canonical `DG-TKM1-2024-9985` form, or the
+        // bare manual segment as printed on an old document. No whitespace, no
+        // punctuation that could carry a wildcard into a query.
+        'allowed_pattern' => '/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/',
+    ],
+
+    /*
     |----------------------------------------------------------------------
     | LEGACY-RME-PDF-1B — processing envelope
     |----------------------------------------------------------------------

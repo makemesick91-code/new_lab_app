@@ -76,6 +76,7 @@ function roll3ReadyImport(
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $legacyDate,
+        $patient->medical_record_number,
         null,
         $document,
         superAdmin(),

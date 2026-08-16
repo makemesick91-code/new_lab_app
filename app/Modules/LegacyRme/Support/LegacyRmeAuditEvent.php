@@ -134,6 +134,18 @@ final class LegacyRmeAuditEvent
     // LEGACY-RME-PDF-ROLL-4 — governance of a migration wave. Every state
     // change a wave, a branch enrollment or an operator assignment can undergo
     // leaves one of these behind.
+    /**
+     * LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM printed on the document did
+     * not prove it belongs to the selected patient, so nothing proceeded.
+     *
+     * ITS OWN ACTION, DELIBERATELY. A wrong-patient refusal is a different
+     * operational event from a branch refusal, a rollout refusal or a throttle:
+     * it means the document and the selection disagree about WHO, which is the
+     * one class of error that produced a real production incident in Wave-2.
+     * Reusing an existing action would bury it.
+     */
+    public const SOURCE_RM_BINDING_REJECTED = 'LEGACY_RME_SOURCE_RM_BINDING_REJECTED';
+
     public const WAVE_REGISTERED = 'LEGACY_RME_WAVE_REGISTERED';
 
     public const WAVE_TRANSITIONED = 'LEGACY_RME_WAVE_TRANSITIONED';
@@ -175,6 +187,7 @@ final class LegacyRmeAuditEvent
         self::IMPORT_ADMISSION_REJECTED,
         self::INGESTION_THROTTLED,
         self::IMPORT_OPERATIONS_REJECTED,
+        self::SOURCE_RM_BINDING_REJECTED,
         self::WAVE_REGISTERED,
         self::WAVE_TRANSITIONED,
         self::WAVE_BRANCH_TRANSITIONED,
@@ -255,6 +268,21 @@ final class LegacyRmeAuditEvent
         // CLI, from a closed vocabulary this application sets itself. It is
         // never operator input and never anything about a patient.
         'channel',
+        // LEGACY-RME-SOURCE-RM-BINDING-1. `source_rm_normalized` is a Nomor RM —
+        // the identifier this domain already stores in its own column and
+        // already records as `patient_id`'s companion, so it discloses nothing
+        // the trail does not hold anyway. It is the NORMALIZED value, never the
+        // raw operator transcription: raw input is free text, and free text has
+        // been excluded from this allow-list since 1D. `source_rm_resolution` is
+        // a closed-vocabulary code (EXACT_UNIQUE / SEGMENT_UNIQUE) stating HOW
+        // identity was established.
+        //
+        // WHAT IS DELIBERATELY ABSENT: the id of a patient a REFUSED number
+        // resolved to. Recording it would make the audit trail answer "who owns
+        // this Nomor RM?" for a number the actor was told nothing about, which
+        // is the enumeration leak the refusal messages themselves avoid.
+        'source_rm_normalized',
+        'source_rm_resolution',
     ];
 
     private function __construct() {}

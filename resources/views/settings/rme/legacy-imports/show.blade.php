@@ -99,6 +99,31 @@
                     <dd class="mt-1 font-semibold text-navy">{{ $import->patient?->name ?? '—' }}</dd>
                     <dd class="text-xs text-ink-muted">{{ $import->patient?->medical_record_number ?? 'Belum ada RM' }}</dd>
                 </div>
+                {{--
+                    LEGACY-RME-SOURCE-RM-BINDING-1 — the binding evidence a
+                    reviewer needs in order to certify honestly: what the
+                    DOCUMENT asserted, next to the Nomor RM of the patient it is
+                    filed under. Both values are already visible on this page
+                    (the patient's RM is directly above), so this adds no
+                    disclosure — it only puts the two side by side so a reviewer
+                    can see that they agree instead of assuming it.
+
+                    A pre-enforcement row states so plainly rather than showing a
+                    blank that could be read as "verified".
+                --}}
+                <div>
+                    <dt class="text-xs uppercase tracking-wide text-ink-muted">Nomor RM pada Dokumen</dt>
+                    @if (filled($import->source_rm_normalized))
+                        <dd class="mt-1 font-semibold text-navy">{{ $import->source_rm_normalized }}</dd>
+                        <dd class="text-xs text-success-700">Terverifikasi cocok dengan pasien di atas.</dd>
+                    @else
+                        <dd class="mt-1 text-ink">Tidak direkam</dd>
+                        <dd class="text-xs text-warning-700">
+                            Impor dibuat sebelum Nomor RM dokumen wajib direkam, sehingga kecocokan pasien tidak dapat
+                            diverifikasi. Batalkan dan ulangi unggah.
+                        </dd>
+                    @endif
+                </div>
                 <div>
                     <dt class="text-xs uppercase tracking-wide text-ink-muted">Status</dt>
                     <dd class="mt-1"><x-ui.badge :status="$import->status">{{ $import->status }}</x-ui.badge></dd>

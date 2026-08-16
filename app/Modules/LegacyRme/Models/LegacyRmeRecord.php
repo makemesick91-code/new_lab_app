@@ -52,6 +52,13 @@ class LegacyRmeRecord extends Model
         'source_pdf_path',
         'source_pdf_sha256',
         'normalized_content_hash',
+        // LEGACY-RME-SOURCE-RM-BINDING-1 — what the SOURCE DOCUMENT asserted
+        // about its own patient, carried onto the immutable record alongside the
+        // other source-identity evidence. It lets a future audit answer "what RM
+        // did this document claim?" from the record alone, without joining a
+        // staging row that publishing soft-deletes.
+        'source_rm_raw',
+        'source_rm_normalized',
         'page_count',
         'status',
         'source_import_id',

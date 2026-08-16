@@ -39,6 +39,7 @@ function lrmeStoredImport(int $pages = 2): LegacyRmeImport
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', $pages),
         superAdmin(),
@@ -231,6 +232,7 @@ it('cleans up the stored source when the staging row cannot be created', functio
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),

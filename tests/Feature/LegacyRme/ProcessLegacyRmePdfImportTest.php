@@ -47,6 +47,7 @@ function lrmeQueuedImport(int $pages = 3, string $date = '2020-05-01'): LegacyRm
     return app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $date,
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', $pages),
         superAdmin(),

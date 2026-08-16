@@ -1,23 +1,26 @@
-# Active sprint manifest — LEGACY-RME-MASTERDATA-1
+# Active sprint manifest — LEGACY-RME-SOURCE-RM-BINDING-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-MASTERDATA-1
+id: LEGACY-RME-SOURCE-RM-BINDING-1
 type: MODULE_SPRINT
 module: LegacyRme
-title: "RM 27541 patient resolution investigation & master-data integrity — exact identity only, a canonical read-only resolution audit replacing ad-hoc SQL, and a durable disposition for a document that maps to no patient"
+title: "Source RM capture, patient-binding enforcement & wrong-patient prevention — the RM printed on a legacy document becomes first-class structured evidence, is resolved exactly, and must name the selected patient before anything is staged, queued, reviewed or published"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new read-only service, support value object and artisan command
-schema_change: false            # no migration, no table, no column, no index
-frontend_change: false          # no Blade, JS, CSS, Vite entry or build file
-security_impact: false          # no policy, middleware, permission or role change; read-only surface
-branch_isolation_impact: false  # branch scope resolution untouched — branch is still derived from the Nomor RM
-ledger_impact: false            # no inventory ledger / billing / payment behaviour change
+runtime_change: true            # new binding guard on the legacy import write path + review/publish revalidation
+schema_change: true             # additive nullable source-RM columns on staging + published legacy tables
+frontend_change: true           # Blade only — source RM input + attestation on the legacy import form
+security_impact: true           # wrong-patient binding prevention, exact-only identity resolution, branch authority
 
-deploy_required: true           # the audit command must exist on production to be runnable there
-browser_required: false         # CLI-only surface, covered by feature tests
+deploy_required: true           # migration must run on the VPS
+browser_required: false         # server-side enforcement; UI is a form field, no interactive flow to drive
 
 test_profiles:
   - legacy_rme
+  - security
+  - permission
 
-go_tag: legacy-rme-masterdata-1-rm-27541-patient-resolution-integrity-go
+# Declared, not yet created. The tag is only cut after the migration is applied
+# on the VPS and the deployed diagnostic proves the binding gate refuses a wrong
+# patient in production.
+go_tag: legacy-rme-source-rm-binding-1-source-rm-capture-patient-binding-enforcement-go

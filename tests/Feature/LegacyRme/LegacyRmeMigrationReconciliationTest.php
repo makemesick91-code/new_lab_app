@@ -101,6 +101,7 @@ function reconUpload(?Patient $patient = null, string $branchCode = 'TKM1'): Leg
     return app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(sprintf('arsip-%d.pdf', $sequence), $sequence),
         superAdmin(),
