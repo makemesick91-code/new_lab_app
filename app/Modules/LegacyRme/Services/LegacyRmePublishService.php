@@ -400,11 +400,20 @@ class LegacyRmePublishService
         return $title !== '' ? mb_substr($title, 0, 150) : 'Arsip RME Lama';
     }
 
+    /**
+     * LEGACY-RME-OPS-CLI-1 — bounded here as well as in the FormRequest.
+     *
+     * The HTTP path already rejects anything over 2000 characters at validation,
+     * so this cap is unreachable from the browser. It exists because the archive
+     * labels can now also arrive from `legacy-rme:import-admin`, and a limit that
+     * lives only in a FormRequest is not a limit on a service — it is a limit on
+     * one caller. `normalizeTitle()` has always bounded itself the same way.
+     */
     private function normalizeDescription(?string $description): ?string
     {
         $description = is_string($description) ? trim($description) : '';
 
-        return $description !== '' ? $description : null;
+        return $description !== '' ? mb_substr($description, 0, 2000) : null;
     }
 
     /**

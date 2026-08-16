@@ -1,0 +1,165 @@
+---
+description: LEGACY-RME-OPS-CLI-1 — canonical import lifecycle CLI and abort recovery; CLI/HTTP convergence, actor authority, quota honesty, no SQL/Tinker recovery
+globs:
+  - app/Console/Commands/LegacyRmeImportAdminCommand.php
+  - app/Modules/LegacyRme/**
+  - config/legacy_rme_operations.php
+  - docs/runbooks/legacy-rme-migration-operations-runbook.md
+alwaysApply: false
+---
+
+# Legacy RME import lifecycle CLI — operating rules
+
+Companion to rule 97 (ROLL-4 control plane) and rule 100 (running a real wave).
+Rule 97 governs the code, rule 100 governs the wave; this one governs **driving a
+single staged import through its lifecycle**, from either surface.
+
+## The convergence rule — this is the whole safety argument
+
+> **The CLI is an adapter, never a second set of rules.**
+
+`LegacyRmeImportController` and `LegacyRmeImportAdminCommand` both enter
+`LegacyRmeImportLifecycleService`, which delegates every state change to the
+canonical services (`LegacyRmeImportProcessingService` for retry/cancel,
+`LegacyRmePublishService` for review/publish).
+
+- A controller must **never** call `$this->processing->` or `$this->publishing->`
+  directly again. A test asserts this structurally.
+- A command must **never** re-implement a transition, a date rule, a branch
+  derivation, a duplicate check, a quota decision or an audit write.
+- Adding a fifth lifecycle operation means adding it to
+  `LegacyRmeLifecycleAction` and wiring **both** surfaces — never one.
+
+## The gate order, and it fails closed at every step
+
+1. **Feature flag** → `FEATURE_DISABLED`. A recovery tool that worked while the
+   emergency stop was pressed would *be* the bypass. The CLI is gated too.
+2. **Branch scope** (`LegacyRmeWorkspaceScope`) → `IMPORT_NOT_IN_SCOPE`. An id on
+   a command line is exactly as untrusted as an id in a URL. "Not found" and "not
+   yours" are deliberately the SAME answer — otherwise id probing reveals what
+   another branch has staged.
+3. **Named route permission** → `PERMISSION_DENIED`. The same door the HTTP route
+   declares as middleware, read from one shared table.
+4. **`LegacyRmeImportPolicy`** → `POLICY_DENIED`.
+5. **Separation of duties** (config) → `SEPARATION_OF_DUTIES`.
+6. **Canonical service** → `SERVICE_REFUSED`. Only now is anything written.
+
+Scope fires before permission on purpose. Never reorder these.
+
+## Actor authority
+
+- `--actor` is **mandatory** for every operation and must name a real, **active**,
+  non-soft-deleted account.
+- The Linux user, the SSH login and `root` are **never** an application identity.
+  There is no CLI identity that bypasses authorization.
+- Permissions are checked exactly as in the browser, through the same policy.
+- An audit row whose actor is "the server" cannot be reviewed by a human. Never
+  make the actor optional.
+
+## Blast radius
+
+- **One import per invocation.** No `--all`, no `--branch`, no `--wave`, no
+  `--force` — asserted by a test. Never add one without an explicit, approved
+  batch design (explicit ids, preview, bounded maximum, fail closed, per-record
+  result, no implicit wildcard).
+- **Dry run unless `--apply`.** A dry run writes no row, no audit entry and no
+  job. Never let a preflight mutate.
+- **Every refusal exits non-zero**, including an ineligible dry run — a wrapper
+  script must not read "would be refused" as "done".
+
+## The dry run must predict, not merely ask the policy
+
+A **Super Admin**'s global `Gate::before` makes every policy answer yes, so the
+policy predicts nothing for the account most likely to be running a 2am recovery.
+`preview()` therefore consults the transition map **directly** and reports
+`TRANSITION_NOT_ALLOWED`.
+
+That check belongs to `preview()` **only**. `perform()` must never duplicate a
+transition rule the canonical services already own — that is exactly how two sets
+of rules appear.
+
+## Semantics that must not drift
+
+- **Cancelling does NOT refund quota.** The bucket is a reservation spent at
+  intake; a withdrawn document does not un-spend the reviewer time it cost. A
+  refund would let an operator loop `upload → cancel → upload` past the approved
+  ceiling. Pinned by a test.
+- **Review is a real gate.** An unreviewed import can never be published — by the
+  policy for a checker, and by the canonical service for a Super Admin. Both are
+  tested, because the account that bypasses policies is the one that must not be
+  able to skip review.
+- **Publish is idempotent, never duplicating.** A repeat returns the existing
+  record with `changed: false`; `UNIQUE(source_import_id)` is the DB backstop.
+- **Retry means requeue, not reset.** `PUBLISHED` and `CANCELLED` are terminal.
+  Published evidence is never re-driven, cloned or reset.
+- **No downstream state, ever.** No `ClinicVisit`, `MedicalRecord`, odontogram,
+  invoice, payment, `LabOrder` or SATUSEHAT candidate from any lifecycle action.
+- **Human attestation is never synthesized.** The CLI lets an authorized person
+  review/publish over SSH; it never lets anyone do so on their behalf.
+
+## Separation of duties — recorded honestly
+
+`imported_by != published_by` was **not** enforced in code before OPS-CLI-1. What
+actually enforces maker/checker is the **role split**: the maker holds
+`create_legacy_rme_imports` and is denied `review`/`publish`; the checker holds
+`review`+`publish` and is denied `create`. That split is load-bearing.
+
+`legacy_rme_operations.require_separate_publisher` adds the account-level check on
+top, **default OFF**, mirroring `require_separate_approver`. It lives in the shared
+lifecycle service, so it applies to the browser and the command line together —
+there is deliberately no way to have it on one surface only. It closes the one
+hole the role split cannot: a Super Admin holding both duties.
+
+## Audit
+
+- Reuse the existing `sys_audit_logs` trail. **No new audit table, no parallel
+  system, no second event invented for the CLI.**
+- Every row carries `channel = HTTP | CLI` so an SSH recovery is distinguishable
+  from a browser action. `LegacyRmeAuditService` is a **container singleton** for
+  this reason — the canonical services write from their own injected copy, and a
+  non-shared instance silently loses the tag.
+- The channel is scoped by `withChannel()` and restored in a `finally`; a
+  long-lived queue worker must never inherit a stale value.
+- Audit payloads stay structure-only, filtered against `ALLOWED_METADATA_KEYS`.
+  Never a patient name, KTP/NIK, medical record number, filename, absolute path
+  or clinical content.
+- Every **structured** field of `--json` is structure-only too. `refusal_message`
+  is the one deliberate exception: it is the canonical service's operator-facing
+  sentence verbatim and may quote the clinical dates a refusal is about
+  (including, in one rule, the patient's date of birth). It reaches only a caller
+  who already passed every gate for that import — the same audience the browser
+  shows the same sentence to. A name, Nomor RM or KTP/NIK must never appear;
+  assert it, do not assume it.
+
+## A FormRequest constrains one caller, not the capability
+
+Any bound that exists only in a FormRequest is **not** a rule of the service. When
+a second surface is added, re-assert it where the capability lives:
+
+- `--title` / `--description` are held to the same 150 / 2000 bounds
+  `PublishLegacyRmeImportRequest` enforces, refusing with `INVALID_ARCHIVE_LABEL`.
+- `normalizeTitle()` and `normalizeDescription()` bound themselves as a backstop.
+
+Before adding any new input to a service reachable from two surfaces, check where
+its validation actually lives.
+
+## Forbidden operational recovery
+
+The CLI exists specifically to remove the temptation.
+
+```
+UPDATE / DELETE on stg_rme_legacy_imports or trx_rme_legacy_records
+php artisan tinker → ->update(['status' => ...])
+editing uploaded_by / published_by / reviewed_by / cancelled_by by hand
+adjusting a quota bucket by hand
+migrate:fresh · db:wipe
+```
+
+## Wave-3
+
+`LEGACY-RME-PDF-ROLL-4-WAVE-3` is **`SKIPPED / NOT REQUIRED`** — no production
+wave created, no approval consumed, no branch admitted, no quota spent, no
+document published, **no GO tag**. A skipped wave is not a GO wave and must never
+be recorded, tagged or cited as a completed migration. Do not let documentation
+leave it reading as "still pending"; a future migration is a newly scoped,
+freshly approved operation, not "Wave-3 resumed".

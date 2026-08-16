@@ -1,24 +1,23 @@
-# Active sprint manifest — DEVFLOW-FIX-BASE-REF-1
+# Active sprint manifest — LEGACY-RME-OPS-CLI-1
 # Validated by: php artisan sprint:manifest-check
 
-id: DEVFLOW-FIX-BASE-REF-1
-type: RUNTIME_FIX
-module: Devflow
-title: "Canonical remote base resolution — exact-SHA comparison authority for every DEVFLOW governance consumer; stale/ahead/diverged local base refs and unrelated checkouts can no longer change a result; remote failure fails closed instead of falling back"
+id: LEGACY-RME-OPS-CLI-1
+type: MODULE_SPRINT
+module: LegacyRme
+title: "Canonical import lifecycle CLI and abort recovery — cancel/review/publish/retry over SSH through the SAME shared service the browser uses; explicit active human actor, one import per invocation, dry-run default, non-zero exit on every refusal; ROLL-4-WAVE-3 formally SKIPPED / NOT REQUIRED"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new resolver + artisan command + classifier hardening — governance/CI tooling only, no product runtime path
+runtime_change: true            # new lifecycle service + artisan command; controller converged onto the shared service
 schema_change: false            # no migration, no table, no column
 frontend_change: false          # no Blade view, no JS/CSS, no Vite entry
-security_impact: true           # git ref/option injection surface, fail-closed authority, wrong-checkout isolation
-branch_isolation_impact: false  # no BranchContext / branch-scoped query change
+security_impact: true           # authorization gates, branch scope/IDOR boundary, separation of duties, audit channel, PII in CLI output
+branch_isolation_impact: false  # reuses LegacyRmeWorkspaceScope unchanged — no new or widened branch resolution
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # governance tooling ships to the VPS checkout and is smoke-verified there
-browser_required: false         # no UI surface
+deploy_required: true           # the CLI must exist in the deployed tree and be smoke-verified there
+browser_required: false         # no UI surface added; the existing HTTP contract is unchanged
 
-go_tag: devflow-fix-base-ref-1-canonical-remote-base-resolution-go
+go_tag: legacy-rme-ops-cli-1-canonical-import-lifecycle-cli-abort-recovery-go
 
 test_profiles:
-  - cicd
   - security

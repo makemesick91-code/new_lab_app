@@ -25,9 +25,49 @@ class LegacyRmeAuditService
 {
     private const MAX_STRING_LENGTH = 255;
 
+    /**
+     * LEGACY-RME-OPS-CLI-1 — the surface currently driving a lifecycle
+     * operation, threaded into every audit row written while it is set.
+     *
+     * NULL BY DEFAULT, AND THAT IS DELIBERATE. Every pre-existing caller keeps
+     * writing exactly the payload it wrote before: an upload, a queued render,
+     * a duplicate rejection and a wave transition are unchanged byte for byte.
+     * Only the lifecycle service sets it, and only for the span of one
+     * operation.
+     */
+    private ?string $channel = null;
+
     public function __construct(
         private readonly AuditLogService $auditLogs,
     ) {}
+
+    /**
+     * Run a callback with every audit row inside it tagged with the surface
+     * that asked.
+     *
+     * SCOPED, NOT ASSIGNED. The previous value is restored in a `finally`, so a
+     * refusal, an exception or a nested call can never leave a stale channel
+     * behind to mislabel the next operation in the same process — which matters
+     * on a queue worker, where one long-lived process serves many jobs.
+     *
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    public function withChannel(?string $channel, callable $callback): mixed
+    {
+        $previous = $this->channel;
+        $this->channel = $channel !== null && in_array($channel, LegacyRmeAuditEvent::CHANNELS, true)
+            ? $channel
+            : null;
+
+        try {
+            return $callback();
+        } finally {
+            $this->channel = $previous;
+        }
+    }
 
     /**
      * @param  array<string, mixed>  $metadata
@@ -39,7 +79,7 @@ class LegacyRmeAuditService
             $import?->getKey() !== null ? (int) $import->getKey() : null,
             $action,
             null,
-            $this->safePayload($metadata + $this->importContext($import)),
+            $this->safePayload($metadata + $this->importContext($import) + $this->channelContext()),
             $actor,
         );
     }
@@ -54,9 +94,17 @@ class LegacyRmeAuditService
             $record?->getKey() !== null ? (int) $record->getKey() : null,
             $action,
             null,
-            $this->safePayload($metadata + $this->recordContext($record)),
+            $this->safePayload($metadata + $this->recordContext($record) + $this->channelContext()),
             $actor,
         );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function channelContext(): array
+    {
+        return $this->channel !== null ? ['channel' => $this->channel] : [];
     }
 
     /**

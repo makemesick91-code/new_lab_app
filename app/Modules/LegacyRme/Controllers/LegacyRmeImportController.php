@@ -13,15 +13,15 @@ use App\Modules\LegacyRme\Requests\StoreLegacyRmeImportRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
 use App\Modules\LegacyRme\Services\LegacyRmeBranchAdmissionService;
 use App\Modules\LegacyRme\Services\LegacyRmeBranchResolver;
-use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
+use App\Modules\LegacyRme\Services\LegacyRmeImportLifecycleService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientLookupService;
-use App\Modules\LegacyRme\Services\LegacyRmePublishService;
 use App\Modules\LegacyRme\Services\LegacyRmeStorageService;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
+use App\Modules\LegacyRme\Support\LegacyRmeLifecycleAction;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
@@ -42,6 +42,21 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * outside that scope; the policy is then a second, independent gate.
  *
  * Nothing here rasterizes a PDF — that only ever happens in the queued job.
+ *
+ * LEGACY-RME-OPS-CLI-1 — THE FOUR LIFECYCLE ACTIONS SHARE ONE BUSINESS PATH.
+ *
+ * `retry`, `cancel`, `review` and `publish` no longer resolve, authorize and
+ * delegate here; they hand the import id to LegacyRmeImportLifecycleService,
+ * which is the SAME class the `legacy-rme:import-admin` command calls. That is
+ * what makes "the CLI is not a weaker door" a fact rather than a promise: there
+ * is one implementation of the scope resolution, the route permission, the
+ * policy and the separation-of-duties rule, so the two surfaces cannot drift.
+ *
+ * The observable HTTP contract is unchanged. An import outside the caller's
+ * branch scope still answers 404 (LegacyRmeImportNotInScope extends
+ * NotFoundHttpException), a refused policy still answers 403, and a service
+ * refusal still surfaces as a field error — the same statuses these actions
+ * have always returned.
  */
 class LegacyRmeImportController extends Controller
 {
@@ -50,8 +65,6 @@ class LegacyRmeImportController extends Controller
     public function __construct(
         private readonly LegacyRmeImportRepositoryInterface $imports,
         private readonly LegacyRmeImportService $importService,
-        private readonly LegacyRmeImportProcessingService $processing,
-        private readonly LegacyRmePublishService $publishing,
         private readonly LegacyRmePatientLookupService $patients,
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeWorkspaceScope $scope,
@@ -59,6 +72,7 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeBranchAdmissionService $admission,
+        private readonly LegacyRmeImportLifecycleService $lifecycle,
     ) {}
 
     public function index(Request $request): View
@@ -276,13 +290,15 @@ class LegacyRmeImportController extends Controller
     {
         $this->assertFeatureEnabled();
 
-        $record = $this->resolve($request, $import);
-        $this->authorize('retry', $record);
-
-        $this->processing->retry($record, $this->importService, $request->user());
+        $outcome = $this->lifecycle->perform(
+            $request->user(),
+            $import,
+            LegacyRmeLifecycleAction::RETRY,
+            channel: LegacyRmeAuditEvent::CHANNEL_HTTP,
+        );
 
         return redirect()
-            ->route('settings.rme.legacy-imports.show', $record->getKey())
+            ->route('settings.rme.legacy-imports.show', $outcome->importId)
             ->with('status', 'Dokumen dimasukkan kembali ke antrean pemrosesan.');
     }
 
@@ -290,13 +306,15 @@ class LegacyRmeImportController extends Controller
     {
         $this->assertFeatureEnabled();
 
-        $record = $this->resolve($request, $import);
-        $this->authorize('cancel', $record);
-
-        $this->processing->cancel($record, $request->user());
+        $outcome = $this->lifecycle->perform(
+            $request->user(),
+            $import,
+            LegacyRmeLifecycleAction::CANCEL,
+            channel: LegacyRmeAuditEvent::CHANNEL_HTTP,
+        );
 
         return redirect()
-            ->route('settings.rme.legacy-imports.show', $record->getKey())
+            ->route('settings.rme.legacy-imports.show', $outcome->importId)
             ->with('status', 'Impor dibatalkan.');
     }
 
@@ -310,13 +328,15 @@ class LegacyRmeImportController extends Controller
     {
         $this->assertFeatureEnabled();
 
-        $record = $this->resolve($request, $import);
-        $this->authorize('review', $record);
-
-        $this->publishing->review($record, $request->user());
+        $outcome = $this->lifecycle->perform(
+            $request->user(),
+            $import,
+            LegacyRmeLifecycleAction::REVIEW,
+            channel: LegacyRmeAuditEvent::CHANNEL_HTTP,
+        );
 
         return redirect()
-            ->route('settings.rme.legacy-imports.show', $record->getKey())
+            ->route('settings.rme.legacy-imports.show', $outcome->importId)
             ->with('status', 'Dokumen ditandai sudah ditinjau dan siap dipublikasikan.');
     }
 
@@ -333,17 +353,16 @@ class LegacyRmeImportController extends Controller
     {
         $this->assertFeatureEnabled();
 
-        $record = $this->resolve($request, $import);
-        $this->authorize('publish', $record);
-
-        $published = $this->publishing->publish(
-            $record,
-            $request->archiveAttributes(),
+        $outcome = $this->lifecycle->perform(
             $request->user(),
+            $import,
+            LegacyRmeLifecycleAction::PUBLISH,
+            $request->archiveAttributes(),
+            LegacyRmeAuditEvent::CHANNEL_HTTP,
         );
 
         return redirect()
-            ->route('rme.legacy-records.show', $published->getKey())
+            ->route('rme.legacy-records.show', $outcome->recordId)
             ->with('status', 'Arsip RME lama berhasil dipublikasikan ke riwayat pasien.');
     }
 
