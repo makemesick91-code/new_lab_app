@@ -245,3 +245,57 @@ alwaysApply: false
     explicit rollout phase authorizes enabling it. Before it is ever enabled the
     `legacy-rme-documents` queue must be served by the managed worker and
     `poppler-utils` must be present.
+
+## LEGACY-RME-MASTERDATA-1 — patient identity and master-data integrity
+
+53. **Identity is EXACT.** A legacy document is bound to a patient only when the
+    stored Nomor RM equals the input, or the input equals a **whole manual
+    segment** of a canonical Nomor RM. `LIKE '%2541'` would also hit the manual
+    number `22541`, which is a different patient — a shorter number may never
+    stand in for a longer one.
+54. **Similarity is never identity.** Edit distance, one-digit resemblance, a
+    shared branch or a shared date are INVESTIGATIVE SIGNALS. They are reported
+    stamped `bindable => false` / `identity_authority => false`, and nothing —
+    not a service, a controller, an operator screen or a later sprint — may
+    promote one to a match. There is no fuzzy fallback anywhere in the chain.
+55. **Normalization never touches significant digits.** Trimming and syntax
+    normalization are allowed. Changing, dropping, adding, padding or guessing a
+    digit is not.
+56. **Unknown and ambiguous both fail closed.** `NOT_FOUND` is a truthful answer,
+    not an error to work around; `EXACT_AMBIGUOUS` / `SEGMENT_AMBIGUOUS` are
+    resolved but NOT bindable. There is no first-row-wins.
+57. **Existence includes soft-deleted patients** (`withTrashed()`, as
+    `PatientMedicalRecordNumberService::exists()` does). A soft-deleted row still
+    owns its Nomor RM; reporting "not found" for one invites a duplicate
+    registration.
+58. `App\Modules\LegacyRme\Services\LegacyRmePatientResolutionAuditService` is the
+    canonical answer to "which patient does this Nomor RM name?", surfaced by
+    `php artisan legacy-rme:patient-resolution-audit`. It is read-only and
+    changes nothing. Diagnosing an unresolvable Nomor RM with ad-hoc SQL/Tinker
+    against production is not a supported path — same rule as
+    LEGACY-RME-OPS-CLI-1 established for import lifecycle actions.
+59. A live patient whose Nomor RM the canonical parser cannot read is a
+    **master-data defect** (`ARCHIVE_BRANCH_UNRESOLVABLE`): the branch resolver
+    fails closed, so they can never receive a legacy archive. It is reported, not
+    auto-repaired — correcting a Nomor RM is a human action through canonical
+    registration.
+60. **Master-data repair and legacy migration are SEPARATE operations.** Fixing,
+    correcting or creating a patient never authorises importing or publishing a
+    document. A resolvable Nomor RM is a precondition for migration, never an
+    approval of it.
+61. A missing patient is created only through canonical human-authorised
+    registration, with demographics supplied by a human. Never invent identity,
+    and never create a patient so that a document has somewhere to land.
+62. **Wave evidence is immutable after the fact.** A later master-data correction
+    never rewrites a closed wave's reconciliation or outcome; corrections are
+    recorded as NEW evidence.
+63. `stg_rme_legacy_imports` does not store the Nomor RM printed on the document,
+    so the server cannot verify the operator's patient choice against the source.
+    Known **product gap** — until it is closed, the binding is an operator
+    responsibility, and the audit reports the one detectable symptom: distinct
+    source documents bound to the same patient inside one wave.
+64. **`RM 27541` is `DOCUMENT_NOT_ELIGIBLE`** (owner determination, 2026-08-16).
+    It exists in no patient row (including soft-deleted), no legacy registration
+    import and no audit entry. The one-digit-away `DG-LDK2-2026-22541` is NOT it.
+    Reopening requires new authoritative external evidence — a register, a signed
+    amendment, an official ledger — and a fresh migration approval. Never Wave-2.

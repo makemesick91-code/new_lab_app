@@ -1,24 +1,23 @@
-# Active sprint manifest — LEGACY-RME-SOD-1
+# Active sprint manifest — LEGACY-RME-MASTERDATA-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-SOD-1
+id: LEGACY-RME-MASTERDATA-1
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Mandatory separate-publisher enforcement & production activation — one canonical server-side separation-of-duties gate, re-asserted under the publish/review row lock, fail-closed by default, activated in production"
+title: "RM 27541 patient resolution investigation & master-data integrity — exact identity only, a canonical read-only resolution audit replacing ad-hoc SQL, and a durable disposition for a document that maps to no patient"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # lifecycle + publish service gate, config default flip, controller/view surface
-schema_change: false            # no migration, no table, no column
-frontend_change: false          # Blade markup only — no JS, CSS, Vite entry or build file
-security_impact: true           # separation of duties is an authorization-adjacent business invariant
-branch_isolation_impact: false  # branch scope resolution untouched
+runtime_change: true            # new read-only service, support value object and artisan command
+schema_change: false            # no migration, no table, no column, no index
+frontend_change: false          # no Blade, JS, CSS, Vite entry or build file
+security_impact: false          # no policy, middleware, permission or role change; read-only surface
+branch_isolation_impact: false  # branch scope resolution untouched — branch is still derived from the Nomor RM
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # production must be redeployed and the flag activated
-browser_required: false         # UI change is a permission-shaped notice, covered by feature tests
+deploy_required: true           # the audit command must exist on production to be runnable there
+browser_required: false         # CLI-only surface, covered by feature tests
 
 test_profiles:
   - legacy_rme
-  - security
 
-go_tag: legacy-rme-sod-1-mandatory-separate-publisher-enforcement-production-activation-go
+go_tag: legacy-rme-masterdata-1-rm-27541-patient-resolution-integrity-go
