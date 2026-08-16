@@ -32,6 +32,7 @@ use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Models\LegacyRmeMigrationQuota;
 use App\Modules\LegacyRme\Models\LegacyRmeRecord;
 use App\Modules\LegacyRme\Services\LegacyRmeImportProcessingService;
 use App\Modules\LegacyRme\Services\LegacyRmeImportService;
@@ -277,6 +278,50 @@ it('creates nothing at all when the document names a different patient', functio
 
     // Nothing queued either: a wrong-patient document never becomes work.
     Bus::assertNothingDispatched();
+});
+
+it('consumes no migration quota when the binding is refused', function () {
+    // WITH A REAL RUNNING WAVE, so the assertion is not vacuous: without one the
+    // operations layer is not enforced and no quota bucket is touched by ANY
+    // upload, refused or not.
+    $selected = legacyRmeArchivablePatient([], 'TKM1');
+    $other = legacyRmeArchivablePatient([], 'TKM1');
+
+    $actor = superAdmin();
+    legacyRmeMigrationWave(['TKM1']);
+    legacyRmeAssignOperator($actor, 'TKM1');
+
+    $consumed = fn (): int => (int) LegacyRmeMigrationQuota::query()->sum('consumed');
+
+    expect($consumed())->toBe(0);
+
+    // The gate runs BEFORE the transaction that reserves quota, so a refused
+    // wrong-patient binding cannot cost a branch a migration slot. This is the
+    // ordering claim, asserted rather than argued.
+    expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
+        $selected,
+        '2015-01-01',
+        $other->medical_record_number,
+        null,
+        legacyRmePdfUpload('refused.pdf', 2),
+        $actor,
+    ))->toThrow(ValidationException::class);
+
+    expect($consumed())->toBe(0)
+        ->and(LegacyRmeImport::count())->toBe(0);
+
+    // ...and a CORRECT binding still charges exactly one, so the test cannot
+    // pass because quota was silently disabled.
+    app(LegacyRmeImportService::class)->createFromUpload(
+        $selected,
+        '2015-01-01',
+        $selected->medical_record_number,
+        null,
+        legacyRmePdfUpload('accepted.pdf', 3),
+        $actor,
+    );
+
+    expect($consumed())->toBe(1);
 });
 
 it('refuses a wrong patient even when the request never touched a form', function () {
