@@ -130,6 +130,34 @@ return [
     'require_separate_approver' => (bool) env('LEGACY_RME_REQUIRE_SEPARATE_APPROVER', false),
 
     /*
+    | LEGACY-RME-OPS-CLI-1 — document-level separation of duties: the account
+    | that filed a document may not also publish it.
+    |
+    | WHAT ALREADY ENFORCES MAKER/CHECKER, RECORDED HONESTLY. The ROLE SPLIT
+    | does, not this switch. Wave-1 gave the maker `create_legacy_rme_imports`
+    | and withheld `review`/`publish`; the checker got `review`+`publish` and was
+    | denied `create`. A maker therefore cannot publish anything at all, on any
+    | surface, whatever this is set to — the policy refuses first. That split is
+    | the load-bearing control and OPS-CLI-1 does not change it.
+    |
+    | WHAT THIS ADDS. Defence in depth for the single account that can hold both
+    | duties: a Super Admin, whose `Gate::before` bypass makes every policy
+    | answer yes. With this on, even that account cannot certify a document it
+    | uploaded itself.
+    |
+    | WHY IT DEFAULTS OFF. Enabling it changes BROWSER behaviour on live clinical
+    | data, which is the owner's decision rather than a side effect of shipping a
+    | recovery CLI. Off, both surfaces behave exactly as they do today; on, both
+    | tighten together — enforcement lives in the shared lifecycle service, so
+    | there is deliberately no way to have this in the browser but not over SSH.
+    |
+    | A staging row with no recorded uploader (pre-attribution) is exempt:
+    | refusing it would strand a document nobody could ever publish, and
+    | inventing an uploader to compare against would be a guess.
+    */
+    'require_separate_publisher' => (bool) env('LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER', false),
+
+    /*
     | Operational thresholds for the read-only dashboard and the reconciliation
     | report. These change what is REPORTED, never what is permitted — nothing
     | here can admit or refuse a document.

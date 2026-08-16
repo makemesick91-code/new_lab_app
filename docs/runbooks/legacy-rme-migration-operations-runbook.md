@@ -327,6 +327,82 @@ used as one.
 - Edit a published record in place (correction is VOID + fresh import).
 - Run `migrate:fresh` or `db:wipe` on the VPS.
 - Treat the dashboard as an authorization boundary — it is presentation.
+- **Move a staged import through its lifecycle with SQL or Tinker.** Use §16.
+
+---
+
+## 16. Abort recovery — the canonical lifecycle CLI (OPS-CLI-1)
+
+Wave-2 was opened and aborted, and the operator could not withdraw the staged
+documents over SSH. `legacy-rme:import-admin` closes that gap. It is an **adapter
+over the same services the browser uses** — same capability flag, same branch
+scope, same permissions, same policy, same transition map, same quota semantics,
+same audit trail. It is not an override and holds no privileges of its own.
+
+```bash
+php artisan legacy-rme:import-admin {cancel|review|publish|retry} \
+    --import=<id> --actor=<id|email> [--apply] [--json]
+```
+
+### Always dry-run first
+
+Without `--apply` nothing is written — no row, no audit entry, no job. Read the
+`blockers` array; it reports **every** obstacle it can see, not just the first.
+
+```bash
+# What WOULD happen? Nothing is touched.
+php artisan legacy-rme:import-admin cancel --import=87 --actor=u7@example --json
+
+# Then, deliberately:
+php artisan legacy-rme:import-admin cancel --import=87 --actor=u7@example --apply --json
+```
+
+### Reading a refusal
+
+| `refusal_code` | What to fix |
+|---|---|
+| `FEATURE_DISABLED` | The capability is OFF (§14). Recovery does not bypass the emergency stop. |
+| `IMPORT_NOT_IN_SCOPE` | Wrong id, **or** the import belongs to a branch this account cannot see. Deliberately indistinguishable. |
+| `PERMISSION_DENIED` | The account lacks the named permission the HTTP route also requires. |
+| `POLICY_DENIED` | Permission held, but branch scope or the transition gate refused. |
+| `TRANSITION_NOT_ALLOWED` | The import's status cannot reach this action's target. Dry-run only. |
+| `SEPARATION_OF_DUTIES` | The uploader may not publish their own document. Find the checker. |
+| `SERVICE_REFUSED` | The canonical service declined: wrong state, missing source PDF, unusable pages, or a date that no longer holds. |
+| `ACTOR_REQUIRED` / `ACTOR_NOT_FOUND` / `ACTOR_INACTIVE` | Missing, unknown, deactivated or deleted `--actor`. Checked **before** anything is resolved. |
+| `UNKNOWN_ACTION` / `IMPORT_REQUIRED` | The action word is not one of the four, or `--import` is missing/not a positive integer. |
+| `INVALID_ARCHIVE_LABEL` | `--title` > 150 or `--description` > 2000 — the same bounds the browser enforces. |
+
+Exit code is `0` only when the requested outcome was reached (or a dry run found
+the action eligible). **Every refusal exits non-zero**, so a wrapper script cannot
+mistake one for success.
+
+### Rules that hold on the command line exactly as in the browser
+
+- **One import per invocation.** There is no `--all`, `--branch`, `--wave` or
+  `--force`. Loop in your own shell if you mean to; each iteration is separately
+  authorized and separately audited.
+- **`--actor` is mandatory and must be a real, active account.** The Linux user,
+  the SSH login and `root` are never an application identity.
+- **Cancelling does NOT hand a quota slot back.** The bucket is a reservation
+  spent at intake. Never loop `upload → cancel → upload` to get past a ceiling.
+- **Review cannot be skipped**, including by a Super Admin — the canonical publish
+  service refuses regardless of the `Gate::before` bypass.
+- **Publishing twice creates one record, not two**, and reports `changed: false`.
+- **Retry means requeue.** `PUBLISHED` and `CANCELLED` are terminal.
+- **Nothing downstream is ever created** — no visit, medical record, odontogram,
+  invoice, payment, lab order or SATUSEHAT candidate.
+
+Every mutation lands in `sys_audit_logs` attributed to `--actor` and tagged
+`channel = CLI`, so an SSH recovery is distinguishable from a browser action.
+
+### Forbidden alternatives
+
+```
+UPDATE stg_rme_legacy_imports SET status = ...        -- never
+php artisan tinker → ->update(['status' => ...])       -- never
+editing uploaded_by / published_by by hand             -- never
+adjusting a quota bucket by hand                       -- never
+```
 
 ---
 

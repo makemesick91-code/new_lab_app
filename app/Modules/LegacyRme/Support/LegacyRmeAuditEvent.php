@@ -20,6 +20,26 @@ final class LegacyRmeAuditEvent
 
     public const ENTITY_RECORD = 'legacy_rme_record';
 
+    /*
+    | LEGACY-RME-OPS-CLI-1 — which surface asked for a lifecycle operation.
+    |
+    | Structure only, and never an authorization input: the CLI is an adapter
+    | over the same services with the same gates, so the channel changes nothing
+    | about what is permitted. It exists so an auditor reading the trail after an
+    | aborted wave can tell an SSH recovery from a browser action WITHOUT a
+    | second, parallel audit event — the existing events keep their exact
+    | meaning and simply carry one more structural field.
+    */
+    public const CHANNEL_HTTP = 'HTTP';
+
+    public const CHANNEL_CLI = 'CLI';
+
+    /** @var list<string> */
+    public const CHANNELS = [
+        self::CHANNEL_HTTP,
+        self::CHANNEL_CLI,
+    ];
+
     public const IMPORT_CREATED = 'LEGACY_RME_IMPORT_CREATED';
 
     public const DATE_SELECTED = 'LEGACY_RME_DATE_SELECTED';
@@ -231,6 +251,10 @@ final class LegacyRmeAuditEvent
         'operator_user_id',
         'daily_quota',
         'reason_length',
+        // LEGACY-RME-OPS-CLI-1. Still structure only: the literal string HTTP or
+        // CLI, from a closed vocabulary this application sets itself. It is
+        // never operator input and never anything about a patient.
+        'channel',
     ];
 
     private function __construct() {}

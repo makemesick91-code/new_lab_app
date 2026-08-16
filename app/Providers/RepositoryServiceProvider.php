@@ -148,6 +148,7 @@ use App\Modules\LegacyRme\Policies\LegacyRmeMigrationWavePolicy;
 use App\Modules\LegacyRme\Policies\LegacyRmeRecordPolicy;
 use App\Modules\LegacyRme\Repositories\LegacyRmeImportRepository;
 use App\Modules\LegacyRme\Repositories\LegacyRmeRecordRepository;
+use App\Modules\LegacyRme\Services\LegacyRmeAuditService;
 use App\Modules\LegacyRme\Services\Pdf\ConfiguredLegacyRmeMalwareScanner;
 use App\Modules\LegacyRme\Services\Pdf\PopplerLegacyRmePdfInspector;
 use App\Modules\LegacyRme\Services\Pdf\PopplerLegacyRmePdfRasterizer;
@@ -445,6 +446,18 @@ class RepositoryServiceProvider extends ServiceProvider
         foreach ($this->repositories as $interface => $concrete) {
             $this->app->bind($interface, $concrete);
         }
+
+        // LEGACY-RME-OPS-CLI-1 — the legacy audit facade is a SINGLETON.
+        //
+        // It carries one piece of scoped state: the surface (HTTP or CLI) that
+        // asked for the lifecycle operation currently running. The lifecycle
+        // service sets that around a canonical service call — and those canonical
+        // services receive their own injected copy of the facade. Without a
+        // shared instance the channel would be set on one object and read from
+        // another, so every audit row would silently lose the tag. The state is
+        // always scoped by `withChannel()` and restored in a `finally`, so a
+        // long-lived queue worker cannot inherit a stale value.
+        $this->app->singleton(LegacyRmeAuditService::class);
 
         // Sprint 16.8.4 — analytics repository swap via feature flag (default: live ledger)
         $this->app->bind(InventoryAnalyticsRepositoryInterface::class, function ($app) {
