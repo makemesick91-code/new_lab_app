@@ -481,6 +481,35 @@ it('refuses to publish a pre-enforcement import instead of freezing an unverifia
     expect(LegacyRmeRecord::count())->toBe(0);
 });
 
+it('refuses a RETRY once the binding no longer holds', function () {
+    $patient = legacyRmeArchivablePatient();
+
+    // A FAILED import is the real retry case: the render died and an operator
+    // wants the worker to try again.
+    $import = LegacyRmeImport::factory()->readyForReview()->create([
+        'patient_id' => $patient->getKey(),
+        'origin_branch_id' => $patient->branch_id,
+        'status' => LegacyRmeImportStatus::FAILED,
+        'source_disk' => app(LegacyRmeStorageService::class)->diskName(),
+    ]);
+
+    Storage::disk('legacy_rme_private')->put((string) $import->source_pdf_path, 'pdf');
+
+    // The patient's Nomor RM is corrected after staging, so the immutable source
+    // RM now asserts an identity the master data contradicts.
+    $patient->forceFill(['medical_record_number' => 'DG-TKM1-2024-70004'])->save();
+
+    // A retry restarts render WORK on a document. Doing that for a document
+    // whose subject is now in doubt is the wrong direction — the operator
+    // cancels and re-imports instead.
+    expect(fn () => app(LegacyRmeImportProcessingService::class)
+        ->retry($import->refresh(), app(LegacyRmeImportService::class), superAdmin()))
+        ->toThrow(ValidationException::class);
+
+    expect($import->refresh()->status)->toBe(LegacyRmeImportStatus::FAILED);
+    Bus::assertNothingDispatched();
+});
+
 it('still allows CANCEL on an import whose binding has gone stale', function () {
     $patient = legacyRmeArchivablePatient();
 
