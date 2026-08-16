@@ -16,8 +16,13 @@ this one assumes the capability side is already understood.
 ```
 capability          OFF   (FEATURE_RME_LEGACY_PDF_ARCHIVE=false)
 admitted branches   EMPTY (LEGACY_RME_ADMITTED_BRANCH_CODES=)
+separation of duties ON   (LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER=true)
 published read      AVAILABLE to authorized clinical readers
 ```
+
+Separation of duties (LEGACY-RME-SOD-1) is the one line here that is ON, and it
+stays on between waves. It is not a wave setting and switching it does not open,
+close or otherwise touch capability, admission or any wave.
 
 This is where a deployment sits between waves, and where ROLL-4 closure returns
 it. `legacy-rme:migration-status` reports `Findings: none` in this state — no
@@ -72,6 +77,24 @@ A deployment where the approver/governance permissions are held by **no role**
 cannot satisfy separation of duties. Super Admin's global `Gate::before` bypass
 lets one account do everything, which is exactly the concentration this split
 exists to prevent — it is not a substitute for provisioning the operators.
+
+**Since LEGACY-RME-SOD-1 the server also refuses it.** With
+`LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER=true` (the default, and explicit in
+production), the account recorded in `uploaded_by` may not **review** or
+**publish** that document — on any surface, including a Super Admin. Plan for a
+real second account BEFORE the wave opens: a wave staffed by one login will
+stall at the first document, and that stall is the control working.
+
+Two limits to state plainly rather than discover mid-wave:
+
+- **A shared login cannot satisfy the rule.** Two people taking turns at one
+  account are one account to the server. That is deliberate — a shared login
+  destroys the accountability the rule exists to create.
+- **The rule cannot prove two humans.** It proves two ACCOUNTS. Nothing in this
+  system establishes that different people hold them, so the human maker/checker
+  requirement remains YOUR operational control and is attested by a person in
+  the wave record — never inferred from the fact that the software allowed the
+  publish.
 
 Prefer a least-privileged branch-pinned operator (`users.branch_id` set to the
 wave's branch) over Super Admin. Grant through the canonical seeder/permission
@@ -366,7 +389,7 @@ php artisan legacy-rme:import-admin cancel --import=87 --actor=u7@example --appl
 | `PERMISSION_DENIED` | The account lacks the named permission the HTTP route also requires. |
 | `POLICY_DENIED` | Permission held, but branch scope or the transition gate refused. |
 | `TRANSITION_NOT_ALLOWED` | The import's status cannot reach this action's target. Dry-run only. |
-| `SEPARATION_OF_DUTIES` | The uploader may not publish their own document. Find the checker. |
+| `SEPARATION_OF_DUTIES` | The uploader may not **review or publish** their own document (LEGACY-RME-SOD-1, on by default). Find the checker — a different account. Never "fix" this by editing `uploaded_by`, by switching the rule off for one document, or by having the maker re-file under the checker's login. |
 | `SERVICE_REFUSED` | The canonical service declined: wrong state, missing source PDF, unusable pages, or a date that no longer holds. |
 | `ACTOR_REQUIRED` / `ACTOR_NOT_FOUND` / `ACTOR_INACTIVE` | Missing, unknown, deactivated or deleted `--actor`. Checked **before** anything is resolved. |
 | `UNKNOWN_ACTION` / `IMPORT_REQUIRED` | The action word is not one of the four, or `--import` is missing/not a positive integer. |

@@ -14,9 +14,11 @@ use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
 use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
+use App\Modules\LegacyRme\Support\LegacyRmeLifecycleAction;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\LegacyRme\Support\LegacyRmePublishRefusal;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -66,7 +68,42 @@ class LegacyRmePublishService
         private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeAuditService $audit,
+        private readonly SeparatePublisherGuard $separation,
     ) {}
+
+    /**
+     * LEGACY-RME-SOD-1 — separation of duties, re-asserted against the LOCKED
+     * row rather than the caller's in-memory copy.
+     *
+     * WHY IT IS HERE AND NOT ONLY IN THE LIFECYCLE SERVICE. Two reasons, both
+     * real.
+     *
+     * TIME OF CHECK vs TIME OF USE. The lifecycle service reads the import,
+     * runs five gates and only then calls this service, which opens the
+     * transaction and takes the lock. Every check that decides whether a write
+     * is lawful belongs under that lock, next to the row it is judging —
+     * otherwise "who filed this" is answered from a snapshot taken before the
+     * lock existed. `uploaded_by` is never edited today, so nothing is known to
+     * exploit that window; a safety invariant that depends on a neighbouring
+     * invariant staying true forever is still the wrong shape.
+     *
+     * THE LOWER LAYER MUST NOT BE THE WEAKER LAYER. `publish()` and `review()`
+     * are public. If the rule lived only one layer up, then the moment any
+     * future caller — a job, a seeder, a recovery command, a well-meaning
+     * refactor — reached this service directly, separation of duties would
+     * silently stop applying, and no test would notice. Enforcing it at the
+     * write itself makes the guarantee a property of the write.
+     *
+     * @throws LegacyRmePublishRefusal
+     */
+    private function assertSeparationOfDuties(LegacyRmeImport $locked, ?User $actor, string $action): void
+    {
+        if (! $this->separation->violates($action, $locked, $actor)) {
+            return;
+        }
+
+        throw LegacyRmePublishRefusal::failure($this->separation->failureCode($action), 'actor');
+    }
 
     /**
      * Mark a rendered import as reviewed by a human operator.
@@ -100,6 +137,11 @@ class LegacyRmePublishService
             if ($locked === null) {
                 $this->refuse(LegacyRmePdfFailure::IMPORT_NOT_REVIEWABLE);
             }
+
+            // Before the no-op shortcut, not after: the rule is about who this
+            // account is, not about what state the row happens to be in, and it
+            // must answer identically however the caller arrived.
+            $this->assertSeparationOfDuties($locked, $actor, LegacyRmeLifecycleAction::REVIEW);
 
             // Re-reviewing an already reviewed import is a harmless no-op: the
             // operator simply pressed the button twice.
@@ -172,6 +214,12 @@ class LegacyRmePublishService
             if ($locked === null) {
                 $this->refuse(LegacyRmePdfFailure::IMPORT_NOT_PUBLISHABLE);
             }
+
+            // Before the idempotency shortcut, not after. An account forbidden
+            // from certifying this document is forbidden whatever state the row
+            // is in, and answering "here is the record" to a refused actor would
+            // make the two enforcement points disagree.
+            $this->assertSeparationOfDuties($locked, $actor, LegacyRmeLifecycleAction::PUBLISH);
 
             // Idempotency, first line: this import already produced its record.
             // Return it instead of failing — a double submit must not look like

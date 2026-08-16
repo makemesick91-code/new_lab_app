@@ -23,6 +23,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeImportPageStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeLifecycleAction;
 use App\Modules\LegacyRme\Support\LegacyRmeWorkspaceScope;
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -73,6 +74,7 @@ class LegacyRmeImportController extends Controller
         private readonly LegacyRmeBranchResolver $branchResolver,
         private readonly LegacyRmeBranchAdmissionService $admission,
         private readonly LegacyRmeImportLifecycleService $lifecycle,
+        private readonly SeparatePublisherGuard $separation,
     ) {}
 
     public function index(Request $request): View
@@ -191,6 +193,8 @@ class LegacyRmeImportController extends Controller
         $record = $this->resolve($request, $import);
         $this->authorize('view', $record);
 
+        $actor = $request->user();
+
         return view('settings.rme.legacy-imports.show', [
             // `record` (LEGACY-RME-PDF-1C) is the published archive this import
             // produced, if any — used only to link to the final viewer.
@@ -201,6 +205,23 @@ class LegacyRmeImportController extends Controller
                 'record:id,source_import_id,status',
             ]),
             'pages' => $this->imports->pagesFor($record),
+
+            // LEGACY-RME-SOD-1 — computed here, never in Blade. The view uses
+            // these to explain WHY a checker action is unavailable instead of
+            // rendering a button that is certain to be refused. They are a
+            // courtesy, not a control: the server refuses the POST regardless,
+            // twice (lifecycle gate 5, then again under the row lock).
+            'separationBlocksReview' => $this->separation->violates(
+                LegacyRmeLifecycleAction::REVIEW,
+                $record,
+                $actor,
+            ),
+            'separationBlocksPublish' => $this->separation->violates(
+                LegacyRmeLifecycleAction::PUBLISH,
+                $record,
+                $actor,
+            ),
+            'separationMessage' => $this->separation->message(LegacyRmeLifecycleAction::PUBLISH),
         ]);
     }
 
