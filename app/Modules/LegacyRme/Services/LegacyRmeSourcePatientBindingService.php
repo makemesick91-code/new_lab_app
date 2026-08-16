@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Services;
 
 use App\Modules\LegacyRme\Models\LegacyRmeImport;
+use App\Modules\LegacyRme\Support\LegacyRmePatientResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeSourceRmBinding;
 use App\Modules\LegacyRme\Support\LegacyRmeSourceRmFailure;
 use App\Modules\Patient\Models\Patient;
@@ -229,17 +230,30 @@ class LegacyRmeSourcePatientBindingService
     }
 
     /**
-     * Map a resolution code onto the refusal an operator sees.
+     * Map a MASTERDATA-1 resolution code onto the refusal an operator sees.
+     *
+     * The constants are referenced, never their literal values: if
+     * LegacyRmePatientResolution ever renamed a code, a magic string here would
+     * silently fall through to the `default` arm and report a MISS for what was
+     * actually an AMBIGUITY — still fail-closed, but telling the operator to
+     * re-read a document when the real fix is a duplicated Nomor RM.
      *
      * TOO_SHORT and EMPTY_INPUT collapse into SOURCE_RM_INVALID on purpose:
      * from the operator's side both mean "what you entered cannot be looked up
      * safely", and the remedy — read the document again — is identical.
+     *
+     * `default` is deliberately the strictest useful answer rather than an
+     * exception: an unrecognised code must never become an acceptance.
      */
     private function refusalFor(string $resolutionCode): string
     {
         return match ($resolutionCode) {
-            'EXACT_AMBIGUOUS', 'SEGMENT_AMBIGUOUS' => LegacyRmeSourceRmFailure::SOURCE_RM_AMBIGUOUS,
-            'TOO_SHORT', 'EMPTY_INPUT' => LegacyRmeSourceRmFailure::SOURCE_RM_INVALID,
+            LegacyRmePatientResolution::CODE_EXACT_AMBIGUOUS,
+            LegacyRmePatientResolution::CODE_SEGMENT_AMBIGUOUS => LegacyRmeSourceRmFailure::SOURCE_RM_AMBIGUOUS,
+
+            LegacyRmePatientResolution::CODE_TOO_SHORT,
+            LegacyRmePatientResolution::CODE_EMPTY_INPUT => LegacyRmeSourceRmFailure::SOURCE_RM_INVALID,
+
             default => LegacyRmeSourceRmFailure::SOURCE_RM_NOT_FOUND,
         };
     }
