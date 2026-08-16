@@ -64,6 +64,13 @@ class LegacyRmePatientResolutionAuditService
     /** Hard cap on rows echoed for any single finding, so a broken master cannot flood a terminal. */
     public const REPORT_LIMIT = 25;
 
+    /**
+     * Ceiling on the same-length candidate set the near-miss scan may hydrate.
+     * Generous enough that the signal stays useful on a real branch, bounded so
+     * the audit can never turn into a full read of the patient master.
+     */
+    public const SIGNAL_SCAN_LIMIT = 2000;
+
     public function __construct(
         private readonly PatientMedicalRecordNumberService $medicalRecordNumbers,
     ) {}
@@ -256,6 +263,15 @@ class LegacyRmePatientResolutionAuditService
      * A near miss is never promoted to a match, never ordered ahead of an exact
      * result, and never returned when the input resolved exactly.
      *
+     * BOUNDED IN SQL. A near miss must have a manual segment of exactly the same
+     * length, so the candidate set is narrowed with `_` — the single-character
+     * LIKE wildcard — before any row is hydrated: `%-_____` means "a dash, then
+     * exactly five characters, then end". Scanning the whole patient master into
+     * PHP to compute an edit distance would be an unbounded master-table read,
+     * which the database performance contract forbids. The wildcard is built
+     * from the needle's LENGTH only; the needle's own characters are never
+     * interpolated, so nothing here is user-controlled SQL.
+     *
      * @return list<array<string, mixed>>
      */
     private function investigativeSignal(string $query): array
@@ -268,7 +284,9 @@ class LegacyRmePatientResolutionAuditService
 
         return Patient::withTrashed()
             ->select(['id', 'medical_record_number', 'branch_id', 'is_active', 'deleted_at'])
+            ->where('medical_record_number', 'LIKE', '%-'.str_repeat('_', mb_strlen($needle)))
             ->with('branch:id,code')
+            ->limit(self::SIGNAL_SCAN_LIMIT)
             ->get()
             ->map(fn (Patient $p): array => $this->row($p))
             ->filter(function (array $row) use ($needle): bool {

@@ -71,6 +71,21 @@ it('does not resolve RM 27541 to the one-digit-away patient 22541', function () 
     }
 });
 
+it('only considers same-length manual segments as near misses', function () {
+    $branch = mdBranch('LDK2');
+    $sameLength = mdPatient('DG-LDK2-2026-22541', $branch);   // 5 chars — a near miss
+    $shorter = mdPatient('DG-LDK2-2026-2541', $branch);       // 4 chars — cannot be
+    $longer = mdPatient('DG-LDK2-2026-227541', $branch);      // 6 chars — cannot be
+
+    $ids = array_column(mdAudit()->resolve('27541')['investigative_signal'], 'patient_id');
+
+    // The candidate set is narrowed in SQL by segment length, so the audit never
+    // reads the whole patient master to compute an edit distance.
+    expect($ids)->toContain($sameLength->id)
+        ->not->toContain($shorter->id)
+        ->not->toContain($longer->id);
+});
+
 it('keeps 27541 unresolved even when the whole LDK2 neighbourhood exists', function () {
     $branch = mdBranch('LDK2');
 
