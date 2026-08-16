@@ -90,6 +90,7 @@ function lrmeSodReady(User $uploader, string $legacyDate = '2020-05-01'): Legacy
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $legacyDate,
+        $patient->medical_record_number,
         null,
         lrmeSodUpload($pages),
         $uploader,

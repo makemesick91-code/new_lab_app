@@ -179,6 +179,32 @@
                         @csrf
                         <input type="hidden" name="patient_id" value="{{ $patient->getKey() }}">
 
+                        {{--
+                            LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM PRINTED
+                            ON THE DOCUMENT.
+
+                            DELIBERATELY NOT PREFILLED with the selected patient's
+                            Nomor RM, and there is no "copy from patient" helper.
+                            Prefilling it would make the operator confirm the
+                            system's own guess instead of reading the paper — and
+                            an assertion that agrees with the selection by
+                            construction cannot catch a wrong selection, which is
+                            the entire failure this field exists to prevent.
+
+                            The server re-normalizes and re-resolves this value on
+                            submit, compares it with the selected patient, and
+                            refuses on any mismatch. Nothing here is the boundary.
+                        --}}
+                        <x-ui.input
+                            name="source_rm_raw"
+                            label="Nomor RM pada Dokumen"
+                            :value="old('source_rm_raw')"
+                            required
+                            autocomplete="off"
+                            placeholder="Contoh: DG-TKM1-2019-1234"
+                            help="Masukkan nomor RM persis seperti yang tercantum pada dokumen RME Legacy. Jangan menyalin dari data pasien — nomor ini dipakai untuk memverifikasi bahwa dokumen benar milik pasien yang dipilih."
+                        />
+
                         <div class="grid gap-4 md:grid-cols-2">
                             <x-ui.input
                                 type="date"
@@ -243,6 +269,13 @@
                                 <span>
                                     Saya memastikan tanggal yang diisi sama dengan tanggal RME yang tertulis pada PDF,
                                     dan tanggal paling awal adalah tanggal RME tertua pada dokumen.
+                                </span>
+                            </label>
+                            <label class="flex items-start gap-3 text-sm text-ink">
+                                <input type="checkbox" name="source_rm_confirmation" value="1" class="mt-0.5 rounded border-hairline text-brand-600 focus:ring-brand-500" required>
+                                <span>
+                                    Saya memastikan nomor RM yang dimasukkan sesuai dengan nomor RM yang tercetak pada
+                                    dokumen RME Legacy.
                                 </span>
                             </label>
                         </div>

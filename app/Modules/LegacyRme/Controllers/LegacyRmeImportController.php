@@ -173,6 +173,12 @@ class LegacyRmeImportController extends Controller
         $import = $this->importService->createFromUpload(
             $patient,
             $request->string('selected_rme_date')->toString(),
+            // LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM the operator read on
+            // the document, passed through verbatim. The controller neither
+            // normalizes it nor compares it with the selected patient: the
+            // binding is decided in the service, so a direct service call and a
+            // CLI cannot be weaker doors than this one.
+            $request->string('source_rm_raw')->toString(),
             // Passed only so a mismatch with the RM-derived branch is rejected
             // explicitly. It is never used as the answer.
             $request->input('origin_branch_id') !== null ? $request->integer('origin_branch_id') : null,

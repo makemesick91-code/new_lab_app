@@ -18,6 +18,8 @@ use App\Modules\LegacyRme\Support\LegacyRmeImportStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeOperationsDecision;
 use App\Modules\LegacyRme\Support\LegacyRmePdfException;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
+use App\Modules\LegacyRme\Support\LegacyRmeSourceRmBinding;
+use App\Modules\LegacyRme\Support\LegacyRmeSourceRmFailure;
 use App\Modules\Patient\Models\Patient;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +32,7 @@ use Illuminate\Validation\ValidationException;
  * Order of operations, and why:
  *
  *   feature flag
+ *   → SOURCE RM → PATIENT BINDING (SOURCE-RM-BINDING-1, first for a reason)
  *   → date rules (1A service, never re-derived here)
  *   → origin branch DERIVED from the patient's Nomor RM (FIX-ROLL2-1)
  *   → structural file validation + server-side SHA-256
@@ -43,6 +46,14 @@ use Illuminate\Validation\ValidationException;
  * participate in it; if the transaction then fails, the orphan file is removed
  * in the catch block. The job is dispatched only after commit, so a worker can
  * never pick up an id that is not yet visible.
+ *
+ * WHY THE BINDING GATE IS FIRST. Everything after it costs something real: a
+ * hashed file, a stored PDF, a reserved quota slot, a queued render job. A
+ * document about the WRONG PATIENT must consume none of them, so the question
+ * "is this document even about this patient?" is answered before any other
+ * question is asked. Refusing here leaves no staging row, no orphan file, no
+ * queued job and — because quota is reserved inside the transaction at the very
+ * end — no consumed migration slot.
  *
  * NOTHING here rasterizes a PDF: rendering only ever happens in the queued job.
  */
@@ -62,9 +73,13 @@ class LegacyRmeImportService
         private readonly LegacyRmeOperationsGateService $operations,
         private readonly LegacyRmeMigrationQuotaService $quota,
         private readonly LegacyRmeWaveBindingService $waveBinding,
+        private readonly LegacyRmeSourcePatientBindingService $sourceBinding,
     ) {}
 
     /**
+     * @param  string|null  $sourceRm  the Nomor RM the operator CONFIRMED reading on
+     *                                 the document — never the selected patient's own RM,
+     *                                 never a filename, never OCR output
      * @param  string|null  $latestRmeDate  the LATEST clinical date the document
      *                                      represents; null means a single-date document
      *
@@ -73,12 +88,21 @@ class LegacyRmeImportService
     public function createFromUpload(
         Patient $patient,
         string $selectedRmeDate,
+        ?string $sourceRm,
         ?int $originBranchId,
         UploadedFile $document,
         User $actor,
         ?string $latestRmeDate = null,
     ): LegacyRmeImport {
         $this->feature->assertMigrationEnabled();
+
+        // SOURCE-RM-BINDING-1 — FIRST, and before anything is spent.
+        //
+        // The document must state, independently of the operator's row
+        // selection, which patient it is about; the server resolves that claim
+        // exactly and refuses unless it names the SELECTED patient. This is the
+        // gate the Wave-2 wrong-patient binding did not have.
+        $binding = $this->assertSourcePatientBinding($sourceRm, $patient, $actor);
 
         // 1A owns the date domain. Never re-derive a bound here. The whole
         // declared range is validated, not just the representative date.
@@ -160,7 +184,7 @@ class LegacyRmeImportService
 
         try {
             $import = DB::transaction(function () use (
-                $uuid, $patient, $originBranchId, $selectedRmeDate, $latestRmeDate, $cutoff, $document, $path, $sha256, $actor, $operations, $branch
+                $uuid, $patient, $originBranchId, $selectedRmeDate, $latestRmeDate, $cutoff, $document, $path, $sha256, $actor, $operations, $branch, $binding
             ): LegacyRmeImport {
                 /*
                  * ROLL-4 — the AUTHORITATIVE quota reservation.
@@ -194,6 +218,14 @@ class LegacyRmeImportService
                     'selected_rme_date' => $selectedRmeDate,
                     'latest_rme_date' => $latestRmeDate,
                     'earliest_native_rme_date_snapshot' => $cutoff,
+                    // SOURCE-RM-BINDING-1 — what the DOCUMENT asserted about its
+                    // own patient. The raw transcription is evidence and is kept
+                    // verbatim; the normalized value is what identity was
+                    // resolved on; the resolution code records HOW. All three
+                    // are written once, here, and never updated again.
+                    'source_rm_raw' => $binding->rawSourceRm,
+                    'source_rm_normalized' => $binding->normalizedSourceRm,
+                    'source_rm_resolution' => $binding->resolutionCode,
                     'original_filename' => $this->safeFilename($document),
                     'source_disk' => $this->storage->diskName(),
                     'source_pdf_path' => $path,
@@ -221,6 +253,11 @@ class LegacyRmeImportService
             // legitimately unbounded because the patient has none.
             'reference_mode' => $dateResult->referenceMode(),
             'branch_code' => $branch->branchCode,
+            // SOURCE-RM-BINDING-1 — the accepted binding, so the trail records
+            // which asserted identity this document was filed on and how it was
+            // established, not merely that an import happened.
+            'source_rm_normalized' => $binding->normalizedSourceRm,
+            'source_rm_resolution' => $binding->resolutionCode,
         ], $actor);
 
         $this->audit->logImportEvent(LegacyRmeAuditEvent::PDF_UPLOADED, $import, [
@@ -314,6 +351,44 @@ class LegacyRmeImportService
     }
 
     /**
+     * LEGACY-RME-SOURCE-RM-BINDING-1 — the document must name the patient it is
+     * being filed under.
+     *
+     * THE RULE IS DECIDED IN THE SERVICE, NOT AT THE HTTP BOUNDARY. The form
+     * request only checks the field's SHAPE. This runs on every path that can
+     * create an import — the browser, a direct service call, a future adapter —
+     * so no surface can be a weaker door than another, and the test suite proves
+     * it by calling this service directly with a mismatched patient.
+     *
+     * A REFUSAL IS AUDITED AS ITS OWN ACTION. Nothing was created, so reusing
+     * IMPORT_CREATED would put a lie in the trail — the same reasoning
+     * FIX-ROLL2-1 and ROLL-3 already applied to their own refusals. The payload
+     * carries the normalized number and the reason code, never a patient name
+     * and never the id of whoever the number actually resolved to.
+     *
+     * @throws ValidationException
+     */
+    private function assertSourcePatientBinding(?string $sourceRm, Patient $patient, User $actor): LegacyRmeSourceRmBinding
+    {
+        $binding = $this->sourceBinding->bind($sourceRm, $patient);
+
+        if ($binding->failed()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::SOURCE_RM_BINDING_REJECTED,
+                null,
+                $binding->auditContext() + ['patient_id' => (int) $patient->getKey()],
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                LegacyRmeSourceRmFailure::FIELD => (string) $binding->message,
+            ]);
+        }
+
+        return $binding;
+    }
+
+    /**
      * LEGACY-RME-PDF-ROLL-3 — the branch must be admitted to the running wave.
      *
      * Capability (the feature flag) and admission (this wave) are separate
@@ -355,6 +430,21 @@ class LegacyRmeImportService
      */
     private function assertRetryAdmitted(LegacyRmeImport $import, ?User $actor): void
     {
+        // SOURCE-RM-BINDING-1 — a retry restarts render work on a document, so
+        // the document must still be about the patient it is filed under.
+        //
+        // The stored source RM is immutable, so this can only fail when the
+        // MASTER DATA moved underneath it: the patient's Nomor RM was corrected,
+        // the patient was soft-deleted, a duplicate appeared. Stranding such a
+        // row mid-render is the intended outcome — the operator cancels and
+        // re-imports, which is exactly why cancel is never gated by this rule.
+        //
+        // A PRE-ENFORCEMENT row (staged before capture existed) is refused here
+        // too, for the same reason it is refused at review and publish: its
+        // binding cannot be verified at all, and guessing is what this sprint
+        // removed.
+        $this->assertStagedBindingStillValid($import, $actor);
+
         $branchCode = $import->originBranch?->code;
 
         $decision = $this->admission->decideForBranchCode(
@@ -417,6 +507,33 @@ class LegacyRmeImportService
 
             throw ValidationException::withMessages([
                 'legacy_rme_operations' => (string) $operations->message,
+            ]);
+        }
+    }
+
+    /**
+     * LEGACY-RME-SOURCE-RM-BINDING-1 — re-verify a STAGED row's binding.
+     *
+     * The canonical guard is asked; nothing is re-implemented here. Only the
+     * refusal handling — an audit row plus a field error — belongs to this
+     * service.
+     *
+     * @throws ValidationException
+     */
+    private function assertStagedBindingStillValid(LegacyRmeImport $import, ?User $actor): void
+    {
+        $binding = $this->sourceBinding->verifyStaged($import);
+
+        if ($binding->failed()) {
+            $this->audit->logImportEvent(
+                LegacyRmeAuditEvent::SOURCE_RM_BINDING_REJECTED,
+                $import,
+                $binding->auditContext(),
+                $actor,
+            );
+
+            throw ValidationException::withMessages([
+                LegacyRmeSourceRmFailure::FIELD => (string) $binding->message,
             ]);
         }
     }

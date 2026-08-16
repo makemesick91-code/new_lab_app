@@ -48,6 +48,7 @@ function lrmeUpload(Patient $patient, ?UploadedFile $document = null, string $da
     return app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $date,
+        $patient->medical_record_number,
         null,
         $document ?? legacyRmePdfUpload(),
         superAdmin(),
@@ -176,6 +177,7 @@ it('stores the declared date range and collapses a single-date document', functi
     $multi = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2024-01-28',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('multi.pdf'),
         superAdmin(),
@@ -207,6 +209,7 @@ it('refuses an origin branch that is not an RME branch', function () {
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         $branch->id,
         legacyRmePdfUpload(),
         superAdmin(),

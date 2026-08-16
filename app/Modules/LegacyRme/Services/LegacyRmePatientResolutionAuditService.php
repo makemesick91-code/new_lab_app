@@ -77,16 +77,83 @@ class LegacyRmePatientResolutionAuditService
 
     /**
      * Resolve one Nomor RM — raw manual number or full canonical value — to the
-     * patient it names, if any.
+     * patient it names, if any, WITH the investigative near-miss signal.
+     *
+     * This is the DIAGNOSTIC entry point, for an operator asking a question at a
+     * terminal. It is deliberately not the one the upload write path calls: see
+     * {@see self::resolveIdentity()}.
      *
      * @return array<string, mixed>
      */
     public function resolve(string $input): array
     {
-        $query = trim($input);
+        $identity = $this->identify(trim($input));
 
+        // The signal is skipped for the two codes that mean "nothing was really
+        // asked" — an empty or too-short input has no meaningful neighbourhood.
+        $signal = in_array($identity['code'], [
+            LegacyRmePatientResolution::CODE_EMPTY_INPUT,
+            LegacyRmePatientResolution::CODE_TOO_SHORT,
+        ], true)
+            ? []
+            : $this->investigativeSignal($identity['query']);
+
+        return $this->report(
+            $identity['query'],
+            $identity['code'],
+            $identity['matches'],
+            $signal,
+            $identity['crossed'],
+        );
+    }
+
+    /**
+     * LEGACY-RME-SOURCE-RM-BINDING-1 — identity ONLY: exact match, then whole
+     * manual segment, and nothing else.
+     *
+     * WHY IT IS SEPARATE FROM {@see self::resolve()}. The identity rules are
+     * IDENTICAL — both call the same private {@see self::identify()}, so there
+     * is exactly one implementation of "which patient does this number name?"
+     * and the write path cannot drift from the diagnostic. What differs is the
+     * near-miss signal, and it differs for two independent reasons:
+     *
+     *   COST. `investigativeSignal()` hydrates up to SIGNAL_SCAN_LIMIT rows and
+     *   runs a Levenshtein distance over each. That is the right price for an
+     *   operator who typed one command; it is the wrong price on a request that
+     *   is about to store a file, and the database performance contract does not
+     *   want it on a write path.
+     *
+     *   MEANING. The signal answers "what does this number look like?", and the
+     *   binding gate must never be able to see that answer, let alone act on it.
+     *   A component that decides identity should not be holding a list of
+     *   patients who are one digit away.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolveIdentity(string $input): array
+    {
+        $identity = $this->identify(trim($input));
+
+        return $this->report(
+            $identity['query'],
+            $identity['code'],
+            $identity['matches'],
+            [],
+            $identity['crossed'],
+        );
+    }
+
+    /**
+     * THE single implementation of "which patient does this Nomor RM name?".
+     *
+     * Exact first, then the whole manual segment. Nothing fuzzy, ever.
+     *
+     * @return array{query: string, code: string, matches: list<array<string, mixed>>, crossed: list<array<string, mixed>>}
+     */
+    private function identify(string $query): array
+    {
         if ($query === '') {
-            return $this->report($query, LegacyRmePatientResolution::CODE_EMPTY_INPUT, [], []);
+            return ['query' => $query, 'code' => LegacyRmePatientResolution::CODE_EMPTY_INPUT, 'matches' => [], 'crossed' => []];
         }
 
         // Exact first — the only form that is identity on its own terms.
@@ -95,18 +162,18 @@ class LegacyRmePatientResolutionAuditService
         );
 
         if ($exact->isNotEmpty()) {
-            return $this->report(
-                $query,
-                $exact->count() === 1
+            return [
+                'query' => $query,
+                'code' => $exact->count() === 1
                     ? LegacyRmePatientResolution::CODE_EXACT_UNIQUE
                     : LegacyRmePatientResolution::CODE_EXACT_AMBIGUOUS,
-                $exact->all(),
-                $this->investigativeSignal($query),
-            );
+                'matches' => $exact->all(),
+                'crossed' => [],
+            ];
         }
 
         if (mb_strlen($query) < self::MIN_SUFFIX_LENGTH) {
-            return $this->report($query, LegacyRmePatientResolution::CODE_TOO_SHORT, [], []);
+            return ['query' => $query, 'code' => LegacyRmePatientResolution::CODE_TOO_SHORT, 'matches' => [], 'crossed' => []];
         }
 
         // A raw manual number is matched against the MANUAL SEGMENT of a
@@ -127,24 +194,22 @@ class LegacyRmePatientResolutionAuditService
         )->values();
 
         if ($segmentMatches->isNotEmpty()) {
-            return $this->report(
-                $query,
-                $segmentMatches->count() === 1
+            return [
+                'query' => $query,
+                'code' => $segmentMatches->count() === 1
                     ? LegacyRmePatientResolution::CODE_SEGMENT_UNIQUE
                     : LegacyRmePatientResolution::CODE_SEGMENT_AMBIGUOUS,
-                $segmentMatches->all(),
-                $this->investigativeSignal($query),
-                $crossed->all(),
-            );
+                'matches' => $segmentMatches->all(),
+                'crossed' => $crossed->all(),
+            ];
         }
 
-        return $this->report(
-            $query,
-            LegacyRmePatientResolution::CODE_NOT_FOUND,
-            [],
-            $this->investigativeSignal($query),
-            $crossed->all(),
-        );
+        return [
+            'query' => $query,
+            'code' => LegacyRmePatientResolution::CODE_NOT_FOUND,
+            'matches' => [],
+            'crossed' => $crossed->all(),
+        ];
     }
 
     /**

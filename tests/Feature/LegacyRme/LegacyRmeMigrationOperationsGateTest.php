@@ -81,6 +81,7 @@ function opsUpload(User $actor, ?Patient $patient = null, string $branchCode = '
     return app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(sprintf('arsip-%d.pdf', $sequence), $sequence),
         $actor,
@@ -432,6 +433,7 @@ it('releases the reserved quota when the staging write rolls back', function () 
             app(LegacyRmeImportService::class)->createFromUpload(
                 $patient,
                 '2019-04-02',
+                $patient->medical_record_number,
                 null,
                 legacyRmePdfUpload(),
                 $actor,
@@ -532,6 +534,7 @@ it('cannot rescue a branch that ROLL-3 refuses', function () {
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2019-04-02',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),

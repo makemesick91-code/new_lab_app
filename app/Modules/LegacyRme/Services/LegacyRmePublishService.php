@@ -18,6 +18,7 @@ use App\Modules\LegacyRme\Support\LegacyRmeLifecycleAction;
 use App\Modules\LegacyRme\Support\LegacyRmePdfFailure;
 use App\Modules\LegacyRme\Support\LegacyRmePublishRefusal;
 use App\Modules\LegacyRme\Support\LegacyRmeRecordStatus;
+use App\Modules\LegacyRme\Support\LegacyRmeSourceRmFailure;
 use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -69,7 +70,46 @@ class LegacyRmePublishService
         private readonly LegacyRmeStorageService $storage,
         private readonly LegacyRmeAuditService $audit,
         private readonly SeparatePublisherGuard $separation,
+        private readonly LegacyRmeSourcePatientBindingService $sourceBinding,
     ) {}
+
+    /**
+     * LEGACY-RME-SOURCE-RM-BINDING-1 — the document must STILL be about the
+     * patient it is filed under.
+     *
+     * WHY REVALIDATE WHAT ACCEPTANCE ALREADY PROVED. Because acceptance proved
+     * it against the master data as it was then, and publishing freezes the
+     * binding into an immutable clinical record. Between upload and publish a
+     * Nomor RM can be corrected, a patient can be soft-deleted, a duplicate can
+     * appear. The stored source RM never changes — it is the MASTER DATA that
+     * can move — so this asks whether the answer the operator gave is still the
+     * answer the system gives. Exactly the reasoning behind the date and branch
+     * revalidation that has always run beside it.
+     *
+     * UNDER THE LOCK, LIKE SEPARATION OF DUTIES. Every check that decides
+     * whether a write is lawful belongs next to the locked row it is judging,
+     * not to a snapshot taken before the lock existed.
+     *
+     * A PRE-ENFORCEMENT ROW IS REFUSED, NOT WAVED THROUGH. An import staged
+     * before capture existed carries no asserted identity, so there is nothing
+     * to verify. Publishing it would freeze an unverifiable binding into
+     * permanent clinical evidence. The operator cancels and re-imports —
+     * available precisely because cancel is never gated by this rule.
+     *
+     * @throws LegacyRmePublishRefusal
+     */
+    private function assertSourcePatientBindingStillValid(LegacyRmeImport $locked): void
+    {
+        $binding = $this->sourceBinding->verifyStaged($locked);
+
+        if ($binding->failed()) {
+            throw LegacyRmePublishRefusal::dateRule(
+                (string) $binding->code,
+                (string) $binding->message,
+                LegacyRmeSourceRmFailure::FIELD,
+            );
+        }
+    }
 
     /**
      * LEGACY-RME-SOD-1 — separation of duties, re-asserted against the LOCKED
@@ -142,6 +182,15 @@ class LegacyRmePublishService
             // account is, not about what state the row happens to be in, and it
             // must answer identically however the caller arrived.
             $this->assertSeparationOfDuties($locked, $actor, LegacyRmeLifecycleAction::REVIEW);
+
+            // SOURCE-RM-BINDING-1 — also before the no-op shortcut. Reviewing
+            // CERTIFIES a document, and an account may not certify one whose
+            // asserted identity no longer matches the patient it is filed under,
+            // whatever state the row happens to be in. Refusing a repeat press
+            // on a now-stale binding is the point, not a side effect: the
+            // operator must cancel and re-import instead of quietly re-affirming
+            // a binding the master data has since contradicted.
+            $this->assertSourcePatientBindingStillValid($locked);
 
             // Re-reviewing an already reviewed import is a harmless no-op: the
             // operator simply pressed the button twice.
@@ -245,6 +294,12 @@ class LegacyRmePublishService
             $this->assertDateStillValid($locked);
             $this->assertBranchStillValid($locked);
 
+            // SOURCE-RM-BINDING-1 — and the document must still be about this
+            // patient. Placed with its siblings for a reason: date, branch and
+            // identity are the three facts a permanent record freezes, and all
+            // three are re-derived here rather than trusted from staging time.
+            $this->assertSourcePatientBindingStillValid($locked);
+
             $pages = $this->imports->pagesFor($locked);
 
             $this->assertRenderedPagesUsable($locked, $pages);
@@ -261,6 +316,11 @@ class LegacyRmePublishService
                 'source_pdf_path' => (string) $locked->source_pdf_path,
                 'source_pdf_sha256' => (string) $locked->source_pdf_sha256,
                 'normalized_content_hash' => $locked->normalized_content_hash,
+                // SOURCE-RM-BINDING-1 — carried onto the immutable record, so it
+                // can answer "what patient did this document claim to be about?"
+                // without joining the staging row publishing soft-deletes.
+                'source_rm_raw' => $locked->source_rm_raw,
+                'source_rm_normalized' => $locked->source_rm_normalized,
                 'page_count' => $pages->count(),
                 'status' => LegacyRmeRecordStatus::PUBLISHED,
                 'source_import_id' => $locked->getKey(),

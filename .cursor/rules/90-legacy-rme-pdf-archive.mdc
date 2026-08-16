@@ -289,13 +289,86 @@ alwaysApply: false
 62. **Wave evidence is immutable after the fact.** A later master-data correction
     never rewrites a closed wave's reconciliation or outcome; corrections are
     recorded as NEW evidence.
-63. `stg_rme_legacy_imports` does not store the Nomor RM printed on the document,
-    so the server cannot verify the operator's patient choice against the source.
-    Known **product gap** — until it is closed, the binding is an operator
-    responsibility, and the audit reports the one detectable symptom: distinct
-    source documents bound to the same patient inside one wave.
+63. ~~`stg_rme_legacy_imports` does not store the Nomor RM printed on the
+    document.~~ **CLOSED by LEGACY-RME-SOURCE-RM-BINDING-1 — see rules 65–79.**
+    The source RM is now captured as structured data and the server verifies the
+    operator's patient choice against it. The wave-level symptom check (distinct
+    source documents bound to the same patient) is retained as a secondary
+    signal, but it is no longer the only detection available.
 64. **`RM 27541` is `DOCUMENT_NOT_ELIGIBLE`** (owner determination, 2026-08-16).
     It exists in no patient row (including soft-deleted), no legacy registration
     import and no audit entry. The one-digit-away `DG-LDK2-2026-22541` is NOT it.
     Reopening requires new authoritative external evidence — a register, a signed
     amendment, an official ledger — and a fresh migration approval. Never Wave-2.
+
+## LEGACY-RME-SOURCE-RM-BINDING-1 — source RM capture & wrong-patient prevention
+
+65. **Every NEW legacy import must capture the Nomor RM printed on the source
+    document** as structured data (`source_rm_raw` verbatim + `source_rm_normalized`
+    canonical + `source_rm_resolution`). It is a first-class column, never a value
+    that lives only in PDF pixels, in a filename, or in an operator's memory.
+66. **The source RM is INDEPENDENT of the selected patient.** It is never
+    prefilled from, auto-copied from, or defaulted to the selected patient's own
+    Nomor RM — in the UI, in a form request, in a service, or in a helper. An
+    assertion that agrees with the selection by construction cannot catch a wrong
+    selection, which is the whole reason the field exists.
+67. **The filename is never source-RM authority.** `RM Landak 4.pdf` carries no
+    clinical identity. Two separate authorities: `source_pdf_sha256` identifies
+    the DOCUMENT; the source RM identifies the PATIENT the document asserts.
+68. **OCR is assistive only.** It may suggest; it may never silently populate an
+    authoritative source RM. Human confirmation is mandatory before any value is
+    treated as the document's assertion. There is no OCR → automatic binding.
+69. **Normalization may repair transcription; it may never change a digit.** Only
+    outer whitespace, whitespace hugging a separator, and Unicode dash variants
+    are folded, and a parseable value is rebuilt through
+    `PatientMedicalRecordNumberService::compose()` (the exact inverse of
+    `parse()`), so the manual sequence is carried verbatim. `27541` never becomes
+    `22541`, `2754`, or `027541`.
+70. **Identity resolution is EXACT.** Exact stored value, or the WHOLE manual
+    segment — nothing else, via
+    `LegacyRmePatientResolutionAuditService::resolveIdentity()`. Fuzzy /
+    Levenshtein / one-digit / prefix / suffix / "nearest in branch" matching is
+    investigative diagnosis only (`resolve()`) and is **unreachable from the write
+    path**. It never binds a document, at any distance, in any sprint.
+71. `SOURCE_RM_REQUIRED`, `SOURCE_RM_INVALID`, `SOURCE_RM_NOT_FOUND`,
+    `SOURCE_RM_AMBIGUOUS`, `SOURCE_RM_PATIENT_MISMATCH`,
+    `SOURCE_RM_BRANCH_MISMATCH` and `SOURCE_RM_CAPTURE_MISSING` all **FAIL
+    CLOSED**. There is no operator override, no "accept anyway", no warning tier,
+    and no config switch that softens any of them.
+72. **The binding gate runs FIRST**, before the date rules, branch derivation,
+    wave admission, capacity, the operations gate, the file hash, the stored PDF
+    and the quota reservation. A refused wrong-patient binding therefore leaves
+    **no staging row, no stored file, no queued job and quota delta 0**.
+73. **The gate lives in the SERVICE** (`LegacyRmeSourcePatientBindingService`),
+    not in the controller, the form request, the Blade view or JavaScript. HTTP,
+    a direct service call and `legacy-rme:import-admin` are the same door. The
+    form request validates SHAPE only; passing it proves nothing about identity.
+74. **The source RM does not decide the archive's owning branch.** FIX-ROLL2-1's
+    `LegacyRmeBranchResolver` still owns that (rule 95), and the gate must not
+    duplicate it — duplicating it swallows FIX-ROLL2-1's specific refusals behind
+    a generic identity error. The gate only compares the branch segment the
+    document ASSERTS against the patient's own. Request `branch_id` remains never
+    an authority.
+75. **The source RM is IMMUTABLE after staging acceptance.** No UI field, no
+    update path, no CLI flag and no SQL/Tinker edit rewrites it. A correction is
+    CANCEL plus a fresh import — the same rule the source PDF already follows.
+76. **The binding is REVALIDATED before review, before publish and on retry**,
+    against the LOCKED row. Acceptance proved it against the master data as it
+    was then; publishing freezes it into permanent clinical evidence, and a
+    Nomor RM can be corrected in between.
+77. **CANCEL is never gated by this rule.** Every "cancel and re-import"
+    instruction the domain gives is a lie if cancel is blocked by the same
+    refusal that produced it. Cancel is the safety valve refusal depends on.
+78. **Pre-enforcement rows are never given a manufactured source RM.** Back-
+    filling `source_rm_raw` from the selected patient's Nomor RM would convert a
+    derived assumption into false source evidence, claiming a human confirmation
+    that never happened. Such rows stay NULL, are refused at review/publish with
+    `SOURCE_RM_CAPTURE_MISSING`, and are resolved by cancel + re-import. Terminal
+    rows (PUBLISHED / CANCELLED / VOID) are untouched and stay readable.
+79. **A refusal never discloses whose Nomor RM it is.** No patient name, id or
+    Nomor RM of the OTHER patient in the message, the response or the audit
+    payload — the upload form is reachable by any `create_legacy_rme_imports`
+    holder, and a helpful refusal would be a patient-enumeration oracle. Audit
+    carries `source_rm_normalized` + `source_rm_resolution` + the reason code
+    only. `php artisan legacy-rme:source-rm-binding-check` answers the binding
+    question read-only and creates nothing.

@@ -41,7 +41,7 @@ function lrmeDupPatient(): Patient
 function lrmeDupUpload(Patient $patient, UploadedFile $document, string $date = '2020-05-01'): LegacyRmeImport
 {
     return app(LegacyRmeImportService::class)
-        ->createFromUpload($patient, $date, null, $document, superAdmin());
+        ->createFromUpload($patient, $date, $patient->medical_record_number, null, $document, superAdmin());
 }
 
 function lrmeDuplicates(): LegacyRmeDuplicateDetectionService

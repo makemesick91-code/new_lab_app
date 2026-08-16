@@ -43,6 +43,7 @@ function lrme1cHttpReviewed(int $pages = 2): LegacyRmeImport
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', $pages),
         superAdmin(),
@@ -72,7 +73,7 @@ it('lets a super admin review then publish and lands on the published archive', 
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
-        $patient, '2020-05-01', null, legacyRmePdfUpload('arsip.pdf', 2), superAdmin(),
+        $patient, '2020-05-01', $patient->medical_record_number, null, legacyRmePdfUpload('arsip.pdf', 2), superAdmin(),
     );
     app(LegacyRmeImportProcessingService::class)->process($import->getKey());
 
@@ -100,7 +101,7 @@ it('refuses a publish over HTTP when the import was never reviewed', function ()
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
-        $patient, '2020-05-01', null, legacyRmePdfUpload('arsip.pdf', 1), superAdmin(),
+        $patient, '2020-05-01', $patient->medical_record_number, null, legacyRmePdfUpload('arsip.pdf', 1), superAdmin(),
     );
     app(LegacyRmeImportProcessingService::class)->process($import->getKey());
 

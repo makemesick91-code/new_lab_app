@@ -51,6 +51,7 @@ function lrme1dPublished(int $pages = 2): LegacyRmeRecord
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', $pages),
         superAdmin(),

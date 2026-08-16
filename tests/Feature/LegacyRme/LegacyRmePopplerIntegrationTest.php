@@ -163,6 +163,7 @@ it('processes a real pdf end to end into private page images', function () {
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', 3),
         superAdmin(),

@@ -190,6 +190,7 @@ it('creates no visit, invoice, payment, lab or SATUSEHAT row when a document is 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', 2),
         superAdmin(),

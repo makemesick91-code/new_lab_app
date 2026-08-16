@@ -71,6 +71,19 @@ class LegacyRmeImport extends Model
         'selected_rme_date',
         'latest_rme_date',
         'earliest_native_rme_date_snapshot',
+        // LEGACY-RME-SOURCE-RM-BINDING-1 — the Nomor RM the operator confirmed
+        // reading ON THE DOCUMENT, kept verbatim, plus the canonical form the
+        // identity resolver matched on and the code it matched under.
+        //
+        // IMMUTABLE AFTER ACCEPTANCE. These are fillable because the intake
+        // service creates the row with them; no update path in this module ever
+        // writes them again, and there is no UI field that edits them. A
+        // correction is a cancel plus a fresh import, exactly as it is for the
+        // source PDF itself — rewriting what a document asserted would destroy
+        // the only independent evidence the archive has about its own identity.
+        'source_rm_raw',
+        'source_rm_normalized',
+        'source_rm_resolution',
         'original_filename',
         'source_disk',
         'source_pdf_path',

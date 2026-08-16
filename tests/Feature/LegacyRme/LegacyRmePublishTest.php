@@ -58,6 +58,7 @@ function lrme1cReadyImport(int $pages = 2, string $legacyDate = '2020-05-01'): L
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         $legacyDate,
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip.pdf', $pages),
         superAdmin(),

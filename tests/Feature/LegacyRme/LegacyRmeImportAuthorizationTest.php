@@ -282,6 +282,7 @@ it('refuses an origin branch outside the uploader own scope', function () {
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         $otherBranch->id,
         legacyRmePdfUpload(),
         $user,
@@ -307,6 +308,7 @@ it('derives the origin branch from the patient Nomor RM', function () {
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -330,6 +332,7 @@ it('ignores nothing and refuses a submitted branch that contradicts the Nomor RM
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         $otherBranch->id,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -348,6 +351,7 @@ it('accepts a submitted branch that matches the RM-derived one', function () {
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         legacyRmeBranch('TKM1')->id,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -367,6 +371,7 @@ it('fails closed when the patient Nomor RM names an unknown branch', function ()
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -386,6 +391,7 @@ it('fails closed when the patient Nomor RM is not in the canonical format', func
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         superAdmin(),
@@ -407,6 +413,7 @@ it('fails closed when the RM-derived branch is outside the uploader scope', func
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
+        $patient->medical_record_number,
         null,
         legacyRmePdfUpload(),
         $user,
