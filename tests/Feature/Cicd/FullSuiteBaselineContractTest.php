@@ -143,13 +143,27 @@ it('escapes the dynamic half of every unescaped assertSee', function () {
     $offenders = [];
 
     foreach (baselineTestSources() as $relative => $contents) {
-        preg_match_all('/assertSee\((.*?),\s*false\s*\)/s', $contents, $matches);
+        /*
+         * Deliberately line-bounded. A `/s` match would run from one
+         * `assertSee(` to a `, false)` several statements later and read a
+         * property out of an unrelated call — reporting a file that is fine,
+         * or swallowing one that is not. These calls are single-line.
+         */
+        preg_match_all('/assertSee\(([^\n]*?),\s*false\s*\)/', $contents, $matches);
 
         foreach ($matches[1] as $argument) {
             // A property read such as ->name / ->description that is not wrapped in e().
             $readsProperty = preg_match('/\$\w+(?:->\w+)*->(?:name|description|title|address|notes)\b/', $argument) === 1;
 
-            if ($readsProperty && ! str_contains($argument, 'e(')) {
+            /*
+             * `e(` must be matched as a call, not as a substring: plain
+             * `str_contains($argument, 'e(')` is satisfied by the trailing
+             * `e(` of `assertSee(` itself, so every offender would look
+             * escaped. The lookbehind requires a non-word character before it.
+             */
+            $isEscaped = preg_match('/(?<!\w)e\(/', $argument) === 1;
+
+            if ($readsProperty && ! $isEscaped) {
                 $offenders[] = $relative.': '.trim($argument);
             }
         }
