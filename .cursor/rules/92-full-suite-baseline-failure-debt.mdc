@@ -95,8 +95,18 @@ strict shell would restore a false green. Do not remove either.
 
 ## Warnings are not failures
 
-The test gates install Composer but not npm, so the Vite manifest is absent and
-tests rendering a Blade layout are downgraded *passed* → *warning*. They still
-execute and assert; assertion count is the honest measure. A real failure is
-still counted and still reddens the gate. Never read a large warning count as a
-skip, and never "fix" it by weakening a test.
+CI summaries carry a large warning count (6 552 at `3234265`). Established:
+warnings are **not** skips — those tests execute and assert, and assertion count
+is the honest measure; and warnings **never mask failures** — a real failure is
+counted and reddens the gate independently (proven twice: 9 failures beside
+5 642 warnings, and 1 failure beside 6 486 warnings, both red).
+
+**The cause is unidentified. Do not repeat the old explanation.** CICD-CTRL-3
+§10 blamed an absent `public/build/manifest.json`. That is superseded:
+`tests/TestCase.php` calls `withoutVite()` — shipped in `9484dd9`, the very
+merge those warnings were measured on — so `@vite` renders nothing, and locally
+with no `public/build` the same tests report `PASS`, not warning. Pest truncates
+the warning text, so no full path survives in the logs.
+
+Never read a large warning count as a skip, never "fix" it by weakening a test,
+and never assert a cause for it that the evidence does not support.

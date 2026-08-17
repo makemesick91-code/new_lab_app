@@ -154,14 +154,36 @@ runner class, same PHP, same database engine, same unfiltered command.
 
 ### About the warning count
 
-The summaries read `6552 warnings … 13 passed`, which looks alarming and is not.
-The test jobs install Composer but not npm, so `public/build/manifest.json` is
-absent and every test rendering a Blade layout emits a `file_get_contents`
-warning. PHPUnit then reports those tests as *warnings* rather than *passed*.
-The tests execute and assert — the assertion count is the honest measure, and it
-rose with the suite. **Warnings never mask failures**: the baseline run reported
-`9 failed` *alongside* 5 642 warnings and concluded `failure`. Restoring a build
-step to the test gates remains open work and is out of scope here.
+The summaries read `6552 warnings … 13 passed`, which looks alarming. What
+matters for this workstream is established beyond doubt:
+
+- **Warnings are not skips.** The tests execute and assert. Assertion count is
+  the honest measure, and it rose with the suite (26 604 → 29 344).
+- **Warnings never mask failures.** The baseline run reported `9 failed`
+  *alongside* 5 642 warnings and concluded `failure`; run `31928614428`
+  reddened the gate on a single failure beside 6 486 warnings. Failures are
+  counted and gated independently of the downgrade.
+
+**The cause is NOT established, and the previously documented explanation is
+superseded.** CICD-CTRL-3 §10 attributed the warnings to an absent
+`public/build/manifest.json` making every layout-rendering test emit a
+`file_get_contents` warning. That cannot be the explanation for the runs
+measured here: `tests/TestCase.php` calls Laravel's `withoutVite()`, which stubs
+the Vite facade so `@vite` renders nothing — and it shipped **in `9484dd9`
+itself**, the very merge whose Full Suite the 5 637-warning figure came from.
+Locally, with no `public/build` present, the same tests report **`PASS`, not
+warning**. No manifest path appears anywhere in the current run's log.
+
+What the log can and cannot show: Pest truncates the inline warning text, so of
+the 6 321 visibly warning-marked tests only 2 469 still show the
+`→ file_get_contents(…` fragment and **none** retains a full path. The real
+source therefore cannot be identified from this evidence, and this workstream
+does not guess at one.
+
+**Handed forward:** identify the actual warning source and restore a clean
+summary line. It is deliberately out of scope here — it changes no failure
+count, and inventing a second unverified explanation to replace the first would
+repeat exactly the mistake this sprint exists to correct.
 
 ---
 

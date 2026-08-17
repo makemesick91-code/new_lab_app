@@ -465,6 +465,15 @@ failing test is committed.
 > CICD-BASELINE-REVERIFY-1; the expected Full Suite failure baseline is now
 > **0**. The recommendation at the end of this section ("open `CICD-FIX-6`") was
 > carried out. Do not cite this list as current debt.
+>
+> **One claim below is WRONG and must not be reused:** the paragraph attributing
+> the warning count to an absent `public/build/manifest.json` downgrading every
+> layout-rendering test. `tests/TestCase.php` calls `withoutVite()`, which
+> shipped **in this sprint's own merge `9484dd9`** — the very run those warnings
+> were measured on — so `@vite` renders nothing and locally the same tests report
+> `PASS`, not warning. The real cause of the warning count is **unidentified**;
+> see CICD-BASELINE-REVERIFY-1 §4. What remains true here: warnings are not
+> skips, and warnings never mask failures.
 
 The post-merge Full Suite on `9484dd9` reported
 `10 failed, 5637 warnings, 1 risky, 13 passed (26587 assertions)`. One
