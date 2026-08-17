@@ -1,0 +1,112 @@
+---
+description: CICD-BASELINE-REVERIFY-1 Full Suite baseline & failure debt — expected failures are evidence, never a regression allowance
+globs:
+  - ".github/workflows/**"
+  - "scripts/ci/**"
+  - "config/ci_runner.php"
+  - "config/ci_runtime_control.php"
+  - "tests/**"
+alwaysApply: false
+---
+
+# CICD-BASELINE-REVERIFY-1 — Full Suite baseline & failure debt
+
+## Current baseline — authoritative
+
+```
+EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0
+LEGACY_9_FAILURE_BASELINE            = RETIRED
+```
+
+Retired at `3234265` on run `31980550379`
+(`0 failed, 6552 warnings, 1 risky, 13 passed / 29344 assertions`).
+The historical nine were established at `cbe9712` on run `31293873172` and were
+closed in a single step by CICD-FIX-6 (`fe36f06`, run `31335720157`).
+
+Evidence: `docs/sprints/cicd-baseline-reverify-1-full-suite-baseline-stale-failure-debt-closure.md`.
+
+## Rules
+
+1. An expected-failure baseline is **temporary evidence, never a standing
+   regression allowance**. It has an owner and an expiry, not tenure.
+2. A baseline must name **exact test identities and failure signatures**, plus
+   the authoritative run and SHA that produced them. A bare count is not a
+   baseline and may not be cited as one.
+3. Retire a baseline only when **every entry is individually reconciled** and
+   current coverage is verified. One green run is not sufficient evidence.
+4. **Deleting a test is not fixing it.** A vanished failure must be explained by
+   a retired requirement, equivalent-or-stronger coverage, or a legitimately
+   removed code path — otherwise it is a coverage regression.
+5. **A failure becoming skipped is not a fix.** Audit skip counts beside failure
+   counts; a skip that replaces a failure is unclosed debt.
+6. Green must never come from **filter drift**. Compare test and assertion
+   inventory across baseline and current runs; a shrinking suite invalidates the
+   comparison.
+7. When the valid baseline is zero the gate **fails closed** — any Full Suite
+   failure is red, and no subtraction path may exist.
+8. Baseline-versus-candidate comparison requires **compatible conditions**:
+   runner class, database engine, test command and suite scope.
+9. **Wrong checkout, runner outage, orphaned Pest workers and absent runtime
+   capability are environment faults, not application debt.** Never catalogue
+   them as baseline failures.
+10. Authoritative CI evidence is **SHA-exact**. Any later commit on the candidate
+    invalidates the prior run as final evidence.
+11. Where post-merge Full Suite is the canonical authority, **let it settle
+    before GO**. A merge is not a closure.
+12. The current baseline is **always explicitly documented**. A stale count must
+    never survive because it is historically convenient.
+13. **A test whose outcome depends on random fixture data is a defect.** Fix it
+    by making it deterministic — never by loosening the assertion.
+
+## The escaping contract (rule 13, concrete form)
+
+Blade renders through `{{ }}`, so a faker-generated value reaches the page
+HTML-escaped. Two assertion shapes get this wrong and both are guarded by
+`tests/Feature/Cicd/FullSuiteBaselineContractTest.php`:
+
+```php
+// WRONG — compares against the raw body; fails whenever faker emits ' & < > "
+expect($response->content())->toContain($patient->name);
+
+// RIGHT — assertSee() escapes the expected value like the view escaped the output
+$response->assertSee($patient->name);
+
+// RIGHT — escaping deliberately off for raw markup, dynamic half escaped by hand
+$response->assertSee('value="'.e($patient->name).'"', false);
+```
+
+Prefer pinning fixture values in the test when the assertion depends on them,
+and pin one that carries an escapable character so the path is exercised every
+run rather than by luck.
+
+## Full Suite topology (do not infer from stale docs)
+
+| | |
+|---|---|
+| Trigger | weekly `schedule` · `workflow_dispatch` with `run_full_suite=true` · `push` to base |
+| Runner | `ubuntu-latest`; **never** self-hosted (`self_hosted_heavy_jobs` = `critical_test_gate_self_hosted` only) |
+| Database | `postgres:16` service, `DB_CONNECTION=pgsql` |
+| Command | `php artisan test` piped to `tee` under `shell: bash` (pipefail carries the exit status) |
+
+The exit-status half of the contract is pinned by
+`NsfReleaseGateExitPropagationTest` — `Run full Pest suite` is registered in
+`ci_runner.strict_pipeline_steps`, and a mutation test proves that removing its
+strict shell would restore a false green. Do not remove either.
+
+## Warnings are not failures
+
+CI summaries carry a large warning count (6 552 at `3234265`). Established:
+warnings are **not** skips — those tests execute and assert, and assertion count
+is the honest measure; and warnings **never mask failures** — a real failure is
+counted and reddens the gate independently (proven twice: 9 failures beside
+5 642 warnings, and 1 failure beside 6 486 warnings, both red).
+
+**The cause is unidentified. Do not repeat the old explanation.** CICD-CTRL-3
+§10 blamed an absent `public/build/manifest.json`. That is superseded:
+`tests/TestCase.php` calls `withoutVite()` — shipped in `9484dd9`, the very
+merge those warnings were measured on — so `@vite` renders nothing, and locally
+with no `public/build` the same tests report `PASS`, not warning. Pest truncates
+the warning text, so no full path survives in the logs.
+
+Never read a large warning count as a skip, never "fix" it by weakening a test,
+and never assert a cause for it that the evidence does not support.

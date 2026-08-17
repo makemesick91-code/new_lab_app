@@ -94,15 +94,34 @@ it('index searches by patient name', function () {
         'source_description' => 'Veneer Pasien Beta',
     ]);
 
-    // Search by patient name from candidateA
-    $patientName = $candidateA->patient->name;
+    /*
+     * CICD-BASELINE-REVERIFY-1 — deterministic, escaping-aware names.
+     *
+     * This assertion used to read the faker-generated name straight off the
+     * model and look for it in the raw response body. Blade renders the name
+     * through `{{ }}`, so any name carrying an HTML-special character came back
+     * escaped and the raw comparison failed — `Oswaldo O'Kon` rendered as
+     * `Oswaldo O&#039;Kon`. That made the whole Full Suite non-deterministic:
+     * it reddened run 31928614428 and passed on either side of it without a
+     * single line of the module changing.
+     *
+     * The names are pinned here so the escaping path is exercised on every run
+     * rather than whenever faker happens to pick an apostrophe, and the search
+     * is asserted through `assertSee()`, which escapes the expected value the
+     * same way the view escapes the rendered one.
+     */
+    $searchedName = "Alpha O'Kon";
+    $otherName = 'Beta Sanjaya';
 
-    $response = $this->actingAs($this->viewer)
-        ->get(route('lab-case-candidates.index', ['search' => $patientName]))
-        ->assertOk();
+    $candidateA->patient->update(['name' => $searchedName]);
+    $candidateB->patient->update(['name' => $otherName]);
 
-    // Response should contain candidateA but NOT candidateB (different patient)
-    expect($response->content())->toContain($patientName);
+    $this->actingAs($this->viewer)
+        ->get(route('lab-case-candidates.index', ['search' => $searchedName]))
+        ->assertOk()
+        // Response should contain candidateA but NOT candidateB (different patient)
+        ->assertSee($searchedName)
+        ->assertDontSee($otherName);
 });
 
 // ─── Test 6: Index searches by source description ─────────────────────────────

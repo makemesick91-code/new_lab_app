@@ -84,3 +84,57 @@ Downstream jobs consume `needs.classify.outputs.*`:
 - Rollback: revert the CICD-CTRL-1 changes (classifier script, workflow edits,
   config/command/scanner/service). This only affects CI gate selection; no app
   runtime, route, schema, or data behaviour is involved.
+
+---
+
+## Full Suite failure baseline (CICD-BASELINE-REVERIFY-1)
+
+```
+EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0
+LEGACY_9_FAILURE_BASELINE            = RETIRED
+```
+
+**Any Full Suite failure is a real regression.** There is no allowance to
+subtract it against, and no code path that could subtract one. The historical
+"9 pre-existing failures" residual from CICD-CTRL-3 was closed by CICD-FIX-6
+(`fe36f06`) and retired per-failure by CICD-BASELINE-REVERIFY-1. Do not cite it.
+
+### When the Full Suite goes red
+
+1. **Read the summary line, not the warning count.** `Tests: N failed, M
+   warnings …` — only `failed` matters. A large `warnings` count is the absent
+   Vite manifest downgrading *passed* → *warning*; those tests executed and
+   asserted. Warnings never mask failures.
+2. **Get the failing identities from the log**, not from a summary:
+   ```bash
+   gh api repos/<owner>/<repo>/actions/jobs/<job_id>/logs \
+     | grep -aE '^\s*(FAILED|⨯)'
+   ```
+3. **Classify before fixing.** Environment fault (wrong checkout, runner outage,
+   orphaned Pest workers, missing runtime binary such as Poppler) or application
+   defect? Environment faults are never catalogued as baseline debt.
+4. **Check determinism before blaming a commit.** If no commit in the range
+   touches the failing test or its module, suspect a flake. The known class is a
+   faker-generated value compared against Blade-escaped output — see rule 92.
+5. **Fix it, do not absorb it.** Never widen a filter, skip a test, delete a
+   test, or open a new "expected failures" list to get back to green.
+
+### Running the Full Suite deliberately
+
+It does **not** run on pull requests. Trigger it on an exact SHA with:
+
+```bash
+gh workflow run foundation-evidence-gates.yml \
+  --ref <branch> -f run_full_suite=true
+```
+
+It also runs on every push to the base branch, and weekly on Sunday 02:00 UTC
+(10:00 WITA). It always runs on `ubuntu-latest` against `postgres:16` — it is
+never routed to the self-hosted runner. Expect roughly 2.5–4 hours.
+
+### If a baseline ever has to be re-opened
+
+It must name exact test identities and failure signatures, the authoritative run
+id and SHA, an owner, and a revalidation date — and it must never be encoded as
+a machine-readable allowance that a red gate could be subtracted against. Rule
+92 governs; `tests/Feature/Cicd/FullSuiteBaselineContractTest.php` enforces.

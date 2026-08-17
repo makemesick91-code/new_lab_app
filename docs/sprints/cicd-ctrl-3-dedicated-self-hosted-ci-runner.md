@@ -21,6 +21,15 @@ RESIDUAL: PRE-EXISTING FULL-SUITE APPLICATION DEBT (9 failures, out of scope)
 | **REQUIRED PR GATES** | **PASS** — Classifier, Quality, Critical, Selective, NSF-9, NSF-10 |
 | **FULL SUITE** | **RED — pre-existing** — 9 application failures that predate this sprint; 0 introduced by it |
 
+> **SUPERSEDED — the residual is closed.** Everything below describes this
+> sprint's own SHAs (`9484dd9` / `cbe9712`) and remains true of them. The nine
+> residual failures were closed by **CICD-FIX-6** (`fe36f06`, run
+> `31335720157` — 0 failed) and formally retired, per-failure, by
+> **CICD-BASELINE-REVERIFY-1**. The current expected Full Suite failure
+> baseline is **0**; any Full Suite failure today is a real regression and must
+> not be attributed to this residual. See
+> `docs/sprints/cicd-baseline-reverify-1-full-suite-baseline-stale-failure-debt-closure.md`.
+
 > **The Full Suite red is this sprint working, not a regression.** Before
 > CICD-CTRL-3, `php artisan test … | tee` reported *tee's* exit status, so the
 > gate went green regardless. The last "successful" Full Suite before the merge
@@ -449,6 +458,22 @@ failing test is committed.
 ---
 
 ## 10. Residual Full Suite debt — PRE-EXISTING, OUT OF SCOPE
+
+> **CLOSED.** This section is retained as the historical catalogue of the nine —
+> it is the authoritative record of what was failing at `cbe9712`. All nine were
+> fixed by CICD-FIX-6 (`fe36f06`) and reconciled one by one in
+> CICD-BASELINE-REVERIFY-1; the expected Full Suite failure baseline is now
+> **0**. The recommendation at the end of this section ("open `CICD-FIX-6`") was
+> carried out. Do not cite this list as current debt.
+>
+> **One claim below is WRONG and must not be reused:** the paragraph attributing
+> the warning count to an absent `public/build/manifest.json` downgrading every
+> layout-rendering test. `tests/TestCase.php` calls `withoutVite()`, which
+> shipped **in this sprint's own merge `9484dd9`** — the very run those warnings
+> were measured on — so `@vite` renders nothing and locally the same tests report
+> `PASS`, not warning. The real cause of the warning count is **unidentified**;
+> see CICD-BASELINE-REVERIFY-1 §4. What remains true here: warnings are not
+> skips, and warnings never mask failures.
 
 The post-merge Full Suite on `9484dd9` reported
 `10 failed, 5637 warnings, 1 risky, 13 passed (26587 assertions)`. One
