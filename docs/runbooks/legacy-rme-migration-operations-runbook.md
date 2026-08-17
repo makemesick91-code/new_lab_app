@@ -9,6 +9,22 @@ this one assumes the capability side is already understood.
 
 **Every command below is read-only unless it carries `--apply`.**
 
+> ### Running a ROUTINE batch? Start with the steady-state SOP instead
+>
+> `docs/runbooks/legacy-rme-steady-state-operations-runbook.md` is the canonical
+> **operating procedure** for routine batches (LEGACY-RME-STEADY-STATE-OPS-1):
+> what makes a batch routine, sizing, the mandatory backup gate, the one
+> pre-flight command, stop-the-line conditions and closure.
+>
+> **This runbook remains authoritative for the mechanics** — exact wave command
+> syntax, QA sampling, abort recovery, emergency stop and source-RM diagnosis.
+> The SOP points back here for all of it; nothing below is superseded.
+>
+> Two readiness commands, two different questions — do not confuse them:
+> `legacy-rme:rollout-readiness` asks *may this DEPLOYMENT run the archive at
+> all?*; `legacy-rme:ops-readiness` asks *may a routine BATCH open right now?*
+> and composes the first one's decision inside its own.
+
 ---
 
 ## 0. Safe resting state

@@ -1,0 +1,116 @@
+---
+description: LEGACY-RME-STEADY-STATE-OPS-1 — legacy RME migration is routine production operations, not an engineering wave per batch. A routine batch is approved, branch-scoped, quota- and time-bounded, maker/checker-assigned, reconciled and closed. One read-only pre-flight decides whether it may open.
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "config/legacy_rme_steady_state.php"
+  - "config/legacy_rme_operations.php"
+  - "config/legacy_rme_rollout.php"
+  - "app/Console/Commands/LegacyRme*.php"
+  - "docs/runbooks/legacy-rme-*.md"
+alwaysApply: false
+---
+
+# LEGACY-RME-STEADY-STATE-OPS-1 — steady-state operations
+
+## The operating model
+
+Legacy RME migration is **routine production operations**. It is not an
+engineering wave per batch, and a batch does not need a sprint.
+
+A **routine batch** is the existing ROLL-4 wave record — never a new table, state
+machine or lifecycle. A second path to the same clinical writes would be a weaker
+one.
+
+A batch is routine only if **all** hold: explicitly approved (fresh reference) ·
+branch-scoped (named codes) · quota-bounded · time-bounded · maker/checker
+assigned · source documents frozen · reconciliation required for closure.
+
+## Non-negotiables
+
+- **`ROLL-4-WAVE-3` remains SKIPPED / NOT REQUIRED.** Never create a Wave-3
+  record, approval, quota or tag. Declaring it as a batch code is **refused** —
+  it has no approval record and never will.
+- **Every routine batch needs a FRESH approval.** Wave-1 and Wave-2R approvals are
+  immutable historical evidence and are never reused.
+- **Production resting state:** capability **OFF** · admission **EMPTY** · active
+  batch **NONE**. A batch opens the minimum controls and returns to rest.
+- **A routine batch never earns a GO tag.** GO tags are for software and
+  governance changes that went through CI. A batch produces operational evidence
+  and an approval closure.
+- **No backup, no batch.** A verified backup under 24 h old is a refusal
+  condition, not a warning.
+- **Closure requires a balanced ledger:** zero in-flight, zero unexplained, zero
+  quota drift, zero unresolved failures, plus a written sign-off. There is no
+  `--force`.
+- **A cancelled import still consumes quota.** Quota counts what was accepted into
+  staging. Never read a quota total as a count of published documents.
+- **Archive-only, permanently.** A legacy import never creates a ClinicVisit,
+  native MedicalRecord, odontogram, prescription, invoice, payment, LabOrder or
+  SATUSEHAT activity. Any such side effect is stop-the-line.
+- **Never direct SQL or Tinker** for lifecycle state. Use
+  `legacy-rme:import-admin` (dry-run first). A hand-edited row is an unaudited
+  transition.
+- **Never a shared maker/checker account.** One accountable human, one attributable
+  account. Account separation is server-enforced; **human** separation is a human
+  attestation the application cannot observe and must never imply it verified.
+
+## Multi-branch
+
+```
+MULTI_BRANCH_MODE = CONCURRENT_BRANCH_ISOLATED_WITHIN_ONE_ACTIVE_BATCH
+```
+
+- **Across batches: SEQUENTIAL.** `LegacyRmeWaveBindingService` resolves one
+  operative batch from one declared code. Do not claim or add concurrent batches.
+- **Within one batch: CONCURRENT, BRANCH-ISOLATED.** Many branches, each with its
+  own status, quota, operators and pause/drain/complete.
+
+## Sizing
+
+| Bound | Value |
+|---|---|
+| Routine default / day | 25 (the queue's single-worker pending ceiling) |
+| Routine maximum / day | 100 (4× ceiling; human review is the constraint) |
+| Above 100 | not routine — elevated approval required |
+| Absolute rail | 500 (`max_declarable_daily`, server-side) |
+
+**Measured throughput is NOT YET AVAILABLE** (five production documents total).
+These are bounded defaults for recoverability, not a benchmark. Do not quote them
+as measured.
+
+## The pre-flight
+
+`php artisan legacy-rme:ops-readiness` — read-only; opens, writes and repairs
+nothing. Composes the deployment gate, operations layer, SOD posture, clinical
+calendar, admission/approval, batch binding and window, sizing, reconciliation,
+queue headroom and backup freshness into one decision, plus a branch matrix.
+
+- Monitoring signals are collected **by default** (that is what establishes backup
+  freshness). `--skip-monitoring` degrades honestly to NO_GO.
+- `UNKNOWN` blocks exactly like `FAIL`. "We could not tell" is never a basis for
+  opening a clinical migration.
+- Exit `1` on NO_GO always; on WATCH only under `--strict` / `--fail-on-warning`.
+
+## When extending this module
+
+- **Compose, never duplicate.** Adding a second reader of an existing rule is the
+  defect, not the feature. Read SOD through `SeparatePublisherGuard::enabled()`,
+  never through its config key — an architecture test enforces that the switch has
+  exactly one home in `app/`.
+- **Guard every check** so it degrades to `UNKNOWN`, never to a silent GO.
+- **PII-free output**: counts, branch codes, batch codes, statuses, account ids and
+  timings. Never a patient name, Nomor RM, KTP/NIK, filename or document path. Never
+  echo the approval reference — report its presence.
+- **Distinguish "not established" from "failed".** Reporting an unchecked condition
+  as a failed control trains operators to ignore the loudest signal.
+- **A deliberately closed branch is `NOT_READY` with zero blockers**, not a fault.
+
+## Canonical documents
+
+| Purpose | File |
+|---|---|
+| SOP | `docs/runbooks/legacy-rme-steady-state-operations-runbook.md` |
+| One-page checklist | `docs/runbooks/legacy-rme-routine-batch-operator-checklist.md` |
+| Batch evidence template | `docs/evidence/legacy-rme/routine-batch-evidence-template.md` |
+| Wave mechanics, abort recovery | `docs/runbooks/legacy-rme-migration-operations-runbook.md` |
+| Enablement / rollback | `docs/runbooks/legacy-rme-pdf-rollout-runbook.md` |

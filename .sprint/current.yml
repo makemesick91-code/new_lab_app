@@ -1,24 +1,24 @@
-# Active sprint manifest — CICD-BASELINE-REVERIFY-1
+# Active sprint manifest — LEGACY-RME-STEADY-STATE-OPS-1
 # Validated by: php artisan sprint:manifest-check
 
-id: CICD-BASELINE-REVERIFY-1
-type: INFRA_RELEASE
-module: Cicd
-title: "Full-Suite baseline revalidation & stale failure-debt closure — the historical nine Full Suite failures are reconciled one by one, proven closed by CICD-FIX-6, and the expected failure baseline is retired to zero with the gate left fail-closed"
+id: LEGACY-RME-STEADY-STATE-OPS-1
+type: MODULE_SPRINT
+module: LegacyRme
+title: "Legacy RME steady-state operations — routine batch operating model, consolidated pre-flight readiness (backup freshness, resting state, branch matrix), SOP and multi-branch classification"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application, config, script or workflow behaviour changes
-schema_change: false            # no migration
-frontend_change: false          # no JS/CSS/Vite change
-security_impact: false          # no policy, permission, middleware or authorization surface touched
+runtime_change: true            # new read-only aggregator service + one read-only artisan command
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade view, no JS/CSS, no Vite entry — CLI + docs only
+security_impact: true           # reads SOD posture and admission/approval state; adds a backup gate. Widens nothing.
+branch_isolation_impact: false  # no BranchContext change; branch matrix is read-only over RME-enabled branches
+ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: false          # tests, docs and rules only — nothing the VPS runtime executes
-browser_required: false         # no user-facing surface
+deploy_required: true           # the command and config must exist on the VPS for operators to use them
+browser_required: false         # no UI surface added
 
 test_profiles:
-  - cicd
+  - legacy_rme
+  - security
 
-# Declared, not yet created. The tag is only cut after the post-merge Full Suite
-# — the canonical authority for this workstream — has actually completed green
-# on the merge SHA.
-go_tag: cicd-baseline-reverify-1-full-suite-baseline-stale-failure-debt-closure-go
+go_tag: legacy-rme-steady-state-ops-1-operationalization-multi-branch-routine-migration-go
