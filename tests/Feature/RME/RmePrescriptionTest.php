@@ -85,11 +85,23 @@ it('authorized user can open prescription page with auto-filled defaults', funct
     $manager = userWith(['manage_clinic_visits']);
     $visit = prescriptionVisit();
 
+    /*
+     * CICD-BASELINE-REVERIFY-1 — escape the dynamic half of the attribute.
+     *
+     * Escaping is switched off deliberately here because the assertion targets
+     * the raw `value="…"` attribute, not the text. The names inside it are
+     * faker-generated and the view prints them through `{{ }}`, so the expected
+     * string has to be escaped exactly as Blade escapes the rendered one —
+     * `e()` is the same htmlspecialchars call Blade compiles to. Without it a
+     * name like `Dr. Oswaldo O'Kon` renders as `Dr. Oswaldo O&#039;Kon` and the
+     * comparison fails on nothing but the random seed. Same defect class as the
+     * one that reddened run 31928614428; caught here before it ever fired.
+     */
     $this->actingAs($manager)
         ->get(route('rme.visits.prescription.show', [$visit, 'edit' => 1]))
         ->assertOk()
-        ->assertSee('value="'.$visit->doctor->name.'"', false)
-        ->assertSee('value="'.$visit->patient->name.'"', false)
+        ->assertSee('value="'.e($visit->doctor->name).'"', false)
+        ->assertSee('value="'.e($visit->patient->name).'"', false)
         ->assertSee('32', false);
 });
 

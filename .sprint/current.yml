@@ -1,26 +1,24 @@
-# Active sprint manifest — LEGACY-RME-SOURCE-RM-BINDING-1
+# Active sprint manifest — CICD-BASELINE-REVERIFY-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-SOURCE-RM-BINDING-1
-type: MODULE_SPRINT
-module: LegacyRme
-title: "Source RM capture, patient-binding enforcement & wrong-patient prevention — the RM printed on a legacy document becomes first-class structured evidence, is resolved exactly, and must name the selected patient before anything is staged, queued, reviewed or published"
+id: CICD-BASELINE-REVERIFY-1
+type: INFRA_RELEASE
+module: Cicd
+title: "Full-Suite baseline revalidation & stale failure-debt closure — the historical nine Full Suite failures are reconciled one by one, proven closed by CICD-FIX-6, and the expected failure baseline is retired to zero with the gate left fail-closed"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new binding guard on the legacy import write path + review/publish revalidation
-schema_change: true             # additive nullable source-RM columns on staging + published legacy tables
-frontend_change: true           # Blade only — source RM input + attestation on the legacy import form
-security_impact: true           # wrong-patient binding prevention, exact-only identity resolution, branch authority
+runtime_change: false           # no application, config, script or workflow behaviour changes
+schema_change: false            # no migration
+frontend_change: false          # no JS/CSS/Vite change
+security_impact: false          # no policy, permission, middleware or authorization surface touched
 
-deploy_required: true           # migration must run on the VPS
-browser_required: false         # server-side enforcement; UI is a form field, no interactive flow to drive
+deploy_required: false          # tests, docs and rules only — nothing the VPS runtime executes
+browser_required: false         # no user-facing surface
 
 test_profiles:
-  - legacy_rme
-  - security
-  - permission
+  - cicd
 
-# Declared, not yet created. The tag is only cut after the migration is applied
-# on the VPS and the deployed diagnostic proves the binding gate refuses a wrong
-# patient in production.
-go_tag: legacy-rme-source-rm-binding-1-source-rm-capture-patient-binding-enforcement-go
+# Declared, not yet created. The tag is only cut after the post-merge Full Suite
+# — the canonical authority for this workstream — has actually completed green
+# on the merge SHA.
+go_tag: cicd-baseline-reverify-1-full-suite-baseline-stale-failure-debt-closure-go
