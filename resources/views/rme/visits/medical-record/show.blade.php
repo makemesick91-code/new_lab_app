@@ -50,6 +50,14 @@
              lands directly on the handwritten RME area with less scrolling. See the
              relocated blocks after the RME Tulisan Tangan card. --}}
 
+        {{-- LEGACY-RME-DOCTOR-WORKSPACE-1 — the patient's RME documents (native
+             sheets + PUBLISHED legacy archive) as a selector ABOVE the fold.
+             The full clinical-history card stays where it is, further down: this
+             rail is an additional, faster read surface, not a replacement. --}}
+        @include('rme.visits.partials.rme-workspace-documents', [
+            'workspaceDocuments' => $workspaceDocuments ?? collect(),
+        ])
+
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
                  two-column table (label : value). KTP number is intentionally
