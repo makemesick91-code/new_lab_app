@@ -232,10 +232,12 @@ maker and a genuinely distinct checker — absent any of those, it is not run.
 
 | Suite | Result |
 |---|---|
-| `LegacyRmeSteadyStateOpsTest` (new) | 30 passed |
-| `tests/Feature/LegacyRme` | see final evidence below |
-| `sprint:manifest-check` | GO |
-| `pint --dirty --test` | clean |
+| `LegacyRmeSteadyStateOpsTest` (new) | **30 passed** |
+| `tests/Feature/LegacyRme` | **801 passed, 5 skipped, 0 failed** (2212 assertions) |
+| `AccessControl` + `Cicd` + `Deploy` + `Foundation` | **714 passed, 4 skipped, 0 failed** (3759 assertions) |
+| `sprint:manifest-check` / `sprint:scope-audit --strict` | GO / GO (1 module) |
+| `pint --dirty` · `git diff --check` | clean · clean |
+| 8 governance gates | all GO |
 
 The new suite is mostly about **refusals**, because the risk this sprint
 introduces is not a missing gate — every gate already existed — but *a report that
@@ -268,3 +270,82 @@ php artisan legacy-rme:migration-status
 
 Expected at rest: capability **OFF**, admission **EMPTY**, active batch **NONE**,
 `Resting state: AT_REST`.
+
+---
+
+## 10. Shipped — GO evidence
+
+```
+BASE_SHA            126ea7617407247738db1d1217fdcab83a1e30e4  (CICD-BASELINE-REVERIFY-1)
+FINAL_CANDIDATE_SHA 5b0960998ae3cf2fead332e254fb702f6da72224
+PR                  #307
+PR_CI_RUN_ID        32044939547   success (SHA-exact on the candidate)
+MERGE_SHA           c5e9fe6f50072474b234c2719de853576cd3cd17
+FULL_SUITE_RUN_ID   32050063749   success — FAILURES=0, 29472 assertions
+RUNTIME_DEPLOYED    c5e9fe6f50072474b234c2719de853576cd3cd17
+VPS_HEAD            c5e9fe6f50072474b234c2719de853576cd3cd17
+GO_TAG              legacy-rme-steady-state-ops-1-operationalization-multi-branch-routine-migration-go
+TAG_OBJECT_SHA      ebbed6d7f77ed96ac0647f27ade6b0988f897548  (local == remote)
+TAG_PEELED          c5e9fe6f50072474b234c2719de853576cd3cd17  (== MERGE_SHA == VPS_HEAD)
+```
+
+**CI gates (both runs):** Classifier · NSF-R012 Quality · NSF-R011 Critical ·
+CICD-CTRL Selective Module · NSF-9 Release Safety + Smoke · NSF-10 Release
+Evidence — all `success`. Exactly one Critical Test Gate variant ran and the
+other was `skipped`, which is the CICD-CTRL-1 routing working as designed.
+The Full Suite Gate is `skipped` on PRs by trigger policy and ran post-merge.
+
+**Full Suite totals read `6586 warnings, 1 risky, 13 passed (29472 assertions)`.**
+That is the documented warning-downgrade phenomenon whose true cause
+CICD-BASELINE-REVERIFY-1 explicitly left unidentified — **not** skips: the tests
+executed and asserted, and **zero failed**. The expected-failure baseline of 0
+holds. This sprint does not invent a replacement explanation.
+
+### Deploy — `srv1730088:/var/www/asia-dental-lab-v2`
+
+Run from the VPS via `bash scripts/deploy-vps-runner.sh start` (never locally).
+
+```
+exit=0 · DEPLOY OK · "Nothing to migrate." (no migration in this sprint)
+LOCK_ACQUIRED=YES   TARGET_PINNED=c5e9fe6f5007…   SNAPSHOT_TRUSTED=PASS
+DEPLOY_HEAD_TARGET_MATCH=YES   DEPLOY_SNAPSHOT_CLEANED=YES   immutable-exec rc=0
+Automated smoke (NSF-9): 7 checks, 7 passed, 0 warnings, 0 errors — GO
+```
+
+### Production verification (read-only)
+
+| Check | Result |
+|---|---|
+| `legacy-rme:ops-readiness` | **11/11 GO · `AT_REST` · Ready for a routine batch: YES · exit 0** |
+| `--strict` | exit 0 |
+| `--skip-monitoring` | exit **1** — fail-closed proven on live production |
+| `--json` | 8 979 bytes · 0 long digit runs · 0 KTP/NIK/RM tokens |
+| `legacy-rme:rollout-readiness` / `legacy-rme:migration-status` | exit 0 / exit 0 — unchanged |
+| Branch matrix | ATG3 · LDK2 · SUN4 · TKM1 all `NOT_READY` with **zero blockers** (deliberately closed); MAIN excluded |
+| Resting posture | capability **OFF** · admission **`[]`** · active batch **NONE** |
+| Health | `/login` `/health/live` `/health/ready` `/health/lb` = 200 |
+| Services | nginx · php8.3-fpm · queue worker all active; jobs 0 pending / 0 failed |
+| Security | env `640 root:daengtisiams` · runtime identity `daengtisiams` · `foundation:security-compliance-check` 9/9 GO |
+| New application errors | 0 |
+
+`backup_freshness` reports GO on production because the deploy itself took and
+verified a backup — which is exactly the intended coupling.
+
+### Side effects — attributable, not naïve counting
+
+Clinics are operational, so a global row-count diff would prove nothing. Rows
+**created within the deploy window** (6 h):
+
+```
+stg_rme_legacy_imports 0 · trx_rme_legacy_records 0 · trx_clinic_visits 0
+trx_medical_records 0 · trx_rme_invoices 0 · trx_rme_payments 0
+trx_lab_orders 0 · trx_satusehat_candidates 0
+```
+
+### What this GO does not authorize
+
+- It is **not** permission to open a batch. `Ready for a routine batch: YES`
+  means *safe to start*, while the deployment remains at rest.
+- No routine batch was run: `LIVE_ROUTINE_BATCH = NOT_EXERCISED`.
+- `ROLL-4-WAVE-3` stays SKIPPED / NOT REQUIRED.
+- The 25/100 sizing envelope is still a bounded default, not measured throughput.
