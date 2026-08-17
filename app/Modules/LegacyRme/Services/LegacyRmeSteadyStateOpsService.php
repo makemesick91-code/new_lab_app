@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Services;
 
 use App\Modules\Branch\Services\BranchService;
-use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeRolloutCheck;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
@@ -73,6 +72,7 @@ class LegacyRmeSteadyStateOpsService
         private readonly LegacyRmeMigrationQuotaService $quota,
         private readonly LegacyRmeIngestionCapacityService $capacity,
         private readonly LegacyRmeOperationsGateService $gate,
+        private readonly LegacyRmeMigrationOperationsService $operations,
         private readonly LegacyRmeRolloutReadinessService $rollout,
         private readonly SeparatePublisherGuard $separation,
         private readonly FoundationMonitoringStatusService $monitoring,
@@ -883,7 +883,7 @@ class LegacyRmeSteadyStateOpsService
             $progress = [];
 
             if ($wave !== null) {
-                foreach ($this->waveBranchRows($wave) as $row) {
+                foreach ($this->operations->branchProgress($wave) as $row) {
                     $progress[(string) $row['branch_code']] = $row;
                 }
             }
@@ -944,19 +944,6 @@ class LegacyRmeSteadyStateOpsService
             }
 
             return $rows;
-        } catch (Throwable) {
-            return [];
-        }
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function waveBranchRows(object $wave): array
-    {
-        try {
-            /** @var LegacyRmeMigrationWave $wave */
-            return app(LegacyRmeMigrationOperationsService::class)->branchProgress($wave);
         } catch (Throwable) {
             return [];
         }
