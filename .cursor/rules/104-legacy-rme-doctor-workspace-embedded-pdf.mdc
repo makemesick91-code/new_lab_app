@@ -1,0 +1,114 @@
+---
+description: LEGACY-RME-DOCTOR-WORKSPACE — embedded read-only legacy PDF inside the doctor's RME workspace
+globs:
+  - "app/Modules/MedicalRecord/**"
+  - "app/Modules/LegacyRme/**"
+  - "resources/views/rme/visits/**"
+  - "tests/Feature/LegacyRme/**"
+alwaysApply: false
+---
+
+# LEGACY-RME-DOCTOR-WORKSPACE-1 — permanent rules
+
+## Discoverability
+
+- Every PUBLISHED legacy RME PDF MUST be directly reachable from the doctor's
+  handwritten/native RME workspace, **not only** from the patient-history
+  timeline at the bottom of the page.
+- The document rail renders ABOVE the handwriting canvas. A doctor must never
+  have to scroll past the surface they are writing on to discover that the
+  patient has an archived RME.
+- The pre-existing patient-history presentation stays. The workspace rail is
+  ADDITIVE — never a replacement, never a duplicate source of truth.
+
+## Domain boundary (non-negotiable)
+
+- The workspace integration is a **read/presentation surface only**.
+- A legacy PDF MUST NEVER be converted into, or backfilled as, a `ClinicVisit`,
+  a `MedicalRecord`, an odontogram, a prescription, an invoice, a payment, a
+  `LabOrder` or a SATUSEHAT resource in order to appear in the workspace.
+- Never create a shadow/placeholder native record so an existing list can
+  render a legacy document. Build a mixed presentation model instead.
+- Legacy archive evidence and native clinical state MUST NOT be collapsed into
+  one data model.
+
+## Presentation model
+
+- Documents are projected into `App\Modules\MedicalRecord\Support\RmeWorkspaceDocument`
+  — a non-persistent value object with an EXPLICIT `type` (`native` | `legacy`).
+- Branch on `isLegacy()` / `isNative()`. NEVER infer the kind from an id range,
+  an id comparison, or by parsing a label.
+- The projection is PII-free: a date, a kind, short labels, a page count and an
+  already-built URL. Never a KTP/NIK, never a storage path, never a hash, never
+  clinical content.
+
+## Single canonical data source
+
+- The legacy side MUST come from `LegacyRmePatientHistoryService::publishedRecordsFor()`.
+- Do NOT re-implement publication status, VOID filtering, branch filtering,
+  patient binding, the feature flag, or doctor clinical scope in the workspace.
+- The native side is the sheet collection the workspace already resolved. Pass
+  it in; never re-query it, or the rail and the sheet navigation can drift.
+
+## Read-only is structural
+
+- Read-only means there is NO edit endpoint, not that a button is hidden.
+- The workspace MUST NOT expose update, replace, delete, re-publish, date-edit,
+  source-RM-edit, or persisted-annotation paths for legacy evidence.
+- `void` remains the archive's only state change, keeps its own named
+  permission, and is NOT a workspace action.
+- If any mutation route could become reachable from this surface: FAIL CLOSED.
+
+## Viewer
+
+- Doctors MUST be able to open a legacy document and ZOOM IN, ZOOM OUT and
+  ENLARGE/EXPAND it for clinical reading. Multi-page archives MUST expose every
+  page, never only page 1.
+- Multiple published archives are distinguishable by canonical clinical date.
+- The viewer opens IN-PAGE (overlay). It MUST NOT navigate away from the
+  workspace: switching to a legacy document must never silently discard unsaved
+  native clinical input.
+- Prefer existing browser/rasterizer capability. Do NOT add React, Vue, a large
+  SPA framework, or a heavy PDF library for this viewer.
+
+## Private storage
+
+- Legacy PDF bytes are served ONLY through the policy-gated application routes
+  (`rme.legacy-records.source`, `rme.legacy-records.pages.show`).
+- No `/storage/...` path, no public disk, no predictable static URL, no direct
+  nginx file path may ever expose an archive.
+- Every byte request re-authorizes independently. "The link only renders for an
+  authorized doctor" is NOT an authorization argument.
+
+## Doctor authorization
+
+- Doctor legacy reads use the canonical `DoctorPatientScopeService` plus the
+  effective doctor branches. Never `doctor.branch_id == patient.branch_id`.
+- **Same branch alone NEVER grants access.** A same-branch doctor with no
+  treating relationship is refused the listing AND the bytes.
+- Direct-object/URL manipulation (record id, patient id, page number) must fail
+  closed. Out-of-scope ids 404 so existence cannot be probed.
+- A VOIDed record never streams — enforced in the controller, not only the
+  policy, because the single global `Gate::before` grants Super Admin every
+  ability.
+
+## Performance
+
+- Document METADATA may load with the workspace; PDF/page BYTES must be lazy
+  and on demand. Never render every archive's bytes on initial page load, and
+  never embed a base64 PDF in HTML.
+- Adding legacy documents must not introduce a query per document, per branch,
+  or per permission check.
+
+## Preserved foundations
+
+Unchanged by this sprint: source-RM binding, separation of duties
+(`LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER=true`), `ClinicalClock` / Asia/Makassar,
+the native cutoff date rule, the archive-only boundary, and steady-state
+operations (`CAPABILITY=OFF`, `ADMISSION=EMPTY`, `ACTIVE_BATCH=NONE`).
+`ROLL-4-WAVE-3` remains SKIPPED / NOT REQUIRED. RM 27541 remains
+`DOCUMENT_NOT_ELIGIBLE`.
+
+Published clinical evidence stays READABLE while the migration capability is
+OFF. The capability gate stops new documents entering the archive; it is not a
+statement that already-published evidence left the patient's history.

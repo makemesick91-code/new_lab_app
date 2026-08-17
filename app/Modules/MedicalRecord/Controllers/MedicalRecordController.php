@@ -15,6 +15,7 @@ use App\Modules\MedicalRecord\Requests\UpdateMedicalRecordRequest;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -37,6 +38,10 @@ class MedicalRecordController extends Controller
         // archive under its own flag, permission, branch and doctor scope.
         private readonly ClinicVisitService $visits,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
+        // LEGACY-RME-DOCTOR-WORKSPACE-1 — the same documents as a selector at
+        // the TOP of the workspace, so a published legacy archive no longer has
+        // to be discovered by scrolling past the handwriting canvas.
+        private readonly RmeWorkspaceDocumentPresenter $workspaceDocuments,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -128,6 +133,16 @@ class MedicalRecordController extends Controller
                 // native RM sheet yet — the archive is exactly the history the
                 // doctor needs here, so the empty state still shows it.
                 'clinicalHistory' => $clinicalHistory,
+                // LEGACY-RME-DOCTOR-WORKSPACE-1 — a migrated patient whose only
+                // RME is the archive is precisely the case where the documents
+                // must be reachable without any native sheet to hang them on.
+                'workspaceDocuments' => $this->workspaceDocuments->documentsFor(
+                    $request->user(),
+                    $patientId,
+                    $sheets,
+                    null,
+                    (int) $workspaceVisit->getKey(),
+                ),
             ]);
         }
 
@@ -231,6 +246,20 @@ class MedicalRecordController extends Controller
             // LEGACY-RME-PDF-HISTORY-1 — native RME history + published legacy
             // archive as one read-only patient-centric history.
             'clinicalHistory' => $clinicalHistory,
+            // LEGACY-RME-DOCTOR-WORKSPACE-1 — the patient's selectable RME
+            // documents (native sheets + published legacy archive) for the rail
+            // at the top of the workspace. The native side is the sheet list
+            // already resolved above, so the rail costs no extra sheet query.
+            'workspaceDocuments' => $this->workspaceDocuments->documentsFor(
+                $request->user(),
+                $patientId,
+                $sheets,
+                (int) $activeSheet->getKey(),
+                // Anchor on the CANONICAL workspace visit — the same anchor the
+                // sheet navigation uses. Anchoring on a sheet's own visit would
+                // trip the canonical redirect, which drops `sheet`.
+                (int) $workspaceVisit->getKey(),
+            ),
         ]);
     }
 

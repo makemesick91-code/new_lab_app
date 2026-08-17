@@ -1,24 +1,25 @@
-# Active sprint manifest — LEGACY-RME-STEADY-STATE-OPS-1
+# Active sprint manifest — LEGACY-RME-DOCTOR-WORKSPACE-1
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-STEADY-STATE-OPS-1
+id: LEGACY-RME-DOCTOR-WORKSPACE-1
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Legacy RME steady-state operations — routine batch operating model, consolidated pre-flight readiness (backup freshness, resting state, branch matrix), SOP and multi-branch classification"
+title: "Embedded read-only legacy PDF in the doctor's handwritten/native RME workspace — document rail above the canvas, overlay viewer with zoom/expand/multi-page, no data-model merge"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new read-only aggregator service + one read-only artisan command
+runtime_change: true            # new presentation value object + presenter service, wired into the workspace controller
 schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade view, no JS/CSS, no Vite entry — CLI + docs only
-security_impact: true           # reads SOD posture and admission/approval state; adds a backup gate. Widens nothing.
-branch_isolation_impact: false  # no BranchContext change; branch matrix is read-only over RME-enabled branches
+frontend_change: true           # new Blade partial + inline Alpine viewer (no Vite entry, no JS/CSS asset change)
+security_impact: true           # renders a private clinical archive surface; reuses the canonical doctor scope and widens nothing
+branch_isolation_impact: false  # branch scope reused verbatim from LegacyRmeWorkspaceScope; no BranchContext change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the command and config must exist on the VPS for operators to use them
-browser_required: false         # no UI surface added
+deploy_required: true           # the workspace view and presenter must exist on the VPS for doctors to use them
+browser_required: true          # the rail and overlay viewer are a real UI surface
 
 test_profiles:
   - legacy_rme
   - security
+  - ui
 
-go_tag: legacy-rme-steady-state-ops-1-operationalization-multi-branch-routine-migration-go
+go_tag: legacy-rme-doctor-workspace-1-embedded-read-only-legacy-pdf-go

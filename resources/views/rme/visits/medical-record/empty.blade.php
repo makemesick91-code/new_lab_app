@@ -21,6 +21,14 @@
             </x-ui.alert>
         @endif
 
+        {{-- LEGACY-RME-DOCTOR-WORKSPACE-1 — a migrated patient may hold a
+             published legacy archive while having no native RM sheet yet. That
+             archive is the ONLY RME this patient has, so the document rail
+             belongs above the empty-state shell too, not only below it. --}}
+        @include('rme.visits.partials.rme-workspace-documents', [
+            'workspaceDocuments' => $workspaceDocuments ?? collect(),
+        ])
+
         <x-ui.card title="Informasi Pasien">
             @php
                 $bioDash = '-';
