@@ -212,6 +212,31 @@
                     help="Kosongkan bila tidak ada batas."
                 />
 
+                {{-- FIX-LEGACY-RME-ROUTINE-OPS-1 — a routine batch is
+                     time-bounded. These were previously collectable only over
+                     HTTP-by-hand: the request already validated them and the
+                     service already persisted them, but the form never offered
+                     them, so every batch opened from this page carried an
+                     approval with no expiry. The rule itself lives in
+                     LegacyRmeWaveGovernanceService, not here — this form only
+                     collects it, exactly like the branch set above. --}}
+                <x-ui.input
+                    name="planned_start_date"
+                    type="date"
+                    label="Tanggal Mulai Batch"
+                    :value="old('planned_start_date')"
+                    help="Hari pertama batch dijalankan."
+                    required
+                />
+                <x-ui.input
+                    name="planned_end_date"
+                    type="date"
+                    label="Tanggal Berakhir Batch"
+                    :value="old('planned_end_date')"
+                    help="Hari terakhir batch berlaku, sudah termasuk. Persetujuan batch berakhir pada tanggal ini."
+                    required
+                />
+
                 <div class="sm:col-span-2">
                     <x-ui.button type="submit" variant="primary">Daftarkan Gelombang</x-ui.button>
                 </div>

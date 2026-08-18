@@ -7,6 +7,7 @@ namespace App\Modules\LegacyRme\Services;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeRolloutCheck;
+use App\Modules\LegacyRme\Support\LegacyRmeSodStaffing;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
 use App\Services\Foundation\FoundationMonitoringStatusService;
@@ -75,6 +76,7 @@ class LegacyRmeSteadyStateOpsService
         private readonly LegacyRmeMigrationOperationsService $operations,
         private readonly LegacyRmeRolloutReadinessService $rollout,
         private readonly SeparatePublisherGuard $separation,
+        private readonly LegacyRmeSodStaffing $sodStaffing,
         private readonly FoundationMonitoringStatusService $monitoring,
         private readonly BranchService $branches,
         private readonly ClinicalClock $clock,
@@ -281,6 +283,11 @@ class LegacyRmeSteadyStateOpsService
             $separatePublisher = $this->separation->enabled();
             $separateApprover = (bool) config('legacy_rme_operations.require_separate_approver');
 
+            // FIX-LEGACY-RME-ROUTINE-OPS-1 — a switch being on is not the same
+            // as the duty being staffable. Counts and booleans only; the
+            // report says an approver EXISTS, never who it is.
+            $staffing = $this->sodStaffing->evaluate();
+
             $context = [
                 'separate_publisher_enforced' => $separatePublisher,
                 'separate_approver_enforced' => $separateApprover,
@@ -289,7 +296,11 @@ class LegacyRmeSteadyStateOpsService
                 // application cannot observe, and must never be reported as if
                 // it had been verified here.
                 'human_separation_verifiable_by_application' => false,
-            ];
+                // Two distinct ACCOUNTS able to perform each half IS
+                // observable, and is the precondition the human control rests
+                // on. Reported separately so the two claims are never confused.
+                'account_separation_verifiable_by_application' => true,
+            ] + $staffing;
 
             if (! $separatePublisher) {
                 return LegacyRmeRolloutCheck::fail(
@@ -297,6 +308,19 @@ class LegacyRmeSteadyStateOpsService
                     'The separate-publisher invariant is disabled, so an account could certify its own upload.',
                     $context + ['code' => 'SEPARATE_PUBLISHER_DISABLED'],
                     'Restore the separate-publisher requirement before any batch is opened. It is a production invariant, not a preference.',
+                );
+            }
+
+            // An enforced rule that cannot be satisfied is worse than one
+            // turned off on purpose: the deployment reads as protected while
+            // the duty is unperformable. Refused, not warned about — a batch
+            // opened here would stall at its first publish or approval.
+            if (! $staffing['distinct_maker_publisher_pair_available']) {
+                return LegacyRmeRolloutCheck::fail(
+                    'separation_of_duties',
+                    'Separate publisher is enforced but no two distinct accounts can file and certify a document.',
+                    $context + ['code' => 'SOD_STAFFING_UNAVAILABLE'],
+                    'Provision the missing half of the maker-checker pair: one account able to create imports and a different account able to publish them. Reconcile roles with `db:seed --class=RoleSeeder --force` before granting anything by hand.',
                 );
             }
 
@@ -309,9 +333,18 @@ class LegacyRmeSteadyStateOpsService
                 );
             }
 
+            if (! $staffing['distinct_creator_approver_pair_available']) {
+                return LegacyRmeRolloutCheck::fail(
+                    'separation_of_duties',
+                    'Separate approver is enforced but no second account can approve a batch its creator did not.',
+                    $context + ['code' => 'SOD_STAFFING_UNAVAILABLE'],
+                    'Provision a governance approver distinct from the account that registers batches. A single all-powerful account satisfies neither half. Reconcile roles with `db:seed --class=RoleSeeder --force` before granting anything by hand.',
+                );
+            }
+
             return LegacyRmeRolloutCheck::go(
                 'separation_of_duties',
-                'Both separation-of-duties requirements are enforced.',
+                'Both separation-of-duties requirements are enforced, and each is staffed by distinct accounts.',
                 $context,
             );
         });

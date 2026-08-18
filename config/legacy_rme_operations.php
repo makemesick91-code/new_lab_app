@@ -132,6 +132,45 @@ return [
     'require_separate_approver' => (bool) env('LEGACY_RME_REQUIRE_SEPARATE_APPROVER', false),
 
     /*
+    | FIX-LEGACY-RME-ROUTINE-OPS-1 — a routine batch is time-bounded.
+    |
+    | `legacy_rme_steady_state.routine_batch.required_properties` has always
+    | listed `time_bounded` as a property of a routine batch, and the routine
+    | batch runbook has always told the operator to record a planned start and
+    | end date. Neither was enforced: `createWave()` accepted null dates from
+    | both callers, and the CLI could not even express them. A batch registered
+    | that way carries an approval that never expires, which
+    | `LegacyRmeSteadyStateOpsService::checkBatchWindow()` then reports as a
+    | WATCH — a finding raised only AFTER the unbounded batch already exists.
+    |
+    | On by default so the documented property is now an asserted one, and
+    | asserted in the SERVICE so the HTTP form and `legacy-rme:wave-admin
+    | register` are bound by the same rule. This governs REGISTRATION only:
+    | waves created before this existed keep their null dates, stay readable
+    | and auditable, and are never backfilled.
+    |
+    | Turning this off is a deliberate, documented deployment decision — it
+    | reopens the possibility of an approval with no expiry.
+    */
+    'routine_batch_window' => [
+        'required' => (bool) env('LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED', true),
+    ],
+
+    /*
+    | FIX-LEGACY-RME-ROUTINE-OPS-1 — separation-of-duties STAFFING.
+    |
+    | The two switches above declare the rules. `LegacyRmeSodStaffing` answers
+    | whether distinct accounts exist that can actually perform each half, so
+    | readiness stops reporting an enforced-but-unstaffable control as GO.
+    |
+    | The candidate query is already narrow (permission holders plus the Super
+    | Admin bypass); this is only a rail against a pathological account count.
+    */
+    'sod_staffing' => [
+        'max_accounts_scanned' => (int) env('LEGACY_RME_SOD_STAFFING_MAX_ACCOUNTS', 500),
+    ],
+
+    /*
     | LEGACY-RME-SOD-1 — document-level separation of duties: the account that
     | filed a document may not also review or publish it. ON BY DEFAULT.
     |
