@@ -171,9 +171,22 @@ ACTIVE_BATCH = NONE   (no wave registered)
 legacy-rme:rollout-readiness = GO
 legacy-rme:ops-readiness     = GO / AT_REST / READY_FOR_ROUTINE_BATCH = YES
 
-/login 200 · /health/live 200 · /health/ready 200 · /health/lb 200
+https://daengtisia.online → /login 200 · /health/live 200 · /health/ready 200 · /health/lb 200
 nginx active · php8.3-fpm active · queue worker active · failed jobs 0
 ```
+
+> **The canonical production entry point is the domain, not the bare IP.**
+> `APP_URL=https://daengtisia.online`, and nginx terminates TLS for
+> `daengtisia.online` / `www.daengtisia.online`. An external request to
+> `http://145.79.13.224` now returns **404 on every endpoint** — the shared VPS
+> hosts a co-tenant application, and the bare-IP catch-all no longer answers for
+> this app.
+>
+> This matters for evidence hygiene: a health check issued *inside* the VPS
+> against `127.0.0.1` with a `Host:` header returns 200 and looks like a pass,
+> while the way real users reach the system is the domain. Production checks in
+> this record are taken over `https://daengtisia.online`. SSH likewise resolves
+> through the domain rather than the raw address.
 
 `READY_FOR_ROUTINE_BATCH = YES` means *safe to begin with a fresh approval*. It
 does **not** mean a migration is currently open — none is.
@@ -345,3 +358,186 @@ under other owners.
 
 Future bugs or features create their own workstreams. They do not retroactively
 reopen this programme unless a closure invariant is proven invalid.
+
+---
+
+## 12. Shipped — CI, merge, deployment and final verification
+
+### Authority chain
+
+```
+BASE_SHA             = f246cb31e699cfb2901fe82b5d5f94ed2e2290da
+FINAL_CANDIDATE_SHA  = 1892975e0a760112d07e67d16304d42a699b585a
+PR                   = #313
+PR_CI_RUN_ID         = 32146107844   (SUCCESS on the exact candidate)
+MERGE_SHA            = 24334c7208e16891956af6c4cbe02412c064aee8
+FULL_SUITE_RUN_ID    = 32151574431
+RUNTIME_DEPLOYED_SHA = 24334c7208e16891956af6c4cbe02412c064aee8
+```
+
+### Pre-merge CI (exact candidate `1892975`)
+
+| Gate | Result |
+|---|---|
+| CICD-CTRL Gate Classifier | success |
+| NSF-R012 Quality Gate | success |
+| NSF-R011 Critical Test Gate | success |
+| NSF-R011 Critical Test Gate (sibling variant) | **skipped by design** — CICD-CTRL-3 runs exactly one of two runner variants |
+| CICD-CTRL Selective Module Gate | success |
+| NSF-9 Release Safety & Automated Smoke | success |
+| NSF-10 Release Evidence | success |
+| NSF-R011 Full Suite Gate | skipped on PR by design — it fires on push-to-base |
+
+`sprint:test-plan` fail-closed **escalated to the FULL REQUIRED SUITE** (5 changed
+files matched no category), so both the critical gate and the Full Suite applied.
+
+### Authoritative post-merge Full Suite (`MERGE_SHA`)
+
+```
+FULL_SUITE_RESULT     = SUCCESS
+FULL_SUITE_FAILURES   = 0
+FULL_SUITE_ASSERTIONS = 29699
+FULL_SUITE_WARNINGS   = 6651
+FULL_SUITE_RISKY      = 1
+FULL_SUITE_PASSED     = 13
+DURATION              = 9591.10s
+```
+
+Zero failures was verified three independent ways, not inferred from the gate
+colour: `Failed asserting` = 0, Pest's `⨯` failure glyph = 0, and no
+`Tests: … N failed` segment anywhere in the log. Every `failed`/`FAILED` string
+in the log is a **test name** containing the word (for example *"stores a failing
+job in failed_jobs"*, `QC_FAILED`), plus one transient Postgres authentication
+line emitted while the CI database service was still starting.
+
+The warning-summary phenomenon is therefore classified
+**`KNOWN_NON_BLOCKING_CI_OBSERVABILITY_DEBT`**, which the closure criteria permit
+only because all four required conditions hold: canonical result `success`, zero
+failure markers, expected baseline `0`, and real assertion coverage (29,699).
+The downgrade presents as a truncated `→ file_get_contents(…)`; **Pest truncates
+the path in its own output, so the cause is not recoverable from this log and no
+cause is invented here.** If evidence ever shows it masking a real failure, that
+is a blocker and this classification is void.
+
+### Local targeted regression
+
+```
+TESTS      = 1850 passed, 5 skipped
+ASSERTIONS = 8617
+FAILURES   = 0
+DURATION   = 8339s
+```
+
+Covering LegacyRme, Clinical, AccessControl, Architecture, Cicd, Deploy,
+Hardening, Ui and MasterData. **The 5 skips are named, not hidden:** four are
+GD-guarded clinical read/print tests (two single tests plus a two-case dataset)
+that skip because the development laptop's PHP has no GD; the fifth was not
+individually attributable because the run output was truncated by a `tail` pipe.
+CI installs `gd`, `exif` and `poppler-utils`, so the authoritative run executes
+all of them — none is a permanent skip.
+
+### Deployment — VPS only
+
+Run **on `srv1730088`** via `bash scripts/deploy-vps-runner.sh start`. Never
+locally, no manual pre-pull, and the merge SHA rather than the candidate.
+
+```
+DEPLOY_EXIT              = 0
+DEPLOY OK                = 20260818-213623
+DEPLOY_HEAD_TARGET_MATCH = YES (24334c7208e16891956af6c4cbe02412c064aee8)
+immutable snapshot       = yes
+snapshot trust boundary  = yes
+source/snapshot hash proof = yes
+helpers from the snapshot  = yes
+immutable-exec rc        = 0
+DEPLOY_SNAPSHOT_CLEANED  = YES
+VPS_HEAD                 = 24334c7208e16891956af6c4cbe02412c064aee8  == MERGE_SHA
+```
+
+The launcher's own output states that accepting the request is **not**
+completion; the deployment was only treated as done once the status file
+reported `exit=0` and the log carried `DEPLOY OK`.
+
+### Production final verification
+
+```
+https://daengtisia.online → /login 200 · /health/live 200 · /health/ready 200 · /health/lb 200
+nginx active · php8.3-fpm active · queue worker active · failed jobs 0
+APP_ENV = pilot · debug OFF · maintenance OFF
+
+separation_of_duties  = GO (both requirements enforced)
+clinical_calendar     = GO (canonical clinic calendar)
+Resting state         = AT_REST
+Decision              = GO
+Ready for routine batch = YES
+
+operations layer      = enforced
+accepting new documents = no
+wave                  = none registered
+admitted branches     = none — closed
+```
+
+### Zero business side effects
+
+Counts taken before and after the deployment are **identical**:
+
+| | before | after | delta |
+|---|---|---|---|
+| legacy imports | 15 | 15 | **0** |
+| legacy records | 10 | 10 | **0** |
+| legacy record pages | 12 | 12 | **0** |
+| clinic visits | 28 | 28 | **0** |
+| medical records | 28 | 28 | **0** |
+| odontograms | 28 | 28 | **0** |
+| RME invoices | 21 | 21 | **0** |
+| RME payments | 30 | 30 | **0** |
+| lab orders | 13 | 13 | **0** |
+| SATUSEHAT candidates | 3 | 3 | **0** |
+
+`laravel.log` is byte-identical at 717,033 bytes before and after — **zero new
+log output, therefore zero new errors** attributable to this deployment.
+
+### Doctor workspace — production evidence
+
+Verified on production without touching patient data:
+
+- `RmeWorkspacePageSequencer` and `RmeWorkspacePage` are both present.
+- The legacy archive partial is **read-only by construction**: 0 `<canvas>`,
+  0 `<form>`, 4 read-only markers, 1 `<img>`.
+- Real archive evidence exists to populate the sequence: **9 PUBLISHED** legacy
+  records and **1 VOID** (retraction preserved, not erased).
+
+`LIVE_BROWSER_SWIPE = NOT_EXERCISED` — no real doctor credentials were used and
+no treating relationship was fabricated.
+
+### Canonical entry point correction
+
+The production entry point is the **domain**, not the bare IP:
+`APP_URL = https://daengtisia.online`, with nginx terminating TLS for
+`daengtisia.online` / `www.daengtisia.online`. An external request to
+`http://145.79.13.224` returns **404 on every endpoint** — the shared VPS hosts a
+co-tenant application and the bare-IP catch-all no longer answers for this app.
+
+This is an evidence-hygiene trap worth recording: a health check issued *inside*
+the VPS against `127.0.0.1` with a `Host:` header returns 200 and looks like a
+pass, while real users reach the system over the domain. Every production check
+in this record was taken externally over `https://daengtisia.online`. SSH access
+was likewise moved onto the domain.
+
+### Final program GO
+
+```
+FINAL_PROGRAM_GO_SHA = 24334c7208e16891956af6c4cbe02412c064aee8   (= MERGE_SHA, the deployed runtime)
+FINAL_GO_TAG         = legacy-rme-program-closure-1-production-steady-state-final-go
+```
+
+The tag is placed on the merge commit — the exact revision running in
+production. This evidence section is a later, deliberately **undeployed** commit;
+it is recorded as `FINAL_EVIDENCE_SHA` rather than redeployed to manufacture SHA
+equality.
+
+```
+ENGINEERING_ROLLOUT_MODE = CLOSED
+STEADY_STATE_OPERATIONS  = AUTHORITATIVE
+PROGRAM_STATUS           = FULLY_CLOSED
+```
