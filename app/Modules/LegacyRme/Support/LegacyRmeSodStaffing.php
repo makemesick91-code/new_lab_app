@@ -72,6 +72,16 @@ final class LegacyRmeSodStaffing
 
     public const PERMISSION_IMPORT_CREATE = 'create_legacy_rme_imports';
 
+    /**
+     * Review is part of the separated chain, not a formality.
+     * `SeparatePublisherGuard::GUARDED_ACTIONS` is `[REVIEW, PUBLISH]`, and
+     * `LegacyRmeImportStatus::TRANSITIONS` only permits
+     * READY_FOR_REVIEW → REVIEWED → PUBLISHED — so an import nobody can review
+     * can never be published, by anyone. Counting only create-vs-publish would
+     * report a staffed chain that in fact dead-ends at review.
+     */
+    public const PERMISSION_IMPORT_REVIEW = 'review_legacy_rme_imports';
+
     public const PERMISSION_IMPORT_PUBLISH = 'publish_legacy_rme_imports';
 
     /**
@@ -82,8 +92,11 @@ final class LegacyRmeSodStaffing
      *     wave_approver_accounts: int,
      *     distinct_creator_approver_pair_available: bool,
      *     import_maker_accounts: int,
+     *     import_reviewer_accounts: int,
      *     import_publisher_accounts: int,
-     *     distinct_maker_publisher_pair_available: bool
+     *     distinct_maker_reviewer_pair_available: bool,
+     *     distinct_maker_publisher_pair_available: bool,
+     *     document_chain_staffed: bool
      * }
      */
     public function evaluate(): array
@@ -91,15 +104,25 @@ final class LegacyRmeSodStaffing
         $creators = $this->accountIdsAbleTo(self::PERMISSION_WAVE_MANAGE);
         $approvers = $this->accountIdsAbleTo(self::PERMISSION_WAVE_APPROVE);
         $makers = $this->accountIdsAbleTo(self::PERMISSION_IMPORT_CREATE);
+        $reviewers = $this->accountIdsAbleTo(self::PERMISSION_IMPORT_REVIEW);
         $publishers = $this->accountIdsAbleTo(self::PERMISSION_IMPORT_PUBLISH);
+
+        $makerReviewer = $this->distinctPairExists($makers, $reviewers);
+        $makerPublisher = $this->distinctPairExists($makers, $publishers);
 
         return [
             'wave_creator_accounts' => count($creators),
             'wave_approver_accounts' => count($approvers),
             'distinct_creator_approver_pair_available' => $this->distinctPairExists($creators, $approvers),
             'import_maker_accounts' => count($makers),
+            'import_reviewer_accounts' => count($reviewers),
             'import_publisher_accounts' => count($publishers),
-            'distinct_maker_publisher_pair_available' => $this->distinctPairExists($makers, $publishers),
+            'distinct_maker_reviewer_pair_available' => $makerReviewer,
+            'distinct_maker_publisher_pair_available' => $makerPublisher,
+            // The whole chain, or it is not staffed: a document has to be
+            // filed, then certified by someone else, then published by someone
+            // other than whoever filed it.
+            'document_chain_staffed' => $makerReviewer && $makerPublisher,
         ];
     }
 

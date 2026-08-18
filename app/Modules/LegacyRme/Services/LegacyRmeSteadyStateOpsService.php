@@ -315,12 +315,15 @@ class LegacyRmeSteadyStateOpsService
             // turned off on purpose: the deployment reads as protected while
             // the duty is unperformable. Refused, not warned about — a batch
             // opened here would stall at its first publish or approval.
-            if (! $staffing['distinct_maker_publisher_pair_available']) {
+            // The guarded chain is file → review → publish, and review is a
+            // mandatory transition, so a deployment that can file and publish
+            // but not review still cannot complete a document.
+            if (! $staffing['document_chain_staffed']) {
                 return LegacyRmeRolloutCheck::fail(
                     'separation_of_duties',
-                    'Separate publisher is enforced but no two distinct accounts can file and certify a document.',
+                    'Separate publisher is enforced but the file-review-publish chain cannot be staffed by distinct accounts.',
                     $context + ['code' => 'SOD_STAFFING_UNAVAILABLE'],
-                    'Provision the missing half of the maker-checker pair: one account able to create imports and a different account able to publish them. Reconcile roles with `db:seed --class=RoleSeeder --force` before granting anything by hand.',
+                    'Provision the missing half of the maker-checker pair: one account able to create imports, and a different account able to BOTH review and publish them. Reconcile roles with `db:seed --class=RoleSeeder --force` before granting anything by hand.',
                 );
             }
 

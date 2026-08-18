@@ -279,6 +279,12 @@ introduced anywhere near production.
   grants and the single global `Gate::before` Super Admin bypass); candidates
   narrowed to permission holders plus Super Admins so the query stays bounded;
   inactive and soft-deleted accounts excluded; counts and booleans only.
+  The document chain is **file → review → publish**, not file → publish:
+  `SeparatePublisherGuard::GUARDED_ACTIONS` is `[REVIEW, PUBLISH]` and
+  `LegacyRmeImportStatus::TRANSITIONS` only permits
+  `READY_FOR_REVIEW → REVIEWED → PUBLISHED`, so an import nobody else can
+  review can never be published by anyone. `document_chain_staffed` requires a
+  distinct maker/reviewer pair **and** a distinct maker/publisher pair.
 
 **Changed**
 
@@ -347,6 +353,19 @@ php artisan legacy-rme:wave-admin register \
   backfilled; `ROUTINE-20260819-TKM1-01` is untouched.
 
 ---
+
+### Defects found by adversarial review and fixed before merge
+
+Four review lenses ran over the committed diff. Five real defects surfaced;
+all are fixed and pinned by tests.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| **HIGH** | Staffing modelled the document pair as file→publish, omitting `review_legacy_rme_imports` — so a deployment where nobody but the maker can review reported `GO` while being unable to complete a single document. Two lenses found this independently. | `document_chain_staffed` now requires distinct maker/reviewer **and** maker/publisher pairs |
+| LOW | `parse()` resolved the clinical timezone *inside* its `catch (Throwable)`, so a misconfigured `CLINICAL_TIMEZONE` was reported as "your date is malformed" — sending the operator to fix the one thing that was correct. `ClinicalClock` is contractually fail-loud. | timezone resolved outside the try; `InvalidClinicalTimezoneException` propagates |
+| LOW | `0000-01-01` survives the strict round trip (PHP represents year zero happily) and PostgreSQL then rejects it at `INSERT` as an unhandled `QueryException` — a 500 where a field error belongs. | year `< 1` refused as a malformed window |
+| LOW | `(bool) env(...)` — the pattern this codebase already documents as unsafe: a present-but-empty `LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED=` casts to `false` and silently switches the invariant off. | reuses the existing fail-safe `SeparatePublisherGuard::resolveEnabledFromEnv()` |
+| LOW | the form hardcoded `required`, so `routine_batch_window.required = false` was honoured by the service and CLI but not the browser | `required` now follows the policy, passed from the controller |
 
 ## 7. Tests
 

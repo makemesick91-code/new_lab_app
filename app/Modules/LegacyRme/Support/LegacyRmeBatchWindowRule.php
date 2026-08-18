@@ -131,8 +131,16 @@ final class LegacyRmeBatchWindowRule
             return null;
         }
 
+        // Resolved OUTSIDE the try on purpose. `ClinicalClock` is contractually
+        // fail-loud about a misconfigured clinical timezone — it never degrades
+        // to UTC, because that degradation is itself the bug it guards. Catching
+        // it here would turn a deployment misconfiguration into "your date is
+        // malformed" on the operator's field, sending them to fix the one thing
+        // that was correct.
+        $timezone = $this->clock->timezoneObject();
+
         try {
-            $parsed = CarbonImmutable::createFromFormat(self::FORMAT, $value, $this->clock->timezoneObject());
+            $parsed = CarbonImmutable::createFromFormat(self::FORMAT, $value, $timezone);
         } catch (Throwable) {
             $parsed = false;
         }
@@ -141,6 +149,17 @@ final class LegacyRmeBatchWindowRule
         // March rather than failing — so the round trip is what actually
         // rejects a date that does not exist on the calendar.
         if (! $parsed instanceof CarbonImmutable || $parsed->format(self::FORMAT) !== $value) {
+            throw ValidationException::withMessages([
+                $field => 'Tanggal batch harus berupa tanggal kalender yang sah dengan format YYYY-MM-DD.',
+            ]);
+        }
+
+        // There is no year zero on the Gregorian calendar, and '0000-01-01'
+        // survives the round trip above because PHP is happy to represent it.
+        // PostgreSQL is not, and would reject it as an unhandled QueryException
+        // at INSERT — a 500 instead of a field error. Refused here, in the same
+        // shape as every other malformed window.
+        if ((int) $parsed->format('Y') < 1) {
             throw ValidationException::withMessages([
                 $field => 'Tanggal batch harus berupa tanggal kalender yang sah dengan format YYYY-MM-DD.',
             ]);

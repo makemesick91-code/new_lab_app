@@ -39,6 +39,9 @@ go_tag: fix-legacy-rme-routine-ops-1-go
 #   no non-terminal batches at all). No RBAC repair was required or performed.
 #
 # PROGRAM STATE — UNCHANGED BY THIS SPRINT
+#   Closed by LEGACY-RME-PROGRAM-CLOSURE-1; this sprint inherits that closure
+#   and does not reopen it. ENGINEERING_ROLLOUT_MODE stays CLOSED and
+#   STEADY_STATE_OPERATIONS stays AUTHORITATIVE.
 #   LEGACY RME PROGRAM       = CLOSED / PRODUCTION STEADY-STATE
 #   ROLL-4-WAVE-3            = SKIPPED / NOT REQUIRED
 #   ROUTINE-20260819-TKM1-01 = CANCELLED / immutable audit evidence, never reused

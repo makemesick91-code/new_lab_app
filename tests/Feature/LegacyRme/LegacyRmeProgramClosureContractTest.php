@@ -145,6 +145,14 @@ it('records the programme closure', function () {
 
     $manifest = File::get(closureRepoPath('.sprint/current.yml'));
 
+    // `.sprint/current.yml` is a ROLLING file — it describes whichever sprint is
+    // current, not the closure sprint. The assertion is deliberately kept on it
+    // anyway: every sprint after closure has to name the closure it inherits,
+    // which is exactly the fact a later sprint is most likely to contradict
+    // quietly. If this fails on a new sprint, the fix is to state the inherited
+    // closure in that sprint's manifest — not to relax this expectation.
+    // (`toContain` is variadic — a second argument would be a second NEEDLE,
+    // not a failure message, so the explanation stays in the comment above.)
     expect($manifest)->toContain('LEGACY-RME-PROGRAM-CLOSURE-1');
 });
 

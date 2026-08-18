@@ -15,6 +15,7 @@ use App\Modules\LegacyRme\Requests\TransitionLegacyRmeMigrationWaveRequest;
 use App\Modules\LegacyRme\Requests\UpdateLegacyRmeWaveBranchRequest;
 use App\Modules\LegacyRme\Services\LegacyRmeMigrationOperationsService;
 use App\Modules\LegacyRme\Services\LegacyRmeWaveGovernanceService;
+use App\Modules\LegacyRme\Support\LegacyRmeBatchWindowRule;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
@@ -55,6 +56,11 @@ class LegacyRmeMigrationOperationsController extends Controller
         return view('settings.rme.migration-operations.index', [
             'overview' => $this->operations->overview(),
             'waves' => $this->operations->waves(),
+            // The form marks the batch window required only when the service
+            // actually requires it. The rule itself is enforced server-side in
+            // createWave(); this just stops the browser from demanding a field
+            // a deployment has deliberately made optional.
+            'batchWindowRequired' => LegacyRmeBatchWindowRule::requiredByPolicy(),
         ]);
     }
 

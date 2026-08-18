@@ -44,6 +44,12 @@ reports on it.
 11. **Distinct ACCOUNTS able to perform each half are required.** A single
     all-powerful account satisfies neither pair: creator ≠ approver, and
     maker ≠ publisher.
+11a. **The document chain is file → review → publish, not file → publish.**
+    `SeparatePublisherGuard::GUARDED_ACTIONS` is `[REVIEW, PUBLISH]` and
+    `LegacyRmeImportStatus::TRANSITIONS` only allows
+    `READY_FOR_REVIEW → REVIEWED → PUBLISHED`, so an import nobody else can
+    review can never be published by anyone. Staffing requires a distinct
+    maker/reviewer pair AND a distinct maker/publisher pair.
 12. An enforced rule that cannot be staffed is a `FAIL` with
     `SOD_STAFFING_UNAVAILABLE` — a stop-the-line INCIDENT, not a warning. It is
     worse than a rule deliberately switched off, because the deployment reads
@@ -53,6 +59,33 @@ reports on it.
     it confirmed two different people.
 14. Readiness reports staffing as **counts and booleans**. Never a name, an
     email or an id.
+
+## Config and date handling
+
+15a. **Never `(bool) env(...)` for a safety flag.** A present-but-empty value
+    casts to `false` and silently disables the invariant. Use the fail-safe
+    `SeparatePublisherGuard::resolveEnabledFromEnv()`, which treats anything
+    that is not an explicit false/0/off/no as ON.
+15b. **Never swallow a `ClinicalClock` failure.** It is contractually
+    fail-loud about an unusable timezone; catching it turns a deployment
+    misconfiguration into "your date is malformed" on the operator's field.
+    Resolve the timezone outside any `catch (Throwable)`.
+15c. **A strict format round trip is not enough.** `0000-01-01` round-trips in
+    PHP and is then rejected by PostgreSQL at INSERT as an unhandled
+    `QueryException`. Refuse year `< 1` in the rule, where it becomes a field
+    error instead of a 500.
+15d. **A `required` attribute in Blade must follow the server policy**, never
+    hardcode it — otherwise turning the rule off is honoured by the service
+    and the CLI but not the browser. It is a hint, never the boundary.
+
+## Test infrastructure
+
+15e. **Never run two `php artisan test` processes in the same worktree.**
+    `Storage::fake()` deletes the shared fake-disk directory, so concurrent
+    runs destroy each other's files and surface as "file not found in
+    storage" on a different, innocent test each time. Before diagnosing any
+    such failure, confirm the suite is running alone
+    (`ps -eo pid,cmd | grep pestphp/pest/bin/pest`).
 
 ## Auditing permissions — the two traps
 

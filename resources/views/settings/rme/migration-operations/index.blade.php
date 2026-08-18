@@ -226,7 +226,7 @@
                     label="Tanggal Mulai Batch"
                     :value="old('planned_start_date')"
                     help="Hari pertama batch dijalankan."
-                    required
+                    :required="$batchWindowRequired ?? true"
                 />
                 <x-ui.input
                     name="planned_end_date"
@@ -234,7 +234,7 @@
                     label="Tanggal Berakhir Batch"
                     :value="old('planned_end_date')"
                     help="Hari terakhir batch berlaku, sudah termasuk. Persetujuan batch berakhir pada tanggal ini."
-                    required
+                    :required="$batchWindowRequired ?? true"
                 />
 
                 <div class="sm:col-span-2">

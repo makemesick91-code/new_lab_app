@@ -158,13 +158,49 @@ it('refuses to report ready when one account would both file and certify', funct
     // certifies. The invariant is on; nobody can satisfy it.
     userWith(['manage_legacy_rme_migration_operations']);
     userWith(['approve_legacy_rme_migration_wave']);
-    userWith(['create_legacy_rme_imports', 'publish_legacy_rme_imports']);
+    userWith(['create_legacy_rme_imports', 'review_legacy_rme_imports', 'publish_legacy_rme_imports']);
 
     $check = sodStaffingCheck();
 
     expect($check['status'])->toBe('FAIL');
     expect($check['context']['distinct_maker_publisher_pair_available'])->toBeFalse();
     expect(sodStaffingReport()['ready_for_routine_batch'])->toBeFalse();
+});
+
+it('refuses to report ready when nobody but the maker can review', function () {
+    // THE CHAIN DEAD-END. SeparatePublisherGuard guards [REVIEW, PUBLISH] and
+    // LegacyRmeImportStatus only allows READY_FOR_REVIEW -> REVIEWED ->
+    // PUBLISHED, so an import nobody else can review can never be published by
+    // anyone. A create/publish-only view of the pair would call this staffed.
+    userWith(['manage_legacy_rme_migration_operations']);
+    userWith(['approve_legacy_rme_migration_wave']);
+    userWith(['create_legacy_rme_imports', 'review_legacy_rme_imports']);
+    userWith(['publish_legacy_rme_imports']);
+
+    $staffing = app(LegacyRmeSodStaffing::class)->evaluate();
+
+    expect($staffing['distinct_maker_publisher_pair_available'])->toBeTrue();
+    expect($staffing['distinct_maker_reviewer_pair_available'])->toBeFalse();
+    expect($staffing['document_chain_staffed'])->toBeFalse();
+
+    $check = sodStaffingCheck();
+
+    expect($check['status'])->toBe('FAIL');
+    expect($check['context']['code'])->toBe('SOD_STAFFING_UNAVAILABLE');
+    expect(sodStaffingReport()['ready_for_routine_batch'])->toBeFalse();
+});
+
+it('refuses to report ready when nobody can review at all', function () {
+    userWith(['manage_legacy_rme_migration_operations']);
+    userWith(['approve_legacy_rme_migration_wave']);
+    userWith(['create_legacy_rme_imports']);
+    userWith(['publish_legacy_rme_imports']);
+
+    $staffing = app(LegacyRmeSodStaffing::class)->evaluate();
+
+    expect($staffing['import_reviewer_accounts'])->toBe(0);
+    expect($staffing['document_chain_staffed'])->toBeFalse();
+    expect(sodStaffingCheck()['status'])->toBe('FAIL');
 });
 
 it('reports GO once both pairs are staffed by distinct accounts', function () {

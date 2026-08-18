@@ -153,7 +153,14 @@ return [
     | reopens the possibility of an approval with no expiry.
     */
     'routine_batch_window' => [
-        'required' => (bool) env('LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED', true),
+        // Resolved through the same fail-safe helper the separate-publisher
+        // invariant uses, not `(bool) env(...)`. A present-but-empty
+        // LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED= casts to false and would
+        // silently switch the invariant off; anything that is not an explicit
+        // false/0/off/no leaves it ON.
+        'required' => SeparatePublisherGuard::resolveEnabledFromEnv(
+            env('LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED'),
+        ),
     ],
 
     /*

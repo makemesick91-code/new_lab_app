@@ -23,6 +23,9 @@ use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Services\LegacyRmeWaveGovernanceService;
 use App\Modules\LegacyRme\Support\LegacyRmeBatchWindowRule;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
+use App\Modules\LegacyRme\Support\SeparatePublisherGuard;
+use App\Support\Clinical\ClinicalTimezone;
+use App\Support\Clinical\InvalidClinicalTimezoneException;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
@@ -119,6 +122,68 @@ it('leaves a fully absent window alone when policy does not require one', functi
 
 it('requires a bounded window by default', function () {
     expect(LegacyRmeBatchWindowRule::requiredByPolicy())->toBeTrue();
+});
+
+it('refuses year zero, which survives PHP but not the database', function () {
+    // '0000-01-01' round-trips through createFromFormat, so the format check
+    // alone lets it through — and PostgreSQL then rejects it at INSERT as an
+    // unhandled QueryException. A 500 where a field error belongs.
+    app(LegacyRmeBatchWindowRule::class)->normalize('0000-01-01', '0000-01-02');
+})->throws(ValidationException::class);
+
+it('keeps the window required when the env flag is present but empty', function () {
+    // `(bool) env(...)` would read an empty LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED=
+    // as false and silently switch the invariant off. The fail-safe resolver
+    // treats anything that is not an explicit false/0/off/no as ON.
+    foreach (['', ' ', null, 'yes', '1', 'true'] as $raw) {
+        expect(SeparatePublisherGuard::resolveEnabledFromEnv($raw))->toBeTrue();
+    }
+
+    foreach (['false', '0', 'off', 'no', 'FALSE'] as $raw) {
+        expect(SeparatePublisherGuard::resolveEnabledFromEnv($raw))->toBeFalse();
+    }
+});
+
+it('marks the form fields required only while the policy requires them', function () {
+    $operator = windowOperator();
+
+    $this->actingAs($operator)
+        ->get(route('settings.rme.migration-operations.index'))
+        ->assertOk()
+        ->assertSee('name="planned_start_date"', escape: false)
+        ->assertSee('required', escape: false);
+
+    // Turned off deliberately: the browser must not demand a field the server
+    // has been told is optional. The service is still the authority either way.
+    config()->set('legacy_rme_operations.routine_batch_window.required', false);
+
+    $html = $this->actingAs($operator)
+        ->get(route('settings.rme.migration-operations.index'))
+        ->assertOk()
+        ->getContent();
+
+    $startField = substr($html, (int) strpos($html, 'name="planned_start_date"'), 400);
+
+    expect($startField)->not->toContain('required');
+});
+
+it('lets a misconfigured clinical timezone surface as itself, not as a bad date', function () {
+    // ClinicalClock is contractually fail-loud about an unusable timezone — it
+    // never degrades to UTC. If the window rule swallowed that, a deployment
+    // misconfiguration would be reported on the operator's date field and they
+    // would go and "fix" the one thing that was correct.
+    config()->set(ClinicalTimezone::CONFIG_KEY, 'Asia/Makasar'); // the canonical typo
+
+    $thrown = null;
+
+    try {
+        app(LegacyRmeBatchWindowRule::class)->normalize('2026-08-19', '2026-08-25');
+    } catch (Throwable $e) {
+        $thrown = $e;
+    }
+
+    expect($thrown)->toBeInstanceOf(InvalidClinicalTimezoneException::class);
+    expect($thrown)->not->toBeInstanceOf(ValidationException::class);
 });
 
 // ---------------------------------------------------------------------
