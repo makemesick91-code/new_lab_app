@@ -154,10 +154,16 @@ class LegacyRmePatientHistoryService
         int $patientId,
         iterable $nativeVisits,
         ?int $currentVisitId = null,
+        // LEGACY-RME-DOCTOR-WORKSPACE-1A — a caller that already resolved this
+        // patient's archive for another surface in the SAME request may hand it
+        // in. Identical collection, identical authorization; it only stops one
+        // request from resolving the same archive several times over. Null
+        // keeps the original self-resolving behaviour.
+        ?Collection $legacyRecords = null,
     ): Collection {
         return $this->mergeEntries(
             $nativeVisits,
-            $this->publishedRecordsFor($user, $patientId),
+            $legacyRecords ?? $this->publishedRecordsFor($user, $patientId),
             $currentVisitId,
         )
             // sortKey() is a strict total order (clinical date, then kind, then

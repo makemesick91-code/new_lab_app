@@ -306,3 +306,38 @@ import, permanent production enablement, skipping manual review, converting the
 archive into native RME, or submitting legacy data to SATUSEHAT.
 
 Widening the rollout is a separate, explicitly approved stage.
+
+---
+
+## 14. Panduan Dokter — membaca RME lama (LEGACY-RME-DOCTOR-WORKSPACE-1A)
+
+Arsip RME lama pasien kini berada di dalam **urutan halaman yang sama** dengan
+rekam medis tulisan tangan. Dokter tidak perlu membuka bagian dokumen terpisah
+dan tidak perlu menggulir ke Riwayat RME.
+
+1. Buka **RME Tulisan Tangan Lengkap** pada kunjungan pasien.
+2. Berpindah halaman dengan **geser kiri/kanan**, atau tombol
+   **← Sebelumnya** / **Berikutnya →**, atau menekan nomor halaman.
+3. Halaman RME Legacy muncul langsung di urutan halaman yang sama, tepat
+   setelah halaman tulisan tangan terakhir.
+4. Halaman arsip diberi label **"Hanya Baca"** dan tombol nomornya diawali
+   huruf **L** (misalnya `L3`). Halaman ini tidak dapat ditulisi, diubah, atau
+   dihapus.
+5. Gunakan **+ Perbesar / − Perkecil / Sesuaikan** untuk membaca, dan
+   **Perbesar Layar Penuh** bila perlu. Menutup layar penuh mengembalikan Anda
+   ke halaman yang sama.
+6. Kembali ke halaman tulisan tangan dengan geser atau tombol navigasi yang
+   sama untuk melanjutkan menulis.
+
+**Catatan penting untuk dokter**
+
+- **+ Tambah Halaman RM** selalu membuat **halaman rekam medis baru (native)**,
+  termasuk ketika ditekan saat sedang membaca halaman arsip. Tombol ini tidak
+  pernah menambah atau mengubah arsip lama.
+- Saat memperbesar halaman arsip, gerakan geser dipakai untuk menggeser gambar
+  (bukan berpindah halaman). Tekan **Sesuaikan** untuk kembali ke ukuran penuh
+  agar geser kiri/kanan kembali berpindah halaman.
+- Jika ada tulisan tangan yang belum disimpan, sistem akan memperingatkan
+  sebelum Anda meninggalkan halaman. Tulisan tidak akan hilang diam-diam.
+- Jika gambar halaman arsip belum tersedia, sistem menampilkan tautan
+  **Buka Dokumen Arsip (PDF)**; halaman rekam medis lain tetap dapat digunakan.

@@ -16,6 +16,7 @@ use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
 use App\Modules\MedicalRecord\Services\RmeWorkspaceDocumentPresenter;
+use App\Modules\MedicalRecord\Services\RmeWorkspacePageSequencer;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -42,6 +43,10 @@ class MedicalRecordController extends Controller
         // the TOP of the workspace, so a published legacy archive no longer has
         // to be discovered by scrolling past the handwriting canvas.
         private readonly RmeWorkspaceDocumentPresenter $workspaceDocuments,
+        // LEGACY-RME-DOCTOR-WORKSPACE-1A — merges the native handwriting book
+        // and the published archive into ONE page sequence, so the archive is
+        // reached with the same previous/next/swipe as a handwritten page.
+        private readonly RmeWorkspacePageSequencer $workspacePages,
     ) {}
 
     public function index(Request $request, CrossBranchPatientLookupService $rmLookup): View
@@ -105,11 +110,21 @@ class MedicalRecordController extends Controller
         // feature flag, permission, branch scope and doctor clinical scope, so
         // an operator who may not read the archive simply gets the native
         // history. Read-only: no visit and no medical record is created here.
+        // LEGACY-RME-DOCTOR-WORKSPACE-1A — the patient's published archive is
+        // resolved ONCE per request through the canonical read path (read
+        // permissions + branch scope + doctor patient scope + published-only)
+        // and then shared by every surface that needs it: the clinical history,
+        // the document rail and the unified page sequence. Each resolving it
+        // for itself would repeat the same query and invite the three surfaces
+        // to drift apart about what this user may see.
+        $legacyRecords = $this->legacyHistory->publishedRecordsFor($request->user(), $patientId);
+
         $clinicalHistory = $this->legacyHistory->patientClinicalHistoryFor(
             $request->user(),
             $patientId,
             $this->visits->patientVisitHistory($patientId),
             (int) ($sourceVisit?->getKey() ?? $workspaceVisit->getKey()),
+            $legacyRecords,
         );
 
         // Sprint 64.0 zero-MR fix — the patient has visits but no RM sheet yet.
@@ -123,7 +138,30 @@ class MedicalRecordController extends Controller
             $addSheetVisit = $workspaceVisit;
             $addSheetVisit->loadMissing(['patient', 'doctor', 'initialTreatment', 'branch']);
 
+            // LEGACY-RME-DOCTOR-WORKSPACE-1A — a migrated patient whose only RME
+            // is the archive still gets the real page experience: the unified
+            // sequence here is purely legacy pages, navigated with the same
+            // previous/next/swipe and the same `?rm_page=` index. The workspace
+            // must not look empty just because the NATIVE sheet count is zero.
+            $emptyStateWorkspacePages = $this->workspacePages->sequenceFor(
+                $request->user(),
+                $patientId,
+                [],
+                $legacyRecords,
+            );
+            $emptyStateTotalPages = $emptyStateWorkspacePages->count();
+            $emptyStateActiveNumber = $emptyStateTotalPages > 0
+                ? max(1, min($request->integer('rm_page') ?: 1, $emptyStateTotalPages))
+                : 1;
+
             return view('rme.visits.medical-record.empty', [
+                'workspacePages' => $emptyStateWorkspacePages,
+                'activeWorkspacePage' => $this->workspacePages->resolveActivePage(
+                    $emptyStateWorkspacePages,
+                    $emptyStateActiveNumber,
+                ),
+                'activePageNumber' => $emptyStateActiveNumber,
+                'totalRmPages' => max($emptyStateTotalPages, 1),
                 'workspaceVisit' => $workspaceVisit,
                 'sourceVisit' => $sourceVisit,
                 'addSheetVisit' => $addSheetVisit,
@@ -142,6 +180,7 @@ class MedicalRecordController extends Controller
                     $sheets,
                     null,
                     (int) $workspaceVisit->getKey(),
+                    $legacyRecords,
                 ),
             ]);
         }
@@ -182,13 +221,35 @@ class MedicalRecordController extends Controller
         // new pages are always added to the canonical medical record.
         $handwritingBook = $workspace->orderedHandwritingBookForPatient($patientId);
         $handwritingRecord = $workspace->canonicalMedicalRecord($patientId);
-        $totalRmPages = max($handwritingBook->count(), 1);
+
+        // LEGACY-RME-DOCTOR-WORKSPACE-1A — ONE page navigation experience, two
+        // data sources, built from the archive already resolved above.
+        $workspacePages = $this->workspacePages->sequenceFor(
+            $request->user(),
+            $patientId,
+            $handwritingBook,
+            $legacyRecords,
+        );
+
+        // The global "Halaman X dari Y" counts the UNIFIED sequence: native
+        // handwriting pages plus every authorized legacy archive page.
+        $totalRmPages = max($workspacePages->count(), 1);
 
         $activePageNumber = $request->integer('rm_page')
             ?: (int) $request->session()->get('focus_rm_page', 1);
         $activePageNumber = max(1, min($activePageNumber, $totalRmPages));
 
-        $activeRmPage = $handwritingBook->firstWhere('virtual_page_number', $activePageNumber)
+        $activeWorkspacePage = $this->workspacePages->resolveActivePage($workspacePages, $activePageNumber);
+        $isLegacyActivePage = $activeWorkspacePage?->isLegacy() ?? false;
+
+        // The handwriting form, the canvas and "+ Tambah Halaman RM" are ALWAYS
+        // bound to a real native record. On a read-only archive page there is
+        // no native page under the cursor, so the nearest native page anchors
+        // the form instead — archive evidence is never a save target.
+        $nativeAnchorPage = $this->workspacePages->nativeAnchorFor($workspacePages, $activePageNumber);
+        $nativeActivePageNumber = $nativeAnchorPage?->workspaceIndex ?? 1;
+
+        $activeRmPage = ($nativeAnchorPage?->nativePage ?: null)
             ?? $handwritingBook->first()
             ?? [
                 'page_number' => 1,
@@ -207,7 +268,7 @@ class MedicalRecordController extends Controller
             ?? $activeSheet;
         $handwritingFormVisit = $handwritingFormRecord->clinicVisit ?? $activeVisit;
 
-        $rmPageNumbers = $handwritingBook->pluck('virtual_page_number');
+        $rmPageNumbers = $workspacePages->pluck('workspaceIndex');
         if ($rmPageNumbers->isEmpty()) {
             $rmPageNumbers = collect([1]);
         }
@@ -232,6 +293,13 @@ class MedicalRecordController extends Controller
             'activeRmPage' => $activeRmPage,
             'activePageNumber' => $activePageNumber,
             'totalRmPages' => $totalRmPages,
+            // LEGACY-RME-DOCTOR-WORKSPACE-1A — the unified sequence the page
+            // navigation walks, plus the active page's explicit kind. The view
+            // branches on `isLegacy()`; it never infers the kind from an index.
+            'workspacePages' => $workspacePages,
+            'activeWorkspacePage' => $activeWorkspacePage,
+            'isLegacyActivePage' => $isLegacyActivePage,
+            'nativeActivePageNumber' => $nativeActivePageNumber,
             'rmPageNumbers' => $rmPageNumbers,
             'nextRmPageNumber' => $nextRmPageNumber,
             'handwritingRecord' => $handwritingRecord,
@@ -259,6 +327,7 @@ class MedicalRecordController extends Controller
                 // sheet navigation uses. Anchoring on a sheet's own visit would
                 // trip the canonical redirect, which drops `sheet`.
                 (int) $workspaceVisit->getKey(),
+                $legacyRecords,
             ),
         ]);
     }

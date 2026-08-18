@@ -1,25 +1,25 @@
-# Active sprint manifest — LEGACY-RME-DOCTOR-WORKSPACE-1
+# Active sprint manifest — LEGACY-RME-DOCTOR-WORKSPACE-1A
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-DOCTOR-WORKSPACE-1
+id: LEGACY-RME-DOCTOR-WORKSPACE-1A
 type: MODULE_SPRINT
 module: LegacyRme
-title: "Embedded read-only legacy PDF in the doctor's handwritten/native RME workspace — document rail above the canvas, overlay viewer with zoom/expand/multi-page, no data-model merge"
+title: "Inline legacy PDF pages in the handwritten RME swipe canvas — one unified page sequence over two data sources, native editable + legacy read-only, no data-model merge"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new presentation value object + presenter service, wired into the workspace controller
-schema_change: false            # no migration, no table, no column
-frontend_change: true           # new Blade partial + inline Alpine viewer (no Vite entry, no JS/CSS asset change)
-security_impact: true           # renders a private clinical archive surface; reuses the canonical doctor scope and widens nothing
-branch_isolation_impact: false  # branch scope reused verbatim from LegacyRmeWorkspaceScope; no BranchContext change
+runtime_change: true            # new page value object + sequencer service, wired into the workspace controller
+schema_change: false            # no migration, no table, no column — page counts already persisted
+frontend_change: true           # Blade partials + inline Alpine viewer (no Vite entry, no JS/CSS asset change)
+security_impact: true           # renders private clinical archive pages; reuses the canonical doctor scope and widens nothing
+branch_isolation_impact: false  # branch scope reused verbatim; no BranchContext change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the workspace view and presenter must exist on the VPS for doctors to use them
-browser_required: true          # the rail and overlay viewer are a real UI surface
+deploy_required: true           # the workspace view and sequencer must exist on the VPS for doctors to use them
+browser_required: true          # the page sequence and swipe are a real UI surface
 
 test_profiles:
   - legacy_rme
   - security
   - ui
 
-go_tag: legacy-rme-doctor-workspace-1-embedded-read-only-legacy-pdf-go
+go_tag: legacy-rme-doctor-workspace-1a-inline-legacy-pdf-pages-handwritten-rme-swipe-canvas-go

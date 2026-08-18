@@ -201,7 +201,7 @@
 
         <x-ui.card
             :title="$canEditHandwriting ? 'RME Tulisan Tangan Lengkap' : 'RME Tulisan Tangan'"
-            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Hanya satu halaman dimuat per layar — gunakan navigasi halaman untuk berpindah. Klik halaman aktif untuk menulis. Menyimpan satu halaman tidak menghapus halaman lain.' : null"
+            :description="$canEditHandwriting ? 'Isi Rekam Medis lengkap: setiap halaman = satu kanvas rekam medis. Hanya satu halaman dimuat per layar — gunakan navigasi halaman atau geser kiri/kanan untuk berpindah. Klik halaman aktif untuk menulis. Halaman bertanda L adalah arsip RME lama (hanya baca). Menyimpan satu halaman tidak menghapus halaman lain.' : null"
         >
             {{-- Sprint 64.0.2 — page navigation/pagination for the patient's single
                  handwriting RM book (virtual merge across visits). Numbered buttons
@@ -233,53 +233,19 @@
                 @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
                 @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
             >
-            <div id="rm-page-nav" class="flex flex-wrap items-center gap-2" data-rm-page-nav-container>
-                @if ($activePageNumber > 1)
-                    <a href="{{ $rmPageUrl($prevPage) }}"
-                       data-rm-page-nav
-                       class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">&larr; Sebelumnya</a>
-                @else
-                    <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">&larr; Sebelumnya</span>
-                @endif
-
-                <span class="text-sm font-medium text-gray-700">Halaman {{ $activePageNumber }} dari {{ $totalRmPages }}</span>
-
-                <div class="flex flex-wrap items-center gap-1">
-                    @foreach ($rmPageNumbers as $pageNo)
-                        <a href="{{ $rmPageUrl($pageNo) }}"
-                           data-rm-page-nav
-                           data-page-number="{{ $pageNo }}"
-                           @class([
-                               $navBase,
-                               'border-brand-600 bg-brand-700 text-white' => $pageNo === $activePageNumber,
-                               'border-gray-200 bg-white text-gray-700 hover:bg-gray-50' => $pageNo !== $activePageNumber,
-                           ])
-                           @if ($pageNo === $activePageNumber) aria-current="page" @endif
-                        >{{ $pageNo }}</a>
-                    @endforeach
-                </div>
-
-                @if ($activePageNumber < $totalRmPages)
-                    <a href="{{ $rmPageUrl($nextNavPage) }}"
-                       data-rm-page-nav
-                       class="{{ $navBase }} border-gray-200 bg-white text-gray-700 hover:bg-gray-50">Berikutnya &rarr;</a>
-                @else
-                    <span class="{{ $navBase }} cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300">Berikutnya &rarr;</span>
-                @endif
-
-                @if ($canEditHandwriting)
-                    <x-ui.button type="button" variant="secondary" id="add-rm-page-btn"
-                                 data-next-page="{{ $nextRmPageNumber }}"
-                                 data-form-action="{{ $canonicalHandwritingFormAction }}"
-                                 class="!px-3 !py-1.5 !text-xs">
-                        + Tambah Halaman RM
-                    </x-ui.button>
-                @endif
-            </div>
+            @include('rme.visits.medical-record.partials.rm-page-navigator')
 
             <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
-            {{-- Only the ACTIVE page preview is rendered (single <img>/canvas). --}}
-            <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y">
+            {{-- Only the ACTIVE page is rendered. LEGACY-RME-DOCTOR-WORKSPACE-1A:
+                 the slot holds EITHER the editable native handwriting page OR a
+                 read-only legacy archive page — decided by the page's explicit
+                 kind, never by its index. --}}
+            @if ($isLegacyActivePage && $activeWorkspacePage)
+                <div id="rm-page-previews" class="touch-pan-y" data-active-page-type="legacy">
+                    @include('rme.visits.medical-record.partials.legacy-archive-page')
+                </div>
+            @else
+            <div id="rm-page-previews" class="mx-auto max-w-md touch-pan-y" data-active-page-type="native">
                 <figure
                     class="rm-page-preview group relative rounded-lg border border-gray-300 bg-white p-2 touch-pan-y {{ $canEditHandwriting ? 'cursor-pointer transition hover:border-brand-500 hover:shadow' : '' }}"
                     data-page-number="{{ $activePageNumber }}"
@@ -315,6 +281,7 @@
                     @endif
                 </figure>
             </div>
+            @endif
             </div>{{-- /#rm-handwriting-swipe --}}
             @if ($canEditHandwriting)
                 @error('handwriting_data')
@@ -328,7 +295,7 @@
                     <div class="my-6 w-full max-w-3xl rounded-xl bg-white p-4 shadow-xl">
                         <div class="mb-3 flex items-center justify-between">
                             <h3 class="text-base font-semibold text-gray-900">
-                                Menulis Halaman <span id="editor-page-label">{{ $activePageNumber }}</span>
+                                Menulis Halaman <span id="editor-page-label">{{ $nativeActivePageNumber }}</span>
                             </h3>
                             <button type="button" id="close-editor-btn" class="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Tutup">
                                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -613,10 +580,33 @@
                         overlay.classList.add('flex');
                     }
 
-                    function closeEditor() {
+                    // LEGACY-RME-DOCTOR-WORKSPACE-1A — unsaved clinical work is
+                    // never discarded silently. The unified sequence lets a
+                    // doctor step from a native page straight onto a read-only
+                    // archive page, so leaving the editor with live strokes must
+                    // be an explicit choice.
+                    let submitting = false;
+
+                    function hasUnsavedStrokes() {
+                        return userDrew && overlay.classList.contains('flex');
+                    }
+
+                    function closeEditor(options) {
+                        const force = options && options.force === true;
+                        if (!force && hasUnsavedStrokes()
+                            && !window.confirm('Tulisan tangan pada halaman ini belum disimpan. Tutup dan buang tulisan yang belum tersimpan?')) {
+                            return;
+                        }
                         overlay.classList.add('hidden');
                         overlay.classList.remove('flex');
                     }
+
+                    window.addEventListener('beforeunload', function (e) {
+                        if (submitting || !hasUnsavedStrokes()) return;
+                        e.preventDefault();
+                        e.returnValue = '';
+                        return '';
+                    });
 
                     // Draw the empty template immediately so the canvas is never
                     // blank before a page is loaded.
@@ -655,7 +645,7 @@
                         });
                     }
 
-                    document.getElementById('close-editor-btn').addEventListener('click', closeEditor);
+                    document.getElementById('close-editor-btn').addEventListener('click', function () { closeEditor(); });
                     overlay.addEventListener('click', function (e) {
                         if (e.target === overlay) closeEditor();
                     });
@@ -725,6 +715,8 @@
                             return;
                         }
                         input.value = canvas.toDataURL('image/png');
+                        // The save itself navigates away; that is not data loss.
+                        submitting = true;
                     });
                 })();
                 </script>
@@ -803,126 +795,7 @@
             })();
             </script>
 
-            <script>
-            (function () {
-                const zone = document.getElementById('rm-handwriting-swipe');
-                if (!zone) return;
-
-                const prevUrl = zone.dataset.prevUrl || '';
-                const nextUrl = zone.dataset.nextUrl || '';
-                const MIN_SWIPE = 60;
-                const H_RATIO = 1.5;
-
-                let startX = 0;
-                let startY = 0;
-                let tracking = false;
-                let activePointerId = null;
-                let touchFallbackActive = false;
-                let swipeHandled = false;
-
-                function shouldIgnore(target) {
-                    if (!target || !zone.contains(target)) return true;
-                    if (target.closest('[data-ignore-swipe]')) return true;
-                    if (target.closest('button, a, input, textarea, select, label')) return true;
-                    if (document.getElementById('rm-editor-overlay')?.classList.contains('flex')) return true;
-
-                    return false;
-                }
-
-                function isHorizontalSwipe(dx, dy) {
-                    return Math.abs(dx) >= MIN_SWIPE && Math.abs(dx) > Math.abs(dy) * H_RATIO;
-                }
-
-                function navigate(dx) {
-                    if (dx < 0 && nextUrl) {
-                        swipeHandled = true;
-                        if (window.rememberRmHandwritingScroll) window.rememberRmHandwritingScroll();
-                        window.location.href = nextUrl;
-                        return true;
-                    }
-                    if (dx > 0 && prevUrl) {
-                        swipeHandled = true;
-                        if (window.rememberRmHandwritingScroll) window.rememberRmHandwritingScroll();
-                        window.location.href = prevUrl;
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                function resetTracking() {
-                    tracking = false;
-                    activePointerId = null;
-                    touchFallbackActive = false;
-                }
-
-                function onGestureEnd(clientX, clientY) {
-                    if (!tracking) return;
-                    const dx = clientX - startX;
-                    const dy = clientY - startY;
-                    resetTracking();
-                    if (!isHorizontalSwipe(dx, dy)) return;
-                    navigate(dx);
-                }
-
-                function onGestureStart(clientX, clientY, target) {
-                    if (shouldIgnore(target)) return;
-                    startX = clientX;
-                    startY = clientY;
-                    tracking = true;
-                }
-
-                zone.addEventListener('pointerdown', function (e) {
-                    if (e.pointerType === 'mouse' && e.button !== 0) return;
-                    if (shouldIgnore(e.target)) return;
-                    touchFallbackActive = false;
-                    activePointerId = e.pointerId;
-                    onGestureStart(e.clientX, e.clientY, e.target);
-                    if (e.pointerType !== 'mouse') {
-                        try { zone.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-                    }
-                });
-
-                zone.addEventListener('pointerup', function (e) {
-                    if (activePointerId !== null && e.pointerId !== activePointerId) return;
-                    onGestureEnd(e.clientX, e.clientY);
-                    try { zone.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
-                });
-
-                zone.addEventListener('pointercancel', function (e) {
-                    if (activePointerId !== null && e.pointerId !== activePointerId) return;
-                    resetTracking();
-                });
-
-                // Touch fallback when pointer events are cancelled or unavailable on preview surfaces.
-                zone.addEventListener('touchstart', function (e) {
-                    if (activePointerId !== null) return;
-                    if (shouldIgnore(e.target)) return;
-                    const t = e.touches[0];
-                    if (!t) return;
-                    touchFallbackActive = true;
-                    onGestureStart(t.clientX, t.clientY, e.target);
-                }, { passive: true });
-
-                zone.addEventListener('touchend', function (e) {
-                    if (!touchFallbackActive || activePointerId !== null) return;
-                    const t = e.changedTouches[0];
-                    if (!t) return;
-                    onGestureEnd(t.clientX, t.clientY);
-                }, { passive: true });
-
-                zone.addEventListener('touchcancel', function () {
-                    if (!touchFallbackActive || activePointerId !== null) return;
-                    resetTracking();
-                }, { passive: true });
-
-                window.__rmHandwritingSwipeHandled = function () {
-                    if (!swipeHandled) return false;
-                    swipeHandled = false;
-                    return true;
-                };
-            })();
-            </script>
+            @include('rme.visits.medical-record.partials.rm-page-swipe-script')
         </x-ui.card>
 
         {{-- SATUSEHAT-4A — structured diagnosis card (explicit entry only). --}}
