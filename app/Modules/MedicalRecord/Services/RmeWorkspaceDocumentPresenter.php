@@ -71,6 +71,11 @@ class RmeWorkspaceDocumentPresenter
         iterable $nativeSheets,
         ?int $activeSheetId = null,
         ?int $anchorVisitId = null,
+        // LEGACY-RME-DOCTOR-WORKSPACE-1A — the caller may pass the records it
+        // already resolved for the unified page sequence. Same collection, same
+        // authorization; it only avoids resolving the patient's archive twice
+        // in one request. Null keeps the original self-resolving behaviour.
+        ?Collection $legacyRecords = null,
     ): Collection {
         $documents = collect();
 
@@ -78,7 +83,7 @@ class RmeWorkspaceDocumentPresenter
             $documents->push($this->nativeDocument($sheet, $index, $activeSheetId, $anchorVisitId));
         }
 
-        foreach ($this->legacyRecordsFor($user, $patientId) as $record) {
+        foreach ($legacyRecords ?? $this->legacyRecordsFor($user, $patientId) as $record) {
             $documents->push($this->legacyDocument($record));
         }
 

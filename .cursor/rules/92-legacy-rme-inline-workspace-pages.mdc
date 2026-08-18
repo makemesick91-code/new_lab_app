@@ -1,0 +1,108 @@
+---
+description: LEGACY-RME-DOCTOR-WORKSPACE-1A — unified RME workspace page sequence (native editable + legacy read-only)
+globs:
+  - "app/Modules/MedicalRecord/**"
+  - "app/Modules/LegacyRme/**"
+  - "resources/views/rme/visits/medical-record/**"
+  - "tests/Feature/LegacyRme/**"
+alwaysApply: false
+---
+
+# Unified RME workspace page sequence (permanent rules)
+
+Applies to `RME Tulisan Tangan Lengkap` (`rme.visits.medical-record.show`) and
+every surface that renders the patient's RME book.
+
+## The product rule
+
+1. Published legacy RME PDFs **participate directly** in the
+   `RME Tulisan Tangan Lengkap` page navigation. They are not a separate
+   document section, and the top document rail must never be the **only** way to
+   reach them.
+2. A doctor must be able to reach every legacy page using the **same**
+   `Sebelumnya` / `Berikutnya` / swipe navigation used for handwritten pages.
+   Requiring a scroll to Riwayat RME, or an "open PDF" step before every page,
+   is a failed implementation.
+3. A legacy PDF containing **N** pages contributes **N** read-only virtual
+   workspace pages, unless a future explicitly approved presentation model
+   supersedes this rule.
+4. The global `Halaman X dari Y` counts the **unified** sequence: native
+   handwriting pages plus every authorized legacy archive page.
+
+## The persistence boundary
+
+5. Native and legacy pages share **presentation navigation** and never share
+   **persistence semantics**.
+   - native page = persisted, editable native clinical sheet page
+   - legacy page = immutable, read-only archive evidence
+6. A legacy virtual page must **never** create a `ClinicVisit`, a
+   `MedicalRecord`, a handwriting page row, or any odontogram / invoice /
+   payment / `LabOrder` / SATUSEHAT record. No shadow native row may be created
+   to make an archive page fit the sequence.
+7. The page kind is an **explicit** field (`RmeWorkspacePage::$type`). Never
+   infer it from an id range, a workspace index, a label or a URL shape.
+
+## Read-only enforcement
+
+8. A legacy page must expose **no** writing, drawing, erase, delete, replace,
+   annotation-persistence or legacy-save operation. The editable figure is not
+   rendered at all on an archive page — an inert-but-present canvas is not
+   acceptable.
+9. A legacy page supports zoom in / zoom out / fit / fullscreen for clinical
+   reading. Zoom must never alter the source document.
+10. Read-only status is conveyed in **text** ("Hanya Baca"), never by colour
+    alone. Legacy page buttons carry an `L` prefix and a spoken `aria-label`.
+11. `+ Tambah Halaman RM` **always** creates a native page. It must never append
+    to, modify or represent legacy evidence — including when the doctor presses
+    it while viewing an archive page.
+
+## Clinical input safety
+
+12. Switching between native and legacy pages must not silently discard unsaved
+    native clinical input. Either the state survives, or the save completes, or
+    the doctor is warned.
+13. Touch/swipe handling must never turn a native handwritten stroke into page
+    navigation. The canvas and the open editor overlay carry `data-ignore-swipe`;
+    the archive viewer sets it while zoomed, because a zoomed doctor is panning.
+14. There is exactly **one** page navigator and **one** swipe implementation
+    (`partials/rm-page-navigator.blade.php`, `partials/rm-page-swipe-script.blade.php`).
+    Extend them; never add a second navigation system.
+
+## Authorization and privacy
+
+15. Legacy binary data stays private and is authorized **per request**. Being
+    listed in a sequence is not an authorization decision.
+16. Doctor legacy access continues to require the canonical
+    `DoctorPatientScopeService`, effective-practice-branch and patient scope
+    rules. **Same branch alone never grants access.**
+17. Only `PUBLISHED` and canonically readable legacy evidence enters the doctor
+    workspace sequence.
+18. The sequence builder must **delegate** to
+    `LegacyRmePatientHistoryService::publishedRecordsFor()`. It must never
+    re-derive publication filtering, branch filtering, doctor scope or the VOID
+    policy — one definition of "which archive may this user see", not two.
+19. No KTP/NIK, patient name, storage path or checksum may appear in the page
+    projection or on an archive page.
+
+## Performance
+
+20. PDF bytes are lazy and on-demand. The workspace must never preload every
+    private PDF, base64 a PDF into the page HTML, or download documents merely to
+    count pages.
+21. The patient's archive is resolved **once per request** and shared by the
+    clinical history, the document rail and the page sequence. Rendered-page
+    counts are one aggregate, never one query per document.
+22. Page count comes from **actually rendered** page rows, not a declared
+    `page_count`. A record with zero rendered pages contributes exactly one
+    fallback page offering the inline source PDF; it is never dropped and never
+    expanded into pages that could only 404.
+
+## Unchanged foundations
+
+23. Patient-history legacy rendering remains available and unchanged.
+24. SOURCE-RM-BINDING, separation of duties, ClinicalClock, the native cutoff
+    date rule and archive-only rules are unchanged.
+25. Production resting state remains `CAPABILITY=OFF`, `ADMISSION=EMPTY`,
+    `ACTIVE_BATCH=NONE`.
+26. `ROLL-4-WAVE-3` remains **SKIPPED / NOT REQUIRED**.
+27. `CURRENT_VALID_EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0`.

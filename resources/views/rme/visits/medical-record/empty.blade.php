@@ -29,6 +29,43 @@
             'workspaceDocuments' => $workspaceDocuments ?? collect(),
         ])
 
+        {{-- LEGACY-RME-DOCTOR-WORKSPACE-1A — this patient has no native RM sheet
+             yet, but the published archive IS their record. It is rendered here
+             as real pages driven by the SAME navigator and the same `?rm_page=`
+             sequence used once a native sheet exists, so the archive is never
+             something the doctor has to go and find somewhere else. --}}
+        @php
+            $workspacePages = $workspacePages ?? collect();
+            $activePageNumber = $activePageNumber ?? 1;
+            $totalRmPages = $totalRmPages ?? 1;
+            $prevPage = $activePageNumber > 1 ? $activePageNumber - 1 : null;
+            $nextNavPage = $activePageNumber < $totalRmPages ? $activePageNumber + 1 : null;
+            $rmPageUrl = fn ($page) => route('rme.visits.medical-record.show', [$workspaceVisit, 'rm_page' => $page]);
+            $prevSwipeUrl = $prevPage ? $rmPageUrl($prevPage) : '';
+            $nextSwipeUrl = $nextNavPage ? $rmPageUrl($nextNavPage) : '';
+        @endphp
+
+        @if ($workspacePages->isNotEmpty() && ($activeWorkspacePage ?? null))
+            <x-ui.card title="RME Lama (Arsip)"
+                       description="Pasien ini belum memiliki lembar RM tulisan tangan. Arsip RME lama di bawah bersifat hanya baca — gunakan navigasi halaman atau geser kiri/kanan untuk membaca.">
+                <div id="rm-handwriting-swipe" class="mb-4 touch-pan-y"
+                     data-rm-swipe-zone
+                     @if ($prevSwipeUrl) data-prev-url="{{ $prevSwipeUrl }}" @endif
+                     @if ($nextSwipeUrl) data-next-url="{{ $nextSwipeUrl }}" @endif
+                >
+                    @include('rme.visits.medical-record.partials.rm-page-navigator', ['canEditHandwriting' => false])
+
+                    <p class="mb-3 text-xs text-gray-500">Geser kiri/kanan pada area halaman untuk berpindah halaman.</p>
+
+                    <div id="rm-page-previews" class="touch-pan-y" data-active-page-type="legacy">
+                        @include('rme.visits.medical-record.partials.legacy-archive-page')
+                    </div>
+                </div>
+
+                @include('rme.visits.medical-record.partials.rm-page-swipe-script')
+            </x-ui.card>
+        @endif
+
         <x-ui.card title="Informasi Pasien">
             @php
                 $bioDash = '-';
