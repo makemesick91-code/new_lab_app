@@ -283,6 +283,30 @@ it('exposes no legacy mutation route reachable from the workspace', function () 
     expect($mutating)->toBe(['rme.legacy-records.void']);
 });
 
+it('actually delivers the viewer component and its zoom, page and expand controls', function () {
+    $patient = lrmedw1Patient();
+    $visit = lrmedw1Visit($patient, '2024-06-01');
+    lrmedw1Sheet($visit);
+    lrmedw1Published($patient, '2019-04-17', ['page_count' => 4]);
+
+    $html = $this->actingAs(lrmedw1WorkspaceUser($patient))
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->getContent();
+
+    // Wiring the markup without delivering the component would leave the zoom
+    // and expand controls inert — "it renders" is not "it works".
+    expect($html)->toContain('x-data="rmeWorkspaceLegacyViewer()"')
+        ->and($html)->toContain('function rmeWorkspaceLegacyViewer()')
+        ->and($html)->toContain('data-rme-legacy-zoom-in')
+        ->and($html)->toContain('data-rme-legacy-zoom-out')
+        ->and($html)->toContain('data-rme-legacy-fit-width')
+        ->and($html)->toContain('data-rme-legacy-expand')
+        ->and($html)->toContain('data-rme-legacy-next-page')
+        ->and($html)->toContain('data-rme-legacy-viewer-close');
+});
+
 /*
 |--------------------------------------------------------------------------
 | C — performance: nothing loads until asked
