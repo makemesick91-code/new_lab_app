@@ -1,0 +1,185 @@
+---
+description: LEGACY-RME-PROGRAM-CLOSURE-1 — the Legacy RME engineering programme is CLOSED and steady-state operations are authoritative. The permanent archive, binding, branch, date, SOD, immutability, doctor-scope and workspace invariants that every later sprint inherits.
+globs:
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/MedicalRecord/**"
+  - "config/legacy_rme*.php"
+  - "app/Console/Commands/LegacyRme*.php"
+  - "docs/runbooks/legacy-rme-*.md"
+  - "resources/views/rme/**"
+alwaysApply: false
+---
+
+# LEGACY RME — PROGRAM CLOSED
+
+```
+ENGINEERING_ROLLOUT_MODE=CLOSED
+STEADY_STATE_OPERATIONS=AUTHORITATIVE
+FUTURE_ROUTINE_BATCHES=OPERATIONAL
+```
+
+The Legacy RME engineering programme ran from the 1A schema/date/permission
+foundation through to the inline doctor workspace and is closed. Later bugs or
+features create their own workstreams; they do **not** reopen this programme
+unless a closure invariant below is proven invalid.
+
+A routine legacy migration batch is now an **operational** event under
+LEGACY-RME-STEADY-STATE-OPS-1. It does not require an engineering GO tag unless
+software or governance changes.
+
+---
+
+## 1. The archive boundary
+
+Legacy RME is **immutable historical archive evidence**. Importing, publishing
+or viewing it never creates native clinical state — no `ClinicVisit`,
+`MedicalRecord`, odontogram, prescription, invoice, payment, `LabOrder` or
+SATUSEHAT resource. Publishing writes only the legacy and staging tables.
+
+Turning archive evidence into native clinical state would require a separately
+approved product feature. It is not a refactor.
+
+## 2. Document identity and patient binding
+
+The source SHA identifies the document. The **Nomor RM is read off the document
+by a human** and captured explicitly; it is never inferred from the file.
+
+That source RM must resolve to **exactly one** patient, and that patient must be
+the selected patient. Refusals are explicit and final:
+
+```
+SOURCE_RM_NOT_FOUND
+SOURCE_RM_AMBIGUOUS
+SOURCE_RM_PATIENT_MISMATCH
+SOURCE_RM_BRANCH_MISMATCH
+```
+
+Normalization is **digit-preserving**. There is no fuzzy matching, no one-digit
+correction and no first-match-wins. Ambiguity is refused, never settled.
+Similarity scoring exists only in the read-only CLI diagnostic and its rows are
+stamped non-bindable.
+
+## 3. Branch authority
+
+The branch is derived from the patient's RM and is the authority. Unknown,
+unparseable, ambiguous, inactive, non-RME-enabled or out-of-scope **fails
+closed**. A submitted `branch_id` is only ever *compared*; it can never
+override the derived branch. The derivation is repeated at publish time.
+
+## 4. Dates
+
+A multi-date document records the **earliest** human-confirmed encounter date as
+`selected_rme_date` and the **latest** as `latest_rme_date`.
+
+```
+latest_rme_date < ClinicalClock::today()          (strictly historical)
+latest_rme_date < earliest native RME date         (strict native cutoff)
+```
+
+Both comparisons are **strict** — equality fails. `NO_NATIVE_REFERENCE` is a
+valid state: the native reference is a bound, never a prerequisite. Clinical
+"today" resolves on the clinic's own calendar (Asia/Makassar), never the process
+timezone.
+
+These bounds are code-level constants with **no environment plumbing**. There is
+no runtime switch that weakens them; only a reviewed code change could, and a
+test pins that property.
+
+## 5. Separation of duties
+
+The account that files a document may not review or publish it. The guard is a
+pure account-id comparison performed inside the transaction under the row lock,
+so **Super Admin is not a bypass**. It defaults fail-closed: unset, empty or
+malformed values enable it.
+
+This enforces **account** separation. It does **not** prove two distinct humans.
+Human maker/checker separation remains an operational control and must be
+attested, never inferred from the account check.
+
+## 6. Immutability
+
+A published record is immutable. There is no edit path — the policy hard-wires
+`update` and `delete` to false and the repository exposes no update method.
+Correction is **VOID with a reason plus a fresh import**. VOID retracts without
+erasing.
+
+## 7. Operations
+
+Lifecycle changes go through the canonical service, reachable from HTTP and from
+`legacy-rme:import-admin {cancel|review|publish|retry}` (dry-run unless
+`--apply`). The CLI is a thin adapter over the same service the UI uses.
+
+**No SQL or Tinker lifecycle repair.** Cancel is always available as the safety
+path. A cancelled accepted import still consumes its quota — quota is honest.
+
+Production rests at:
+
+```
+CAPABILITY=OFF
+ADMISSION=EMPTY
+ACTIVE_BATCH=NONE
+```
+
+Routine batches require fresh approval, bounded quota and branch isolation, and
+must return to this resting state when closed. Quota, reconciliation, in-flight
+and unexplained state must balance before a batch closes.
+
+## 8. Reading the archive
+
+Published archive evidence appears in the patient's clinical history, and its
+pages also participate directly in the **RME Tulisan Tangan Lengkap** unified
+page sequence.
+
+Native and legacy pages share **navigation, not persistence**:
+
+- native page — editable canvas, saved by the native rules
+- legacy virtual page — **read only by construction**, zoom / fit / fullscreen
+- a rendered legacy PDF contributes one virtual page per rendered page
+- **+ Tambah Halaman RM** always creates a **native** page
+
+No writable canvas may ever be bound to archive evidence. Switching to a legacy
+page must not silently discard unsaved native handwriting.
+
+## 9. Doctor access
+
+A doctor's legacy read requires **both**:
+
+- the canonical patient/treating relationship (`DoctorPatientScopeService`), and
+- effective practice branches — assigned practice branches ∩ active RME-enabled
+  branches
+
+There is no fallback to MAIN, to all branches, or to the patient's branch.
+**Same branch alone grants nothing.** An empty effective branch set denies
+everything. The listing path applies the same gate as the viewer, so the
+timeline is never a weaker door.
+
+## 10. Private bytes
+
+Archive PDFs and rendered pages stream only through the policy-gated route,
+which re-authorizes per request. The disk is private and unservable by any
+framework route. There is no public storage URL and no request-supplied path.
+Being listed is not authorization.
+
+## 11. Standing facts
+
+```
+CURRENT_VALID_EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0
+ROLL-4-WAVE-3 = SKIPPED / NOT REQUIRED
+```
+
+The historical nine-failure baseline is **retired**; it survives only as
+historical evidence and must never be reintroduced as an allowance. A skipped
+wave is not a GO wave — Wave-3 is closed, not pending, and is refused as a
+declared batch code.
+
+## 12. Deployment
+
+Deploys run **on the VPS only**, from the immutable pinned snapshot:
+
+```
+bash scripts/deploy-vps-runner.sh start
+```
+
+Never locally, never with a manual pre-pull, and never against a candidate SHA.
+`start` is a launcher, not a result — completion means `DEPLOY_EXIT=0` and
+`DEPLOY OK`.

@@ -1,25 +1,30 @@
-# Active sprint manifest — LEGACY-RME-DOCTOR-WORKSPACE-1A
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-DOCTOR-WORKSPACE-1A
-type: MODULE_SPRINT
+id: LEGACY-RME-PROGRAM-CLOSURE-1
+type: FOUNDATION_SPRINT
 module: LegacyRme
-title: "Inline legacy PDF pages in the handwritten RME swipe canvas — one unified page sequence over two data sources, native editable + legacy read-only, no data-model merge"
+title: "Final program audit, foundation revalidation and production steady-state closure — the Legacy RME engineering programme is closed and steady-state operations become authoritative"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new page value object + sequencer service, wired into the workspace controller
-schema_change: false            # no migration, no table, no column — page counts already persisted
-frontend_change: true           # Blade partials + inline Alpine viewer (no Vite entry, no JS/CSS asset change)
-security_impact: true           # renders private clinical archive pages; reuses the canonical doctor scope and widens nothing
-branch_isolation_impact: false  # branch scope reused verbatim; no BranchContext change
+runtime_change: false           # no application behaviour changes — audit, contract test, rules and evidence only
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade, JS, CSS or Vite change
+security_impact: false          # no policy, middleware or permission changed; the closure test PINS existing controls, it does not alter them
+branch_isolation_impact: false  # branch scope untouched
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # the workspace view and sequencer must exist on the VPS for doctors to use them
-browser_required: true          # the page sequence and swipe are a real UI surface
+deploy_required: true           # owner-requested synchronization deployment so production carries the closure record
+browser_required: false         # no UI surface introduced or altered
 
 test_profiles:
   - legacy_rme
   - security
-  - ui
 
-go_tag: legacy-rme-doctor-workspace-1a-inline-legacy-pdf-pages-handwritten-rme-swipe-canvas-go
+go_tag: legacy-rme-program-closure-1-production-steady-state-final-go
+
+# PROGRAM STATE AFTER THIS SPRINT
+#   LEGACY-RME-PROGRAM-CLOSURE-1 = COMPLETE / GO
+#   LEGACY RME PROGRAM           = FULLY CLOSED / PRODUCTION STEADY-STATE
+#   ROLL-4-WAVE-3                = SKIPPED / NOT REQUIRED
+#   ENGINEERING_ROLLOUT_MODE     = CLOSED
+#   STEADY_STATE_OPERATIONS      = AUTHORITATIVE
