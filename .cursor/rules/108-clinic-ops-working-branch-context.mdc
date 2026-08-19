@@ -1,0 +1,97 @@
+---
+description: Clinic and cashier working-branch context, branch document identity, examination completion, WhatsApp prescription delivery, SATUSEHAT access
+globs:
+  - app/Modules/RmeOnlineContext/**
+  - app/Modules/ClinicVisit/**
+  - app/Modules/RmeInvoice/**
+  - app/Modules/Prescription/**
+  - resources/views/rme/**
+  - routes/web.php
+alwaysApply: false
+---
+
+# FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 — durable rules
+
+## Working branch scope
+
+1. `App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope` is the ONLY
+   authority for "which RME branches may this workspace read?". Do not re-derive
+   branch scope in a controller, repository or Blade view.
+2. Context-bound roles are **Admin Klinik, Perawat and Kasir**. Each works from
+   one selected branch, chosen through the branch-only online context.
+3. **Fail closed.** A context-bound user with no valid context gets an EMPTY
+   scope. Never fall back to MAIN, to the first active branch, to the patient's
+   branch, or to the whole estate.
+4. A request `branch_id` may only NARROW an authorised scope. It may never widen
+   it. Never trust a request branch id as authority.
+5. Governance roles (Owner, Super Admin, Supervisor RME) and the reporting roles
+   keep the full active RME-enabled set — cross-branch analytics are intentional.
+6. **Doctor is NOT context-bound by this scope.** The doctor clinical branch
+   model (practice branches, `DoctorClinicalBranchResolver`) is a separate
+   domain and must not be regressed.
+7. Scope applies to lists, counts, aggregates, totals, print and export alike.
+   Scoping a table but not its CSV is a leak.
+
+## Document identity
+
+8. A document's clinic identity comes from the branch that OWNS the record, not
+   from the viewer's working context and not from a literal in a shared
+   template. Printing another branch's record prints that branch's identity.
+9. Never invent an address. A branch with no address recorded prints no address
+   line — never a placeholder presented as real data, and never another
+   branch's address as a fallback.
+
+## Examination completion
+
+10. "Selesai Pemeriksaan" requires `complete_rme_examination` (Doctor, Perawat,
+    Supervisor RME; Super Admin via `Gate::before`). Admin Klinik keeps
+    registration and room placement but may never close an examination.
+11. `cashier_pending → completed` stays cashier-owned: only `RmePaymentService`
+    reaches it, once the invoice is settled. Do not add a manual path.
+12. Hiding a button is never the boundary. Every hidden action is also denied
+    server-side by its own ability.
+
+## Visit list date
+
+13. Daftar Kunjungan defaults to the **clinical** day (`ClinicalClock`,
+    Asia/Makassar). Historical visits require an explicit date or range filter.
+14. `visit_date` is a clinical calendar date. Stamp it from `ClinicalClock`,
+    never from a UTC `today()`/`now()` — they differ for eight hours a day, and
+    the same value drives the queue number and the visit number.
+
+## WhatsApp prescription delivery
+
+15. Delivery is server-to-server through Meta's official Cloud API. No `wa.me`,
+    no WhatsApp Web, no browser redirect, no deep link.
+16. Meta delivers non-template messages only inside an open 24-hour customer
+    service window, so a proactive prescription always sends an **approved
+    utility template**. Never attempt to bypass that.
+17. OFF by default and fail-closed: without credentials the disabled gateway is
+    bound and opens no socket.
+18. The outbound host is checked against an allowlist and must be HTTPS before
+    any request. Redirects are never followed.
+19. The access token comes from the environment only. Never log it, never
+    persist it, never render it, never return it.
+20. Sending is an explicit, confirmed operator action gated by
+    `send_prescription_whatsapp` — never automatic on save, finalize or a
+    schedule. It is idempotent per prescription + recipient + template.
+21. A delivery failure never mutates the prescription or the visit.
+22. Send only what belongs on a prescription hand-off. No diagnosis, no clinical
+    notes, no KTP/NIK.
+
+## SATUSEHAT
+
+23. SATUSEHAT is **Super Admin only**. One `satusehat.access` gate backs both the
+    route group and the sidebar, so the menu and the boundary cannot drift apart.
+24. The per-feature SATUSEHAT permissions stay in place: they still tier what a
+    Super Admin may do, and some of them gate clinical-diagnosis routes that are
+    not part of the SATUSEHAT module. Do not revoke them to "tidy up".
+
+## Tests
+
+25. A Kasir fixture must select a working branch (`rmeMakeKasirActive`), exactly
+    as Perawat's did when Perawat became context-bound.
+26. Fixtures that assert visit dates, queue numbers or visit numbers use
+    `clinicalToday()`, not `today()`.
+27. WhatsApp tests are hermetic: `Http::preventStrayRequests()` always, and
+    `Http::assertNothingSent()` on every fail-closed path.
