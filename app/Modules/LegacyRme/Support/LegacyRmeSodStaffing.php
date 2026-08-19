@@ -119,11 +119,59 @@ final class LegacyRmeSodStaffing
             'import_publisher_accounts' => count($publishers),
             'distinct_maker_reviewer_pair_available' => $makerReviewer,
             'distinct_maker_publisher_pair_available' => $makerPublisher,
-            // The whole chain, or it is not staffed: a document has to be
-            // filed, then certified by someone else, then published by someone
-            // other than whoever filed it.
-            'document_chain_staffed' => $makerReviewer && $makerPublisher,
+            // The whole chain, for ONE maker — see chainStaffed().
+            'document_chain_staffed' => $this->chainStaffed($makers, $reviewers, $publishers),
         ];
+    }
+
+    /**
+     * Can some SINGLE account file a document that then completes the chain?
+     *
+     * The two pair booleans above are reported for diagnosis, but ANDing them
+     * is not the requirement and would pass a deployment where nothing can
+     * move. They allow a different maker in each pair, whereas a real document
+     * has one uploader who must be excluded from BOTH later steps:
+     *
+     *   A: create + publish
+     *   B: create + review
+     *
+     * maker/reviewer is satisfied (A≠B) and maker/publisher is satisfied
+     * (B≠A), yet A's documents stall at REVIEWED (only A can publish, and A
+     * uploaded) and B's stall at READY_FOR_REVIEW (only B can review, and B
+     * uploaded). Nothing is publishable and readiness would have said GO.
+     *
+     * So: there must exist one maker m with a reviewer other than m AND a
+     * publisher other than m. The reviewer and publisher may be the same
+     * account — `SeparatePublisherGuard` only excludes the uploader, and the
+     * seeded checker role legitimately holds both.
+     *
+     * @param  list<int>  $makers
+     * @param  list<int>  $reviewers
+     * @param  list<int>  $publishers
+     */
+    private function chainStaffed(array $makers, array $reviewers, array $publishers): bool
+    {
+        foreach ($makers as $maker) {
+            if ($this->someoneOtherThan($reviewers, $maker) && $this->someoneOtherThan($publishers, $maker)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<int>  $accounts
+     */
+    private function someoneOtherThan(array $accounts, int $excluded): bool
+    {
+        foreach ($accounts as $account) {
+            if ($account !== $excluded) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

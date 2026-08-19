@@ -10,7 +10,9 @@ and production closure**
 | Type | `RUNTIME_FIX` (module `LegacyRme`) |
 | Migration | **none** |
 | New permission / role / route | **none** |
-| GO tag | `fix-legacy-rme-routine-ops-1-go` |
+| Full Suite | **skipped by explicit user decision** — execution count **0** |
+| GO tag | **none created.** `fix-legacy-rme-routine-ops-1-go` is reserved for a follow-up closure sprint that runs the Full Suite |
+| Closing posture | **WATCH — PENDING FINAL FULL SUITE CLOSURE** |
 
 ---
 
@@ -356,12 +358,14 @@ php artisan legacy-rme:wave-admin register \
 
 ### Defects found by adversarial review and fixed before merge
 
-Four review lenses ran over the committed diff. Five real defects surfaced;
-all are fixed and pinned by tests.
+Four review lenses ran over the committed diff. Six real defects surfaced; all
+are fixed and pinned by tests. Two of them were in the staffing check itself —
+the part of this sprint whose entire purpose is to stop reporting a false GO.
 
 | Severity | Defect | Fix |
 |---|---|---|
-| **HIGH** | Staffing modelled the document pair as file→publish, omitting `review_legacy_rme_imports` — so a deployment where nobody but the maker can review reported `GO` while being unable to complete a single document. Two lenses found this independently. | `document_chain_staffed` now requires distinct maker/reviewer **and** maker/publisher pairs |
+| **HIGH** | Staffing modelled the document pair as file→publish, omitting `review_legacy_rme_imports` — so a deployment where nobody but the maker can review reported `GO` while being unable to complete a single document. Two lenses found this independently. | reviewer counted as part of the chain |
+| **MEDIUM/HIGH** | The first fix corrected *which* permissions are counted but not *how* they combine: ANDing two independent pair tests lets a **different** maker satisfy each. `A = create+publish`, `B = create+review` passes both pairs, yet A's documents stall at `REVIEWED` (only A can publish, and A uploaded) and B's stall at `READY_FOR_REVIEW` (only B can review, and B uploaded). Nothing is publishable and readiness said `GO`. | `chainStaffed()` requires **one** maker with a reviewer other than them *and* a publisher other than them |
 | LOW | `parse()` resolved the clinical timezone *inside* its `catch (Throwable)`, so a misconfigured `CLINICAL_TIMEZONE` was reported as "your date is malformed" — sending the operator to fix the one thing that was correct. `ClinicalClock` is contractually fail-loud. | timezone resolved outside the try; `InvalidClinicalTimezoneException` propagates |
 | LOW | `0000-01-01` survives the strict round trip (PHP represents year zero happily) and PostgreSQL then rejects it at `INSERT` as an unhandled `QueryException` — a 500 where a field error belongs. | year `< 1` refused as a malformed window |
 | LOW | `(bool) env(...)` — the pattern this codebase already documents as unsafe: a present-but-empty `LEGACY_RME_ROUTINE_BATCH_WINDOW_REQUIRED=` casts to `false` and silently switches the invariant off. | reuses the existing fail-safe `SeparatePublisherGuard::resolveEnabledFromEnv()` |
@@ -409,14 +413,46 @@ already pins the readiness half and was left as-is.
 
 ---
 
-## 8. Evidence
+## 8. Full Suite — skipped by explicit user decision
 
-_Filled in at closure: targeted runs, CI, the single authorised Full Suite,
-merge, deploy, production smoke and the GO tag._
+**`FULL_SUITE_STATUS = SKIPPED_BY_EXPLICIT_USER_DECISION`**
+**`FULL_SUITE_EXECUTION_COUNT = 0`**
+
+The Full Suite was **not** run for this sprint. That is a deliberate decision,
+not an omission and not a failure — and it is why this sprint carries **no
+engineering GO tag**. Claiming a pass we never obtained would be the one
+outcome worse than not running it.
+
+Audited history, so the record is complete rather than merely asserted:
+
+| CI run | SHA | Event | Full Suite job |
+|---|---|---|---|
+| `32198344406` | `46f717e` | `pull_request` | job created, `conclusion=cancelled`, `startedAt == completedAt` (zero duration). Collateral of the run being superseded by a newer push; it never became runnable, because it `needs` the critical gates and those were still in flight. On a `pull_request` event its `if` is false regardless, so it would have been skipped. **No test executed.** |
+| `32199492319` | `a08a79f` | `pull_request` | skipped by the workflow's own condition |
+
+No Full Suite was dispatched, and no CI file was modified to suppress one. The
+gate fires only on `schedule`, on `workflow_dispatch` with
+`run_full_suite=true`, or on a push to the base branch — so a pull request
+skips it through the workflow's official path, with nothing hidden.
+
+### What a follow-up closure sprint has to do
+
+Everything else in this sprint is finished and evidenced, so the remaining work
+is narrow:
+
+1. Re-verify the baseline on the merged SHA (targeted suites below).
+2. Run **one** authoritative Full Suite; expected failures **0**.
+3. Make the final GO decision on that result.
+4. Create the tag `fix-legacy-rme-routine-ops-1-go` — nothing here has created
+   or moved it.
+
+## 9. Evidence
+
+_Targeted runs, CI, merge, deploy, production smoke and rollback verification._
 
 ---
 
-## 9. Rollback
+## 10. Rollback
 
 Independent axes:
 
@@ -435,7 +471,7 @@ No destructive database rollback is ever performed for historical wave records.
 
 ---
 
-## 10. Next operational action
+## 11. Next operational action
 
 After GO, a routine TKM1 batch may be opened as a **new** batch with a fresh
 approval and a bounded window. `ROUTINE-20260819-TKM1-01` is never reused.

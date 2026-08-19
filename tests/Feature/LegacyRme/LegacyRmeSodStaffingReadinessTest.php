@@ -190,6 +190,42 @@ it('refuses to report ready when nobody but the maker can review', function () {
     expect(sodStaffingReport()['ready_for_routine_batch'])->toBeFalse();
 });
 
+it('refuses two makers who between them can review and publish but never for one document', function () {
+    // THE DECOMPOSITION TRAP. Both pair tests pass with a DIFFERENT maker in
+    // each, so ANDing them reports a staffed chain — while nothing is
+    // publishable:
+    //   A files -> B reviews -> publish needs A, who uploaded it. Blocked.
+    //   B files -> review needs B, who uploaded it. Blocked.
+    // The chain must be satisfiable by ONE maker, not by two taking turns.
+    userWith(['manage_legacy_rme_migration_operations']);
+    userWith(['approve_legacy_rme_migration_wave']);
+    userWith(['create_legacy_rme_imports', 'publish_legacy_rme_imports']);   // A
+    userWith(['create_legacy_rme_imports', 'review_legacy_rme_imports']);    // B
+
+    $staffing = app(LegacyRmeSodStaffing::class)->evaluate();
+
+    // Both pair views look satisfied in isolation — that is the trap.
+    expect($staffing['distinct_maker_reviewer_pair_available'])->toBeTrue();
+    expect($staffing['distinct_maker_publisher_pair_available'])->toBeTrue();
+
+    // The chain itself is not staffed.
+    expect($staffing['document_chain_staffed'])->toBeFalse();
+    expect(sodStaffingCheck()['status'])->toBe('FAIL');
+    expect(sodStaffingReport()['ready_for_routine_batch'])->toBeFalse();
+});
+
+it('accepts one checker who both reviews and publishes for a distinct maker', function () {
+    // The real seeded topology: Supervisor RME holds review AND publish, and
+    // SeparatePublisherGuard only ever excludes the uploader — so one checker
+    // covering both later steps is legitimate, not a concentration.
+    userWith(['manage_legacy_rme_migration_operations']);
+    userWith(['approve_legacy_rme_migration_wave']);
+    userWith(['create_legacy_rme_imports']);
+    userWith(['review_legacy_rme_imports', 'publish_legacy_rme_imports']);
+
+    expect(app(LegacyRmeSodStaffing::class)->evaluate()['document_chain_staffed'])->toBeTrue();
+});
+
 it('refuses to report ready when nobody can review at all', function () {
     userWith(['manage_legacy_rme_migration_operations']);
     userWith(['approve_legacy_rme_migration_wave']);

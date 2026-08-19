@@ -48,8 +48,13 @@ reports on it.
     `SeparatePublisherGuard::GUARDED_ACTIONS` is `[REVIEW, PUBLISH]` and
     `LegacyRmeImportStatus::TRANSITIONS` only allows
     `READY_FOR_REVIEW → REVIEWED → PUBLISHED`, so an import nobody else can
-    review can never be published by anyone. Staffing requires a distinct
-    maker/reviewer pair AND a distinct maker/publisher pair.
+    review can never be published by anyone.
+11b. **The chain must be satisfiable by ONE maker.** Do not AND two
+    independent pair tests — that lets a different maker satisfy each.
+    `A = create+publish` and `B = create+review` passes both pairs while
+    nothing is publishable. Require: ∃ one maker with a reviewer other than
+    them AND a publisher other than them. The reviewer and publisher MAY be
+    the same account — the guard excludes only the uploader.
 12. An enforced rule that cannot be staffed is a `FAIL` with
     `SOD_STAFFING_UNAVAILABLE` — a stop-the-line INCIDENT, not a warning. It is
     worse than a rule deliberately switched off, because the deployment reads

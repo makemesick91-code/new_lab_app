@@ -20,6 +20,12 @@ test_profiles:
   - legacy_rme
   - security
 
+# The tag a FUTURE closure sprint would create. This sprint does NOT create or
+# move it: the Full Suite was skipped by explicit user decision, so there is no
+# honest basis for a final engineering GO.
+#   FULL_SUITE_STATUS         = SKIPPED_BY_EXPLICIT_USER_DECISION
+#   FULL_SUITE_EXECUTION_COUNT = 0
+# Closing posture: WATCH — PENDING FINAL FULL SUITE CLOSURE.
 go_tag: fix-legacy-rme-routine-ops-1-go
 
 # WHAT THIS SPRINT FIXES
