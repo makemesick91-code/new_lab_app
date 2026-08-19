@@ -101,6 +101,16 @@ zero-duration proof are recorded, and no CI file is touched. Cancelling a Full
 Suite that has **already begun executing**, to report a zero count, is
 forbidden — that is an execution; record it and report the partial result.
 
+**Reading the evidence.** A `success` Full Suite **job** does **not** mean the
+suite ran: on a docs-only change the job is green precisely because
+`Run full Pest suite` was **skipped**. Always check the step:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[]|select(.name=="NSF-R011 Full Suite Gate")|.steps[]
+        |select(.name|test("full Pest suite"))|"\(.conclusion)\t\(.name)"'
+```
+
 **Scheduled run.** Never cancel it for count management. It is an informational
 baseline only and can never be cited as a fix sprint's Full Suite pass.
 
