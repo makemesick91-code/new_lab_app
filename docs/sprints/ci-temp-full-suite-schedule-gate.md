@@ -317,7 +317,79 @@ effect of another sprint.
 
 ---
 
-## 10. Posture
+## 10. Shipped — CI, merge, deploy and production evidence
+
+| | |
+|---|---|
+| PR | #319, squash-merged **2026-08-19T10:38:38Z** |
+| Merge SHA | `cf6d2cc` |
+| Candidate CI | run `32230944053` (attempt 2) — **success**, all required gates green |
+| GO tag | `ci-temp-full-suite-schedule-gate-go` (annotated, tag object `75aca46`) → peels to `cf6d2cc` |
+| VPS HEAD | `cf6d2cc` — exact match, `git describe --exact-match` returns the GO tag |
+| Deploy | `scripts/deploy-vps-runner.sh start` **on the VPS**; `exit=0`, `DEPLOY OK: 20260819-104010`, `Nothing to migrate.` |
+| Production smoke | `/login` `/health/live` `/health/ready` `/health/lb` → **200**; components database/cache/queue/storage/object_storage all `ok`; gated routes 302; **0 Laravel errors**; no failed jobs |
+| Legacy RME | capability OFF, admission EMPTY, wave `None` — **identical to the pre-deploy baseline** |
+
+### The decisive evidence — a real push to the base branch
+
+`full_suite_gate` fires on push-to-base. Post-merge run **`32243680080`** (event
+`push`, SHA `cf6d2cc`) is therefore the first live test of the gate on the base
+branch, and it is the strongest form the evidence can take: **every precondition
+for running the Full Suite was satisfied** — the critical gate SUCCEEDED — so the
+policy was the only thing that stopped it.
+
+```
+NSF-R011 Critical Test Gate  : success     (self-hosted variant: skipped, by design)
+NSF-R011 Full Suite Gate     : skipped
+```
+
+From the always-run `classify` job of that same run:
+
+```
+event                 : push
+policy status         : ACTIVE
+policy source         : .../.github/ci-policy/full-suite-policy.json
+full suite authorised : false
+reason                : TEMPORARY_FULL_SUITE_POLICY_ACTIVE
+```
+
+Every other gate in that run passed (Classifier, Quality, Selective Module,
+NSF-9, NSF-10) — confirming §19's requirement that suppressing the Full Suite
+must not disable any other CI.
+
+Note the Full Suite job reads **`skipped`, not `success`**. Under §7.1 a green
+Full Suite job would prove nothing; a skipped one is unambiguous, and the *reason*
+lives in the always-run classifier so no future operator has to guess whether it
+was deliberate.
+
+The resolver was also verified directly on production after deploy:
+
+```
+schedule       -> full_suite_authorized=false  TEMPORARY_FULL_SUITE_POLICY_ACTIVE
+push (to base) -> full_suite_authorized=false  TEMPORARY_FULL_SUITE_POLICY_ACTIVE
+policy status on production: ACTIVE
+```
+
+### CI infrastructure note (not caused by this sprint)
+
+`Install and verify Poppler (LEGACY-RME-PDF-1B)` — an `apt-get install
+poppler-utils` step — **hung twice out of four attempts** (110+ min and 43 min,
+versus **73 s** when healthy), each time with `Run critical regression tests`
+still `pending`, i.e. zero tests executed. Both hung runs were cancelled after
+confirming no test had run, and re-run on the same SHA. This is a GitHub-hosted
+apt-mirror problem, not repository code; it deserves its own small fix (a step
+`timeout-minutes`, or caching/pinning the package) rather than allowing jobs to
+stall for hours. Deliberately not folded into this sprint.
+
+Related, and also not this sprint: the critical gate's healthy duration is now
+~22–38 min (runner variance for identical work), up from the ~21 min recorded in
+earlier sprints, because the single `--filter=` line has accumulated terms across
+eight commits — `LegacyRme` alone matches 41 test files. **Duration alone is not a
+health signal**; the reliable check is which *step* is in progress.
+
+---
+
+## 11. Posture
 
 ```
 GLOBAL TEMPORARY FULL-SUITE POLICY        = ACTIVE (unchanged)
