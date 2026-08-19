@@ -171,19 +171,28 @@ class CiRuntimeControlScanner
         if ($state === null) {
             $issues[] = 'canonical Full Suite policy state file is missing';
         } else {
+            // Count OCCURRENCES, not distinct statuses. The bash resolver counts
+            // occurrences, and the two layers MUST agree — a file declaring
+            // "RETIRED" twice is ambiguous even though only one status is named.
+            // Counting distinct values here would report RETIRED while the
+            // resolver fails closed, which is exactly the drift this check exists
+            // to catch.
             $found = [];
+            $occurrences = 0;
             foreach ($allowed as $candidate) {
-                if (preg_match('/"status"\s*:\s*"'.preg_quote((string) $candidate, '/').'"/', $state) === 1) {
+                $hits = preg_match_all('/"status"\s*:\s*"'.preg_quote((string) $candidate, '/').'"/', $state);
+                if ($hits > 0) {
                     $found[] = (string) $candidate;
+                    $occurrences += $hits;
                 }
             }
 
-            if (count($found) === 1) {
+            if ($occurrences === 1 && count($found) === 1) {
                 $status = $found[0];
             } else {
-                // Zero or several statuses is ambiguous. Fail closed: report it
-                // and leave the status UNRESOLVED so nothing reads it as RETIRED.
-                $issues[] = 'policy state file must declare exactly one recognised status ('.implode(' / ', $allowed).'); found '.count($found);
+                // Zero or several status tokens is ambiguous. Fail closed: report
+                // it and leave the status UNRESOLVED so nothing reads it as RETIRED.
+                $issues[] = 'policy state file must declare exactly one recognised status token ('.implode(' / ', $allowed).'); found '.$occurrences;
             }
         }
 

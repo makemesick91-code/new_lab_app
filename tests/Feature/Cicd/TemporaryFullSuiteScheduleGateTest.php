@@ -287,6 +287,38 @@ it('restores the automatic cadence only once the policy is explicitly RETIRED', 
 |--------------------------------------------------------------------------
 */
 
+it('resolves the policy status identically in bash and in PHP', function (string $body, string $expected) {
+    // R013 is "one canonical state, BOTH layers agree". A divergence here would
+    // let governance report RETIRED while the gate still defers — the drift this
+    // check exists to catch. Found by adversarial review: PHP previously counted
+    // DISTINCT statuses while bash counted OCCURRENCES, so a file naming RETIRED
+    // twice read as RETIRED in PHP and UNRESOLVED in bash.
+    $rel = 'storage/framework/testing/tfs-policy-'.bin2hex(random_bytes(6)).'.json';
+    $abs = base_path($rel);
+    @mkdir(dirname($abs), 0777, true);
+    file_put_contents($abs, $body);
+
+    try {
+        $bash = tfsResolve('schedule', ['policy_file' => $abs]);
+
+        config()->set('ci_runtime_control.files.full_suite_policy_state', $rel);
+        $php = app(CiRuntimeControlScanner::class)->temporaryFullSuitePolicyPosture();
+
+        expect($bash['policy_status'])->toBe($expected)
+            ->and($php['status'])->toBe($expected, 'PHP must agree with the bash resolver')
+            // Whatever the verdict, an unresolved state is never authorised.
+            ->and($bash['full_suite_authorized'])->toBe($expected === 'RETIRED' ? 'true' : 'false');
+    } finally {
+        @unlink($abs);
+    }
+})->with([
+    'single ACTIVE' => ['{"status":"ACTIVE"}', 'ACTIVE'],
+    'single RETIRED' => ['{"status":"RETIRED"}', 'RETIRED'],
+    'RETIRED twice is ambiguous' => ['{"status":"RETIRED","mirror":{"status":"RETIRED"}}', 'UNRESOLVED'],
+    'ACTIVE twice is ambiguous' => ['{"status":"ACTIVE","mirror":{"status":"ACTIVE"}}', 'UNRESOLVED'],
+    'conflicting statuses' => ['{"status":"ACTIVE","other":{"status":"RETIRED"}}', 'UNRESOLVED'],
+]);
+
 it('gates the Full Suite job on the resolved authorisation', function () {
     $gate = (string) tfsWorkflow()['jobs']['full_suite_gate']['if'];
 

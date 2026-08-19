@@ -200,7 +200,11 @@ set is genuinely docs-only, and the classification follows the change.
 
 ### 6.1 Handling the post-merge push-to-base run
 
-> **Now structurally prevented — CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19).**
+> **Now structurally prevented — CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19),
+> in force on the base branch from that sprint's merge commit onward.** GitHub
+> resolves a workflow from the pushed ref, so this protection governs pushes to
+> base only once the gate is present on base; runs that predate it remain governed
+> by the `gh run cancel` precedent below.**
 > A post-merge push to base no longer starts the Full Suite while this policy is
 > ACTIVE, so the manual `gh run cancel` handling below is a **historical
 > precedent and a fallback**, not the primary control. It still governs any run

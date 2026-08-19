@@ -65,6 +65,24 @@ Once the policy is flipped to `RETIRED`, the previous cadence returns **exactly*
 schedule, push-to-base and manual dispatch all authorised again, and `pull_request`
 still never runs the suite.
 
+### When the gate takes effect (stated explicitly, because it is easy to overstate)
+
+GitHub resolves a workflow **from the ref that was pushed**. The gate therefore
+governs the base branch only **from the moment this sprint is merged into it** —
+before that, `full_suite_authorized` does not exist on the base tip at all
+(`git show <base>:.github/workflows/foundation-evidence-gates.yml | grep -c
+full_suite_authorized` → `0`).
+
+So during the window between opening this PR and merging it, a squash-merge of
+**some other** PR into the base branch would still have run the Full Suite under
+the pre-policy condition. That is the ordinary property of any unmerged CI change,
+not a hole in this mechanism — but it is recorded here because §6.1/§6.2 of the
+policy now read "structurally prevented", and that statement is true **from this
+merge onward**, not retroactively. Runs that predate the merge are still governed
+by the §6.1 `gh run cancel` precedent.
+
+Surfaced by the adversarial review; see §7.
+
 ---
 
 ## 3. Design
@@ -190,7 +208,7 @@ gh run view <run-id> --json jobs \
 
 ## 6. Tests
 
-`tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php` — **25 tests, 158
+`tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php` — **30 tests, 178
 assertions.** They compose the two real artefacts rather than paraphrasing them:
 the real resolver script produces `full_suite_authorized`, which is fed into an
 evaluator of the **real workflow `if:` expression**.
@@ -227,7 +245,35 @@ The suite is wired into the CI critical filter via the existing `Cicd` selection
 | Is there another scheduled path to the suite? | No. `foundation-evidence-gates.yml` is the only workflow with a `schedule:` trigger, and `RUN_FULL_SUITE` — the env flag guarding `run_full_suite()` in `scripts/ci/foundation-evidence-gates.sh` — is set by no workflow; CI only ever invokes that script `--critical-only`. |
 | Can an env default enable the suite? | No. The resolver reads **no** environment variable for policy state; the status comes only from the canonical file. |
 
-**Finding raised and fixed during review — shell injection surface (LOW).** The
+### Findings from the adversarial refutation pass
+
+Five independent skeptics, each with a distinct lens, tried to **refute** the claim
+that no automatic trigger can run the Full Suite; every bypass they proposed was
+independently re-tested by a second skeptic. Two findings survived verification —
+both were reproduced by hand before being accepted, and both are fixed above.
+
+**1 — Cross-layer status divergence (MEDIUM, fixed).** The bash resolver counted
+status token *occurrences*; the PHP scanner counted *distinct* statuses. A file
+declaring `"RETIRED"` twice therefore read as **UNRESOLVED in bash** (fail closed,
+correct) but **RETIRED + ok in PHP** — governance would have reported the policy
+retired while the gate still deferred. It could never make the suite run, because
+the workflow consumes the bash resolver; but it broke exactly the "both layers
+agree" guarantee R013 exists for. The original test only covered duplicate
+*different* statuses, which PHP did catch — that was the blind spot. PHP now counts
+occurrences via `preg_match_all`, and a parameterised test asserts both layers
+return the identical verdict for single, duplicated-identical, and conflicting
+tokens.
+
+> Method note: the first attempt to reproduce this **failed to reproduce it** —
+> the probe passed an absolute path while `readFile()` resolves through
+> `base_path()`, so the file was never read. The finding was only accepted after a
+> corrected probe reproduced it. An agent's claim is a hypothesis, not evidence.
+
+**2 — The gate is inert until merged (informational).** See §2. Documented rather
+than "fixed", because it is the generic property of any unmerged CI change; the
+actionable part was the documentation overstating present-tense closure.
+
+**3 — Shell injection surface (LOW, fixed).** The
 first implementation interpolated `${{ github.ref }}` directly into the resolver
 step's `run:` block. A ref is attacker-influenceable text, and a branch name
 containing a single quote could terminate the quoting and join the command. This
