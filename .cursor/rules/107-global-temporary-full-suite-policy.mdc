@@ -106,7 +106,16 @@ GLOBAL_TEMPORARY_FULL_SUITE_POLICY_ACTIVE = YES
 ```
 
 Never write `FULL SUITE PASS` if it did not run. **Job skipped ≠ tests passed.
-Job cancelled ≠ tests passed.** If an accidental Full Suite genuinely runs,
+Job cancelled ≠ tests passed. And `success` ≠ tests passed** — verified: on a
+docs-only push to base the `NSF-R011 Full Suite Gate` job is **green while the
+suite never ran** (`Run full Pest suite` = `skipped`, a "Note skipped full suite"
+step writes the evidence). Read the **step**, never the job:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[]|select(.name=="NSF-R011 Full Suite Gate")|.steps[]
+        |select(.name|test("full Pest suite"))|"\(.conclusion)\t\(.name)"'
+``` If an accidental Full Suite genuinely runs,
 record run ID / SHA / event / result, report the breach, and never rewrite
 history to protect a count.
 

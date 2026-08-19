@@ -254,11 +254,54 @@ Absolutely prohibited:
 - writing `FULL SUITE PASS` when it did not run;
 - equating **job skipped** with **tests passed**;
 - equating **job cancelled** with **tests passed**;
+- equating a **`success` Full Suite job** with **tests passed** — see §7.1; on a
+  docs-only change the job is green precisely *because* the suite was skipped;
 - reporting a count of zero that the evidence does not support.
 
 If an accidental deliberate Full Suite genuinely runs: **record it** — run ID,
 SHA, event, result — report the policy breach, and continue only after an
 explicit governance assessment. Never manipulate history to preserve a number.
+
+---
+
+### 7.1 Read the STEP, never the job — a `success` job can mean nothing ran
+
+**Verified on real runs, and the single most dangerous misreading available.**
+On a docs-only push to base the `NSF-R011 Full Suite Gate` **job reports
+`success` while the suite never executed** — the classifier resolves
+`docs_only`, the `Run full Pest suite` step is `skipped`, and a
+`Note skipped full suite (docs-only change)` step writes the evidence file
+instead. Nothing failed, so the job is green.
+
+Evidence, run `32211741144` (commit `1311dba`, `event=push` to base):
+
+| Level | Name | Conclusion |
+|---|---|---|
+| job | `NSF-R011 Full Suite Gate` | **success** |
+| step | `Run full Pest suite` | **skipped** |
+| step | `Note skipped full suite (docs-only change)` | success |
+
+So the rule is not merely "job skipped ≠ tests passed". It is:
+
+> **Job `success` ≠ tests passed.** A green Full Suite job proves only that
+> nothing *errored*. Only the `Run full Pest suite` **step** proves the suite
+> ran.
+
+Always verify at step level before recording anything:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[]|select(.name=="NSF-R011 Full Suite Gate")|.steps[]
+        |select(.name|test("full Pest suite"))|"\(.conclusion)\t\(.name)"'
+```
+
+- step `skipped` → `FULL_SUITE_EXECUTION_COUNT = 0`. Never "PASS".
+- step `success` → it genuinely ran; record the result, and if it ran on an
+  individual fix while this policy was ACTIVE, report it under §7 as a breach.
+
+The same applies to the run-level `conclusion=success` shown by
+`gh run list` — it is an aggregate over jobs and says nothing about whether the
+suite executed.
 
 ---
 
