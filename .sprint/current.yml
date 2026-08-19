@@ -40,6 +40,22 @@ test_profiles:
 #   closure, create any deferred fix GO tag, change the expected failure
 #   baseline (0), or hide any CI failure.
 #
+### PROGRAM STATE — INHERITED, UNCHANGED BY THIS SPRINT
+#
+#   The Legacy RME programme was closed by LEGACY-RME-PROGRAM-CLOSURE-1. This
+#   sprint inherits that closure and does not reopen it: it is a CI/governance
+#   sprint and touches no Legacy RME code, capability, admission, wave or batch.
+#   ENGINEERING_ROLLOUT_MODE stays CLOSED and STEADY_STATE_OPERATIONS stays
+#   AUTHORITATIVE.
+#
+#   LEGACY RME PROGRAM       = CLOSED / PRODUCTION STEADY-STATE
+#   ROLL-4-WAVE-3            = SKIPPED / NOT REQUIRED
+#   ROUTINE-20260819-TKM1-01 = CANCELLED / immutable audit evidence, never reused
+#   RESTING STATE            = capability OFF, admission EMPTY, no active batch
+#
+#   Verified on production before this sprint's deploy (read-only):
+#   capability_enabled=false, admitted_branch_codes=[], wave=null.
+#
 ### FULL SUITE POSTURE
 #
 #   FULL_SUITE_STATUS          = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY
