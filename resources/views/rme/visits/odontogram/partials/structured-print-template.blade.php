@@ -102,14 +102,26 @@
 <div class="odo-wrap">
 
     @if ($showHeader)
+        {{-- FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-01) — the clinic address comes
+             from the branch that OWNS this record, never a literal. This partial is
+             shared by every branch, so a hardcoded address printed one branch's
+             street on another branch's document. A branch with no address recorded
+             simply prints no address line; nothing is invented. --}}
+        @php
+            $branchAddress = trim((string) ($branchAddress ?? ''));
+            $branchPhone = trim((string) ($branchPhone ?? ''));
+        @endphp
         <div class="odo-clinic-header">
             <x-brand.daengtisia-logo class="odo-logo" />
             <span class="odo-clinic-text">
                 <h2>KLINIK GIGI DAENGTISIA</h2>
-                <div class="odo-clinic-meta">
-                    Jl. Telkomas Raya, Ruko No. 07, Kel. Berua, Kec. Biringkanaya, Kota Makassar, Sulawesi Selatan. 90245.<br>
-                    Telp/.WA +62 895 3253 54253 / 085757297146
-                </div>
+                @if ($branchAddress !== '' || $branchPhone !== '')
+                    <div class="odo-clinic-meta">
+                        @if ($branchAddress !== ''){{ $branchAddress }}@endif
+                        @if ($branchAddress !== '' && $branchPhone !== '')<br>@endif
+                        @if ($branchPhone !== '')Telp/WA {{ $branchPhone }}@endif
+                    </div>
+                @endif
             </span>
         </div>
     @endif

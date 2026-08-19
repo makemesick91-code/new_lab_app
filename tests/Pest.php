@@ -518,6 +518,21 @@ function rmeMakePerawatActive(User $user, Branch $branch): void
         ->startPerawatSession($user, (int) $branch->id);
 }
 
+/**
+ * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — activate a Kasir branch-only
+ * online context through the real service (same canonical mechanism as Admin
+ * Klinik and Perawat).
+ */
+function rmeMakeKasirActive(User $user, Branch $branch): void
+{
+    if (! $user->hasRole('Kasir')) {
+        $user->assignRole('Kasir');
+    }
+
+    app(UserOnlineContextService::class)
+        ->startKasirSession($user, (int) $branch->id);
+}
+
 function rmeAdminClinicUser(Branch $branch): User
 {
     $user = userInRole('Admin Klinik');

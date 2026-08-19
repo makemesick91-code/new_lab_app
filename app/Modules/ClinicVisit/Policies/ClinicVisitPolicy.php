@@ -94,7 +94,13 @@ class ClinicVisitPolicy
             return false;
         }
 
-        return $this->canManage($user) && $this->withinWorkingBranchScope($user, $visit->branch_id);
+        // Deliberately NOT gated on manage_clinic_visits: this ability only
+        // answers "is this the read-only front office?". What each control
+        // actually requires is decided by its own @can guard and its own
+        // server-side authorisation, so a legitimate viewer (e.g. a
+        // prescription viewer holding only view_clinic_visits) keeps exactly
+        // the access it had before.
+        return $this->canView($user) && $this->withinWorkingBranchScope($user, $visit->branch_id);
     }
 
     /**

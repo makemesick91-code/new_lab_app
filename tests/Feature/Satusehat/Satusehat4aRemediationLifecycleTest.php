@@ -11,6 +11,7 @@ use App\Modules\Satusehat\Services\DataQuality\SatusehatDataQualityScanService;
 use App\Modules\Satusehat\Services\DataQuality\SatusehatRehearsalService;
 use App\Modules\Satusehat\Services\DataQuality\SatusehatRemediationService;
 use App\Modules\Satusehat\Services\DataQuality\SatusehatSyntheticPilotService;
+use App\Modules\Satusehat\Support\SatusehatWorkspaceScope;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
@@ -107,26 +108,37 @@ it('waiving never changes the canonical readiness verdict', function () {
     expect($candidate->readiness_status)->toBe(SatusehatCandidate::READINESS_INCOMPLETE);
 });
 
-it('HTTP actions are permission-gated and waivers need the dedicated permission', function () {
+it('denies every non-Super-Admin role over HTTP while the remediation/waiver permission tiers stay enforced on the policy', function () {
     ['ctx' => $ctx, 'issue' => $issue] = ssOpenIssue();
 
-    // Kasir: no access at all.
-    $this->actingAs(userInRole('Kasir'))
-        ->post(route('satusehat.readiness.issues.acknowledge', $issue->id))
-        ->assertForbidden();
-
-    // Admin Klinik: remediation yes (within their branch context), waiver no.
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so no
+    // operational role reaches a remediation action over HTTP any more —
+    // including the ones that previously could.
     $adminKlinik = userInRole('Admin Klinik');
     rmeMakeAdminClinicActive($adminKlinik, $ctx['branch']);
-    $this->actingAs($adminKlinik)
-        ->post(route('satusehat.readiness.issues.acknowledge', $issue->id))
-        ->assertRedirect();
-    $this->actingAs($adminKlinik)
-        ->post(route('satusehat.readiness.issues.waive', $issue->id), ['reason' => 'coba tanpa izin'])
-        ->assertForbidden();
+    $supervisor = userInRole('Supervisor RME');
 
-    // Supervisor RME: waiver allowed (soft issue).
-    $this->actingAs(userInRole('Supervisor RME'))
+    foreach ([userInRole('Kasir'), $adminKlinik, $supervisor] as $user) {
+        $this->actingAs($user)
+            ->post(route('satusehat.readiness.issues.acknowledge', $issue->id))
+            ->assertForbidden();
+        $this->actingAs($user)
+            ->post(route('satusehat.readiness.issues.waive', $issue->id), ['reason' => 'coba tanpa izin'])
+            ->assertForbidden();
+    }
+
+    // FIX-08: the remediation-vs-waiver permission split moved from HTTP to the
+    // policy, where the Super Admin bypass does not apply. Same boundary, same
+    // three tiers — Kasir nothing, Admin Klinik manage-but-not-waive,
+    // Supervisor RME waive.
+    expect(userInRole('Kasir')->can('manage', $issue))->toBeFalse()
+        ->and(userInRole('Kasir')->can('waive', $issue))->toBeFalse()
+        ->and($adminKlinik->can('manage', $issue))->toBeTrue()
+        ->and($adminKlinik->can('waive', $issue))->toBeFalse()
+        ->and($supervisor->can('waive', $issue))->toBeTrue();
+
+    // The waiver itself still works for the only actor that can reach it.
+    $this->actingAs(superAdmin())
         ->post(route('satusehat.readiness.issues.waive', $issue->id), ['reason' => 'alasan waiver sah'])
         ->assertRedirect();
 
@@ -136,31 +148,60 @@ it('HTTP actions are permission-gated and waivers need the dedicated permission'
 it('issues outside the RME branch set are unreachable (IDOR boundary)', function () {
     ['issue' => $issue] = ssOpenIssue();
 
-    // Take the branch out of the RME set — the issue must vanish (404), even
-    // for a fully-permitted user, and a forged POST must also 404.
+    // Take the branch out of the RME set — the issue must vanish, even for the
+    // most privileged actor, and a forged POST must vanish too.
     Branch::query()->whereKey($issue->branch_id)->update(['is_rme_enabled' => false]);
 
+    // FIX-08: a Supervisor RME is now stopped by the Super Admin gate (403), so
+    // its response no longer proves the branch boundary. The boundary itself is
+    // proven with a Super Admin, who clears the gate but is still bound by the
+    // server-side RME branch scope (a branch set, not a permission check).
     $supervisor = userInRole('Supervisor RME');
-    $this->actingAs($supervisor)->get(route('satusehat.readiness.issues.show', $issue->id))->assertNotFound();
-    $this->actingAs($supervisor)->post(route('satusehat.readiness.issues.acknowledge', $issue->id))->assertNotFound();
+    $this->actingAs($supervisor)->get(route('satusehat.readiness.issues.show', $issue->id))->assertForbidden();
+    $this->actingAs($supervisor)->post(route('satusehat.readiness.issues.acknowledge', $issue->id))->assertForbidden();
+
+    $superAdmin = superAdmin();
+    $this->actingAs($superAdmin)->get(route('satusehat.readiness.issues.show', $issue->id))->assertNotFound();
+    $this->actingAs($superAdmin)->post(route('satusehat.readiness.issues.acknowledge', $issue->id))->assertNotFound();
+
+    // Policy layer: out-of-RME-scope is unreachable for a fully-permitted
+    // non-Super-Admin too (Gate::before never applies to them).
+    expect($supervisor->can('view', $issue->fresh()))->toBeFalse()
+        ->and($supervisor->can('manage', $issue->fresh()))->toBeFalse();
 });
 
 it('pins a branch operator (Admin Klinik) to their own branch while executives stay cross-branch', function () {
     ['ctx' => $ctx, 'issue' => $issue] = ssOpenIssue();
 
-    // Admin Klinik whose online context is a DIFFERENT RME branch → 404.
     $otherBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
     $foreignAdmin = userInRole('Admin Klinik');
     rmeMakeAdminClinicActive($foreignAdmin, $otherBranch);
+    $supervisor = userInRole('Supervisor RME');
+
+    // FIX-08: neither actor reaches the workspace over HTTP any more, so the
+    // pinned-vs-cross-branch distinction is asserted on the very same scope
+    // resolver the controller uses (SatusehatWorkspaceScope::branchIdsFor),
+    // which is where the pinning is actually implemented.
     $this->actingAs($foreignAdmin)
         ->post(route('satusehat.readiness.issues.acknowledge', $issue->id))
-        ->assertNotFound();
+        ->assertForbidden();
     $this->actingAs($foreignAdmin)
         ->get(route('satusehat.readiness.issues.show', $issue->id))
-        ->assertNotFound();
+        ->assertForbidden();
 
-    // Supervisor RME (executive tier) reaches the same issue cross-branch.
-    $this->actingAs(userInRole('Supervisor RME'))
+    $scope = app(SatusehatWorkspaceScope::class);
+
+    // Branch operator: pinned to their own branch, the issue's branch excluded.
+    expect($scope->branchIdsFor($foreignAdmin))->toBe([$otherBranch->id])
+        ->and(in_array((int) $issue->branch_id, $scope->branchIdsFor($foreignAdmin), true))->toBeFalse();
+
+    // Executive tier: cross-branch, the issue's branch included.
+    expect(in_array((int) $issue->branch_id, $scope->branchIdsFor($supervisor), true))->toBeTrue()
+        ->and(in_array((int) $otherBranch->id, $scope->branchIdsFor($supervisor), true))->toBeTrue();
+
+    // And an actor that clears the FIX-08 gate still resolves cross-branch and
+    // reads the issue end-to-end over HTTP.
+    $this->actingAs(superAdmin())
         ->get(route('satusehat.readiness.issues.show', $issue->id))
         ->assertOk();
 });

@@ -5,9 +5,12 @@ namespace App\Modules\Prescription\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Prescription\Exceptions\WhatsAppDeliveryException;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Modules\Prescription\Requests\SendPrescriptionWhatsAppRequest;
 use App\Modules\Prescription\Requests\StoreRmePrescriptionRequest;
 use App\Modules\Prescription\Requests\UpdateRmePrescriptionRequest;
+use App\Modules\Prescription\Services\PrescriptionWhatsAppDeliveryService;
 use App\Modules\Prescription\Services\RmePrescriptionService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
@@ -28,8 +31,16 @@ class RmePrescriptionController extends Controller
         $data = $this->service->showDataForVisit($clinicVisit);
         $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
         $canManage = auth()->user()?->can('create', [RmePrescription::class, $clinicVisit]) ?? false;
+        $prescription = $data['prescription'];
+        // FIX-02 — the WhatsApp hand-off is offered only for a saved prescription
+        // the operator is actually authorised to transmit.
+        $canSendWhatsApp = $prescription !== null
+            && (auth()->user()?->can('sendWhatsApp', $prescription) ?? false);
 
         return view('rme.visits.prescription.show', [
+            'canSendWhatsApp' => $canSendWhatsApp,
+            'whatsAppEnabled' => app(PrescriptionWhatsAppDeliveryService::class)->isEnabled(),
+            'lastWhatsAppDelivery' => $prescription?->whatsAppDeliveries()->latest('id')->first(),
             'clinicVisit' => $clinicVisit,
             'prescription' => $data['prescription'],
             'defaults' => $data['defaults'],
@@ -38,6 +49,37 @@ class RmePrescriptionController extends Controller
             'canManage' => $canManage,
             'editMode' => $canManage && (request()->boolean('edit') || $data['prescription'] === null),
         ]);
+    }
+
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — send this prescription to
+     * the patient through the official WhatsApp Business Platform.
+     *
+     * Server-to-server: no wa.me link, no WhatsApp Web, no browser redirect.
+     * A failure never mutates the prescription — the operator gets an
+     * actionable message and the clinical record is untouched.
+     */
+    public function sendWhatsApp(
+        SendPrescriptionWhatsAppRequest $request,
+        RmePrescription $rmePrescription,
+        PrescriptionWhatsAppDeliveryService $delivery,
+    ): RedirectResponse {
+        $this->authorize('sendWhatsApp', $rmePrescription);
+
+        try {
+            $sent = $delivery->send(
+                $rmePrescription,
+                $request->user(),
+                (bool) $request->boolean('resend'),
+            );
+        } catch (WhatsAppDeliveryException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with(
+            'status',
+            'Resep berhasil dikirim ke WhatsApp pasien ('.$sent->maskedRecipient().').'
+        );
     }
 
     public function store(StoreRmePrescriptionRequest $request, ClinicVisit $clinicVisit): RedirectResponse

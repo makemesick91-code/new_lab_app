@@ -52,6 +52,20 @@ class RmePrescriptionPolicy
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
     }
 
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — hand this prescription to
+     * the patient over WhatsApp. Its own clinical permission, so viewing or
+     * printing a prescription never implies the authority to transmit it.
+     */
+    public function sendWhatsApp(User $user, RmePrescription $prescription): Response|bool
+    {
+        if (! $user->can('send_prescription_whatsapp')) {
+            return false;
+        }
+
+        return $this->view($user, $prescription);
+    }
+
     public function update(User $user, RmePrescription $prescription): Response|bool
     {
         if (! $this->canManage($user) || ! $this->belongsToActiveBranch($prescription->branch_id)) {

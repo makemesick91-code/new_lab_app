@@ -236,6 +236,7 @@ class RoleSeeder extends Seeder
             'view_clinic_visits',
             'manage_clinic_visits',
             'complete_rme_examination',
+            'send_prescription_whatsapp',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
@@ -369,6 +370,7 @@ class RoleSeeder extends Seeder
             'view_clinic_visits',
             'manage_clinic_visits',
             'complete_rme_examination',
+            'send_prescription_whatsapp',
             // Doctor/Perawat treatment room worklist
             'view_treatment_worklist',
             // Cashier RME: billing, payment, receivables, follow-ups

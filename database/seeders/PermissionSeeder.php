@@ -129,6 +129,9 @@ class PermissionSeeder extends Seeder
         // registration and room placement while only clinically responsible
         // roles may close a doctor's examination and hand it to the cashier.
         'complete_rme_examination',
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — hand a prescription to
+        // the patient over the official WhatsApp Business Platform.
+        'send_prescription_whatsapp',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist

@@ -37,6 +37,11 @@
                 <div class="text-center border-b border-hairline pb-4 mb-5">
                     <x-brand.daengtisia-logo class="mx-auto mb-3 h-14 w-auto" />
                     <h2 class="text-xl font-bold text-navy">{{ $invoice->branch?->name ?? config('app.name') }}</h2>
+                    {{-- FIX-01 — the note carries the identity of the branch that
+                         issued the invoice, not the cashier's current context. --}}
+                    @if ($invoice->branch?->address || $invoice->branch?->phone)
+                        <p class="text-xs text-ink-muted">{{ $invoice->branch?->address }}@if ($invoice->branch?->address && $invoice->branch?->phone) &middot; @endif{{ $invoice->branch?->phone }}</p>
+                    @endif
                     <p class="mt-1 text-sm font-semibold uppercase tracking-wide text-brand-700">Kwitansi Pembayaran RME</p>
                 </div>
 

@@ -175,16 +175,28 @@ it('gates the override route by permission and medical-record policy', function 
     expect(DiagnosisRequirementOverride::query()->where('medical_record_id', $ctx['mr']->id)->count())->toBe(1);
 });
 
-it('gates rollout configuration routes (Kasir 403, Supervisor RME 200) and refuses request branch injection', function () {
+it('gates rollout configuration routes to Super Admin only (Kasir AND Supervisor RME 403) and refuses request branch injection', function () {
     $ctx = ssMakeVisit();
 
-    $this->actingAs(userInRole('Kasir'))->get(route('satusehat.rollout.index'))->assertForbidden();
-    $this->actingAs(userInRole('Kasir'))
-        ->post(route('satusehat.rollout.update', $ctx['branch']), ['mode' => 'warning', 'reason' => 'kasir mencoba mengubah rollout'])
-        ->assertForbidden();
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
+    // Supervisor RME — who still holds configure_diagnosis_rollout — is denied
+    // at the route layer too.
+    foreach (['Kasir', 'Supervisor RME'] as $role) {
+        $this->actingAs(userInRole($role))->get(route('satusehat.rollout.index'))->assertForbidden();
+        $this->actingAs(userInRole($role))
+            ->post(route('satusehat.rollout.update', $ctx['branch']), ['mode' => 'warning', 'reason' => 'peran ini mencoba mengubah rollout'])
+            ->assertForbidden();
+    }
 
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.rollout.index'))->assertOk();
-    $this->actingAs(userInRole('Supervisor RME'))
+    // The route's own configure_diagnosis_rollout requirement is unchanged.
+    expect(userInRole('Supervisor RME')->can('configure_diagnosis_rollout'))->toBeTrue()
+        ->and(userInRole('Kasir')->can('configure_diagnosis_rollout'))->toBeFalse();
+
+    // Nothing was written by the denied attempts.
+    expect(s4bRollout()->modeForBranch($ctx['branch']->id))->not->toBe(DiagnosisRolloutSetting::MODE_WARNING);
+
+    $this->actingAs(superAdmin())->get(route('satusehat.rollout.index'))->assertOk();
+    $this->actingAs(superAdmin())
         ->post(route('satusehat.rollout.update', $ctx['branch']), ['mode' => 'warning', 'reason' => 'fase warning untuk adopsi'])
         ->assertRedirect();
 

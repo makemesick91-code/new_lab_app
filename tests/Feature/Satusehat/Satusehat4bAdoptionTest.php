@@ -68,13 +68,22 @@ it('counts overrides and rollout modes in the adoption metrics', function () {
         ->and(collect($metrics['rollout_modes'])->firstWhere('branch_id', $ctx['branch']->id)['mode'])->toBe('pilot_enforced');
 });
 
-it('gates the adoption dashboard (Owner 200 via view_diagnosis_adoption, Kasir/Doctor 403) and leaks no NIK', function () {
+it('gates the adoption dashboard to Super Admin only (Owner and Kasir 403) and leaks no NIK', function () {
     $ctx = ssMakeVisit(['visit_date' => now()->toDateString()]);
     ssDiagnosis($ctx, 'K02.1', 'primary');
 
-    $this->actingAs(userInRole('Kasir'))->get(route('satusehat.adoption.index'))->assertForbidden();
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
+    // Owner — who still holds view_diagnosis_adoption — is denied as well.
+    foreach (['Kasir', 'Owner'] as $role) {
+        $this->actingAs(userInRole($role))->get(route('satusehat.adoption.index'))->assertForbidden();
+    }
 
-    $response = $this->actingAs(userInRole('Owner'))->get(route('satusehat.adoption.index'));
+    // The route's own view_diagnosis_adoption requirement is unchanged.
+    expect(userInRole('Owner')->can('view_diagnosis_adoption'))->toBeTrue()
+        ->and(userInRole('Kasir')->can('view_diagnosis_adoption'))->toBeFalse()
+        ->and(userInRole('Doctor')->can('view_diagnosis_adoption'))->toBeFalse();
+
+    $response = $this->actingAs(superAdmin())->get(route('satusehat.adoption.index'));
     $response->assertOk();
     expect($response->getContent())->not->toContain($ctx['patient']->ktp_number);
 });

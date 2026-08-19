@@ -67,7 +67,10 @@ it('renders the dental preview locally and never sends anything', function () {
     ssAddIdentifiers($ctx);
     $candidate = ssService()->generateForVisit($ctx['visit']);
 
-    $viewer = userWith(['view_satusehat_submissions']);
+    // FIX-08: SATUSEHAT is Super Admin only (`can:satusehat.access` on the whole
+    // route group), so the preview is rendered for a Super Admin. Every
+    // preview/privacy assertion below is unchanged.
+    $viewer = superAdmin();
     $response = $this->actingAs($viewer)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('satusehat.submissions.preview', $candidate))
@@ -79,8 +82,10 @@ it('renders the dental preview locally and never sends anything', function () {
     Http::assertNothingSent();
 });
 
-it('shows the dental coverage page to a viewer', function () {
-    $viewer = userWith(['view_satusehat_submissions']);
+it('shows the dental coverage page to a Super Admin', function () {
+    // FIX-08: the module is Super Admin only; a `view_satusehat_submissions`
+    // holder is now denied at the route group (see the denial test below).
+    $viewer = superAdmin();
 
     $this->actingAs($viewer)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -90,7 +95,9 @@ it('shows the dental coverage page to a viewer', function () {
 });
 
 it('shows the production readiness page and states production is blocked', function () {
-    $settings = userWith(['manage_satusehat_settings']);
+    // FIX-08: Super Admin only — the `manage_satusehat_settings` route
+    // permission is untouched, the outer gate simply precedes it.
+    $settings = superAdmin();
 
     $this->actingAs($settings)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -99,13 +106,19 @@ it('shows the production readiness page and states production is blocked', funct
         ->assertSee('TERBLOKIR', false);
 });
 
-it('denies the coverage page without a SATUSEHAT permission', function () {
-    $user = userWith(['manage patients']);
-
-    $this->actingAs($user)
-        ->withoutMiddleware(EnsureRmeOnlineContext::class)
-        ->get(route('satusehat.dental.coverage'))
-        ->assertForbidden();
+it('denies the coverage page to every non-Super-Admin, SATUSEHAT permission or not', function () {
+    // FIX-08: the module is Super Admin only. Holding the per-feature SATUSEHAT
+    // permission is no longer sufficient — the outer gate denies first.
+    foreach ([
+        userWith(['manage patients']),
+        userWith(['view_satusehat_submissions']),
+        userWith(['manage_satusehat_settings']),
+    ] as $user) {
+        $this->actingAs($user)
+            ->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->get(route('satusehat.dental.coverage'))
+            ->assertForbidden();
+    }
 });
 
 it('keeps SATUSEHAT-2 in WATCH: external submission remains disabled', function () {

@@ -52,12 +52,16 @@ class EnsureRmeOnlineContext
 
         if (! $this->onlineContext->requiresDoctorContext($user)
             && ! $this->onlineContext->requiresAdminClinicContext($user)
-            && ! $this->onlineContext->requiresPerawatContext($user)) {
+            && ! $this->onlineContext->requiresPerawatContext($user)
+            // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — Kasir now works from a
+            // selected branch too. Without this the cashier would fall through
+            // this early return and reach the workspace with no working context.
+            && ! $this->onlineContext->requiresKasirContext($user)) {
             return $next($request);
         }
 
         if ($request->expectsJson()) {
-            abort(403, 'Pilih cabang dan ruangan (dokter) atau cabang (admin klinik/perawat) terlebih dahulu.');
+            abort(403, 'Pilih cabang dan ruangan (dokter) atau cabang (admin klinik/perawat/kasir) terlebih dahulu.');
         }
 
         return redirect()
