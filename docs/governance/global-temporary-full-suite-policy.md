@@ -176,6 +176,22 @@ real sprint updates its manifest, **every real fix merge resolves to
 skipped. Only a genuinely docs-only change set resolves to `docs_only` and skips
 the step.
 
+### 6.0 Governance-only changes deliberately do not touch the manifest
+
+A governance/docs/rules-only change (this policy itself is the worked example)
+**must not** update `.sprint/current.yml`. That file matches no classifier
+pattern, so adding it flips an otherwise clean `docs_only` change set to
+`unknown_high_risk` — enabling the very Full Suite step the change exists to
+defer. A governance-only change is also not a sprint, so it needs no manifest.
+Verify before pushing:
+
+```bash
+git diff --cached --name-only | bash scripts/ci/resolve-gates.sh --changed-files-stdin
+```
+
+This is **not** the §5 prohibition on manufacturing a weaker profile: the change
+set is genuinely docs-only, and the classification follows the change.
+
 ### 6.1 Handling the post-merge push-to-base run
 
 Precedent set by FIX-LEGACY-RME-ROUTINE-OPS-1 (run `32205563992`). The permitted
