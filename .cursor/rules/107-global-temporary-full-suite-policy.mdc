@@ -1,0 +1,158 @@
+---
+description: GLOBAL TEMPORARY FULL-SUITE POLICY (ACTIVE) — the Full Suite is deferred to one authoritative run on the frozen final integrated SHA; individual fix sprints must not run it, and every other gate stays mandatory.
+globs:
+alwaysApply: true
+---
+
+# GLOBAL TEMPORARY FULL-SUITE POLICY — **ACTIVE / TEMPORARY**
+
+Canonical document: `docs/governance/global-temporary-full-suite-policy.md`.
+This rule is the durable mirror. Where they differ, the document governs.
+
+**Status: ACTIVE.** Authorised by explicit user decision, effective 2026-08-19,
+global across the current corrective/fix series. It **defers** one gate; it
+removes none.
+
+## The rule
+
+1. **The Full Suite MUST NOT be run on an individual fix sprint** while this
+   policy is ACTIVE. Do not recommend it, do not dispatch it, do not run a
+   whole-repository `php artisan test` for a fix.
+2. The Full Suite is **deferred**, never cancelled as a concept, to **one
+   authoritative consolidated run on the frozen final integrated SHA** after all
+   fixes are complete.
+3. If you believe a specific change is risky enough to warrant a Full Suite:
+   **state why and ask the user. Never run it automatically.** Only an explicit
+   user override for that specific run permits it.
+
+## What is still mandatory on every fix (unchanged)
+
+Targeted tests · dependency-aware cumulative regression · security review ·
+architecture review · `pint` · `git diff --check` · permission/module suites ·
+**all required non-Full-Suite CI gates** (NSF-R012 Quality, CICD-CTRL
+Classifier, NSF-R011 Critical, CICD-CTRL Selective Module, NSF-9 Release Safety
+& Smoke, NSF-10 Release Evidence) · merge verification · deploy verification ·
+production smoke · rules sync · cleanup.
+
+> "Full Suite skipped, therefore other tests may be skipped" is **forbidden
+> reasoning**. This policy narrows exactly one gate.
+
+Regression is **risk-based and dependency-based** — derive it from
+`sprint:test-plan` + `graphify`, not by running the whole repository and not by
+running too little.
+
+## The local trigger inside DEVFLOW — read this first
+
+**`php artisan sprint:test --all-required` (and `--regression`) runs the FULL
+SUITE** — it appends a `pest-full-required` step of bare `php artisan test`
+whenever `escalate_full_suite` is true, and escalation is **fail-closed** (an
+unmatched changed file sets it; a sprint manifest matches nothing). **While this
+policy is ACTIVE, do not run `--all-required` or `--regression`.** Use:
+
+```bash
+php artisan sprint:test-plan          # read-only
+php artisan sprint:test --focused     # never escalates
+vendor/bin/pint --dirty --test
+git diff --check
+php artisan test --filter='<targeted regression>'
+```
+
+This supersedes the "run `sprint:test --all-required` before release" line in
+`docs/engineering/sprint-runtime-template.md`.
+
+## Accidental triggers — know the mechanics
+
+`full_suite_gate` fires on exactly three events:
+
+- `pull_request` → **never fires**. A fix sprint's own PR is structurally
+  `FULL_SUITE_EXECUTION_COUNT = 0`.
+- `push` to the base branch → **fires**, and a squash-merge is such a push.
+- `schedule` (weekly) → **fires**; calendar-driven, attributable to no sprint.
+- `workflow_dispatch` + `run_full_suite=true` → **deliberate; forbidden while
+  ACTIVE** except for the consolidated closure or an explicit user override.
+
+`.sprint/current.yml` matches no classifier pattern → `unknown_high_risk`, so
+every real sprint (which updates its manifest) enables the post-merge Full Suite
+step. Only a genuinely docs-only change set resolves to `docs_only`.
+
+Always resolve the profile with the real tool before pushing:
+`scripts/ci/resolve-gates.sh --base origin/<base> --head HEAD`.
+
+**Never** add `paths-ignore`, widen `skip_critical_profiles` beyond `docs_only`,
+edit CI merely to hide a failure or force a skip, or manufacture a fake
+docs-only change to obtain a weaker profile.
+
+## Cancelling a post-merge run — permitted only under proof
+
+An official `gh run cancel` of the push-to-base run is permitted **only** when
+all hold: the pre-merge candidate was green on an identical tree; the cancel
+lands **before the Full Suite job begins executing tests**; the run ID and the
+`startedAt == completedAt` zero-duration proof are recorded; no CI file is
+touched.
+
+**Forbidden:** cancelling a Full Suite that has **already begun executing** in
+order to make the count look like zero. That is an execution — record it, report
+the partial result, never claim "never executed". Never cancel a *scheduled* run
+for count management.
+
+## Evidence — truthful or nothing
+
+Every sprint report under this policy must carry:
+
+```
+FULL_SUITE_STATUS = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY
+FULL_SUITE_EXECUTION_COUNT = 0
+GLOBAL_TEMPORARY_FULL_SUITE_POLICY_ACTIVE = YES
+```
+
+Never write `FULL SUITE PASS` if it did not run. **Job skipped ≠ tests passed.
+Job cancelled ≠ tests passed.** If an accidental Full Suite genuinely runs,
+record run ID / SHA / event / result, report the breach, and never rewrite
+history to protect a count.
+
+## Closing posture and GO tags
+
+A completed fix closes at **`WATCH — PENDING CONSOLIDATED FULL SUITE`** — it is
+not failed and not unfinished. Distinguish **implementation closure** (reached)
+from **final integrated verification closure** (deferred).
+
+**No final engineering GO tag** for a fix whose governance requires a Full Suite
+before GO. Never tag on a pretended pass. Historical GO tags and CI evidence are
+**immutable** — never delete, move, downgrade, or rewrite them; this policy is
+prospective only.
+
+## Consolidated closure (do not start automatically)
+
+Begins only when the user says all fixes are finished or authorises the final
+Full Suite: inventory WATCH sprints → verify merged+deployed → freeze the final
+integrated SHA → baseline re-verify → **one** authoritative Full Suite (expected
+failures **0**) → production smoke → governance audit → GO decision → tags.
+
+On failure: **NO FINAL GO**; record the exact failure set; **do not immediately
+rerun**; diagnose with targeted tests; fix; merge/deploy; agree the next
+authoritative run with the user. Never loop the Full Suite while debugging.
+
+## Unchanged by this policy
+
+Deployment (`bash scripts/deploy-vps-runner.sh start` **on the VPS**, real
+`exit=0` + `DEPLOY OK`, backup first, `migrate --force` only, never
+`migrate:fresh`/`db:wipe`) · production smoke over `https://daengtisia.online` ·
+Legacy RME fail-closed / RM-derived branch authority / read-only archive / maker
+≠ publisher / creator ≠ approver / admission EMPTY + capability OFF at rest ·
+CICD-CTRL-1 default-strong classification · branch isolation · ledger-only
+inventory · RBAC 3-layer · PII masking · additive-only migrations.
+
+**This policy changes test scheduling only.**
+
+## Retirement
+
+Ends only on explicit user revocation, or on completed consolidated closure. One
+finished fix does not end it. On retirement mark this rule and the canonical
+document `RETIRED after consolidated Full Suite closure` — **never delete them.**
+
+## Deferred inventory
+
+`FIX-LEGACY-RME-ROUTINE-OPS-1` — WATCH, Full Suite skipped (count 0), **no GO
+tag**; runtime authority `acbf5e3`, docs-only `1311dba` undeployed. Per explicit
+user decision **do not create a `…-1A` Full-Suite closure sprint now**; it folds
+into the single consolidated closure.
