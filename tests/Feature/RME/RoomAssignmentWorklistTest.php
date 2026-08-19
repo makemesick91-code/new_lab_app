@@ -139,7 +139,12 @@ it('lets a Perawat open the treatment room worklist', function () {
 });
 
 it('forbids a Kasir (no worklist permission) from the worklist', function () {
-    $this->actingAs(userInRole('Kasir'))
+    // FIX-03 — give the cashier a real working branch so this asserts the
+    // worklist permission boundary, not the online-context selector.
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, $this->atg);
+
+    $this->actingAs($kasir)
         ->get(route('rme.treatment-room-worklist.index'))
         ->assertForbidden();
 });
