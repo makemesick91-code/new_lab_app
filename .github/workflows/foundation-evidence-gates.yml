@@ -122,14 +122,23 @@ jobs:
       - name: Resolve temporary Full Suite policy (CI-TEMP-FULL-SUITE-SCHEDULE-GATE)
         id: full_suite_policy
         shell: bash
+        # Context values are passed through `env:` and never interpolated into
+        # the command line — the same convention the runner-routing step above
+        # uses. A ref is attacker-influenceable text; it must never be able to
+        # terminate a quote and become part of the command.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          DISPATCH_RUN_FULL_SUITE: ${{ inputs.run_full_suite }}
+          DISPATCH_POLICY_OVERRIDE: ${{ inputs.full_suite_policy_override }}
         run: |
           chmod +x scripts/ci/resolve-full-suite-policy.sh
           bash scripts/ci/resolve-full-suite-policy.sh \
-            --event '${{ github.event_name }}' \
-            --ref '${{ github.ref }}' \
+            --event "$EVENT_NAME" \
+            --ref "$EVENT_REF" \
             --base-branch 'feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report' \
-            --dispatch-run-full-suite '${{ inputs.run_full_suite }}' \
-            --dispatch-override '${{ inputs.full_suite_policy_override }}' \
+            --dispatch-run-full-suite "$DISPATCH_RUN_FULL_SUITE" \
+            --dispatch-override "$DISPATCH_POLICY_OVERRIDE" \
             --github-output
 
       - name: Resolve safe CI gates (CICD-CTRL-1)

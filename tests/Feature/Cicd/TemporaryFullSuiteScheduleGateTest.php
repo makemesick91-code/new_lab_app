@@ -380,6 +380,21 @@ it('detects a workflow that stops honouring the policy', function () {
     }
 });
 
+it('passes CI context to the resolver through env, never the command line', function () {
+    $step = collect(tfsWorkflow()['jobs']['classify']['steps'])
+        ->firstWhere('id', 'full_suite_policy');
+
+    // A ref is attacker-influenceable text. Interpolating it into `run:` would
+    // let a crafted branch name terminate the quote and join the command — the
+    // same convention the runner-routing step already follows.
+    expect($step)->not->toBeNull()
+        ->and($step['env'])->toHaveKeys(['EVENT_NAME', 'EVENT_REF', 'DISPATCH_RUN_FULL_SUITE', 'DISPATCH_POLICY_OVERRIDE'])
+        ->and($step['run'])->not->toContain('github.ref')
+        ->and($step['run'])->not->toContain('github.event_name')
+        ->and($step['run'])->not->toContain('inputs.run_full_suite')
+        ->and($step['run'])->not->toContain('inputs.full_suite_policy_override');
+});
+
 it('keeps the resolver read-only and incapable of running the suite', function () {
     $resolver = (string) file_get_contents(base_path('scripts/ci/resolve-full-suite-policy.sh'));
 

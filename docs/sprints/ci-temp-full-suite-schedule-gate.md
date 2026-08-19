@@ -190,7 +190,7 @@ gh run view <run-id> --json jobs \
 
 ## 6. Tests
 
-`tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php` — **24 tests, 149
+`tests/Feature/Cicd/TemporaryFullSuiteScheduleGateTest.php` — **25 tests, 158
 assertions.** They compose the two real artefacts rather than paraphrasing them:
 the real resolver script produces `full_suite_authorized`, which is fed into an
 evaluator of the **real workflow `if:` expression**.
@@ -223,6 +223,20 @@ The suite is wired into the CI critical filter via the existing `Cicd` selection
 | Can a docs-only change silently retire the policy? | No. Retirement requires editing the canonical JSON state; a test pins it to `ACTIVE`. |
 | Does anything fail **open**? | No. Every unresolved path resolves to deferred. |
 | Was any failure hidden? | No. This sprint defers a run; it changes no test, no expectation, and no baseline. |
+| Can retirement sneak through as a docs-only change? | No — and this was verified, not assumed. `.github/ci-policy/full-suite-policy.json` classifies as `ci_workflow` (high risk), so editing the status always runs the full critical gate. It can never resolve to `docs_only`. |
+| Is there another scheduled path to the suite? | No. `foundation-evidence-gates.yml` is the only workflow with a `schedule:` trigger, and `RUN_FULL_SUITE` — the env flag guarding `run_full_suite()` in `scripts/ci/foundation-evidence-gates.sh` — is set by no workflow; CI only ever invokes that script `--critical-only`. |
+| Can an env default enable the suite? | No. The resolver reads **no** environment variable for policy state; the status comes only from the canonical file. |
+
+**Finding raised and fixed during review — shell injection surface (LOW).** The
+first implementation interpolated `${{ github.ref }}` directly into the resolver
+step's `run:` block. A ref is attacker-influenceable text, and a branch name
+containing a single quote could terminate the quoting and join the command. This
+also deviated from the convention the sibling runner-routing step already used.
+
+Fixed by passing every context value through an `env:` block and referencing it as
+`"$EVENT_REF"`, matching the established pattern. A regression test now asserts the
+step declares those env keys and that `run:` contains no `github.*` / `inputs.*`
+interpolation.
 
 **Privacy / safety:** no migration, permission, role, route, schema or clinical
 path touched. No secret added. No patient data involved.
