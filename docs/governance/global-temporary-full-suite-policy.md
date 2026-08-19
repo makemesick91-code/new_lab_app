@@ -162,12 +162,18 @@ this policy that instruction is **superseded** by the sequence above.
 `full_suite_gate` in `.github/workflows/foundation-evidence-gates.yml` fires on
 exactly three events. This is verified behaviour, not an assumption:
 
-| Event | Fires? | Under this policy |
+> **SUPERSEDED BY CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19).** The table below
+> records the behaviour *before* that sprint. Both automatic triggers are now
+> **deferred in CI**, not merely documented. §6.1 and §6.2 below carry the current
+> handling; the historical text is kept because the `gh run cancel` precedent it
+> describes remains valid evidence for runs that predate the gate.
+
+| Event | Fired? (before) | Now (policy ACTIVE) |
 |---|---|---|
-| `pull_request` | **No** — not in the job's `if` condition | Structurally guaranteed zero. This is why a fix sprint's own PR validation is always `FULL_SUITE_EXECUTION_COUNT = 0`. |
-| `push` to the base branch | **Yes** | **Structural.** A squash-merge *is* a push to base. See §6.1. |
-| `schedule` (weekly `0 2 * * 0` UTC) | **Yes** | **Structural, calendar-driven, attributable to no sprint.** See §6.2. |
-| `workflow_dispatch` + `run_full_suite=true` | Yes | **Deliberate. Forbidden while ACTIVE**, except for the consolidated closure (§9) or an explicit per-run user override. |
+| `pull_request` | **No** — not in the job's `if` condition | Unchanged. Structurally guaranteed zero; a fix sprint's own PR validation is always `FULL_SUITE_EXECUTION_COUNT = 0`. |
+| `push` to the base branch | **Yes** | **Deferred.** `full_suite_authorized=false`, reason `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`. A squash-merge *is* a push to base, so this closed the largest structural gap. |
+| `schedule` (weekly `0 2 * * 0` UTC) | **Yes** | **Deferred.** Same reason code. The run still happens and every other gate still executes; only the Full Suite job is skipped. |
+| `workflow_dispatch` + `run_full_suite=true` | Yes | **Deferred** unless `full_suite_policy_override=true` is also set. Both inputs together are the authorised consolidated-closure path (§9). |
 
 A further mechanical fact worth knowing: `.sprint/current.yml` matches no
 classifier pattern and therefore resolves to `unknown_high_risk`. Since every
@@ -193,6 +199,17 @@ This is **not** the §5 prohibition on manufacturing a weaker profile: the chang
 set is genuinely docs-only, and the classification follows the change.
 
 ### 6.1 Handling the post-merge push-to-base run
+
+> **Now structurally prevented — CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19),
+> in force on the base branch from that sprint's merge commit onward.** GitHub
+> resolves a workflow from the pushed ref, so this protection governs pushes to
+> base only once the gate is present on base; runs that predate it remain governed
+> by the `gh run cancel` precedent below.**
+> A post-merge push to base no longer starts the Full Suite while this policy is
+> ACTIVE, so the manual `gh run cancel` handling below is a **historical
+> precedent and a fallback**, not the primary control. It still governs any run
+> that predates the gate, and its hard limit — never cancel a suite that has
+> already begun executing tests — remains in force.
 
 Precedent set by FIX-LEGACY-RME-ROUTINE-OPS-1 (run `32205563992`). The permitted
 handling is an **official `gh run cancel`**, and only under all of these
@@ -226,12 +243,21 @@ the cron fires. It is:
 
 Treat its result as an informational baseline signal only.
 
-> **Available option, requires separate explicit user authorisation:** the
-> push-to-base and/or `schedule` triggers could be narrowed for the duration of
-> this policy. That is a CI change and is **out of scope here** — it must not be
-> done unilaterally, and `full_suite_fallback_triggers` in
-> `config/ci_runtime_control.php` requires at least one of `schedule` /
-> `workflow_dispatch` to survive, or `foundation:ci-runtime-control-check` fails.
+> **DONE — CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19).** The option this
+> paragraph reserved has been exercised under explicit user authorisation. Both
+> automatic triggers are now gated in CI on a fail-closed policy decision, so a
+> scheduled run no longer executes the Full Suite while this policy is ACTIVE.
+> Both triggers are **retained** in the workflow — the gate is deferred, never
+> deleted — so `full_suite_fallback_triggers` still holds and
+> `foundation:ci-runtime-control-check` stays GO.
+>
+> Canonical state: `.github/ci-policy/full-suite-policy.json` ·
+> resolver: `scripts/ci/resolve-full-suite-policy.sh` ·
+> sprint: `docs/sprints/ci-temp-full-suite-schedule-gate.md`.
+>
+> A scheduled run is therefore no longer an "informational baseline signal" for
+> the Full Suite — the suite does not run. Every other gate in that run still
+> does, and the deferral reason is published by the always-run `classify` job.
 
 ---
 

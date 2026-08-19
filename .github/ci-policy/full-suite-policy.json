@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "CI-TEMP-FULL-SUITE-SCHEDULE-GATE — the single canonical, machine-readable state of the",
+    "GLOBAL TEMPORARY FULL-SUITE POLICY (docs/governance/global-temporary-full-suite-policy.md).",
+    "",
+    "This file is the ONE source of truth. Both layers read it and neither duplicates the value:",
+    "  - bash : scripts/ci/resolve-full-suite-policy.sh  (consumed by the CI workflow)",
+    "  - PHP  : App\\Support\\Cicd\\CiRuntimeControlScanner (consumed by governance + tests)",
+    "",
+    "Flipping `status` to RETIRED is the ONLY supported way to restore the automatic",
+    "schedule/push-to-base Full Suite. That is a governance act reserved for the consolidated",
+    "closure (policy doc s10) and must never be done as a side effect of another sprint."
+  ],
+
+  "policy_id": "GLOBAL-TEMPORARY-FULL-SUITE-POLICY",
+  "status": "ACTIVE",
+  "authorised_by": "explicit user decision",
+  "effective_from": "2026-08-19",
+  "canonical_document": "docs/governance/global-temporary-full-suite-policy.md",
+  "rule_mirror": ".cursor/rules/107-global-temporary-full-suite-policy.mdc",
+  "gating_sprint": "CI-TEMP-FULL-SUITE-SCHEDULE-GATE",
+
+  "deferred_automatic_events": ["schedule", "push"],
+
+  "authorised_manual_path": {
+    "event": "workflow_dispatch",
+    "requires_inputs": ["run_full_suite", "full_suite_policy_override"],
+    "note": "Both inputs must be true. This is the consolidated-closure path and stays usable while ACTIVE."
+  },
+
+  "reason_codes": {
+    "deferred_by_policy": "TEMPORARY_FULL_SUITE_POLICY_ACTIVE",
+    "override_required": "TEMPORARY_FULL_SUITE_POLICY_ACTIVE_OVERRIDE_REQUIRED",
+    "authorised_consolidated": "AUTHORISED_CONSOLIDATED_FULL_SUITE",
+    "not_requested": "FULL_SUITE_NOT_REQUESTED",
+    "event_never_runs_full_suite": "FULL_SUITE_NOT_ENABLED_FOR_EVENT",
+    "fail_closed": "POLICY_STATE_UNRESOLVED_FAIL_CLOSED",
+    "retired_schedule": "POLICY_RETIRED_SCHEDULED_RUN",
+    "retired_push": "POLICY_RETIRED_PUSH_TO_BASE",
+    "retired_manual": "POLICY_RETIRED_MANUAL_DISPATCH"
+  },
+
+  "retirement": {
+    "requires": "explicit user revocation, or completed consolidated Full Suite closure",
+    "forbidden": "retiring this policy as a side effect of an unrelated sprint"
+  }
+}

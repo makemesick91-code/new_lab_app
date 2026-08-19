@@ -28,6 +28,10 @@ return [
     'files' => [
         'classifier_script' => 'scripts/ci/resolve-gates.sh',
         'ci_workflow' => '.github/workflows/foundation-evidence-gates.yml',
+        // CI-TEMP-FULL-SUITE-SCHEDULE-GATE — the canonical policy state and the
+        // resolver that turns it into a per-run CI decision.
+        'full_suite_policy_state' => '.github/ci-policy/full-suite-policy.json',
+        'full_suite_policy_resolver' => 'scripts/ci/resolve-full-suite-policy.sh',
     ],
 
     // The conservative gate profiles, strongest first. `unknown_high_risk` is
@@ -103,6 +107,11 @@ return [
         'release_safety_gate',
         'nsf10_release_evidence_gate',
         'full_suite_gate',
+        // CI-TEMP-FULL-SUITE-SCHEDULE-GATE — the Full Suite authorisation wiring
+        // must stay present; deleting it would silently restore the automatic
+        // weekly / post-merge Full Suite while the temporary policy is ACTIVE.
+        'resolve-full-suite-policy.sh',
+        'full_suite_authorized',
     ],
 
     // Marker strings that must NEVER appear in the workflow — unsafe path
@@ -114,8 +123,61 @@ return [
     // The full-suite gate must remain available via at least one of these
     // fallbacks (scheduled / manual dispatch / push-to-base). Presence of any
     // is sufficient.
+    // CI-TEMP-FULL-SUITE-SCHEDULE-GATE note: both triggers are deliberately
+    // RETAINED in the workflow. The temporary policy narrows WHEN the gate may
+    // execute; it never deletes a trigger, so this invariant still holds.
     'full_suite_fallback_triggers' => [
         'schedule',
         'workflow_dispatch',
+    ],
+
+    /*
+     * CI-TEMP-FULL-SUITE-SCHEDULE-GATE — GLOBAL TEMPORARY FULL-SUITE POLICY.
+     *
+     * The canonical STATE lives in the JSON file registered above; it is never
+     * duplicated here. This block declares only the CONTRACT the state file and
+     * the resolver must satisfy, so governance can prove the CI layer and the
+     * documentation cannot drift apart.
+     */
+    'temporary_full_suite_policy' => [
+        // Where the human-readable authority lives.
+        'canonical_document' => 'docs/governance/global-temporary-full-suite-policy.md',
+        'rule_mirror' => '.cursor/rules/107-global-temporary-full-suite-policy.mdc',
+
+        // The only two statuses the resolver may read. Anything else is
+        // unresolved and MUST fail closed to "policy active".
+        'allowed_statuses' => ['ACTIVE', 'RETIRED'],
+
+        // While ACTIVE these events must never reach the Full Suite. `push`
+        // covers the post-merge squash-merge to the base branch.
+        'deferred_automatic_events' => ['schedule', 'push'],
+
+        // The one path that survives while ACTIVE: a deliberate dispatch with
+        // BOTH inputs set. This keeps the consolidated final closure possible.
+        'authorised_manual_event' => 'workflow_dispatch',
+        'authorised_manual_inputs' => ['run_full_suite', 'full_suite_policy_override'],
+
+        // Machine-readable reason codes the resolver emits. "Deferred", never
+        // "not needed" — a future operator must be able to tell the difference.
+        'required_reason_codes' => [
+            'TEMPORARY_FULL_SUITE_POLICY_ACTIVE',
+            'TEMPORARY_FULL_SUITE_POLICY_ACTIVE_OVERRIDE_REQUIRED',
+            'AUTHORISED_CONSOLIDATED_FULL_SUITE',
+            'POLICY_STATE_UNRESOLVED_FAIL_CLOSED',
+        ],
+
+        // Markers proving the resolver is fail-closed and read-only.
+        'required_resolver_markers' => [
+            'set -euo pipefail',
+            'FAIL CLOSED',
+            'POLICY_STATE_UNRESOLVED_FAIL_CLOSED',
+            'full_suite_authorized',
+        ],
+
+        // The resolver must never run tests or mutate the repository.
+        'forbidden_resolver_markers' => [
+            'artisan test',
+            'vendor/bin/pest',
+        ],
     ],
 ];

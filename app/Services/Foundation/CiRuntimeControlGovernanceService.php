@@ -86,6 +86,21 @@ class CiRuntimeControlGovernanceService
                 'title' => 'Widening the skip set requires a reviewed sprint',
                 'description' => 'Any change to skip_critical_profiles, the profile precedence, or the always-on gate set must extend this contract with tests and pass foundation:ci-runtime-control-check before shipping.',
             ],
+            [
+                'id' => 'CICDCTRL-R012',
+                'title' => 'While the temporary policy is ACTIVE no automatic trigger may run the Full Suite',
+                'description' => 'CI-TEMP-FULL-SUITE-SCHEDULE-GATE. Both automatic paths are deferred: the weekly schedule and the post-merge push to the base branch (a squash-merge IS such a push). full_suite_gate additionally requires needs.classify.outputs.full_suite_authorized == true, which the resolver only returns for an explicitly authorised dispatch. The gate is DEFERRED, never deleted — the schedule and workflow_dispatch triggers both remain, and the consolidated closure still runs the suite on the frozen final SHA.',
+            ],
+            [
+                'id' => 'CICDCTRL-R013',
+                'title' => 'One canonical policy state, resolved fail-closed',
+                'description' => 'The status lives in exactly one machine-readable file (.github/ci-policy/full-suite-policy.json) that the bash resolver and this PHP governance both read, so the workflow can never disagree with the documentation. Any uncertainty — missing file, unreadable file, unknown or duplicated status — resolves to POLICY ACTIVE and the Full Suite is not authorised. Failing closed can only defer a run; it can never hide a failure.',
+            ],
+            [
+                'id' => 'CICDCTRL-R014',
+                'title' => 'The authorised consolidated run stays reachable, and retirement is a deliberate act',
+                'description' => 'workflow_dispatch survives with two inputs: run_full_suite AND full_suite_policy_override. Both must be set, so no casual dispatch bypasses the policy while the final closure remains one deliberate action away. Restoring the automatic cadence requires flipping the canonical status to RETIRED — an explicit governance act reserved for the consolidated closure, never a side effect of another sprint.',
+            ],
         ];
     }
 
@@ -116,6 +131,13 @@ class CiRuntimeControlGovernanceService
             ? $this->pass('CICDCTRL-SAFETY-INVARIANT', 'Safety invariant intact: docs_only is the only skip-critical profile and the default profile is unknown_high_risk.')
             : $this->fail('CICDCTRL-SAFETY-INVARIANT', 'Safety invariant failed: '.implode('; ', $invariant['issues']).'.');
 
+        // CI-TEMP-FULL-SUITE-SCHEDULE-GATE — the temporary policy must be
+        // enforced by the CI layer, not merely written down.
+        $policy = $this->scanner->temporaryFullSuitePolicyPosture();
+        $checks[] = $policy['ok']
+            ? $this->pass('CICDCTRL-TEMP-FULL-SUITE-POLICY', "Temporary Full Suite policy is {$policy['status']} and enforced: the resolver is fail-closed and the workflow gates full_suite_gate on its decision.")
+            : $this->fail('CICDCTRL-TEMP-FULL-SUITE-POLICY', 'Temporary Full Suite policy posture failed: '.implode('; ', $policy['issues']).'.');
+
         $enterprise = $this->cicdEnterpriseGate->collect();
         $enterpriseDecision = (string) ($enterprise['decision'] ?? 'FAIL');
         $checks[] = $this->decisionCheck('CICDCTRL-ENT10-CICD-GATE', $enterpriseDecision, 'ENT-10 CI/CD enterprise gate is GO.');
@@ -136,6 +158,9 @@ class CiRuntimeControlGovernanceService
             'skip_critical_profiles' => $invariant['skip_critical_profiles'],
             'default_profile' => $invariant['default_profile'],
             'full_suite_fallback' => $workflow['full_suite_fallback'] ?? false,
+            'temporary_full_suite_policy_ok' => $policy['ok'],
+            'temporary_full_suite_policy_status' => $policy['status'],
+            'temporary_full_suite_policy_active' => $policy['active'],
             'enterprise_gate_decision' => $enterpriseDecision,
             'checks' => $checks,
             'summary' => [
