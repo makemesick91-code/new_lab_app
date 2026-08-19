@@ -9,6 +9,7 @@ use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Services\ClinicalDiagnosisService;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -182,8 +183,9 @@ it('gates rollout configuration routes to Super Admin only (Kasir AND Supervisor
     // Supervisor RME — who still holds configure_diagnosis_rollout — is denied
     // at the route layer too.
     foreach (['Kasir', 'Supervisor RME'] as $role) {
-        $this->actingAs(userInRole($role))->get(route('satusehat.rollout.index'))->assertForbidden();
-        $this->actingAs(userInRole($role))
+        $this->actingAs(userInRole($role))->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->get(route('satusehat.rollout.index'))->assertForbidden();
+        $this->actingAs(userInRole($role))->withoutMiddleware(EnsureRmeOnlineContext::class)
             ->post(route('satusehat.rollout.update', $ctx['branch']), ['mode' => 'warning', 'reason' => 'peran ini mencoba mengubah rollout'])
             ->assertForbidden();
     }

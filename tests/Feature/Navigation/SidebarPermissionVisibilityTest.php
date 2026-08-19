@@ -27,7 +27,11 @@ it('shows doctor-focused RME navigation but hides admin queue links and Kasir RM
 });
 
 it('shows cashier workflow navigation for Kasir but hides visit shortcuts', function () {
-    $this->actingAs(userInRole('Kasir'))
+    $kasirBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, $kasirBranch);
+
+    $this->actingAs($kasir)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertSee('Dashboard RME')
@@ -97,7 +101,11 @@ it('shows lab workflow menus for Admin Lab but not Kasir', function () {
         ->and($labSidebar)->not->toContain('Kasir');
     $this->get(route('dashboard'))->assertForbidden();
 
-    $this->actingAs(userInRole('Kasir'))
+    $kasirBranch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, $kasirBranch);
+
+    $this->actingAs($kasir)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Order Lab')

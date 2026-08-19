@@ -17,7 +17,7 @@ beforeEach(function () {
 
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'HW2', 'is_rme_enabled' => true]);
-    $this->manager = userWith(['manage_clinic_visits']);
+    $this->manager = userWith(['manage_clinic_visits', 'complete_rme_examination']);
     Storage::fake('public');
 });
 

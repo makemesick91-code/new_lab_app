@@ -3,6 +3,7 @@
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\MedicalRecordDiagnosisService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Services\SatusehatReadinessService;
 use Illuminate\Support\Facades\Http;
@@ -143,7 +144,8 @@ it('diagnosis routes are permission + policy gated (unauthorized user cannot rec
 it('master governance page is Super Admin only and denies every other role', function () {
     // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
     // master governance page is unreachable for Supervisor RME too.
-    $this->actingAs(userInRole('Kasir'))->get(route('satusehat.diagnoses.index'))->assertForbidden();
+    $this->actingAs(userInRole('Kasir'))->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('satusehat.diagnoses.index'))->assertForbidden();
     $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.diagnoses.index'))->assertForbidden();
     $this->actingAs(superAdmin())->get(route('satusehat.diagnoses.index'))->assertOk();
 

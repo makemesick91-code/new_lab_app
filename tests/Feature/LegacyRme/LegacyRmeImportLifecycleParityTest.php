@@ -174,6 +174,9 @@ it('refuses an account with no legacy permission on both surfaces', function () 
     // make this pass for the wrong reason (it would then be the permission gate
     // refusing, which the next test covers deliberately).
     $cashier->forceFill(['branch_id' => legacyRmeBranch('LDK2', 'Cabang Landak')->id])->save();
+    // FIX-03 — a Kasir now works from a selected branch; pin the same LDK2 so
+    // BranchContext still resolves exactly where this test intends.
+    rmeMakeKasirActive($cashier, legacyRmeBranch('LDK2', 'Cabang Landak'));
 
     test()->actingAs($cashier)
         ->post(route('settings.rme.legacy-imports.cancel', $import->getKey()))

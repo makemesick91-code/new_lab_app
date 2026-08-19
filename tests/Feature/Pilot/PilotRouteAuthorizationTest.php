@@ -20,6 +20,7 @@ it('allows Owner to open dashboard and reports but not lab order creation', func
 
 it('allows Kasir to access cashier routes but not visit creation', function () {
     $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]));
 
     $this->actingAs($kasir)->get(route('rme.cashier.index'))->assertOk();
     $this->actingAs($kasir)->get(route('rme.visits.index'))->assertOk();
@@ -48,6 +49,7 @@ it('allows Perawat visit queue but denies cashier and lab candidates', function 
 it('allows Admin Lab lab candidate queue and denies users without lab permissions', function () {
     $adminLab = userInRole('Admin Lab');
     $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]));
 
     $this->actingAs($adminLab)->get(route('lab-case-candidates.index'))->assertOk();
     $this->actingAs($kasir)->get(route('lab-case-candidates.index'))->assertForbidden();

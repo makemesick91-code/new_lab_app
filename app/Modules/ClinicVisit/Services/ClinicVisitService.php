@@ -243,7 +243,13 @@ class ClinicVisitService
 
             unset($data['branch_id']);
 
-            $visitDate = Carbon::today();
+            // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-06) — visit_date is a
+            // clinical calendar date, so it is stamped from the clinic's own
+            // calendar (Asia/Makassar), not from a UTC today(). Registering at
+            // 00:30 WITA previously recorded YESTERDAY's date, queue number and
+            // visit number, and such a visit would then be missing from the
+            // "today" list this sprint makes the default.
+            $visitDate = Carbon::parse($this->clock->todayString());
 
             $queueNumber = $this->visits->nextQueueNumber($branchId, $visitDate);
             $visitNumber = $this->generateUniqueVisitNumber($branchId, $visitDate);

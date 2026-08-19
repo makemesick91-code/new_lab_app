@@ -2,6 +2,7 @@
 
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Services\ClinicalDiagnosisService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -162,7 +163,7 @@ it('gates the review routes to Super Admin only while the manager-vs-reviewer pe
     $reviewer = userWith(['review_clinical_terminology']);
 
     foreach ([userInRole('Kasir'), $manager, $reviewer] as $user) {
-        $this->actingAs($user)
+        $this->actingAs($user)->withoutMiddleware(EnsureRmeOnlineContext::class)
             ->post(route('satusehat.diagnoses.approve', $dx), ['reason' => 'peran ini tidak boleh menyetujui'])
             ->assertForbidden();
     }

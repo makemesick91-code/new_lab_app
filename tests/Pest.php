@@ -77,10 +77,12 @@ use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
+use App\Support\Clinical\ClinicalClock;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
 use Illuminate\Http\Testing\File;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Carbon;
 use Spatie\Permission\Models\Role;
 
 /**
@@ -516,6 +518,18 @@ function rmeMakePerawatActive(User $user, Branch $branch): void
 
     app(UserOnlineContextService::class)
         ->startPerawatSession($user, (int) $branch->id);
+}
+
+/**
+ * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-06) — the clinic's own calendar day.
+ *
+ * visit_date is a clinical calendar date, so fixtures must use the same
+ * Asia/Makassar day production stamps. A raw today() is UTC and drifts from the
+ * clinic's day for eight hours of every day.
+ */
+function clinicalToday(): Carbon
+{
+    return Carbon::parse(app(ClinicalClock::class)->todayString());
 }
 
 /**

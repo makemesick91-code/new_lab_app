@@ -2,6 +2,7 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\MedicalRecord\Services\DiagnosisRolloutService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Services\SatusehatDiagnosisAdoptionService;
 use Illuminate\Support\Facades\Http;
 
@@ -75,7 +76,8 @@ it('gates the adoption dashboard to Super Admin only (Owner and Kasir 403) and l
     // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
     // Owner — who still holds view_diagnosis_adoption — is denied as well.
     foreach (['Kasir', 'Owner'] as $role) {
-        $this->actingAs(userInRole($role))->get(route('satusehat.adoption.index'))->assertForbidden();
+        $this->actingAs(userInRole($role))->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->get(route('satusehat.adoption.index'))->assertForbidden();
     }
 
     // The route's own view_diagnosis_adoption requirement is unchanged.

@@ -16,6 +16,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
+use App\Modules\Treatment\Models\Treatment;
 use App\Support\Clinical\ClinicalClock;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Validation\ValidationException;
@@ -267,4 +268,35 @@ it('resolves the visit list default from the clinical calendar, not UTC', functi
     $this->actingAs($viewer)->get(route('rme.visits.index'))
         ->assertOk()
         ->assertSee(app(ClinicalClock::class)->todayString());
+});
+
+it('stamps a new visit with the clinic calendar day, not a UTC today', function () {
+    // Between 00:00 and 08:00 WITA the UTC date is still yesterday. A visit
+    // registered in that window used to be stamped with YESTERDAY's date, queue
+    // number and visit number — and would then be missing from the "today" list
+    // this sprint makes the default.
+    $admin = userInRole('Admin Klinik');
+    rmeMakeAdminClinicActive($admin, $this->tkm);
+
+    $patient = Patient::factory()->create(['branch_id' => $this->tkm->id, 'name' => 'Pasien Subuh']);
+
+    $treatment = Treatment::factory()->create(['is_active' => true]);
+
+    $this->actingAs($admin)->post(route('rme.visits.store'), [
+        'patient_mode' => 'existing',
+        'branch_id' => $this->tkm->id,
+        'patient_id' => $patient->id,
+        'doctor_id' => $this->doctor->id,
+        'initial_treatment_id' => $treatment->id,
+        'visit_type' => ClinicVisit::VISIT_TYPE_NEW,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $visit = ClinicVisit::query()->where('patient_id', $patient->id)->firstOrFail();
+    $clinicalToday = app(ClinicalClock::class)->todayString();
+
+    expect($visit->visit_date->toDateString())->toBe($clinicalToday)
+        ->and($visit->visit_number)->toContain(str_replace('-', '', $clinicalToday));
+
+    // And it is therefore visible on the default (today) list.
+    $this->actingAs($admin)->get(route('rme.visits.index'))->assertOk()->assertSee('Pasien Subuh');
 });
