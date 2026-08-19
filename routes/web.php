@@ -449,6 +449,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // RME-BRANCH-SUN4 — Perawat picks a Cabang RME the same way as Admin Klinik.
     Route::post('online-context/perawat', [OnlineContextController::class, 'storePerawat'])
         ->name('online-context.perawat');
+    // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — cashier working branch context.
+    Route::post('online-context/kasir', [OnlineContextController::class, 'storeKasir'])
+        ->name('online-context.kasir');
     Route::post('online-context/offline', [OnlineContextController::class, 'offline'])
         ->name('online-context.offline');
 

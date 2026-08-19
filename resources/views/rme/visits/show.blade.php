@@ -28,8 +28,17 @@
             'cashier_pending' => 'success',
             'cancelled'       => 'danger',
         ];
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07) — Admin Klinik's visit detail
+        // is read-only plus "Cetak RME"; it registers and places patients from
+        // Antrian Pasien instead. Every hidden control is also denied server-side
+        // by its own ability, so this is presentation, never the boundary.
+        $canOperateVisit = auth()->user()?->can('operateFromDetail', $visit) ?? false;
+        // FIX-05 — "Selesai Pemeriksaan" additionally needs clinical authority.
+        $canCompleteExamination = auth()->user()?->can('completeExamination', $visit) ?? false;
         $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
+            ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING
+                && ! $canCompleteExamination)
             ->all();
     @endphp
 
@@ -44,6 +53,7 @@
             </x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.badge :status="$visit->status">{{ $statusLabels[$visit->status] ?? $visit->status }}</x-ui.badge>
+                @if ($canOperateVisit)
                 @can('transition', $visit)
                     @foreach ($validNextStatuses as $nextStatus)
                         <form method="POST" action="{{ route('rme.visits.transition', $visit) }}">
@@ -60,9 +70,11 @@
                         <x-ui.button variant="secondary" :href="route('rme.visits.edit', $visit)">Ubah</x-ui.button>
                     @endcan
                 @endif
+                @endif
                 @can('print', $visit)
                     <x-ui.button variant="neutral" :href="route('rme.visits.print', $visit)" target="_blank">Cetak RME</x-ui.button>
                 @endcan
+                @if ($canOperateVisit)
                 @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
                     <x-ui.button variant="primary" :href="route('rme.visits.create', [
                         'patient_id' => $visit->patient_id,
@@ -71,6 +83,7 @@
                         'branch_id' => $visit->branch_id,
                     ])">Buat Kontrol</x-ui.button>
                 @endcan
+                @endif
             </x-slot:actions>
         </x-ui.page-header>
 
@@ -93,6 +106,10 @@
                         Pasien belum ditempatkan ke ruangan perawatan. Dokter belum dapat memulai pemeriksaan
                         sebelum ruangan dipilih.
                     </p>
+                    @if (! $canOperateVisit)
+                        <span class="text-xs">Penempatan ruangan dilakukan dari halaman <span class="font-medium">Antrian Pasien</span>.</span>
+                    @endif
+                    @if ($canOperateVisit)
                     @can('update', $visit)
                         @if (($rooms ?? collect())->isNotEmpty())
                             <form method="POST" action="{{ route('rme.visits.assign-room', $visit) }}"
@@ -112,6 +129,7 @@
                             <span class="text-xs">Belum ada ruangan aktif pada cabang ini.</span>
                         @endif
                     @endcan
+                    @endif
                 </div>
             </x-ui.alert>
         @endif
@@ -241,6 +259,11 @@
             </x-ui.card>
         @endif
 
+        {{-- FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07) — the clinical surfaces
+             (Rekam Medis, Odontogram, Resep) belong to the treating clinician.
+             Admin Klinik's visit detail is read-only plus "Cetak RME"; each of
+             these routes is independently authorised server-side as well. --}}
+        @if ($canOperateVisit)
         {{-- Rekam Medis --}}
         @php $medicalRecord = $visit->medicalRecord; @endphp
         <x-ui.card title="Rekam Medis">
@@ -309,6 +332,7 @@
                 @endif
             </x-ui.card>
         @endcan
+        @endif
 
         @include('rme.visits.partials.patient-visit-history', [
             'patientVisitHistory' => $patientVisitHistory,

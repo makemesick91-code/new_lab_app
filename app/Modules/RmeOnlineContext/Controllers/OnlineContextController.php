@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeOnlineContext\Requests\StartAdminClinicOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartDoctorOnlineContextRequest;
+use App\Modules\RmeOnlineContext\Requests\StartKasirOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartPerawatOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -35,8 +36,9 @@ class OnlineContextController extends Controller
         $requiresDoctor = $this->onlineContext->requiresDoctorContext($user);
         $requiresAdmin = $this->onlineContext->requiresAdminClinicContext($user);
         $requiresPerawat = $this->onlineContext->requiresPerawatContext($user);
+        $requiresKasir = $this->onlineContext->requiresKasirContext($user);
 
-        abort_unless($requiresDoctor || $requiresAdmin || $requiresPerawat, 403);
+        abort_unless($requiresDoctor || $requiresAdmin || $requiresPerawat || $requiresKasir, 403);
 
         $linkedDoctor = $requiresDoctor ? $this->doctorResolver->resolveForUser($user) : null;
 
@@ -54,6 +56,7 @@ class OnlineContextController extends Controller
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
             'requiresPerawat' => $requiresPerawat,
+            'requiresKasir' => $requiresKasir,
             'linkedDoctor' => $linkedDoctor,
             'doctorAllowedBranches' => $doctorAllowedBranches,
             'rmeBranches' => $this->branches->listRmeEnabled(),
@@ -120,6 +123,25 @@ class OnlineContextController extends Controller
         return redirect()
             ->intended(route('dashboard'))
             ->with('status', 'Konteks cabang perawat aktif.');
+    }
+
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — start the cashier working
+     * branch context. The cashier workspace and every payment mutation are
+     * scoped to this branch server-side.
+     */
+    public function storeKasir(StartKasirOnlineContextRequest $request): RedirectResponse
+    {
+        abort_unless($this->onlineContext->requiresKasirContext($request->user()), 403);
+
+        $this->onlineContext->startKasirSession(
+            $request->user(),
+            (int) $request->validated('branch_id'),
+        );
+
+        return redirect()
+            ->intended(route('dashboard'))
+            ->with('status', 'Konteks cabang kasir aktif.');
     }
 
     public function offline(Request $request): RedirectResponse

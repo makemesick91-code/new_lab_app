@@ -33,7 +33,9 @@ beforeEach(function () {
     Branch::where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
 
-    $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits']);
+    // FIX-05 — closing an examination needs the clinical capability, not just
+    // the broad manage_clinic_visits the front office also holds.
+    $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
     $this->cashier = userWith(['manage_rme_billing']);
 });
 

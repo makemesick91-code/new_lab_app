@@ -10,7 +10,17 @@
             'completed'       => 'Selesai',
             'cancelled'       => 'Dibatalkan',
         ];
-        $hasActiveFilters = $filters['search'] || $filters['status'] || $filters['visit_date'] || $filters['branch_id'];
+        // FIX-06 — the clinical-today default is not an "active filter"; only a
+        // user-chosen narrowing is. `showingAllDates` is the explicit
+        // cleared-the-date state, which the status tabs must preserve.
+        $defaultedToToday = (bool) ($filters['defaulted_to_today'] ?? false);
+        $showingAllDates = ! $defaultedToToday
+            && ! ($filters['visit_date'] ?? null)
+            && ! ($filters['date_from'] ?? null)
+            && ! ($filters['date_to'] ?? null);
+        $hasActiveFilters = $filters['search'] || $filters['status'] || $filters['branch_id']
+            || $showingAllDates
+            || (! $defaultedToToday && (($filters['visit_date'] ?? null) || ($filters['date_from'] ?? null) || ($filters['date_to'] ?? null)));
     @endphp
 
     <div class="space-y-6">
@@ -50,6 +60,14 @@
             @endforeach
         </div>
 
+        {{-- FIX-06 — say plainly which day is on screen, so "empty" is never mistaken for "no data". --}}
+        @if ($defaultedToToday)
+            <x-ui.alert variant="info">
+                Menampilkan kunjungan hari ini ({{ $filters['visit_date'] }}). Gunakan filter tanggal atau rentang
+                <span class="font-medium">Riwayat Dari</span>/<span class="font-medium">Riwayat Sampai</span> untuk melihat kunjungan lain.
+            </x-ui.alert>
+        @endif
+
         {{-- Filter bar (search / date / status / branch). Same GET params as before. --}}
         <x-ui.filter-bar :action="route('rme.visits.index')" method="GET">
             <div class="w-full md:flex-1 md:min-w-[14rem]">
@@ -62,6 +80,13 @@
             </div>
             <div class="w-full sm:w-auto">
                 <x-ui.input label="Tanggal" id="visit-date" name="visit_date" type="date" :value="$filters['visit_date']" />
+            </div>
+            {{-- FIX-06 — explicit historical range lookup. --}}
+            <div class="w-full sm:w-auto">
+                <x-ui.input label="Riwayat Dari" id="visit-date-from" name="date_from" type="date" :value="$filters['date_from'] ?? null" />
+            </div>
+            <div class="w-full sm:w-auto">
+                <x-ui.input label="Riwayat Sampai" id="visit-date-to" name="date_to" type="date" :value="$filters['date_to'] ?? null" />
             </div>
             <div class="w-full sm:w-auto">
                 <x-ui.select label="Status" id="visit-status" name="status">
@@ -92,8 +117,16 @@
             $tabBaseParams = array_filter([
                 'search' => $filters['search'],
                 'visit_date' => $filters['visit_date'],
+                'date_from' => $filters['date_from'] ?? null,
+                'date_to' => $filters['date_to'] ?? null,
                 'branch_id' => $filters['branch_id'],
             ], fn ($v) => $v !== null && $v !== '');
+            // Keep the "show every date" choice sticky across the status tabs:
+            // an explicitly emptied date must stay explicitly empty, otherwise
+            // the next request would silently fall back to the today default.
+            if ($showingAllDates) {
+                $tabBaseParams['visit_date'] = '';
+            }
             $statusTabs = ['' => 'Semua'];
             foreach ($statuses as $status) {
                 $statusTabs[$status] = $statusLabels[$status] ?? $status;

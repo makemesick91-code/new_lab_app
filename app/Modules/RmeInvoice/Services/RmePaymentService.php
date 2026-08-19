@@ -10,7 +10,9 @@ use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -25,6 +27,7 @@ class RmePaymentService
         private readonly ClinicVisitService $visitService,
         private readonly BranchService $branches,
         private readonly RmeControlReceivableService $carryOver,
+        private readonly RmeWorkingBranchScope $workingBranchScope,
     ) {}
 
     /**
@@ -397,6 +400,18 @@ class RmePaymentService
         if (! in_array((int) $invoice->branch_id, $this->branches->rmeEnabledIds(), true)) {
             throw ValidationException::withMessages([
                 'rme_invoice_id' => 'Invoice tidak berada di cabang RME aktif.',
+            ]);
+        }
+
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — a cashier may only settle
+        // invoices of the branch it is currently working in. Asserted in the
+        // service, so every payment path (pay, control allocation and visit
+        // allocation all funnel through here) is covered no matter which
+        // controller, command or crafted request reached it. Fails closed when
+        // the cashier has no valid working context.
+        if (! $this->workingBranchScope->allows(Auth::user(), (int) $invoice->branch_id)) {
+            throw ValidationException::withMessages([
+                'rme_invoice_id' => 'Invoice ini berasal dari cabang lain. Pilih cabang kerja yang sesuai terlebih dahulu.',
             ]);
         }
 

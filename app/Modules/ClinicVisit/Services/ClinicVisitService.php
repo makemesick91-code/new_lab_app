@@ -11,7 +11,9 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
@@ -30,6 +32,8 @@ class ClinicVisitService
         private readonly UserOnlineContextService $onlineContext,
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly PatientDoctorAssignmentService $patientDoctorAssignments,
+        private readonly RmeWorkingBranchScope $workingBranchScope,
+        private readonly ClinicalClock $clock,
     ) {}
 
     /**
@@ -51,20 +55,65 @@ class ClinicVisitService
 
     /**
      * Resolve the branch IDs a visit list / count should be scoped to.
-     * Returns the single requested branch when it is a valid RME branch,
-     * otherwise the full active RME-enabled set.
+     *
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-04) — delegated to the canonical
+     * {@see RmeWorkingBranchScope}. A context-bound operational role (Admin
+     * Klinik, Perawat, Kasir) is pinned to its selected working branch and fails
+     * closed to an EMPTY scope when it has no valid context; governance roles
+     * keep the full active RME-enabled set. The optional `branch_id` filter may
+     * only NARROW the authorised scope, never widen it, so a crafted
+     * `?branch_id=` can never reach another branch. Every visit list, queue,
+     * worklist and count widget funnels through here, so the scope also covers
+     * aggregates and exports.
      *
      * @return array<int, int>
      */
     private function scopeBranchIds(?int $branchFilter): array
     {
-        $allowed = $this->branches->rmeEnabledIds();
+        return $this->workingBranchScope->resolve(Auth::user(), $branchFilter);
+    }
 
-        if ($branchFilter !== null && in_array($branchFilter, $allowed, true)) {
-            return [$branchFilter];
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-06) — Daftar Kunjungan defaults to
+     * the clinic's own calendar day. Historical visits stay reachable, but only
+     * when the user explicitly touches a date filter. "Explicit" means the
+     * request actually carries one of the date keys — clearing the field (an
+     * empty submitted value) is itself an explicit request for the full history.
+     *
+     * The clinical day comes from {@see ClinicalClock} (Asia/Makassar), never
+     * from a raw UTC now().
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function applyVisitIndexDateDefault(array $filters, bool $hasExplicitDateFilter): array
+    {
+        $filters['defaulted_to_today'] = false;
+
+        if ($hasExplicitDateFilter) {
+            return $filters;
         }
 
-        return $allowed;
+        $filters['visit_date'] = $this->clock->todayString();
+        $filters['defaulted_to_today'] = true;
+
+        return $filters;
+    }
+
+    /**
+     * The RME branches this user may actually choose between — used for the
+     * branch filter selector so a context-bound role is never offered a branch
+     * it cannot read.
+     *
+     * @return Collection<int, Branch>
+     */
+    public function selectableRmeBranches(): Collection
+    {
+        $allowed = $this->workingBranchScope->branchIdsFor(Auth::user());
+
+        return $this->branches->listRmeEnabled()
+            ->filter(fn (Branch $branch) => in_array((int) $branch->id, $allowed, true))
+            ->values();
     }
 
     /**
@@ -415,7 +464,8 @@ class ClinicVisitService
     {
         return $this->visits->countTodayByBranches(
             $this->scopeBranchIds($branchId),
-            Carbon::today()->toDateString(),
+            // FIX-06 — the clinic's own calendar day, not a UTC now().
+            $this->clock->todayString(),
         );
     }
 
@@ -447,6 +497,21 @@ class ClinicVisitService
             throw ValidationException::withMessages([
                 'status' => 'Visit belum dapat diselesaikan total karena pembayaran belum selesai.',
             ]);
+        }
+
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-05) — "Selesai Pemeriksaan" is a
+        // clinical act. Enforced here as well as at the route, so a non-HTTP
+        // caller (command, job, another service) cannot close an examination on
+        // behalf of a user who may not. Unauthenticated/system callers are not
+        // affected, and the cashier-owned `completed` transition is untouched.
+        if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING) {
+            $actor = Auth::user();
+
+            if ($actor !== null && $actor->cannot('completeExamination', $visit)) {
+                throw ValidationException::withMessages([
+                    'status' => 'Anda tidak berwenang menyelesaikan pemeriksaan. Tindakan ini dilakukan oleh dokter.',
+                ]);
+            }
         }
 
         $allowed = ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [];

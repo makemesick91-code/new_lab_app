@@ -235,6 +235,7 @@ class RoleSeeder extends Seeder
             // Sprint 20 Phase 1.12 — RME pilot: doctor workflow (no cashier billing)
             'view_clinic_visits',
             'manage_clinic_visits',
+            'complete_rme_examination',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
@@ -322,6 +323,7 @@ class RoleSeeder extends Seeder
             'manage patients',
             'view_clinic_visits',
             'manage_clinic_visits',
+            'complete_rme_examination',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
             // LAB-WORKFLOW-V2 Phase 2 — Cabang lab pickup request
@@ -366,6 +368,7 @@ class RoleSeeder extends Seeder
             // Clinic visit queue, RM, odontogram, print bundle, room assignment
             'view_clinic_visits',
             'manage_clinic_visits',
+            'complete_rme_examination',
             // Doctor/Perawat treatment room worklist
             'view_treatment_worklist',
             // Cashier RME: billing, payment, receivables, follow-ups

@@ -37,6 +37,10 @@ class ClinicVisitRepository implements ClinicVisitRepositoryInterface
             ->whereIn('branch_id', $branchIds)
             ->when($filters['status'] ?? null, fn ($q, $v) => $q->where('status', $v))
             ->when($filters['visit_date'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', $v))
+            // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-06) — explicit historical
+            // range lookup. Applied on top of the branch scope, never instead of it.
+            ->when($filters['date_from'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', '>=', $v))
+            ->when($filters['date_to'] ?? null, fn ($q, $v) => $q->whereDate('visit_date', '<=', $v))
             ->when($filters['search'] ?? null, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
                 $query->where(function ($q) use ($term) {

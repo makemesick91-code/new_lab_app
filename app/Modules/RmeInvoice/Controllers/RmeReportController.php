@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -211,11 +212,10 @@ class RmeReportController extends Controller
 
     private function patientReportQuery(Request $request): Builder
     {
-        $branchId = $this->resolveBranchId($request);
-
+        // FIX-04 — always branch-scoped; the filter narrows inside the scope.
         return ClinicVisit::query()
             ->with(['patient:id,name,medical_record_number', 'branch:id,name', 'doctor:id,name'])
-            ->when($branchId !== null, fn (Builder $q) => $q->where('branch_id', $branchId))
+            ->whereIn('branch_id', $this->reportScopeBranchIds($request))
             ->when(
                 $request->filled('status'),
                 fn (Builder $q) => $q->where('status', $request->input('status')),
@@ -228,13 +228,13 @@ class RmeReportController extends Controller
 
     private function paymentReportQuery(Request $request): Builder
     {
-        $branchId = $this->resolveBranchId($request);
         $paymentMethodId = $this->resolveMasterId($request, 'payment_method_id');
         $treatmentId = $this->resolveMasterId($request, 'treatment_id');
         $doctorId = $this->resolveMasterId($request, 'doctor_id');
 
+        // FIX-09 — always branch-scoped; list, totals and export share this scope.
         return RmePayment::query()
-            ->when($branchId !== null, fn (Builder $q) => $q->where('branch_id', $branchId))
+            ->whereIn('branch_id', $this->reportScopeBranchIds($request))
             ->when($paymentMethodId !== null, fn (Builder $q) => $q->where('payment_method_id', $paymentMethodId))
             ->when($treatmentId !== null, fn (Builder $q) => $q->whereHas(
                 'rmeInvoice.items',
@@ -409,11 +409,35 @@ class RmeReportController extends Controller
 
         $requested = (int) $request->input('branch_id');
 
+        // FIX-04/FIX-09 — a requested branch is honoured only when it is inside
+        // the viewer's authorised scope; otherwise it is ignored (never widened).
+        if (! app(RmeWorkingBranchScope::class)->allows($request->user(), $requested)) {
+            return null;
+        }
+
         return Branch::query()
             ->where('id', $requested)
             ->where('is_active', true)
             ->rmeEnabled()
             ->value('id');
+    }
+
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-04/FIX-09) — the base branch scope
+     * for EVERY RME report query. Previously the branch predicate was applied
+     * only when the user supplied `branch_id`, so an unfiltered report spanned
+     * every branch. It is now always applied: a context-bound role (Admin
+     * Klinik, Perawat, Kasir) sees only its working branch, and the same scope
+     * backs the on-screen list, the totals and the CSV/print exports.
+     *
+     * @return array<int, int>
+     */
+    private function reportScopeBranchIds(Request $request): array
+    {
+        return app(RmeWorkingBranchScope::class)->resolve(
+            $request->user(),
+            $this->resolveBranchId($request),
+        );
     }
 
     private function resolveMasterId(Request $request, string $key): ?int
@@ -429,7 +453,10 @@ class RmeReportController extends Controller
 
     private function rmeBranches()
     {
+        $allowed = app(RmeWorkingBranchScope::class)->branchIdsFor(request()->user());
+
         return Branch::query()
+            ->whereIn('id', $allowed)
             ->where('is_active', true)
             ->rmeEnabled()
             ->orderBy('name')

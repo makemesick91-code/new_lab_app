@@ -26,6 +26,7 @@ class EnsureRmeOnlineContext
         'rme.online-context.doctor',
         'rme.online-context.admin-clinic',
         'rme.online-context.perawat',
+        'rme.online-context.kasir',
         'rme.online-context.offline',
     ];
 

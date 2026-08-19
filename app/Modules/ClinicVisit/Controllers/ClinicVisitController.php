@@ -51,12 +51,22 @@ class ClinicVisitController extends Controller
 
         $branchId = $request->integer('branch_id') ?: null;
 
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-06) — "explicit" means the
+        // request actually carries a date key. Clearing the field (submitting an
+        // empty value) is an explicit request for the full history; arriving with
+        // no date key at all gets the clinical-today default.
+        $hasExplicitDateFilter = $request->hasAny(['visit_date', 'date_from', 'date_to']);
+
         $filters = [
             'search' => $request->string('search')->toString() ?: null,
             'status' => $request->string('status')->toString() ?: null,
             'visit_date' => $request->string('visit_date')->toString() ?: null,
+            'date_from' => $request->string('date_from')->toString() ?: null,
+            'date_to' => $request->string('date_to')->toString() ?: null,
             'branch_id' => $branchId,
         ];
+
+        $filters = $this->visits->applyVisitIndexDateDefault($filters, $hasExplicitDateFilter);
 
         $rmeWidgets = [
             'visits_today' => $this->visits->visitsTodayCount($branchId),
@@ -71,7 +81,8 @@ class ClinicVisitController extends Controller
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
             'rmeWidgets' => $rmeWidgets,
-            'rmeBranches' => $this->branchService->listRmeEnabled(),
+            // FIX-04 — a context-bound role is never offered a branch it cannot read.
+            'rmeBranches' => $this->visits->selectableRmeBranches(),
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'rmLookup' => $rmLookup->lookupByMedicalRecordNumberAcrossBranches($request->string('rm_lookup')->toString()),
         ]);
@@ -315,6 +326,13 @@ class ClinicVisitController extends Controller
     {
         $this->authorize('transition', $clinicVisit);
         $newStatus = $request->validated()['status'];
+
+        // FIX-05 — the doctor examination-completion action needs its own
+        // clinical authority; hiding the button is never the boundary.
+        if ($newStatus === ClinicVisit::STATUS_CASHIER_PENDING) {
+            $this->authorize('completeExamination', $clinicVisit);
+        }
+
         $this->visits->transitionStatus($clinicVisit, $newStatus);
 
         // Sprint 62.1 — "Selesai Pemeriksaan" handoff: a visit moved to
