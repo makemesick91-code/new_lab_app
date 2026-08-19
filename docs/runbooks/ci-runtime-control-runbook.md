@@ -62,9 +62,52 @@ Downstream jobs consume `needs.classify.outputs.*`:
 - Do NOT gate the always-on security / governance / release-safety / evidence
   jobs on the classifier.
 - Do NOT make CI green by skipping failures or hiding them.
+- Do NOT dispatch the workflow with `run_full_suite=true` for an individual fix
+  while the `GLOBAL TEMPORARY FULL-SUITE POLICY` is ACTIVE (see below).
+- Do NOT manufacture a fake docs-only change set to obtain a weaker profile; the
+  profile must follow the change, never the reverse.
 - Never run destructive database rebuild/wipe/reset operations in CI or deploy;
   migrations stay additive and use `migrate --force` only.
 
+
+## GLOBAL TEMPORARY FULL-SUITE POLICY (ACTIVE)
+
+Canonical: `docs/governance/global-temporary-full-suite-policy.md` · rule `.cursor/rules/107-global-temporary-full-suite-policy.mdc`.
+
+While ACTIVE, an individual fix must not run the Full Suite. Mechanics that
+matter here — `full_suite_gate` fires on exactly three events:
+
+| Event | Fires | Notes |
+|---|---|---|
+| `pull_request` | **no** | a fix sprint's own PR is structurally count 0 |
+| `push` to base | **yes** | a squash-merge is such a push |
+| `schedule` (weekly) | **yes** | calendar-driven; attributable to no sprint |
+| `workflow_dispatch` + `run_full_suite=true` | yes | deliberate — forbidden while ACTIVE |
+
+`.sprint/current.yml` matches no classifier pattern → `unknown_high_risk`, so
+every real sprint enables the post-merge Full Suite step; only a genuinely
+docs-only change set resolves to `docs_only` and skips it.
+
+Preview before pushing — never guess:
+
+```bash
+scripts/ci/resolve-gates.sh --base origin/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report --head HEAD
+```
+
+**Post-merge run.** An official `gh run cancel` is permitted **only** when the
+pre-merge candidate was green on an identical tree, the cancel lands before the
+Full Suite job begins executing tests, the run ID and `startedAt == completedAt`
+zero-duration proof are recorded, and no CI file is touched. Cancelling a Full
+Suite that has **already begun executing**, to report a zero count, is
+forbidden — that is an execution; record it and report the partial result.
+
+**Scheduled run.** Never cancel it for count management. It is an informational
+baseline only and can never be cited as a fix sprint's Full Suite pass.
+
+Narrowing the `push`/`schedule` triggers would be a CI change requiring separate
+explicit user authorisation, and `full_suite_fallback_triggers` in
+`config/ci_runtime_control.php` requires at least one of `schedule` /
+`workflow_dispatch` to survive or `foundation:ci-runtime-control-check` fails.
 ## Troubleshooting
 
 - **Classifier returned `unknown_high_risk` unexpectedly:** the base ref was

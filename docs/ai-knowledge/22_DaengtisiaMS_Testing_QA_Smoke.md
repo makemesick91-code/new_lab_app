@@ -3,6 +3,13 @@
 ## Tujuan
 Framework test, suite penting, smoke checklist, regression, dan pre-merge gates.
 
+> **ACTIVE — GLOBAL TEMPORARY FULL-SUITE POLICY.** Full Suite **ditunda**, tidak
+> dihapus. Sprint fix individual **tidak menjalankan Full Suite**; cukup targeted
+> test + regression berbasis dependensi + required non-Full-Suite CI + smoke,
+> lalu tutup sebagai `WATCH — PENDING CONSOLIDATED FULL SUITE` tanpa GO tag.
+> Satu Full Suite otoritatif dijalankan setelah semua fix selesai pada SHA final
+> yang dibekukan. Kanonik: `docs/governance/global-temporary-full-suite-policy.md` (mirror rule `107`).
+
 ## Ringkasan
 Pest untuk feature tests (utama). Laravel Dusk untuk browser smoke RME. Playwright: **TODO: belum ditemukan di repo** sebagai runner resmi.
 

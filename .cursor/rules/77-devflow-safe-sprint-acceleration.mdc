@@ -29,6 +29,11 @@ recurring contract is inherited, never repeated.
 - `foundation:devflow-check` / `foundation:shared-service-audit` governance.
 - `scripts/sprint-release.sh` thin orchestration over the existing deploy runner; dry-run default, `--apply` for mutation, `--tag` only after deploy + smoke.
 
+
+**Active override:** while the `GLOBAL TEMPORARY FULL-SUITE POLICY` is ACTIVE
+(rule `107`, doc `docs/governance/global-temporary-full-suite-policy.md`), an individual fix sprint **must not run the Full Suite**;
+it closes at `WATCH — PENDING CONSOLIDATED FULL SUITE` with the GO tag deferred.
+Every other gate below is unchanged.
 ## Non-negotiable
 1. Manifest is the source of truth; CI enforces impact flags match the diff.
 2. Fail closed: unresolved diff / unmatched file / unknown type → full required suite.

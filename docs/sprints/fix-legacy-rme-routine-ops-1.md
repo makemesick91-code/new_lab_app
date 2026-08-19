@@ -10,9 +10,9 @@ and production closure**
 | Type | `RUNTIME_FIX` (module `LegacyRme`) |
 | Migration | **none** |
 | New permission / role / route | **none** |
-| Full Suite | **skipped by explicit user decision** — execution count **0** |
-| GO tag | **none created.** `fix-legacy-rme-routine-ops-1-go` is reserved for a follow-up closure sprint that runs the Full Suite |
-| Closing posture | **WATCH — PENDING FINAL FULL SUITE CLOSURE** |
+| Full Suite | **skipped** — execution count **0**. Now governed by the `GLOBAL TEMPORARY FULL-SUITE POLICY` (`docs/governance/global-temporary-full-suite-policy.md`) |
+| GO tag | **none created.** `fix-legacy-rme-routine-ops-1-go` is deferred to the single **consolidated** closure (policy §9). Per explicit user decision **no `…-1A` closure sprint is to be created now.** |
+| Closing posture | **WATCH — PENDING CONSOLIDATED FULL SUITE** |
 
 ---
 
@@ -435,7 +435,13 @@ gate fires only on `schedule`, on `workflow_dispatch` with
 `run_full_suite=true`, or on a push to the base branch — so a pull request
 skips it through the workflow's official path, with nothing hidden.
 
-### What a follow-up closure sprint has to do
+### What the consolidated closure has to do
+
+> **Superseded scope.** This is no longer a per-sprint follow-up. Under the
+> `GLOBAL TEMPORARY FULL-SUITE POLICY` (ACTIVE) it folds into the **single
+> consolidated closure** covering every deferred fix, run once on the frozen
+> final integrated SHA. **Do not create a `FIX-LEGACY-RME-ROUTINE-OPS-1A`
+> sprint** — explicit user decision: wait until all fixes are complete.
 
 Everything else in this sprint is finished and evidenced, so the remaining work
 is narrow:
@@ -444,7 +450,8 @@ is narrow:
 2. Run **one** authoritative Full Suite; expected failures **0**.
 3. Make the final GO decision on that result.
 4. Create the tag `fix-legacy-rme-routine-ops-1-go` — nothing here has created
-   or moved it.
+   or moved it. It is created **by the consolidated closure**, on the frozen
+   final integrated SHA, never retroactively backdated onto this sprint.
 
 ## 9. Evidence
 
