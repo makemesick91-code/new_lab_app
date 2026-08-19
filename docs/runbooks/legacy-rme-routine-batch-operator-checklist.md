@@ -53,6 +53,11 @@ Full detail: `docs/runbooks/legacy-rme-steady-state-operations-runbook.md`.
 
 - [ ] Batch registered, approved, activated; branches enrolled
 - [ ] Quota and window set on the batch record
+      *(the window is enforced — registration is refused without
+      `--planned-start-date` / `--planned-end-date`, or the two date fields on
+      the form. The end date is inclusive.)*
+- [ ] Batch registered by the governance account and **approved by a different
+      account** — the server refuses self-approval
 - [ ] Operators assigned
 - [ ] Admission opened for **exactly** the approved branch codes
 - [ ] Re-run pre-flight → still `YES`, batch binds, `BATCH_IN_PROGRESS`

@@ -1,0 +1,136 @@
+---
+description: Legacy RME routine batch operations — time-bounded batches, one rule for CLI and HTTP, and separation of duties that is staffed rather than merely switched on.
+globs: app/Modules/LegacyRme/**,app/Console/Commands/LegacyRmeWaveAdminCommand.php,config/legacy_rme_operations.php,config/legacy_rme_steady_state.php,resources/views/settings/rme/migration-operations/**
+alwaysApply: false
+---
+
+# FIX-LEGACY-RME-ROUTINE-OPS-1 — routine batch operations
+
+The Legacy RME programme is closed and migration is routine production
+operations. These rules govern how a routine batch is opened and how readiness
+reports on it.
+
+## Time-bounded batches
+
+1. **A routine batch is time-bounded.** Every newly registered batch declares a
+   planned start date and a planned end date. An approval with no expiry is one
+   nobody revisits.
+2. `planned_end_date >= planned_start_date`. The end date is **inclusive** — a
+   batch approved "through the 20th" is open on the 20th.
+3. Dates are calendar days on the clinic's canonical calendar
+   (`ClinicalClock`, Asia/Makassar). Never server UTC. Strict `YYYY-MM-DD`;
+   a date that does not exist on the calendar is refused, never rolled over.
+4. **The invariant lives in `LegacyRmeWaveGovernanceService::createWave()`**,
+   via `LegacyRmeBatchWindowRule`. Not in a FormRequest — the CLI never touches
+   one, and a governance rule only the browser enforces is not a rule.
+5. **The CLI must never be a weaker entry point than the UI.** Any field the
+   form collects, `legacy-rme:wave-admin` can express. Any rule the form
+   enforces, the CLI is bound by. When a new wave field is added, add the
+   option in the same change.
+6. A missing window **fails closed** at registration. Nothing is written.
+7. **Historical batches are immutable.** Waves registered before this rule keep
+   their null dates and stay readable and auditable. Never backfill a
+   historical wave to satisfy a rule invented afterwards.
+8. `ROUTINE-20260819-TKM1-01` is **CANCELLED** and is audit evidence. Never
+   delete it, never reuse its code. Open a NEW batch with a fresh approval.
+9. `WAVE-3` remains **SKIPPED / NOT REQUIRED** and is a retired governance
+   identity. Never reopened, never reused for a routine batch.
+
+## Separation of duties — staffed, not just enforced
+
+10. `require_separate_approver` / `require_separate_publisher` being **true**
+    states an intent. It does not mean the duty can be performed. Readiness
+    verifies both.
+11. **Distinct ACCOUNTS able to perform each half are required.** A single
+    all-powerful account satisfies neither pair: creator ≠ approver, and
+    maker ≠ publisher.
+11a. **The document chain is file → review → publish, not file → publish.**
+    `SeparatePublisherGuard::GUARDED_ACTIONS` is `[REVIEW, PUBLISH]` and
+    `LegacyRmeImportStatus::TRANSITIONS` only allows
+    `READY_FOR_REVIEW → REVIEWED → PUBLISHED`, so an import nobody else can
+    review can never be published by anyone.
+11b. **The chain must be satisfiable by ONE maker.** Do not AND two
+    independent pair tests — that lets a different maker satisfy each.
+    `A = create+publish` and `B = create+review` passes both pairs while
+    nothing is publishable. Require: ∃ one maker with a reviewer other than
+    them AND a publisher other than them. The reviewer and publisher MAY be
+    the same account — the guard excludes only the uploader.
+12. An enforced rule that cannot be staffed is a `FAIL` with
+    `SOD_STAFFING_UNAVAILABLE` — a stop-the-line INCIDENT, not a warning. It is
+    worse than a rule deliberately switched off, because the deployment reads
+    as protected while the duty is unperformable.
+13. **Account separation is verifiable; human separation is not.** Report both
+    claims separately and never conflate them. The application must never imply
+    it confirmed two different people.
+14. Readiness reports staffing as **counts and booleans**. Never a name, an
+    email or an id.
+
+## Config and date handling
+
+15a. **Never `(bool) env(...)` for a safety flag.** A present-but-empty value
+    casts to `false` and silently disables the invariant. Use the fail-safe
+    `SeparatePublisherGuard::resolveEnabledFromEnv()`, which treats anything
+    that is not an explicit false/0/off/no as ON.
+15b. **Never swallow a `ClinicalClock` failure.** It is contractually
+    fail-loud about an unusable timezone; catching it turns a deployment
+    misconfiguration into "your date is malformed" on the operator's field.
+    Resolve the timezone outside any `catch (Throwable)`.
+15c. **A strict format round trip is not enough.** `0000-01-01` round-trips in
+    PHP and is then rejected by PostgreSQL at INSERT as an unhandled
+    `QueryException`. Refuse year `< 1` in the rule, where it becomes a field
+    error instead of a 500.
+15d. **A `required` attribute in Blade must follow the server policy**, never
+    hardcode it — otherwise turning the rule off is honoured by the service
+    and the CLI but not the browser. It is a hint, never the boundary.
+
+## Test infrastructure
+
+15e. **Never run two `php artisan test` processes in the same worktree.**
+    `Storage::fake()` deletes the shared fake-disk directory, so concurrent
+    runs destroy each other's files and surface as "file not found in
+    storage" on a different, innocent test each time. Before diagnosing any
+    such failure, confirm the suite is running alone
+    (`ps -eo pid,cmd | grep pestphp/pest/bin/pest`).
+
+## Auditing permissions — the two traps
+
+15. **Always audit EFFECTIVE permissions** (`$user->can()`), never a direct-only
+    `whereHas('permissions')` query. A role-granted permission has zero direct
+    rows and a direct-only query reports a false NO.
+16. **Never decide capability from a policy probe against an arbitrary wave.**
+    `LegacyRmeMigrationWavePolicy::approve()` also requires a non-terminal wave,
+    so probing it when the newest batch is COMPLETED or CANCELLED reports "nobody
+    can approve" for everyone. Staffing is a property of the deployment, not of a
+    row.
+17. Both traps produced the same false negative on production in this sprint.
+    The briefed "Supervisor RME cannot approve" finding did **not** reproduce:
+    the role holds the permission and `can()` returns YES.
+
+## Roles
+
+18. **Supervisor RME is the checker/approver**, never the wave manager or maker:
+    `approve_legacy_rme_migration_wave`, `view_legacy_rme_migration_operations`,
+    `review_legacy_rme_imports`, `publish_legacy_rme_imports`. It must NOT hold
+    `manage_legacy_rme_migration_operations` or `create_legacy_rme_imports`.
+19. **Admin Klinik is the branch intake maker**, never the publisher:
+    `create_legacy_rme_imports` + `view_legacy_rme_imports`, and nothing more.
+20. **Role repair goes through canonical role provisioning**
+    (`db:seed --class=RoleSeeder --force`, which uses `syncPermissions` and is
+    idempotent), never an ad-hoc per-user `givePermissionTo()` and never direct
+    SQL. Inspect the exact delta before running it: `syncPermissions` REMOVES
+    role permissions absent from the seeder array.
+
+## Operational posture
+
+21. At rest: capability **OFF**, admission **EMPTY**, no active batch,
+    `Resting state: AT_REST`.
+22. A routine batch is normal operations and needs **no engineering GO tag**.
+    A software or governance change like this sprint does.
+23. Legacy RME stays a historical archive. Importing or viewing one never
+    creates or mutates a native ClinicVisit, MedicalRecord, Invoice, Payment,
+    Odontogram, Prescription, LabOrder or SATUSEHAT submission.
+24. Published legacy clinical history stays readable when the migration flag is
+    OFF, subject to normal authorization. The flag governs migration, not
+    clinical read.
+25. `scripts/deploy-vps-runner.sh` runs **on the VPS**, never locally, and must
+    reach `exit=0` / `DEPLOY OK`.

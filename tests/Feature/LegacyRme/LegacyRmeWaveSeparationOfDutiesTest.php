@@ -66,7 +66,10 @@ function sodRegisterWave(User $creator, string $code = 'SOD-WAVE'): LegacyRmeMig
     legacyRmeApproveWave('SOD-APPROVAL-2026-08-14', ['LDK2']);
     legacyRmeAdmittedBranches(['LDK2']);
 
-    return sodGovernance()->createWave($creator, $code, 'Gelombang Uji SoD', ['LDK2'], 5, 5);
+    // FIX-LEGACY-RME-ROUTINE-OPS-1 — a batch is time-bounded, so every caller
+    // (this fixture included) declares its window. Fixed dates keep the test
+    // deterministic; nothing here depends on the window's position in time.
+    return sodGovernance()->createWave($creator, $code, 'Gelombang Uji SoD', ['LDK2'], 5, 5, '2026-08-14', '2026-08-20');
 }
 
 it('refuses to let the wave creator approve their own wave', function () {

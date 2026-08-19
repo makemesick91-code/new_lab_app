@@ -1,30 +1,54 @@
 # Validated by: php artisan sprint:manifest-check
 
-id: LEGACY-RME-PROGRAM-CLOSURE-1
-type: FOUNDATION_SPRINT
+id: FIX-LEGACY-RME-ROUTINE-OPS-1
+type: RUNTIME_FIX
 module: LegacyRme
-title: "Final program audit, foundation revalidation and production steady-state closure — the Legacy RME engineering programme is closed and steady-state operations become authoritative"
+title: "Routine batch operational surface, time-bounded governance and separation-of-duties staffing truth — the CLI can declare a batch window, the form offers it, and readiness stops reporting an unstaffable control as GO"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: false           # no application behaviour changes — audit, contract test, rules and evidence only
-schema_change: false            # no migration, no table, no column
-frontend_change: false          # no Blade, JS, CSS or Vite change
-security_impact: false          # no policy, middleware or permission changed; the closure test PINS existing controls, it does not alter them
-branch_isolation_impact: false  # branch scope untouched
-ledger_impact: false            # no inventory ledger / billing / payment behaviour change
+runtime_change: true            # createWave asserts a bounded window; the SOD readiness check now verifies staffing
+schema_change: false            # no migration, no table, no column — planned_start_date/planned_end_date already exist
+frontend_change: true           # the wave registration form gains two date inputs (Blade only; no JS, CSS or Vite change)
+security_impact: true           # separation-of-duties readiness semantics change; no permission, policy or role definition is altered
+branch_isolation_impact: false  # branch scope and admission untouched
+ledger_impact: false            # no inventory ledger, billing, payment or clinical write path touched
 
-deploy_required: true           # owner-requested synchronization deployment so production carries the closure record
-browser_required: false         # no UI surface introduced or altered
+deploy_required: true           # the fix is only real once production runs it
+browser_required: false         # the two new fields are covered by render + POST tests; no new UI surface
 
 test_profiles:
   - legacy_rme
   - security
 
-go_tag: legacy-rme-program-closure-1-production-steady-state-final-go
+# The tag a FUTURE closure sprint would create. This sprint does NOT create or
+# move it: the Full Suite was skipped by explicit user decision, so there is no
+# honest basis for a final engineering GO.
+#   FULL_SUITE_STATUS         = SKIPPED_BY_EXPLICIT_USER_DECISION
+#   FULL_SUITE_EXECUTION_COUNT = 0
+# Closing posture: WATCH — PENDING FINAL FULL SUITE CLOSURE.
+go_tag: fix-legacy-rme-routine-ops-1-go
 
-# PROGRAM STATE AFTER THIS SPRINT
-#   LEGACY-RME-PROGRAM-CLOSURE-1 = COMPLETE / GO
-#   LEGACY RME PROGRAM           = FULLY CLOSED / PRODUCTION STEADY-STATE
-#   ROLL-4-WAVE-3                = SKIPPED / NOT REQUIRED
-#   ENGINEERING_ROLLOUT_MODE     = CLOSED
-#   STEADY_STATE_OPERATIONS      = AUTHORITATIVE
+# WHAT THIS SPRINT FIXES
+#   A. legacy-rme:wave-admin register could not express a planned window at all,
+#      so a batch opened over SSH could never be time-bounded.
+#   B. The migration-operations form never offered the two date fields, though
+#      the FormRequest already validated them and the service already stored them.
+#   C. separation_of_duties reported GO from two config booleans, without ever
+#      checking that two distinct accounts could actually perform the duties.
+#
+# WHAT ROOT CAUSE C TURNED OUT TO BE
+#   The briefed "Supervisor RME cannot approve" finding DOES NOT REPRODUCE on
+#   production. User 11 holds approve_legacy_rme_migration_wave via the role and
+#   can() returns YES. The observation was a measurement artifact, reproducible
+#   two ways: a direct-only permission query sees 0 rows, and a policy probe
+#   returns false against the terminal cancelled batch (and there are currently
+#   no non-terminal batches at all). No RBAC repair was required or performed.
+#
+# PROGRAM STATE — UNCHANGED BY THIS SPRINT
+#   Closed by LEGACY-RME-PROGRAM-CLOSURE-1; this sprint inherits that closure
+#   and does not reopen it. ENGINEERING_ROLLOUT_MODE stays CLOSED and
+#   STEADY_STATE_OPERATIONS stays AUTHORITATIVE.
+#   LEGACY RME PROGRAM       = CLOSED / PRODUCTION STEADY-STATE
+#   ROLL-4-WAVE-3            = SKIPPED / NOT REQUIRED
+#   ROUTINE-20260819-TKM1-01 = CANCELLED / immutable audit evidence, never reused
+#   RESTING STATE            = capability OFF, admission EMPTY, no active batch

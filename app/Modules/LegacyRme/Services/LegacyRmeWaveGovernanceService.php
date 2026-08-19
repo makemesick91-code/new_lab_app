@@ -10,6 +10,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Models\LegacyRmeWaveBranch;
 use App\Modules\LegacyRme\Models\LegacyRmeWaveOperator;
 use App\Modules\LegacyRme\Support\LegacyRmeAuditEvent;
+use App\Modules\LegacyRme\Support\LegacyRmeBatchWindowRule;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,7 @@ class LegacyRmeWaveGovernanceService
         private readonly LegacyRmeMigrationReconciliationService $reconciliation,
         private readonly LegacyRmeAuditService $audit,
         private readonly BranchService $branches,
+        private readonly LegacyRmeBatchWindowRule $batchWindow,
     ) {}
 
     /**
@@ -113,6 +115,15 @@ class LegacyRmeWaveGovernanceService
 
         $this->assertQuotaWithinBounds($dailyQuota, 'daily_quota');
         $this->assertQuotaWithinBounds($perBranchDailyQuota, 'per_branch_daily_quota');
+
+        // A routine batch is time-bounded. Asserted HERE, in the service both
+        // callers reach, rather than in the wave FormRequest — the CLI never
+        // touches a FormRequest, and a governance rule that only the browser
+        // enforces is not a rule. The normalised strings are what gets
+        // persisted, so the row holds exactly what was validated.
+        $window = $this->batchWindow->normalize($plannedStartDate, $plannedEndDate);
+        $plannedStartDate = $window[LegacyRmeBatchWindowRule::FIELD_START];
+        $plannedEndDate = $window[LegacyRmeBatchWindowRule::FIELD_END];
 
         return DB::transaction(function () use (
             $actor, $code, $name, $codes, $rmeBranches, $dailyQuota, $perBranchDailyQuota, $plannedStartDate, $plannedEndDate

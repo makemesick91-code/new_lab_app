@@ -259,6 +259,35 @@ function userInRole(string $role): User
     return User::factory()->create()->assignRole($role);
 }
 
+/**
+ * FIX-LEGACY-RME-ROUTINE-OPS-1 — staff both legacy RME separation-of-duties
+ * pairs with distinct accounts.
+ *
+ * Mirrors the real production topology rather than inventing one: a governance
+ * account that registers batches, a branch intake operator that files
+ * documents, and a separate checker that both certifies documents and approves
+ * batches. Three accounts, and no account holds both halves of either pair.
+ *
+ * Needed because readiness now verifies that the enforced SOD rules can
+ * actually be performed. A suite with no accounts at all is a deployment where
+ * nobody can approve anything, and it is now reported as such.
+ *
+ * @return array{manager: User, maker: User, checker: User}
+ */
+function legacyRmeStaffSeparationOfDuties(): array
+{
+    return [
+        'manager' => userWith(['manage_legacy_rme_migration_operations', 'view_legacy_rme_migration_operations']),
+        'maker' => userWith(['create_legacy_rme_imports', 'view_legacy_rme_imports']),
+        'checker' => userWith([
+            'approve_legacy_rme_migration_wave',
+            'publish_legacy_rme_imports',
+            'review_legacy_rme_imports',
+            'view_legacy_rme_migration_operations',
+        ]),
+    ];
+}
+
 function validPodSignatureData(): string
 {
     return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC';

@@ -154,6 +154,32 @@ Run these in order. Do not skip ahead; later steps assume earlier ones.
    Do not proceed unless `Ready for a routine batch: YES`.
 5. **Register, approve and activate the batch**, and enrol its branches
    (ROLL-4 runbook §3–§4). Declare a daily quota and a planned window.
+
+   The planned window is **mandatory and enforced server-side** — registration
+   is refused without it, from the terminal and from the browser alike
+   (FIX-LEGACY-RME-ROUTINE-OPS-1). The end date is inclusive: a batch approved
+   "through the 19th" is open on the 19th.
+
+   ```bash
+   php artisan legacy-rme:wave-admin register \
+     --wave="ROUTINE-YYYYMMDD-<BRANCH>-NN" \
+     --name="Batch Rutin <Cabang> <tanggal>" \
+     --branches="<BRANCH>" \
+     --daily-quota=25 --per-branch-daily-quota=25 \
+     --planned-start-date="YYYY-MM-DD" \
+     --planned-end-date="YYYY-MM-DD" \
+     --actor="<governance account>"
+     # dry run first — add --apply only when the plan reads correctly
+   ```
+
+   The dry run echoes `planned_start_date`, `planned_end_date` and
+   `batch_window_required`, and writes nothing. From the browser, the same two
+   fields are **Tanggal Mulai Batch** and **Tanggal Berakhir Batch** on the
+   migration-operations registration form.
+
+   Registering the batch is done by the governance account; **approving it is
+   done by a different account** (Supervisor RME). Never reuse a cancelled or
+   completed batch code — open a new one with a fresh approval.
 6. **Assign operators** — maker and checker, per branch (ROLL-4 runbook §5).
 7. **Open admission** for exactly the approved branch codes.
 8. **Re-run the pre-flight** and confirm the batch binds:

@@ -37,6 +37,12 @@ beforeEach(function () {
     // dev box has no backup at all. Neutralised so each test asserts the ONE
     // condition it is about; the backup gate has its own dedicated tests below.
     config()->set('legacy_rme_steady_state.backup.required_before_batch', false);
+
+    // FIX-LEGACY-RME-ROUTINE-OPS-1 — readiness now verifies that the enforced
+    // separation-of-duties rules can actually be PERFORMED, not merely that
+    // the switches are on. Staffed here so every test below asserts the one
+    // condition it is about; the unstaffed case has its own tests.
+    legacyRmeStaffSeparationOfDuties();
 });
 
 function steadyOps(): LegacyRmeSteadyStateOpsService

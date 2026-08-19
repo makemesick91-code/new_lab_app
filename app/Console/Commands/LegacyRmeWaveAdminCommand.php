@@ -9,6 +9,7 @@ use App\Modules\LegacyRme\Models\LegacyRmeMigrationWave;
 use App\Modules\LegacyRme\Models\LegacyRmeWaveBranch;
 use App\Modules\LegacyRme\Models\LegacyRmeWaveOperator;
 use App\Modules\LegacyRme\Services\LegacyRmeWaveGovernanceService;
+use App\Modules\LegacyRme\Support\LegacyRmeBatchWindowRule;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveBranchStatus;
 use Illuminate\Console\Command;
 use Illuminate\Validation\ValidationException;
@@ -48,6 +49,8 @@ class LegacyRmeWaveAdminCommand extends Command
         {--operator= : Id or email of the operator to assign or revoke}
         {--daily-quota= : Wave or branch daily ceiling; omit for no ceiling}
         {--per-branch-daily-quota= : Default per-branch ceiling (register)}
+        {--planned-start-date= : First planned day of the batch window, YYYY-MM-DD (register)}
+        {--planned-end-date= : Final planned day of the batch window, inclusive, YYYY-MM-DD (register)}
         {--planned-documents= : Expected document count for a branch}
         {--reason= : Reason or sign-off note}
         {--apply : Perform the change; without it nothing is written}
@@ -130,12 +133,21 @@ class LegacyRmeWaveAdminCommand extends Command
             branchCodes: $codes,
             dailyQuota: $this->optionalInt('daily-quota'),
             perBranchDailyQuota: $this->optionalInt('per-branch-daily-quota'),
+            // A routine batch is time-bounded, and SSH is a first-class way to
+            // open one. Passing these through means the CLI can satisfy the
+            // same invariant the browser does; the service validates them for
+            // both callers, so omitting them here fails closed rather than
+            // silently registering a batch whose approval never expires.
+            plannedStartDate: $this->optionalString('planned-start-date'),
+            plannedEndDate: $this->optionalString('planned-end-date'),
         );
 
         return [
             'wave' => $wave->code,
             'status' => $wave->status,
             'branches' => $wave->branches()->pluck('branch_code')->all(),
+            'planned_start_date' => $wave->planned_start_date?->toDateString(),
+            'planned_end_date' => $wave->planned_end_date?->toDateString(),
         ];
     }
 
@@ -274,6 +286,13 @@ class LegacyRmeWaveAdminCommand extends Command
             'branch' => $this->option('branch'),
             'operator' => $this->option('operator'),
             'target_action' => $action,
+            // Surfaced so an operator can SEE the window a --apply would
+            // record, and see that it is missing, before the write happens.
+            // Reported as typed, not normalised: the dry run must not imply
+            // the value has already passed validation.
+            'planned_start_date' => $this->optionalString('planned-start-date'),
+            'planned_end_date' => $this->optionalString('planned-end-date'),
+            'batch_window_required' => LegacyRmeBatchWindowRule::requiredByPolicy(),
         ];
     }
 
@@ -395,6 +414,25 @@ class LegacyRmeWaveAdminCommand extends Command
         $value = $this->option($option);
 
         return ($value === null || $value === '') ? null : (int) $value;
+    }
+
+    /**
+     * An omitted option and an empty one mean the same thing: not supplied.
+     * The value is passed through untouched — parsing and rejecting it is the
+     * service's job, so the CLI cannot accidentally accept a shape the HTTP
+     * caller would refuse.
+     */
+    private function optionalString(string $option): ?string
+    {
+        $value = $this->option($option);
+
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
     }
 
     /**

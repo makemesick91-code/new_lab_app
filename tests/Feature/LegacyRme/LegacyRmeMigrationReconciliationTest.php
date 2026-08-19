@@ -333,7 +333,10 @@ it('enforces approver-is-not-creator when separation of duties is switched on', 
     config()->set('legacy_rme_operations.require_separate_approver', true);
 
     $creator = reconGovernor();
-    $wave = reconGovernance()->createWave($creator, 'WAVE-SOD', 'Gelombang SoD', ['TKM1']);
+    // FIX-LEGACY-RME-ROUTINE-OPS-1 — a batch is time-bounded, so every caller
+    // declares its window. Fixed dates keep this deterministic; nothing here
+    // depends on where the window sits in time.
+    $wave = reconGovernance()->createWave($creator, 'WAVE-SOD', 'Gelombang SoD', ['TKM1'], null, null, '2026-08-14', '2026-08-20');
 
     expect(fn () => reconGovernance()->approve($creator, $wave))
         ->toThrow(ValidationException::class);

@@ -238,6 +238,7 @@ return [
         'BATCH_BINDING_MISMATCH',        // declared wave and wave record disagree
         'CLINICAL_TIMEZONE_WRONG',       // date boundary is not the clinic's calendar
         'BACKUP_MISSING_OR_STALE',       // no verified restore point
+        'SOD_STAFFING_UNAVAILABLE',      // SOD enforced but no distinct pair of accounts can perform it
     ],
 
     /*
@@ -269,6 +270,9 @@ return [
             'SEPARATE_PUBLISHER_DISABLED',
             'ADMITTED_BRANCH_NOT_APPROVED',
             'BATCH_BINDING_MISMATCH',
+            // An enforced separation rule nobody can satisfy is a control in
+            // question, not merely a blocked step.
+            'SOD_STAFFING_UNAVAILABLE',
         ],
     ],
 
