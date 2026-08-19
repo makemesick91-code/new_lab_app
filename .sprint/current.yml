@@ -22,6 +22,14 @@ deploy_required: true
 go_tag: fix-clinic-ops-branch-context-wa-1-go
 browser_required: false         # every surface is proven by HTTP feature tests
 
+# Inherited programme state (LegacyRmeProgramClosureContractTest): this sprint
+# runs after LEGACY-RME-PROGRAM-CLOSURE-1 and inherits that closure unchanged.
+# It touches no Legacy RME code, capability, admission, wave or batch.
+# ENGINEERING_ROLLOUT_MODE stays CLOSED and STEADY_STATE_OPERATIONS stays
+# AUTHORITATIVE; the Legacy RME resting state (capability OFF, admission EMPTY,
+# no active batch) is untouched.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+
 test_profiles:
   - rme
   - security
