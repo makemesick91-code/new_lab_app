@@ -448,7 +448,57 @@ is narrow:
 
 ## 9. Evidence
 
-_Targeted runs, CI, merge, deploy, production smoke and rollback verification._
+### Targeted regression — authoritative run
+
+`php artisan test tests/Feature/LegacyRme tests/Feature/AccessControl tests/Feature/Auth`
+on the final tree, **run in isolation**:
+
+```
+Tests:  1010 passed, 5 skipped, 0 failed  (3128 assertions)
+```
+
+The 5 skips are named, not swallowed: all are guarded on the GD extension
+(dompdf image decoding) which this dev machine's PHP lacks. CI installs
+`gd, exif, poppler-utils`, so they execute there.
+
+Every mandated suite ran and passed:
+
+| Suite | |
+|---|---|
+| `LegacyRmeWaveSeparationOfDutiesTest` | PASS |
+| `LegacyRmeWaveApprovalUiReachabilityTest` | PASS |
+| `LegacyRmeSteadyStateOpsTest` | PASS |
+| `LegacyRmeMigrationOperationsGateTest` | PASS |
+| `LegacyRmeImportAuthorizationTest` | PASS |
+| `LegacyRmeMigrationReconciliationTest` | PASS |
+| `LegacyRmeImportLifecycleCliTest` | PASS |
+| `SupervisorRmeRolePermissionTest` | PASS |
+| `LegacyRmeProgramClosureContractTest` | PASS |
+| `LegacyRmeRoutineBatchWindowTest` (new) | PASS |
+| `LegacyRmeSodStaffingReadinessTest` (new) | PASS |
+
+Also clean: `pint --dirty --test`, `git diff --check`,
+`sprint:manifest-check`, `sprint:scope-audit`, `foundation:devflow-check`,
+`foundation:shared-service-audit`, `foundation:ci-runtime-control-check`,
+`foundation:security-compliance-check`.
+
+### A test-infrastructure trap worth keeping
+
+Earlier whole-directory runs showed "file not found in storage" failures
+(`SOURCE_FILE_MISSING`, *"Berkas sumber/gambar halaman tidak ditemukan pada
+penyimpanan"*) hitting a **different, innocent test each run**. The cause is not
+the code and not test ordering — no randomisation is configured. It is **two
+concurrent `php artisan test` processes in the same worktree**: `Storage::fake()`
+DELETES `storage/framework/testing/disks/...` when it runs, so whichever process
+fakes first destroys the other's files.
+
+Diagnosed by process inspection, not by guessing: a review subagent was running
+the suite alongside the main run. Isolated, the same command is clean.
+
+Before diagnosing any LegacyRme storage failure, confirm the suite is running
+alone. Note that the obvious check self-matches — a shell whose own command line
+contains the pattern is counted by `grep`, which is how a naive
+`until [ "$(ps -eo cmd | grep -c pest)" -le 1 ]` guard deadlocks against itself.
 
 ---
 
