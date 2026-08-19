@@ -62,14 +62,30 @@ This supersedes the "run `sprint:test --all-required` before release" line in
 
 ## Accidental triggers — know the mechanics
 
-`full_suite_gate` fires on exactly three events:
+**Since CI-TEMP-FULL-SUITE-SCHEDULE-GATE (2026-08-19) the policy is enforced in
+CI, not only written down.** `full_suite_gate` additionally requires
+`needs.classify.outputs.full_suite_authorized == 'true'`:
 
-- `pull_request` → **never fires**. A fix sprint's own PR is structurally
-  `FULL_SUITE_EXECUTION_COUNT = 0`.
-- `push` to the base branch → **fires**, and a squash-merge is such a push.
-- `schedule` (weekly) → **fires**; calendar-driven, attributable to no sprint.
-- `workflow_dispatch` + `run_full_suite=true` → **deliberate; forbidden while
-  ACTIVE** except for the consolidated closure or an explicit user override.
+- `pull_request` → **never fires** (unchanged). A fix sprint's own PR is
+  structurally `FULL_SUITE_EXECUTION_COUNT = 0`.
+- `push` to the base branch → **DEFERRED** while ACTIVE, even though a
+  squash-merge is such a push. Reason `TEMPORARY_FULL_SUITE_POLICY_ACTIVE`.
+- `schedule` (weekly) → **DEFERRED** while ACTIVE. Same reason code. The run
+  still happens and every other gate still executes.
+- `workflow_dispatch` + `run_full_suite=true` → **DEFERRED** unless
+  `full_suite_policy_override=true` is also ticked. Both together are the
+  authorised consolidated-closure path.
+
+Canonical state lives in exactly one file, `.github/ci-policy/full-suite-policy.json`,
+read by both `scripts/ci/resolve-full-suite-policy.sh` and PHP governance — so CI
+and these docs cannot drift apart. Resolution **fails closed**: a missing,
+unreadable, unknown or duplicated status resolves to ACTIVE and the suite is not
+authorised. Restoring the automatic cadence means flipping that status to
+`RETIRED` — a deliberate governance act reserved for the consolidated closure,
+**never** a side effect of another sprint.
+
+The gate is **deferred, never deleted**: both triggers and the job remain, and
+suppressing the Full Suite must never disable any other CI gate.
 
 `.sprint/current.yml` matches no classifier pattern → `unknown_high_risk`, so
 every real sprint (which updates its manifest) enables the post-merge Full Suite

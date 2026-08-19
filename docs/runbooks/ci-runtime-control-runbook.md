@@ -191,3 +191,47 @@ It must name exact test identities and failure signatures, the authoritative run
 id and SHA, an owner, and a revalidation date — and it must never be encoded as
 a machine-readable allowance that a red gate could be subtracted against. Rule
 92 governs; `tests/Feature/Cicd/FullSuiteBaselineContractTest.php` enforces.
+
+## Temporary Full Suite gating (CI-TEMP-FULL-SUITE-SCHEDULE-GATE)
+
+While the GLOBAL TEMPORARY FULL-SUITE POLICY is ACTIVE, the weekly `schedule` and
+the post-merge `push` to base are **deferred in CI** — they no longer execute the
+NSF-R011 Full Suite. Nothing else about CI changes: every other gate still runs on
+those events.
+
+**Check the current state**
+
+```bash
+cat .github/ci-policy/full-suite-policy.json            # the one canonical status
+bash scripts/ci/resolve-full-suite-policy.sh --event schedule
+php artisan foundation:ci-runtime-control-check --strict
+```
+
+**Read why a Full Suite did not run.** The always-on classifier job publishes it:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[]|select(.name=="CICD-CTRL Gate Classifier")|.steps[].name'
+# and in that job's log:  full_suite_defer_reason=TEMPORARY_FULL_SUITE_POLICY_ACTIVE
+```
+
+**Run the authorised consolidated Full Suite** (only when the user has authorised
+the final closure). Both inputs are required — `run_full_suite` alone is deferred:
+
+```bash
+gh workflow run foundation-evidence-gates.yml \
+  -f run_full_suite=true \
+  -f full_suite_policy_override=true
+```
+
+**Never** infer a pass from a green job — read the step:
+
+```bash
+gh run view <run-id> --json jobs \
+  --jq '.jobs[]|select(.name=="NSF-R011 Full Suite Gate")|.steps[]
+        |select(.name|test("full Pest suite"))|"\(.conclusion)\t\(.name)"'
+```
+
+**Restoring the automatic cadence** means setting `status` to `RETIRED` in the
+canonical JSON. That is a governance act reserved for the consolidated closure —
+never a side effect of another sprint.

@@ -1,54 +1,50 @@
 # Validated by: php artisan sprint:manifest-check
 
-id: FIX-LEGACY-RME-ROUTINE-OPS-1
-type: RUNTIME_FIX
-module: LegacyRme
-title: "Routine batch operational surface, time-bounded governance and separation-of-duties staffing truth — the CLI can declare a batch window, the form offers it, and readiness stops reporting an unstaffable control as GO"
+id: CI-TEMP-FULL-SUITE-SCHEDULE-GATE
+type: INFRA_RELEASE
+module: Cicd
+title: "Temporary scheduled Full-Suite suppression under the global consolidated Full-Suite policy — no automatic trigger may run the integrated gate while the policy is ACTIVE, and the authorised consolidated run stays reachable"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # createWave asserts a bounded window; the SOD readiness check now verifies staffing
-schema_change: false            # no migration, no table, no column — planned_start_date/planned_end_date already exist
-frontend_change: true           # the wave registration form gains two date inputs (Blade only; no JS, CSS or Vite change)
-security_impact: true           # separation-of-duties readiness semantics change; no permission, policy or role definition is altered
-branch_isolation_impact: false  # branch scope and admission untouched
+runtime_change: false           # CI orchestration + read-only governance only; no application runtime path changes
+schema_change: false            # no migration, no table, no column
+frontend_change: false          # no Blade, JS, CSS or Vite change
+security_impact: true           # changes which events may execute a gate, and adds a fail-closed authorisation decision
+branch_isolation_impact: false  # no branch scope, admission or BranchContext change
 ledger_impact: false            # no inventory ledger, billing, payment or clinical write path touched
 
-deploy_required: true           # the fix is only real once production runs it
-browser_required: false         # the two new fields are covered by render + POST tests; no new UI surface
+deploy_required: true           # explicit user requirement: this sprint is deployed and production-verified
+browser_required: false         # no user-facing surface; the decision is proven by resolver + workflow-expression tests
 
 test_profiles:
-  - legacy_rme
+  - cicd
   - security
 
-# The tag a FUTURE closure sprint would create. This sprint does NOT create or
-# move it: the Full Suite was skipped by explicit user decision, so there is no
-# honest basis for a final engineering GO.
-#   FULL_SUITE_STATUS         = SKIPPED_BY_EXPLICIT_USER_DECISION
+### WHAT THIS SPRINT FIXES
+#
+#   The GLOBAL TEMPORARY FULL-SUITE POLICY (#317/#318) existed in prose only.
+#   Nothing in CI enforced it, so TWO automatic paths still reached the Full
+#   Suite while the policy was ACTIVE:
+#
+#     A. the weekly `schedule` (cron '0 2 * * 0') — the briefed gap;
+#     B. `push` to the base branch — i.e. EVERY fix squash-merge. Policy s6.1
+#        handled this only by an after-the-fact `gh run cancel` precedent.
+#
+#   Policy s6.2 named narrowing these triggers as an available option requiring
+#   separate explicit user authorisation. This sprint IS that authorisation, so
+#   the change is pre-sanctioned by the policy rather than unilateral.
+#
+### WHAT IT DOES NOT DO
+#
+#   Does NOT retire the policy, run the Full Suite, open the consolidated
+#   closure, create any deferred fix GO tag, change the expected failure
+#   baseline (0), or hide any CI failure.
+#
+### FULL SUITE POSTURE
+#
+#   FULL_SUITE_STATUS          = SKIPPED_BY_GLOBAL_TEMPORARY_POLICY
 #   FULL_SUITE_EXECUTION_COUNT = 0
-# Closing posture: WATCH — PENDING FINAL FULL SUITE CLOSURE.
-go_tag: fix-legacy-rme-routine-ops-1-go
-
-# WHAT THIS SPRINT FIXES
-#   A. legacy-rme:wave-admin register could not express a planned window at all,
-#      so a batch opened over SSH could never be time-bounded.
-#   B. The migration-operations form never offered the two date fields, though
-#      the FormRequest already validated them and the service already stored them.
-#   C. separation_of_duties reported GO from two config booleans, without ever
-#      checking that two distinct accounts could actually perform the duties.
+#   GLOBAL_TEMPORARY_FULL_SUITE_POLICY_ACTIVE = YES
 #
-# WHAT ROOT CAUSE C TURNED OUT TO BE
-#   The briefed "Supervisor RME cannot approve" finding DOES NOT REPRODUCE on
-#   production. User 11 holds approve_legacy_rme_migration_wave via the role and
-#   can() returns YES. The observation was a measurement artifact, reproducible
-#   two ways: a direct-only permission query sees 0 rows, and a policy probe
-#   returns false against the terminal cancelled batch (and there are currently
-#   no non-terminal batches at all). No RBAC repair was required or performed.
-#
-# PROGRAM STATE — UNCHANGED BY THIS SPRINT
-#   Closed by LEGACY-RME-PROGRAM-CLOSURE-1; this sprint inherits that closure
-#   and does not reopen it. ENGINEERING_ROLLOUT_MODE stays CLOSED and
-#   STEADY_STATE_OPERATIONS stays AUTHORITATIVE.
-#   LEGACY RME PROGRAM       = CLOSED / PRODUCTION STEADY-STATE
-#   ROLL-4-WAVE-3            = SKIPPED / NOT REQUIRED
-#   ROUTINE-20260819-TKM1-01 = CANCELLED / immutable audit evidence, never reused
-#   RESTING STATE            = capability OFF, admission EMPTY, no active batch
+#   A sprint-specific governance GO tag is authorised for this sprint only, by
+#   explicit user decision: its scope IS the mechanism that defers the suite.

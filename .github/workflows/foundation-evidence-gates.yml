@@ -13,6 +13,16 @@ on:
         description: Run full Pest suite (NSF-R011 full gate)
         type: boolean
         default: false
+      # CI-TEMP-FULL-SUITE-SCHEDULE-GATE — explicit authorisation against the
+      # GLOBAL TEMPORARY FULL-SUITE POLICY. While that policy is ACTIVE the
+      # weekly `schedule` and the post-merge `push` to base are DEFERRED, and
+      # `run_full_suite` alone is NOT enough: this box must also be ticked.
+      # That keeps the authoritative consolidated closure run one deliberate
+      # action away, while no automatic or casual trigger can reach the suite.
+      full_suite_policy_override:
+        description: 'Authorised consolidated Full Suite (overrides the ACTIVE temporary policy)'
+        type: boolean
+        default: false
       # CICD-CTRL-3 — explicit runner routing override. Leaving this empty uses
       # the repository variable CI_RUNNER_MODE, which itself defaults to
       # github-hosted. Falling back to GitHub-hosted is always an explicit
@@ -52,6 +62,14 @@ jobs:
       run_rme_tests: ${{ steps.resolve.outputs.run_rme_tests }}
       run_lab_tests: ${{ steps.resolve.outputs.run_lab_tests }}
       run_full_suite: ${{ steps.resolve.outputs.run_full_suite }}
+      # CI-TEMP-FULL-SUITE-SCHEDULE-GATE — the canonical Full Suite authorisation
+      # decision for this run. `classify` always runs and is GitHub-hosted, so
+      # the reason is recorded on EVERY run, including runs where the Full Suite
+      # job itself is skipped and would otherwise leave no trace of why.
+      temporary_full_suite_policy_active: ${{ steps.full_suite_policy.outputs.temporary_full_suite_policy_active }}
+      full_suite_authorized: ${{ steps.full_suite_policy.outputs.full_suite_authorized }}
+      full_suite_defer_reason: ${{ steps.full_suite_policy.outputs.full_suite_defer_reason }}
+      policy_status: ${{ steps.full_suite_policy.outputs.policy_status }}
       # CICD-CTRL-3 — which runner the heavy gates target for this run.
       runner_mode: ${{ steps.runner.outputs.runner_mode }}
       # DEVFLOW-FIX-BASE-REF-1 — the pinned base authority for this run.
@@ -95,6 +113,24 @@ jobs:
             echo "Exactly one NSF-R011 Critical Test Gate variant runs; the other is skipped."
             echo "A self-hosted outage QUEUES the gate — it never lets it silently pass."
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # CI-TEMP-FULL-SUITE-SCHEDULE-GATE — resolve the GLOBAL TEMPORARY
+      # FULL-SUITE POLICY. Reads ONE canonical state file
+      # (.github/ci-policy/full-suite-policy.json) that PHP governance and the
+      # Pest tests read too, so the workflow can never disagree with the docs.
+      # Fails closed: any unresolved state defers the Full Suite.
+      - name: Resolve temporary Full Suite policy (CI-TEMP-FULL-SUITE-SCHEDULE-GATE)
+        id: full_suite_policy
+        shell: bash
+        run: |
+          chmod +x scripts/ci/resolve-full-suite-policy.sh
+          bash scripts/ci/resolve-full-suite-policy.sh \
+            --event '${{ github.event_name }}' \
+            --ref '${{ github.ref }}' \
+            --base-branch 'feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report' \
+            --dispatch-run-full-suite '${{ inputs.run_full_suite }}' \
+            --dispatch-override '${{ inputs.full_suite_policy_override }}' \
+            --github-output
 
       - name: Resolve safe CI gates (CICD-CTRL-1)
         id: resolve
@@ -156,6 +192,9 @@ jobs:
           echo "gate_profile=${{ steps.resolve.outputs.gate_profile }}"
           echo "run_critical_tests=${{ steps.resolve.outputs.run_critical_tests }}"
           echo "run_full_suite=${{ steps.resolve.outputs.run_full_suite }}"
+          echo "temporary_full_suite_policy_active=${{ steps.full_suite_policy.outputs.temporary_full_suite_policy_active }}"
+          echo "full_suite_authorized=${{ steps.full_suite_policy.outputs.full_suite_authorized }}"
+          echo "full_suite_defer_reason=${{ steps.full_suite_policy.outputs.full_suite_defer_reason }}"
           echo "Always-on gates (quality, release-safety, release-evidence) run regardless."
 
   quality_gate:
@@ -1072,10 +1111,19 @@ jobs:
     runs-on: ubuntu-latest
     # CICD-CTRL-3: depends on BOTH critical-gate variants for the same reason as
     # NSF-9 — a skipped sibling must not silently drop the full-suite fallback.
+    #
+    # CI-TEMP-FULL-SUITE-SCHEDULE-GATE — while the GLOBAL TEMPORARY FULL-SUITE
+    # POLICY is ACTIVE, `full_suite_authorized` is 'false' for BOTH automatic
+    # paths (weekly `schedule` and post-merge `push` to base), so this job is
+    # skipped and the reason is recorded by the always-run `classify` job.
+    # The original event conditions are RETAINED below the authorisation check
+    # on purpose: an AND of both can only ever narrow execution, so even a bug
+    # in the resolver could never widen the gate beyond its pre-policy cadence.
     if: >-
       !cancelled() &&
       (needs.critical_test_gate.result == 'success' ||
        needs.critical_test_gate_self_hosted.result == 'success') &&
+      needs.classify.outputs.full_suite_authorized == 'true' &&
       (github.event_name == 'schedule' ||
        (github.event_name == 'workflow_dispatch' && inputs.run_full_suite == true) ||
        (github.event_name == 'push' && github.ref == 'refs/heads/feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report'))
