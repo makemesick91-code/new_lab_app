@@ -502,6 +502,132 @@ contains the pattern is counted by `grep`, which is how a naive
 
 ---
 
+### CI — final candidate `826dacc`
+
+Run `32202230947`, `CONCLUSION=success`:
+
+| Gate | |
+|---|---|
+| NSF-R012 Quality | success |
+| CICD-CTRL Gate Classifier | success |
+| CICD-CTRL Selective Module | success |
+| NSF-R011 Critical Test | success (sibling runner variant `skipped` by design — CICD-CTRL-3 runs exactly one of two) |
+| NSF-9 Release Safety & Automated Smoke | success |
+| NSF-10 Release Evidence | success |
+| **NSF-R011 Full Suite** | **skipped** — the workflow's own condition on a `pull_request` event |
+
+Superseded runs `32198344406` / `32199492319` / `32201707062` were cancelled by
+later pushes; each is recorded in §8 with its Full Suite job at zero duration.
+
+### Merge
+
+PR **#315** squash-merged as **`acbf5e3835dc082df14f9a1784331c929ba593de`**.
+
+The merge pushed to the base branch, which is one of the three triggers that
+fires the Full Suite automatically. Run `32205563992` was therefore cancelled
+immediately — an official `gh run cancel`, no CI file touched. Its Full Suite
+job records `started == completed == 01:37:42Z`: **zero duration, never
+executed.** The other gates in that run had already passed on `826dacc`, whose
+tree is identical to the squash merge.
+
+### Deploy — VPS, from the VPS
+
+`ssh daengtisiams-vps` → `cd /var/www/asia-dental-lab-v2` →
+`bash scripts/deploy-vps-runner.sh start` (detached; the launcher's
+acknowledgement is explicitly *not* treated as completion).
+
+```
+exit=0
+DEPLOY OK: 20260819-013808
+DEPLOY_HEAD_TARGET_MATCH=YES (acbf5e3835dc082df14f9a1784331c929ba593de)
+immutable-exec: program finished rc=0
+DEPLOY_SNAPSHOT_CLEANED=YES
+log: storage/logs/deploy-runner/deploy-20260819-013807.log
+```
+
+Deploy governance gates 10/10, Decision GO (ENT-5 … ENT-9 all GO).
+VPS `git rev-parse HEAD` = `acbf5e3835dc082df14f9a1784331c929ba593de` — exact
+match with the merge SHA.
+
+The bundled smoke reported one warning: `SMOKE-HTTP-HEALTH` probing
+`http://127.0.0.1/login` returned **404**. That is the documented co-tenant
+artefact on this shared VPS, not an application fault — the canonical entry
+point is the domain, and an inside-VPS localhost probe does not reach this app.
+Verified externally instead (below).
+
+### Production smoke — over `https://daengtisia.online`
+
+| | |
+|---|---|
+| `/login` | 200 |
+| `/health/live` | 200 |
+| `/health/ready` | 200 — all 5 components `ok` |
+| `/health/lb` | 200 |
+| `/dashboard` (guest) | 302 |
+| `/rme/satusehat/submissions` (guest) | 302 |
+
+`env=pilot`, `debug=false`, maintenance **OFF**, `queue:failed` empty.
+`storage/logs/laravel.log` last modified **2026-08-18 23:08**, i.e. before the
+01:38 deploy — **zero new log entries attributable to this deploy**.
+
+### Production RBAC — verified, not repaired
+
+```
+USER 1  [Super Admin,Owner]  view=Y manage=Y approve=Y create=Y review=Y publish=Y
+USER 7  [Admin Klinik]       view=N manage=N approve=N create=Y review=N publish=N
+USER 11 [Supervisor RME]     view=Y manage=N approve=Y create=N review=Y publish=Y
+```
+
+Exactly the canonical model. **No role changed, no seeder run, no permission
+granted** — there was no delta to converge, and `syncPermissions` removes role
+permissions absent from the array, so running it against a zero delta is risk
+without benefit.
+
+### Production — the new logic, live
+
+```
+SOD staffing
+  wave_creator_accounts                    = 1
+  wave_approver_accounts                   = 2
+  distinct_creator_approver_pair_available = true
+  import_maker_accounts                    = 2
+  import_reviewer_accounts                 = 2
+  import_publisher_accounts                = 2
+  distinct_maker_reviewer_pair_available   = true
+  distinct_maker_publisher_pair_available  = true
+  document_chain_staffed                   = true
+
+Batch window invariant
+  routine_batch_window.required = true
+  valid single-day  : ACCEPTED
+  impossible date   : REFUSED  (2026-02-31)
+  reversed window   : REFUSED
+  absent window     : REFUSED  ← the incident is closed
+
+CLI surface
+  --planned-start-date   present
+  --planned-end-date     present
+```
+
+`legacy-rme:ops-readiness` → **Decision GO**, `Resting state: AT_REST`,
+`Ready for a routine batch: YES`, and `separation_of_duties` now reads *"Both
+separation-of-duties requirements are enforced, **and each is staffed by
+distinct accounts**"* — the claim is backed by verified staffing rather than by
+two config booleans.
+
+`legacy-rme:rollout-readiness --expect=off` → **GO**.
+
+### Immutability confirmed on production
+
+```
+non-terminal waves                     = 0
+ROUTINE-20260819-TKM1-01               = present, CANCELLED, start=null end=null
+waves with a null window (historical)  = 4   (unchanged)
+```
+
+The cancelled batch and every historical wave keep their null dates. Nothing
+was backfilled, nothing deleted.
+
 ## 10. Rollback
 
 Independent axes:
