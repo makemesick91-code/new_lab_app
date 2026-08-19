@@ -1,8 +1,13 @@
 ### Validated by: php artisan sprint:manifest-check
 
 id: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1
-type: MODULE_SPRINT
+type: FOUNDATION_SPRINT
 module: ClinicVisit
+# Nine integrated fixes spanning ClinicVisit, RmeOnlineContext, RmeInvoice and
+# Prescription, introducing the shared RmeWorkingBranchScope foundation the
+# clinic and cashier surfaces all consume. FOUNDATION_SPRINT is the accurate
+# classification for cross-module shared-foundation work, and it is the STRICTER
+# choice: audit level 3 and full_foundation_audit, versus MODULE_SPRINT's 2.
 title: "Clinic and cashier workspaces pinned to one working branch, branch document identity, WhatsApp Business prescription delivery, and Super Admin-only SATUSEHAT"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
