@@ -70,6 +70,12 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'publish_legacy_rme_imports',
     'view_legacy_rme_migration_operations',
     'approve_legacy_rme_migration_wave',
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the signed
+    // PERSETUJUAN TINDAKAN MEDIS that gates RME payment. Supervisor RME holds the
+    // full RME operational surface, so it holds both; the same pair also goes to
+    // Doctor, Kasir and Admin Klinik, which this exact-list pin does not cover.
+    'view_rme_consents',
+    'manage_rme_consents',
 ];
 
 it('creates the Supervisor RME role after seeding', function () {
