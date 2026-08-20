@@ -10,6 +10,8 @@
                     Pilih cabang RME sebagai konteks kerja admin klinik Anda.
                 @elseif ($requiresPerawat)
                     Pilih cabang tempat Anda bertugas pada sesi ini.
+                @elseif ($requiresKasir)
+                    Pilih cabang RME tempat Anda bertugas sebagai kasir pada sesi ini.
                 @endif
             </x-slot:subtitle>
         </x-ui.page-header>
@@ -75,10 +77,15 @@
             @endif
         @endif
 
-        @if ($requiresAdmin || $requiresPerawat)
+        @if ($requiresAdmin || $requiresPerawat || $requiresKasir)
+            @php
+                $branchContextAction = $requiresAdmin
+                    ? route('rme.online-context.admin-clinic')
+                    : ($requiresPerawat ? route('rme.online-context.perawat') : route('rme.online-context.kasir'));
+            @endphp
             <x-ui.card>
                 <form method="POST"
-                    action="{{ $requiresAdmin ? route('rme.online-context.admin-clinic') : route('rme.online-context.perawat') }}"
+                    action="{{ $branchContextAction }}"
                     class="space-y-5">
                     @csrf
                     <div>

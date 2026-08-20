@@ -97,7 +97,8 @@
 <body>
     @php
         $branch = $clinicVisit->branch;
-        $branchTitle = strtoupper($branch?->name ?: 'TELKOMAS');
+        // FIX-01 — never fall back to another branch's name/address.
+        $branchTitle = strtoupper($branch?->name ?: '');
         $rxUrl = $prescription->prescriptionCanvasUrl();
         $sigUrl = $prescription->signatureCanvasUrl();
         $dash = '—';
@@ -111,8 +112,10 @@
     <div class="header">
         <x-brand.daengtisia-logo class="clinic-logo" />
         <h1>Klinik Gigi Daengtisia</h1>
-        <p class="branch">CABANG {{ $branchTitle }}</p>
-        <p class="address">{{ $branch?->address ?: 'Makassar' }}@if ($branch?->phone) &middot; {{ $branch->phone }}@endif</p>
+        @if ($branchTitle !== '')<p class="branch">CABANG {{ $branchTitle }}</p>@endif
+        @if ($branch?->address || $branch?->phone)
+            <p class="address">{{ $branch?->address }}@if ($branch?->address && $branch?->phone) &middot; @endif{{ $branch?->phone }}</p>
+        @endif
     </div>
 
     <table class="fields">

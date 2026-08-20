@@ -18,18 +18,29 @@ beforeEach(function () {
     $this->withoutMiddleware(EnsureRmeOnlineContext::class);
 });
 
-it('renders the readiness dashboard for permitted roles and blocks others', function () {
+it('renders the readiness dashboard for Super Admin and denies every other role now that the module is Super Admin only', function () {
     ssSyncIssues(ssMakeVisit());
 
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.readiness.index'))
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so only
+    // a Super Admin reaches the workspace at all.
+    $this->actingAs(superAdmin())->get(route('satusehat.readiness.index'))
         ->assertOk()
         ->assertSee('Kesiapan Operasional SATUSEHAT');
 
-    $this->actingAs(userInRole('Owner'))->get(route('satusehat.readiness.index'))->assertOk();
-    $this->actingAs(userInRole('Admin Klinik'))->get(route('satusehat.readiness.index'))->assertOk();
-    $this->actingAs(userInRole('Kasir'))->get(route('satusehat.readiness.index'))->assertForbidden();
-    $this->actingAs(userInRole('Doctor'))->get(route('satusehat.readiness.index'))->assertForbidden();
-    $this->actingAs(userInRole('Admin Lab'))->get(route('satusehat.readiness.index'))->assertForbidden();
+    foreach ([
+        'Supervisor RME', 'Owner', 'Admin Klinik', 'Kasir', 'Doctor', 'Admin Lab',
+    ] as $role) {
+        $this->actingAs(userInRole($role))->get(route('satusehat.readiness.index'))->assertForbidden();
+    }
+
+    // The per-feature readiness permission itself is unchanged — the outer gate
+    // simply precedes it. Asserted here so the seeded RBAC split is not lost.
+    expect(userInRole('Supervisor RME')->can('view_satusehat_readiness'))->toBeTrue()
+        ->and(userInRole('Owner')->can('view_satusehat_readiness'))->toBeTrue()
+        ->and(userInRole('Admin Klinik')->can('view_satusehat_readiness'))->toBeTrue()
+        ->and(userInRole('Kasir')->canAny(['view_satusehat_readiness', 'manage_satusehat_remediation']))->toBeFalse()
+        ->and(userInRole('Doctor')->canAny(['view_satusehat_readiness', 'manage_satusehat_remediation']))->toBeFalse()
+        ->and(userInRole('Admin Lab')->canAny(['view_satusehat_readiness', 'manage_satusehat_remediation']))->toBeFalse();
 
     Http::assertNothingSent();
 });
@@ -123,11 +134,14 @@ it('never renders a full NIK anywhere in the workspace', function () {
 
     $issue = SatusehatDataQualityIssue::query()->firstOrFail();
 
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.readiness.index'))
+    // FIX-08: Super Admin only. Every privacy assertion below is unchanged.
+    $actor = superAdmin();
+
+    $this->actingAs($actor)->get(route('satusehat.readiness.index'))
         ->assertOk()->assertDontSee($nik);
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.readiness.issues'))
+    $this->actingAs($actor)->get(route('satusehat.readiness.issues'))
         ->assertOk()->assertDontSee($nik);
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.readiness.issues.show', $issue->id))
+    $this->actingAs($actor)->get(route('satusehat.readiness.issues.show', $issue->id))
         ->assertOk()->assertDontSee($nik);
 });
 

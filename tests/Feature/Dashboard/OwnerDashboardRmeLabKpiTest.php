@@ -226,7 +226,12 @@ it('does not show owner RME lab section for branch admin dashboard users', funct
 });
 
 it('does not show owner RME lab section for Kasir role dashboard', function () {
-    $this->actingAs(userInRole('Kasir'))
+    // FIX-03 — a Kasir now works from a selected branch, so give it one before
+    // asserting what its dashboard shows.
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, $this->branch);
+
+    $this->actingAs($kasir)
         ->get(route('dashboard'))
         ->assertOk()
         ->assertDontSee('Monitoring Pilot RME & Lab')

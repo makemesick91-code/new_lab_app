@@ -29,6 +29,8 @@
                     <tr>
                         <th class="px-4 py-3 font-semibold">Kode Cabang</th>
                         <th class="px-4 py-3 font-semibold">Nama Cabang</th>
+                        {{-- FIX-01 — the address printed on this branch's documents. --}}
+                        <th class="px-4 py-3 font-semibold">Alamat</th>
                         <th class="px-4 py-3 font-semibold">Status</th>
                         <th class="px-4 py-3 font-semibold">RME</th>
                         <th class="px-4 py-3 font-semibold">Inventory</th>
@@ -40,6 +42,13 @@
                         <tr class="hover:bg-navy-50/60">
                             <td class="px-4 py-3 font-medium text-navy">{{ $branch->code }}</td>
                             <td class="px-4 py-3 text-ink-soft">{{ $branch->name }}</td>
+                            <td class="px-4 py-3 text-ink-soft">
+                                @if ($branch->address)
+                                    {{ $branch->address }}@if ($branch->phone)<span class="block text-xs text-ink-muted">{{ $branch->phone }}</span>@endif
+                                @else
+                                    <span class="text-xs text-warning-700">Belum diisi</span>
+                                @endif
+                            </td>
                             <td class="px-4 py-3">
                                 <x-ui.badge :tone="$branch->is_active ? 'success' : 'neutral'">{{ $branch->is_active ? 'Aktif' : 'Nonaktif' }}</x-ui.badge>
                             </td>

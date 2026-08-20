@@ -257,7 +257,10 @@
                 </div>
             @endcanany
 
-            {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance. Independently permission-gated. --}}
+            {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance.
+                 FIX-08: the whole group is Super Admin only, using the same
+                 `satusehat.access` gate the route group enforces. --}}
+            @can('satusehat.access')
             @canany(['view_satusehat_submissions', 'review_satusehat_submissions', 'send_satusehat_submissions', 'manage_satusehat_mappings', 'manage_satusehat_settings', 'view_satusehat_readiness', 'manage_satusehat_remediation', 'manage_structured_diagnoses', 'review_clinical_terminology', 'configure_diagnosis_rollout', 'view_diagnosis_adoption', 'view_satusehat_branch_readiness', 'view_satusehat_pilot_metrics', 'manage_satusehat_branch_remediation', 'view_satusehat_multi_branch_readiness', 'view_satusehat_executive_readiness', 'manage_satusehat_rollout_waves', 'manage_satusehat_change_control', 'record_satusehat_uat_signoff'])
                 <div>
                     <p class="menu-group-title pt-2">SATUSEHAT</p>
@@ -331,6 +334,7 @@
                     </div>
                 </div>
             @endcanany
+            @endcan
 
             {{-- Sprint 23 Phase 23.5 — RME report viewers without clinical access still get their report links --}}
             @if ($user && $user->cannot('view_clinic_visits') && $user->cannot('manage_clinic_visits'))

@@ -3,8 +3,8 @@
 namespace App\Modules\RmeInvoice\Policies;
 
 use App\Models\User;
-use App\Modules\Branch\Services\BranchService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 
 class RmeInvoicePolicy
 {
@@ -15,7 +15,7 @@ class RmeInvoicePolicy
 
     public function view(User $user, RmeInvoice $invoice): bool
     {
-        return $this->canManage($user) && $this->belongsToActiveRmeBranch($invoice->branch_id);
+        return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
     }
 
     public function create(User $user): bool
@@ -25,12 +25,12 @@ class RmeInvoicePolicy
 
     public function pay(User $user, RmeInvoice $invoice): bool
     {
-        return $this->canManage($user) && $this->belongsToActiveRmeBranch($invoice->branch_id);
+        return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
     }
 
     public function viewReceipt(User $user, RmeInvoice $invoice): bool
     {
-        return $this->canManage($user) && $this->belongsToActiveRmeBranch($invoice->branch_id);
+        return $this->canManage($user) && $this->withinWorkingBranchScope($user, $invoice->branch_id);
     }
 
     private function canManage(User $user): bool
@@ -39,17 +39,18 @@ class RmeInvoicePolicy
     }
 
     /**
-     * RME billing is scoped to the operational "Cabang RME" set (active
-     * RME-enabled branches), mirroring ClinicVisitPolicy. This avoids the single
-     * BranchContext/MAIN fallback that would otherwise deny every RME invoice in
-     * the pilot (MAIN is not RME-enabled). Sprint 23 Phase 23.10.
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 — the server-side branch boundary.
+     *
+     * Delegated to the canonical {@see RmeWorkingBranchScope}: a context-bound
+     * operational role (Admin Klinik, Perawat, Kasir) may only reach records of
+     * the branch it is currently working in, and fails closed when it has no
+     * valid working context. Governance/cross-branch roles and the Doctor
+     * clinical branch model keep the full active RME-enabled set, so this is a
+     * narrowing of the previous rule, never a widening. Enforced here rather
+     * than in the view, so a crafted URL or direct request is denied too.
      */
-    private function belongsToActiveRmeBranch(?int $branchId): bool
+    private function withinWorkingBranchScope(User $user, ?int $branchId): bool
     {
-        if ($branchId === null) {
-            return false;
-        }
-
-        return in_array($branchId, app(BranchService::class)->rmeEnabledIds(), true);
+        return app(RmeWorkingBranchScope::class)->allows($user, $branchId);
     }
 }

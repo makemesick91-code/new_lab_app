@@ -449,6 +449,9 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
     // RME-BRANCH-SUN4 — Perawat picks a Cabang RME the same way as Admin Klinik.
     Route::post('online-context/perawat', [OnlineContextController::class, 'storePerawat'])
         ->name('online-context.perawat');
+    // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — cashier working branch context.
+    Route::post('online-context/kasir', [OnlineContextController::class, 'storeKasir'])
+        ->name('online-context.kasir');
     Route::post('online-context/offline', [OnlineContextController::class, 'offline'])
         ->name('online-context.offline');
 
@@ -547,6 +550,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
 
         Route::get('prescriptions/{rmePrescription}/print', [RmePrescriptionController::class, 'print'])
             ->name('prescriptions.print');
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — server-to-server delivery
+        // of the prescription over the official WhatsApp Business Platform.
+        Route::post('prescriptions/{rmePrescription}/whatsapp', [RmePrescriptionController::class, 'sendWhatsApp'])
+            ->middleware('permission:send_prescription_whatsapp')
+            ->name('prescriptions.whatsapp.send');
 
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])
@@ -623,7 +631,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
 // governance. Readiness foundation only: server-side branch scope, separate
 // view/review/send + mapping/settings permissions, and NO external network call
 // while the integration is disabled. URL /rme/satusehat; route name satusehat.*
-Route::middleware('auth')->prefix('rme/satusehat')->name('satusehat.')->group(function () {
+// FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-08) — SATUSEHAT is Super Admin only.
+// `can:satusehat.access` is applied to the whole group, so every current and
+// future satusehat.* route is denied to any other role at the route layer,
+// regardless of which per-feature permission it also declares.
+Route::middleware(['auth', 'can:satusehat.access'])->prefix('rme/satusehat')->name('satusehat.')->group(function () {
     Route::middleware('permission:view_satusehat_submissions|review_satusehat_submissions|send_satusehat_submissions')->group(function () {
         Route::get('submissions', [SatusehatSubmissionController::class, 'index'])->name('submissions.index');
         Route::post('submissions/bulk', [SatusehatSubmissionController::class, 'bulk'])->name('submissions.bulk');

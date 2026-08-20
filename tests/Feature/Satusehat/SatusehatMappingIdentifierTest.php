@@ -94,7 +94,12 @@ it('requires manage_satusehat_mappings to open the mapping page', function () {
 });
 
 it('rejects an invalid identifier format', function () {
-    $user = userWith(['manage_satusehat_settings']);
+    // FIX-08: SATUSEHAT is Super Admin only (`can:satusehat.access` on the whole
+    // route group), so the identifier form is exercised by a Super Admin. The
+    // `manage_satusehat_settings` route permission is unchanged and still
+    // asserted at the permission layer below.
+    $user = superAdmin();
+    expect(userWith(['view_satusehat_submissions'])->can('manage_satusehat_settings'))->toBeFalse();
 
     $this->actingAs($user)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)

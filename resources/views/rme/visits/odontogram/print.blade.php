@@ -74,7 +74,8 @@
     </div>
 
     @php
-        $branchTitle = strtoupper($clinicVisit->branch?->name ?: 'Telkomas');
+        // FIX-01 — identity always follows the record's own branch.
+        $branchTitle = strtoupper($clinicVisit->branch?->name ?: '');
         $patientName = $clinicVisit->patient?->name ?? '—';
         $rmNumber = $clinicVisit->patient?->medical_record_number ?? '—';
     @endphp
@@ -85,6 +86,8 @@
         'patientName' => $patientName,
         'rmNumber' => $rmNumber,
         'branchTitle' => $branchTitle,
+        'branchAddress' => $clinicVisit->branch?->address,
+        'branchPhone' => $clinicVisit->branch?->phone,
         'showHeader' => true,
         'showVisual' => true,
     ])

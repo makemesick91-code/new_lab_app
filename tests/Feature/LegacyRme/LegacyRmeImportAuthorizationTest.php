@@ -60,7 +60,10 @@ it('rejects a doctor', function () {
 });
 
 it('rejects a cashier', function () {
-    $this->actingAs(userInRole('Kasir'))
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]));
+
+    $this->actingAs($kasir)
         ->get(route('settings.rme.legacy-imports.index'))
         ->assertForbidden();
 });

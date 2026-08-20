@@ -2,10 +2,16 @@
 
 namespace App\Providers;
 
+use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
+use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
+use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
+use App\Modules\Prescription\Gateways\WhatsAppGatewayInterface;
+use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
 use App\Support\Devflow\GitChangeInspector;
 use App\Support\Devflow\SharedFoundationScanner;
+use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -29,6 +35,39 @@ class AppServiceProvider extends ServiceProvider
             base_path(),
             $app->make(CanonicalBaseRefResolver::class),
         ));
+
+        $this->bindWhatsAppGateway();
+    }
+
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — resolve the WhatsApp
+     * Business Platform gateway.
+     *
+     * Fail closed: the real Cloud API client is bound ONLY when the integration
+     * is switched on AND its driver is explicitly cloud_api. Anything else —
+     * including a deployment with no credentials at all — gets the disabled
+     * gateway, which opens no network connection under any circumstance.
+     */
+    private function bindWhatsAppGateway(): void
+    {
+        $this->app->bind(WhatsAppGatewayInterface::class, function ($app) {
+            $driver = (string) config('whatsapp.driver', 'disabled');
+
+            if ($driver === 'fake') {
+                return $app->make(FakeWhatsAppGateway::class);
+            }
+
+            if (! config('whatsapp.enabled', false) || $driver !== 'cloud_api') {
+                return new DisabledWhatsAppGateway;
+            }
+
+            return new CloudApiWhatsAppGateway(
+                $app->make(HttpFactory::class),
+                $app->make(SensitiveValueMasker::class),
+                (array) config('whatsapp.cloud_api', []),
+                (array) config('whatsapp.allowed_hosts', []),
+            );
+        });
     }
 
     /**

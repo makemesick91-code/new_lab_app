@@ -9,6 +9,7 @@ use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,7 +23,8 @@ class ClinicVisitFactory extends Factory
     public function definition(): array
     {
         $queueNumber = fake()->unique()->numberBetween(1, 999);
-        $visitDate = Carbon::today();
+        // FIX-06 — mirror production: visit_date is a clinical calendar date.
+        $visitDate = Carbon::parse(app(ClinicalClock::class)->todayString());
 
         return [
             'visit_number' => 'VIS-'.$visitDate->format('Ymd').'-'.str_pad((string) $queueNumber, 3, '0', STR_PAD_LEFT),

@@ -498,6 +498,15 @@ class RepositoryServiceProvider extends ServiceProvider
             Gate::define($ability, $callback);
         }
 
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-08) — SATUSEHAT is a Super
+        // Admin-only module. Defined once here and consumed by BOTH the route
+        // group (`can:satusehat.access`) and the sidebar, so the menu and the
+        // server-side boundary can never drift apart. The per-feature SATUSEHAT
+        // permissions are intentionally left in place: they still tier what a
+        // Super Admin may do inside the module, and they gate the non-SATUSEHAT
+        // clinical-diagnosis routes that share some of them.
+        Gate::define('satusehat.access', fn (User $user) => $user->hasRole('Super Admin'));
+
         // Super Admin can do everything (PRD §5).
         Gate::before(function (User $user, string $ability) {
             return $user->hasRole('Super Admin') ? true : null;

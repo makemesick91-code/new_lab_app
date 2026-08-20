@@ -23,17 +23,32 @@ function s4dUser(string $role): User
     return $u;
 }
 
-it('lets Supervisor RME open every 4D read surface', function () {
+it('denies Supervisor RME every 4D read surface now that the module is Super Admin only', function () {
     $user = s4dUser('Supervisor RME');
-
-    foreach ([
+    $surfaces = [
         'satusehat.multi-branch.index',
         'satusehat.executive.index',
         'satusehat.waves.index',
         'satusehat.uat.index',
         'satusehat.change-control.index',
-    ] as $route) {
-        $this->actingAs($user)->get(route($route))->assertOk();
+    ];
+
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group.
+    foreach ($surfaces as $route) {
+        $this->actingAs($user)->get(route($route))->assertForbidden();
+    }
+
+    // The seeded 4D permissions are untouched — this is a route-layer
+    // restriction, not a permission revocation.
+    expect($user->can('view_satusehat_multi_branch_readiness'))->toBeTrue()
+        ->and($user->can('view_satusehat_executive_readiness'))->toBeTrue()
+        ->and($user->can('manage_satusehat_rollout_waves'))->toBeTrue()
+        ->and($user->can('record_satusehat_uat_signoff'))->toBeTrue()
+        ->and($user->can('manage_satusehat_change_control'))->toBeTrue();
+
+    // Every surface still renders for the only role that may open them.
+    foreach ($surfaces as $route) {
+        $this->actingAs(superAdmin())->get(route($route))->assertOk();
     }
 
     Http::assertNothingSent();
@@ -48,27 +63,48 @@ it('denies Kasir and Admin Lab every 4D surface (403)', function () {
     }
 });
 
-it('gives Owner read-only access but denies wave management (403)', function () {
+it('denies Owner every 4D surface (403) while its read-only permission set is unchanged', function () {
     $owner = s4dUser('Owner');
 
-    $this->actingAs($owner)->get(route('satusehat.multi-branch.index'))->assertOk();
-    $this->actingAs($owner)->get(route('satusehat.executive.index'))->assertOk();
-    // Owner has no manage_satusehat_rollout_waves → cannot create a wave.
+    // FIX-08: Owner previously had read-only 4D access; the module is now Super
+    // Admin only, so even the read surfaces are denied.
+    $this->actingAs($owner)->get(route('satusehat.multi-branch.index'))->assertForbidden();
+    $this->actingAs($owner)->get(route('satusehat.executive.index'))->assertForbidden();
     $this->actingAs($owner)->post(route('satusehat.waves.store'), ['name' => 'X'])->assertForbidden();
-    // Owner cannot open the UAT recording surface.
     $this->actingAs($owner)->get(route('satusehat.uat.index'))->assertForbidden();
+
+    // The read-only-vs-management permission split is unchanged and still
+    // enforced by the routes' own `permission:` middleware.
+    expect($owner->can('view_satusehat_multi_branch_readiness'))->toBeTrue()
+        ->and($owner->can('view_satusehat_executive_readiness'))->toBeTrue()
+        ->and($owner->can('manage_satusehat_rollout_waves'))->toBeFalse()
+        ->and($owner->can('record_satusehat_uat_signoff'))->toBeFalse();
+
+    // No wave was created by the denied POST.
+    $this->assertDatabaseMissing('mst_satusehat_rollout_waves', ['name' => 'X']);
 });
 
-it('gives Admin Klinik matrix read but denies executive + wave management', function () {
+it('denies Admin Klinik every 4D surface (403) while its matrix-only permission set is unchanged', function () {
     $ak = s4dUser('Admin Klinik');
 
-    $this->actingAs($ak)->get(route('satusehat.multi-branch.index'))->assertOk();
+    // FIX-08: Admin Klinik previously had matrix read access; the module is now
+    // Super Admin only, so the matrix is denied as well.
+    $this->actingAs($ak)->get(route('satusehat.multi-branch.index'))->assertForbidden();
     $this->actingAs($ak)->get(route('satusehat.executive.index'))->assertForbidden();
     $this->actingAs($ak)->post(route('satusehat.waves.store'), ['name' => 'X'])->assertForbidden();
+
+    // The matrix-only permission split is unchanged and still enforced by the
+    // routes' own `permission:` middleware.
+    expect($ak->can('view_satusehat_multi_branch_readiness'))->toBeTrue()
+        ->and($ak->can('view_satusehat_executive_readiness'))->toBeFalse()
+        ->and($ak->can('manage_satusehat_rollout_waves'))->toBeFalse();
+
+    $this->assertDatabaseMissing('mst_satusehat_rollout_waves', ['name' => 'X']);
 });
 
-it('creates a wave via HTTP as Supervisor RME without network', function () {
-    $user = s4dUser('Supervisor RME');
+it('creates a wave via HTTP as Super Admin without network', function () {
+    // FIX-08: Super Admin only. The wave-creation behaviour itself is unchanged.
+    $user = superAdmin();
 
     $this->actingAs($user)
         ->post(route('satusehat.waves.store'), ['name' => 'HTTP Wave', 'sequence' => 1])

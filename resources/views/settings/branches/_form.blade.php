@@ -16,6 +16,23 @@
                class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" />
         @error('name')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
     </div>
+    {{-- FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-01) — the branch address is the
+         identity printed on that branch's clinical and financial documents. --}}
+    <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-gray-700">Alamat Cabang</label>
+        <textarea name="address" rows="2" maxlength="255"
+                  class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500">{{ old('address', $branch?->address) }}</textarea>
+        <p class="mt-1 text-xs text-gray-500">
+            Dicetak pada dokumen cabang ini (rekam medis, odontogram, resep, dan nota pembayaran).
+        </p>
+        @error('address')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
+    </div>
+    <div>
+        <label class="block text-sm font-medium text-gray-700">Telepon / WhatsApp Cabang</label>
+        <input type="text" name="phone" value="{{ old('phone', $branch?->phone) }}" maxlength="30"
+               class="mt-1 block w-full rounded-md border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500" />
+        @error('phone')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
+    </div>
 </div>
 
 <div class="space-y-3">

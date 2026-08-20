@@ -12,6 +12,7 @@ use App\Modules\Satusehat\Services\Pilot\SatusehatPilotConfigurationService;
 use App\Modules\Satusehat\Services\Pilot\SatusehatPilotRehearsalService;
 use App\Modules\Satusehat\Services\Pilot\SatusehatReadinessScoreService;
 use App\Modules\Satusehat\Services\Pilot\SatusehatReadinessThresholdService;
+use App\Modules\Satusehat\Support\SatusehatWorkspaceScope;
 use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Http;
@@ -257,10 +258,19 @@ it('recalculate persists a score + stage to the branch profile', function () {
 
 it('branch board is scoped and renders without external calls', function () {
     $branch = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
-    $user = User::factory()->create();
-    $user->givePermissionTo(['view_satusehat_branch_readiness', 'view_satusehat_submissions']);
 
-    $this->actingAs($user)
+    // FIX-08: SATUSEHAT is Super Admin only (`can:satusehat.access` on the whole
+    // route group), so the board is rendered for a Super Admin. A permission
+    // holder is denied — asserted here so the new rule stays covered.
+    $permissionHolder = User::factory()->create();
+    $permissionHolder->givePermissionTo(['view_satusehat_branch_readiness', 'view_satusehat_submissions']);
+
+    $this->actingAs($permissionHolder)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('satusehat.branches.index'))
+        ->assertForbidden();
+
+    $this->actingAs(superAdmin())
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('satusehat.branches.index'))
         ->assertOk();
@@ -268,17 +278,36 @@ it('branch board is scoped and renders without external calls', function () {
     Http::assertNothingSent();
 });
 
-it('a branch-pinned operator cannot open another branch (IDOR 404)', function () {
+it('a branch-pinned operator cannot open another branch (IDOR)', function () {
     $branchA = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
     $branchB = Branch::factory()->create(['is_active' => true, 'is_rme_enabled' => true]);
 
     $operator = User::factory()->create(['branch_id' => $branchA->id]);
     $operator->givePermissionTo(['view_satusehat_branch_readiness', 'manage_satusehat_branch_remediation']);
 
+    // FIX-08: the operator is now stopped by the Super Admin gate before the
+    // branch scope is consulted, so the HTTP response alone no longer proves the
+    // pinning. The pinning itself is asserted on the very scope resolver the
+    // controller uses (`abort_unless(in_array($branch, $scope->branchIdsFor(...)))`).
     $this->actingAs($operator)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('satusehat.branches.show', $branchB->id))
-        ->assertNotFound();
+        ->assertForbidden();
+
+    $scope = app(SatusehatWorkspaceScope::class);
+
+    expect($scope->branchIdsFor($operator))->toBe([$branchA->id])
+        ->and(in_array($branchB->id, $scope->branchIdsFor($operator), true))->toBeFalse();
+
+    // Control: an actor that clears the FIX-08 gate resolves cross-branch and
+    // opens the same branch end-to-end, so the denial above is the pinning.
+    $superAdmin = superAdmin();
+    expect(in_array($branchB->id, $scope->branchIdsFor($superAdmin), true))->toBeTrue();
+
+    $this->actingAs($superAdmin)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('satusehat.branches.show', $branchB->id))
+        ->assertOk();
 });
 
 it('pilot-eligibility command reports blocked_external_credential json for a ready branch', function () {

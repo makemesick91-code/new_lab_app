@@ -12,6 +12,7 @@ use Database\Factories\RmePrescriptionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
@@ -106,6 +107,14 @@ class RmePrescription extends Model
         }
 
         return Storage::disk('public')->url($path);
+    }
+
+    /**
+     * FIX-02 — WhatsApp hand-off attempts for this prescription.
+     */
+    public function whatsAppDeliveries(): HasMany
+    {
+        return $this->hasMany(PrescriptionWhatsAppDelivery::class, 'rme_prescription_id');
     }
 
     protected static function newFactory(): RmePrescriptionFactory

@@ -249,10 +249,26 @@ it('redirects guests away from the context selector', function () {
 
 it('does not force context-exempt or non-context roles through the selector', function () {
     $owner = User::factory()->create()->assignRole('Owner');
-    $kasir = User::factory()->create()->assignRole('Kasir');
+    $kepalaCabang = User::factory()->create()->assignRole('Kepala Cabang');
 
     $this->actingAs($owner)->get(route('dashboard'))->assertOk();
-    $this->actingAs($kasir)->get(route('dashboard'))->assertOk();
+    // Kepala Cabang never works from an RME online context, so the gate leaves
+    // it alone — proving the middleware still only stops the four RME roles.
+    $this->actingAs($kepalaCabang)->get(route('dashboard'))->assertOk();
+});
+
+it('now routes Kasir through the selector too, since it works from a chosen branch', function () {
+    // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — Kasir joined Doctor, Admin
+    // Klinik and Perawat as a role that works from one selected branch, so it is
+    // deliberately no longer a "non-context" role.
+    $kasir = User::factory()->create()->assignRole('Kasir');
+
+    $this->actingAs($kasir)->get(route('dashboard'))
+        ->assertRedirect(route('rme.online-context.select'));
+
+    rmeMakeKasirActive($kasir, test()->ldk2);
+
+    $this->actingAs($kasir->fresh())->get(route('dashboard'))->assertOk();
 });
 
 // ---------------------------------------------------------------------------

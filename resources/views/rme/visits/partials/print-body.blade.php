@@ -148,7 +148,9 @@
                 'structured' => $odontogramPrint,
                 'patientName' => $visit->patient?->name ?? '—',
                 'rmNumber' => $visit->patient?->medical_record_number ?? '—',
-                'branchTitle' => strtoupper($visit->branch?->name ?: 'Telkomas'),
+                'branchTitle' => strtoupper($visit->branch?->name ?: ''),
+                'branchAddress' => $visit->branch?->address,
+                'branchPhone' => $visit->branch?->phone,
                 'showHeader' => false,
                 'showVisual' => true,
             ])

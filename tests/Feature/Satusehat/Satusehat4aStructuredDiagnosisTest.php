@@ -3,6 +3,7 @@
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
 use App\Modules\MedicalRecord\Services\MedicalRecordDiagnosisService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatCandidate;
 use App\Modules\Satusehat\Services\SatusehatReadinessService;
 use Illuminate\Support\Facades\Http;
@@ -140,7 +141,17 @@ it('diagnosis routes are permission + policy gated (unauthorized user cannot rec
     expect(MedicalRecordDiagnosis::query()->where('medical_record_id', $ctx['mr']->id)->count())->toBe(1);
 });
 
-it('master governance page requires manage_structured_diagnoses', function () {
-    $this->actingAs(userInRole('Kasir'))->get(route('satusehat.diagnoses.index'))->assertForbidden();
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.diagnoses.index'))->assertOk();
+it('master governance page is Super Admin only and denies every other role', function () {
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
+    // master governance page is unreachable for Supervisor RME too.
+    $this->actingAs(userInRole('Kasir'))->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('satusehat.diagnoses.index'))->assertForbidden();
+    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.diagnoses.index'))->assertForbidden();
+    $this->actingAs(superAdmin())->get(route('satusehat.diagnoses.index'))->assertOk();
+
+    // The route's own `manage_structured_diagnoses|review_clinical_terminology`
+    // permission requirement is unchanged — asserted here so the seeded RBAC
+    // split survives the move to a Super-Admin-only module.
+    expect(userInRole('Supervisor RME')->canAny(['manage_structured_diagnoses', 'review_clinical_terminology']))->toBeTrue()
+        ->and(userInRole('Kasir')->canAny(['manage_structured_diagnoses', 'review_clinical_terminology']))->toBeFalse();
 });

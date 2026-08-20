@@ -21,7 +21,7 @@ beforeEach(function () {
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $this->rmeBranch = Branch::factory()->create(['code' => 'RME1', 'is_rme_enabled' => true]);
-    $this->manager = userWith(['manage_clinic_visits']);
+    $this->manager = userWith(['manage_clinic_visits', 'complete_rme_examination']);
     $this->viewer = userWith(['view_clinic_visits']);
 
     $this->clinic = Clinic::factory()->create();
@@ -127,9 +127,9 @@ it('auto-generates queue_number per branch per visit_date', function () {
         'patient_id' => $this->patient->id,
         'doctor_id' => $this->doctor->id,
         'created_by' => $this->manager->id,
-        'visit_date' => today()->toDateString(),
+        'visit_date' => clinicalToday()->toDateString(),
         'queue_number' => 1,
-        'visit_number' => 'VIS-'.today()->format('Ymd').'-001',
+        'visit_number' => 'VIS-'.clinicalToday()->format('Ymd').'-001',
     ]);
 
     // Second visit via HTTP — must get queue_number = 2 since 1 is taken.
@@ -1109,7 +1109,7 @@ it('Cetak RME button appears on visit show for authorized user', function () {
 });
 
 it('generates next unique branch-coded visit number when suffix already exists', function () {
-    $today = today();
+    $today = clinicalToday();
 
     $rawBranchCode = $this->rmeBranch->code
         ?? $this->rmeBranch->branch_code

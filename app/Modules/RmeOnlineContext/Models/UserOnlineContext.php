@@ -20,6 +20,12 @@ class UserOnlineContext extends Model
 
     public const ROLE_PERAWAT = 'perawat';
 
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — Kasir works from one
+     * selected RME branch at a time, exactly like Admin Klinik and Perawat.
+     */
+    public const ROLE_KASIR = 'kasir';
+
     public const STATUS_ONLINE = 'online';
 
     public const STATUS_INACTIVE = 'inactive';

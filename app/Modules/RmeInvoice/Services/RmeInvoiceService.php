@@ -10,8 +10,10 @@ use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -23,7 +25,20 @@ class RmeInvoiceService
         private readonly RmeInvoiceNumberGeneratorService $numberGenerator,
         private readonly BranchService $branches,
         private readonly CashierHandoffStatusService $handoffStatus,
+        private readonly RmeWorkingBranchScope $workingBranchScope,
     ) {}
+
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-09) — the cashier financial
+     * workspace reads only the branch the cashier is working in. Fails closed to
+     * an empty scope without a valid context; governance roles keep the full set.
+     *
+     * @return array<int, int>
+     */
+    private function cashierScopeBranchIds(): array
+    {
+        return $this->workingBranchScope->branchIdsFor(Auth::user());
+    }
 
     /**
      * Hotfix Sprint 60.7 — Doctor → Cashier sync queue. Returns active visits across
@@ -40,7 +55,7 @@ class RmeInvoiceService
     public function cashierHandoffQueue(array $filters = []): array
     {
         $visits = $this->invoices->cashierHandoffQueueForBranches(
-            $this->branches->rmeEnabledIds(),
+            $this->cashierScopeBranchIds(),
             $filters,
         );
 
@@ -93,7 +108,7 @@ class RmeInvoiceService
     public function paginatePendingVisits(array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         return $this->invoices->paginateCashierPendingForBranches(
-            $this->branches->rmeEnabledIds(),
+            $this->cashierScopeBranchIds(),
             $filters,
             $perPage,
         );

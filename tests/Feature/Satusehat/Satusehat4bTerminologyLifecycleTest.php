@@ -2,6 +2,7 @@
 
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Services\ClinicalDiagnosisService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\Satusehat\Models\SatusehatAuditLog;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -152,27 +153,55 @@ it('appends an audit row for every terminology lifecycle event', function () {
         ->and($events)->toContain(SatusehatAuditLog::EVENT_TERMINOLOGY_DEPRECATED);
 });
 
-it('gates the review routes: master managers cannot approve; reviewers can; Kasir gets 403', function () {
+it('gates the review routes to Super Admin only while the manager-vs-reviewer permission split is kept', function () {
     $dx = ClinicalDiagnosis::factory()->create(['status' => ClinicalDiagnosis::STATUS_UNDER_REVIEW, 'submitted_by' => null, 'created_by' => null]);
 
-    // Kasir — no access at all.
-    $this->actingAs(userInRole('Kasir'))->post(route('satusehat.diagnoses.approve', $dx), ['reason' => 'x tidak berhak'])->assertForbidden();
-
-    // Master manager WITHOUT review permission cannot approve.
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group, so the
+    // dedicated reviewer is now denied over HTTP too — not only Kasir and the
+    // master manager.
     $manager = userWith(['manage_structured_diagnoses']);
-    $this->actingAs($manager)->post(route('satusehat.diagnoses.approve', $dx), ['reason' => 'tanpa izin review'])->assertForbidden();
-
-    // Dedicated reviewer approves.
     $reviewer = userWith(['review_clinical_terminology']);
-    $this->actingAs($reviewer)
+
+    foreach ([userInRole('Kasir'), $manager, $reviewer] as $user) {
+        $this->actingAs($user)->withoutMiddleware(EnsureRmeOnlineContext::class)
+            ->post(route('satusehat.diagnoses.approve', $dx), ['reason' => 'peran ini tidak boleh menyetujui'])
+            ->assertForbidden();
+    }
+
+    expect($dx->fresh()->status)->toBe(ClinicalDiagnosis::STATUS_UNDER_REVIEW);
+
+    // FIX-08: the route's own review_clinical_terminology requirement is
+    // unchanged — the manager-vs-reviewer split is asserted on the permission
+    // layer the `permission:` middleware itself evaluates.
+    expect($manager->can('review_clinical_terminology'))->toBeFalse()
+        ->and($reviewer->can('review_clinical_terminology'))->toBeTrue()
+        ->and(userInRole('Kasir')->canAny(['manage_structured_diagnoses', 'review_clinical_terminology']))->toBeFalse();
+
+    // The approval itself still works for the only actor that can reach it.
+    $this->actingAs(superAdmin())
         ->post(route('satusehat.diagnoses.approve', $dx), ['reason' => 'Disetujui reviewer klinis.'])
         ->assertRedirect();
 
     expect($dx->fresh()->status)->toBe(ClinicalDiagnosis::STATUS_APPROVED);
 });
 
-it('Supervisor RME retains full lifecycle access via seeded permissions', function () {
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.diagnoses.index'))->assertOk();
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.rollout.index'))->assertOk();
-    $this->actingAs(userInRole('Supervisor RME'))->get(route('satusehat.adoption.index'))->assertOk();
+it('Supervisor RME keeps its seeded lifecycle permissions but is denied every SATUSEHAT route now that the module is Super Admin only', function () {
+    $supervisor = userInRole('Supervisor RME');
+
+    // FIX-08: `can:satusehat.access` guards the whole satusehat.* group.
+    $this->actingAs($supervisor)->get(route('satusehat.diagnoses.index'))->assertForbidden();
+    $this->actingAs($supervisor)->get(route('satusehat.rollout.index'))->assertForbidden();
+    $this->actingAs($supervisor)->get(route('satusehat.adoption.index'))->assertForbidden();
+
+    // The seeded permissions themselves are untouched — this is a route-layer
+    // restriction, not a permission revocation.
+    expect($supervisor->can('manage_structured_diagnoses'))->toBeTrue()
+        ->and($supervisor->can('review_clinical_terminology'))->toBeTrue()
+        ->and($supervisor->can('configure_diagnosis_rollout'))->toBeTrue()
+        ->and($supervisor->can('view_diagnosis_adoption'))->toBeTrue();
+
+    // The surfaces themselves still render for the only role that may open them.
+    $this->actingAs(superAdmin())->get(route('satusehat.diagnoses.index'))->assertOk();
+    $this->actingAs(superAdmin())->get(route('satusehat.rollout.index'))->assertOk();
+    $this->actingAs(superAdmin())->get(route('satusehat.adoption.index'))->assertOk();
 });

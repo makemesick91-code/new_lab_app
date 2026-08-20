@@ -1,9 +1,10 @@
 <x-settings-shell title="Resep Dokter">
     @php
         $branch = $clinicVisit->branch;
-        $branchTitle = strtoupper($branch?->name ?: 'TELKOMAS');
-        $branchAddress = $branch?->address ?: 'Makassar';
-        $branchPhone = $branch?->phone ?: '';
+        // FIX-01 — identity follows the record's branch; nothing is invented.
+        $branchTitle = strtoupper($branch?->name ?: '');
+        $branchAddress = (string) ($branch?->address ?? '');
+        $branchPhone = (string) ($branch?->phone ?? '');
         $formValues = $prescription ? [
             'prescribed_by_name' => old('prescribed_by_name', $prescription->prescribed_by_name),
             'prescription_date' => old('prescription_date', $prescription->prescription_date?->format('Y-m-d')),
@@ -72,6 +73,64 @@
                     </x-ui.button>
                 @endif
             </div>
+
+        {{-- FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — send the prescription to
+             the patient through the official WhatsApp Business Platform. This posts
+             to the server, which calls Meta's Cloud API itself: there is no wa.me
+             link, no WhatsApp Web and no browser redirect. --}}
+        @if (($canSendWhatsApp ?? false))
+            <x-ui.card title="Kirim Resep via WhatsApp" class="mt-4">
+                @if (session('error'))
+                    <x-ui.alert variant="danger" class="mb-3">{{ session('error') }}</x-ui.alert>
+                @endif
+
+                @php $lastDelivery = $lastWhatsAppDelivery ?? null; @endphp
+
+                @if ($lastDelivery?->isSent())
+                    <x-ui.alert variant="success" class="mb-3">
+                        Terkirim ke {{ $lastDelivery->maskedRecipient() }}
+                        pada {{ $lastDelivery->sent_at?->format('d/m/Y H:i') }}.
+                    </x-ui.alert>
+                @elseif ($lastDelivery && $lastDelivery->provider_error_message)
+                    <x-ui.alert variant="warning" class="mb-3">
+                        Percobaan terakhir gagal: {{ $lastDelivery->provider_error_message }}
+                    </x-ui.alert>
+                @endif
+
+                @if (! ($whatsAppEnabled ?? false))
+                    <x-ui.alert variant="warning">
+                        Pengiriman WhatsApp belum aktif. Administrator perlu mengatur kredensial
+                        WhatsApp Business dan template resep yang telah disetujui sebelum fitur ini dapat digunakan.
+                    </x-ui.alert>
+                @else
+                    <form method="POST" action="{{ route('rme.prescriptions.whatsapp.send', $prescription) }}"
+                          class="space-y-3"
+                          onsubmit="return confirm('Kirim resep ini ke WhatsApp pasien?');">
+                        @csrf
+                        <p class="text-sm text-ink-soft">
+                            Resep akan dikirim ke nomor WhatsApp pasien yang terdaftar menggunakan template resmi
+                            yang telah disetujui. Pastikan nomor pasien sudah benar.
+                        </p>
+                        <label class="flex items-start gap-2 text-sm text-ink">
+                            <input type="checkbox" name="confirm" value="1" required
+                                   class="mt-0.5 rounded border-hairline text-brand-600 focus:ring-brand-500" />
+                            <span>Saya memastikan resep ini benar dan boleh dikirim ke pasien.</span>
+                        </label>
+                        @error('confirm')<p class="text-xs text-danger">{{ $message }}</p>@enderror
+                        @if ($lastDelivery?->isSent())
+                            <label class="flex items-start gap-2 text-sm text-warning-700">
+                                <input type="checkbox" name="resend" value="1"
+                                       class="mt-0.5 rounded border-hairline text-warning-600 focus:ring-warning-500" />
+                                <span>Kirim ulang (resep ini sudah pernah dikirim).</span>
+                            </label>
+                        @endif
+                        <div class="flex justify-end border-t border-hairline pt-3">
+                            <x-ui.button type="submit" variant="success">Kirim via WhatsApp</x-ui.button>
+                        </div>
+                    </form>
+                @endif
+            </x-ui.card>
+        @endif
         </div>
 
         @if (session('status'))
@@ -92,8 +151,10 @@
                     <x-brand.daengtisia-logo class="h-12 w-auto max-w-[120px]" />
                     <div class="text-center sm:text-left">
                         <p class="text-lg font-bold text-gray-900">Klinik Gigi Daengtisia</p>
-                        <p class="text-sm font-semibold text-teal-800">CABANG {{ $branchTitle }}</p>
-                        <p class="text-xs text-gray-600">{{ $branchAddress }}@if ($branchPhone) &middot; {{ $branchPhone }}@endif</p>
+                        @if ($branchTitle !== '')<p class="text-sm font-semibold text-brand-800">CABANG {{ $branchTitle }}</p>@endif
+                        @if ($branchAddress !== '' || $branchPhone !== '')
+                            <p class="text-xs text-gray-600">{{ $branchAddress }}@if ($branchAddress !== '' && $branchPhone !== '') &middot; @endif{{ $branchPhone }}</p>
+                        @endif
                     </div>
                 </div>
             </div>

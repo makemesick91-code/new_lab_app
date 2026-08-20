@@ -18,6 +18,8 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'manage patients',
     'view_clinic_visits',
     'manage_clinic_visits',
+    'complete_rme_examination',
+    'send_prescription_whatsapp',
     'view_treatment_worklist',
     'manage_rme_billing',
     'view_rme_patient_reports',

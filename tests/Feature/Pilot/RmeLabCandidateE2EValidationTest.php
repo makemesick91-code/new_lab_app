@@ -32,6 +32,9 @@ beforeEach(function () {
     $this->branch->update(['is_rme_enabled' => true, 'is_active' => true]);
     $this->doctor = doctorWithOnlineContext($this->branch);
     $this->kasir = userInRole('Kasir');
+    // FIX-03 — a Kasir now works from a selected branch. This suite's branch IS
+    // the RME branch it bills in, so pin the working context to it.
+    rmeMakeKasirActive($this->kasir, $this->branch);
     $this->adminLab = userInRole('Admin Lab');
     $this->labService = LabService::factory()->create(['is_active' => true, 'price' => 850000]);
 });

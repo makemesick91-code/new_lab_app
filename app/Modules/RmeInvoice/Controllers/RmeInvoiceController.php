@@ -13,6 +13,7 @@ use App\Modules\RmeInvoice\Requests\CreateRmeInvoiceRequest;
 use App\Modules\RmeInvoice\Services\CashierHandoffStatusService;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Services\TreatmentService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -196,9 +197,18 @@ class RmeInvoiceController extends Controller
         }, 200, $headers);
     }
 
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-09) — the branches this cashier may
+     * actually read. Drives BOTH the branch filter selector and the receivable /
+     * payment-report base scope, so the list, the totals and the CSV export can
+     * never span a branch the cashier is not working in.
+     */
     private function rmeBranches()
     {
+        $allowed = app(RmeWorkingBranchScope::class)->branchIdsFor(request()->user());
+
         return Branch::query()
+            ->whereIn('id', $allowed)
             ->where('is_active', true)
             ->where('is_rme_enabled', true)
             ->orderBy('name')

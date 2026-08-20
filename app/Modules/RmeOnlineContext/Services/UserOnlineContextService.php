@@ -43,6 +43,17 @@ class UserOnlineContextService
         return $user->hasRole('Perawat') && ! $this->isExemptFromContext($user);
     }
 
+    /**
+     * FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-03) — Kasir uses the same
+     * branch-only online context mechanism as Admin Klinik and Perawat, so the
+     * cashier workspace and every payment mutation are pinned to the branch the
+     * cashier is actually working in.
+     */
+    public function requiresKasirContext(User $user): bool
+    {
+        return $user->hasRole('Kasir') && ! $this->isExemptFromContext($user);
+    }
+
     public function isExemptFromContext(User $user): bool
     {
         return $user->hasRole(['Owner', 'Super Admin', 'Supervisor RME']);
@@ -60,6 +71,10 @@ class UserOnlineContextService
 
         if ($this->requiresPerawatContext($user)) {
             return $this->isPerawatActive($user);
+        }
+
+        if ($this->requiresKasirContext($user)) {
+            return $this->isKasirActive($user);
         }
 
         return true;
@@ -129,6 +144,21 @@ class UserOnlineContextService
             && $this->branchIsRmeEnabled((int) $context->branch_id);
     }
 
+    public function isKasirActive(User $user): bool
+    {
+        if (! $this->requiresKasirContext($user)) {
+            return false;
+        }
+
+        $context = $this->currentContextFor($user);
+
+        return $context !== null
+            && $context->role_context === UserOnlineContext::ROLE_KASIR
+            && $context->status === UserOnlineContext::STATUS_ONLINE
+            && $context->branch_id !== null
+            && $this->branchIsRmeEnabled((int) $context->branch_id);
+    }
+
     /**
      * Active branch-only online context branch (Admin Klinik or Perawat).
      * Registration/queue flows treat both roles identically: the visit branch is
@@ -168,6 +198,7 @@ class UserOnlineContextService
             UserOnlineContext::ROLE_DOCTOR => $this->requiresDoctorContext($user),
             UserOnlineContext::ROLE_ADMIN_CLINIC => $this->requiresAdminClinicContext($user),
             UserOnlineContext::ROLE_PERAWAT => $this->requiresPerawatContext($user),
+            UserOnlineContext::ROLE_KASIR => $this->requiresKasirContext($user),
             default => false,
         };
 
@@ -270,6 +301,29 @@ class UserOnlineContextService
             'branch_id' => $branchId,
             'clinic_room_id' => null,
             'role_context' => UserOnlineContext::ROLE_PERAWAT,
+            'status' => UserOnlineContext::STATUS_ONLINE,
+            'online_since' => $now,
+            'last_seen_at' => $now,
+            'offline_at' => null,
+        ]);
+    }
+
+    public function startKasirSession(User $user, int $branchId): UserOnlineContext
+    {
+        if (! $this->requiresKasirContext($user)) {
+            throw ValidationException::withMessages([
+                'branch_id' => 'Akun ini tidak memerlukan konteks kasir.',
+            ]);
+        }
+
+        $this->assertRmeBranch($branchId);
+
+        $now = now();
+
+        return $this->contexts->upsertForUser((int) $user->id, [
+            'branch_id' => $branchId,
+            'clinic_room_id' => null,
+            'role_context' => UserOnlineContext::ROLE_KASIR,
             'status' => UserOnlineContext::STATUS_ONLINE,
             'online_since' => $now,
             'last_seen_at' => $now,
