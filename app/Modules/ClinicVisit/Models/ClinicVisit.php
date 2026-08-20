@@ -4,9 +4,9 @@ namespace App\Modules\ClinicVisit\Models;
 
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
-use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;

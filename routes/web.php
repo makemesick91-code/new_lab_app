@@ -618,6 +618,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/payment/create', [RmePaymentController::class, 'create'])->name('cashier.payment.create');
         Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/payment', [RmePaymentController::class, 'store'])->name('cashier.payment.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt', [RmePaymentController::class, 'receipt'])->name('cashier.receipt.show');
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-06 — the same kwitansi as a
+        // single-page PDF. Same policy (viewReceipt), same paid-only rule, same
+        // data; it exists so the one-page contract is measurable rather than
+        // assumed.
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
     });
 
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)

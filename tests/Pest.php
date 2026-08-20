@@ -54,6 +54,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -927,9 +928,9 @@ function legacyRmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
  * branch scope — must go through RmeVisitConsentService instead, so that the
  * rules stay under test. See RmeVisitConsentGateTest.
  */
-function rmeSignedConsentFor(\App\Modules\ClinicVisit\Models\ClinicVisit $visit): \App\Modules\Consent\Models\RmeVisitConsent
+function rmeSignedConsentFor(ClinicVisit $visit): RmeVisitConsent
 {
-    return \App\Modules\Consent\Models\RmeVisitConsent::factory()->create([
+    return RmeVisitConsent::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
         'patient_id' => $visit->patient_id,

@@ -7,10 +7,11 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
+use Database\Factories\RmeVisitConsentFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Builder;
 
 /**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — a signed PERSETUJUAN TINDAKAN
@@ -163,6 +164,6 @@ class RmeVisitConsent extends Model
 
     protected static function newFactory()
     {
-        return \Database\Factories\RmeVisitConsentFactory::new();
+        return RmeVisitConsentFactory::new();
     }
 }
