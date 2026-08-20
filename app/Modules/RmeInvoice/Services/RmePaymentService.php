@@ -581,6 +581,26 @@ class RmePaymentService
      * The two boolean columns are kept as a denormalised mirror for display and
      * backward compatibility, but they are no longer the authority and are only
      * ever written server-side, from a consent that was actually signed.
+     *
+     * SCOPE — deliberately the CURRENT visit only.
+     *
+     * allocateControlPayment() and allocateVisitPayment() also settle invoices
+     * belonging to EARLIER visits (carry-over receivables). Those are NOT gated
+     * on their own consent, and that is the correct behaviour, not an oversight:
+     *
+     *   - Consent is consent to TREATMENT. A prior visit's treatment already
+     *     happened, and from this sprint onward it could not have been paid
+     *     without its own signed consent in the first place.
+     *   - Collecting an outstanding debt is not a new treatment. Demanding a
+     *     fresh signature before accepting money for old, already-consented work
+     *     would be meaningless.
+     *   - Every receivable that predates this sprint has NO signed consent by
+     *     definition. Asserting consent on parent visits would make all
+     *     historical debt permanently uncollectable — a far worse outcome than
+     *     the one this gate exists to prevent.
+     *
+     * So: the visit whose treatment is being paid for must have consent; visits
+     * whose debt is merely being collected must not be re-gated.
      */
     private function assertConsentVerified(ClinicVisit $visit): void
     {

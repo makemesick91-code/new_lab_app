@@ -187,6 +187,73 @@ it('allows payment again once a replacement consent is signed', function () {
 |--------------------------------------------------------------------------
 */
 
+it('collects a prior receivable whose own visit predates consent', function () {
+    /*
+     * SCOPE OF THE GATE — the current visit only.
+     *
+     * A carry-over payment settles invoices from EARLIER visits too. Those are
+     * deliberately not gated on their own consent: consent is consent to
+     * TREATMENT, and collecting an outstanding debt is not a new treatment.
+     *
+     * The decisive argument is production data. Every receivable that predates
+     * this sprint has no signed consent by definition, so gating parent visits
+     * would make all historical debt permanently uncollectable — a worse outcome
+     * than the bypass this sprint closes.
+     *
+     * This test pins that, so a future "tighten the gate" change cannot quietly
+     * strand real money.
+     */
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+
+    // An old visit with an unpaid balance and NO consent at all.
+    $priorVisit = consentVisit();
+    $priorVisit->forceFill(['patient_id' => $patient->id])->save();
+    $priorInvoice = consentInvoiceFor($priorVisit->refresh(), 100000);
+    expect($priorVisit->refresh()->hasSignedConsentDocument())->toBeFalse();
+
+    // Today's visit, properly consented.
+    $currentVisit = consentVisit();
+    $currentVisit->forceFill(['patient_id' => $patient->id])->save();
+    $currentInvoice = consentInvoiceFor($currentVisit->refresh(), 50000);
+    signConsentFor($currentVisit->refresh());
+
+    $result = app(RmePaymentService::class)->allocateVisitPayment(
+        $currentInvoice->refresh(),
+        $this->cashier,
+        payDataFor(150000),
+        [$priorInvoice->id],
+    );
+
+    // The old debt is collected even though its visit never had a consent...
+    expect($priorInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+    // ...and today's treatment was still gated on today's consent.
+    expect($currentInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+    expect($result->allocatedToParent)->toEqual(100000.0);
+});
+
+it('still refuses the whole carry-over batch when the CURRENT visit lacks consent', function () {
+    // The other half of the same rule: prior receivables are collectable, but
+    // they are not a way to pay for un-consented treatment today.
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+
+    $priorVisit = consentVisit();
+    $priorVisit->forceFill(['patient_id' => $patient->id])->save();
+    $priorInvoice = consentInvoiceFor($priorVisit->refresh(), 100000);
+
+    $currentVisit = consentVisit();
+    $currentVisit->forceFill(['patient_id' => $patient->id])->save();
+    $currentInvoice = consentInvoiceFor($currentVisit->refresh(), 50000);
+
+    expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
+        $currentInvoice->refresh(),
+        $this->cashier,
+        payDataFor(150000),
+        [$priorInvoice->id],
+    ))->toThrow(ValidationException::class);
+
+    expect($priorInvoice->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
+});
+
 it('does not let another visit consent satisfy this visit', function () {
     $visitA = consentVisit();
     $visitB = consentVisit();
