@@ -238,3 +238,55 @@ php artisan permission:cache-reset
 ```
 
 One additive table (`trx_rme_visit_consents`). No destructive migration.
+
+---
+
+## Closure evidence
+
+| | |
+|---|---|
+| BASE_SHA | `2b1725c2c5002cc9c20a0c3e64fc113cbe068f48` |
+| CANDIDATE_SHA | `39318f72bce2cab8d0d95f15d8e5fbc64c23209a` |
+| PR | #323 |
+| RUNTIME_MERGE_SHA | `b080ab13e47de3d6e47bafd06a41996fdd8f8fe0` |
+| VPS_HEAD | `b080ab13e47de3d6e47bafd06a41996fdd8f8fe0` (exact match) |
+| GO_TAG | `fix-rme-consent-workflow-print-ux-2-go` (object `ccc4586`) |
+| CI run | `32396544839` — all required gates success |
+| FULL_SUITE_EXECUTION_COUNT | **0** — deferred, `full_suite_authorized=false` |
+| Local regression | 1504 passed / 0 failed |
+| Migration | 1 additive table, batch 60, after a pre-deploy backup |
+
+### Production UAT — read only
+
+Zero writes: `payments 31/31`, `consents 0/0`, `medical records 29/29`.
+
+- **FIX-01** — 2 real `cashier_pending` visits: `hasSignedConsent=no` (payment
+  blocked), `signable=yes`. Visit detail shows the consent banner and
+  "Pilih Form Consent"; no identity number rendered.
+  **Gate boundary proven on real money:** `RME-202608-000001` carries an
+  outstanding **Rp 1.000.000** on a COMPLETED visit and stays collectable.
+- **FIX-02** — `Informasi Kunjungan` < `RME Tulisan Tangan` < `Dokumen RME
+  Pasien`; the rail is still rendered.
+- **FIX-03** — FINAL record: button absent, "telah difinalkan" shown. Real DRAFT
+  record: **exactly 1** Finalisasi, above the handwriting.
+- **FIX-04** — **exactly 1** "Cetak RME" on the RME page above the handwriting;
+  label and `rme.visits.print` both **absent** from Detail Kunjungan.
+- **FIX-05** — real visit with an odontogram: odontogram markers absent, patient
+  / medical record / branch present, **standalone odontogram print still works**.
+- **FIX-06** — real PAID invoice via `rme.cashier.receipt.pdf`:
+  **`pdfinfo` page count = 1**, grand total + LUNAS + every item present in the
+  extracted text.
+
+Health on `https://daengtisia.online`: `/login`, `/health/live`,
+`/health/ready`, `/health/lb` all **200**. `NEW_RELEVANT_APPLICATION_ERRORS=0`
+(the 7 log lines in the window are self-inflicted UAT-harness probes).
+Legacy RME `AT_REST`; WhatsApp `DisabledWhatsAppGateway` (FIX-02 stays HOLD).
+
+### Deploy note
+
+The deploy ran detached via `scripts/deploy-vps-runner.sh start`. The `follow`
+SSH pipe later timed out (exit 255) — the exact dropped-pipe case the POST-ENT
+runner exists to survive. The deploy itself finished `exit=0` / `DEPLOY RUNNER
+OK`, confirmed from `storage/logs/deploy-runner/latest.status`, never from the
+pipe. A follow-pipe timeout is not a deploy failure; always read the status file.
+
