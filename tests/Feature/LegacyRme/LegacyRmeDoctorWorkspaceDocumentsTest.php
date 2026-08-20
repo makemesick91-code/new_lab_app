@@ -163,7 +163,7 @@ function lrmedw1DownstreamCounts(): array
 |--------------------------------------------------------------------------
 */
 
-it('offers the published legacy archive from the workspace without scrolling to the history card', function () {
+it('offers the published legacy archive from the workspace document rail', function () {
     $patient = lrmedw1Patient();
     $visit = lrmedw1Visit($patient, '2024-06-01');
     lrmedw1Sheet($visit);
@@ -178,12 +178,51 @@ it('offers the published legacy archive from the workspace without scrolling to 
     $railPosition = strpos($html, 'data-rme-workspace-documents');
     $historyPosition = strpos($html, 'data-rme-clinical-history');
 
+    /*
+     * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-02.
+     *
+     * LEGACY-RME-DOCTOR-WORKSPACE-1 put this rail ABOVE the history card so the
+     * archive was reachable without scrolling past the canvas. The product
+     * decision is now that the top of the Medical Record page belongs to the
+     * active visit and the handwritten RME, with "Dokumen RME Pasien" last.
+     *
+     * The original goal survives the move: LEGACY-RME-DOCTOR-WORKSPACE-1A
+     * inlined the PUBLISHED legacy pages INTO the handwritten RME swipe canvas
+     * itself, so the archive is still reachable near the top of the page without
+     * scrolling. The rail is the explicit selector for it, not the only path to
+     * it — which is why relocating the rail does not regress the 1/1A outcome.
+     *
+     * So the ordering assertion is dropped, and what actually matters is
+     * asserted instead: both surfaces render, and the published record is
+     * offered by the rail.
+     */
     expect($railPosition)->not->toBeFalse('the workspace document rail must render')
         ->and($historyPosition)->not->toBeFalse('the existing clinical history card must remain')
-        // The whole point of the sprint: the rail is ABOVE the history card, so
-        // the archive is reachable without scrolling past the canvas.
-        ->and($railPosition)->toBeLessThan($historyPosition)
         ->and($html)->toContain('data-rme-workspace-document-id="'.$record->getKey().'"');
+});
+
+it('still inlines published legacy pages in the canvas after the rail moved down', function () {
+    // FIX-02 safety net: this is the reason the rail may move at all. If the
+    // inline legacy pages ever stop rendering, the archive would genuinely
+    // become harder to reach and FIX-02's placement would need revisiting.
+    $patient = lrmedw1Patient();
+    $visit = lrmedw1Visit($patient, '2024-06-01');
+    lrmedw1Sheet($visit);
+    lrmedw1Published($patient, '2019-04-17');
+
+    $html = $this->actingAs(lrmedw1WorkspaceUser($patient))
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->get(route('rme.visits.medical-record.show', $visit))
+        ->assertOk()
+        ->getContent();
+
+    $canvasPosition = strpos($html, 'rm-handwriting-swipe');
+    $railPosition = strpos($html, 'data-rme-workspace-documents');
+
+    expect($canvasPosition)->not->toBeFalse('the handwriting canvas must render')
+        ->and($railPosition)->not->toBeFalse('the document rail must still render')
+        // The canvas (which carries the inline legacy pages) comes first now.
+        ->and($canvasPosition)->toBeLessThan($railPosition);
 });
 
 it('keeps the existing patient history card in place (the rail is additive)', function () {

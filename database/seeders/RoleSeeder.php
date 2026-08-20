@@ -114,6 +114,10 @@ class RoleSeeder extends Seeder
             'manage_clinic_visits',
             // Sprint 20 Phase 1.10 — RME Cashier Billing
             'manage_rme_billing',
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
+            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            'view_rme_consents',
+            'manage_rme_consents',
             // Hotfix 66.2.6 — Admin Klinik may view/export/print patient reports only
             'view_rme_patient_reports',
             // SATUSEHAT-4A — limited branch-scoped remediation (patient data
@@ -239,6 +243,10 @@ class RoleSeeder extends Seeder
             'send_prescription_whatsapp',
             // Sprint 58.6 — treatment room worklist
             'view_treatment_worklist',
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
+            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            'view_rme_consents',
+            'manage_rme_consents',
             // FIX-PRE-68-45 Scope C — a doctor sees ONLY their own performance/income.
             'view_own_doctor_performance_report',
             // SATUSEHAT-4B — a doctor may use the reasoned, audited emergency
@@ -316,6 +324,10 @@ class RoleSeeder extends Seeder
             'view dashboard',
             'view_clinic_visits',
             'manage_rme_billing',
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
+            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            'view_rme_consents',
+            'manage_rme_consents',
             // Sprint 23 Phase 23.5 — Kasir may view RME payment reports only
             'view_rme_payment_reports',
         ],
@@ -375,6 +387,10 @@ class RoleSeeder extends Seeder
             'view_treatment_worklist',
             // Cashier RME: billing, payment, receivables, follow-ups
             'manage_rme_billing',
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the
+            // signed PERSETUJUAN TINDAKAN MEDIS that gates RME payment.
+            'view_rme_consents',
+            'manage_rme_consents',
             // RME reports + patient data completeness audit
             'view_rme_patient_reports',
             'view_rme_payment_reports',

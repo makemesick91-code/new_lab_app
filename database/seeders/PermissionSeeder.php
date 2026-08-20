@@ -132,6 +132,13 @@ class PermissionSeeder extends Seeder
         // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02) — hand a prescription to
         // the patient over the official WhatsApp Business Platform.
         'send_prescription_whatsapp',
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed PERSETUJUAN
+        // TINDAKAN MEDIS. Separated from manage_clinic_visits on purpose: the
+        // consent is captured at the cashier, and Kasir holds only
+        // view_clinic_visits, so reusing a clinic-visit management permission
+        // would 403 exactly the role that has to complete the payment.
+        'view_rme_consents',
+        'manage_rme_consents',
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         'manage_rme_billing',
         // Sprint 58.6 — Doctor/Perawat treatment room worklist

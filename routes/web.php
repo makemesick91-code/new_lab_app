@@ -14,6 +14,7 @@ use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
+use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
@@ -555,6 +556,29 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::post('prescriptions/{rmePrescription}/whatsapp', [RmePrescriptionController::class, 'sendWhatsApp'])
             ->middleware('permission:send_prescription_whatsapp')
             ->name('prescriptions.whatsapp.send');
+
+        /*
+         * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed PERSETUJUAN
+         * TINDAKAN MEDIS. Signing is gated by manage_rme_consents and reading by
+         * view_rme_consents; both are additionally branch-scoped and
+         * timing-gated inside the policy and the service, so route middleware is
+         * the outermost guard, never the only one.
+         */
+        Route::get('visits/{clinicVisit}/consent/create', [RmeVisitConsentController::class, 'create'])
+            ->middleware('permission:manage_rme_consents')
+            ->name('visits.consent.create');
+        Route::post('visits/{clinicVisit}/consent', [RmeVisitConsentController::class, 'store'])
+            ->middleware('permission:manage_rme_consents')
+            ->name('visits.consent.store');
+        Route::get('consents/{consent}', [RmeVisitConsentController::class, 'show'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.show');
+        Route::get('consents/{consent}/print', [RmeVisitConsentController::class, 'print'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.print');
+        Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.signature');
 
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])

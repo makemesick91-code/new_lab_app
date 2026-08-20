@@ -5,6 +5,7 @@ namespace App\Modules\RmeInvoice\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
@@ -50,7 +51,6 @@ class RmePaymentService
             }
 
             $visit = $this->requireVisit($invoice);
-            $this->applyConsentVerification($visit, $cashier, $data);
             $this->assertConsentVerified($visit);
 
             $payment = $this->recordPayment($invoice, $visit, $cashier, $data, $amount);
@@ -97,7 +97,6 @@ class RmePaymentService
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
             $this->assertInvoicePayable($controlInvoice);
 
-            $this->applyConsentVerification($controlVisit, $cashier, $data);
             $this->assertConsentVerified($controlVisit);
 
             $remainingPayment = $amount;
@@ -242,7 +241,6 @@ class RmePaymentService
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
             $this->assertInvoicePayable($currentInvoice);
 
-            $this->applyConsentVerification($currentVisit, $cashier, $data);
             $this->assertConsentVerified($currentVisit);
 
             $remainingPayment = $amount;
@@ -566,36 +564,32 @@ class RmePaymentService
     }
 
     /**
-     * @param  array<string, mixed>  $data
+     * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the payment consent gate.
+     *
+     * This method used to have a sibling, applyConsentVerification(), which
+     * wrote consent_signed_by_patient / consent_signed_by_doctor onto the visit
+     * straight from the payment request and then let this assertion read back
+     * the row it had just written. The gate therefore authored its own evidence:
+     * a POST carrying consent_signed_by_patient=1&consent_signed_by_doctor=1
+     * satisfied it with no signature, no document and no patient involvement.
+     *
+     * That write path is deleted. Payment now asks a question it cannot answer
+     * itself: does a signed PERSETUJUAN TINDAKAN MEDIS exist for THIS visit,
+     * and is it still valid? Only RmeVisitConsentService can create that
+     * evidence, and only from a real signature.
+     *
+     * The two boolean columns are kept as a denormalised mirror for display and
+     * backward compatibility, but they are no longer the authority and are only
+     * ever written server-side, from a consent that was actually signed.
      */
-    private function applyConsentVerification(ClinicVisit $visit, User $cashier, array $data): void
-    {
-        if (! array_key_exists('consent_signed_by_patient', $data)
-            && ! array_key_exists('consent_signed_by_doctor', $data)) {
-            return;
-        }
-
-        $patientSigned = filter_var($data['consent_signed_by_patient'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $doctorSigned = filter_var($data['consent_signed_by_doctor'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-        $visit->update([
-            'consent_signed_by_patient' => $patientSigned,
-            'consent_signed_by_doctor' => $doctorSigned,
-            'consent_verified_at' => ($patientSigned && $doctorSigned) ? now() : null,
-            'consent_verified_by' => ($patientSigned && $doctorSigned) ? $cashier->id : null,
-        ]);
-
-        $visit->refresh();
-    }
-
     private function assertConsentVerified(ClinicVisit $visit): void
     {
-        if ($visit->hasVerifiedConsent()) {
+        if (app(RmeVisitConsentService::class)->hasValidConsent($visit)) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'consent_signed_by_patient' => 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan belum dikonfirmasi ditandatangani oleh pasien dan dokter.',
+            'consent_signed_by_patient' => 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan Medis belum ditandatangani untuk kunjungan ini.',
         ]);
     }
 }

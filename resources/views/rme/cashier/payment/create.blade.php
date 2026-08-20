@@ -336,9 +336,51 @@
                     @enderror
                 </div>
 
-                {{-- Consent verification checklist (consent gate — calm but clear). --}}
-                <x-ui.alert variant="warning" title="Verifikasi Surat Persetujuan Tindakan (fisik)">
-                    <p class="text-xs">Konfirmasi bahwa formulir persetujuan tindakan sudah ditandatangani pasien dan dokter sebelum pembayaran diproses.</p>
+                {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the consent gate.
+
+                     This block used to BE the gate: two checkboxes whose values the
+                     payment service wrote to the visit and then asserted against. It
+                     now REPORTS the gate. The authority is a signed PERSETUJUAN
+                     TINDAKAN MEDIS, and the server refuses the payment regardless of
+                     what this form submits.
+
+                     The two checkbox names are preserved: they remain the cashier's
+                     acknowledgement that the signed document was sighted. --}}
+                @if ($signedConsent === null)
+                    <x-ui.alert variant="danger" title="Consent belum ditandatangani">
+                        <p class="text-xs">
+                            Pembayaran belum dapat diproses. Surat Persetujuan Tindakan Medis untuk kunjungan ini
+                            harus ditandatangani terlebih dahulu oleh pasien atau keluarga yang berhak.
+                        </p>
+                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])
+                            <div class="mt-3">
+                                <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $visit)">
+                                    Pilih Form Consent
+                                </x-ui.button>
+                            </div>
+                        @else
+                            <p class="mt-2 text-xs">
+                                Hubungi petugas yang berwenang untuk mengambil tanda tangan persetujuan.
+                            </p>
+                        @endcan
+                    </x-ui.alert>
+                @else
+                    <x-ui.alert variant="success" title="Consent sudah ditandatangani">
+                        <p class="text-xs">
+                            {{ $signedConsent->consent_number }} &middot;
+                            ditandatangani {{ $signedConsent->signed_at?->format('d/m/Y H:i') }}
+                            oleh {{ $signedConsent->consenter_name }}.
+                        </p>
+                        <div class="mt-3">
+                            <x-ui.button variant="secondary" :href="route('rme.consents.show', $signedConsent)">
+                                Lihat Persetujuan
+                            </x-ui.button>
+                        </div>
+                    </x-ui.alert>
+                @endif
+
+                <x-ui.alert variant="warning" title="Verifikasi Surat Persetujuan Tindakan">
+                    <p class="text-xs">Konfirmasi bahwa surat persetujuan tindakan yang sudah ditandatangani telah diperiksa sebelum pembayaran diproses.</p>
                     <div class="mt-3 space-y-3">
                         <label class="flex items-start gap-2 text-sm text-ink">
                             <input type="checkbox" name="consent_signed_by_patient" value="1"

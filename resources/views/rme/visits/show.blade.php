@@ -118,6 +118,46 @@
             </x-ui.alert>
         @endif
 
+        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the consent gate, shown
+             at the moment it becomes actionable: the doctor has finished, the
+             patient is on the way to the cashier, and payment is blocked until the
+             Surat Persetujuan Tindakan Medis is signed. Surfacing it here means the
+             cashier never learns about the requirement by having a payment
+             rejected. Presentation only — the server is the authority. --}}
+        @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING)
+            @php $visitSignedConsent = $visit->consents()->whereNull('voided_at')->latest('signed_at')->first(); @endphp
+
+            @if ($visitSignedConsent === null)
+                <x-ui.alert variant="warning" title="Consent belum ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-xl text-sm">
+                            Surat Persetujuan Tindakan Medis untuk kunjungan ini belum ditandatangani.
+                            Kasir belum dapat memproses pembayaran sampai persetujuan diambil.
+                        </p>
+                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])
+                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $visit)">
+                                Pilih Form Consent
+                            </x-ui.button>
+                        @endcan
+                    </div>
+                </x-ui.alert>
+            @else
+                <x-ui.alert variant="success" title="Consent sudah ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-xl text-sm">
+                            {{ $visitSignedConsent->consent_number }} &middot;
+                            {{ $visitSignedConsent->signed_at?->format('d/m/Y H:i') }}. Pembayaran sudah dapat diproses.
+                        </p>
+                        @can('view', $visitSignedConsent)
+                            <x-ui.button variant="secondary" :href="route('rme.consents.show', $visitSignedConsent)">
+                                Lihat Persetujuan
+                            </x-ui.button>
+                        @endcan
+                    </div>
+                </x-ui.alert>
+            @endif
+        @endif
+
         {{-- Hotfix Sprint 60.8 — room-assignment gate. An active visit must be
              placed into a treatment room before the doctor can examine. --}}
         @if ($visit->requiresRoomBeforeExam())

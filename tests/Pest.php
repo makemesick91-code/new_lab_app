@@ -916,6 +916,29 @@ function legacyRmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
 }
 
 /**
+ * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — give a visit a signed consent.
+ *
+ * RME payment now requires a signed PERSETUJUAN TINDAKAN MEDIS, so any test
+ * that exercises payment mechanics (allocation, receivables, receipts, lab
+ * candidates) needs one. Those tests are not testing consent, so this writes
+ * the record directly rather than driving the signing UI.
+ *
+ * Tests that ARE about consent — timing, signature evidence, authorisation,
+ * branch scope — must go through RmeVisitConsentService instead, so that the
+ * rules stay under test. See RmeVisitConsentGateTest.
+ */
+function rmeSignedConsentFor(\App\Modules\ClinicVisit\Models\ClinicVisit $visit): \App\Modules\Consent\Models\RmeVisitConsent
+{
+    return \App\Modules\Consent\Models\RmeVisitConsent::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien',
+    ]);
+}
+
+/**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 — shared PDF inspection helpers.
  *
  * These reuse Poppler (`pdfinfo` / `pdftotext`), which is already a required,

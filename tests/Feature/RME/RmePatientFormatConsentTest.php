@@ -175,7 +175,19 @@ it('does not show ktp on rme visit print', function () {
         ->assertDontSee('Nomor KTP');
 });
 
-it('fails payment when patient consent is missing', function () {
+/*
+ * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01.
+ *
+ * These four tests described the OLD gate: two booleans carried by the payment
+ * request, which the payment service wrote onto the visit and then asserted
+ * against. Sending `false` proved only that a request could decline consent on
+ * its own behalf — the same mechanism that let a request GRANT itself consent.
+ *
+ * The gate now depends on a signed PERSETUJUAN TINDAKAN MEDIS, so the tests are
+ * rewritten around the evidence rather than around the booleans.
+ */
+
+it('fails payment when no consent document has been signed', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
@@ -183,15 +195,16 @@ it('fails payment when patient consent is missing', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        consentPaymentPayload($invoice, ['consent_signed_by_patient' => false]),
-    ))->toThrow(ValidationException::class, 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan belum dikonfirmasi ditandatangani oleh pasien dan dokter.');
+        consentPaymentPayload($invoice),
+    ))->toThrow(ValidationException::class, 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan Medis belum ditandatangani untuk kunjungan ini.');
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-it('fails payment when doctor consent is missing', function () {
+it('fails payment even when the request asserts both consents are true', function () {
+    // The exact payload that settled an invoice before this sprint.
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
@@ -199,18 +212,23 @@ it('fails payment when doctor consent is missing', function () {
     expect(fn () => app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
-        consentPaymentPayload($invoice, ['consent_signed_by_doctor' => false]),
-    ))->toThrow(ValidationException::class, 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan belum dikonfirmasi ditandatangani oleh pasien dan dokter.');
+        consentPaymentPayload($invoice, [
+            'consent_signed_by_patient' => true,
+            'consent_signed_by_doctor' => true,
+        ]),
+    ))->toThrow(ValidationException::class);
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+        // The request must not have been able to write the attestation either.
+        ->and($visit->fresh()->consent_signed_by_patient)->toBeFalse();
 });
 
-it('succeeds payment when both consents are true', function () {
+it('succeeds payment once a consent document exists for the visit', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
+    rmeSignedConsentFor($visit);
 
     app(RmePaymentService::class)->pay(
         $invoice,
@@ -221,12 +239,26 @@ it('succeeds payment when both consents are true', function () {
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
-        ->and($visit->fresh()->consent_signed_by_patient)->toBeTrue()
-        ->and($visit->fresh()->consent_signed_by_doctor)->toBeTrue()
-        ->and($visit->fresh()->consent_verified_by)->toBe($this->cashier->id);
+        ->and($visit->fresh()->hasSignedConsentDocument())->toBeTrue();
 });
 
-it('rejects http payment without consent checkboxes', function () {
+it('accepts an http payment without the consent checkboxes when a consent is signed', function () {
+    // The checkboxes are now an acknowledgement, not the decision, so their
+    // absence must not block a payment that is genuinely consented.
+    $this->actingAs($this->cashier);
+
+    [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
+    rmeSignedConsentFor($visit);
+
+    $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
+        'amount' => $invoice->grand_total,
+        'paid_at' => now()->format('Y-m-d H:i:s'),
+    ])->assertRedirect();
+
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+});
+
+it('rejects an http payment when no consent has been signed', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
@@ -234,7 +266,9 @@ it('rejects http payment without consent checkboxes', function () {
     $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-    ])->assertSessionHasErrors(['consent_signed_by_patient', 'consent_signed_by_doctor']);
+        'consent_signed_by_patient' => 1,
+        'consent_signed_by_doctor' => 1,
+    ])->assertSessionHasErrors('consent_signed_by_patient');
 
     expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
         ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID);

@@ -51,6 +51,11 @@ function porVisit(Patient $patient, Branch $branch, Doctor $doctor, ?string $vis
         'doctor_id' => $doctor->id,
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. These tests exercise payment mechanics,
+    // not the consent rules, so the fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
+
     return $visit;
 }
 
@@ -382,19 +387,35 @@ it('behaves like the normal plain payment flow when no receivable is selected', 
         ->and(RmePayment::where('rme_invoice_id', $priorInvoice->id)->count())->toBe(0);
 });
 
-it('blocks payment when consent is not verified', function () {
+it('blocks a carry-over payment when the current visit has no signed consent', function () {
+    /*
+     * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01.
+     *
+     * This test used to prove the gate by sending consent_signed_by_* = false.
+     * That only ever proved the request could decline consent on its own
+     * behalf — the same mechanism that let a request GRANT itself consent.
+     *
+     * The gate now depends on persisted evidence, so the meaningful test is to
+     * withhold the evidence: the current visit simply has no signed consent.
+     * Note the request below carries the old booleans set to TRUE, which under
+     * the previous implementation would have settled the invoice.
+     */
     $prior = porVisit($this->patient, $this->rmeBranch, $this->doctor, now()->subDays(5)->toDateString());
     $priorInvoice = porInvoice($prior, 200000);
 
     $current = porVisit($this->patient, $this->rmeBranch, $this->doctor);
     $currentInvoice = porInvoice($current, 100000);
 
+    // Remove the fixture's consent so this visit genuinely has none.
+    $current->consents()->delete();
+    expect($current->refresh()->hasSignedConsentDocument())->toBeFalse();
+
     expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
         porPaymentPayload(300000, [
-            'consent_signed_by_patient' => false,
-            'consent_signed_by_doctor' => false,
+            'consent_signed_by_patient' => true,
+            'consent_signed_by_doctor' => true,
         ]),
         [$priorInvoice->id],
     ))->toThrow(ValidationException::class);

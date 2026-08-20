@@ -58,6 +58,12 @@ function gateBillableVisit(Branch $branch): array
         'doctor_id' => $visit->doctor_id,
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. These tests are about the doctor →
+    // cashier completion gate, so the fixture simply gives the visit one. The
+    // consent gate itself has its own explicit test below.
+    rmeSignedConsentFor($visit);
+
     return [$visit, $record];
 }
 
@@ -238,17 +244,24 @@ it('an unpaid invoice leaves the visit at cashier_pending', function () {
 
 // ─── Rule 7: Consent gate still blocks payment ───────────────────────────────
 
-it('payment is blocked when consent is not confirmed', function () {
+it('payment is blocked when no consent document has been signed', function () {
+    // AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01: the gate is a
+    // signed PERSETUJUAN TINDAKAN MEDIS, not a checkbox, so the evidence is
+    // withheld here rather than the checkboxes. The request even asserts consent
+    // — which used to be enough on its own — and is still refused.
     $this->actingAs($this->cashier);
 
     [$visit] = gateBillableVisit($this->branch);
     $invoice = gateInvoiceFor($visit, $this->cashier, 150000);
 
+    $visit->consents()->delete();
+
     $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
         'amount' => 150000,
         'paid_at' => now()->toDateString(),
-        // consent intentionally omitted
-    ])->assertSessionHasErrors(['consent_signed_by_patient', 'consent_signed_by_doctor']);
+        'consent_signed_by_patient' => 1,
+        'consent_signed_by_doctor' => 1,
+    ])->assertSessionHasErrors('consent_signed_by_patient');
 
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
