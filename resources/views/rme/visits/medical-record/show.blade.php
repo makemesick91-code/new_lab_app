@@ -1,6 +1,22 @@
 <x-settings-shell title="Rekam Medis">
     @php
         $isFinal = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_FINAL;
+
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — hoisted from the middle of
+        // the page so the primary actions (Finalisasi, Cetak RME) can render in the
+        // page-header actions slot. Presentation only: every gate below is the same
+        // policy/handwriting check as before, evaluated in the same way.
+        $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
+        $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
+        $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
+        // Sprint 59 — handwriting and notes remain editable after finalization.
+        $canEditHandwriting = $canUpdate;
+        $savedHandwriting = $medicalRecord->latestHandwriting();
+        $hasHandwriting = $hasRequiredHandwriting ?? false;
+        $hasLegacySoap = filled($medicalRecord->subjective)
+            || filled($medicalRecord->objective)
+            || filled($medicalRecord->assessment)
+            || filled($medicalRecord->plan);
     @endphp
 
     <div class="space-y-6">
@@ -14,6 +30,43 @@
                     {{ $isFinal ? 'Final' : 'Draft' }}
                 </x-ui.badge>
 
+                {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — "Finalisasi" moved
+                     here from the very bottom of the page. MOVED, NOT DUPLICATED:
+                     there is no second Finalisasi control further down. The action,
+                     its route, its policy gate ($canFinalize) and the mandatory
+                     handwriting precondition ($hasHandwriting) are all unchanged. --}}
+                @if ($isDraft && $canFinalize)
+                    @if ($hasHandwriting)
+                        <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
+                            @csrf
+                            <x-ui.button type="submit" variant="success">
+                                Finalisasi
+                            </x-ui.button>
+                        </form>
+                    @else
+                        {{-- Disabled is presentation only; the server still refuses to
+                             finalize without handwriting. The reason is spelled out in
+                             the alert directly below the header. --}}
+                        <x-ui.button type="button" variant="success" disabled>
+                            Finalisasi
+                        </x-ui.button>
+                    @endif
+                @endif
+
+                {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-04 — "Cetak RME" moved
+                     here from Detail Kunjungan, mirroring the "Cetak Odontogram"
+                     placement and style on the Odontogram page. It reuses the
+                     EXISTING print route; no duplicate print endpoint was created and
+                     authorisation stays server-side in ClinicVisitPolicy::print.
+                     $clinicVisit is the ACTIVE SHEET's visit (MedicalRecordController
+                     binds 'clinicVisit' => $activeSheet->clinicVisit), so this prints
+                     exactly the visit whose sheet is on screen. --}}
+                @can('print', $clinicVisit)
+                    <x-ui.button variant="secondary" :href="route('rme.visits.print', $clinicVisit)" target="_blank">
+                        Cetak RME
+                    </x-ui.button>
+                @endcan
+
                 {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
                      top of the page, matching the Odontogram page placement/style so
                      the doctor reaches the handwriting area faster. --}}
@@ -22,6 +75,19 @@
                 </x-ui.button>
             </x-slot:actions>
         </x-ui.page-header>
+
+        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE
+             messages travel with the relocated button so the doctor learns why it is
+             unavailable without scrolling to the bottom of the record. --}}
+        @if ($isDraft && $canFinalize && ! $hasHandwriting)
+            <x-ui.alert variant="warning">
+                RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
+            </x-ui.alert>
+        @elseif (! $isDraft)
+            <x-ui.alert variant="success" title="Rekam Medis ini telah difinalkan.">
+                Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
+            </x-ui.alert>
+        @endif
 
         @if ($clinicVisit->isFollowUpVisit())
             <x-ui.alert variant="info">
@@ -50,13 +116,12 @@
              lands directly on the handwritten RME area with less scrolling. See the
              relocated blocks after the RME Tulisan Tangan card. --}}
 
-        {{-- LEGACY-RME-DOCTOR-WORKSPACE-1 — the patient's RME documents (native
-             sheets + PUBLISHED legacy archive) as a selector ABOVE the fold.
-             The full clinical-history card stays where it is, further down: this
-             rail is an additional, faster read surface, not a replacement. --}}
-        @include('rme.visits.partials.rme-workspace-documents', [
-            'workspaceDocuments' => $workspaceDocuments ?? collect(),
-        ])
+        {{-- LEGACY-RME-DOCTOR-WORKSPACE-1 introduced the patient's RME document rail
+             (native sheets + PUBLISHED legacy archive) here, above the fold.
+             FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-02 moved it to the foot of the
+             page: the top of the record must prioritise the active visit and the
+             handwritten RME, not the document archive. The rail itself is unchanged
+             and still reachable — see the relocated include at the end of this view. --}}
 
         <x-ui.card title="Informasi Kunjungan">
             {{-- Sprint 59.4 — patient biodata rendered as a compact bordered
@@ -131,19 +196,9 @@
             </dl>
         </x-ui.card>
 
-        @php
-            $isDraft = $medicalRecord->status === \App\Modules\MedicalRecord\Models\MedicalRecord::STATUS_DRAFT;
-            $canUpdate = auth()->user()?->can('update', $medicalRecord) ?? false;
-            $canFinalize = auth()->user()?->can('finalize', $medicalRecord) ?? false;
-            // Sprint 59 — handwriting and notes remain editable after finalization.
-            $canEditHandwriting = $canUpdate;
-            $savedHandwriting = $medicalRecord->latestHandwriting();
-            $hasHandwriting = $hasRequiredHandwriting ?? false;
-            $hasLegacySoap = filled($medicalRecord->subjective)
-                || filled($medicalRecord->objective)
-                || filled($medicalRecord->assessment)
-                || filled($medicalRecord->plan);
-        @endphp
+        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the gating variables that
+             used to be computed here are now computed once at the top of this view,
+             so the page-header actions can use them. --}}
 
         {{-- Sprint 59.2 — the typed "Catatan Rekam Medis" notes section is
              removed from the doctor UI. Handwriting RM is the primary clinical
@@ -845,29 +900,18 @@
             </dl>
         </x-ui.card>
 
-        {{-- Finalize form: draft only, manager only. Presentation only — the
-             $isDraft / $canFinalize / $hasHandwriting gate (handwriting PNG
-             required before finalize) is unchanged. --}}
-        @if ($isDraft && $canFinalize)
-            @if (! $hasHandwriting)
-                <x-ui.alert variant="warning">
-                    RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.
-                </x-ui.alert>
-                <x-ui.button type="button" variant="success" disabled>
-                    Finalisasi
-                </x-ui.button>
-            @else
-                <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
-                    @csrf
-                    <x-ui.button type="submit" variant="success">
-                        Finalisasi
-                    </x-ui.button>
-                </form>
-            @endif
-        @elseif (! $isDraft)
-            <x-ui.alert variant="success" title="Rekam Medis ini telah difinalkan.">
-                Catatan dan tulisan tangan masih dapat diperbarui oleh dokter bila diperlukan.
-            </x-ui.alert>
-        @endif
+        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-02 — "Dokumen RME Pasien"
+             relocated here, to the FOOT of the page. The information hierarchy is
+             now: visit information -> handwritten RME -> supporting documents, so a
+             doctor opening the record lands on the active visit and the clinical
+             workspace rather than on the document archive. This is placement only:
+             the partial, its data and the documents themselves are unchanged. --}}
+        @include('rme.visits.partials.rme-workspace-documents', [
+            'workspaceDocuments' => $workspaceDocuments ?? collect(),
+        ])
+
+        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the Finalisasi control and
+             its state messages now live in the page header. Nothing replaces them
+             here: the action was MOVED, not duplicated. --}}
     </div>
 </x-settings-shell>

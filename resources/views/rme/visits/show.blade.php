@@ -28,10 +28,13 @@
             'cashier_pending' => 'success',
             'cancelled'       => 'danger',
         ];
-        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07) — Admin Klinik's visit detail
-        // is read-only plus "Cetak RME"; it registers and places patients from
-        // Antrian Pasien instead. Every hidden control is also denied server-side
-        // by its own ability, so this is presentation, never the boundary.
+        // FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07), as amended by
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 (FIX-04) — Admin Klinik's visit detail
+        // is read-only; it registers and places patients from Antrian Pasien
+        // instead. "Cetak RME" no longer lives here: it moved to the Rekam Medis
+        // page, which the front office reaches through the navigation link below.
+        // Every hidden control is also denied server-side by its own ability, so
+        // this is presentation, never the boundary.
         $canOperateVisit = auth()->user()?->can('operateFromDetail', $visit) ?? false;
         // FIX-05 — "Selesai Pemeriksaan" additionally needs clinical authority.
         $canCompleteExamination = auth()->user()?->can('completeExamination', $visit) ?? false;
@@ -71,9 +74,27 @@
                     @endcan
                 @endif
                 @endif
-                @can('print', $visit)
-                    <x-ui.button variant="neutral" :href="route('rme.visits.print', $visit)" target="_blank">Cetak RME</x-ui.button>
-                @endcan
+                {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-04 — "Cetak RME" no
+                     longer lives on Detail Kunjungan. It now belongs to the Rekam
+                     Medis workflow and is rendered in the Medical Record page header,
+                     next to Finalisasi. This SUPERSEDES the FIX-CLINIC-OPS (FIX-07)
+                     rule that Admin Klinik's visit detail is "read-only plus Cetak
+                     RME".
+
+                     The front office keeps the capability rather than losing it: a
+                     user who may print but may not operate the visit has no Rekam
+                     Medis card (that card is behind $canOperateVisit), so without a
+                     path here they could no longer reach the print action at all.
+                     They get a NAVIGATION link — not a second print button — gated by
+                     the very ability that decides whether they may print. Operators
+                     already have the Rekam Medis card, so they get no duplicate. --}}
+                @if (! $canOperateVisit)
+                    @can('print', $visit)
+                        <x-ui.button variant="secondary" :href="route('rme.visits.medical-record.show', $visit)">
+                            Rekam Medis
+                        </x-ui.button>
+                    @endcan
+                @endif
                 @if ($canOperateVisit)
                 @can('create', \App\Modules\ClinicVisit\Models\ClinicVisit::class)
                     <x-ui.button variant="primary" :href="route('rme.visits.create', [
@@ -261,8 +282,9 @@
 
         {{-- FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-07) — the clinical surfaces
              (Rekam Medis, Odontogram, Resep) belong to the treating clinician.
-             Admin Klinik's visit detail is read-only plus "Cetak RME"; each of
-             these routes is independently authorised server-side as well. --}}
+             Admin Klinik's visit detail is read-only; each of these routes is
+             independently authorised server-side as well. Since FIX-04, "Cetak RME"
+             lives on the Rekam Medis page rather than here. --}}
         @if ($canOperateVisit)
         {{-- Rekam Medis --}}
         @php $medicalRecord = $visit->medicalRecord; @endphp

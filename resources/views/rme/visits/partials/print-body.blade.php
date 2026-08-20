@@ -1,17 +1,11 @@
 @php
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — the odontogram is NOT part of
+    // the RME print composition. "Cetak RME" prints the medical record; the
+    // odontogram has its own standalone print (rme.odontograms.print). The
+    // odontogram model, table, workflow, UI and standalone print are unchanged —
+    // only this print composition drops the section. The odontogram status/condition
+    // label maps went with it: they were only ever read by the removed block.
     $medicalRecord = $visit->medicalRecord;
-    $odontogram = $visit->odontogram;
-    $statusLabels = [
-        'caries' => 'Karies',
-        'missing' => 'Cabut/Missing',
-        'crown' => 'Mahkota',
-        'root_treated' => 'Perawatan Saluran Akar',
-        'mobility' => 'Goyang',
-        'impaction' => 'Impaksi',
-        'filling' => 'Tambalan',
-        'normal' => 'Normal',
-    ];
-    $conditionLabels = $statusLabels;
     // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
     $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
 @endphp
@@ -106,57 +100,6 @@
         </div>
     @else
         <div class="not-available">Rekam medis belum tersedia.</div>
-    @endif
-</div>
-
-{{-- Odontogram Summary --}}
-<div class="section-block">
-    <div class="section-title">Odontogram
-        @if ($odontogram)
-            &nbsp;
-            @if ($odontogram->isFinalized())
-                <span class="status-badge status-finalized">Final</span>
-            @else
-                <span class="status-badge status-draft">Draft</span>
-            @endif
-        @endif
-    </div>
-    @if ($odontogram)
-        <div class="odonto-summary">
-            @if ($odontogram->additional_conditions)
-                <div class="field-item">
-                    <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Kondisi Tambahan</dt>
-                    <div class="odonto-notes">{{ $odontogram->additional_conditions }}</div>
-                </div>
-            @endif
-
-            @if ($odontogram->summary_notes)
-                <div class="field-item">
-                    <dt style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#6b7280;">Catatan Odontogram</dt>
-                    <div class="odonto-notes">{{ $odontogram->summary_notes }}</div>
-                </div>
-            @endif
-
-            {{-- Sprint 63.1 — structured Daengtisia odontogram (visual + DMF-T + legend + table).
-                 Reuses the same formatter/partial as the standalone print; the clinic header is
-                 suppressed because the print bundle already renders its own header. --}}
-            @php
-                $odontogramPrint = $odontogramPrint
-                    ?? app(\App\Modules\Odontogram\Services\OdontogramPrintFormatter::class)->format($odontogram);
-            @endphp
-            @include('rme.visits.odontogram.partials.structured-print-template', [
-                'structured' => $odontogramPrint,
-                'patientName' => $visit->patient?->name ?? '—',
-                'rmNumber' => $visit->patient?->medical_record_number ?? '—',
-                'branchTitle' => strtoupper($visit->branch?->name ?: ''),
-                'branchAddress' => $visit->branch?->address,
-                'branchPhone' => $visit->branch?->phone,
-                'showHeader' => false,
-                'showVisual' => true,
-            ])
-        </div>
-    @else
-        <div class="not-available">Belum ada data odontogram. Odontogram belum tersedia.</div>
     @endif
 </div>
 

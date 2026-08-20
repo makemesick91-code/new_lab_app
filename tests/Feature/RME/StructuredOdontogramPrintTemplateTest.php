@@ -12,9 +12,13 @@ use Database\Seeders\BranchSeeder;
  *
  * Renders already-saved structured odontogram data (tooth_map_payload) into the
  * Daengtisia print/PDF layout: FDI visual diagram, D/M/F/DMF-T summary, legend,
- * and the GIGI | DIAGNOSA | PERAWATAN | DOKTER table with continuation. Both the
- * standalone print and the combined visit print/PDF reuse the same formatter +
- * shared partial. Presentation-only: no data mutation, no migration, no KTP/NIK.
+ * and the GIGI | DIAGNOSA | PERAWATAN | DOKTER table with continuation.
+ * Presentation-only: no data mutation, no migration, no KTP/NIK.
+ *
+ * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05: the formatter and the
+ * shared partial are unchanged, but they are now consumed ONLY by the standalone
+ * odontogram print. The combined visit print/PDF no longer composes the
+ * odontogram — see MedicalRecordPrintOdontogramSeparationTest for that contract.
  */
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -150,28 +154,32 @@ it('standalone odontogram print includes the visual diagram, DMF-T, legend, and 
         ->assertSee('Tambal komposit');
 });
 
-// --- 8: combined visit print includes visual, DMF-T, legend, and table ---
+// --- 8: the combined visit print does NOT compose the odontogram (FIX-05) ---
 
-it('combined visit print includes the visual diagram, DMF-T, legend, and table', function () {
+it('combined visit print excludes the visual diagram, DMF-T, legend, and table', function () {
     $manager = userWith(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([
         '11' => ['status' => 'caries', 'additional_condition' => 'BundleDiag', 'additional_note' => 'BundleCare'],
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — this assertion is the exact
+    // inverse of the Sprint 63.1 contract, and deliberately so: the structured
+    // odontogram template is now owned solely by the standalone odontogram print
+    // (proven by test 6 above, which is unchanged).
     $this->actingAs($manager)
         ->get(route('rme.visits.print', $odontogram->clinicVisit))
         ->assertOk()
-        ->assertSee('KANAN / RIGHT')
-        ->assertSee('Jumlah DMF-T')
-        ->assertSee('D = Decay (Karies)')
-        ->assertSee('Hasil Odontogram yang Dipilih')
-        ->assertSee('BundleDiag')
-        ->assertSee('BundleCare');
+        ->assertDontSee('KANAN / RIGHT')
+        ->assertDontSee('Jumlah DMF-T')
+        ->assertDontSee('D = Decay (Karies)')
+        ->assertDontSee('Hasil Odontogram yang Dipilih')
+        ->assertDontSee('BundleDiag')
+        ->assertDontSee('BundleCare');
 });
 
-// --- 9: dompdf route renders without exception ---
+// --- 9: dompdf route still renders for a visit that has an odontogram ---
 
-it('visit PDF (dompdf) renders the structured odontogram without exception', function () {
+it('visit PDF (dompdf) still renders for a visit that has an odontogram', function () {
     $manager = userWith(['manage_clinic_visits']);
     $odontogram = structuredOdontogram([
         '11' => ['status' => 'caries'],

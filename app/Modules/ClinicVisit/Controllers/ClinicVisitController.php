@@ -14,7 +14,6 @@ use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
-use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
@@ -374,7 +373,6 @@ class ClinicVisitController extends Controller
             'initialTreatment',
             'medicalRecord.handwriting',
             'medicalRecord.finalizedBy',
-            'odontogram',
         ]);
 
         $paidInvoice = RmeInvoice::query()
@@ -390,19 +388,16 @@ class ClinicVisitController extends Controller
 
         $payment = $paidInvoice?->payments->first();
 
-        // Sprint 63.1 — structured odontogram print view-model (visual + DMF-T +
-        // legend + table), generated on demand from saved data. Null when the
-        // visit has no odontogram yet.
-        $odontogramPrint = $clinicVisit->odontogram
-            ? app(OdontogramPrintFormatter::class)->format($clinicVisit->odontogram)
-            : null;
-
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — the RME print bundle no
+        // longer composes the odontogram, so it no longer builds the Sprint 63.1
+        // structured odontogram view-model. The formatter itself is unchanged and
+        // is still the single source of truth for the standalone odontogram print
+        // (OdontogramController@print), which is untouched.
         return [
             'visit' => $clinicVisit,
             'paidInvoice' => $paidInvoice,
             'payment' => $payment,
             'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
-            'odontogramPrint' => $odontogramPrint,
         ];
     }
 }
