@@ -96,6 +96,31 @@ any more.
 > That is the intended behaviour, and the cashier is told so on both the visit
 > detail and the payment page rather than discovering it by being refused.
 
+### The gate covers treatment, not debt collection
+
+Found by adversarial review, and it blocked merge until fixed.
+
+The partial-payment rule completes a visit on its **first** payment while the
+invoice stays `PARTIAL` and payable. So *"visit completed + invoice PARTIAL"* is
+the normal shape of an outstanding instalment — and of every receivable that
+existed before this sprint. Because consent can only be signed at
+`cashier_pending`, a gate on every `pay()` made all of them **permanently
+uncollectable**, on a path the Piutang screen links to directly.
+
+Consent is therefore required **while the visit is at `cashier_pending`** and not
+for instalments on a completed visit, nor for carry-over receivables settled
+during a later visit. Collecting a debt is not a new treatment.
+
+The exemption is safe only because `completed` is not an accepted value in
+`TransitionStatusRequest`, `ClinicVisitService::transitionStatus()` refuses it
+from anywhere but `cashier_pending`, and `RmeInvoiceService::create()` will not
+raise an invoice on a non-`cashier_pending` visit — so the only route to a
+completed visit is *through* a payment that already passed the gate. All three
+are asserted, not assumed.
+
+**Performance:** `hasVerifiedConsent()` was a free column read and is now a
+query, so the unpaginated cashier handoff board eager-loads `consents`.
+
 ---
 
 ## FIX-02 — Medical Record page hierarchy

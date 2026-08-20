@@ -30,6 +30,44 @@ alwaysApply: false
   are a **display-only historical record** that a paper form was sighted before
   this sprint. They gate nothing and are never written from a request.
 
+### 1a. The gate covers TREATMENT, never debt collection
+
+This is the boundary of the gate, and getting it wrong strands real money.
+
+- Consent is required **while the visit is at `cashier_pending`** — the moment
+  the treatment itself is being paid for.
+- It is **NOT** required for:
+  - **carry-over / prior receivables** settled during a later visit, and
+  - **instalments on a visit that is already `completed`**.
+- Why: the partial-payment rule completes a visit on its FIRST payment while the
+  invoice stays `PARTIAL` and payable, so *"visit completed + invoice PARTIAL"*
+  is the normal shape of an outstanding instalment — and of every receivable that
+  predates this sprint. Consent cannot be signed for a completed visit
+  (`assertSignable()` requires `cashier_pending`), so demanding one there makes
+  those balances **permanently uncollectable**. The Piutang screen links straight
+  to that payment page, so the cashier reaches a dead end with no workaround.
+- Collecting a debt is not a new treatment. Do not "tighten" this.
+
+**The exemption is only safe because of three guarantees — assert them, never
+assume them:**
+
+1. `completed` is not an accepted value in `TransitionStatusRequest`;
+2. `ClinicVisitService::transitionStatus()` refuses `→ completed` from anywhere
+   but `cashier_pending`;
+3. `RmeInvoiceService::create()` will not raise an invoice on a
+   non-`cashier_pending` visit.
+
+So the only route to a completed visit is through a payment that already passed
+the gate. If any of those loosens, revisit the exemption rather than inheriting
+it.
+
+### 1b. Consent reads cost queries now
+
+`hasVerifiedConsent()` used to read two casted booleans for free; it now consults
+the consent document. **Any list that calls it per row must eager-load
+`consents`** — the cashier handoff board is unpaginated by design, so an N+1
+there has no upper bound.
+
 ## 2. Consent timing follows the canonical RME flow
 
 ```
