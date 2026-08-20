@@ -54,6 +54,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Inventory\Models\InventoryLocation;
 use App\Modules\Inventory\Models\InventoryMovement;
@@ -913,4 +914,109 @@ function legacyRmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
     ]);
 
     return $visit;
+}
+
+/**
+ * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — give a visit a signed consent.
+ *
+ * RME payment now requires a signed PERSETUJUAN TINDAKAN MEDIS, so any test
+ * that exercises payment mechanics (allocation, receivables, receipts, lab
+ * candidates) needs one. Those tests are not testing consent, so this writes
+ * the record directly rather than driving the signing UI.
+ *
+ * Tests that ARE about consent — timing, signature evidence, authorisation,
+ * branch scope — must go through RmeVisitConsentService instead, so that the
+ * rules stay under test. See RmeVisitConsentGateTest.
+ */
+function rmeSignedConsentFor(ClinicVisit $visit): RmeVisitConsent
+{
+    return RmeVisitConsent::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $visit->branch_id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+        'patient_name_snapshot' => $visit->patient?->name ?? 'Pasien',
+    ]);
+}
+
+/**
+ * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 — shared PDF inspection helpers.
+ *
+ * These reuse Poppler (`pdfinfo` / `pdftotext`), which is already a required,
+ * CI-verified dependency of this repository (LEGACY-RME-PDF-1B installs and
+ * verifies it in the critical gate). Nothing new is introduced: the print
+ * contracts in this sprint are proven against real renderer output rather than
+ * against CSS or template strings.
+ */
+function popplerBinary(string $binary): string
+{
+    return (string) config('legacy_rme.processing.'.$binary.'_binary', $binary);
+}
+
+function pdfToolAvailable(string $binary): bool
+{
+    $which = @shell_exec('command -v '.escapeshellarg(popplerBinary($binary)).' 2>/dev/null');
+
+    return is_string($which) && trim($which) !== '';
+}
+
+function pdfToTextAvailable(): bool
+{
+    return pdfToolAvailable('pdftotext');
+}
+
+function pdfInfoAvailable(): bool
+{
+    return pdfToolAvailable('pdfinfo');
+}
+
+/**
+ * Write PDF bytes to a temp file, run a Poppler binary over it, then clean up.
+ */
+function pdfWithTempFile(string $bytes, callable $callback): mixed
+{
+    $path = tempnam(sys_get_temp_dir(), 'dms-pdf-').'.pdf';
+    file_put_contents($path, $bytes);
+
+    try {
+        return $callback($path);
+    } finally {
+        @unlink($path);
+    }
+}
+
+/**
+ * Extract the text layer of a PDF. Callers asserting that something is ABSENT
+ * must also assert that something expected is PRESENT, otherwise the negative
+ * assertion passes vacuously whenever extraction fails.
+ */
+function pdfExtractText(string $bytes): string
+{
+    return pdfWithTempFile($bytes, function (string $path): string {
+        $out = @shell_exec(
+            escapeshellarg(popplerBinary('pdftotext')).' -layout '.escapeshellarg($path).' - 2>/dev/null'
+        );
+
+        return is_string($out) ? $out : '';
+    });
+}
+
+/**
+ * Page count of a rendered PDF, straight from `pdfinfo`. Returns 0 when the
+ * document cannot be read, which FAILS a `toBe(1)` assertion rather than
+ * silently passing it.
+ */
+function pdfPageCount(string $bytes): int
+{
+    return pdfWithTempFile($bytes, function (string $path): int {
+        $out = @shell_exec(
+            escapeshellarg(popplerBinary('pdfinfo')).' '.escapeshellarg($path).' 2>/dev/null'
+        );
+
+        if (! is_string($out) || ! preg_match('/^Pages:\s+(\d+)/m', $out, $m)) {
+            return 0;
+        }
+
+        return (int) $m[1];
+    });
 }

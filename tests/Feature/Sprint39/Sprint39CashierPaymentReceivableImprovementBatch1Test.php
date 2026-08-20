@@ -191,6 +191,11 @@ describe('cashier payment receivable clarity', function (): void {
     it('rejects an overpayment that exceeds the remaining balance', function (): void {
         $invoice = sprint39Invoice($this->branch, $this->cashier);
 
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — consent is signed here so
+        // this test still measures the AMOUNT cap; without it the request would be
+        // refused by the consent gate first and prove nothing about overpayment.
+        rmeSignedConsentFor($invoice->clinicVisit);
+
         $this->actingAs($this->cashier)
             ->from(route('rme.cashier.payment.create', [$invoice->clinicVisit, $invoice]))
             ->post(route('rme.cashier.payment.store', [$invoice->clinicVisit, $invoice]), [

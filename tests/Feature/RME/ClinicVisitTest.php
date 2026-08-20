@@ -930,7 +930,9 @@ it('print view displays medical record info if available', function () {
         ->assertDontSee('Keluhan sakit gigi kiri');
 });
 
-it('print view displays odontogram info if available', function () {
+it('print view excludes odontogram info even when available', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — SUPERSEDED: the RME print is
+    // medical-record content only; the odontogram has its own standalone print.
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -952,12 +954,14 @@ it('print view displays odontogram info if available', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Catatan odontogram kunjungan ini')
-        ->assertSee('Karies')
-        ->assertSee('Tambalan');
+        ->assertSee('Rekam Medis')
+        ->assertDontSee('Catatan odontogram kunjungan ini')
+        ->assertDontSee('Hasil Odontogram yang Dipilih');
 });
 
-it('print view handles missing odontogram gracefully', function () {
+it('print view no longer advertises a missing odontogram', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — the odontogram section was
+    // removed, so its empty-state placeholder is gone with it.
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -970,7 +974,7 @@ it('print view handles missing odontogram gracefully', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Odontogram belum tersedia');
+        ->assertDontSee('Odontogram belum tersedia');
 });
 
 it('print view displays saved handwriting preview', function () {
@@ -1087,7 +1091,10 @@ it('print view does not require SOAP fields when handwriting exists', function (
         ->assertDontSee('Plan (Rencana Perawatan)');
 });
 
-it('Cetak RME button appears on visit show for authorized user', function () {
+it('Cetak RME button no longer appears on visit show', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-04 — SUPERSEDED: the print entry
+    // point moved to the Rekam Medis page. Proven present there by
+    // MedicalRecordPageActionsTest; proven absent here.
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -1100,12 +1107,12 @@ it('Cetak RME button appears on visit show for authorized user', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
-        ->assertSee('Cetak RME');
+        ->assertDontSee('Cetak RME');
 
     $this->actingAs($this->viewer)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
-        ->assertSee('Cetak RME');
+        ->assertDontSee('Cetak RME');
 });
 
 it('generates next unique branch-coded visit number when suffix already exists', function () {

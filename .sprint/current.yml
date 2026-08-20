@@ -1,25 +1,28 @@
 ### Validated by: php artisan sprint:manifest-check
 
-id: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1
+id: FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2
 type: FOUNDATION_SPRINT
-module: ClinicVisit
-# Nine integrated fixes spanning ClinicVisit, RmeOnlineContext, RmeInvoice and
-# Prescription, introducing the shared RmeWorkingBranchScope foundation the
-# clinic and cashier surfaces all consume. FOUNDATION_SPRINT is the accurate
-# classification for cross-module shared-foundation work, and it is the STRICTER
-# choice: audit level 3 and full_foundation_audit, versus MODULE_SPRINT's 2.
-title: "Clinic and cashier workspaces pinned to one working branch, branch document identity, WhatsApp Business prescription delivery, and Super Admin-only SATUSEHAT"
+module: Consent
+# Six integrated fixes. FIX-01 replaces a request-body consent attestation with a
+# real signed clinical document that is the server-side RME payment gate, which is
+# a cross-module security foundation (Consent, RmeInvoice, ClinicVisit). The other
+# five reshape the Medical Record workspace, relocate the RME print entry point,
+# remove the odontogram from the RME print composition and put the receipt on one
+# page. FOUNDATION_SPRINT is the accurate classification for cross-module
+# foundation work and is the STRICTER choice: audit level 3 and
+# full_foundation_audit, versus MODULE_SPRINT's 2.
+title: "Signed PERSETUJUAN TINDAKAN MEDIS as the RME payment gate, Medical Record workspace hierarchy, relocated RME print, odontogram removed from the RME print, and a one-page receipt"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # branch scoping, visit workflow, prescription delivery
-schema_change: true             # one additive table for WhatsApp delivery records
+runtime_change: true            # payment gate, consent signing, print composition
+schema_change: true             # one additive table for signed consent records
 frontend_change: true           # Blade only (no JS/CSS/Vite change)
-security_impact: true           # branch isolation, a new capability, a Super Admin gate
-branch_isolation_impact: true   # the core of the sprint
-ledger_impact: false            # no inventory ledger; payment branch scope tightened, amounts untouched
+security_impact: true           # the payment gate stops trusting the request body
+branch_isolation_impact: true   # consent is branch-scoped to the owning visit
+ledger_impact: false            # no inventory ledger; payment amounts untouched
 
 deploy_required: true
-go_tag: fix-clinic-ops-branch-context-wa-1-go
+go_tag: fix-rme-consent-workflow-print-ux-2-go
 browser_required: false         # every surface is proven by HTTP feature tests
 
 # Inherited programme state (LegacyRmeProgramClosureContractTest): this sprint
@@ -29,6 +32,11 @@ browser_required: false         # every surface is proven by HTTP feature tests
 # AUTHORITATIVE; the Legacy RME resting state (capability OFF, admission EMPTY,
 # no active batch) is untouched.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+
+# FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 / FIX-02 (WhatsApp prescription delivery)
+# stays on HOLD / BLOCKED_EXTERNAL_DEPENDENCY. This sprint does not activate it,
+# does not touch the gateway, the configuration or the credentials.
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
 test_profiles:
   - rme

@@ -47,6 +47,11 @@ function uix12UnpaidInvoice(Branch $branch, User $cashier): array
         ]],
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent, so the
+    // fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
+
     return [$visit->refresh(), $invoice->refresh()];
 }
 
@@ -75,8 +80,11 @@ it('renders the payment page with the financial summary card and consent gate in
         ->assertOk()
         ->assertSee('Total Tagihan')
         ->assertSee('Sisa Tagihan')
-        // Consent gate + field names preserved (payment logic unchanged).
-        ->assertSee('Verifikasi Surat Persetujuan Tindakan (fisik)')
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the panel now REPORTS the
+        // consent state (this fixture's visit has a signed consent) instead of
+        // asking the cashier to assert it. The checkbox field names are preserved.
+        ->assertSee('Verifikasi Surat Persetujuan Tindakan')
+        ->assertSee('Consent sudah ditandatangani')
         ->assertSee('consent_signed_by_patient', false)
         ->assertSee('consent_signed_by_doctor', false);
 });

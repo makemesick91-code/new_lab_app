@@ -1,7 +1,24 @@
 <x-settings-shell title="Kwitansi Pembayaran RME">
 
-    {{-- Print isolation: show only receipt-body when printing --}}
+    {{-- Print isolation: show only receipt-body when printing.
+
+         FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-06 — the kwitansi is contracted
+         to a single page. This view had NO @page rule at all (every other print
+         template in the repo declares one), so paper size and margins were
+         whatever the browser dialog happened to default to — typically 1in on
+         each side, which is what pushed the receipt onto a second sheet.
+
+         One page is reached by removing waste, never by hiding money: a declared
+         page box, tighter margins, compact card chrome and modest type. Nothing
+         is clipped, no financial row is suppressed, and the totals block is kept
+         whole. If a receipt is genuinely longer than the supported envelope it
+         continues onto another page rather than losing a line.
+
+         The measurable form of this contract is the PDF route
+         (rme.cashier.receipt.pdf), whose page count is asserted in CI. --}}
     <style>
+        @page { size: A4 portrait; margin: 10mm; }
+
         @media print {
             body * { visibility: hidden; }
             #receipt-body, #receipt-body * { visibility: visible; }
@@ -9,9 +26,23 @@
                 position: absolute;
                 inset: 0;
                 width: 100%;
-                padding: 24px;
+                padding: 0;
                 background: #fff;
+                font-size: 11px;
+                line-height: 1.35;
             }
+            /* Card chrome costs vertical space that the paper does not have. */
+            #receipt-body .ui-card { padding: 8px 10px !important; box-shadow: none !important; }
+            #receipt-body h2 { font-size: 15px !important; }
+            #receipt-body table { font-size: 11px !important; }
+            #receipt-body td, #receipt-body th { padding-top: 3px !important; padding-bottom: 3px !important; }
+            /* Never split the money across sheets. */
+            #receipt-body .receipt-totals,
+            #receipt-body .receipt-payment,
+            #receipt-body .receipt-footer { page-break-inside: avoid; }
+            /* Continuation, not truncation, for an unusually long receipt. */
+            #receipt-body thead { display: table-header-group; }
+            #receipt-body tr { page-break-inside: avoid; }
         }
     </style>
 
@@ -25,17 +56,18 @@
             <x-slot:breadcrumb>Rekam Medis Elektronik</x-slot:breadcrumb>
             <x-slot:actions>
                 <x-ui.button variant="secondary" :href="route('rme.cashier.show', [$visit, $invoice])">&larr; Kembali ke Tagihan</x-ui.button>
+                <x-ui.button variant="secondary" :href="route('rme.cashier.receipt.pdf', [$visit, $invoice])">Unduh PDF</x-ui.button>
                 <x-ui.button variant="primary" onclick="window.print()">Cetak Kwitansi</x-ui.button>
             </x-slot:actions>
         </x-ui.page-header>
 
         {{-- Receipt Body --}}
-        <div class="max-w-2xl mx-auto space-y-4 print:max-w-full print:space-y-3" id="receipt-body">
+        <div class="max-w-2xl mx-auto space-y-4 print:max-w-full print:space-y-2" id="receipt-body">
 
             {{-- Clinic / Receipt Header --}}
             <x-ui.card>
                 <div class="text-center border-b border-hairline pb-4 mb-5">
-                    <x-brand.daengtisia-logo class="mx-auto mb-3 h-14 w-auto" />
+                    <x-brand.daengtisia-logo class="mx-auto mb-3 h-14 w-auto print:mb-1 print:h-10" />
                     <h2 class="text-xl font-bold text-navy">{{ $invoice->branch?->name ?? config('app.name') }}</h2>
                     {{-- FIX-01 — the note carries the identity of the branch that
                          issued the invoice, not the cashier's current context. --}}
@@ -92,7 +124,7 @@
             </x-ui.card>
 
             {{-- Treatment Items --}}
-            <x-ui.card title="Rincian Tindakan">
+            <x-ui.card title="Rincian Tindakan" class="receipt-totals">
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead>
@@ -138,7 +170,7 @@
             />
 
             {{-- Payment Summary --}}
-            <x-ui.card>
+            <x-ui.card class="receipt-payment">
                 <div class="space-y-3 text-sm">
                     @if ($hasPaymentAllocation ?? false)
                         <div class="rounded-lg border border-warning-100 bg-warning-50 px-4 py-3 space-y-2">
@@ -171,7 +203,7 @@
             </x-ui.card>
 
             {{-- Stamp / Footer --}}
-            <div class="py-4 text-center text-xs text-ink-muted">
+            <div class="receipt-footer py-4 text-center text-xs text-ink-muted print:py-2">
                 <p>Dicetak pada {{ now()->format('d/m/Y H:i') }}</p>
                 <p class="mt-3 inline-block rounded border border-hairline px-6 py-1 text-base font-bold tracking-widest text-ink-soft">LUNAS</p>
             </div>

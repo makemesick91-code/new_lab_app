@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Clinic\Models\Clinic;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
+use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Odontogram\Models\Odontogram;
@@ -137,8 +138,51 @@ class ClinicVisit extends Model
         return $this->belongsTo(User::class, 'consent_verified_by');
     }
 
+    /**
+     * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed consent documents
+     * for this visit, newest last. A visit normally has zero or one live
+     * consent; more than one row only appears when a mistaken consent was
+     * voided and re-signed, because signed consent is never edited in place.
+     */
+    public function consents(): HasMany
+    {
+        return $this->hasMany(RmeVisitConsent::class, 'clinic_visit_id');
+    }
+
+    /**
+     * Is there a signed, non-voided PERSETUJUAN TINDAKAN MEDIS for this visit?
+     *
+     * This — and ONLY this — is what the payment gate depends on. It is
+     * deliberately NOT the same question as hasVerifiedConsent() below.
+     */
+    public function hasSignedConsentDocument(): bool
+    {
+        if ($this->relationLoaded('consents')) {
+            return $this->consents->contains(fn (RmeVisitConsent $consent) => $consent->voided_at === null);
+        }
+
+        return $this->consents()->whereNull('voided_at')->exists();
+    }
+
+    /**
+     * Does this visit have consent evidence of ANY kind?
+     *
+     * A display predicate, not an authorisation one. Visits settled before this
+     * sprint carry only the old cashier attestation — two booleans confirming
+     * that a PAPER form had been signed — and that remains a truthful historical
+     * record, so a completed visit from last month must not suddenly render as
+     * "no consent". New visits carry a real signed document.
+     *
+     * Nothing may use this to authorise a payment: the attestation booleans are
+     * no longer written from any request, but they are still weaker evidence
+     * than a signature, so the gate uses hasSignedConsentDocument() instead.
+     */
     public function hasVerifiedConsent(): bool
     {
+        if ($this->hasSignedConsentDocument()) {
+            return true;
+        }
+
         return $this->consent_signed_by_patient === true
             && $this->consent_signed_by_doctor === true;
     }

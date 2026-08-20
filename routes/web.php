@@ -14,6 +14,7 @@ use App\Modules\Branch\Controllers\BranchController;
 use App\Modules\Clinic\Controllers\ClinicController;
 use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
+use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
@@ -556,6 +557,29 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->middleware('permission:send_prescription_whatsapp')
             ->name('prescriptions.whatsapp.send');
 
+        /*
+         * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed PERSETUJUAN
+         * TINDAKAN MEDIS. Signing is gated by manage_rme_consents and reading by
+         * view_rme_consents; both are additionally branch-scoped and
+         * timing-gated inside the policy and the service, so route middleware is
+         * the outermost guard, never the only one.
+         */
+        Route::get('visits/{clinicVisit}/consent/create', [RmeVisitConsentController::class, 'create'])
+            ->middleware('permission:manage_rme_consents')
+            ->name('visits.consent.create');
+        Route::post('visits/{clinicVisit}/consent', [RmeVisitConsentController::class, 'store'])
+            ->middleware('permission:manage_rme_consents')
+            ->name('visits.consent.store');
+        Route::get('consents/{consent}', [RmeVisitConsentController::class, 'show'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.show');
+        Route::get('consents/{consent}/print', [RmeVisitConsentController::class, 'print'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.print');
+        Route::get('consents/{consent}/signature/{kind}', [RmeVisitConsentController::class, 'signature'])
+            ->middleware('permission:view_rme_consents|manage_rme_consents')
+            ->name('consents.signature');
+
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])
             ->name('odontograms.print');
@@ -594,6 +618,11 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/payment/create', [RmePaymentController::class, 'create'])->name('cashier.payment.create');
         Route::post('cashier/{clinicVisit}/billing/{rmeInvoice}/payment', [RmePaymentController::class, 'store'])->name('cashier.payment.store');
         Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt', [RmePaymentController::class, 'receipt'])->name('cashier.receipt.show');
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-06 — the same kwitansi as a
+        // single-page PDF. Same policy (viewReceipt), same paid-only rule, same
+        // data; it exists so the one-page contract is measurable rather than
+        // assumed.
+        Route::get('cashier/{clinicVisit}/billing/{rmeInvoice}/receipt/pdf', [RmePaymentController::class, 'receiptPdf'])->name('cashier.receipt.pdf');
     });
 
     // Sprint 23 Phase 23.5 — Separated RME reports (branch-aware, RME is multi-branch)

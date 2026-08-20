@@ -4,14 +4,17 @@ namespace App\Modules\RmeInvoice\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\PaymentMethod\Services\PaymentMethodService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
 use App\Modules\RmeInvoice\Services\RmeControlReceivableService;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\View\View;
 
 class RmePaymentController extends Controller
@@ -46,6 +49,10 @@ class RmePaymentController extends Controller
         }
 
         return view('rme.cashier.payment.create', [
+            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the cashier sees the
+            // real consent state before attempting a payment, instead of
+            // discovering the gate by having the payment rejected.
+            'signedConsent' => app(RmeVisitConsentService::class)->validConsentFor($clinicVisit),
             'visit' => $clinicVisit->load(['patient', 'doctor', 'followUpOf']),
             'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
             'paymentMethods' => $this->paymentMethods->listActive(),
@@ -142,6 +149,43 @@ class RmePaymentController extends Controller
                 ->with('error', 'Kwitansi pelunasan hanya tersedia untuk invoice yang sudah PAID.');
         }
 
+        return view('rme.cashier.receipt.show', $this->resolveReceiptData($clinicVisit, $rmeInvoice));
+    }
+
+    /**
+     * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-06 — the receipt as a PDF.
+     *
+     * The kwitansi is contracted to be a single page. A browser's print dialog
+     * cannot be measured, so the same receipt is also renderable through the
+     * project's existing dompdf pipeline, where the page count is a fact that
+     * can be asserted in CI and checked in production with pdfinfo.
+     *
+     * It reuses the same authorisation (viewReceipt), the same paid-only rule
+     * and the same assembled data as the on-screen receipt.
+     */
+    public function receiptPdf(Request $request, ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): Response|RedirectResponse
+    {
+        $this->authorize('viewReceipt', $rmeInvoice);
+
+        if (! $rmeInvoice->isPaid()) {
+            return redirect()
+                ->route('rme.cashier.show', [$clinicVisit, $rmeInvoice])
+                ->with('error', 'Kwitansi pelunasan hanya tersedia untuk invoice yang sudah PAID.');
+        }
+
+        $data = $this->resolveReceiptData($clinicVisit, $rmeInvoice);
+        $filename = 'kwitansi-'.($rmeInvoice->invoice_number ?? $rmeInvoice->id).'.pdf';
+
+        return Pdf::loadView('rme.cashier.receipt.pdf', $data)
+            ->setPaper('a4')
+            ->download($filename);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveReceiptData(ClinicVisit $clinicVisit, RmeInvoice $rmeInvoice): array
+    {
         $payment = $this->service->paymentsForInvoice($rmeInvoice)->first();
         $allocation = session('payment_allocation');
         $batchPayments = collect();
@@ -178,7 +222,7 @@ class RmePaymentController extends Controller
             'labCaseCandidates.treatment',
         ]);
 
-        return view('rme.cashier.receipt.show', [
+        return [
             'visit' => $clinicVisit->load(['patient', 'doctor', 'initialTreatment']),
             'invoice' => $invoice,
             'payment' => $payment,
@@ -186,6 +230,6 @@ class RmePaymentController extends Controller
             'allocatedToParent' => $allocatedToParent,
             'allocatedToControl' => $allocatedToControl,
             'hasPaymentAllocation' => $allocatedToParent > 0 || $allocatedToControl > 0,
-        ]);
+        ];
     }
 }

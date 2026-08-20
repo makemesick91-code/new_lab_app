@@ -82,7 +82,9 @@ class ClinicVisitPolicy
      * action controls on the visit DETAIL page?
      *
      * Admin Klinik operates the queue from Antrian Pasien (registration and room
-     * placement) and its visit-detail page is deliberately read-only plus
+     * placement) and its visit-detail page is deliberately read-only plus, since
+     * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 (FIX-04), a navigation link to the Rekam
+     * Medis page (which now owns "Cetak RME") instead of
      * "Cetak RME". Every other role keeps exactly what it had. This is a
      * presentation capability, so it is expressed once here rather than as a
      * role literal scattered through Blade; the security-critical actions are

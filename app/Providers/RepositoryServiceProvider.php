@@ -24,6 +24,10 @@ use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Policies\ClinicVisitPolicy;
 use App\Modules\ClinicVisit\Repositories\ClinicVisitRepository;
+use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
+use App\Modules\Consent\Models\RmeVisitConsent;
+use App\Modules\Consent\Policies\RmeVisitConsentPolicy;
+use App\Modules\Consent\Repositories\RmeVisitConsentRepository;
 use App\Modules\Delivery\Interfaces\DeliveryRepositoryInterface;
 use App\Modules\Delivery\Models\Delivery;
 use App\Modules\Delivery\Policies\DeliveryPolicy;
@@ -314,6 +318,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 20 Phase 1.3.1
         OdontogramRepositoryInterface::class => OdontogramRepository::class,
         RmePrescriptionRepositoryInterface::class => RmePrescriptionRepository::class,
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — signed consent as the payment gate
+        RmeVisitConsentRepositoryInterface::class => RmeVisitConsentRepository::class,
         // Sprint 66.0 — RME online context
         UserOnlineContextRepositoryInterface::class => UserOnlineContextRepository::class,
         // Sprint 20 Phase 1.8
@@ -396,6 +402,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // Sprint 20 Phase 1.3.1 — Odontogram Placeholder
         Odontogram::class => OdontogramPolicy::class,
         RmePrescription::class => RmePrescriptionPolicy::class,
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01
+        RmeVisitConsent::class => RmeVisitConsentPolicy::class,
         // Sprint 20 Phase 1.10 — RME Cashier Billing
         RmeInvoice::class => RmeInvoicePolicy::class,
         TreatmentCategory::class => TreatmentCategoryPolicy::class,

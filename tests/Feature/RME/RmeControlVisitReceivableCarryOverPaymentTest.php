@@ -70,6 +70,11 @@ function covParentVisit(Patient $patient, Branch $branch, Doctor $doctor): Clini
         'doctor_id' => $doctor->id,
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. These tests exercise payment mechanics,
+    // not the consent rules, so the fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
+
     return $visit;
 }
 
@@ -91,6 +96,11 @@ function covControlVisit(ClinicVisit $parent, Patient $patient, Branch $branch, 
         'patient_id' => $patient->id,
         'doctor_id' => $doctor->id,
     ]);
+
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. These tests exercise payment mechanics,
+    // not the consent rules, so the fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
 
     return $visit;
 }

@@ -65,6 +65,14 @@ class RmeInvoiceRepository implements RmeInvoiceRepositoryInterface
                 'initialTreatment',
                 'medicalRecord',
                 'rmeInvoice',
+                // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — this board calls
+                // hasVerifiedConsent() once per row (in the status classifier and
+                // again in the view). That used to read two casted boolean columns
+                // and cost nothing; it now consults the consent document, so
+                // without this eager load each row issues its own EXISTS query.
+                // The queue is deliberately unpaginated, so the cost would grow
+                // linearly with clinic volume and without an upper bound.
+                'consents',
             ])
             ->whereIn('branch_id', $branchIds)
             ->whereIn('status', [

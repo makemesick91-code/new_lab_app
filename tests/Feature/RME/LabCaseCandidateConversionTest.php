@@ -275,6 +275,10 @@ it('rme payment still does not auto-create lab order only explicit conversion do
 
     $beforeOrders = LabOrder::count();
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent.
+    rmeSignedConsentFor($invoice->clinicVisit);
+
     app(RmePaymentService::class)->pay($invoice->fresh(), $this->converter, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),

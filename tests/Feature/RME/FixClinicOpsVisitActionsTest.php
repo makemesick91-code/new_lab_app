@@ -91,7 +91,16 @@ it('keeps the cashier-owned completed transition unreachable from the visit surf
 
 /* ------------------------------------------------ FIX-07 read-only visit detail */
 
-it('shows Admin Klinik only the Cetak RME action on the visit detail', function () {
+/*
+ * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-04.
+ *
+ * The FIX-07 rule was "Admin Klinik's visit detail is read-only plus Cetak RME".
+ * "Cetak RME" has since moved to the Rekam Medis page, so the rule is now
+ * "read-only plus a NAVIGATION link to Rekam Medis" — the front office keeps the
+ * print capability (it is authorised for it) but reaches it where the action now
+ * lives. The read-only guarantee itself is unchanged and still asserted below.
+ */
+it('shows Admin Klinik a read-only visit detail with only a Rekam Medis navigation link', function () {
     $visit = fcoActionsVisit();
 
     $admin = userInRole('Admin Klinik');
@@ -99,13 +108,16 @@ it('shows Admin Klinik only the Cetak RME action on the visit detail', function 
 
     $html = $this->actingAs($admin)->get(route('rme.visits.show', $visit))->assertOk()->getContent();
 
-    expect($html)->toContain(route('rme.visits.print', $visit));
+    // FIX-04 — the print action itself is gone from this page...
+    expect($html)->not->toContain(route('rme.visits.print', $visit));
+    // ...and is reachable through the Rekam Medis page, which now owns it.
+    expect($html)->toContain(route('rme.visits.medical-record.show', $visit));
 
+    // The FIX-07 read-only guarantee is untouched.
     foreach ([
         route('rme.visits.transition', $visit),
         route('rme.visits.edit', $visit),
         route('rme.visits.assign-room', $visit),
-        route('rme.visits.medical-record.show', $visit),
         route('rme.visits.odontogram.show', $visit),
         route('rme.visits.prescription.show', $visit),
     ] as $forbiddenAction) {
@@ -119,8 +131,22 @@ it('keeps the clinical surfaces on the visit detail for a clinician', function (
 
     $html = $this->actingAs($clinician)->get(route('rme.visits.show', $visit))->assertOk()->getContent();
 
+    // The clinician still reaches Rekam Medis through the clinical card...
     expect($html)->toContain(route('rme.visits.medical-record.show', $visit))
-        ->and($html)->toContain(route('rme.visits.print', $visit));
+        // ...and, since FIX-04, never sees a print action on the visit detail.
+        ->and($html)->not->toContain(route('rme.visits.print', $visit));
+});
+
+it('does not render a duplicate Rekam Medis navigation button for a clinician', function () {
+    // FIX-04 — a clinician already has the Rekam Medis clinical card, so the
+    // front-office navigation button must not also appear. "Moved, not
+    // duplicated" applies to navigation as well as to the action itself.
+    $visit = fcoActionsVisit();
+    $clinician = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
+
+    $html = $this->actingAs($clinician)->get(route('rme.visits.show', $visit))->assertOk()->getContent();
+
+    expect(substr_count($html, route('rme.visits.medical-record.show', $visit)))->toBe(1);
 });
 
 /* ------------------------------------------------ FIX-08 SATUSEHAT Super Admin only */

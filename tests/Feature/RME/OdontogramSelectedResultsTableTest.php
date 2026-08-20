@@ -324,7 +324,9 @@ it('print odontogram shows the selected results table with per-row notes', funct
 
 // --- 16: visit print bundle shows the per-row notes ---
 
-it('visit print bundle shows the selected results per-row notes', function () {
+it('visit print bundle no longer shows the selected results per-row notes', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — SUPERSEDED: the odontogram
+    // selected-results table belongs to the standalone odontogram print only.
     $manager = userWith(['manage_clinic_visits']);
     $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
@@ -338,8 +340,8 @@ it('visit print bundle shows the selected results per-row notes', function () {
     $this->actingAs($manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('BundleKondisiRow')
-        ->assertSee('BundleCatatanRow');
+        ->assertDontSee('BundleKondisiRow')
+        ->assertDontSee('BundleCatatanRow');
 });
 
 // --- 17: legacy payload without new keys renders safely ---

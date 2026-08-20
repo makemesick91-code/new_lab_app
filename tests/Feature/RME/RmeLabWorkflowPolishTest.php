@@ -40,6 +40,11 @@ function polishFinalizedVisit(Branch $branch): array
         'doctor_id' => $visit->doctor_id,
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent, so the
+    // fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
+
     return [$visit, $record];
 }
 

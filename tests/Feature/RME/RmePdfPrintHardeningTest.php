@@ -48,6 +48,11 @@ function hardenFinalizedVisit(Branch $branch): array
         'doctor_id' => $visit->doctor_id,
     ]);
 
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — RME payment now requires a
+    // signed PERSETUJUAN TINDAKAN MEDIS. This suite is not about consent, so the
+    // fixture simply gives the visit one.
+    rmeSignedConsentFor($visit);
+
     return [$visit, $record];
 }
 
@@ -215,7 +220,11 @@ it('rme print page shows safe empty handwriting message when no handwriting exis
         ->assertSee('Belum ada handwriting RM.');
 });
 
-it('rme print page includes odontogram summary when available', function () {
+it('rme print page excludes the odontogram summary even when one exists', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — SUPERSEDES the Sprint 21.6
+    // expectation that the RME print bundle carried an odontogram summary. The
+    // odontogram keeps its own standalone print; the RME print is medical-record
+    // content only. The odontogram record itself is untouched.
     $visit = hardenVisit($this->branch);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -229,8 +238,10 @@ it('rme print page includes odontogram summary when available', function () {
     $this->actingAs($this->viewer)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('HARDEN_ODONTO_SUMMARY')
-        ->assertSee('Karies');
+        // Still a working print, just without the odontogram composition.
+        ->assertSee('Rekam Medis')
+        ->assertDontSee('HARDEN_ODONTO_SUMMARY')
+        ->assertDontSee('Catatan Odontogram');
 });
 
 // ─── 10–12: Invoice & lab workflow on print ──────────────────────────────────

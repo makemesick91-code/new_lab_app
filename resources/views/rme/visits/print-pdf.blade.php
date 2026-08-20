@@ -103,7 +103,6 @@
         'paidInvoice' => $paidInvoice,
         'payment' => $payment,
         'labCaseCandidates' => $labCaseCandidates,
-        'odontogramPrint' => $odontogramPrint ?? null,
     ])
 
     <div class="footer">

@@ -96,21 +96,56 @@ it('renders the polished payment page with a visible consent gate', function () 
         ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
         ->assertOk()
         ->assertSee('Pembayaran Tagihan RME')
-        ->assertSee('Verifikasi Surat Persetujuan Tindakan (fisik)')
-        // Consent field names must remain unchanged (payment logic preserved).
+        ->assertSee('Verifikasi Surat Persetujuan Tindakan')
+        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the page now reports the
+        // real consent state and offers the way to resolve it, instead of asking
+        // the cashier to assert consent on the patient's behalf.
+        ->assertSee('Consent belum ditandatangani')
+        // This fixture holds manage_rme_billing only, so it may not capture a
+        // signature: it is told who can, rather than shown an action it would
+        // be refused. The action itself is asserted in the next test.
+        ->assertSee('Hubungi petugas yang berwenang')
+        ->assertDontSee('Pilih Form Consent')
+        // The checkbox field names stay unchanged (payment logic preserved).
         ->assertSee('consent_signed_by_patient', false)
         ->assertSee('consent_signed_by_doctor', false);
+});
+
+it('offers Pilih Form Consent to a cashier who may capture the signature', function () {
+    [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
+
+    $operator = userWith(['view_clinic_visits', 'manage_rme_billing', 'manage_rme_consents', 'view_rme_consents']);
+
+    $this->actingAs($operator)
+        ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
+        ->assertOk()
+        ->assertSee('Consent belum ditandatangani')
+        ->assertSee('Pilih Form Consent')
+        ->assertSee(route('rme.visits.consent.create', $visit));
+});
+
+it('shows the signed consent state on the payment page once consent exists', function () {
+    [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
+    $consent = rmeSignedConsentFor($visit);
+
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
+        ->assertOk()
+        ->assertSee('Consent sudah ditandatangani')
+        ->assertSee($consent->consent_number)
+        ->assertDontSee('Consent belum ditandatangani');
 });
 
 it('still processes a full payment and renders the receipt after the polish', function () {
     [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
 
-    // Payment logic path unchanged — settle the invoice via the service.
+    // Payment logic path unchanged — settle the invoice via the service. Since
+    // FIX-01 the visit needs a signed consent before it can be paid.
+    rmeSignedConsentFor($visit);
+
     app(RmePaymentService::class)->pay($invoice, $this->cashier, [
         'amount' => $invoice->grand_total,
         'paid_at' => now()->format('Y-m-d H:i:s'),
-        'consent_signed_by_patient' => true,
-        'consent_signed_by_doctor' => true,
     ]);
 
     expect($invoice->refresh()->status)->toBe('PAID');

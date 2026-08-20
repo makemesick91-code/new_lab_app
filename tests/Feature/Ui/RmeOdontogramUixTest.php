@@ -62,7 +62,9 @@ it('renders the polished Odontogram section for an authorized user', function ()
         ->assertSee('Peta Gigi');
 });
 
-it('keeps the RME print action route on the detail page', function () {
+it('no longer renders the RME print action route on the detail page', function () {
+    // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-04 — SUPERSEDED: "Cetak RME" moved
+    // to the Rekam Medis page. Proven present there by MedicalRecordPageActionsTest.
     $patient = Patient::factory()->create(['branch_id' => $this->rmeBranch->id]);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->rmeBranch->id,
@@ -72,7 +74,7 @@ it('keeps the RME print action route on the detail page', function () {
     $this->actingAs($this->manager)
         ->get(route('rme.visits.show', $visit))
         ->assertOk()
-        ->assertSee(route('rme.visits.print', $visit), false);
+        ->assertDontSee(route('rme.visits.print', $visit), false);
 });
 
 it('redirects guests to login for the RME detail page', function () {
