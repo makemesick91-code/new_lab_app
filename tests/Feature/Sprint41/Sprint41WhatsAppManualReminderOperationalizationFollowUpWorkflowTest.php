@@ -132,10 +132,31 @@ describe('manual WhatsApp follow-up helper', function () {
             ->assertForbidden();
     });
 
-    it('does not register any WhatsApp send route', function () {
+    it('keeps the receivable follow-up manual, with no send route of its own', function () {
+        // Sprint 41's property is that the CASHIER RECEIVABLE REMINDER is manual:
+        // the server never dials a patient to chase a debt. That is unchanged, and
+        // the assertions above still pin the helper's "tidak memanggil API WhatsApp"
+        // wording and its client-side wa.me draft.
+        //
+        // PARTLY SUPERSEDED by FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 (FIX-02), which
+        // deliberately introduced exactly ONE server-side WhatsApp send route — the
+        // prescription hand-off, an explicit operator action gated by
+        // `send_prescription_whatsapp`. The original blanket "no send route
+        // anywhere" is therefore narrowed to what Sprint 41 actually protects, and
+        // the permitted set is pinned exactly so a future send route cannot appear
+        // unnoticed.
         $names = collect(app('router')->getRoutes())->map->getName()->filter()->values();
 
-        expect($names->contains(fn ($name) => str_contains($name, 'whatsapp.send')))->toBeFalse()
-            ->and($names->contains(fn ($name) => str_contains($name, 'wa.send')))->toBeFalse();
+        $sendRoutes = $names
+            ->filter(fn ($name) => str_contains($name, 'whatsapp.send') || str_contains($name, 'wa.send'))
+            ->values();
+
+        // The receivable / follow-up surface still has no send route of its own.
+        expect($sendRoutes->contains(
+            fn ($name) => str_contains($name, 'receivable') || str_contains($name, 'follow-up')
+        ))->toBeFalse();
+
+        // And app-wide there is exactly one, the FIX-02 prescription hand-off.
+        expect($sendRoutes->all())->toBe(['rme.prescriptions.whatsapp.send']);
     });
 });
