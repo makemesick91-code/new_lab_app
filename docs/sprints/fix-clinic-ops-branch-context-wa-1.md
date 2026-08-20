@@ -147,3 +147,68 @@ Existing tests were updated for the new rules, not around them: Kasir fixtures
 select a working branch exactly as Perawat's did when Perawat gained a context,
 and actors that finish an examination now hold the capability it requires. No
 test was skipped, deleted or weakened to pass.
+
+## Closure — consolidated Full Suite and final status (2026-08-20)
+
+Status: **WATCH — no GO tag.** Eight of the nine fixes are production-complete
+and machine-verified; FIX-02 remains blocked on an external dependency, so the
+programme deliberately does not close.
+
+### Consolidated Full Suite
+
+The GLOBAL TEMPORARY FULL-SUITE POLICY stayed ACTIVE throughout; both runs were
+explicit, individually authorised `workflow_dispatch` invocations.
+
+| Run | Source SHA | Result | Assertions | Duration |
+|---|---|---|---|---|
+| `32319351675` | `99c5643` | **1 failed** | 30283 | 14172.78s |
+| `32344343470` | `82f1122` | **0 failed** | 30284 | 14309.25s |
+
+The first run's single failure was `Sprint41WhatsAppManualReminderOperationalization
+FollowUpWorkflowTest` line 138 — `Failed asserting that true is false` on
+`str_contains($name, 'whatsapp.send')`. Sprint 41 had asserted that **no**
+WhatsApp send route exists anywhere; FIX-02 deliberately introduced exactly one.
+
+PR #322 (`82f1122`, **test-only**) narrowed that contract rather than deleting
+it. The receivable/follow-up surface is still asserted to have no send route of
+its own, and the app-wide permitted set is now pinned **exactly** to
+`['rme.prescriptions.whatsapp.send']` — stricter than the original substring
+ban, because a second send route can no longer appear unnoticed. Verified
+against production runtime: 566 routes, exactly one WhatsApp send route.
+
+The second run's classifier resolved `full_suite_authorized=true`,
+`gate_profile=unknown_high_risk`, `run_critical_tests=true`, and the
+`Run full Pest suite` step completed as **executed**, not skipped. Every other
+gate was green: Quality, Classifier, Critical, Selective Module, NSF-9 Release
+Safety & Smoke, NSF-10 Release Evidence.
+
+### Authority
+
+`82f1122` is test-only, so the deployed runtime authority remains `99c5643`
+(VPS HEAD exact match, working tree clean). The corrective SHA is **not**
+deployed, following the established evidence-commit pattern.
+
+### FIX-02 — still blocked
+
+Production carries **none** of the required Meta values (access token, phone
+number ID, approved utility template name), so the container binds
+`DisabledWhatsAppGateway` and opens no socket. Re-verified against Meta's
+current documentation on 2026-08-20: template messages remain the only type
+deliverable outside an open 24-hour customer service window, and Graph API
+v23.0 is supported until 8 October 2027 (latest v26.0). Because the graph
+version and every credential are read from configuration, **activation is
+config-only** — no source change is required, which is why this Full Suite
+result stays valid once credentials arrive.
+
+### Defect found during closure — not fixed here
+
+`asia_dental_lab`, a **2.9 MB SQLite database, was committed to the repository
+root** by this programme's merge and is still at the base-branch tip. It is
+schema-only: of 128 tables only `migrations` and `sqlite_sequence` hold rows,
+and every patient, user, clinical, invoice, payment and audit table is empty —
+**zero PII**, so this is repo hygiene, not a security incident. It originates
+from `DB_DATABASE=asia_dental_lab` combined with a SQLite connection, and there
+is no ignore rule covering it, so it can recur. It was left in place
+deliberately: a new commit would have moved the source tip out from under the
+one authorised Full Suite. **Follow-up:** remove it from tracking and add ignore
+rules for it and for `*.sqlite` / `*.sqlite3`.
