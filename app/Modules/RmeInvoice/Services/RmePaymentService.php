@@ -601,9 +601,32 @@ class RmePaymentService
      *
      * So: the visit whose treatment is being paid for must have consent; visits
      * whose debt is merely being collected must not be re-gated.
+     *
+     * That same principle applies to THIS visit once it is no longer at the
+     * cashier. The partial-payment rule completes a visit on the first payment
+     * while leaving the invoice PARTIAL and still payable, so
+     * "visit completed + invoice PARTIAL" is the normal shape of an outstanding
+     * instalment. Collecting that balance later is debt collection, not a new
+     * treatment — and consent cannot even be signed for a completed visit
+     * (assertSignable requires cashier_pending), so demanding one here would
+     * make every instalment permanently uncollectable, including the entire
+     * receivables book that existed before this sprint.
+     *
+     * Gating on cashier_pending is safe rather than a loophole: `completed` is
+     * not an accepted value in TransitionStatusRequest and
+     * ClinicVisitService::transitionStatus() refuses it from anywhere but
+     * cashier_pending, so the ONLY way a visit becomes completed is through a
+     * payment that already passed this gate. A new invoice cannot be raised on a
+     * completed visit either — RmeInvoiceService::create() requires
+     * cashier_pending. There is therefore no path that reaches a payment on a
+     * completed visit without consent having been given for the treatment.
      */
     private function assertConsentVerified(ClinicVisit $visit): void
     {
+        if ($visit->status !== ClinicVisit::STATUS_CASHIER_PENDING) {
+            return;
+        }
+
         if (app(RmeVisitConsentService::class)->hasValidConsent($visit)) {
             return;
         }

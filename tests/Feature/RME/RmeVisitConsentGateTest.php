@@ -2,6 +2,7 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -186,6 +187,77 @@ it('allows payment again once a replacement consent is signed', function () {
 | B — consent identity cannot be borrowed
 |--------------------------------------------------------------------------
 */
+
+it('still collects an instalment on a visit that was completed before this sprint', function () {
+    /*
+     * REGRESSION GUARD — found by adversarial review, not by the happy path.
+     *
+     * The partial-payment rule completes a visit on its FIRST payment while the
+     * invoice stays PARTIAL and payable, so "visit completed + invoice PARTIAL"
+     * is the normal shape of an outstanding instalment, and it is the shape of
+     * every receivable that existed before this sprint.
+     *
+     * Consent cannot be signed for a completed visit (assertSignable requires
+     * cashier_pending), so if the gate demanded one here those balances would be
+     * permanently uncollectable — the Piutang screen links straight to this
+     * payment page, so the cashier would hit a dead end with no way out.
+     *
+     * Collecting a balance is debt collection, not a new treatment.
+     */
+    $visit = consentVisit();
+    $invoice = consentInvoiceFor($visit, 200000);
+    signConsentFor($visit);
+
+    // First instalment: completes the visit, leaves the invoice PARTIAL.
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(50000));
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL);
+
+    // Now make it look exactly like a pre-sprint receivable: no consent at all.
+    $visit->consents()->delete();
+    expect($visit->refresh()->hasSignedConsentDocument())->toBeFalse();
+    // And it genuinely cannot be given one any more.
+    expect(fn () => signConsentFor($visit))->toThrow(ValidationException::class);
+
+    // The remaining balance must still be collectable.
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(150000));
+
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+    expect($invoice->remainingAmount())->toEqual(0.0);
+});
+
+it('does not let completing a visit become a way around the gate', function () {
+    /*
+     * The other half of the same rule. Skipping the gate once a visit is no
+     * longer at the cashier is only safe because `completed` is unreachable
+     * without a payment that already passed the gate:
+     *
+     *   - TransitionStatusRequest does not accept `completed` at all, and
+     *   - ClinicVisitService::transitionStatus() refuses it from anywhere but
+     *     cashier_pending, and
+     *   - RmeInvoiceService::create() will not raise an invoice on a
+     *     non-cashier_pending visit.
+     *
+     * If any of those ever loosens, this test fails and the exemption above must
+     * be revisited rather than quietly inherited.
+     */
+    expect(ClinicVisit::VALID_TRANSITIONS[ClinicVisit::STATUS_IN_PROGRESS])
+        ->not->toContain(ClinicVisit::STATUS_COMPLETED);
+
+    $accepted = (new TransitionStatusRequest)->rules()['status'];
+    expect(collect($accepted)->contains(fn ($rule) => is_object($rule) && str_contains((string) $rule, ClinicVisit::STATUS_COMPLETED)))
+        ->toBeFalse();
+
+    // An invoice cannot even be raised on a visit that is not at the cashier.
+    $inProgress = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    expect(fn () => consentInvoiceFor($inProgress, 100000))->toThrow(ValidationException::class);
+
+    // And a visit still AT the cashier is refused without consent, as before.
+    $atCashier = consentVisit();
+    $invoice = consentInvoiceFor($atCashier, 100000);
+    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(100000)))
+        ->toThrow(ValidationException::class);
+});
 
 it('collects a prior receivable whose own visit predates consent', function () {
     /*
