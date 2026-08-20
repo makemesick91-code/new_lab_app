@@ -1,0 +1,136 @@
+---
+description: RME consent payment gate, Medical Record page ownership, print ownership and the one-page kwitansi
+globs:
+  - app/Modules/Consent/**
+  - app/Modules/RmeInvoice/**
+  - app/Modules/ClinicVisit/**
+  - app/Modules/MedicalRecord/**
+  - resources/views/rme/**
+  - config/rme_consent.php
+alwaysApply: false
+---
+
+# FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 — durable rules
+
+## 1. Consent is the RME payment gate
+
+- RME payment requires a **valid signed `PERSETUJUAN TINDAKAN MEDIS` for the
+  current visit**. No signed consent, no payment.
+- The gate reads **persisted evidence**: `ClinicVisit::hasSignedConsentDocument()`
+  / `RmeVisitConsentService::hasValidConsent()`. It must never be satisfied by a
+  value carried in the payment request.
+- **Never reintroduce a consent flag that the payment request supplies.** The
+  original defect was `applyConsentVerification()` writing request booleans onto
+  the visit and `assertConsentVerified()` reading them back — the gate authored
+  its own evidence, so `consent_signed_by_patient=1` paid an invoice.
+- The UI is not the authority. A disabled button, a hidden card or a Blade
+  condition is presentation; the payment service must fail closed on a crafted
+  POST.
+- `consent_signed_by_patient` / `consent_signed_by_doctor` on `trx_clinic_visits`
+  are a **display-only historical record** that a paper form was sighted before
+  this sprint. They gate nothing and are never written from a request.
+
+## 2. Consent timing follows the canonical RME flow
+
+```
+Pendaftaran -> Antrian -> Input Ruangan -> Pemeriksaan Dokter
+  -> Selesai Pemeriksaan (cashier_pending) -> Consent -> Pembayaran -> completed
+```
+
+- Consent is signable **only at `cashier_pending`**. Before doctor completion it
+  fails closed; on a terminal visit it fails closed.
+- The doctor still advances only `in_progress -> cashier_pending`. `completed`
+  remains cashier/payment-owned. Unchanged by this sprint.
+
+## 3. Consent identity cannot be borrowed
+
+- A signed consent binds patient + visit + form. A consent for another visit,
+  another patient or another branch **never** satisfies payment.
+- The treating doctor comes from the visit, never from the request.
+- `Saya sendiri` copies the canonical patient identity; typed input cannot
+  override `mst_patients`.
+
+## 4. Signed consent is evidence
+
+- **Immutable.** No update path, no hard delete. A mistake is **voided with a
+  reason** and re-signed; the voided row is kept.
+- The agreed wording is **snapshotted** into the consent. Editing
+  `config/rme_consent.php` must never retro-change a signed consent — bump
+  `version` when the substance changes.
+- The consent clause text is the clinic's printed form. Do not rephrase, extend
+  or trim it without a new product decision. Formatting normalisation only.
+
+## 5. Documentation consent (clause 8) is separate and non-coercive
+
+- Must be an **explicit YA/TIDAK**. No default, and a signature is not implied
+  agreement to publication.
+- Validate as `present|boolean`, never `required` — `required` rejects `0`.
+- **Payment eligibility must never depend on answering YA.** A valid consent
+  with clause 8 = TIDAK still opens payment.
+
+## 6. Consent permissions
+
+- `manage_rme_consents` (sign/void), `view_rme_consents` (read/print).
+- Held by Doctor, Kasir, Admin Klinik, Supervisor RME.
+- **Do not gate consent on `manage_clinic_visits`: Kasir does not hold it**, and
+  doing so 403s the role that must complete every payment. Consent routes sit
+  inside the RME group, which already requires
+  `view_clinic_visits|manage_clinic_visits`.
+- Audit **effective** permissions (`$user->can()`), never direct rows, and never
+  test with Super Admin (`Gate::before` bypasses everything).
+
+## 7. Consent PII
+
+- The consent document is the **only** surface that renders a full identity
+  number, because the form legally records "No KTP/SIM". It is permission-gated
+  and branch-scoped.
+- Identity numbers and signature paths are `$hidden` on the model — never JSON,
+  logs or listings.
+- Signatures live on a **private disk** with no public URL, and are streamed only
+  through the consent policy.
+
+## 8. Medical Record page ownership
+
+- Information hierarchy: **Informasi Kunjungan -> RME Tulisan Tangan ->
+  Dokumen RME Pasien**.
+- **Finalisasi** and **Cetak RME** belong to the Medical Record page header.
+- Moved, not duplicated: exactly one Finalisasi control and one print entry
+  point.
+- The page's `$clinicVisit` is the **active sheet's** visit
+  (`$activeSheet->clinicVisit`). Any per-visit action here must use it, not a
+  canonical or source visit, or it acts on a different visit than the one shown.
+
+## 9. Print ownership
+
+- **Cetak RME** lives on the Medical Record page, **not** on Detail Kunjungan.
+  This supersedes the FIX-CLINIC-OPS (FIX-07) rule that Admin Klinik's visit
+  detail is "read-only plus Cetak RME"; the front office reaches it through a
+  **navigation link** to Rekam Medis instead.
+- **RME print contains no odontogram.** The odontogram has its own standalone
+  print (`rme.odontograms.print`), which is unchanged.
+- Removing the odontogram from the print is **composition only** — never delete
+  the odontogram model, table, workflow, UI or standalone print.
+- Relocating a print button must never create a second print endpoint.
+
+## 10. The kwitansi is one page
+
+- The RME receipt is designed as a **one-page** print/PDF for the supported
+  transaction envelope.
+- **Financial data must never be clipped, hidden or dropped to force one page.**
+  No `overflow:hidden`, no `display:none` on money, no unreadable type, no
+  removed rows. Beyond the envelope the document **continues**; it is never
+  truncated.
+- Every print template must declare an `@page` box. The missing one here was the
+  root cause of the second sheet.
+- Prove the contract with **real renderer output** — render through dompdf and
+  read the page count with poppler `pdfinfo` — and pair it with a content
+  assertion, because a page count alone can be satisfied by deleting rows.
+- The kwitansi is a *pelunasan* document: both receipt routes are `PAID`-only.
+
+## 11. Testing
+
+- Tests that exercise **payment mechanics** may use `rmeSignedConsentFor($visit)`.
+- Tests about **consent itself** (timing, signature, authorisation, branch scope)
+  must go through `RmeVisitConsentService` so the rules stay under test.
+- A "does not contain" assertion on a PDF is vacuous unless extraction is proven
+  to work — always assert something expected is present first.
