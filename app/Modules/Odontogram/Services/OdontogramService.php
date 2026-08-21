@@ -95,32 +95,25 @@ class OdontogramService
             $limit,
         );
 
+        /*
+         * An odontogram counts as history only once a tooth has actually been
+         * recorded: an empty draft is not a clinical finding.
+         *
+         * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — opening the page no
+         * longer creates such a draft. This filter is retained as
+         * belt-and-braces for the empty rows that already exist in production,
+         * which are not deleted by that fix.
+         *
+         * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 moved the predicate onto
+         * the model so the legacy odontogram archive's native-reference cutoff
+         * applies the SAME test. It was private here, so the cutoff could not
+         * reach it and counted bare row existence instead. Behaviour here is
+         * unchanged — only the predicate's home moved.
+         */
         return $records
-            ->filter(fn (Odontogram $o) => $this->hasRecordedTeeth($o))
+            ->filter(fn (Odontogram $o) => $o->hasRecordedTeeth())
             ->map(fn (Odontogram $o) => $this->toHistoryRow($o))
             ->values();
-    }
-
-    /**
-     * An odontogram counts as history only once a tooth has actually been
-     * recorded: an empty draft is not a clinical finding.
-     *
-     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — opening the page no
-     * longer creates such a draft. This filter is retained as belt-and-braces
-     * for the empty rows that already exist in production, which are not
-     * deleted by that fix.
-     */
-    private function hasRecordedTeeth(Odontogram $odontogram): bool
-    {
-        $payload = $odontogram->tooth_map_payload;
-
-        if (! is_array($payload)) {
-            return false;
-        }
-
-        $teeth = $payload['teeth'] ?? null;
-
-        return is_array($teeth) && $teeth !== [];
     }
 
     /**

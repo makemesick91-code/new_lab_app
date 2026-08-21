@@ -1,0 +1,112 @@
+---
+description: LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — only a native odontogram carrying clinical evidence gates or bounds a legacy odontogram archive
+globs:
+  - "app/Modules/LegacyOdontogram/**"
+  - "app/Modules/Odontogram/**"
+  - "tests/Feature/LegacyOdontogram/**"
+alwaysApply: false
+---
+
+# LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1
+
+Four durable rules. They **refine** the legacy odontogram date rules established by
+FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 and never weaken them.
+
+**Refinement.** `109-rme-exam-consent-odontogram-history.mdc` §5 requires the legacy
+date to be "strictly before the patient's earliest **native odontogram**". That
+remains true. This rule defines what counts as one: **a row is not a chart.**
+
+**Supersession.** This rule supersedes the *factual* half of
+`110-post-rme-odontogram-stabilization.mdc` §1 "Known coupling, deliberately not
+changed", which states that the cutoff "still counts pre-existing empty rows".
+That was true when written; it is not true now. Rule 110's **norm** — that
+narrowing the cutoff requires an owner decision and a separate evidenced sprint,
+never a side effect — was honoured: this is that sprint, decided on measured
+read-only production evidence. Rule 110's "belt-and-braces" sentence is likewise
+scoped to the **Patient Odontogram History query only**; for the cutoff the same
+predicate is the *primary* test. **Never "restore" `whereHas('odontogram')`.**
+
+---
+
+## 1. Only clinical evidence is a native reference
+
+- For legacy odontogram **native-reference cutoff** purposes, a native odontogram
+  counts **only when it carries meaningful clinical evidence**. An empty
+  persistence placeholder is **not** clinical evidence.
+- The predicate is `Odontogram::hasRecordedTeeth()` — **the one definition**. It is
+  the same predicate the doctor's Patient Odontogram History applies, so *a row the
+  doctor is never shown as history can never gate or bound that patient's archive.*
+  Do not re-derive it in a service, controller, form request, policy, view or test.
+- A charted tooth counts **regardless of its status, `normal` included**. The
+  asymmetry is deliberate: treating real content as empty erases a chronological
+  boundary and admits an overlapping document, whereas treating a sparse chart as
+  content only ever *keeps* a boundary. **When in doubt, keep the boundary.**
+- **Content, not workflow status, is the test.** A `finalized` row that charts
+  nothing is still nothing; a `draft` that charts a tooth is evidence. Never
+  shortcut this to `status`.
+
+## 2. The cutoff acts in TWO directions — always reason about both
+
+`LegacyOdontogramDateRuleService` feeds both from one `resolve()` call:
+
+1. **Eligibility GATE** — `null` ⇒ the patient is refused outright
+   (`CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM`).
+2. **Chronological BOUND** — the archive date must be *strictly* earlier.
+
+They move in **opposite** directions when the predicate narrows: a patient whose
+only row is empty loses eligibility, while a patient with an early empty row and a
+later real chart gets a *later* bound and therefore a *wider* window. Any change to
+this predicate must state its effect on **both**, never just the one that suits the
+story.
+
+That refusal for a never-charted patient is **deliberate**, not an oversight, and it
+self-heals: chart a tooth and the patient becomes eligible against a real boundary.
+A bulk capability for never-examined patients is a separate, explicit sprint.
+
+## 3. Impact before eligibility expansion
+
+- Any change that **broadens** legacy odontogram import eligibility must produce a
+  **read-only production impact report before activation** — counts of empty vs
+  meaningful rows, affected patients, and the eligibility delta in both directions.
+- Run production analysis under `SET default_transaction_read_only = on`, so
+  mutation is impossible rather than merely avoided. Never `INSERT`/`UPDATE`/
+  `DELETE`/DDL for analysis. Leave no scratch script, SQL file or scratch database
+  behind.
+- **Verify the predicate against the real payload shape before trusting any count.**
+  `tooth_map_payload->'teeth'` is a JSON **object keyed by FDI number**, never a
+  list; `jsonb_array_length()`/`whereJsonLength()` therefore return 0 or error for
+  every row and will silently report real charts as empty. If two numbers in the
+  same result contradict each other, the predicate is wrong — stop and re-derive it.
+- **Changing eligibility semantics never deletes, edits or backfills a historical
+  native odontogram row, and never auto-imports, auto-publishes or creates a
+  migration batch.** Eligibility ≠ execution.
+
+## 4. PostgreSQL portability of any content predicate
+
+- `trx_odontograms.tooth_map_payload` is **`jsonb`**. Comparing it to a string is a
+  **hard PostgreSQL error** (there is no `jsonb = text` operator) that SQLite
+  silently tolerates — such a predicate passes every local test and 500s in
+  production.
+- The **only** portable SQL half is `whereNotNull('tooth_map_payload')`. Everything
+  SQL cannot portably express (`{"teeth": {}}`, a payload with no `teeth` key) is
+  settled in PHP by `Odontogram::hasRecordedTeeth()`.
+- `whereJsonLength()` is **forbidden** here: it compiles to `jsonb_array_length()` on
+  PostgreSQL, which errors on a JSON object.
+- Where a `limit` is involved (Patient Odontogram History), the SQL half must stay
+  **in the query** so the limit bounds real history; filtering only in PHP after the
+  limit would let empty rows push genuine findings out of a doctor's view.
+
+## 5. Testing
+
+- `OdontogramFactory` defaults `tooth_map_payload` to `NULL`. A fixture that "gives
+  a patient a native odontogram" without a payload creates an **empty placeholder** —
+  precisely the row the cutoff must ignore. Use `lodoNativeOdontogram()` for a real
+  chart and `lodoEmptyNativeOdontogram()` when contentlessness is the point.
+- Fixtures must chart `teeth` as an **object keyed by FDI number**, the shape
+  production actually stores.
+- The resolver stays deliberately **un-branch-scoped**; a narrower scan could only
+  move the bound later and admit an overlapping document. Pin that, do not "fix" it.
+- `tests/Feature/LegacyOdontogram/*` already reaches CI via the `LegacyOdontogram`
+  alternative in the `--filter=` string of **both** critical-gate variants of
+  `.github/workflows/foundation-evidence-gates.yml`. A suite named outside that
+  prefix needs the filter updated in both variants.

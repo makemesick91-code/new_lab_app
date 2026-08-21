@@ -98,6 +98,12 @@ write path.
   alone:** narrowing that resolver to non-empty payloads would change
   admissibility for existing production data, which is an owner decision and a
   separate sprint, not a side effect of this one.
+  - **Superseded (2026-08-22).** LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 is
+    that separate sprint. The cutoff now requires meaningful clinical content
+    (`Odontogram::hasRecordedTeeth()`). Measured read-only on production first:
+    of 15 patients with a native row, 14 kept an identical bound, 0 gained
+    eligibility, 1 lost a bound that was never real. The paragraph above is
+    retained as the record of this sprint's decision, not as current fact.
 
 ---
 

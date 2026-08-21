@@ -21,8 +21,15 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 interface LegacyOdontogramNativeReferenceRepositoryInterface
 {
     /**
-     * The earliest non-cancelled visit that owns a native odontogram, or null
-     * when the patient has none. Null is meaningful — it is NOT "no restriction".
+     * The earliest non-cancelled visit that owns a native odontogram CARRYING
+     * CLINICAL CONTENT, or null when the patient has none. Null is meaningful —
+     * it is NOT "no restriction".
+     *
+     * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — "owns an odontogram" used
+     * to mean a row exists. A contentless placeholder is not evidence, so it
+     * neither opens the eligibility gate nor draws the chronological bound. The
+     * content test is `Odontogram::hasRecordedTeeth()`, the same predicate the
+     * doctor's Patient Odontogram History applies.
      */
     public function earliestVisitWithOdontogramForPatient(int $patientId): ?ClinicVisit;
 }

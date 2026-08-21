@@ -63,6 +63,47 @@ class Odontogram extends Model
     }
 
     /**
+     * Does this odontogram carry actual clinical evidence?
+     *
+     * An odontogram counts as clinical evidence only once a tooth has really
+     * been recorded: an empty draft is a persistence placeholder, not a
+     * finding. Content is the whole test — a finalized row that charts nothing
+     * is still nothing, and a draft that charts a tooth is still evidence.
+     *
+     * THE ONE DEFINITION. It was previously private to `OdontogramService`,
+     * where only Patient Odontogram History could reach it, while the legacy
+     * odontogram archive's native-reference cutoff counted bare row existence.
+     * The two answers disagreed: a row the doctor is never shown as history
+     * could still bound — and gate — a patient's archive.
+     * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 promoted it here, beside
+     * `dmftCounts()`, which reads the same `tooth_map_payload['teeth']`. Every
+     * consumer goes through this method; nobody re-derives it.
+     *
+     * SHAPE. `teeth` is an OBJECT keyed by FDI number ("11", "12", …), not a
+     * list — verified against the pilot database. `tooth_map_payload` is cast
+     * to `array`, so both the object and the legacy empty-list shape arrive
+     * here as PHP arrays and an empty one is falsy either way.
+     *
+     * A charted tooth counts REGARDLESS of its status, `normal` included. The
+     * asymmetry is deliberate: treating real content as empty would erase a
+     * chronological boundary and let an overlapping document into the archive,
+     * whereas treating a sparse chart as content only ever keeps a boundary.
+     * When in doubt this errs towards keeping the boundary.
+     */
+    public function hasRecordedTeeth(): bool
+    {
+        $payload = $this->tooth_map_payload;
+
+        if (! is_array($payload)) {
+            return false;
+        }
+
+        $teeth = $payload['teeth'] ?? null;
+
+        return is_array($teeth) && $teeth !== [];
+    }
+
+    /**
      * Compute the Daengtisia DMF-T tally (Jumlah D / M / F / DMF-T) from the
      * saved table data only. Source of truth = tooth_map_payload.teeth[*].status.
      *
