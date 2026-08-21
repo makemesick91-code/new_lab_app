@@ -126,8 +126,11 @@ class OdontogramRepository implements OdontogramRepositoryInterface
              * have passed every local test and returned HTTP 500 on every
              * odontogram page in production.
              *
-             * hasRecordedTeeth() stays as the defensive post-filter for shapes SQL
-             * cannot express portably (e.g. a payload with an empty `teeth` map).
+             * Odontogram::hasRecordedTeeth() stays as the defensive post-filter for
+             * shapes SQL cannot express portably (e.g. a payload with an empty
+             * `teeth` map). It lives on the model since
+             * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1, which made the legacy
+             * odontogram archive's native-reference cutoff apply the same test.
              */
             ->whereNotNull('trx_odontograms.tooth_map_payload')
             ->orderByDesc('trx_clinic_visits.visit_date')

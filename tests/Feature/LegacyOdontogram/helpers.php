@@ -93,24 +93,84 @@ if (! function_exists('lodoPatient')) {
     }
 }
 
+if (! function_exists('lodoChartedTeeth')) {
+    /**
+     * A minimal but REAL charted tooth map, in the shape production actually
+     * stores: `teeth` is an OBJECT keyed by FDI number, not a list.
+     *
+     * Verified against the pilot database — every charted row there is
+     * `{"teeth": {"11": {"status": "caries", ...}, ...}}`. A fixture that used a
+     * JSON array would model a shape the application never writes.
+     *
+     * @return array<string, mixed>
+     */
+    function lodoChartedTeeth(string $fdi = '11', string $status = 'caries'): array
+    {
+        return ['teeth' => [$fdi => [
+            'note' => '',
+            'status' => $status,
+            'conditions' => [],
+        ]]];
+    }
+}
+
 if (! function_exists('lodoNativeOdontogram')) {
     /**
-     * Give a patient a NATIVE odontogram on a given clinical date.
+     * Give a patient a NATIVE odontogram carrying REAL clinical content on a
+     * given clinical date.
      *
      * The clinical date is the owning VISIT's `visit_date` — the odontogram row
      * itself has no clinical date column, which is exactly why the resolver
      * reads the visit.
+     *
+     * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — this fixture now charts a
+     * tooth. `OdontogramFactory` defaults `tooth_map_payload` to NULL, so before
+     * this sprint every "native odontogram" in this suite was in fact an EMPTY
+     * placeholder, and the tests were asserting the cutoff against exactly the
+     * rows the cutoff must now ignore. Use `lodoEmptyNativeOdontogram()` when a
+     * contentless row is the point of the test.
      */
     function lodoNativeOdontogram(Patient $patient, string $visitDate, ?string $status = null): Odontogram
+    {
+        return lodoOdontogramRow($patient, $visitDate, lodoChartedTeeth(), $status);
+    }
+}
+
+if (! function_exists('lodoEmptyNativeOdontogram')) {
+    /**
+     * A native odontogram row that carries NO clinical content — the placeholder
+     * shape that already exists in production and that the native-reference
+     * cutoff must not treat as evidence.
+     *
+     * `$payload` defaults to NULL (the shape the pilot database actually holds);
+     * pass `['teeth' => []]` to exercise the empty-map shape that SQL cannot
+     * portably exclude.
+     *
+     * @param  array<string, mixed>|null  $payload
+     */
+    function lodoEmptyNativeOdontogram(Patient $patient, string $visitDate, ?array $payload = null, ?string $status = null): Odontogram
+    {
+        return lodoOdontogramRow($patient, $visitDate, $payload, $status);
+    }
+}
+
+if (! function_exists('lodoOdontogramRow')) {
+    /**
+     * The one place this suite creates an odontogram + its owning visit.
+     *
+     * @param  array<string, mixed>|null  $payload
+     */
+    function lodoOdontogramRow(Patient $patient, string $visitDate, ?array $payload, ?string $visitStatus = null): Odontogram
     {
         $visit = ClinicVisit::factory()->create([
             'patient_id' => $patient->id,
             'visit_date' => $visitDate,
-        ] + ($status !== null ? ['status' => $status] : []));
+        ] + ($visitStatus !== null ? ['status' => $visitStatus] : []));
 
         return Odontogram::factory()->create([
             'clinic_visit_id' => $visit->id,
             'branch_id' => $visit->branch_id,
+            'tooth_map_payload' => $payload,
         ]);
     }
 }

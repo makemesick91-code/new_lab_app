@@ -44,16 +44,29 @@ calendar.
 
 Do not "fix" a stray empty row by filtering it out downstream. Empty
 auto-created placeholders are not clinical history and must not be created in
-the first place; `hasRecordedTeeth()` and the history query's
-`whereNotNull('tooth_map_payload')` remain only as belt-and-braces for rows that
-already exist in production.
+the first place; in the **Patient Odontogram History query**,
+`Odontogram::hasRecordedTeeth()` and `whereNotNull('tooth_map_payload')` remain
+only as belt-and-braces for rows that already exist in production.
 
-**Known coupling, deliberately not changed.**
-`LegacyOdontogramNativeReferenceRepository::earliestVisitWithOdontogramForPatient()`
-uses `whereHas('odontogram')` and therefore still counts pre-existing empty
-rows. Narrowing it to non-empty payloads would change Legacy Odontogram import
-admissibility for existing production data — an owner decision and a separate
-evidenced sprint, never a side effect.
+That "belt-and-braces" scoping is **history-only**. Since
+LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 the same predicate is the *primary*
+test for the legacy odontogram native-reference cutoff — see rule 111.
+
+**Known coupling — SUPERSEDED by rule 111.** This block described the state of
+the code as of this sprint and is retained as history. It is **no longer current
+fact.**
+
+*Then:* `LegacyOdontogramNativeReferenceRepository::earliestVisitWithOdontogramForPatient()`
+used `whereHas('odontogram')` and therefore still counted pre-existing empty
+rows. Narrowing it would change Legacy Odontogram import admissibility for
+existing production data — an owner decision and a separate evidenced sprint,
+never a side effect.
+
+*Now:* LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 **is** that separate evidenced
+sprint. The cutoff requires meaningful clinical content
+(`Odontogram::hasRecordedTeeth()`). The norm above was honoured, not broken: the
+change was made on measured read-only production evidence, never as a side
+effect. **Do not "restore" `whereHas('odontogram')` — see rule 111.**
 
 ## 2. The consent and completion gates are unchanged
 

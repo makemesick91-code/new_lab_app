@@ -1,24 +1,24 @@
-# Active sprint manifest — POST-RME-ODONTOGRAM-STABILIZATION-1
+# Active sprint manifest — LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1
 #
 # Validated by: php artisan sprint:manifest-check
 
-id: POST-RME-ODONTOGRAM-STABILIZATION-1
+id: LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1
 type: RUNTIME_FIX
-module: Odontogram
-title: "Odontogram view creates no clinical row, repository SQLite artifact hygiene, RM number + registration date on the clinical calendar"
+module: LegacyOdontogram
+title: "An empty native odontogram placeholder is not clinical evidence for the legacy odontogram native-reference cutoff"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true             # odontogram read/write split, new store route + policy ability, ClinicalClock in RM composition
-schema_change: false             # no migration, no table, no column
-frontend_change: true            # resources/views/rme/visits/odontogram/show.blade.php — form action, print + finalize guards
-security_impact: true            # new write-level policy ability; consent asserted BEFORE the insert; read-only operator no longer writes
-branch_isolation_impact: false   # no BranchContext / branch-scoped query change; existing scopes re-pinned by tests
+runtime_change: true             # the native-reference read boundary now requires meaningful clinical content
+schema_change: false             # no migration, no table, no column, no index
+frontend_change: false           # no Blade/JS change — the rule messages and codes are unchanged
+security_impact: true            # changes which documents may enter a patient's clinical archive (eligibility boundary)
+branch_isolation_impact: false   # the resolver stays deliberately un-branch-scoped; no BranchContext change
 ledger_impact: false             # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true            # runtime fixes must reach production to be verified in realtime
-browser_required: false          # server-rendered Blade; no JS behaviour change (Alpine payload untouched)
+deploy_required: true            # the corrected cutoff must reach production to be verified in realtime
+browser_required: false          # server-side domain rule only
 
-go_tag: post-rme-odontogram-stabilization-1-go
+go_tag: legacy-odontogram-native-reference-cutoff-1-go
 
 test_profiles:
   - rme

@@ -376,18 +376,23 @@ it('cannot pollute history because a viewed chart is never persisted', function 
 
 /*
 |--------------------------------------------------------------------------
-| Legacy Odontogram archive cutoff — the coupling this fix deliberately leaves
+| Legacy Odontogram archive cutoff — the coupling, now RESOLVED
 |--------------------------------------------------------------------------
 |
 | PatientEarliestNativeOdontogramDateResolver anchors the Legacy Odontogram
-| import's chronology gate, and its repository qualifies a visit purely on the
+| import's chronology gate. Its repository used to qualify a visit purely on the
 | EXISTENCE of a trx_odontograms row (whereHas('odontogram')), with no payload
-| predicate. So before FIX-01 a merely-OPENED page anchored the cutoff.
+| predicate, so before FIX-01 a merely-OPENED page anchored the cutoff.
 |
-| Raised by adversarial review as an unpinned semantic shift. It is pinned here
-| rather than changed: rows already in production keep anchoring the cutoff, so
-| no existing patient's admissibility moves, and narrowing the resolver is an
-| owner decision for a separate sprint.
+| This sprint pinned that residual rather than changing it, and recorded that
+| narrowing the resolver was "an owner decision for a separate sprint".
+| LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 is that sprint: the cutoff now
+| requires meaningful clinical content (Odontogram::hasRecordedTeeth()), the
+| same predicate the doctor's Patient Odontogram History already applied.
+|
+| Measured read-only on production before the change: of 15 patients with a
+| native row, 14 kept an identical bound, 0 gained eligibility, and exactly one
+| — whose only row was a contentless draft — lost a bound that was never real.
 */
 
 it('no longer anchors the legacy odontogram cutoff by merely opening a chart page', function () {
@@ -418,10 +423,13 @@ it('anchors the legacy odontogram cutoff once a chart is actually saved', functi
         ->toBe($visit->fresh()->visit_date->toDateString());
 });
 
-it('still anchors the cutoff from a pre-existing empty row, which this fix does not delete', function () {
-    // Rows already in production keep their meaning: the resolver counts any
-    // odontogram, and FIX-01 removes none. This pins that no existing patient's
-    // archive admissibility moved.
+it('no longer anchors the cutoff from a pre-existing empty row — and still does not delete it', function () {
+    // A contentless row is not clinical evidence, so it neither opens the
+    // eligibility gate nor draws the chronological bound.
+    //
+    // The row itself is untouched. This sprint changed ELIGIBILITY SEMANTICS,
+    // never data: no historical odontogram is deleted, edited or backfilled, so
+    // the assertion on the surviving row is the point, not an afterthought.
     $visit = stabVisit(ClinicVisit::STATUS_COMPLETED);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -431,8 +439,8 @@ it('still anchors the cutoff from a pre-existing empty row, which this fix does 
 
     $resolver = app(PatientEarliestNativeOdontogramDateResolver::class);
 
-    expect($resolver->resolve($this->patient->id)?->toDateString())
-        ->toBe($visit->fresh()->visit_date->toDateString());
+    expect($resolver->resolve($this->patient->id))->toBeNull()
+        ->and(stabRowCount($visit))->toBe(1);
 });
 
 /*
