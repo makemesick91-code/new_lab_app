@@ -118,8 +118,9 @@ Verifikasi: `php artisan route:list | rg "keyword"`
 ## 8. RME Workflow (End-to-End)
 
 ```text
-Pendaftaran → Antrian → Input Ruangan → Pemeriksaan (RM + Odontogram)
-→ Selesai Pemeriksaan (cashier_pending) → Consent → Kasir/Payment → Visit completed
+Pendaftaran → Antrian → Input Ruangan → Mulai Pemeriksaan (in_progress)
+→ Consent → RM + Odontogram editable → (tetap in_progress)
+→ Selesai Pemeriksaan (cashier_pending) → Kasir/Payment → Visit completed
 ```
 
 **Aturan kunci:**

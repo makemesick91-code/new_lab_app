@@ -5,6 +5,7 @@ namespace App\Modules\Odontogram\Services;
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Odontogram\Interfaces\OdontogramRepositoryInterface;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RME\Services\DoctorPatientScopeService;
@@ -29,6 +30,9 @@ class OdontogramService
         // Perawat, so without this a context-bound operator would read a patient's
         // odontogram findings from every branch in the RME estate.
         private readonly RmeWorkingBranchScope $workingBranchScope,
+        // CORRECTIVE-03 — the active odontogram is a clinical workspace, so it
+        // now carries the same signed-consent authority as the RME beside it.
+        private readonly RmeVisitConsentService $consents,
     ) {}
 
     /**
@@ -175,10 +179,21 @@ class OdontogramService
                 ]);
             }
 
-            // Sprint 59 — odontogram data (table + generated visual) is revisable
-            // at any time, including previously finalized records and older
-            // visits. The finalization edit-lock is removed; `status`,
-            // `finalized_at`, and `finalized_by` remain for backward compatibility.
+            /*
+             * CORRECTIVE-03 — POSITIVE authority, resolved from server state.
+             *
+             * Supersedes the Sprint 59 rule that any odontogram is revisable at
+             * any time. Sprint 59 removed the FINALIZATION lock, and that part
+             * stands: a finalized chart on the LIVE encounter is still revisable.
+             * What it may no longer do is reach back into a previous encounter's
+             * chart, and it may not record anything at all before the patient has
+             * signed. The chart being written must be the live, consented
+             * encounter's own chart.
+             *
+             * The status/finalized_at/finalized_by columns keep their meaning and
+             * are untouched.
+             */
+            $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);
 
             $safe = array_intersect_key($payload, array_flip(['summary_notes', 'additional_conditions', 'tooth_map_payload']));
             $safe['updated_by'] = $user->id;
@@ -205,6 +220,12 @@ class OdontogramService
                     'odontogram_id' => 'Odontogram tidak berada di cabang RME aktif.',
                 ]);
             }
+
+            // CORRECTIVE-03 — finalizing a chart is a clinical write, so it needs
+            // the same authorized, consented, live encounter. Asserted BEFORE the
+            // already-finalized short circuit, so an unconsented caller cannot use
+            // the idempotent path to probe which charts exist.
+            $this->consents->assertOdontogramAuthoringAllowed($odontogram->clinicVisit, $user);
 
             if ($odontogram->isFinalized()) {
                 return $odontogram;

@@ -112,6 +112,8 @@ it('rejects billing before the doctor completes examination with the gate messag
 
 it('doctor can mark examination complete, moving the visit to cashier_pending', function () {
     $visit = gateInProgressVisit($this->branch);
+    // CORRECTIVE-03 — a consented examination is the only one that can be finished.
+    rmeSignedConsentFor($visit);
 
     $this->actingAs($this->doctorUser)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING])

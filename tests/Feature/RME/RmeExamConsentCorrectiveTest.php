@@ -327,10 +327,27 @@ it('keeps the visit in_progress when RME and odontogram are complete, and advanc
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-it('leaves the active odontogram editable without any consent', function () {
-    // The active odontogram workflow is deliberately unchanged by this sprint.
+it('refuses to chart the active odontogram until the consent is signed', function () {
+    /*
+     * SUPERSEDED BY CORRECTIVE-03. This test previously asserted the opposite —
+     * that the active odontogram was deliberately outside the consent gate. That
+     * product decision is withdrawn: an odontogram is a clinical finding recorded
+     * during a treatment decision, so gating the note beside it and not the chart
+     * consents to nothing coherent.
+     *
+     * The security intent of the original test is preserved and inverted: the
+     * chart is still reachable, and charting still works — once consented.
+     */
     $visit = corrVisit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = app(OdontogramService::class)->getOrCreateForVisit($visit, $this->doctorUser);
+
+    expect(fn () => app(OdontogramService::class)->updatePlaceholder($odontogram, [
+        'tooth_map_payload' => ['teeth' => ['21' => ['status' => 'caries']]],
+    ], $this->doctorUser))->toThrow(ValidationException::class);
+
+    expect($odontogram->refresh()->tooth_map_payload)->toBeNull();
+
+    rmeSignedConsentFor($visit);
 
     app(OdontogramService::class)->updatePlaceholder($odontogram, [
         'tooth_map_payload' => ['teeth' => ['21' => ['status' => 'caries']]],

@@ -38,10 +38,17 @@
         $canOperateVisit = auth()->user()?->can('operateFromDetail', $visit) ?? false;
         // FIX-05 — "Selesai Pemeriksaan" additionally needs clinical authority.
         $canCompleteExamination = auth()->user()?->can('completeExamination', $visit) ?? false;
+        // CORRECTIVE-03 — "Selesai Pemeriksaan" also requires a signed consent.
+        // Consent can only be taken while the visit is in_progress, so finishing
+        // an unsigned examination would strand it: unconsented, unwritable, and
+        // already at the cashier. The server refuses the transition regardless;
+        // hiding the button here just stops the doctor walking into the refusal.
+        $examinationConsentSigned = app(\App\Modules\Consent\Services\RmeVisitConsentService::class)
+            ->hasValidConsent($visit);
         $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING
-                && ! $canCompleteExamination)
+                && (! $canCompleteExamination || ! $examinationConsentSigned))
             ->all();
     @endphp
 
@@ -138,8 +145,9 @@
                 <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <p class="max-w-xl text-sm">
-                            Rekam medis kunjungan ini belum dapat ditulis sampai Surat Persetujuan
-                            Tindakan Medis ditandatangani pasien atau pemberi persetujuan.
+                            Rekam medis dan odontogram kunjungan ini belum dapat ditulis sampai
+                            Surat Persetujuan Tindakan Medis ditandatangani pasien atau pemberi
+                            persetujuan, dan pemeriksaan belum dapat diselesaikan.
                             Riwayat klinis pasien tetap dapat dibaca.
                         </p>
                         @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])

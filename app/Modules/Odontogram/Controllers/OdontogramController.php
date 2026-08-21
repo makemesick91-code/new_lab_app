@@ -5,6 +5,7 @@ namespace App\Modules\Odontogram\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPatientHistoryService;
 use App\Modules\Odontogram\Models\Odontogram;
@@ -98,7 +99,35 @@ class OdontogramController extends Controller
                 : (string) $row['date'])
             ->values();
 
-        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits', 'structured', 'odontogramHistory'));
+        /*
+         * CORRECTIVE-03 — may this chart be EDITED right now?
+         *
+         * Presentation only. RmeVisitConsentService is the authority and refuses
+         * the write itself, so a stale or crafted page cannot author anything;
+         * this exists so the doctor is told why the controls are absent instead of
+         * discovering it on submit.
+         *
+         * Two distinct read-only reasons, kept distinct because the remedy
+         * differs: an unsigned consent on the live encounter is fixed by taking
+         * the signature, while a previous visit's chart is history and no
+         * signature reopens it.
+         */
+        $consents = app(RmeVisitConsentService::class);
+        $odontogramAuthoringAllowed = $consents->canAuthorOdontogramFor($clinicVisit, $request->user());
+        $odontogramConsentRequired = ! $odontogramAuthoringAllowed
+            && $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS
+            && ! $consents->hasValidConsent($clinicVisit);
+
+        return view('rme.visits.odontogram.show', compact(
+            'clinicVisit',
+            'odontogram',
+            'parentOdontogram',
+            'adjacentVisits',
+            'structured',
+            'odontogramHistory',
+            'odontogramAuthoringAllowed',
+            'odontogramConsentRequired',
+        ));
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse

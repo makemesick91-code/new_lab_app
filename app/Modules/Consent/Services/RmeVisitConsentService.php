@@ -237,6 +237,102 @@ class RmeVisitConsentService
         return $encounter;
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Active odontogram authoring authority
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * CORRECTIVE-03 — the SAME positive authority, now covering the ACTIVE
+     * odontogram.
+     *
+     * This supersedes the earlier contract, under which consent gated only RME
+     * authoring and the odontogram workflow was left unchanged. That split was
+     * indefensible: an odontogram is a clinical finding recorded on a patient
+     * during a treatment decision, exactly like the note beside it, so consenting
+     * to one and not the other consents to nothing coherent.
+     *
+     * An odontogram row is bound to ONE visit — unlike handwriting, which Sprint
+     * 64.0.2 stores on the patient's canonical record — so authority here is
+     * stricter than the RME gate and can be exact: the chart being written must
+     * BE the live encounter's chart. That is what keeps history permanently
+     * read-only. A previous visit's chart is evidence of what was found then;
+     * signing a consent today authorises recording today's findings, never
+     * rewriting an earlier encounter's.
+     *
+     * All four RME conditions still hold, in this order, so the refusal names the
+     * real reason:
+     *
+     *   1. the patient HAS a single current `in_progress` encounter;
+     *   2. the actor may work on that encounter (branch + clinical scope);
+     *   3. the odontogram belongs to THAT encounter (else it is history);
+     *   4. a valid signed consent exists for that encounter.
+     */
+    public function assertOdontogramAuthoringAllowed(?ClinicVisit $visit, ?User $actor = null): ClinicVisit
+    {
+        if ($visit === null) {
+            // A chart with no resolvable visit has no encounter to authorise it.
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram ini tidak terhubung ke kunjungan mana pun sehingga tidak dapat diubah.',
+            ]);
+        }
+
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($visit->patient_id);
+
+        if ($encounter === null) {
+            $active = app(ActiveEncounterResolver::class)->activeFor($visit->patient_id);
+
+            throw ValidationException::withMessages([
+                'consent' => $active->count() > 1
+                    ? 'Pasien ini memiliki lebih dari satu pemeriksaan yang sedang berjalan. Selesaikan atau batalkan kunjungan yang tidak dipakai sebelum mengubah odontogram.'
+                    : 'Odontogram hanya dapat diubah saat pasien sedang dalam pemeriksaan. Mulai pemeriksaan terlebih dahulu.',
+            ]);
+        }
+
+        $actor ??= Auth::user();
+
+        if (! $actor instanceof User || ! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Anda tidak berwenang mengubah odontogram untuk pemeriksaan pasien ini.',
+            ]);
+        }
+
+        if ($encounter->id !== $visit->id) {
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram kunjungan sebelumnya adalah riwayat dan bersifat hanya-baca. Catat temuan pada odontogram kunjungan yang sedang berjalan.',
+            ]);
+        }
+
+        if (! $this->hasValidConsent($encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram kunjungan ini belum dapat diubah karena Persetujuan Tindakan Medis belum ditandatangani.',
+            ]);
+        }
+
+        return $encounter;
+    }
+
+    /**
+     * Presentation predicate for the odontogram page: may this chart be edited
+     * right now? Never the authorisation answer — assertOdontogramAuthoringAllowed()
+     * is. The page stays viewable either way.
+     */
+    public function canAuthorOdontogramFor(?ClinicVisit $visit, ?User $actor = null): bool
+    {
+        if ($visit === null) {
+            return false;
+        }
+
+        try {
+            $this->assertOdontogramAuthoringAllowed($visit, $actor);
+        } catch (ValidationException) {
+            return false;
+        }
+
+        return true;
+    }
+
     /**
      * May this actor work on this encounter? Branch scope plus the same clinical
      * patient scope every single-record ability already applies.

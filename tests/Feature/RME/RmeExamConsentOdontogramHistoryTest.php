@@ -642,9 +642,15 @@ it('renders the read-only history section on the odontogram page without edit co
         ->and($html)->not->toContain(route('rme.odontograms.finalize', $previous->odontogram));
 });
 
-it('keeps the ACTIVE odontogram editable exactly as before', function () {
-    // FIX-04 must not turn into a blanket read-only policy.
+it('keeps the ACTIVE odontogram editable on a consented encounter', function () {
+    /*
+     * Amended by CORRECTIVE-03: the active chart is now gated by consent, but
+     * FIX-04's history work still must not become a blanket read-only policy.
+     * What this pins is that a CONSENTED live encounter charts normally — the
+     * history surface did not freeze the workspace beside it.
+     */
     $visit = examVisit($this->branch);
+    rmeSignedConsentFor($visit);
     $odontogram = app(OdontogramService::class)->getOrCreateForVisit($visit, $this->doctorUser);
 
     app(OdontogramService::class)->updatePlaceholder($odontogram, [
@@ -656,6 +662,7 @@ it('keeps the ACTIVE odontogram editable exactly as before', function () {
 
 it('does not let saving an odontogram change the visit status', function () {
     $visit = examVisit($this->branch);
+    rmeSignedConsentFor($visit);
     $odontogram = app(OdontogramService::class)->getOrCreateForVisit($visit, $this->doctorUser);
 
     app(OdontogramService::class)->updatePlaceholder($odontogram, [

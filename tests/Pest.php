@@ -951,6 +951,25 @@ function rmeActiveConsentedEncounter(ClinicVisit $visit): ClinicVisit
 }
 
 /**
+ * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-03 — a visit that is a
+ * legitimate, consented, ACTIVE encounter and is therefore a writable odontogram
+ * workspace.
+ *
+ * The active odontogram is now gated exactly like the RME beside it, so a fixture
+ * that intends to CHART something must build the state the clinic would: the
+ * doctor started the examination and the patient signed. Tests about the GATE
+ * itself must still build their state explicitly, so the rules stay under test.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function rmeConsentedOdontogramVisit(array $attributes = []): ClinicVisit
+{
+    return rmeActiveConsentedEncounter(
+        ClinicVisit::factory()->create($attributes + ['status' => ClinicVisit::STATUS_IN_PROGRESS]),
+    );
+}
+
+/**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — give a visit a signed consent.
  *
  * RME payment now requires a signed PERSETUJUAN TINDAKAN MEDIS, so any test

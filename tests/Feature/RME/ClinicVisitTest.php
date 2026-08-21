@@ -356,6 +356,9 @@ it('manager can transition in_progress to cashier_pending', function () {
         'queue_number' => 1,
     ]);
 
+    // CORRECTIVE-03 — finishing an examination requires the signed consent.
+    rmeSignedConsentFor($visit);
+
     $this->actingAs($this->manager)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING])
         ->assertRedirect(route('rme.visits.show', $visit));
@@ -544,6 +547,9 @@ it('sets check_in_at on transition to waiting, started_at on in_progress, comple
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
     expect($visit->refresh()->started_at)->not->toBeNull();
 
+    // CORRECTIVE-03 — the examination cannot be finished unconsented.
+    rmeSignedConsentFor($visit->refresh());
+
     // Sprint 62.1 — "Selesai Pemeriksaan" then cashier-driven completion.
     $this->actingAs($this->manager)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
@@ -573,6 +579,9 @@ it('does not overwrite existing timestamps on transition', function () {
     ]);
 
     // Sprint 62.1 — reach completion through cashier_pending + service.
+    // CORRECTIVE-03 — which now requires the consent first.
+    rmeSignedConsentFor($visit);
+
     $this->actingAs($this->manager)
         ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
     app(ClinicVisitService::class)

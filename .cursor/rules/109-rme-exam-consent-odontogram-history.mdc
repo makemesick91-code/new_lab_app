@@ -23,16 +23,19 @@ in force unchanged.
 ```
 Pendaftaran -> Antrian -> Input Ruangan
   -> Dokter "Mulai Pemeriksaan"            -> in_progress
-  -> Persetujuan Tindakan Medis            -> RME authoring unlocked
+  -> Persetujuan Tindakan Medis            -> RME AND Odontogram unlocked
   -> RME + Odontogram
   -> RME and/or Odontogram complete        -> STILL in_progress
   -> Dokter "Selesai Pemeriksaan"          -> cashier_pending
   -> Kasir / Pembayaran (no consent check) -> completed
 ```
 
+Before the signature, both active clinical workspaces are **viewable but
+READ-ONLY**, and the examination **cannot be finished**.
+
 Historical clinical evidence — RME history, Legacy RME, native odontogram
-history, Legacy Odontogram — is **read-only** and readable throughout. The
-**active odontogram workflow is unchanged** by this sprint.
+history, Legacy Odontogram — is **read-only** and readable throughout, signature
+or not.
 
 ## 1. A clinical document never completes an examination
 
@@ -61,7 +64,22 @@ history, Legacy Odontogram — is **read-only** and readable throughout. The
   `cashier_pending`, so **if the doctor never clicks "Selesai Pemeriksaan" the
   cashier cannot raise an invoice.** That is the intended workflow, not a bug.
 
-## 2. Consent gates RME AUTHORING, not payment and not reading
+### 1a. CORRECTIVE-03 — a signed consent is a PREREQUISITE of finishing
+
+- `in_progress -> cashier_pending` additionally requires a **valid signed consent
+  on that visit**, asserted in `ClinicVisitService::transitionStatus()` so a
+  command, job or another service cannot close an examination the patient never
+  agreed to. Hiding the button is not the boundary; it is only courtesy.
+- This is not a second consent gate bolted on for symmetry — it removes an
+  **unrecoverable state**. Consent is signable only while the visit is
+  `in_progress` (§2a), so an unsigned visit pushed to `cashier_pending` can never
+  be consented afterwards: the record can never be written, and the treatment
+  still arrives at the cashier as a bill. Refusing keeps the visit where the
+  missing signature can still be obtained.
+- `cashier_pending -> completed` is untouched. It is reached from
+  `cashier_pending`, which by this rule already had a consent.
+
+## 2. Consent gates ACTIVE CLINICAL AUTHORING, not payment and not reading
 
 - A valid signed `PERSETUJUAN TINDAKAN MEDIS` is required before the patient's
   CURRENT RME may be **written**: create sheet, edit, save/replace handwriting,
@@ -71,8 +89,25 @@ history, Legacy Odontogram — is **read-only** and readable throughout. The
   fully readable — including when there is no active encounter at all, and when
   the active encounter is unconsented. The doctor deciding today's treatment needs
   the history, and reading harms nobody.
-- **The active odontogram is NOT gated by consent.** Its workflow, UI, payload,
-  authorization and print are unchanged. Do not add a consent dependency to it.
+- **CORRECTIVE-03 — the ACTIVE ODONTOGRAM is gated too.** This SUPERSEDES the
+  earlier rule that the active odontogram workflow was unchanged and carried no
+  consent dependency. A valid signed consent on the live encounter is required
+  before `OdontogramService::updatePlaceholder()` or `::finalize()` may write:
+  setting or changing a tooth condition, diagnosis, treatment, summary notes,
+  additional conditions, or finalizing the chart.
+  - The split was indefensible. An odontogram is a clinical finding recorded on a
+    patient during a treatment decision, exactly like the note beside it, so
+    consenting to one and not the other consents to nothing coherent.
+  - **Opening the page still works, and still creates the empty placeholder row**
+    (`getOrCreateForVisit`) — the doctor must SEE the chart to decide the
+    treatment the patient is being asked to consent to, and an empty draft with no
+    recorded teeth is not a clinical finding. Do not gate the read.
+  - Authority here is **stricter than the RME gate and exact**: an odontogram row
+    belongs to ONE visit (unlike handwriting, which Sprint 64.0.2 stores on the
+    patient's canonical record), so the chart being written must BE the live
+    encounter's chart. `assertOdontogramAuthoringAllowed()` checks, in order:
+    a single `in_progress` encounter exists, the actor may work on it, the chart
+    belongs to THAT encounter, and it has a valid signed consent.
 
 ### 2a. Consent timing — only during the examination
 
@@ -157,13 +192,14 @@ State this precisely; overclaiming is how a control gets trusted for something i
 never did.
 
 **Covered:** `trx_medical_records` and its handwriting pages, structured
-diagnoses, the emergency diagnosis override.
+diagnoses, the emergency diagnosis override, the **active odontogram**
+(CORRECTIVE-03), and **finishing the examination** (§1a).
 
-**Deliberately NOT covered:** the **active odontogram** (explicit product
-decision — unchanged by this sprint) and **prescriptions** (out of scope). So do
-not write "a treatment that was recorded at all had consent" without
-qualification. The accurate statement is: **the medical record and its handwriting
-cannot be written without an authorized, consented, in-progress encounter.**
+**Deliberately NOT covered:** **prescriptions** (out of scope). So do not write
+"a treatment that was recorded at all had consent" without qualification. The
+accurate statement is: **the medical record, its handwriting and the active
+odontogram cannot be written, and the examination cannot be finished, without an
+authorized, consented, in-progress encounter.**
 
 ## 3. Consent is not a cashier concern
 
@@ -180,17 +216,22 @@ cannot be written without an authorized, consented, in-progress encounter.**
 
 ## 4. Patient odontogram history is read-only
 
-- The Odontogram page has two separate surfaces: the **ACTIVE odontogram**
-  (existing editor, existing workflow, unchanged) and **Riwayat Odontogram
+- The Odontogram page has two separate surfaces: the **ACTIVE odontogram** (the
+  live encounter's chart, editable once consented — §2) and **Riwayat Odontogram
   Pasien** (previous native odontograms + published Legacy Odontograms,
   read-only).
-- Do not mix them, and **do not introduce a blanket "all odontograms are
-  read-only" policy.** `OdontogramPolicy::update` is unchanged: a doctor may
-  still correct a past chart by opening that visit's own odontogram page, which
-  is what Sprint 59 requires.
-  - "Read-only" here means the history SURFACE offers no mutation control and no
-    mutation endpoint accepts a history row — read-only by construction, not by
-    hiding a button.
+- **CORRECTIVE-03 — a previous visit's chart is permanently read-only, and a
+  consent signed today never reopens it.** This SUPERSEDES the Sprint 59 allowance
+  that any odontogram is revisable at any time. What Sprint 59 established still
+  stands where it applies: the FINALIZATION lock is gone, so a finalized chart on
+  the LIVE encounter is still revisable. What it may no longer do is reach back
+  into an earlier encounter's chart.
+  - Enforced in `OdontogramService`, not by hiding a control, and not by a blanket
+    "all odontograms are read-only" policy: `OdontogramPolicy::update` still
+    answers only the role/branch/patient-scope question, so the refusal carries a
+    clear reason instead of a bare 403.
+  - "Read-only" for the history SURFACE additionally means it offers no mutation
+    control and no mutation endpoint accepts a history row.
 - The **current visit is never listed as its own history**, and empty auto-created
   drafts are excluded (opening the page creates one; an empty draft is not a
   clinical finding).

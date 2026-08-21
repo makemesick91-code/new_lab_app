@@ -215,6 +215,56 @@ is not frozen — is preserved: during an authorized consented encounter a final
 record is still editable. What is refused is writing with no encounter at all.
 Historical READ access is untouched in every case.
 
+### CORRECTIVE-03 — consent gates the odontogram too, and gates finishing
+
+Realtime verification against the pilot found the workflow still wrong. Two of the
+five reported defects were genuine gaps in the candidate; the other three were the
+same gaps' downstream symptoms plus the fact that **none of this sprint had been
+deployed** — production was still running the previous sprint, `b080ab1`, so
+FIX-01..FIX-04 were simply not live. Both real gaps are closed here.
+
+**The active odontogram was outside the consent gate.** The first pass wrote that
+down as a deliberate product decision — "its workflow is unchanged" — and that
+decision does not survive contact with the clinic. An odontogram is a clinical
+finding recorded on a patient during a treatment decision, exactly like the note
+beside it. Gating one and not the other means a doctor can chart every tooth,
+diagnosis and planned treatment on an unconsented patient and only the prose note
+is refused; consenting to that is consenting to nothing coherent.
+
+`OdontogramService::updatePlaceholder()` and `::finalize()` now assert
+`RmeVisitConsentService::assertOdontogramAuthoringAllowed()`. Reading is untouched:
+the page still opens and still creates its empty placeholder row, because the
+doctor must SEE the chart to decide the treatment the patient is being asked to
+consent to, and an empty draft with no recorded teeth is not a clinical finding.
+
+Authority here is **stricter than the RME gate, and exact**. An odontogram row
+belongs to one visit, whereas Sprint 64.0.2 stores handwriting on the patient's
+canonical record — so where the RME gate can only ask "is this patient being
+examined, with consent?", the odontogram gate also asks "and is this chart THAT
+encounter's chart?". That is what makes a previous visit's chart permanently
+read-only: a consent signed today authorises recording today's findings, never
+rewriting an earlier encounter's. This narrows Sprint 59 for the odontogram in the
+same shape CORRECTIVE-02 narrowed it for the record — the finalization lock stays
+gone (a finalized chart on the live encounter is still revisable), but reaching
+back into a closed encounter is refused.
+
+**"Selesai Pemeriksaan" did not require consent.** It only checked clinical
+authority, so an unsigned `in_progress` visit could be pushed to `cashier_pending`.
+That is not merely a missing check — it produces an **unrecoverable state**.
+CORRECTIVE-01 made consent signable only while the visit is `in_progress`, so once
+the visit moves on, consent can never be taken: the record can never be written,
+and yet the treatment arrives at the cashier as a bill. `ClinicVisitService::
+transitionStatus()` now refuses `-> cashier_pending` without a valid signed consent,
+in the service rather than only the controller, so a command, job or another service
+cannot close an examination the patient never agreed to. The visit stays exactly
+where the missing signature can still be obtained.
+
+**What was already correct and was left alone.** The reproducers confirmed that in
+the candidate the RME gate already covered every current-RME mutation, no clinical
+save or finalization transitions the visit, histories stay readable with consent
+unsigned, and billing already depends on `cashier_pending` rather than on consent.
+Those four are pinned by tests here rather than re-implemented.
+
 ## FIX-03 — Cashier / payment consent independence
 
 `assertConsentVerified()` and its three call sites are **deleted**. Consent is no

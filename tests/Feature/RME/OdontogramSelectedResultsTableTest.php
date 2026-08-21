@@ -1,7 +1,6 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
-use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
 use Database\Seeders\BranchSeeder;
 
@@ -28,7 +27,7 @@ function mainRmeBranchId(): int
 
 it('odontogram edit page shows the selected results table section', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -40,7 +39,7 @@ it('odontogram edit page shows the selected results table section', function () 
 
 it('shows empty-state when no odontogram condition is selected', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -52,7 +51,7 @@ it('shows empty-state when no odontogram condition is selected', function () {
 
 it('renders existing selected odontogram payload as table rows', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -77,7 +76,7 @@ it('renders existing selected odontogram payload as table rows', function () {
 
 it('selected results table row shows the tooth area', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -95,7 +94,7 @@ it('selected results table row shows the tooth area', function () {
 
 it('selected results table row shows the selected odontogram condition', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -115,7 +114,7 @@ it('selected results table row shows the selected odontogram condition', functio
 
 it('draft selected results table exposes a DIAGNOSA input column', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -132,7 +131,7 @@ it('draft selected results table exposes a DIAGNOSA input column', function () {
 
 it('draft selected results table exposes a PERAWATAN input column', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -151,7 +150,7 @@ it('draft selected results table exposes a PERAWATAN input column', function () 
 
 it('saving draft persists per-row additional_condition', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -171,7 +170,7 @@ it('saving draft persists per-row additional_condition', function () {
 
 it('saving draft persists per-row additional_note', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -193,7 +192,7 @@ it('saving draft persists per-row additional_note', function () {
 
 it('saved per-row additional_condition is present after save', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -215,7 +214,7 @@ it('saved per-row additional_condition is present after save', function () {
 
 it('saved per-row additional_note is present after save', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -239,7 +238,7 @@ it('saved per-row additional_note is present after save', function () {
 
 it('finalization does not clear per-row additional_condition', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -259,7 +258,7 @@ it('finalization does not clear per-row additional_condition', function () {
 
 it('finalization does not clear per-row additional_note', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -280,7 +279,7 @@ it('finalization does not clear per-row additional_note', function () {
 
 it('finalized odontogram keeps rows editable for a manager (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -305,7 +304,7 @@ it('finalized odontogram keeps rows editable for a manager (Sprint 59)', functio
 
 it('print odontogram shows the selected results table with per-row notes', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -328,7 +327,7 @@ it('visit print bundle no longer shows the selected results per-row notes', func
     // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-05 — SUPERSEDED: the odontogram
     // selected-results table belongs to the standalone odontogram print only.
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -348,7 +347,7 @@ it('visit print bundle no longer shows the selected results per-row notes', func
 
 it('old payload without per-row keys still renders safely', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -370,7 +369,7 @@ it('old payload without per-row keys still renders safely', function () {
 
 it('clinic_id null visit odontogram still opens', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create([
+    $visit = rmeConsentedOdontogramVisit([
         'branch_id' => mainRmeBranchId(),
         'clinic_id' => null,
     ]);
@@ -386,7 +385,7 @@ it('clinic_id null visit odontogram still opens', function () {
 it('active RME branch visit can save per-row additional fields', function () {
     $manager = userWith(['manage_clinic_visits']);
     $rmeBranch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
-    $visit = ClinicVisit::factory()->create(['branch_id' => $rmeBranch->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $rmeBranch->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $rmeBranch->id,
@@ -409,7 +408,7 @@ it('active RME branch visit can save per-row additional fields', function () {
 it('non-RME branch visit odontogram update remains forbidden', function () {
     $manager = userWith(['manage_clinic_visits']);
     $nonRme = Branch::factory()->create(['is_rme_enabled' => false]);
-    $visit = ClinicVisit::factory()->create(['branch_id' => $nonRme->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $nonRme->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $nonRme->id,
@@ -428,7 +427,7 @@ it('non-RME branch visit odontogram update remains forbidden', function () {
 
 it('existing tooth-grid status save still works alongside per-row fields', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -455,7 +454,7 @@ it('existing tooth-grid status save still works alongside per-row fields', funct
 
 it('general summary_notes still saves and prints (removed from table-only show)', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -486,7 +485,7 @@ it('general summary_notes still saves and prints (removed from table-only show)'
 
 it('no raw JSON payload appears in odontogram print output', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => mainRmeBranchId()]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => mainRmeBranchId()]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,

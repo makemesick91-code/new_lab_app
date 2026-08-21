@@ -27,6 +27,7 @@ Odontogram adalah bagian pemeriksaan dokter per visit, di-gate `visit.room` sama
 - `tooth_map_payload` — structured tooth statuses per FDI
 - `additional_condition` — field tambahan (migration `add_additional_fields`)
 - `finalized_at`, `finalized_by` — retained; Sprint 59: **editable setelah finalize**
+  (hanya pada encounter aktif — lihat CORRECTIVE-03 di bawah)
 - Relasi: satu odontogram per `clinic_visit_id`
 
 ### UI editing (Sprint 59)
@@ -48,6 +49,15 @@ Odontogram adalah bagian pemeriksaan dokter per visit, di-gate `visit.room` sama
 ### Finalisasi
 - Route: `rme.odontograms.finalize` POST
 - Policy `update` tidak lagi gate `isFinalized()` (Sprint 59)
+- **CORRECTIVE-03 (FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3):** mutasi odontogram
+  aktif (`updatePlaceholder`/`finalize`) wajib melewati
+  `RmeVisitConsentService::assertOdontogramAuthoringAllowed()` — pasien harus punya
+  tepat satu kunjungan `in_progress`, aktor berwenang atasnya, **odontogram yang
+  diubah harus milik kunjungan itu**, dan consent sudah ditandatangani. Karena itu
+  **odontogram kunjungan lampau permanen hanya-baca** dan consent hari ini tidak
+  membukanya kembali. Membuka halaman + pembuatan placeholder kosong tetap diizinkan
+  (dokter perlu melihat chart sebelum pasien menyetujui tindakan). Policy `update`
+  sengaja tidak diubah, sehingga penolakan membawa pesan yang jelas, bukan 403 kosong.
 
 ### Preview
 - Sprint 63.1.1: saved result table preview di halaman odontogram

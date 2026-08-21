@@ -4,11 +4,18 @@
 Mendokumentasikan alur end-to-end Rekam Medis Elektronik dari pendaftaran hingga print bundle.
 
 ## Ringkasan
-Pipeline: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`) → Consent (membuka penulisan RME) → Pemeriksaan Dokter (RM + Odontogram) → Dokter "Selesai Pemeriksaan" (`cashier_pending`) → Kasir/Pembayaran (tanpa cek consent) → Visit `completed`.
+Pipeline: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`) → Consent (membuka penulisan RME **dan** Odontogram) → Pemeriksaan Dokter (RM + Odontogram) → Dokter "Selesai Pemeriksaan" (`cashier_pending`) → Kasir/Pembayaran (tanpa cek consent) → Visit `completed`.
 
 > FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 memindahkan consent ke AWAL pemeriksaan
 > (gate penulisan RME, bukan gate pembayaran) dan memisahkan finalisasi dokumen dari
 > penyelesaian pemeriksaan. Lihat `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc`.
+>
+> CORRECTIVE-03: consent juga menggate **Odontogram aktif** (bukan hanya RME), dan
+> **"Selesai Pemeriksaan" menolak visit tanpa consent** — karena consent hanya bisa
+> ditandatangani saat `in_progress`, visit tanpa tanda tangan yang terlanjur pindah
+> ke `cashier_pending` tidak akan pernah bisa di-consent maupun ditulis. Sebelum
+> tanda tangan: RME aktif dan Odontogram aktif **hanya-baca**, seluruh riwayat tetap
+> terbaca. Odontogram kunjungan lampau **permanen hanya-baca**.
 
 ## Konteks DaengtisiaMS
 RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; SOAP tersembunyi di UI dokter.
