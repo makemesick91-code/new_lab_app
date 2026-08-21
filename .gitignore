@@ -52,3 +52,18 @@ backup_working_changes_*.patch
 /storage/ci-evidence/*
 !/storage/ci-evidence/.gitkeep
 /storage/release-evidence/
+
+# POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-02 — stray local SQLite database.
+#
+# config/database.php:37 resolves the sqlite connection's file from DB_DATABASE
+# (`env('DB_DATABASE', database_path('database.sqlite'))`). A local environment
+# file legitimately sets DB_DATABASE to the PostgreSQL database NAME
+# `asia_dental_lab`, so any command run with DB_CONNECTION=sqlite resolves that
+# name as a RELATIVE path and creates a database file of that name in the
+# working directory — which is how a 2.9MB schema-only artifact came to be
+# committed at the repository root.
+#
+# Anchored to the root so it can never mask a legitimately named file elsewhere.
+# It cannot be a *.sqlite / *.db pattern: the file has no extension.
+# The PostgreSQL database NAME of the same spelling is untouched by this.
+/asia_dental_lab

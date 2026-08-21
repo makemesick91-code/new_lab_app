@@ -174,7 +174,16 @@ it('viewer can open odontogram placeholder from clinic visit', function () {
         ->assertOk();
 });
 
-it('opening odontogram show creates odontogram if not exists', function () {
+/*
+ * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — CONTRACT REVERSED.
+ *
+ * These two cases used to assert that opening the page CREATES a row
+ * ('opening odontogram show creates odontogram if not exists' / '...again does
+ * not duplicate record'). That was the defect, not the requirement: viewing a
+ * chart is a read and must leave no clinical record behind. They now pin the
+ * opposite, which is what the fix guarantees.
+ */
+it('opening odontogram show does not create an odontogram', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
@@ -185,18 +194,18 @@ it('opening odontogram show creates odontogram if not exists', function () {
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk();
 
-    expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeTrue();
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->exists())->toBeFalse();
 });
 
-it('opening odontogram show again does not duplicate record', function () {
+it('opening odontogram show repeatedly still creates no record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
 
-    $this->actingAs($manager)->get(route('rme.visits.odontogram.show', $visit));
-    $this->actingAs($manager)->get(route('rme.visits.odontogram.show', $visit));
+    $this->actingAs($manager)->get(route('rme.visits.odontogram.show', $visit))->assertOk();
+    $this->actingAs($manager)->get(route('rme.visits.odontogram.show', $visit))->assertOk();
 
-    expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(1);
+    expect(Odontogram::where('clinic_visit_id', $visit->id)->count())->toBe(0);
 });
 
 it('unauthenticated user cannot open odontogram placeholder', function () {
@@ -1395,10 +1404,17 @@ it('print view displays per-tooth note', function () {
 
 // --- Print button on show page ---
 
+/*
+ * FIX-01 — the print route is model-bound (`odontograms/{odontogram}/print`),
+ * so there is nothing to print until a chart has actually been saved. These
+ * cases therefore now chart the visit first; a button that 404s is not a
+ * feature. The companion case below pins the absence before the first save.
+ */
 it('print button appears on odontogram show page for manager', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
+    Odontogram::factory()->create(['clinic_visit_id' => $visit->id, 'branch_id' => $branch->id]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -1410,11 +1426,23 @@ it('print button appears on odontogram show page for viewer', function () {
     $viewer = userWith(['view_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
+    Odontogram::factory()->create(['clinic_visit_id' => $visit->id, 'branch_id' => $branch->id]);
 
     $this->actingAs($viewer)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Cetak Odontogram');
+});
+
+it('print button is absent until the visit has a saved chart', function () {
+    $manager = userWith(['manage_clinic_visits']);
+    $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $branch->id]);
+
+    $this->actingAs($manager)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertDontSee('Cetak Odontogram');
 });
 
 // --- Regression: status-only update still works after Phase 1.4 ---

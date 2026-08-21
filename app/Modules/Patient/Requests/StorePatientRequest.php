@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Requests;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -99,7 +100,12 @@ class StorePatientRequest extends FormRequest
         }
 
         $rmNumbers = app(PatientMedicalRecordNumberService::class);
-        $registeredAt = $this->input('registered_at') ? Carbon::parse($this->input('registered_at')) : Carbon::today();
+        // FIX-03 — the clinical calendar day, so this pre-check composes the same
+        // Nomor RM that PatientService will persist. A UTC today() would disagree
+        // with it for the first eight hours of every clinical day.
+        $registeredAt = $this->input('registered_at')
+            ? Carbon::parse($this->input('registered_at'))
+            : app(ClinicalClock::class)->today();
 
         $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
 

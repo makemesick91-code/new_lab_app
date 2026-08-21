@@ -263,15 +263,17 @@ it('clinic_id null visit odontogram still opens and saves additional fields', fu
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk();
 
-    $odontogram = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
-
+    // FIX-01 — the GET no longer creates the row, so the FIRST save goes to the
+    // visit-scoped store route. It is that write which creates the chart.
     $this->actingAs($manager)
-        ->patch(route('rme.odontograms.update', $odontogram), [
+        ->patch(route('rme.visits.odontogram.store', $visit), [
             'additional_conditions' => 'Kondisi tanpa clinic_id.',
         ])
         ->assertRedirect();
 
-    expect($odontogram->fresh()->additional_conditions)->toBe('Kondisi tanpa clinic_id.');
+    $odontogram = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
+
+    expect($odontogram->additional_conditions)->toBe('Kondisi tanpa clinic_id.');
 });
 
 // --- 13: RME-enabled branch (ATG3-style) is allowed ---
@@ -286,15 +288,16 @@ it('additional RME branch visit odontogram is allowed', function () {
         ->assertOk()
         ->assertSee('Hasil Odontogram yang Dipilih');
 
-    $odontogram = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
-
+    // FIX-01 — first save creates the chart through the visit-scoped route.
     $this->actingAs($manager)
-        ->patch(route('rme.odontograms.update', $odontogram), [
+        ->patch(route('rme.visits.odontogram.store', $visit), [
             'additional_conditions' => 'Kondisi cabang RME.',
         ])
         ->assertRedirect();
 
-    expect($odontogram->fresh()->additional_conditions)->toBe('Kondisi cabang RME.');
+    $odontogram = Odontogram::where('clinic_visit_id', $visit->id)->firstOrFail();
+
+    expect($odontogram->additional_conditions)->toBe('Kondisi cabang RME.');
 });
 
 // --- 14: non-RME branch visit remains forbidden ---

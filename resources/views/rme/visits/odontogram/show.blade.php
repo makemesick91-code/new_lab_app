@@ -15,9 +15,23 @@
         // supplied by the controller from RmeVisitConsentService, which is the
         // authority; this is presentation only, and the server refuses the write
         // regardless of what is rendered here.
+        //
+        // POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — `$odontogram` may be an
+        // UNSAVED instance, because opening this page no longer creates a row.
+        // Reading it is safe everywhere (a fresh instance is an empty draft),
+        // but anything that puts the model in a URL needs `->exists` first: an
+        // unsaved model has no route key and route() would throw.
+        $odontogramExists = $odontogram->exists;
+
+        // Ask for the ability the SERVER will actually enforce on submit:
+        // `update` for a revision of a saved chart, `author` for the first one.
+        // Asking the wrong one could render a save form the server then refuses.
         $canUpdate = ($odontogramAuthoringAllowed ?? false)
-            && (auth()->user()?->can('update', $odontogram) ?? false);
-        $canFinalize = ($odontogramAuthoringAllowed ?? false)
+            && ($odontogramExists
+                ? (auth()->user()?->can('update', $odontogram) ?? false)
+                : (auth()->user()?->can('author', [\App\Modules\Odontogram\Models\Odontogram::class, $clinicVisit]) ?? false));
+        $canFinalize = $odontogramExists
+            && ($odontogramAuthoringAllowed ?? false)
             && (! $isFinalized)
             && (auth()->user()?->can('finalize', $odontogram) ?? false);
 
@@ -141,11 +155,15 @@
                     &larr; Kembali ke Kunjungan
                 </x-ui.button>
 
-                @can('print', $odontogram)
-                    <x-ui.button variant="secondary" :href="route('rme.odontograms.print', $odontogram)" target="_blank">
-                        Cetak Odontogram
-                    </x-ui.button>
-                @endcan
+                {{-- FIX-01 — an unsaved chart has no route key and nothing to
+                     print, so the button only exists once a chart is saved. --}}
+                @if ($odontogramExists)
+                    @can('print', $odontogram)
+                        <x-ui.button variant="secondary" :href="route('rme.odontograms.print', $odontogram)" target="_blank">
+                            Cetak Odontogram
+                        </x-ui.button>
+                    @endcan
+                @endif
 
                 @if ($canFinalize)
                     <form method="POST" action="{{ route('rme.odontograms.finalize', $odontogram) }}"
@@ -242,7 +260,17 @@
         {{-- a generated, read-only output and is never drawn on directly.    --}}
         {{-- ============================================================ --}}
         @if ($canUpdate)
-            <form method="POST" action="{{ route('rme.odontograms.update', $odontogram) }}" class="space-y-6">
+            {{-- FIX-01 — the save target depends on whether a chart exists yet.
+                 A saved chart is revised through the model-bound update route;
+                 the FIRST save goes to the visit-scoped store route, which
+                 creates the row only after consent passes. Both are PATCH, both
+                 sit behind manage_clinic_visits + the room gate, and both carry
+                 the identical Alpine payload below. --}}
+            <form method="POST"
+                  action="{{ $odontogramExists
+                      ? route('rme.odontograms.update', $odontogram)
+                      : route('rme.visits.odontogram.store', $clinicVisit) }}"
+                  class="space-y-6">
                 @csrf
                 @method('PATCH')
 

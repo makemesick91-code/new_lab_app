@@ -678,6 +678,15 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->name('visits.pdf');
 
         Route::middleware(['permission:manage_clinic_visits', 'visit.room'])->group(function () {
+            // POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the first save for
+            // a visit that has no chart yet. Opening the odontogram no longer
+            // creates a row, so the write surface can no longer assume one
+            // exists to bind to. Visit-scoped, and inside this same group so the
+            // manage permission and the Sprint 60.8 room gate apply to a first
+            // chart exactly as they do to a revision.
+            Route::patch('visits/{clinicVisit}/odontogram', [OdontogramController::class, 'store'])
+                ->name('visits.odontogram.store');
+
             Route::patch('odontograms/{odontogram}', [OdontogramController::class, 'update'])
                 ->name('odontograms.update');
 

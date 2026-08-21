@@ -5,7 +5,9 @@ namespace App\Modules\Patient\Services;
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +20,8 @@ class PatientService
         private readonly PatientCodeGenerator $codeGenerator,
         private readonly PatientMedicalRecordNumberService $rmNumbers,
         private readonly BranchRepositoryInterface $branches,
+        // FIX-03 — the clinical calendar authority for the registration day.
+        private readonly ClinicalClock $clock,
     ) {}
 
     public function list(array $filters = [], int $perPage = 10): LengthAwarePaginator
@@ -124,11 +128,20 @@ class PatientService
         return $data;
     }
 
-    private function resolveRegisteredAt(array $data, ?Patient $patient): Carbon
+    /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-03 — the PERSISTING site.
+     *
+     * This value becomes both `mst_patients.registered_at` and the year inside
+     * the patient's permanent Nomor RM, so "today" must be the clinic's
+     * calendar day ({@see ClinicalClock}, Asia/Makassar) and not the UTC one.
+     * A supplied date is parsed verbatim: it is a calendar date, not an
+     * instant, and must never be shifted.
+     */
+    private function resolveRegisteredAt(array $data, ?Patient $patient): CarbonInterface
     {
         $value = $data['registered_at'] ?? $patient?->registered_at;
 
-        return $value ? Carbon::parse($value) : Carbon::today();
+        return $value ? Carbon::parse($value) : $this->clock->today();
     }
 
     public function delete(Patient $patient): bool

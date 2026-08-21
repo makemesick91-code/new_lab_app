@@ -1,48 +1,32 @@
-### Validated by: php artisan sprint:manifest-check
+# Active sprint manifest — POST-RME-ODONTOGRAM-STABILIZATION-1
+#
+# Validated by: php artisan sprint:manifest-check
 
-id: FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3
-type: FOUNDATION_SPRINT
-module: ClinicVisit
-# Four integrated fixes that together re-time the whole RME clinical workflow.
-# FIX-01 separates clinical-document finalization from examination completion.
-# FIX-02 moves the consent gate from payment to RME authoring, which is a
-# cross-module security foundation (Consent, MedicalRecord, ClinicVisit).
-# FIX-03 removes consent from cashier/payment eligibility entirely.
-# FIX-04 adds a read-only patient odontogram history plus a new immutable
-# Legacy Odontogram archive. FOUNDATION_SPRINT is the accurate classification
-# for cross-module foundation work and is the STRICTER choice: audit level 3 and
-# full_foundation_audit, versus MODULE_SPRINT's 2.
-title: "Explicit doctor examination completion, consent as the RME authoring gate, cashier/payment consent independence, and patient odontogram history with a Legacy Odontogram archive"
+id: POST-RME-ODONTOGRAM-STABILIZATION-1
+type: RUNTIME_FIX
+module: Odontogram
+title: "Odontogram view creates no clinical row, repository SQLite artifact hygiene, RM number + registration date on the clinical calendar"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # workflow transitions, consent gate, payment eligibility
-schema_change: true             # additive tables for the Legacy Odontogram archive
-frontend_change: true           # Blade only (no JS/CSS/Vite change)
-security_impact: true           # a trust boundary MOVES: consent now gates clinical writes
-branch_isolation_impact: true   # patient odontogram history and the legacy archive are branch scoped
-ledger_impact: false            # no inventory ledger; payment amounts untouched
+runtime_change: true             # odontogram read/write split, new store route + policy ability, ClinicalClock in RM composition
+schema_change: false             # no migration, no table, no column
+frontend_change: true            # resources/views/rme/visits/odontogram/show.blade.php — form action, print + finalize guards
+security_impact: true            # new write-level policy ability; consent asserted BEFORE the insert; read-only operator no longer writes
+branch_isolation_impact: false   # no BranchContext / branch-scoped query change; existing scopes re-pinned by tests
+ledger_impact: false             # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true
-go_tag: fix-rme-exam-consent-odontogram-history-3-go
-browser_required: false         # every surface is proven by HTTP feature tests
+deploy_required: true            # runtime fixes must reach production to be verified in realtime
+browser_required: false          # server-rendered Blade; no JS behaviour change (Alpine payload untouched)
 
-# GLOBAL TEMPORARY FULL-SUITE POLICY is ACTIVE for this sprint. The Full Suite is
-# NOT executed here; it is deferred, not passed. FULL_SUITE_EXECUTION_COUNT=0.
-full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY
-
-# Inherited programme state (LegacyRmeProgramClosureContractTest): this sprint
-# inherits LEGACY-RME-PROGRAM-CLOSURE-1 unchanged. It adds a SEPARATE Legacy
-# Odontogram archive with its own flag, tables and permissions, and deliberately
-# does NOT open a Legacy RME migration batch, wave, quota or admission. The Legacy
-# RME resting state (capability OFF, admission EMPTY, no active batch) is untouched.
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-
-# FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 / FIX-02 (WhatsApp prescription delivery)
-# stays on HOLD / BLOCKED_EXTERNAL_DEPENDENCY. This sprint does not activate it,
-# does not touch the gateway, the configuration or the credentials.
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+go_tag: post-rme-odontogram-stabilization-1-go
 
 test_profiles:
   - rme
   - security
-  - permission
+
+# Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
+full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
+
+# Carried forward, unchanged by this sprint.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

@@ -11,6 +11,18 @@ interface OdontogramRepositoryInterface
 {
     public function findByClinicVisit(int $clinicVisitId): ?Odontogram;
 
+    /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the same lookup under a
+     * row lock, for the create-or-update decision in a first save.
+     *
+     * MUST be called inside a transaction. Creation moved from the page GET to
+     * the Save button, so two concurrent saves on the same uncharted visit are
+     * now realistic (a double-click, or a doctor and a nurse on one live
+     * encounter). Without the lock the loser of that race loses its payload to
+     * the UNIQUE on clinic_visit_id.
+     */
+    public function findByClinicVisitForUpdate(int $clinicVisitId): ?Odontogram;
+
     public function createForClinicVisit(ClinicVisit $clinicVisit, array $data = []): Odontogram;
 
     public function updatePlaceholder(Odontogram $odontogram, array $data): Odontogram;

@@ -55,8 +55,9 @@ class OdontogramService
      *   - the doctor's clinical patient scope, identical to the single-record abilities
      *   - the CURRENT visit excluded, so the chart being edited is never also
      *     listed as its own history
-     *   - odontograms with no recorded teeth excluded, because the page
-     *     auto-creates an empty draft row on every open and those are not history
+     *   - odontograms with no recorded teeth excluded. Since FIX-01 the page
+     *     no longer auto-creates such a draft; the exclusion stays for the
+     *     empty rows already present in production
      *
      * @return Collection<int, array<string, mixed>>
      */
@@ -102,8 +103,12 @@ class OdontogramService
 
     /**
      * An odontogram counts as history only once a tooth has actually been
-     * recorded. Opening the page creates an empty draft, and an empty draft is
-     * not a clinical finding.
+     * recorded: an empty draft is not a clinical finding.
+     *
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — opening the page no
+     * longer creates such a draft. This filter is retained as belt-and-braces
+     * for the empty rows that already exist in production, which are not
+     * deleted by that fix.
      */
     private function hasRecordedTeeth(Odontogram $odontogram): bool
     {
@@ -155,6 +160,114 @@ class OdontogramService
         return $branchId !== null && in_array($branchId, $this->branches->rmeEnabledIds(), true);
     }
 
+    /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the visit's saved chart,
+     * or NULL when nothing has been charted yet.
+     *
+     * A PURE READ. It is the only resolver the show page may use, and it exists
+     * so that opening the odontogram can never leave a clinical row behind.
+     */
+    public function findForVisit(ClinicVisit $clinicVisit): ?Odontogram
+    {
+        return $this->odontograms->findByClinicVisit($clinicVisit->id);
+    }
+
+    /**
+     * FIX-01 — the chart to RENDER for this visit.
+     *
+     * Returns the saved odontogram when one exists, otherwise an UNSAVED,
+     * in-memory instance carrying the visit's identity. Nothing is written.
+     *
+     * Why an unsaved model rather than null: every consumer of a chart —
+     * {@see OdontogramPrintFormatter::format()}, `dmftCounts()`, the show view —
+     * is typed against a non-nullable Odontogram. Handing them a transient
+     * instance keeps all of them unchanged while removing the write, instead of
+     * pushing null-handling into a formatter, a view and a print template.
+     *
+     * The caller MUST branch on `$odontogram->exists` before generating any URL
+     * that embeds the model key: an unsaved model has no route key.
+     */
+    public function draftForVisit(ClinicVisit $clinicVisit): Odontogram
+    {
+        $existing = $this->findForVisit($clinicVisit);
+
+        if ($existing !== null) {
+            return $existing;
+        }
+
+        $draft = new Odontogram([
+            'clinic_visit_id' => $clinicVisit->id,
+            'branch_id' => $clinicVisit->branch_id,
+            'medical_record_id' => $clinicVisit->medicalRecord?->id,
+            'status' => Odontogram::STATUS_DRAFT,
+            'summary_notes' => null,
+            'additional_conditions' => null,
+            'tooth_map_payload' => null,
+        ]);
+
+        // So the policy and the view can reach the owning visit without the
+        // relation firing a query against a row that does not exist.
+        $draft->setRelation('clinicVisit', $clinicVisit);
+
+        return $draft;
+    }
+
+    /**
+     * FIX-01 — the FIRST clinical write for a visit that has no chart yet.
+     *
+     * This is the create-on-mutation entry point that replaces creation-on-view.
+     * Consent is asserted BEFORE the row is created, not after: otherwise an
+     * unconsented submission would still persist an empty chart and then fail,
+     * reintroducing through the write path exactly the side effect this fix
+     * removes from the read path.
+     *
+     * Idempotent, and safe against a concurrent first save. The create-or-update
+     * decision is taken under a row lock rather than as a bare check-then-act:
+     * creation moved from the page GET to the Save button, so two saves racing
+     * on the same uncharted visit is now a realistic clinical scenario (a
+     * double-click, or a doctor and a nurse on one live encounter). `trx_odontograms`
+     * holds a UNIQUE on clinic_visit_id, so without the lock the loser would
+     * hit a constraint violation and lose its charted teeth to a rolled-back
+     * transaction. With it, the second save simply updates the first one's row.
+     */
+    public function saveForVisit(ClinicVisit $clinicVisit, array $payload, User $user): Odontogram
+    {
+        return DB::transaction(function () use ($clinicVisit, $payload, $user) {
+            if (! $this->isActiveRmeBranch($clinicVisit->branch_id)) {
+                throw ValidationException::withMessages([
+                    'clinic_visit_id' => 'Kunjungan tidak berada di cabang RME aktif.',
+                ]);
+            }
+
+            // BEFORE the insert. A refused encounter leaves no trace.
+            $this->consents->assertOdontogramAuthoringAllowed($clinicVisit, $user);
+
+            $odontogram = $this->odontograms->findByClinicVisitForUpdate($clinicVisit->id)
+                ?? $this->odontograms->createForClinicVisit($clinicVisit, [
+                    'created_by' => $user->id,
+                ]);
+
+            return $this->updatePlaceholder($odontogram, $payload, $user);
+        });
+    }
+
+    /**
+     * The bare create primitive — NOT a clinical write entry point.
+     *
+     * FIX-01 — it has ZERO production callers and must keep having none. It
+     * checks the RME branch but deliberately does NOT assert consent, so
+     * calling it from application code would recreate exactly the defect this
+     * sprint removed: a `trx_odontograms` row inserted with no signed consent.
+     * Use {@see self::saveForVisit()} for any real write.
+     *
+     * It survives only because three tests pin its own behaviour and several
+     * others use it as a fixture primitive. That "no production caller" claim
+     * is not left to this docblock: it is enforced by
+     * `tests/Feature/Architecture/RepositoryArtifactHygieneTest.php`, which
+     * fails if any file under `app/` outside this class references it.
+     *
+     * @internal
+     */
     public function getOrCreateForVisit(ClinicVisit $clinicVisit, User $user): Odontogram
     {
         return DB::transaction(function () use ($clinicVisit, $user) {

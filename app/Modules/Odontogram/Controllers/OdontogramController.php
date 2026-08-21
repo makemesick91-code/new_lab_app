@@ -34,15 +34,28 @@ class OdontogramController extends Controller
 
         $this->authorize('create', [Odontogram::class, $clinicVisit]);
 
-        $odontogram = $this->service->getOrCreateForVisit($clinicVisit, auth()->user());
+        /*
+         * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — OPENING THE CHART IS A
+         * READ.
+         *
+         * This used to call getOrCreateForVisit(), so every GET — including one
+         * by a view-only operator, and one on a visit whose consent forbids
+         * authoring — INSERTed an empty trx_odontograms row. Viewing is not a
+         * clinical act and must leave no clinical record behind.
+         *
+         * draftForVisit() returns the saved chart, or an UNSAVED instance when
+         * nothing has been charted yet. The first real write goes through
+         * store() below, which creates the row only after consent passes.
+         */
+        $odontogram = $this->service->draftForVisit($clinicVisit);
 
         $clinicVisit->loadMissing(['followUpOf.odontogram', 'patient', 'doctor']);
 
         $parentOdontogram = $clinicVisit->followUpOf?->odontogram;
 
-        // Prev/next arrow navigation across the patient's visits. The odontogram
-        // show route auto-creates a placeholder per visit, so no medical-record
-        // requirement is needed here (Sprint 59).
+        // Prev/next arrow navigation across the patient's visits. Scoped to the
+        // visit, not to the odontogram, so it is unaffected by whether this
+        // visit has been charted yet (Sprint 59).
         $adjacentVisits = app(ClinicVisitService::class)->adjacentVisits($clinicVisit);
 
         // Sprint 63.1.1 — read-only saved-result table rendered below the visual
@@ -128,6 +141,31 @@ class OdontogramController extends Controller
             'odontogramAuthoringAllowed',
             'odontogramConsentRequired',
         ));
+    }
+
+    /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — the FIRST save for a visit
+     * that has no chart yet.
+     *
+     * Creation moved off the GET, so the write surface needs an entry point
+     * that is not bound to a row which does not exist yet. This is visit-scoped
+     * and lives inside the same `permission:manage_clinic_visits` + `visit.room`
+     * group as update/finalize, so the Sprint 60.8 room gate and the manage
+     * permission apply identically to a first chart and to a revision.
+     *
+     * Authorized with the `author` ability — the WRITE-level counterpart of
+     * `create`, which is only view-level and is what the read page uses. The
+     * service then re-asserts the signed consent before inserting anything.
+     */
+    public function store(UpdateOdontogramPlaceholderRequest $request, ClinicVisit $clinicVisit): RedirectResponse
+    {
+        $this->authorize('author', [Odontogram::class, $clinicVisit]);
+
+        $this->service->saveForVisit($clinicVisit, $request->validated(), auth()->user());
+
+        return redirect()
+            ->route('rme.visits.odontogram.show', $clinicVisit)
+            ->with('status', 'Odontogram berhasil disimpan.');
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse
