@@ -91,14 +91,26 @@ class OdontogramRepository implements OdontogramRepositoryInterface
                 $scope !== null,
                 fn ($q) => $q->whereHas('clinicVisit', fn ($sub) => $scope($sub)),
             )
-            // Clinical-content predicate lives IN the query so `limit` bounds REAL
-            // history. Filtering empty drafts only in PHP after the limit would let
-            // a long-history patient's auto-created empty rows push genuine findings
-            // out of the result — hiding clinical data from the treating doctor.
-            // hasRecordedTeeth() stays as a defensive post-filter for shapes SQL
-            // cannot express portably.
+            /*
+             * Clinical-content predicate lives IN the query so `limit` bounds REAL
+             * history: filtering empty drafts only in PHP, after the limit, would
+             * let a long-history patient's auto-created empty rows push genuine
+             * findings out of the result and hide clinical data from the doctor.
+             *
+             * IS NOT NULL is the whole predicate, and deliberately so. Opening the
+             * odontogram page auto-creates a draft with tooth_map_payload = NULL
+             * (createForClinicVisit), so those rows — the only ones this needs to
+             * exclude — are already covered. It is also the only form that is safe
+             * on BOTH drivers: the column is `jsonb`, and comparing jsonb to an
+             * empty string is a hard PostgreSQL error (no jsonb = text operator)
+             * that sqlite would never surface, so a string comparison here would
+             * have passed every local test and returned HTTP 500 on every
+             * odontogram page in production.
+             *
+             * hasRecordedTeeth() stays as the defensive post-filter for shapes SQL
+             * cannot express portably (e.g. a payload with an empty `teeth` map).
+             */
             ->whereNotNull('trx_odontograms.tooth_map_payload')
-            ->where('trx_odontograms.tooth_map_payload', '!=', '')
             ->orderByDesc('trx_clinic_visits.visit_date')
             ->orderByDesc('trx_clinic_visits.id')
             ->select('trx_odontograms.*')

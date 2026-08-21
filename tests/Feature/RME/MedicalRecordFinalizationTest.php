@@ -24,11 +24,12 @@ beforeEach(function () {
 function makeVisitWithDraft(Branch $branch): array
 {
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
-    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
-    // consent, so the fixture simply gives the visit one; the gate itself is under
-    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
-    rmeSignedConsentFor($visit);
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 — writing a
+    // patient's RME now requires a legitimate ACTIVE encounter: in_progress plus a
+    // signed Persetujuan Tindakan Medis. These tests are about medical-record
+    // mechanics, not the gate, so the fixture establishes that encounter. The gate
+    // itself is under test in RmeExamConsentCorrectiveTest.
+    rmeActiveConsentedEncounter($visit);
 
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
@@ -121,7 +122,7 @@ it('finalization leaves an in_progress visit in_progress', function () {
     $this->actingAs($this->manager);
 
     $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $this->branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $this->branch->id,
@@ -138,20 +139,38 @@ it('finalization leaves an in_progress visit in_progress', function () {
     ]);
 });
 
-it('finalization does not change visit status when not in_progress', function () {
+it('refuses to finalize at all when the patient is not under examination', function () {
+    /*
+     * SUPERSEDED by CORRECTIVE-02. This used to prove "finalizing a REGISTERED
+     * visit does not force a transition". Finalizing such a visit is now refused
+     * outright: current-RME authoring requires a legitimate in_progress encounter,
+     * so there is no write whose side effects could be observed.
+     *
+     * The property it protected — finalization never forces a transition — is
+     * still pinned by 'finalization leaves an in_progress visit in_progress'.
+     */
     $this->actingAs($this->manager);
 
-    // Visit in REGISTERED state (default factory)
-    [$visit, $record] = makeVisitWithDraft($this->branch);
+    $visit = ClinicVisit::factory()->create([
+        'branch_id' => $this->branch->id,
+        'status' => ClinicVisit::STATUS_REGISTERED,
+    ]);
+    $record = MedicalRecord::factory()->create([
+        'clinic_visit_id' => $visit->id,
+        'branch_id' => $this->branch->id,
+        'patient_id' => $visit->patient_id,
+        'doctor_id' => $visit->doctor_id,
+    ]);
     addHandwriting($record, $visit);
 
-    app(MedicalRecordService::class)->finalize($record);
+    expect(fn () => app(MedicalRecordService::class)->finalize($record))
+        ->toThrow(ValidationException::class);
 
-    // Visit stays in REGISTERED — no forced transition
     $this->assertDatabaseHas('trx_clinic_visits', [
         'id' => $visit->id,
         'status' => ClinicVisit::STATUS_REGISTERED,
     ]);
+    expect($record->refresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 
 // ─── Part C: Finalized RME remains editable (Sprint 59) ──────────────────────
@@ -255,7 +274,7 @@ it('initial service data is unchanged after finalization', function () {
         'branch_id' => $this->branch->id,
         'initial_service_note' => 'Scaling dan polishing',
     ]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,

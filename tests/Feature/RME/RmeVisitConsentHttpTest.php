@@ -45,7 +45,9 @@ beforeEach(function () {
     ]);
 });
 
-function consentHttpVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_CASHIER_PENDING): ClinicVisit
+// CORRECTIVE-01 — signing happens during the examination; tests that pay pass
+// STATUS_CASHIER_PENDING explicitly.
+function consentHttpVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_IN_PROGRESS): ClinicVisit
 {
     $branch ??= test()->branch;
 
@@ -97,7 +99,7 @@ function consentHttpFormPayload(array $overrides = []): array
 */
 
 it('accepts a payment POST regardless of any consent claim it carries', function () {
-    $visit = consentHttpVisit();
+    $visit = consentHttpVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
@@ -118,7 +120,7 @@ it('accepts a payment POST regardless of any consent claim it carries', function
 });
 
 it('accepts a payment POST that mentions consent not at all', function () {
-    $visit = consentHttpVisit();
+    $visit = consentHttpVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
@@ -134,15 +136,20 @@ it('accepts a payment POST that mentions consent not at all', function () {
     expect(RmePayment::count())->toBe(1);
 });
 
-it('accepts the payment once the consent has been signed over HTTP', function () {
+it('signs during the examination and pays afterwards, over HTTP', function () {
+    // SUPERSEDED by CORRECTIVE-01 — the order is consent-DURING-EXAM then pay,
+    // not consent-at-the-counter then pay.
     $visit = consentHttpVisit();
-    $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
         ->post(route('rme.visits.consent.store', $visit), consentHttpFormPayload())
         ->assertRedirect();
 
     expect(RmeVisitConsent::count())->toBe(1);
+
+    // The doctor finishes; only then is there an invoice.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($this->cashier)
         ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
@@ -396,7 +403,6 @@ it('lets a real Kasir complete the consent-then-pay workflow', function () {
      * This test exists to keep that mistake from being reintroduced.
      */
     $visit = consentHttpVisit();
-    $invoice = consentHttpInvoice($visit);
 
     $kasir = userInRole('Kasir');
     $kasir->forceFill(['branch_id' => $this->branch->id])->save();
@@ -412,6 +418,10 @@ it('lets a real Kasir complete the consent-then-pay workflow', function () {
     $this->actingAs($kasir)
         ->post(route('rme.visits.consent.store', $visit), consentHttpFormPayload())
         ->assertRedirect();
+
+    // The doctor finishes the examination; the cashier then bills and collects.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($kasir)
         ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [

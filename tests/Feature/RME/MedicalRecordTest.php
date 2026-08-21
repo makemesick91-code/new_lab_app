@@ -42,7 +42,7 @@ it('medical record default status is draft', function () {
 
 it('clinic visit has one medical record relation works', function () {
     $visit = ClinicVisit::factory()->create();
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -58,7 +58,7 @@ it('clinic visit has one medical record relation works', function () {
 
 it('medical record belongs to clinic visit relation works', function () {
     $visit = ClinicVisit::factory()->create();
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -86,7 +86,7 @@ it('service can create draft medical record for clinic visit', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $record = app(MedicalRecordService::class)->createDraft($visit);
 
@@ -101,7 +101,7 @@ it('createDraft creates medical record without SOAP fields', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $record = app(MedicalRecordService::class)->createDraft($visit);
 
@@ -118,7 +118,7 @@ it('createDraft copies branch_id, patient_id, doctor_id from clinic visit', func
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $record = app(MedicalRecordService::class)->createDraft($visit);
 
@@ -133,7 +133,7 @@ it('createDraft ignores unsafe branch_id, patient_id, doctor_id, status, recorde
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $record = app(MedicalRecordService::class)->createDraft($visit, null, [
         'branch_id' => 9999,
@@ -158,7 +158,7 @@ it('createDraft prevents duplicate medical record for same visit', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $service = app(MedicalRecordService::class);
     $service->createDraft($visit);
@@ -173,7 +173,7 @@ it('service can finalize draft medical record', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
@@ -195,7 +195,7 @@ it('finalize is idempotent when record is already final', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
@@ -232,7 +232,7 @@ it('updateDraft updates SOAP fields on draft record', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -255,7 +255,7 @@ it('updateDraft ignores unsafe fields', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -280,7 +280,7 @@ it('updateDraft still edits a final record (Sprint 59)', function () {
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     // Let factory create its own visit to avoid visit_number collision within the same test
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($record->clinicVisit);
+    rmeActiveConsentedEncounter($record->clinicVisit);
 
     $updated = app(MedicalRecordService::class)->updateDraft($record, ['subjective' => 'nyeri']);
 
@@ -294,7 +294,7 @@ it('manager can store medical record for clinic visit', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($manager)
         ->post(route('rme.visits.medical-record.store', $visit), [
@@ -309,7 +309,7 @@ it('store ignores unsafe fields through request and service', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($manager)
         ->post(route('rme.visits.medical-record.store', $visit), [
@@ -328,7 +328,7 @@ it('viewer cannot store medical record', function () {
     $viewer = userWith(['view_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($viewer)
         ->post(route('rme.visits.medical-record.store', $visit))
@@ -339,7 +339,7 @@ it('user from another branch cannot store medical record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $otherBranch = Branch::factory()->create(['is_rme_enabled' => false]);
     $visit = ClinicVisit::factory()->create(['branch_id' => $otherBranch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($manager)
         ->post(route('rme.visits.medical-record.store', $visit))
@@ -350,7 +350,7 @@ it('manager can update draft medical record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -372,7 +372,7 @@ it('manager can update final medical record (Sprint 59)', function () {
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     // Use factory's own visit so no visit_number collision within the same test
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($record->clinicVisit);
+    rmeActiveConsentedEncounter($record->clinicVisit);
     $visit = $record->clinicVisit;
 
     $this->actingAs($manager)
@@ -390,7 +390,7 @@ it('manager can finalize draft medical record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -415,7 +415,7 @@ it('nested medical record route rejects mismatched visit and record', function (
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $otherVisit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $otherVisit->id,
@@ -433,7 +433,7 @@ it('manager can view medical record show page', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -452,7 +452,7 @@ it('clinic visit show displays create medical record action when no record exist
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.show', $visit))
@@ -465,7 +465,7 @@ it('clinic visit show displays view medical record action when record exists', f
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -484,7 +484,7 @@ it('doctor-facing show page hides SOAP editable fields for draft record', functi
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -510,7 +510,7 @@ it('medical record show page hides draft form for final record', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($record->clinicVisit);
+    rmeActiveConsentedEncounter($record->clinicVisit);
     $visit = $record->clinicVisit;
 
     $this->actingAs($manager)
@@ -525,7 +525,7 @@ it('finalized show page hides empty SOAP labels', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($record->clinicVisit);
+    rmeActiveConsentedEncounter($record->clinicVisit);
     $visit = $record->clinicVisit;
 
     MedicalRecordHandwriting::factory()->create([
@@ -547,7 +547,7 @@ it('medical record show page displays finalize action for draft record', functio
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -565,7 +565,7 @@ it('medical record show page hides finalize action for final record', function (
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $record = MedicalRecord::factory()->final()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($record->clinicVisit);
+    rmeActiveConsentedEncounter($record->clinicVisit);
     $visit = $record->clinicVisit;
 
     $this->actingAs($manager)
@@ -578,7 +578,7 @@ it('manager can update SOAP fields from show page', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -612,7 +612,7 @@ it('final record remains editable from UI perspective (Sprint 59)', function () 
         'subjective' => 'original subjective',
     ]);
     $visit = $record->clinicVisit;
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $this->actingAs($manager)
         ->patch(route('rme.visits.medical-record.update', [$visit, $record]), [
@@ -638,7 +638,7 @@ it('finalize sets finalized_at', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
@@ -665,7 +665,7 @@ it('finalize does not overwrite finalized_at when already final', function () {
 
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
 
     $service = app(MedicalRecordService::class);
     $draft = $service->createDraft($visit);
@@ -693,7 +693,7 @@ it('show page displays recorded_by and created_at metadata', function () {
     $manager = userWith(['manage_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -784,7 +784,7 @@ it('index shows room name for a record whose visit has a room', function () {
 
     $room = ClinicRoom::factory()->create(['branch_id' => $branch->id, 'name' => 'Ruang Periksa Gigi 1']);
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => $room->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id]);
 
     $this->actingAs($manager)
@@ -799,7 +799,7 @@ it('index shows room fallback when visit has no room', function () {
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
 
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => null]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id]);
 
     $this->actingAs($manager)
@@ -834,7 +834,7 @@ it('index does not expose sensitive patient fields', function () {
     ]);
     $room = ClinicRoom::factory()->create(['branch_id' => $branch->id, 'name' => 'Ruang Periksa 2']);
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id, 'clinic_room_id' => $room->id, 'patient_id' => $patient->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create(['branch_id' => $branch->id, 'clinic_visit_id' => $visit->id, 'patient_id' => $patient->id]);
 
     $this->actingAs($manager)
@@ -970,7 +970,7 @@ it('viewer can view medical record show page', function () {
     $viewer = userWith(['view_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -988,7 +988,7 @@ it('viewer sees legacy read-only SOAP when data exists on draft record show page
     $viewer = userWith(['view_clinic_visits']);
     $branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,

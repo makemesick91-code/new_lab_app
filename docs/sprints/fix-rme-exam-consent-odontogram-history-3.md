@@ -175,6 +175,46 @@ history's clinical-content predicate moved into SQL so `limit` bounds real histo
 rather than letting empty drafts push findings out; staged legacy page reads are
 audited.
 
+### Two residual contract mismatches, closed before merge
+
+The first pass left two gaps between the implementation and the product contract.
+Both were reproducible, so neither was accepted — they were closed.
+
+**CORRECTIVE-01 — consent could still be signed at `registered`/`waiting`.** The
+window had been widened to "any non-terminal visit" to stop an authoring bypass.
+That fixed the bypass but broke the product rule: consent to a treatment that has
+not been decided is consent to nothing. `isSignable()` is now `in_progress` and
+nothing else — the doctor must have explicitly clicked "Mulai Pemeriksaan" — and
+`cashier_pending`/terminal are refused because signing there records agreement
+after the fact.
+
+**CORRECTIVE-02 — authoring authority was absence-of-blocker.** The gate asked
+"does this patient have an open UNCONSENTED encounter?" and allowed the write when
+the answer was no. Two reproducers followed directly:
+
+- **cancel-then-author** — cancel the live visit and the patient has no open
+  unconsented encounter, so their canonical record (an older terminal visit's
+  record) becomes writable again;
+- **complete-then-author** — the same, by moving the visit to `cashier_pending`.
+
+The question is now inverted into a **positive** one, established from server state
+by `assertRmeAuthoringAllowedForPatient()`: the patient must HAVE a current
+`in_progress` encounter, the actor must be authorized for it, and a valid signed
+consent must exist for that same encounter. "No encounter at all" fails closed.
+
+The new primitive is `App\Modules\ClinicVisit\Services\ActiveEncounterResolver`
+— read-only, one question, no transition capability, and unreachable from the
+request. It exists because authority cannot come from
+`medical_record.clinic_visit_id` (Sprint 64.0.2 makes that the patient's first,
+long-finished visit) nor from the `{clinicVisit}` route parameter, `source_visit_id`
+or `?sheet=`, all of which the caller controls.
+
+**Effect on Sprint 59.** For WRITES this supersedes the reading that any visit is
+freely editable at any time. Sprint 59's actual subject — that a *finalized* record
+is not frozen — is preserved: during an authorized consented encounter a finalized
+record is still editable. What is refused is writing with no encounter at all.
+Historical READ access is untouched in every case.
+
 ## FIX-03 — Cashier / payment consent independence
 
 `assertConsentVerified()` and its three call sites are **deleted**. Consent is no

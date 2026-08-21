@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
@@ -310,25 +311,24 @@ class MedicalRecordController extends Controller
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
             /*
-             * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — is this sheet's
-             * own visit still waiting for a signed PERSETUJUAN TINDAKAN MEDIS?
+             * FIX-02 / CORRECTIVE-02 — may this user author current RME right now?
              *
-             * Keyed on the ACTIVE SHEET's visit, not the canonical workspace visit:
-             * one patient's book spans many visits, and the consent that matters is
-             * the one for the encounter whose sheet is on screen.
+             * Resolved by POSITIVE authority: the patient must have an authorized,
+             * consented examination in progress. Not "does this sheet's visit lack
+             * consent" — that question let a terminal visit read as writable.
              *
-             * Presentation only. Disabling a control is a courtesy, never the
-             * boundary — MedicalRecordService and the handwriting controller assert
-             * the same gate server-side, so a crafted POST is refused regardless of
-             * what this page rendered.
+             * Presentation only. Disabling a control is a courtesy; the service
+             * asserts the same authority, so a crafted POST is refused regardless.
              */
-            'consentRequired' => app(RmeVisitConsentService::class)
-                ->requiresConsentBeforeRmeAuthoring($activeVisit),
-            'consentVisit' => $activeVisit,
-            // "Tambah Lembar RM" creates a sheet on a DIFFERENT visit than the one
-            // on screen, so it is gated on that visit's own consent.
-            'addSheetConsentRequired' => $addSheetVisit !== null
-                && app(RmeVisitConsentService::class)->requiresConsentBeforeRmeAuthoring($addSheetVisit),
+            'canAuthorRme' => app(RmeVisitConsentService::class)
+                ->canAuthorRmeForPatient($patientId, $request->user()),
+            // The encounter the doctor is actually in, if any — drives the banner
+            // and the "sign consent" link so both name the right visit.
+            'activeEncounter' => app(ActiveEncounterResolver::class)->currentFor($patientId),
+            // Adding a sheet is a current-RME write like any other, so it follows
+            // the same single authority rather than a per-visit predicate.
+            'addSheetConsentRequired' => ! app(RmeVisitConsentService::class)
+                ->canAuthorRmeForPatient($patientId, $request->user()),
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),

@@ -128,7 +128,10 @@
              than the cashier meeting it at the counter.
 
              Presentation only — RmeVisitConsentService is the authority. --}}
-        @if (! $visit->isTerminal())
+        {{-- CORRECTIVE-01 — consent becomes actionable ONLY once the doctor has
+             explicitly started the examination. Before that there is no decided
+             treatment to consent to; after it, signing would be after the fact. --}}
+        @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS)
             @php $visitSignedConsent = $visit->consents()->whereNull('voided_at')->latest('signed_at')->first(); @endphp
 
             @if ($visitSignedConsent === null)

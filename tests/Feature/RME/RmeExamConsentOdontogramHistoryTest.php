@@ -49,6 +49,10 @@ beforeEach(function () {
         'view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination', 'manage_rme_consents',
     ]);
     $this->cashier = userWith(['manage_rme_billing']);
+
+    // CORRECTIVE-02 condition 3 — an RME write needs a resolvable, authorized
+    // actor; the gate fails closed without one. Individual tests override this.
+    $this->actingAs($this->doctorUser);
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -367,11 +371,27 @@ it('never lets a request assert its own consent', function () {
     expect($record->refresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 
-it('does not gate RME authoring on a terminal visit, so Sprint 59 revision still works', function () {
-    // Historical correction must never be locked: no visit that predates this
-    // consent architecture has a signed consent.
-    $visit = ClinicVisit::factory()->completed()->create(['branch_id' => $this->branch->id]);
+it('refuses to revise a terminal visit record when no examination is running, and allows it during one', function () {
+    /*
+     * CORRECTIVE-02. Historical correction is not a standing right: writing into a
+     * patient's record requires a legitimate encounter. What Sprint 59 actually
+     * protects — that a FINALIZED record is not frozen — is preserved: during an
+     * authorized consented examination the old record IS editable.
+     */
+    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $visit = ClinicVisit::factory()->completed()->create([
+        'branch_id' => $this->branch->id,
+        'patient_id' => $patient->id,
+    ]);
     $record = examRecordWithHandwriting($visit);
+
+    // No examination running: refused.
+    expect(fn () => app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'koreksi historis']))
+        ->toThrow(ValidationException::class);
+
+    // The patient comes in and is examined: the old record becomes editable again.
+    $live = examVisit($this->branch, ['patient_id' => $patient->id]);
+    rmeSignedConsentFor($live);
 
     app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'koreksi historis']);
 
@@ -709,8 +729,9 @@ it('refuses a handwriting POST that omits source_visit_id to dodge the gate', fu
     expect(MedicalRecordHandwriting::count())->toBe($before);
 });
 
-it('still allows historical revision for a patient with no open visit', function () {
-    // The patient-scoped gate must not lock Sprint 59 correction.
+it('refuses historical revision for a patient with no open visit, but keeps it READABLE', function () {
+    // CORRECTIVE-02 — absence of a blocker is not authority to write. Reading is
+    // never gated, so the history stays available to the treating doctor.
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $old = ClinicVisit::factory()->completed()->create([
         'branch_id' => $this->branch->id,
@@ -718,9 +739,14 @@ it('still allows historical revision for a patient with no open visit', function
     ]);
     $record = examRecordWithHandwriting($old);
 
-    app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'koreksi historis']);
+    expect(fn () => app(MedicalRecordService::class)->updateDraft($record, ['notes' => 'koreksi historis']))
+        ->toThrow(ValidationException::class);
 
-    expect($record->refresh()->notes)->toBe('koreksi historis');
+    $this->actingAs($this->doctorUser)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->followingRedirects()
+        ->get(route('rme.visits.medical-record.show', $old))
+        ->assertOk();
 });
 
 it('refuses a structured diagnosis write on a live visit without consent', function () {

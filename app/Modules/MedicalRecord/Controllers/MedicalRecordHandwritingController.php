@@ -77,20 +77,17 @@ class MedicalRecordHandwritingController extends Controller
          * Every visit involved is checked: the live encounter, the visit the doctor
          * navigated from, and the visit that owns the record being written.
          */
-        // Patient-scoped FIRST: Sprint 64.0.2 lands new pages on the patient's
-        // CANONICAL record, which for a returning patient is an older terminal
-        // (exempt) visit — so checking only the visits the request names is not a
-        // boundary. This asks a question the request cannot influence.
-        $consents->assertPatientRecordWritable($medicalRecord->patient_id);
-
-        $consents->assertRmeAuthoringAllowedForAll([
-            $encounterVisit,
-            $workspace->resolveSourceVisit(
-                $medicalRecord->patient_id,
-                $request->integer('source_visit_id') ?: null,
-            ),
-            $medicalRecord->clinicVisit,
-        ]);
+        /*
+         * FIX-02 / CORRECTIVE-02 — POSITIVE authority, resolved from server state.
+         *
+         * Neither the {clinicVisit} route parameter, nor source_visit_id, nor the
+         * record's own clinic_visit_id can establish the right to write: the first
+         * two are request input and the third points at wherever Sprint 64.0.2
+         * chose to store the bytes, which for a returning patient is an old
+         * terminal visit. The only sound question is whether this patient has an
+         * authorized, consented examination happening now.
+         */
+        $consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
         // Sprint 59 — handwriting RM is revisable after finalization. The
         // previous immutability lock is removed so doctors can correct or

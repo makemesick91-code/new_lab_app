@@ -36,7 +36,7 @@
                      its route, its policy gate ($canFinalize) and the mandatory
                      handwriting precondition ($hasHandwriting) are all unchanged. --}}
                 @if ($isDraft && $canFinalize)
-                    @if ($hasHandwriting && ! $consentRequired)
+                    @if ($hasHandwriting && $canAuthorRme)
                         <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
                             @csrf
                             <x-ui.button type="submit" variant="success">
@@ -109,31 +109,42 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — the RME authoring
-             gate for THIS sheet's visit.
+        {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 + CORRECTIVE-02 —
+             the RME authoring gate.
 
              Reading is never blocked: the patient's history, the published legacy
-             archive and this record itself stay fully visible, because the doctor
-             deciding the treatment needs them. Only WRITING this visit's record
-             waits for the signature.
+             archive and this record itself stay fully visible. Only WRITING the
+             current record waits — and it waits on an authorized, consented
+             examination being in progress, not merely on this sheet's own visit.
 
-             Presentation only — the server asserts the same gate. --}}
-        @if ($consentRequired)
-            <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
-                <div class="flex flex-wrap items-start justify-between gap-3">
+             Presentation only; the service asserts the same authority. --}}
+        @unless ($canAuthorRme)
+            @if ($activeEncounter === null)
+                <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
                     <p class="max-w-2xl text-sm">
-                        Penulisan rekam medis kunjungan ini terkunci sampai Surat Persetujuan
-                        Tindakan Medis ditandatangani. Riwayat rekam medis, arsip RME lama dan
-                        odontogram pasien tetap dapat dibaca.
+                        Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
+                        pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
+                        arsip RME lama dan odontogram pasien tetap dapat dibaca.
                     </p>
-                    @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $consentVisit])
-                        <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $consentVisit)">
-                            Pilih Form Consent
-                        </x-ui.button>
-                    @endcan
-                </div>
-            </x-ui.alert>
-        @endif
+                </x-ui.alert>
+            @else
+                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Penulisan rekam medis untuk pemeriksaan yang sedang berjalan
+                            (Kunjungan #{{ $activeEncounter->visit_number }}) terkunci sampai Surat
+                            Persetujuan Tindakan Medis ditandatangani. Riwayat rekam medis, arsip
+                            RME lama dan odontogram pasien tetap dapat dibaca.
+                        </p>
+                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $activeEncounter])
+                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $activeEncounter)">
+                                Pilih Form Consent
+                            </x-ui.button>
+                        @endcan
+                    </div>
+                </x-ui.alert>
+            @endif
+        @endunless
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE
              messages travel with the relocated button so the doctor learns why it is
@@ -446,7 +457,7 @@
                                      is presentation only; MedicalRecordHandwritingController
                                      asserts the same gate before it stores anything. --}}
                                 <x-ui.button type="submit" variant="primary" id="save-handwriting-btn"
-                                    :disabled="$consentRequired">Simpan Tulisan Tangan</x-ui.button>
+                                    :disabled="! $canAuthorRme">Simpan Tulisan Tangan</x-ui.button>
                             </div>
                         </form>
                     </div>

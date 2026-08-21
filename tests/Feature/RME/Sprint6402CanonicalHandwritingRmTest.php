@@ -30,11 +30,18 @@ function hw2Visit(Branch $branch, Patient $patient, string $date): ClinicVisit
         'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ]);
 
-    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
-    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
-    // consent, so the fixture simply gives the visit one; the gate itself is under
-    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
-    rmeSignedConsentFor($visit);
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 — writing a
+    // patient's RME now requires a legitimate ACTIVE encounter: in_progress plus a
+    // signed Persetujuan Tindakan Medis. These tests are about medical-record
+    // mechanics, not the gate, so the fixture establishes that encounter. The gate
+    // itself is under test in RmeExamConsentCorrectiveTest.
+    // Only an in_progress visit becomes THE active encounter; a status the test
+    // chose deliberately (cancelled, completed) is never overridden.
+    if ($visit->status === ClinicVisit::STATUS_IN_PROGRESS) {
+        rmeActiveConsentedEncounter($visit);
+    } else {
+        rmeSignedConsentFor($visit);
+    }
 
     return $visit;
 }
@@ -360,8 +367,10 @@ it('finalizing visit 2 transitions no visit at all', function () {
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]))
         ->assertRedirect();
 
+    // visit1 was closed when visit2's examination opened (one active encounter at
+    // a time). Neither status moves as a result of finalizing visit2's sheet.
     expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
-        ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+        ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 it('does not transition canonical visit 1 when finalizing visit 2', function () {
@@ -381,7 +390,9 @@ it('does not transition canonical visit 1 when finalizing visit 2', function () 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]));
 
-    expect($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+    // visit1 was closed when visit2's examination opened; finalizing visit2's
+    // sheet still moves nothing — neither visit1's status nor sheet1's.
+    expect($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
         ->and($sheet1->refresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 

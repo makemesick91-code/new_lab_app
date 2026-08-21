@@ -44,8 +44,7 @@ class MedicalRecordDiagnosisService
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
          */
-        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
         $this->assertRmeBranch($medicalRecord);
 
@@ -129,8 +128,7 @@ class MedicalRecordDiagnosisService
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
          */
-        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
         $this->assertRmeBranch($medicalRecord);
 
@@ -186,8 +184,7 @@ class MedicalRecordDiagnosisService
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
          */
-        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
         $this->assertRmeBranch($medicalRecord);
 

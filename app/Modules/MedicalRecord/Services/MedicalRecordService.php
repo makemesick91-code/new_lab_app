@@ -87,12 +87,15 @@ class MedicalRecordService
                 ]);
             }
 
-            // FIX-02 — no RME sheet is created for a live visit without consent.
-            // Patient-scoped first: which visit a request claims to be "for" is client
-            // input, so the binding question is whether this PATIENT has an open,
-            // unconsented encounter.
-            $this->consents->assertPatientRecordWritable($clinicVisit->patient_id);
-            $this->consents->assertRmeAuthoringAllowed($clinicVisit);
+            /*
+             * FIX-02 / CORRECTIVE-02 — POSITIVE authority.
+             *
+             * A sheet is created only when the patient HAS an authorized, consented
+             * examination in progress. Which visit the caller names is client input
+             * and is never the authority; the encounter is resolved from server
+             * state. No active encounter => no write, full stop.
+             */
+            $this->consents->assertRmeAuthoringAllowedForPatient($clinicVisit->patient_id);
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
@@ -133,9 +136,9 @@ class MedicalRecordService
                 return $medicalRecord;
             }
 
-            // FIX-02 — finalization is a write to this visit's record.
-            $this->consents->assertPatientRecordWritable($medicalRecord->patient_id);
-            $this->consents->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+            // FIX-02 / CORRECTIVE-02 — finalization is a current-RME write, so it
+            // needs the same authorized, consented, in-progress encounter.
+            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
             if (! $this->hasRequiredHandwriting($medicalRecord)) {
                 throw ValidationException::withMessages([
@@ -206,9 +209,8 @@ class MedicalRecordService
                 ]);
             }
 
-            // FIX-02 — editing this visit's record is a write to it.
-            $this->consents->assertPatientRecordWritable($medicalRecord->patient_id);
-            $this->consents->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+            // FIX-02 / CORRECTIVE-02 — editing is a current-RME write.
+            $this->consents->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
@@ -241,16 +243,15 @@ class MedicalRecordService
             ?? $contextVisit;
 
         /*
-         * FIX-02 — gate the ENCOUNTER, not just the storage target.
+         * FIX-02 / CORRECTIVE-02 — the storage target is irrelevant to authority.
          *
          * Sprint 64.0.2 writes the patient's handwriting book onto the CANONICAL
-         * visit, which is usually an older, already-terminal visit and therefore
-         * outside the consent window. Content authored during the live encounter
-         * ($contextVisit) would otherwise be written through that exempt
-         * historical visit with no consent for the treatment actually happening.
+         * visit, usually an older terminal one. Authority therefore cannot come
+         * from $contextVisit or $canonicalVisit — both are reachable from the
+         * request — but from whether this PATIENT has an authorized, consented
+         * examination in progress right now.
          */
-        $this->consents->assertPatientRecordWritable($patientId);
-        $this->consents->assertRmeAuthoringAllowedForAll([$contextVisit, $canonicalVisit]);
+        $this->consents->assertRmeAuthoringAllowedForPatient($patientId);
 
         $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id);
 

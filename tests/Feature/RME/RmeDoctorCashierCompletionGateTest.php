@@ -37,6 +37,10 @@ beforeEach(function () {
     // the broad manage_clinic_visits the front office also holds.
     $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
     $this->cashier = userWith(['manage_rme_billing']);
+
+    // CORRECTIVE-02 condition 3 — an RME write needs a resolvable, authorized
+    // actor; the gate fails closed without one. Individual tests override this.
+    $this->actingAs($this->doctorUser);
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

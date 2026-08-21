@@ -43,7 +43,10 @@ beforeEach(function () {
     $this->consentOperator = $this->cashier;
 });
 
-function consentVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_CASHIER_PENDING): ClinicVisit
+// CORRECTIVE-01 — consent is signable only while the examination is running, so
+// the default fixture is an in-progress encounter. Payment tests pass
+// STATUS_CASHIER_PENDING explicitly, because raising an invoice needs that state.
+function consentVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_IN_PROGRESS): ClinicVisit
 {
     $branch ??= test()->branch;
 
@@ -122,7 +125,7 @@ function payDataFor(float $amount, array $overrides = []): array
 */
 
 it('lets a payment settle even though no consent has been signed', function () {
-    $visit = consentVisit();
+    $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
     app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
@@ -153,7 +156,7 @@ it('THE FIX — a crafted request claiming consent cannot author its own consent
 });
 
 it('keeps partial payment behaviour intact without any consent', function () {
-    $visit = consentVisit();
+    $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
     app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
@@ -167,7 +170,9 @@ it('does not let a voided consent block a payment', function () {
     $consent = signConsentFor($visit);
     app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'salah pasien');
 
-    $invoice = consentInvoiceFor($visit);
+    // The examination finishes, then the cashier takes payment.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentInvoiceFor($visit->refresh());
     app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
 
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
@@ -177,7 +182,7 @@ it('still collects an instalment on a visit that was completed before this sprin
     // The receivables book that predates the consent architecture must stay
     // collectible. That was true under the old gate only by exemption; it is now
     // true by construction, because payment never asks about consent.
-    $visit = consentVisit();
+    $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentInvoiceFor($visit);
 
     app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
@@ -278,13 +283,19 @@ it('accepts a consent whose documentation answer is TIDAK and still opens RME au
     // Refusing publication must never cost the patient their treatment or block
     // the cashier. This is the rule that keeps consent from becoming coercive.
     $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit);
 
     $consent = signConsentFor($visit, ['documentation_consent' => false]);
 
     expect($consent->documentation_consent)->toBeFalse();
     expect($consent->allowsDocumentationPublication())->toBeFalse();
 
+    // Refusing publication does not block RME authoring...
+    expect(app(RmeVisitConsentService::class)->canAuthorRmeForPatient($visit->patient_id, $this->consentOperator))
+        ->toBeTrue();
+
+    // ...nor the cashier, once the doctor has finished.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentInvoiceFor($visit->refresh());
     $payment = app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(200000));
     expect($payment->amount)->toEqual(200000.0);
 });
@@ -423,7 +434,7 @@ it('leaves the doctor to cashier transition exactly as it was', function () {
 
 it('treats a legacy cashier attestation as history but not as a payment gate', function () {
     // A visit settled before this sprint keeps its truthful historical record...
-    $visit = consentVisit();
+    $visit = consentVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $visit->forceFill([
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,

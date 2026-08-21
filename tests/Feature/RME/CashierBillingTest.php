@@ -28,6 +28,11 @@ beforeEach(function () {
     $this->branch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
     $this->cashier = userWith(['manage_rme_billing']);
     $this->unauthorized = userWith(['view_clinic_visits']);
+
+    // CORRECTIVE-02 condition 3 — a service-level RME write needs a resolvable,
+    // authorized actor; individual tests override this.
+    $this->doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
+    $this->actingAs($this->doctorUser);
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -369,7 +374,7 @@ it('lists an RME-branch visit in the cashier queue after the doctor completes th
     // the record no longer hands the patient to the cashier; the doctor's explicit
     // "Selesai Pemeriksaan" does. The queue behaviour itself is unchanged.
     $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $this->branch->id]);
-    rmeSignedConsentFor($visit);
+    rmeActiveConsentedEncounter($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $this->branch->id,

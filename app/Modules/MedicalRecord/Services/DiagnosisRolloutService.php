@@ -223,7 +223,7 @@ class DiagnosisRolloutService
          * unlocks finalization), so it waits for consent like every other write.
          */
         app(RmeVisitConsentService::class)
-            ->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+            ->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
 
         $mode = $this->modeForBranch((int) $medicalRecord->branch_id);
         if ($mode !== DiagnosisRolloutSetting::MODE_PILOT_ENFORCED) {
