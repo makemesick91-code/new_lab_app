@@ -4,7 +4,11 @@
 Mendokumentasikan alur end-to-end Rekam Medis Elektronik dari pendaftaran hingga print bundle.
 
 ## Ringkasan
-Pipeline: Pendaftaran → Antrian → Input Ruangan → Pemeriksaan Dokter (RM + Odontogram) → Selesai Pemeriksaan (`cashier_pending`) → Consent → Kasir/Pembayaran → Visit `completed`.
+Pipeline: Pendaftaran → Antrian → Input Ruangan → Dokter "Mulai Pemeriksaan" (`in_progress`) → Consent (membuka penulisan RME) → Pemeriksaan Dokter (RM + Odontogram) → Dokter "Selesai Pemeriksaan" (`cashier_pending`) → Kasir/Pembayaran (tanpa cek consent) → Visit `completed`.
+
+> FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 memindahkan consent ke AWAL pemeriksaan
+> (gate penulisan RME, bukan gate pembayaran) dan memisahkan finalisasi dokumen dari
+> penyelesaian pemeriksaan. Lihat `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc`.
 
 ## Konteks DaengtisiaMS
 RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; SOAP tersembunyi di UI dokter.
@@ -60,7 +64,7 @@ RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; 
 - Carry-over piutang visit baru (Sprint 62.2) — opt-in, tidak merge invoice
 
 ### Consent
-- Gate pembayaran: consent pasien/dokter harus terpenuhi (`CreateRmePaymentRequest`)
+- Gate pembayaran: TIDAK ada pemeriksaan consent. Consent diambil di awal pemeriksaan dan menggate penulisan RME (`RmeVisitConsentService::assertRmeAuthoringAllowed`)
 
 ### Lab integration
 - Setelah invoice RME `PAID` → `LabCaseCandidate` idempotent (bukan LabOrder langsung)
@@ -76,7 +80,8 @@ RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; 
 3. Assign ruangan: PATCH rme.visits.assign-room
 4. Dokter: buka RM (rme.visits.medical-record.show) — workspace sheets jika multi-visit
 5. Isi catatan + handwriting canvas + odontogram
-6. Finalize RM → transition ke cashier_pending (Selesai Pemeriksaan)
+6. Finalize RM → HANYA mengubah status dokumen. Visit TETAP `in_progress`.
+7. Dokter klik "Selesai Pemeriksaan" → transition ke `cashier_pending` (satu-satunya jalur)
 7. Kasir: rme.cashier.create → payment → visit completed
 8. Opsional: print bundle / PDF
 ```

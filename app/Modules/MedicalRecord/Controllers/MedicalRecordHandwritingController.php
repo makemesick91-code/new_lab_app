@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
@@ -31,8 +32,16 @@ class MedicalRecordHandwritingController extends Controller
         MedicalRecord $medicalRecord,
         PatientRmWorkspaceResolver $workspace,
         MedicalRecordService $medicalRecordService,
+        RmeVisitConsentService $consents,
     ): RedirectResponse {
         $pageNumber = (int) ($request->input('page_number') ?? 1);
+
+        // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — remember which
+        // visit the doctor is actually examining BEFORE the Sprint 64.0.2
+        // canonical substitution below rewrites $clinicVisit to the patient's
+        // first visit. The consent that matters is the one for the live
+        // encounter, not for whichever historical visit stores the page.
+        $encounterVisit = $clinicVisit;
 
         // Sprint 64.0.2 — new handwriting pages always persist on the canonical
         // medical record. Existing legacy pages on later visits may still be
@@ -57,6 +66,31 @@ class MedicalRecordHandwritingController extends Controller
         abort_if($medicalRecord->clinic_visit_id !== $clinicVisit->id, 404);
 
         $this->authorize('update', $medicalRecord);
+
+        /*
+         * FIX-02 — handwriting is RME content, so it is gated exactly like the
+         * rest of the record. This controller writes through the repository
+         * rather than MedicalRecordService, so the gate is asserted here too;
+         * without it the "edit an existing page in place" branch would reach a
+         * write without ever passing a service-layer check.
+         *
+         * Every visit involved is checked: the live encounter, the visit the doctor
+         * navigated from, and the visit that owns the record being written.
+         */
+        // Patient-scoped FIRST: Sprint 64.0.2 lands new pages on the patient's
+        // CANONICAL record, which for a returning patient is an older terminal
+        // (exempt) visit — so checking only the visits the request names is not a
+        // boundary. This asks a question the request cannot influence.
+        $consents->assertPatientRecordWritable($medicalRecord->patient_id);
+
+        $consents->assertRmeAuthoringAllowedForAll([
+            $encounterVisit,
+            $workspace->resolveSourceVisit(
+                $medicalRecord->patient_id,
+                $request->integer('source_visit_id') ?: null,
+            ),
+            $medicalRecord->clinicVisit,
+        ]);
 
         // Sprint 59 — handwriting RM is revisable after finalization. The
         // previous immutability lock is removed so doctors can correct or

@@ -1,5 +1,5 @@
 ---
-description: RME consent payment gate, Medical Record page ownership, print ownership and the one-page kwitansi
+description: RME consent gate (SUPERSEDED by rule 109 — consent gates RME authoring, not payment), Medical Record page ownership, print ownership and the one-page kwitansi
 globs:
   - app/Modules/Consent/**
   - app/Modules/RmeInvoice/**
@@ -12,73 +12,79 @@ alwaysApply: false
 
 # FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 — durable rules
 
-## 1. Consent is the RME payment gate
+## 1. Consent is the RME AUTHORING gate
 
-- RME payment requires a **valid signed `PERSETUJUAN TINDAKAN MEDIS` for the
-  current visit**. No signed consent, no payment.
-- The gate reads **persisted evidence**: `ClinicVisit::hasSignedConsentDocument()`
-  / `RmeVisitConsentService::hasValidConsent()`. It must never be satisfied by a
-  value carried in the payment request.
-- **Never reintroduce a consent flag that the payment request supplies.** The
-  original defect was `applyConsentVerification()` writing request booleans onto
-  the visit and `assertConsentVerified()` reading them back — the gate authored
-  its own evidence, so `consent_signed_by_patient=1` paid an invoice.
+> **SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 (FIX-02 / FIX-03).**
+> This section previously read "Consent is the RME payment gate". It is not.
+> See `.cursor/rules/109-rme-exam-consent-odontogram-history.mdc` for the
+> current workflow; the anti-regression clauses below remain in force.
+
+- A valid signed `PERSETUJUAN TINDAKAN MEDIS` for the current visit is required
+  before that visit's **RME may be written** — created, edited, handwritten or
+  finalized. It is **not** required to take payment.
+- The gate reads **persisted evidence**: `RmeVisitConsentService::hasValidConsent()`
+  / `ClinicVisit::hasSignedConsentDocument()`. It must never be satisfied by a
+  value carried in any request.
+- **Never reintroduce a consent flag that a request supplies.** The original
+  defect was `applyConsentVerification()` writing request booleans onto the visit
+  and `assertConsentVerified()` reading them back — the gate authored its own
+  evidence, so `consent_signed_by_patient=1` paid an invoice. Both of those
+  methods are now deleted.
 - The UI is not the authority. A disabled button, a hidden card or a Blade
-  condition is presentation; the payment service must fail closed on a crafted
-  POST.
+  condition is presentation; `MedicalRecordService` and the handwriting
+  controller must fail closed on a crafted POST.
 - `consent_signed_by_patient` / `consent_signed_by_doctor` on `trx_clinic_visits`
   are a **display-only historical record** that a paper form was sighted before
-  this sprint. They gate nothing and are never written from a request.
+  this sprint. They gate nothing, are never written from a request, and are no
+  longer read by any authorisation path.
 
-### 1a. The gate covers TREATMENT, never debt collection
+### 1a. Consent is never a payment condition
 
-This is the boundary of the gate, and getting it wrong strands real money.
+> **SUPERSEDED.** This section previously said consent was required while the
+> visit was at `cashier_pending`. That gate is REMOVED.
 
-- Consent is required **while the visit is at `cashier_pending`** — the moment
-  the treatment itself is being paid for.
-- It is **NOT** required for:
-  - **carry-over / prior receivables** settled during a later visit, and
-  - **instalments on a visit that is already `completed`**.
-- Why: the partial-payment rule completes a visit on its FIRST payment while the
-  invoice stays `PARTIAL` and payable, so *"visit completed + invoice PARTIAL"*
-  is the normal shape of an outstanding instalment — and of every receivable that
-  predates this sprint. Consent cannot be signed for a completed visit
-  (`assertSignable()` requires `cashier_pending`), so demanding one there makes
-  those balances **permanently uncollectable**. The Piutang screen links straight
-  to that payment page, so the cashier reaches a dead end with no workaround.
-- Collecting a debt is not a new treatment. Do not "tighten" this.
-
-**The exemption is only safe because of three guarantees — assert them, never
-assume them:**
-
-1. `completed` is not an accepted value in `TransitionStatusRequest`;
-2. `ClinicVisitService::transitionStatus()` refuses `→ completed` from anywhere
-   but `cashier_pending`;
-3. `RmeInvoiceService::create()` will not raise an invoice on a
-   non-`cashier_pending` visit.
-
-So the only route to a completed visit is through a payment that already passed
-the gate. If any of those loosens, revisit the exemption rather than inheriting
-it.
+- **Payment eligibility is purely financial and workflow-based.** Nothing in
+  `RmePaymentService` may consult consent again.
+- Consent is consent to TREATMENT, so it belongs where treatment is decided and
+  recorded — the doctor's examination — not where money changes hands. A cashier
+  is not the right person to adjudicate clinical consent, and a patient at the
+  counter is past the point where refusing could change anything.
+- The safety property is now STRONGER, not weaker: a treatment that was recorded
+  at all already had consent. The old cashier gate only ever fired for a visit
+  still at `cashier_pending`, so every carry-over receivable and every instalment
+  on an already-completed visit bypassed it by design.
+- **Historical receivables must stay collectible.** Every receivable that
+  predates the consent architecture has no signed consent. Do not "tighten" this.
 
 ### 1b. Consent reads cost queries now
 
-`hasVerifiedConsent()` used to read two casted booleans for free; it now consults
-the consent document. **Any list that calls it per row must eager-load
-`consents`** — the cashier handoff board is unpaginated by design, so an N+1
-there has no upper bound.
+`hasVerifiedConsent()` used to read two casted booleans for free; the signed-document
+predicates consult the consent table. **Any list that calls one per row must
+eager-load `consents`** — the cashier handoff board is unpaginated by design, so an
+N+1 there has no upper bound.
 
 ## 2. Consent timing follows the canonical RME flow
 
+> **SUPERSEDED.** The flow below is the current one; consent moved from after
+> "Selesai Pemeriksaan" to the start of the examination.
+
 ```
-Pendaftaran -> Antrian -> Input Ruangan -> Pemeriksaan Dokter
-  -> Selesai Pemeriksaan (cashier_pending) -> Consent -> Pembayaran -> completed
+Pendaftaran -> Antrian -> Input Ruangan -> Dokter "Mulai Pemeriksaan" (in_progress)
+  -> Consent -> RME authoring unlocked -> RME + Odontogram
+  -> Dokter "Selesai Pemeriksaan" (cashier_pending) -> Pembayaran -> completed
 ```
 
-- Consent is signable **only at `cashier_pending`**. Before doctor completion it
-  fails closed; on a terminal visit it fails closed.
-- The doctor still advances only `in_progress -> cashier_pending`. `completed`
-  remains cashier/payment-owned. Unchanged by this sprint.
+- Consent is signable for any **non-terminal** visit, so the doctor takes it at
+  the start of the encounter. On a `completed` / `cancelled` visit it fails
+  closed, because that would be back-dating evidence.
+- The gate window and the signable window are the SAME window, so a blocked
+  write always has an unblocking action available and the gate can never
+  deadlock a live visit.
+- **Terminal visits are never gated**, so Sprint 59 historical revision keeps
+  working and no pre-existing record is locked.
+- The doctor still advances only `in_progress -> cashier_pending`, and
+  `completed` remains cashier/payment-owned. **Finalizing a record no longer
+  advances anything** — see rule 109 / FIX-01.
 
 ## 3. Consent identity cannot be borrowed
 

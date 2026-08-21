@@ -4,6 +4,7 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordDiagnosis;
@@ -36,6 +37,16 @@ class MedicalRecordDiagnosisService
      */
     public function record(MedicalRecord $medicalRecord, array $data, User $actor): MedicalRecordDiagnosis
     {
+        /*
+         * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — a structured
+         * diagnosis is clinical content OF the medical record (it feeds the RME,
+         * the FHIR Condition preview and the SATUSEHAT source hash), so it is
+         * gated exactly like the rest of the record. Asserted in the service so
+         * the CLI and any future controller inherit it.
+         */
+        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+
         $this->assertRmeBranch($medicalRecord);
 
         $master = ClinicalDiagnosis::query()->find((int) $data['clinical_diagnosis_id']);
@@ -111,6 +122,16 @@ class MedicalRecordDiagnosisService
      */
     public function makePrimary(MedicalRecord $medicalRecord, MedicalRecordDiagnosis $diagnosis, User $actor): MedicalRecordDiagnosis
     {
+        /*
+         * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — a structured
+         * diagnosis is clinical content OF the medical record (it feeds the RME,
+         * the FHIR Condition preview and the SATUSEHAT source hash), so it is
+         * gated exactly like the rest of the record. Asserted in the service so
+         * the CLI and any future controller inherit it.
+         */
+        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+
         $this->assertRmeBranch($medicalRecord);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {
@@ -158,6 +179,16 @@ class MedicalRecordDiagnosisService
 
     public function remove(MedicalRecord $medicalRecord, MedicalRecordDiagnosis $diagnosis, User $actor): void
     {
+        /*
+         * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — a structured
+         * diagnosis is clinical content OF the medical record (it feeds the RME,
+         * the FHIR Condition preview and the SATUSEHAT source hash), so it is
+         * gated exactly like the rest of the record. Asserted in the service so
+         * the CLI and any future controller inherit it.
+         */
+        app(RmeVisitConsentService::class)->assertPatientRecordWritable($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+
         $this->assertRmeBranch($medicalRecord);
 
         if ((int) $diagnosis->medical_record_id !== (int) $medicalRecord->id) {

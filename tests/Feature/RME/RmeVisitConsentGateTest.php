@@ -2,10 +2,10 @@
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
-use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
+use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmeInvoiceService;
@@ -103,271 +103,126 @@ function payDataFor(float $amount, array $overrides = []): array
 
 /*
 |--------------------------------------------------------------------------
-| A — the gate itself
+| A — the gate itself: consent gates RME AUTHORING, not payment
 |--------------------------------------------------------------------------
+|
+| SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 (FIX-02 / FIX-03).
+|
+| Sections A and B used to prove a PAYMENT gate. That gate is removed: consent is
+| consent to TREATMENT, so it now guards the moment treatment is recorded — the
+| doctor's examination — and payment does not consult it at all.
+|
+| The assertions are converted, not dropped. Every adversarial property the old
+| section proved (a request cannot author its own consent; another visit's,
+| another patient's or another branch's consent does not satisfy this one; a
+| voided consent satisfies nothing) still matters — it now applies to the
+| authoring gate. The payment cases are INVERTED, so reintroducing a payment
+| consent gate — which would make the historical receivables book uncollectable —
+| fails here.
 */
 
-it('refuses payment when no consent has been signed', function () {
+it('lets a payment settle even though no consent has been signed', function () {
     $visit = consentVisit();
     $invoice = consentInvoiceFor($visit);
 
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000)))
-        ->toThrow(ValidationException::class);
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
 
-    expect($invoice->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 it('THE FIX — a crafted request claiming consent cannot author its own consent', function () {
-    // This is exactly the payload that used to settle an invoice outright.
-    $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit);
+    // The original defect: the payment request supplied the booleans, the service
+    // wrote them onto the visit, then asserted against what it had just written.
+    // Both the write path and the payment gate are gone. What remains provable —
+    // and what matters — is that no request field, and no legacy attestation
+    // column, can create the evidence. Only a real signature can.
+    $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000, [
+    expect(fn () => app(MedicalRecordService::class)->createDraft($visit, $this->cashier->id))
+        ->toThrow(ValidationException::class);
+
+    $visit->forceFill([
         'consent_signed_by_patient' => true,
         'consent_signed_by_doctor' => true,
-    ])))->toThrow(ValidationException::class);
+    ])->save();
 
-    expect($invoice->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
-    // And it must not have written the attestation onto the visit either.
-    expect($visit->refresh()->consent_signed_by_patient)->toBeFalse();
-    expect($visit->hasSignedConsentDocument())->toBeFalse();
+    expect(fn () => app(MedicalRecordService::class)->createDraft($visit->refresh(), $this->cashier->id))
+        ->toThrow(ValidationException::class)
+        ->and(RmeVisitConsent::count())->toBe(0);
 });
 
-it('allows payment once a consent has actually been signed', function () {
+it('keeps partial payment behaviour intact without any consent', function () {
     $visit = consentVisit();
     $invoice = consentInvoiceFor($visit);
-    signConsentFor($visit);
 
-    $payment = app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(200000));
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
 
-    expect($payment->amount)->toEqual(200000.0);
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL)
+        ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
+});
+
+it('does not let a voided consent block a payment', function () {
+    $visit = consentVisit();
+    $consent = signConsentFor($visit);
+    app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'salah pasien');
+
+    $invoice = consentInvoiceFor($visit);
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
+
     expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
-it('keeps partial payment behaviour intact behind the consent gate', function () {
+it('still collects an instalment on a visit that was completed before this sprint', function () {
+    // The receivables book that predates the consent architecture must stay
+    // collectible. That was true under the old gate only by exemption; it is now
+    // true by construction, because payment never asks about consent.
     $visit = consentVisit();
     $invoice = consentInvoiceFor($visit);
-    signConsentFor($visit);
 
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(50000));
-
-    $invoice->refresh();
-    expect($invoice->status)->toBe(RmeInvoice::STATUS_PARTIAL);
-    expect($invoice->remainingAmount())->toEqual(150000.0);
-    // The partial-payment rule still completes the visit and leaves a receivable.
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(50000));
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
-});
 
-it('refuses payment when the only consent has been voided', function () {
-    $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit);
-    $consent = signConsentFor($visit);
+    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(150000));
 
-    app(RmeVisitConsentService::class)->void($consent, $this->consentOperator, 'Salah pasien.');
-
-    expect(fn () => app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(200000)))
-        ->toThrow(ValidationException::class);
-});
-
-it('allows payment again once a replacement consent is signed', function () {
-    $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit);
-    $first = signConsentFor($visit);
-
-    app(RmeVisitConsentService::class)->void($first, $this->consentOperator, 'Salah pasien.');
-    signConsentFor($visit);
-
-    $payment = app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(200000));
-
-    expect($payment->amount)->toEqual(200000.0);
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
 /*
 |--------------------------------------------------------------------------
-| B — consent identity cannot be borrowed
+| B — consent identity cannot be borrowed (now proved on the AUTHORING gate)
 |--------------------------------------------------------------------------
 */
 
-it('still collects an instalment on a visit that was completed before this sprint', function () {
-    /*
-     * REGRESSION GUARD — found by adversarial review, not by the happy path.
-     *
-     * The partial-payment rule completes a visit on its FIRST payment while the
-     * invoice stays PARTIAL and payable, so "visit completed + invoice PARTIAL"
-     * is the normal shape of an outstanding instalment, and it is the shape of
-     * every receivable that existed before this sprint.
-     *
-     * Consent cannot be signed for a completed visit (assertSignable requires
-     * cashier_pending), so if the gate demanded one here those balances would be
-     * permanently uncollectable — the Piutang screen links straight to this
-     * payment page, so the cashier would hit a dead end with no way out.
-     *
-     * Collecting a balance is debt collection, not a new treatment.
-     */
-    $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit, 200000);
-    signConsentFor($visit);
-
-    // First instalment: completes the visit, leaves the invoice PARTIAL.
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(50000));
-    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
-    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PARTIAL);
-
-    // Now make it look exactly like a pre-sprint receivable: no consent at all.
-    $visit->consents()->delete();
-    expect($visit->refresh()->hasSignedConsentDocument())->toBeFalse();
-    // And it genuinely cannot be given one any more.
-    expect(fn () => signConsentFor($visit))->toThrow(ValidationException::class);
-
-    // The remaining balance must still be collectable.
-    app(RmePaymentService::class)->pay($invoice->refresh(), $this->cashier, payDataFor(150000));
-
-    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
-    expect($invoice->remainingAmount())->toEqual(0.0);
-});
-
-it('does not let completing a visit become a way around the gate', function () {
-    /*
-     * The other half of the same rule. Skipping the gate once a visit is no
-     * longer at the cashier is only safe because `completed` is unreachable
-     * without a payment that already passed the gate:
-     *
-     *   - TransitionStatusRequest does not accept `completed` at all, and
-     *   - ClinicVisitService::transitionStatus() refuses it from anywhere but
-     *     cashier_pending, and
-     *   - RmeInvoiceService::create() will not raise an invoice on a
-     *     non-cashier_pending visit.
-     *
-     * If any of those ever loosens, this test fails and the exemption above must
-     * be revisited rather than quietly inherited.
-     */
-    expect(ClinicVisit::VALID_TRANSITIONS[ClinicVisit::STATUS_IN_PROGRESS])
-        ->not->toContain(ClinicVisit::STATUS_COMPLETED);
-
-    $accepted = (new TransitionStatusRequest)->rules()['status'];
-    expect(collect($accepted)->contains(fn ($rule) => is_object($rule) && str_contains((string) $rule, ClinicVisit::STATUS_COMPLETED)))
-        ->toBeFalse();
-
-    // An invoice cannot even be raised on a visit that is not at the cashier.
-    $inProgress = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
-    expect(fn () => consentInvoiceFor($inProgress, 100000))->toThrow(ValidationException::class);
-
-    // And a visit still AT the cashier is refused without consent, as before.
-    $atCashier = consentVisit();
-    $invoice = consentInvoiceFor($atCashier, 100000);
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(100000)))
-        ->toThrow(ValidationException::class);
-});
-
-it('collects a prior receivable whose own visit predates consent', function () {
-    /*
-     * SCOPE OF THE GATE — the current visit only.
-     *
-     * A carry-over payment settles invoices from EARLIER visits too. Those are
-     * deliberately not gated on their own consent: consent is consent to
-     * TREATMENT, and collecting an outstanding debt is not a new treatment.
-     *
-     * The decisive argument is production data. Every receivable that predates
-     * this sprint has no signed consent by definition, so gating parent visits
-     * would make all historical debt permanently uncollectable — a worse outcome
-     * than the bypass this sprint closes.
-     *
-     * This test pins that, so a future "tighten the gate" change cannot quietly
-     * strand real money.
-     */
-    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
-
-    // An old visit with an unpaid balance and NO consent at all.
-    $priorVisit = consentVisit();
-    $priorVisit->forceFill(['patient_id' => $patient->id])->save();
-    $priorInvoice = consentInvoiceFor($priorVisit->refresh(), 100000);
-    expect($priorVisit->refresh()->hasSignedConsentDocument())->toBeFalse();
-
-    // Today's visit, properly consented.
-    $currentVisit = consentVisit();
-    $currentVisit->forceFill(['patient_id' => $patient->id])->save();
-    $currentInvoice = consentInvoiceFor($currentVisit->refresh(), 50000);
-    signConsentFor($currentVisit->refresh());
-
-    $result = app(RmePaymentService::class)->allocateVisitPayment(
-        $currentInvoice->refresh(),
-        $this->cashier,
-        payDataFor(150000),
-        [$priorInvoice->id],
-    );
-
-    // The old debt is collected even though its visit never had a consent...
-    expect($priorInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
-    // ...and today's treatment was still gated on today's consent.
-    expect($currentInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
-    expect($result->allocatedToParent)->toEqual(100000.0);
-});
-
-it('still refuses the whole carry-over batch when the CURRENT visit lacks consent', function () {
-    // The other half of the same rule: prior receivables are collectable, but
-    // they are not a way to pay for un-consented treatment today.
-    $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
-
-    $priorVisit = consentVisit();
-    $priorVisit->forceFill(['patient_id' => $patient->id])->save();
-    $priorInvoice = consentInvoiceFor($priorVisit->refresh(), 100000);
-
-    $currentVisit = consentVisit();
-    $currentVisit->forceFill(['patient_id' => $patient->id])->save();
-    $currentInvoice = consentInvoiceFor($currentVisit->refresh(), 50000);
-
-    expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
-        $currentInvoice->refresh(),
-        $this->cashier,
-        payDataFor(150000),
-        [$priorInvoice->id],
-    ))->toThrow(ValidationException::class);
-
-    expect($priorInvoice->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
-});
-
 it('does not let another visit consent satisfy this visit', function () {
-    $visitA = consentVisit();
-    $visitB = consentVisit();
+    $other = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    signConsentFor($other);
 
-    signConsentFor($visitA);
-    $invoiceB = consentInvoiceFor($visitB);
+    $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    $visit->forceFill(['patient_id' => $other->patient_id])->save();
 
-    expect(fn () => app(RmePaymentService::class)->pay($invoiceB, $this->cashier, payDataFor(200000)))
+    expect(fn () => app(MedicalRecordService::class)->createDraft($visit->refresh(), $this->cashier->id))
         ->toThrow(ValidationException::class);
 });
 
 it('does not let another patient consent satisfy this visit', function () {
-    $patientA = Patient::factory()->create(['branch_id' => $this->branch->id]);
-    $patientB = Patient::factory()->create(['branch_id' => $this->branch->id]);
+    $other = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    signConsentFor($other);
 
-    $visitA = consentVisit();
-    $visitA->forceFill(['patient_id' => $patientA->id])->save();
-    $visitB = consentVisit();
-    $visitB->forceFill(['patient_id' => $patientB->id])->save();
+    $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
-    signConsentFor($visitA->refresh());
-
-    $invoiceB = consentInvoiceFor($visitB->refresh());
-
-    expect(fn () => app(RmePaymentService::class)->pay($invoiceB, $this->cashier, payDataFor(200000)))
+    expect(fn () => app(MedicalRecordService::class)->createDraft($visit, $this->cashier->id))
         ->toThrow(ValidationException::class);
 });
 
 it('does not let a consent from another branch satisfy this visit', function () {
-    $otherBranch = Branch::factory()->create([
-        'code' => 'CNS2',
-        'is_active' => true,
-        'is_rme_enabled' => true,
-    ]);
+    $otherBranch = Branch::factory()->create(['code' => 'SUN4', 'is_rme_enabled' => true]);
+    $other = consentVisit($otherBranch, ClinicVisit::STATUS_IN_PROGRESS);
+    signConsentFor($other);
 
-    $otherVisit = consentVisit($otherBranch);
-    signConsentFor($otherVisit);
+    $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
-    $visit = consentVisit();
-    $invoice = consentInvoiceFor($visit);
-
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000)))
+    expect(fn () => app(MedicalRecordService::class)->createDraft($visit, $this->cashier->id))
         ->toThrow(ValidationException::class);
 });
 
@@ -377,11 +232,15 @@ it('does not let a consent from another branch satisfy this visit', function () 
 |--------------------------------------------------------------------------
 */
 
-it('refuses to sign before the doctor has finished the examination', function () {
+it('signs as soon as the doctor has started the examination', function () {
+    // SUPERSEDED by FIX-02: consent is taken at the START of the examination,
+    // because consent to a treatment has to be given before the treatment.
     $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
-    expect(fn () => signConsentFor($visit))->toThrow(ValidationException::class);
-    expect(RmeVisitConsent::count())->toBe(0);
+    $consent = signConsentFor($visit);
+
+    expect($consent->exists)->toBeTrue()
+        ->and(app(RmeVisitConsentService::class)->hasValidConsent($visit->refresh()))->toBeTrue();
 });
 
 it('refuses to sign on a terminal visit', function () {
@@ -415,7 +274,7 @@ it('requires an explicit YA or TIDAK for the documentation clause', function () 
         ->toThrow(ValidationException::class);
 });
 
-it('accepts a consent whose documentation answer is TIDAK and still opens payment', function () {
+it('accepts a consent whose documentation answer is TIDAK and still opens RME authoring', function () {
     // Refusing publication must never cost the patient their treatment or block
     // the cashier. This is the rule that keeps consent from becoming coercive.
     $visit = consentVisit();
@@ -554,6 +413,12 @@ it('leaves the doctor to cashier transition exactly as it was', function () {
 
     expect(ClinicVisit::VALID_TRANSITIONS[ClinicVisit::STATUS_CASHIER_PENDING])
         ->toBe([ClinicVisit::STATUS_COMPLETED]);
+
+    // FIX-01: and signing a consent does not advance anything by itself.
+    $visit = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    signConsentFor($visit);
+
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
 it('treats a legacy cashier attestation as history but not as a payment gate', function () {
@@ -567,10 +432,23 @@ it('treats a legacy cashier attestation as history but not as a payment gate', f
 
     expect($visit->refresh()->hasVerifiedConsent())->toBeTrue();
 
-    // ...but that attestation is NOT a signed document and must not pay anything.
+    // ...but that attestation is NOT a signed document, and must never be
+    // mistaken for one by any gate. SUPERSEDED by FIX-02/FIX-03: it no longer
+    // gates payment (nothing does), and it does not satisfy the AUTHORING gate
+    // either — which is the property that actually needs protecting now.
     expect($visit->hasSignedConsentDocument())->toBeFalse();
 
     $invoice = consentInvoiceFor($visit);
-    expect(fn () => app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000)))
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, payDataFor(200000));
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+
+    $live = consentVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+    $live->forceFill([
+        'consent_signed_by_patient' => true,
+        'consent_signed_by_doctor' => true,
+        'consent_verified_at' => now(),
+    ])->save();
+
+    expect(fn () => app(MedicalRecordService::class)->createDraft($live->refresh(), $this->cashier->id))
         ->toThrow(ValidationException::class);
 });

@@ -1,0 +1,206 @@
+---
+description: Explicit doctor examination completion, consent as the RME authoring gate, cashier/payment consent independence, patient odontogram history and the Legacy Odontogram archive
+globs:
+  - app/Modules/ClinicVisit/**
+  - app/Modules/MedicalRecord/**
+  - app/Modules/Consent/**
+  - app/Modules/Odontogram/**
+  - app/Modules/LegacyOdontogram/**
+  - app/Modules/RmeInvoice/**
+  - resources/views/rme/**
+alwaysApply: false
+---
+
+# FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 — durable rules
+
+This rule supersedes sections 1, 1a and 2 of
+`100-rme-consent-payment-gate-print-ownership.mdc`. Sections 1b and 3–11 of that
+rule, and sections 10–12 of `108-clinic-ops-working-branch-context.mdc`, remain
+in force unchanged.
+
+## 0. The canonical RME workflow
+
+```
+Pendaftaran -> Antrian -> Input Ruangan
+  -> Dokter "Mulai Pemeriksaan"            -> in_progress
+  -> Persetujuan Tindakan Medis            -> RME authoring unlocked
+  -> RME + Odontogram
+  -> RME and/or Odontogram complete        -> STILL in_progress
+  -> Dokter "Selesai Pemeriksaan"          -> cashier_pending
+  -> Kasir / Pembayaran (no consent check) -> completed
+```
+
+Historical clinical evidence — RME history, Legacy RME, native odontogram
+history, Legacy Odontogram — is **read-only** and readable throughout. The
+**active odontogram workflow is unchanged** by this sprint.
+
+## 1. A clinical document never completes an examination
+
+- **Finalizing a medical record does NOT transition the visit.** Neither does
+  saving handwriting, saving or finalizing an odontogram, or any combination of
+  them. `MedicalRecordService::finalize()` used to move an `in_progress` visit to
+  `cashier_pending`; that call is deleted and `ClinicVisitService` is
+  deliberately **not** a dependency of `MedicalRecordService`, so the class does
+  not even hold the ability.
+- Document finalization is a **clinical-document state**. `in_progress ->
+  cashier_pending` is a **workflow transition**. They are different facts and
+  must stay separate actions.
+  - Since Sprint 59 a finalized record is explicitly editable again, so "final"
+    was never a reliable proxy for "the examination is over" anyway.
+- The ONLY path to `cashier_pending` is an authorized doctor explicitly
+  performing **"Selesai Pemeriksaan"** — `rme.visits.transition` guarded by
+  `ClinicVisitPolicy::completeExamination` / `complete_rme_examination`
+  (Doctor, Perawat, Supervisor RME; Super Admin via `Gate::before`). Admin Klinik
+  and Kasir can never close an examination.
+- More than one BUTTON may point at that one guarded route (the visit detail page
+  and the Medical Record page both do). That is a second entry point to one
+  action, **never** a second way to complete a visit.
+- `cashier_pending -> completed` stays cashier-owned: only `RmePaymentService`
+  reaches it, once the invoice is settled.
+- Consequence to keep in mind: `RmeInvoiceService::create()` still requires
+  `cashier_pending`, so **if the doctor never clicks "Selesai Pemeriksaan" the
+  cashier cannot raise an invoice.** That is the intended workflow, not a bug.
+
+## 2. Consent gates RME AUTHORING, not payment and not reading
+
+- A valid signed `PERSETUJUAN TINDAKAN MEDIS` for the visit is required before
+  that visit's RME may be **written**: create sheet, edit, save/replace
+  handwriting, add an RM page, finalize.
+- **Reads are never gated.** Patient history, previous sheets, the published
+  Legacy RME archive, previous odontograms and the Legacy Odontogram archive
+  stay fully readable without consent. The doctor deciding today's treatment
+  needs them, and reading harms nobody.
+- **The active odontogram is NOT gated by consent.** Its workflow, UI, payload,
+  authorization and print are unchanged by this sprint. Do not add a consent
+  dependency to it.
+- **Window:** the gate applies to every **non-terminal** visit, and consent is
+  signable in that same window. The two windows must stay identical, or a blocked
+  write can have no unblocking action and the gate deadlocks a live visit.
+  - Breadth is what makes it unbypassable. `in_progress` alone is not enough: a
+    roomed `registered`/`waiting` visit can reach the RME screens, and "Selesai
+    Pemeriksaan" needs no consent, so a doctor could otherwise finish the
+    examination first and then author the whole record unconsented.
+- **Terminal visits (`completed`, `cancelled`) are never gated.** Sprint 59 makes
+  historical records revisable and no pre-existing visit has a signed consent, so
+  gating them would permanently lock historical clinical correction.
+- **Enforce in the service layer, not the controller and never in Blade.** The
+  chokepoints are `MedicalRecordService::createDraft/updateDraft/finalize/
+  getOrCreateCanonicalMedicalRecord` plus `MedicalRecordHandwritingController`
+  (which writes through the repository directly). A disabled button is a
+  courtesy; a crafted POST must still be refused.
+- **Gate the ENCOUNTER, not only the storage target.** Sprint 64.0.2 redirects a
+  new handwriting page onto the patient's CANONICAL medical record, which usually
+  belongs to an older, terminal visit. Checking only the record's owner lets
+  content authored during a live unconsented encounter be written through an
+  exempt historical visit. Use `assertRmeAuthoringAllowedForAll([...])`.
+- A consent for another visit, another patient or another branch never satisfies
+  this visit. A voided consent never satisfies it.
+- Publication/documentation consent (clause 8) is a **separate decision**.
+  `TIDAK` is a valid, complete consent and must still unlock RME authoring.
+
+### 2a. What the gate covers, exactly — and what it does not
+
+State this precisely; overclaiming here is how a control gets trusted for something
+it never did.
+
+**Covered** (a write is refused without consent): `trx_medical_records` and its
+handwriting pages, structured diagnoses, and the emergency diagnosis override.
+
+**Deliberately NOT covered:**
+
+- **The active odontogram.** Excluded by explicit product decision — its workflow,
+  UI, payload, authorization and print are unchanged by this sprint. A dental chart
+  can therefore still be recorded on an unconsented live visit. Do not "fix" this
+  without a product decision that reverses the exclusion.
+- **Prescriptions.** Outside this sprint's scope; the same caveat applies.
+
+So do NOT write "a treatment that was recorded at all had consent" without
+qualification. The accurate statement is: **the medical record and its handwriting
+cannot be written without consent.**
+
+**Accepted residual risks, recorded rather than hidden:**
+
+- **Cancel-then-author.** Cancelling a live visit makes it terminal and therefore
+  exempt. A doctor with the authority to cancel can use that to author unconsented.
+  Accepted because cancelling is itself an authorised, audited, destructive act and
+  a cancelled visit can never be billed (`RmeInvoiceService::create()` requires
+  `cashier_pending`), so no money can follow.
+- **Early consent at `registered`.** The signing window has to be at least as wide
+  as the gate window or a blocked write would have no unblocking action, so consent
+  can be taken before the treatment is decided. Mitigated by the form itself: it
+  requires a real patient signature and records the specific medical action.
+
+## 3. Consent is not a cashier concern
+
+- **Nothing in the payment path may consult consent.** `assertConsentVerified()`
+  is deleted; `CreateRmePaymentRequest` accepts no consent field; the cashier
+  payment page shows no consent block; `CashierHandoffStatusService` has no
+  `CONSENT_PENDING` rung and the cashier queue has no Consent column.
+- The cashier must not verify, acknowledge, confirm or wait for consent, and
+  consent must never be rendered as a reason a payment cannot proceed.
+- **Historical receivables stay collectible.** Every receivable predating the
+  consent architecture has no signed consent.
+- Partial payment still completes the visit and leaves the remainder as an active
+  receivable; full payment still settles. Unchanged.
+
+## 4. Patient odontogram history is read-only
+
+- The Odontogram page has two separate surfaces: the **ACTIVE odontogram**
+  (existing editor, existing workflow, unchanged) and **Riwayat Odontogram
+  Pasien** (previous native odontograms + published Legacy Odontograms,
+  read-only).
+- Do not mix them, and **do not introduce a blanket "all odontograms are
+  read-only" policy.** `OdontogramPolicy::update` is unchanged: a doctor may
+  still correct a past chart by opening that visit's own odontogram page, which
+  is what Sprint 59 requires.
+  - "Read-only" here means the history SURFACE offers no mutation control and no
+    mutation endpoint accepts a history row — read-only by construction, not by
+    hiding a button.
+- The **current visit is never listed as its own history**, and empty auto-created
+  drafts are excluded (opening the page creates one; an empty draft is not a
+  clinical finding).
+- History is **patient-centric and server-scoped**: active RME branch set plus the
+  doctor's clinical patient scope, resolved from the already-authorized visit —
+  never from a request parameter. An unresolved branch set fails closed to empty.
+- Never fabricate missing metadata. A missing doctor or branch renders as an em
+  dash.
+- The history card lives **outside** the `x-data="odontogramEditor(...)"` wrapper
+  so its Alpine state can never bind against the chart being edited.
+
+## 5. Legacy Odontogram is immutable archive
+
+- Uploading or publishing a Legacy Odontogram must **never** create or mutate a
+  native `ClinicVisit`, `Odontogram`, `MedicalRecord`, invoice, payment,
+  treatment, prescription, LabOrder or SATUSEHAT record.
+- Published evidence is **read-only**: no edit, no hard delete. Correction is
+  **VOID (with a reason) + a fresh import**.
+- **Branch is derived from the medical-record number's branch code**
+  (`DG-{BRANCH}-{YEAR}-{NUMBER}`), never submitted. Unknown / invalid /
+  ambiguous / inactive → **fail closed**.
+- The clinical date is **chosen manually** from what the document shows — never
+  upload time, `created_at`, file mtime or PDF metadata — and is validated
+  against the clinical clock (Asia/Makassar), strictly before the patient's
+  earliest **native odontogram**.
+  - Do **not** reuse `PatientEarliestNativeRmeDateResolver`: its cutoff is the
+    earliest visit owning a MEDICAL RECORD, a different fact, which would let a
+    legacy odontogram be filed after a real native odontogram already exists.
+- **It has its own feature flag, its own tables and its own permissions.** It
+  must NOT piggyback on a Legacy RME migration batch, wave, quota or admission,
+  and must not add a discriminator column to the Legacy RME published tables.
+- The flag gates **migration only**. Reading an already-published archive is
+  never flag-gated, or a rollback would remove a patient's history from their
+  treating doctor.
+- Private storage only; pages are served solely through a policy-gated route.
+  Never a public disk, never a public URL, never a full KTP/NIK.
+
+## 6. Testing
+
+- The gate and the workflow are proven **server-side**: assert the service/HTTP
+  refusal, not the absence of a button.
+- Tests that are not about consent may seed one with `rmeSignedConsentFor()`
+  (writes the row directly, works at any status). Tests that ARE about consent
+  must go through `RmeVisitConsentService` so the rules stay under test.
+- A new test suite reaches CI **only** if its name is added to the `--filter=`
+  string in **both** critical-gate variants of
+  `.github/workflows/foundation-evidence-gates.yml`; the classifier's
+  `run_rme_tests` output is consumed by no job.

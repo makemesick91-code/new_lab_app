@@ -42,9 +42,12 @@ class RmeVisitConsentPolicy
 
     /**
      * Capturing a signature. Note this is an authorisation question only —
-     * WHEN a consent may be signed (the visit must be at cashier_pending) is a
-     * business rule and lives in RmeVisitConsentService::assertSignable(), so
-     * it is enforced even for callers that never touch this policy.
+     * WHEN a consent may be signed is a business rule and lives in
+     * RmeVisitConsentService::assertSignable(), so it is enforced even for
+     * callers that never touch this policy. Since
+     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 that window is every
+     * non-terminal visit, so consent is taken at the start of the examination
+     * rather than on the way to the cashier.
      */
     public function create(User $user, ClinicVisit $visit): Response|bool
     {

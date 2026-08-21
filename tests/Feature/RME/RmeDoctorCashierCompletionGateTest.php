@@ -117,10 +117,16 @@ it('doctor can mark examination complete, moving the visit to cashier_pending', 
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-// ─── Rule 2: RME finalization is the doctor's "Selesai Pemeriksaan" too ───────
+// ─── Rule 2: RME finalization is NOT the doctor's "Selesai Pemeriksaan" ──────
+//
+// SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01. Finalizing a
+// clinical DOCUMENT no longer completes the EXAMINATION. What this test still
+// pins is preserved and inverted: the visit stays in_progress, and it reaches the
+// cashier queue only through the doctor's explicit "Selesai Pemeriksaan".
 
-it('finalizing the RME moves an in_progress visit to cashier_pending and into the cashier queue', function () {
+it('finalizing the RME leaves the visit in_progress until the doctor explicitly completes the examination', function () {
     $visit = gateInProgressVisit($this->branch);
+    rmeSignedConsentFor($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $this->branch->id,
@@ -136,9 +142,22 @@ it('finalizing the RME moves an in_progress visit to cashier_pending and into th
 
     app(MedicalRecordService::class)->finalize($record);
 
+    // THE INVERSION: the document is final, the examination is not over.
+    expect($record->refresh()->status)->toBe(MedicalRecord::STATUS_FINAL)
+        ->and($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+
+    // ...and it is NOT yet in the cashier queue.
+    $this->actingAs($this->cashier)
+        ->get(route('rme.cashier.index'))
+        ->assertOk()
+        ->assertDontSee($visit->visit_number);
+
+    // The doctor's explicit action is what hands the patient over.
+    $this->actingAs($this->doctorUser)
+        ->post(route('rme.visits.transition', $visit), ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+
     expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 
-    // Rule 2/3 — visit appears automatically in the cashier queue, no FO action.
     $this->actingAs($this->cashier)
         ->get(route('rme.cashier.index'))
         ->assertOk()
@@ -242,13 +261,14 @@ it('an unpaid invoice leaves the visit at cashier_pending', function () {
         ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });
 
-// ─── Rule 7: Consent gate still blocks payment ───────────────────────────────
+// ─── Rule 7: Consent is NOT a payment gate ───────────────────────────────────
+//
+// SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03. Consent is
+// taken at the START of the examination and gates RME authoring; payment does not
+// consult it. The assertion is inverted rather than deleted, so a reintroduced
+// payment consent gate fails here.
 
-it('payment is blocked when no consent document has been signed', function () {
-    // AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01: the gate is a
-    // signed PERSETUJUAN TINDAKAN MEDIS, not a checkbox, so the evidence is
-    // withheld here rather than the checkboxes. The request even asserts consent
-    // — which used to be enough on its own — and is still refused.
+it('accepts payment even when no consent document exists for the visit', function () {
     $this->actingAs($this->cashier);
 
     [$visit] = gateBillableVisit($this->branch);
@@ -259,12 +279,10 @@ it('payment is blocked when no consent document has been signed', function () {
     $this->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
         'amount' => 150000,
         'paid_at' => now()->toDateString(),
-        'consent_signed_by_patient' => 1,
-        'consent_signed_by_doctor' => 1,
-    ])->assertSessionHasErrors('consent_signed_by_patient');
+    ])->assertSessionHasNoErrors();
 
-    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+    expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 // ─── Rule 8: Room gate still blocks doctor examination ───────────────────────

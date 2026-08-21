@@ -4,7 +4,6 @@ namespace App\Modules\RmeInvoice\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
-use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\PaymentMethod\Services\PaymentMethodService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Requests\CreateRmePaymentRequest;
@@ -49,10 +48,6 @@ class RmePaymentController extends Controller
         }
 
         return view('rme.cashier.payment.create', [
-            // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the cashier sees the
-            // real consent state before attempting a payment, instead of
-            // discovering the gate by having the payment rejected.
-            'signedConsent' => app(RmeVisitConsentService::class)->validConsentFor($clinicVisit),
             'visit' => $clinicVisit->load(['patient', 'doctor', 'followUpOf']),
             'invoice' => $rmeInvoice->load(['items.treatment', 'cashier', 'payments.paymentMethod', 'payments.cashier']),
             'paymentMethods' => $this->paymentMethods->listActive(),

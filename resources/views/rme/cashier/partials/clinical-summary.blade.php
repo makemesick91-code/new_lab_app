@@ -51,15 +51,19 @@
             <dd class="mt-0.5 text-xs text-gray-400">Follow-up WhatsApp dilakukan manual oleh kasir. Sistem tidak mengirim pesan WhatsApp otomatis.</dd>
         </div>
         <div>
-            <dt class="text-gray-500">Status Persetujuan Tindakan (TTD)</dt>
+            <dt class="text-gray-500">Persetujuan Tindakan Medis</dt>
             <dd class="mt-1">
-                @if ($visit->hasVerifiedConsent())
-                    <x-ui.badge tone="success">Terverifikasi</x-ui.badge>
+                @if ($visit->hasSignedConsentDocument())
+                    <x-ui.badge tone="success">Sudah ditandatangani</x-ui.badge>
                 @else
-                    <x-ui.badge tone="warning">Belum Diverifikasi</x-ui.badge>
+                    <x-ui.badge tone="neutral">Tidak tercatat</x-ui.badge>
                 @endif
             </dd>
-            <dd class="mt-0.5 text-xs text-gray-400">Status verifikasi checklist saja — bukan tanda tangan digital.</dd>
+            {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — informational
+                 only. Consent is taken by the doctor at the start of the examination
+                 and gates RME authoring; it is NOT a condition of payment and the
+                 cashier has nothing to verify here. --}}
+            <dd class="mt-0.5 text-xs text-gray-400">Ditandatangani saat pemeriksaan dokter. Bukan syarat pembayaran.</dd>
         </div>
         <div>
             <dt class="text-gray-500">Dokter</dt>

@@ -23,12 +23,20 @@ beforeEach(function () {
 
 function hw2Visit(Branch $branch, Patient $patient, string $date): ClinicVisit
 {
-    return ClinicVisit::factory()->create([
+    $visit = ClinicVisit::factory()->create([
         'branch_id' => $branch->id,
         'patient_id' => $patient->id,
         'visit_date' => $date,
         'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ]);
+
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
+    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
+    // consent, so the fixture simply gives the visit one; the gate itself is under
+    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
+    rmeSignedConsentFor($visit);
+
+    return $visit;
 }
 
 function hw2Sheet(Branch $branch, ClinicVisit $visit): MedicalRecord
@@ -332,7 +340,9 @@ it('allows finalizing visit 2 when handwriting exists only on canonical visit 1'
     expect($sheet2->refresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
 });
 
-it('finalizing visit 2 transitions only visit 2 to cashier_pending', function () {
+it('finalizing visit 2 transitions no visit at all', function () {
+    // SUPERSEDED by FIX-01 — finalization no longer advances the workflow. The
+    // preserved property: finalizing one sheet never touches another visit.
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = hw2Visit($this->branch, $patient, now()->subDays(10)->toDateString());
     $visit2 = hw2Visit($this->branch, $patient, now()->subDays(2)->toDateString());
@@ -350,7 +360,7 @@ it('finalizing visit 2 transitions only visit 2 to cashier_pending', function ()
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]))
         ->assertRedirect();
 
-    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
+    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
         ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 

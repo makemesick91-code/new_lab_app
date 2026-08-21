@@ -80,13 +80,12 @@ it('renders the payment page with the financial summary card and consent gate in
         ->assertOk()
         ->assertSee('Total Tagihan')
         ->assertSee('Sisa Tagihan')
-        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the panel now REPORTS the
-        // consent state (this fixture's visit has a signed consent) instead of
-        // asking the cashier to assert it. The checkbox field names are preserved.
-        ->assertSee('Verifikasi Surat Persetujuan Tindakan')
-        ->assertSee('Consent sudah ditandatangani')
-        ->assertSee('consent_signed_by_patient', false)
-        ->assertSee('consent_signed_by_doctor', false);
+        // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — the
+        // payment page carries no consent panel at all now. Consent is taken at
+        // the start of the examination and is not a payment input.
+        ->assertDontSee('Verifikasi Surat Persetujuan Tindakan')
+        ->assertDontSee('consent_signed_by_patient', false)
+        ->assertDontSee('consent_signed_by_doctor', false);
 });
 
 it('shows a partial-payment status label on the invoice list after a partial payment', function () {

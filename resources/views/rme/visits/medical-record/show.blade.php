@@ -36,7 +36,7 @@
                      its route, its policy gate ($canFinalize) and the mandatory
                      handwriting precondition ($hasHandwriting) are all unchanged. --}}
                 @if ($isDraft && $canFinalize)
-                    @if ($hasHandwriting)
+                    @if ($hasHandwriting && ! $consentRequired)
                         <form method="POST" action="{{ route('rme.visits.medical-record.finalize', [$clinicVisit, $medicalRecord]) }}">
                             @csrf
                             <x-ui.button type="submit" variant="success">
@@ -67,6 +67,39 @@
                     </x-ui.button>
                 @endcan
 
+                {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — "Selesai
+                     Pemeriksaan" reachable from the page the doctor is actually on.
+
+                     Finalizing a record no longer ends the examination, so without an
+                     affordance here a doctor could finalize, leave, and strand the
+                     patient at in_progress with the cashier unable to raise an
+                     invoice. This is the SAME route and the SAME authorization as the
+                     button on Detail Kunjungan (rme.visits.transition +
+                     ClinicVisitPolicy::completeExamination) — a second entry point to
+                     one guarded action, not a second way to complete a visit. --}}
+                @php
+                    // The workspace spans the patient's whole RM book, so the active
+                    // sheet — and therefore $clinicVisit — changes as the doctor
+                    // swipes. Completing an examination is irreversible, so the
+                    // control is shown ONLY while the active sheet belongs to the
+                    // visit the doctor actually navigated from, and the label always
+                    // names that visit. Switching sheets hides it rather than
+                    // silently retargeting it at a different visit.
+                    $examVisitInFocus = $clinicVisit->id === ($sourceVisit?->id ?? $workspaceVisit->id);
+                @endphp
+                @if ($examVisitInFocus && $clinicVisit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS)
+                    @can('completeExamination', $clinicVisit)
+                        <form method="POST" action="{{ route('rme.visits.transition', $clinicVisit) }}">
+                            @csrf
+                            <input type="hidden" name="status"
+                                value="{{ \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING }}">
+                            <x-ui.button type="submit" variant="primary">
+                                Selesai Pemeriksaan (Kunjungan #{{ $clinicVisit->visit_number }})
+                            </x-ui.button>
+                        </form>
+                    @endcan
+                @endif
+
                 {{-- FIX-PRE-68-45 Scope A — real "Kembali ke Kunjungan" button at the
                      top of the page, matching the Odontogram page placement/style so
                      the doctor reaches the handwriting area faster. --}}
@@ -75,6 +108,32 @@
                 </x-ui.button>
             </x-slot:actions>
         </x-ui.page-header>
+
+        {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — the RME authoring
+             gate for THIS sheet's visit.
+
+             Reading is never blocked: the patient's history, the published legacy
+             archive and this record itself stay fully visible, because the doctor
+             deciding the treatment needs them. Only WRITING this visit's record
+             waits for the signature.
+
+             Presentation only — the server asserts the same gate. --}}
+        @if ($consentRequired)
+            <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                    <p class="max-w-2xl text-sm">
+                        Penulisan rekam medis kunjungan ini terkunci sampai Surat Persetujuan
+                        Tindakan Medis ditandatangani. Riwayat rekam medis, arsip RME lama dan
+                        odontogram pasien tetap dapat dibaca.
+                    </p>
+                    @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $consentVisit])
+                        <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $consentVisit)">
+                            Pilih Form Consent
+                        </x-ui.button>
+                    @endcan
+                </div>
+            </x-ui.alert>
+        @endif
 
         {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-03 — the finalization STATE
              messages travel with the relocated button so the doctor learns why it is
@@ -382,7 +441,12 @@
 
                             <div class="mt-3 flex flex-wrap items-center gap-3">
                                 <x-ui.button type="button" variant="secondary" id="clear-canvas-btn">Reset ke Tulisan Tersimpan</x-ui.button>
-                                <x-ui.button type="submit" variant="primary" id="save-handwriting-btn">Simpan Tulisan Tangan</x-ui.button>
+                                {{-- FIX-02 — saving handwriting is an RME write, so it waits
+                                     for consent exactly like the rest of the record. Disabled
+                                     is presentation only; MedicalRecordHandwritingController
+                                     asserts the same gate before it stores anything. --}}
+                                <x-ui.button type="submit" variant="primary" id="save-handwriting-btn"
+                                    :disabled="$consentRequired">Simpan Tulisan Tangan</x-ui.button>
                             </div>
                         </form>
                     </div>

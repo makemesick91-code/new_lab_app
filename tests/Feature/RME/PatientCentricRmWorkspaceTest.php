@@ -25,12 +25,20 @@ beforeEach(function () {
 /** Create a visit (default registered, roomed) for a patient. */
 function rmwsVisit(Branch $branch, Patient $patient, string $date, string $status = ClinicVisit::STATUS_REGISTERED): ClinicVisit
 {
-    return ClinicVisit::factory()->create([
+    $visit = ClinicVisit::factory()->create([
         'branch_id' => $branch->id,
         'patient_id' => $patient->id,
         'visit_date' => $date,
         'status' => $status,
     ]);
+
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
+    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
+    // consent, so the fixture simply gives the visit one; the gate itself is under
+    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
+    rmeSignedConsentFor($visit);
+
+    return $visit;
 }
 
 /** Attach a draft medical record (sheet) to a visit. */
@@ -287,7 +295,10 @@ it('keeps the per-visit print route working', function () {
 });
 
 // 18 — Finalize transitions ONLY the source sheet's own visit to cashier_pending.
-it('finalize transitions only the active sheet visit to cashier_pending', function () {
+it('finalize changes no visit status, not even the active sheet visit', function () {
+    // SUPERSEDED by FIX-01 — finalization is a document state, not a workflow
+    // transition. What this still pins, and what mattered, is that finalizing one
+    // sheet does not reach across the patient's book and touch another visit.
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = rmwsVisit($this->branch, $patient, now()->subDays(10)->toDateString(), ClinicVisit::STATUS_IN_PROGRESS);
     $visit2 = rmwsVisit($this->branch, $patient, now()->subDays(2)->toDateString(), ClinicVisit::STATUS_IN_PROGRESS);
@@ -304,7 +315,7 @@ it('finalize transitions only the active sheet visit to cashier_pending', functi
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]))
         ->assertRedirect();
 
-    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
+    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
         ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 

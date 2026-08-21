@@ -390,6 +390,21 @@ $registry = [
             'dependencies' => [],
             'rollback_action' => 'Set the env override to false and clear the config cache; every legacy upload/processing/retry/review/publish/void/branch-admission path is refused again, so no new evidence can enter or leave the archive. Nothing is deleted — the schema, already imported staging rows, published legacy records and their files on the private disk all stay exactly as they are. LEGACY-RME-PDF-HISTORY-1A: this rollback stops MUTATIONS, it does not hide already-published evidence — an authorized clinical reader keeps reading a published archive, which is deliberate so a rollback never removes a patient medical history from the doctor treating them. To contain a READ incident use the mechanisms built for it: revoke view_legacy_rme_archive / view_legacy_rme_imports from the affected actors, and/or VOID the offending record, which stops its bytes streaming immediately while preserving it as auditable evidence.',
         ],
+
+        // --- FIX-04b — legacy ODONTOGRAM chart archive (runtime shipped, stays OFF) ---
+
+        'rme.legacy_odontogram_archive' => [
+            'name' => 'Legacy Odontogram Archive Migration',
+            'description' => 'MIGRATION / INGESTION / WRITE capability for the legacy ODONTOGRAM chart archive: uploading a scanned historical paper odontogram as PDF, rasterizing its pages onto a private disk, reviewing them and publishing an immutable, read-only legacy odontogram record that appears in the patient odontogram history alongside their native odontograms. Entirely separate from the legacy RME PDF archive: its own tables, its own permissions and this own flag, so neither capability can be opened or rolled back as a side effect of the other. Publishing never creates a clinic visit, a native odontogram, a medical record, an invoice, a payment, a lab order or a SATUSEHAT record. While this flag is off every upload, processing, retry, review, publish and void path is refused server-side. THIS FLAG DOES NOT GATE READING AN ALREADY-PUBLISHED ARCHIVE: published evidence is the patient real clinical history, so it stays readable to an authorized clinical reader through the policy-gated private viewer; read is governed by the record being PUBLISHED plus canonical authorization (read permission, server-resolved branch scope, and for a doctor the treating-relationship scope), never by this flag.',
+            'default' => false,
+            'env_key' => 'FEATURE_RME_LEGACY_ODONTOGRAM_ARCHIVE',
+            'owner' => 'rme',
+            'risk_level' => 'high',
+            'rollout_status' => 'implemented',
+            'review_target' => 'FIX-04b',
+            'dependencies' => [],
+            'rollback_action' => 'Set the environment override to false and clear the config cache; every legacy odontogram upload/processing/retry/review/publish/void path is refused again, so no new evidence can enter or leave the archive. Nothing is deleted - the schema, staged rows, published records and their files on the private disk all stay exactly as they are. This rollback stops MUTATIONS, it does not hide already-published evidence: an authorized clinical reader keeps reading a published archive, which is deliberate so a rollback never removes a patient clinical history from the doctor treating them. To contain a READ incident, revoke view_legacy_odontogram_archive from the affected actors and/or VOID the offending record, which stops its bytes streaming immediately while preserving it as auditable evidence.',
+        ],
     ],
 ];
 

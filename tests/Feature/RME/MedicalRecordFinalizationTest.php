@@ -24,6 +24,12 @@ beforeEach(function () {
 function makeVisitWithDraft(Branch $branch): array
 {
     $visit = ClinicVisit::factory()->create(['branch_id' => $branch->id]);
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
+    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
+    // consent, so the fixture simply gives the visit one; the gate itself is under
+    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
+    rmeSignedConsentFor($visit);
+
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -107,10 +113,15 @@ it('finalization sets finalized_by to authenticated user', function () {
 
 // ─── Part B: ClinicVisit status transition ────────────────────────────────────
 
-it('finalization moves in_progress visit to cashier_pending', function () {
+it('finalization leaves an in_progress visit in_progress', function () {
+    // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01.
+    // Completing a clinical DOCUMENT is not completing the EXAMINATION. Only the
+    // doctor's explicit "Selesai Pemeriksaan" advances the visit. Inverted rather
+    // than deleted, so a reintroduced implicit transition fails here.
     $this->actingAs($this->manager);
 
     $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $this->branch->id]);
+    rmeSignedConsentFor($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $this->branch->id,
@@ -123,7 +134,7 @@ it('finalization moves in_progress visit to cashier_pending', function () {
 
     $this->assertDatabaseHas('trx_clinic_visits', [
         'id' => $visit->id,
-        'status' => ClinicVisit::STATUS_CASHIER_PENDING,
+        'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ]);
 });
 
@@ -244,6 +255,7 @@ it('initial service data is unchanged after finalization', function () {
         'branch_id' => $this->branch->id,
         'initial_service_note' => 'Scaling dan polishing',
     ]);
+    rmeSignedConsentFor($visit);
 
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,

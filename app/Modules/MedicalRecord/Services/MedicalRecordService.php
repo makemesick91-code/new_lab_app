@@ -4,7 +4,7 @@ namespace App\Modules\MedicalRecord\Services;
 
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
-use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\RME\Services\DoctorPatientScopeService;
@@ -18,10 +18,16 @@ class MedicalRecordService
     public function __construct(
         private readonly MedicalRecordRepositoryInterface $medicalRecords,
         private readonly BranchService $branches,
-        private readonly ClinicVisitService $visitService,
+        // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — ClinicVisitService
+        // is deliberately NOT a dependency of this service. Authoring or
+        // finalizing a clinical document must never move the visit through the
+        // workflow, so this class does not even hold the ability to do it.
         private readonly PatientRmWorkspaceResolver $workspace,
         private readonly DoctorPatientScopeService $doctorScope,
         private readonly DiagnosisRolloutService $diagnosisRollout,
+        // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — every write path
+        // in this service asserts the consent gate before it touches a record.
+        private readonly RmeVisitConsentService $consents,
     ) {}
 
     /**
@@ -81,6 +87,13 @@ class MedicalRecordService
                 ]);
             }
 
+            // FIX-02 — no RME sheet is created for a live visit without consent.
+            // Patient-scoped first: which visit a request claims to be "for" is client
+            // input, so the binding question is whether this PATIENT has an open,
+            // unconsented encounter.
+            $this->consents->assertPatientRecordWritable($clinicVisit->patient_id);
+            $this->consents->assertRmeAuthoringAllowed($clinicVisit);
+
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
             ]));
@@ -120,6 +133,10 @@ class MedicalRecordService
                 return $medicalRecord;
             }
 
+            // FIX-02 — finalization is a write to this visit's record.
+            $this->consents->assertPatientRecordWritable($medicalRecord->patient_id);
+            $this->consents->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
+
             if (! $this->hasRequiredHandwriting($medicalRecord)) {
                 throw ValidationException::withMessages([
                     'handwriting' => 'RME belum dapat difinalkan karena catatan tulis tangan dokter belum tersedia.',
@@ -139,14 +156,32 @@ class MedicalRecordService
             ]);
 
             // Sprint 64.0 — lazily backfill workspace audit columns (no-op once
-            // stamped). Finalize transitions only THIS sheet's own visit.
+            // stamped).
             $this->workspace->stampWorkspaceFields($finalized);
 
-            $visit = $medicalRecord->clinicVisit;
-            if ($visit && $visit->status === ClinicVisit::STATUS_IN_PROGRESS) {
-                $this->visitService->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
-            }
-
+            /*
+             * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — finalizing a
+             * medical record NO LONGER ends the examination.
+             *
+             * This method used to transition an in_progress visit to
+             * cashier_pending, so completing a clinical DOCUMENT silently
+             * completed the doctor's EXAMINATION and handed the patient to the
+             * cashier. Those are two different facts. A doctor who finalizes one
+             * RM sheet may still have an odontogram to record, a second sheet to
+             * write, or a treatment decision to revise — and since Sprint 59 a
+             * finalized record is explicitly editable again, so "final" was never
+             * a reliable proxy for "the examination is over".
+             *
+             * Document finalization is now purely a clinical-document state.
+             * The workflow transition in_progress -> cashier_pending happens ONLY
+             * when an authorized doctor explicitly performs "Selesai Pemeriksaan"
+             * (ClinicVisitController::transitionStatus, gated by
+             * ClinicVisitPolicy::completeExamination / complete_rme_examination).
+             *
+             * Nothing here may re-introduce an automatic transition: not this
+             * method, not odontogram saving, not handwriting completion, and not
+             * any combination of them.
+             */
             return $finalized;
         });
     }
@@ -170,6 +205,10 @@ class MedicalRecordService
                     'medical_record_id' => 'Rekam medis tidak berada di cabang RME aktif.',
                 ]);
             }
+
+            // FIX-02 — editing this visit's record is a write to it.
+            $this->consents->assertPatientRecordWritable($medicalRecord->patient_id);
+            $this->consents->assertRmeAuthoringAllowed($medicalRecord->clinicVisit);
 
             $safe = array_intersect_key($data, array_flip([
                 'subjective', 'objective', 'assessment', 'plan', 'notes',
@@ -200,6 +239,18 @@ class MedicalRecordService
         $patientId = $contextVisit->patient_id;
         $canonicalVisit = $this->workspace->resolveCanonicalWorkspaceVisit($patientId)
             ?? $contextVisit;
+
+        /*
+         * FIX-02 — gate the ENCOUNTER, not just the storage target.
+         *
+         * Sprint 64.0.2 writes the patient's handwriting book onto the CANONICAL
+         * visit, which is usually an older, already-terminal visit and therefore
+         * outside the consent window. Content authored during the live encounter
+         * ($contextVisit) would otherwise be written through that exempt
+         * historical visit with no consent for the treatment actually happening.
+         */
+        $this->consents->assertPatientRecordWritable($patientId);
+        $this->consents->assertRmeAuthoringAllowedForAll([$contextVisit, $canonicalVisit]);
 
         $existing = $this->medicalRecords->findByVisitId($canonicalVisit->id);
 

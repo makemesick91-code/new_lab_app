@@ -5,6 +5,7 @@
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Models\MedicalRecordHandwriting;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
@@ -363,8 +364,12 @@ it('cashier cannot access invoice from a non-RME branch', function () {
 
 // ─── RME branch queue + clinical display (Sprint 23 hardening) ───────────────
 
-it('lists an RME-branch visit in cashier queue after medical record finalization', function () {
+it('lists an RME-branch visit in the cashier queue after the doctor completes the examination', function () {
+    // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — finalizing
+    // the record no longer hands the patient to the cashier; the doctor's explicit
+    // "Selesai Pemeriksaan" does. The queue behaviour itself is unchanged.
     $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $this->branch->id]);
+    rmeSignedConsentFor($visit);
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $this->branch->id,
@@ -379,6 +384,11 @@ it('lists an RME-branch visit in cashier queue after medical record finalization
     ]);
 
     app(MedicalRecordService::class)->finalize($record);
+
+    // Still with the doctor: a final document is not a finished examination.
+    expect($visit->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+
+    app(ClinicVisitService::class)->transitionStatus($visit, ClinicVisit::STATUS_CASHIER_PENDING);
 
     $this->actingAs($this->cashier)
         ->get(route('rme.cashier.index'))

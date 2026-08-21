@@ -96,6 +96,18 @@ return [
             'report' => false,
         ],
 
+        // FIX-04b — legacy ODONTOGRAM chart archive. Its own private disk, kept
+        // separate from the legacy RME archive so the two capabilities can be
+        // retained, audited and (if ever needed) purged independently.
+        'legacy_odontogram_private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/legacy-odontogram-private'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
     ],
 
     /*

@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
-use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\RmeInvoice\Interfaces\RmeInvoiceRepositoryInterface;
 use App\Modules\RmeInvoice\Interfaces\RmePaymentRepositoryInterface;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
@@ -51,7 +50,6 @@ class RmePaymentService
             }
 
             $visit = $this->requireVisit($invoice);
-            $this->assertConsentVerified($visit);
 
             $payment = $this->recordPayment($invoice, $visit, $cashier, $data, $amount);
 
@@ -96,8 +94,6 @@ class RmePaymentService
         $result = DB::transaction(function () use ($controlInvoice, $controlVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $controlInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($controlInvoice->id);
             $this->assertInvoicePayable($controlInvoice);
-
-            $this->assertConsentVerified($controlVisit);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -240,8 +236,6 @@ class RmePaymentService
         $result = DB::transaction(function () use ($currentInvoice, $currentVisit, $cashier, $data, $amount, $summary, $batchUuid) {
             $currentInvoice = RmeInvoice::query()->lockForUpdate()->findOrFail($currentInvoice->id);
             $this->assertInvoicePayable($currentInvoice);
-
-            $this->assertConsentVerified($currentVisit);
 
             $remainingPayment = $amount;
             $allocatedToParent = 0.0;
@@ -488,7 +482,7 @@ class RmePaymentService
      * open. A zero-payment / still-UNPAID invoice never reaches here because
      * {@see normalizeAmount()} requires amount > 0, so the visit stays
      * cashier_pending. The Sprint 62.1 doctor→cashier gate is untouched: this
-     * only ever runs after consent, payable, and room assertions inside pay().
+     * only ever runs after the payable and room assertions inside pay().
      */
     private function completeVisitAfterCashierPayment(RmeInvoice $invoice, ClinicVisit $visit): void
     {
@@ -534,7 +528,7 @@ class RmePaymentService
      * unpaid balance stays active piutang and is collected at a future visit. A
      * zero-payment batch never reaches here (normalizeAmount requires amount > 0).
      * The Sprint 62.1 doctor→cashier gate is untouched: this only runs after
-     * consent, payable, and branch assertions inside allocateVisitPayment().
+     * payable and branch assertions inside allocateVisitPayment().
      */
     private function completeVisitAfterCashierBatch(ClinicVisit $visit, bool $paymentMade): void
     {
@@ -563,76 +557,36 @@ class RmePaymentService
         }
     }
 
-    /**
-     * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the payment consent gate.
+    /*
+     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — the payment consent
+     * gate is REMOVED. assertConsentVerified() lived here and is deleted.
      *
-     * This method used to have a sibling, applyConsentVerification(), which
-     * wrote consent_signed_by_patient / consent_signed_by_doctor onto the visit
-     * straight from the payment request and then let this assertion read back
-     * the row it had just written. The gate therefore authored its own evidence:
-     * a POST carrying consent_signed_by_patient=1&consent_signed_by_doctor=1
-     * satisfied it with no signature, no document and no patient involvement.
+     * The previous sprint made a signed PERSETUJUAN TINDAKAN MEDIS the condition
+     * for taking money. That put the consent check in the wrong place. Consent is
+     * consent to TREATMENT, so it belongs at the moment treatment is decided and
+     * recorded — the doctor's examination — not at the moment money changes
+     * hands. Collecting payment is an administrative act; a cashier is not the
+     * right person to adjudicate clinical consent, and a patient standing at the
+     * counter is past the point where refusing consent could change anything.
      *
-     * That write path is deleted. Payment now asks a question it cannot answer
-     * itself: does a signed PERSETUJUAN TINDAKAN MEDIS exist for THIS visit,
-     * and is it still valid? Only RmeVisitConsentService can create that
-     * evidence, and only from a real signature.
+     * Consent now gates CURRENT-VISIT RME AUTHORING instead
+     * (RmeVisitConsentService::assertRmeAuthoringAllowed, enforced in
+     * MedicalRecordService and the handwriting service). A treatment that was
+     * recorded at all therefore already had consent, which is a stronger
+     * guarantee than the cashier check ever gave: the old gate could be reached
+     * only when the visit was still at cashier_pending, so every carry-over
+     * receivable and every instalment on an already-completed visit bypassed it
+     * by design.
      *
-     * The two boolean columns are kept as a denormalised mirror for display and
-     * backward compatibility, but they are no longer the authority and are only
-     * ever written server-side, from a consent that was actually signed.
+     * Payment eligibility is now purely financial and workflow-based:
+     *   - the invoice must be payable (assertInvoicePayable)
+     *   - the amount must not exceed the remaining balance
+     *   - the cashier must hold manage_rme_billing and be in the invoice branch
+     *   - invoice creation still requires the visit to be at cashier_pending
+     *     (RmeInvoiceService::create), which still requires the doctor to have
+     *     explicitly finished the examination (FIX-01).
      *
-     * SCOPE — deliberately the CURRENT visit only.
-     *
-     * allocateControlPayment() and allocateVisitPayment() also settle invoices
-     * belonging to EARLIER visits (carry-over receivables). Those are NOT gated
-     * on their own consent, and that is the correct behaviour, not an oversight:
-     *
-     *   - Consent is consent to TREATMENT. A prior visit's treatment already
-     *     happened, and from this sprint onward it could not have been paid
-     *     without its own signed consent in the first place.
-     *   - Collecting an outstanding debt is not a new treatment. Demanding a
-     *     fresh signature before accepting money for old, already-consented work
-     *     would be meaningless.
-     *   - Every receivable that predates this sprint has NO signed consent by
-     *     definition. Asserting consent on parent visits would make all
-     *     historical debt permanently uncollectable — a far worse outcome than
-     *     the one this gate exists to prevent.
-     *
-     * So: the visit whose treatment is being paid for must have consent; visits
-     * whose debt is merely being collected must not be re-gated.
-     *
-     * That same principle applies to THIS visit once it is no longer at the
-     * cashier. The partial-payment rule completes a visit on the first payment
-     * while leaving the invoice PARTIAL and still payable, so
-     * "visit completed + invoice PARTIAL" is the normal shape of an outstanding
-     * instalment. Collecting that balance later is debt collection, not a new
-     * treatment — and consent cannot even be signed for a completed visit
-     * (assertSignable requires cashier_pending), so demanding one here would
-     * make every instalment permanently uncollectable, including the entire
-     * receivables book that existed before this sprint.
-     *
-     * Gating on cashier_pending is safe rather than a loophole: `completed` is
-     * not an accepted value in TransitionStatusRequest and
-     * ClinicVisitService::transitionStatus() refuses it from anywhere but
-     * cashier_pending, so the ONLY way a visit becomes completed is through a
-     * payment that already passed this gate. A new invoice cannot be raised on a
-     * completed visit either — RmeInvoiceService::create() requires
-     * cashier_pending. There is therefore no path that reaches a payment on a
-     * completed visit without consent having been given for the treatment.
+     * Nothing in this class may consult consent again. Historical receivables —
+     * every one of which predates signed consent — must stay collectible.
      */
-    private function assertConsentVerified(ClinicVisit $visit): void
-    {
-        if ($visit->status !== ClinicVisit::STATUS_CASHIER_PENDING) {
-            return;
-        }
-
-        if (app(RmeVisitConsentService::class)->hasValidConsent($visit)) {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            'consent_signed_by_patient' => 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan Medis belum ditandatangani untuk kunjungan ini.',
-        ]);
-    }
 }

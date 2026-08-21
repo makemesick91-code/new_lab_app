@@ -8,7 +8,7 @@
     defaulting to the visit the doctor came from. No KTP/NIK is rendered.
 
     Expects: $sheets, $activeSheet, $workspaceVisit, $sourceVisit, $addSheetVisit,
-             $canEdit (bool).
+             $canEdit (bool), $addSheetConsentRequired (bool, optional).
 --}}
 @php
     $sheetBase = array_filter(['source_visit_id' => $sourceVisit?->id], fn ($v) => $v !== null);
@@ -71,13 +71,24 @@
                 @endif
             </div>
 
+            {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — adding a sheet
+                 is an RME write on $addSheetVisit, so it waits for THAT visit's
+                 consent. Presentation only; MedicalRecordService::createDraft
+                 asserts the same gate. Defaults to false so any other includer of
+                 this partial keeps its previous behaviour. --}}
             @if ($canEdit && $addSheetVisit)
-                <form method="POST" action="{{ route('rme.visits.medical-record.store', $addSheetVisit) }}">
-                    @csrf
-                    <x-ui.button type="submit" variant="secondary" class="!px-3 !py-1.5 !text-xs">
+                @if (($addSheetConsentRequired ?? false))
+                    <x-ui.button type="button" variant="secondary" class="!px-3 !py-1.5 !text-xs" disabled>
                         + Tambah Lembar RM (Kunjungan #{{ $addSheetVisit->visit_number }})
                     </x-ui.button>
-                </form>
+                @else
+                    <form method="POST" action="{{ route('rme.visits.medical-record.store', $addSheetVisit) }}">
+                        @csrf
+                        <x-ui.button type="submit" variant="secondary" class="!px-3 !py-1.5 !text-xs">
+                            + Tambah Lembar RM (Kunjungan #{{ $addSheetVisit->visit_number }})
+                        </x-ui.button>
+                    </form>
+                @endif
             @endif
         </div>
     </x-ui.card>

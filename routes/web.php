@@ -59,6 +59,8 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramImportController;
+use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramRecordController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeMigrationOperationsController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeRecordController;
@@ -276,6 +278,56 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->middleware('permission:publish_legacy_rme_imports');
     });
 
+    // FIX-04b — Impor Arsip Odontogram Lama (historical paper odontogram chart).
+    //
+    // Its OWN group and its OWN permissions, deliberately parallel to (never
+    // nested inside) the legacy RME intake group above: the two capabilities
+    // are independent, so holding one must never imply the other.
+    //
+    // Declared inside the `settings` prefix/name group, so these resolve to
+    // /settings/rme/legacy-odontograms/* under settings.rme.legacy-odontograms.*.
+    //
+    // The controller independently re-checks the feature flag (OFF by default,
+    // so the whole surface 404s) and the policy (which adds the per-row branch
+    // scope) on every action. `create` is declared before the numeric
+    // `{import}` routes so the static segment is never captured as an id.
+    Route::prefix('rme/legacy-odontograms')->name('rme.legacy-odontograms.')->group(function () {
+        Route::get('/', [LegacyOdontogramImportController::class, 'index'])
+            ->name('index')
+            ->middleware('permission:view_legacy_odontogram_imports|create_legacy_odontogram_imports');
+
+        Route::get('create', [LegacyOdontogramImportController::class, 'create'])
+            ->name('create')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::post('/', [LegacyOdontogramImportController::class, 'store'])
+            ->name('store')
+            ->middleware('permission:create_legacy_odontogram_imports');
+
+        Route::middleware('permission:view_legacy_odontogram_imports|create_legacy_odontogram_imports')->group(function () {
+            Route::get('{import}', [LegacyOdontogramImportController::class, 'show'])->name('show')->whereNumber('import');
+            Route::get('{import}/pages/{page}', [LegacyOdontogramImportController::class, 'page'])->name('pages.show')->whereNumber('import')->whereNumber('page');
+        });
+
+        Route::middleware('permission:create_legacy_odontogram_imports')->group(function () {
+            Route::post('{import}/retry', [LegacyOdontogramImportController::class, 'retry'])->name('retry')->whereNumber('import');
+            Route::post('{import}/cancel', [LegacyOdontogramImportController::class, 'cancel'])->name('cancel')->whereNumber('import');
+        });
+
+        // Review and publish carry their own named permissions so the two
+        // duties are separable; the policy then adds the per-row branch scope
+        // and the transition gate (PUBLISHED is only reachable from REVIEWED).
+        Route::post('{import}/review', [LegacyOdontogramImportController::class, 'review'])
+            ->name('review')
+            ->whereNumber('import')
+            ->middleware('permission:review_legacy_odontogram_imports');
+
+        Route::post('{import}/publish', [LegacyOdontogramImportController::class, 'publish'])
+            ->name('publish')
+            ->whereNumber('import')
+            ->middleware('permission:publish_legacy_odontogram_imports');
+    });
+
     // LEGACY-RME-PDF-ROLL-4 — Operasi Migrasi Arsip RME Lama.
     //
     // The control plane for a wave-based migration: register a wave, enroll the
@@ -434,6 +486,39 @@ Route::middleware('auth')->prefix('rme/legacy-records')->name('rme.legacy-record
     // folded into the read group.
     Route::middleware('permission:void_legacy_rme_imports')->group(function () {
         Route::post('{record}/void', [LegacyRmeRecordController::class, 'void'])->name('void')->whereNumber('record');
+    });
+});
+
+// FIX-04b — the published legacy ODONTOGRAM archive itself.
+//
+// A published record belongs to the patient's CLINICAL history, so the viewer
+// lives under /rme rather than under Master Data (which owns the intake side).
+// Its own group, declared BEFORE the general `rme.` group, so `legacy-odontograms`
+// is never captured by another route's wildcard segment.
+//
+// Read-only by design: no update, no delete and no republish route exists. A
+// published legacy odontogram is immutable clinical evidence, and its source PDF
+// and rendered pages stay private — these policy-gated streaming routes are the
+// ONLY way to reach those bytes.
+Route::middleware('auth')->prefix('rme/legacy-odontograms')->name('rme.legacy-odontograms.')->group(function () {
+    // `permission:` is applied INSIDE the auth group, never chained alongside
+    // it: a guest must be sent to the login screen, not told 403 by a
+    // permission check that ran before authentication.
+    //
+    // Reading is open to the intake operator OR a clinical reader (doctor).
+    // Neither implies the other and neither implies review/publish/void; branch
+    // scope still decides WHICH records are reachable, and a doctor
+    // additionally needs a real treating relationship with the patient.
+    Route::middleware('permission:view_legacy_odontogram_imports|view_legacy_odontogram_archive')->group(function () {
+        Route::get('{record}', [LegacyOdontogramRecordController::class, 'show'])->name('show')->whereNumber('record');
+        Route::get('{record}/source', [LegacyOdontogramRecordController::class, 'source'])->name('source')->whereNumber('record');
+        Route::get('{record}/pages/{page}', [LegacyOdontogramRecordController::class, 'page'])->name('pages.show')->whereNumber('record')->whereNumber('page');
+    });
+
+    // Retracting is a state change with its own named permission — never folded
+    // into the read group.
+    Route::middleware('permission:void_legacy_odontogram_records')->group(function () {
+        Route::post('{record}/void', [LegacyOdontogramRecordController::class, 'void'])->name('void')->whereNumber('record');
     });
 });
 

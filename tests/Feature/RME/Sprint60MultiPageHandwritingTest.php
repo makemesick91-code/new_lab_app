@@ -38,6 +38,12 @@ beforeEach(function () {
         'queue_number' => 1,
     ]);
 
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — writing a visit's RME
+    // now requires a signed Persetujuan Tindakan Medis. These tests are not about
+    // consent, so the fixture simply gives the visit one; the gate itself is under
+    // test in RmeExamConsentOdontogramHistoryTest and RmeVisitConsentGateTest.
+    rmeSignedConsentFor($this->visit);
+
     $this->record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $this->visit->id,
         'branch_id' => $this->branch->id,

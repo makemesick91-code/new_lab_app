@@ -529,4 +529,16 @@
         </x-ui.card>
 
     </div>
+
+    {{-- ============================================================ --}}
+    {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-04            --}}
+    {{-- Riwayat Odontogram Pasien — read-only, previous visits only.  --}}
+    {{-- Deliberately placed AFTER the closing </div> of the           --}}
+    {{-- x-data="odontogramEditor(...)" wrapper: the history card has  --}}
+    {{-- its own per-row Alpine state and must never share scope with  --}}
+    {{-- the active editor, so a stray binding can never reach the     --}}
+    {{-- chart being edited. The active editor above is UNCHANGED.     --}}
+    {{-- ============================================================ --}}
+    @include('rme.visits.odontogram.partials.patient-odontogram-history')
+
 </x-settings-shell>

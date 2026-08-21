@@ -13,7 +13,6 @@ use App\Modules\RmeInvoice\Services\RmePaymentService;
 use App\Modules\Treatment\Models\Treatment;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
-use Illuminate\Validation\ValidationException;
 
 beforeEach(function () {
     test()->seed(BranchSeeder::class);
@@ -187,40 +186,40 @@ it('does not show ktp on rme visit print', function () {
  * rewritten around the evidence rather than around the booleans.
  */
 
-it('fails payment when no consent document has been signed', function () {
+it('settles payment even when no consent document has been signed', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
 
-    expect(fn () => app(RmePaymentService::class)->pay(
-        $invoice,
-        $this->cashier,
-        consentPaymentPayload($invoice),
-    ))->toThrow(ValidationException::class, 'Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan Medis belum ditandatangani untuk kunjungan ini.');
+    // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — consent is
+    // taken at the start of the examination and is not a payment condition.
+    app(RmePaymentService::class)->pay($invoice, $this->cashier, consentPaymentPayload($invoice));
 
-    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
-        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
-        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
+    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($visit->fresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
-it('fails payment even when the request asserts both consents are true', function () {
+it('settles payment and ignores any consent claim the request carries', function () {
     // The exact payload that settled an invoice before this sprint.
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
 
-    expect(fn () => app(RmePaymentService::class)->pay(
+    app(RmePaymentService::class)->pay(
         $invoice,
         $this->cashier,
         consentPaymentPayload($invoice, [
             'consent_signed_by_patient' => true,
             'consent_signed_by_doctor' => true,
         ]),
-    ))->toThrow(ValidationException::class);
+    );
 
-    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
-        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID)
-        // The request must not have been able to write the attestation either.
+    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        // PRESERVED, and still the point: the request must never be able to write
+        // the attestation columns. It could not gate a payment before, and it
+        // cannot author consent evidence now.
         ->and($visit->fresh()->consent_signed_by_patient)->toBeFalse();
 });
 
@@ -258,7 +257,7 @@ it('accepts an http payment without the consent checkboxes when a consent is sig
     expect($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
-it('rejects an http payment when no consent has been signed', function () {
+it('accepts an http payment when no consent has been signed', function () {
     $this->actingAs($this->cashier);
 
     [$visit, $invoice] = consentUnpaidInvoice($this->branch, $this->cashier);
@@ -268,10 +267,10 @@ it('rejects an http payment when no consent has been signed', function () {
         'paid_at' => now()->format('Y-m-d H:i:s'),
         'consent_signed_by_patient' => 1,
         'consent_signed_by_doctor' => 1,
-    ])->assertSessionHasErrors('consent_signed_by_patient');
+    ])->assertSessionHasNoErrors();
 
-    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeFalse()
-        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_UNPAID);
+    expect(RmePayment::where('rme_invoice_id', $invoice->id)->exists())->toBeTrue()
+        ->and($invoice->fresh()->status)->toBe(RmeInvoice::STATUS_PAID);
 });
 
 it('shows ktp duplicate validation message exactly', function () {

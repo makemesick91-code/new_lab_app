@@ -67,6 +67,13 @@ class PermissionGroupingService
                 'view_legacy_rme_migration_operations',
                 'manage_legacy_rme_migration_operations',
                 'approve_legacy_rme_migration_wave',
+                // FIX-04b — legacy (historical) odontogram chart archive
+                'view_legacy_odontogram_imports',
+                'create_legacy_odontogram_imports',
+                'review_legacy_odontogram_imports',
+                'publish_legacy_odontogram_imports',
+                'void_legacy_odontogram_records',
+                'view_legacy_odontogram_archive',
             ],
         ],
         [

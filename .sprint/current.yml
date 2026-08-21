@@ -1,36 +1,40 @@
 ### Validated by: php artisan sprint:manifest-check
 
-id: FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2
+id: FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3
 type: FOUNDATION_SPRINT
-module: Consent
-# Six integrated fixes. FIX-01 replaces a request-body consent attestation with a
-# real signed clinical document that is the server-side RME payment gate, which is
-# a cross-module security foundation (Consent, RmeInvoice, ClinicVisit). The other
-# five reshape the Medical Record workspace, relocate the RME print entry point,
-# remove the odontogram from the RME print composition and put the receipt on one
-# page. FOUNDATION_SPRINT is the accurate classification for cross-module
-# foundation work and is the STRICTER choice: audit level 3 and
+module: ClinicVisit
+# Four integrated fixes that together re-time the whole RME clinical workflow.
+# FIX-01 separates clinical-document finalization from examination completion.
+# FIX-02 moves the consent gate from payment to RME authoring, which is a
+# cross-module security foundation (Consent, MedicalRecord, ClinicVisit).
+# FIX-03 removes consent from cashier/payment eligibility entirely.
+# FIX-04 adds a read-only patient odontogram history plus a new immutable
+# Legacy Odontogram archive. FOUNDATION_SPRINT is the accurate classification
+# for cross-module foundation work and is the STRICTER choice: audit level 3 and
 # full_foundation_audit, versus MODULE_SPRINT's 2.
-title: "Signed PERSETUJUAN TINDAKAN MEDIS as the RME payment gate, Medical Record workspace hierarchy, relocated RME print, odontogram removed from the RME print, and a one-page receipt"
+title: "Explicit doctor examination completion, consent as the RME authoring gate, cashier/payment consent independence, and patient odontogram history with a Legacy Odontogram archive"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # payment gate, consent signing, print composition
-schema_change: true             # one additive table for signed consent records
+runtime_change: true            # workflow transitions, consent gate, payment eligibility
+schema_change: true             # additive tables for the Legacy Odontogram archive
 frontend_change: true           # Blade only (no JS/CSS/Vite change)
-security_impact: true           # the payment gate stops trusting the request body
-branch_isolation_impact: true   # consent is branch-scoped to the owning visit
+security_impact: true           # a trust boundary MOVES: consent now gates clinical writes
+branch_isolation_impact: true   # patient odontogram history and the legacy archive are branch scoped
 ledger_impact: false            # no inventory ledger; payment amounts untouched
 
 deploy_required: true
-go_tag: fix-rme-consent-workflow-print-ux-2-go
+go_tag: fix-rme-exam-consent-odontogram-history-3-go
 browser_required: false         # every surface is proven by HTTP feature tests
 
+# GLOBAL TEMPORARY FULL-SUITE POLICY is ACTIVE for this sprint. The Full Suite is
+# NOT executed here; it is deferred, not passed. FULL_SUITE_EXECUTION_COUNT=0.
+full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY
+
 # Inherited programme state (LegacyRmeProgramClosureContractTest): this sprint
-# runs after LEGACY-RME-PROGRAM-CLOSURE-1 and inherits that closure unchanged.
-# It touches no Legacy RME code, capability, admission, wave or batch.
-# ENGINEERING_ROLLOUT_MODE stays CLOSED and STEADY_STATE_OPERATIONS stays
-# AUTHORITATIVE; the Legacy RME resting state (capability OFF, admission EMPTY,
-# no active batch) is untouched.
+# inherits LEGACY-RME-PROGRAM-CLOSURE-1 unchanged. It adds a SEPARATE Legacy
+# Odontogram archive with its own flag, tables and permissions, and deliberately
+# does NOT open a Legacy RME migration batch, wave, quota or admission. The Legacy
+# RME resting state (capability OFF, admission EMPTY, no active batch) is untouched.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 
 # FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1 / FIX-02 (WhatsApp prescription delivery)

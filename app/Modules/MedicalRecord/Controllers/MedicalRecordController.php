@@ -5,6 +5,7 @@ namespace App\Modules\MedicalRecord\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -308,6 +309,26 @@ class MedicalRecordController extends Controller
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
+            /*
+             * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — is this sheet's
+             * own visit still waiting for a signed PERSETUJUAN TINDAKAN MEDIS?
+             *
+             * Keyed on the ACTIVE SHEET's visit, not the canonical workspace visit:
+             * one patient's book spans many visits, and the consent that matters is
+             * the one for the encounter whose sheet is on screen.
+             *
+             * Presentation only. Disabling a control is a courtesy, never the
+             * boundary — MedicalRecordService and the handwriting controller assert
+             * the same gate server-side, so a crafted POST is refused regardless of
+             * what this page rendered.
+             */
+            'consentRequired' => app(RmeVisitConsentService::class)
+                ->requiresConsentBeforeRmeAuthoring($activeVisit),
+            'consentVisit' => $activeVisit,
+            // "Tambah Lembar RM" creates a sheet on a DIFFERENT visit than the one
+            // on screen, so it is gated on that visit's own consent.
+            'addSheetConsentRequired' => $addSheetVisit !== null
+                && app(RmeVisitConsentService::class)->requiresConsentBeforeRmeAuthoring($addSheetVisit),
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),

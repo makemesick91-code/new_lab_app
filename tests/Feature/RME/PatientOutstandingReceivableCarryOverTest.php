@@ -387,18 +387,18 @@ it('behaves like the normal plain payment flow when no receivable is selected', 
         ->and(RmePayment::where('rme_invoice_id', $priorInvoice->id)->count())->toBe(0);
 });
 
-it('blocks a carry-over payment when the current visit has no signed consent', function () {
+it('settles a carry-over payment even when the current visit has no signed consent', function () {
     /*
-     * AMENDED by FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01.
+     * SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03.
      *
-     * This test used to prove the gate by sending consent_signed_by_* = false.
-     * That only ever proved the request could decline consent on its own
-     * behalf — the same mechanism that let a request GRANT itself consent.
+     * Consent is no longer part of payment eligibility. It is taken at the start
+     * of the examination and gates RME AUTHORING, so a treatment that was recorded
+     * at all already had consent — a stronger guarantee than this gate ever gave,
+     * since it only ever fired while the visit was at cashier_pending and every
+     * carry-over receivable bypassed it by design.
      *
-     * The gate now depends on persisted evidence, so the meaningful test is to
-     * withhold the evidence: the current visit simply has no signed consent.
-     * Note the request below carries the old booleans set to TRUE, which under
-     * the previous implementation would have settled the invoice.
+     * Inverted rather than deleted: a reintroduced payment consent gate, which
+     * would make the historical receivables book uncollectable, fails here.
      */
     $prior = porVisit($this->patient, $this->rmeBranch, $this->doctor, now()->subDays(5)->toDateString());
     $priorInvoice = porInvoice($prior, 200000);
@@ -406,21 +406,20 @@ it('blocks a carry-over payment when the current visit has no signed consent', f
     $current = porVisit($this->patient, $this->rmeBranch, $this->doctor);
     $currentInvoice = porInvoice($current, 100000);
 
-    // Remove the fixture's consent so this visit genuinely has none.
+    // The current visit genuinely has no signed consent.
     $current->consents()->delete();
     expect($current->refresh()->hasSignedConsentDocument())->toBeFalse();
 
-    expect(fn () => app(RmePaymentService::class)->allocateVisitPayment(
+    app(RmePaymentService::class)->allocateVisitPayment(
         $currentInvoice,
         $this->cashier,
-        porPaymentPayload(300000, [
-            'consent_signed_by_patient' => true,
-            'consent_signed_by_doctor' => true,
-        ]),
+        porPaymentPayload(300000),
         [$priorInvoice->id],
-    ))->toThrow(ValidationException::class);
+    );
 
-    expect(RmePayment::count())->toBe(0);
+    expect($priorInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and($currentInvoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID)
+        ->and(RmePayment::count())->toBe(2);
 });
 
 it('does not render KTP, NIK, scanned documents or raw medical notes on the cashier screen', function () {

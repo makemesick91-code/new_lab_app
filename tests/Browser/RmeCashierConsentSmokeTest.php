@@ -32,16 +32,19 @@ class RmeCashierConsentSmokeTest extends DuskTestCase
                 $this->loginAsAdmin($browser)
                     ->visit(route('rme.cashier.payment.create', [$visit, $invoice]))
                     ->waitForText('Pembayaran Tagihan RME', 10)
-                    ->assertSee('Verifikasi Surat Persetujuan Tindakan')
-                    ->assertPresent('input[name="consent_signed_by_patient"]')
-                    ->assertPresent('input[name="consent_signed_by_doctor"]')
-                    ->click('button[type="submit"]')
-                    ->waitForText('Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan', 10)
-                    ->assertSee('Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan');
+                    // SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 /
+                    // FIX-03. This smoke used to drive a consent-BLOCKED payment.
+                    // Consent is no longer a payment condition, so the page must
+                    // carry no consent verification panel and no consent
+                    // checkboxes, and a payment must not be refused for consent.
+                    ->assertDontSee('Verifikasi Surat Persetujuan Tindakan')
+                    ->assertMissing('input[name="consent_signed_by_patient"]')
+                    ->assertMissing('input[name="consent_signed_by_doctor"]')
+                    ->assertDontSee('Pembayaran tidak dapat diproses karena Surat Persetujuan Tindakan');
 
                 $this->assertRmePageHealthy($browser);
 
-                $browser->screenshot('rme-cashier-consent-blocked-smoke');
+                $browser->screenshot('rme-cashier-no-consent-gate-smoke');
             });
         } finally {
             $this->cleanupSmokeTestInvoice($createdInvoiceId);

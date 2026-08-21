@@ -5,12 +5,15 @@ namespace App\Modules\Odontogram\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
+use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPatientHistoryService;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class OdontogramController extends Controller
@@ -21,8 +24,13 @@ class OdontogramController extends Controller
         private readonly OdontogramService $service,
     ) {}
 
-    public function show(ClinicVisit $clinicVisit, OdontogramPrintFormatter $formatter): View
-    {
+    public function show(
+        Request $request,
+        ClinicVisit $clinicVisit,
+        OdontogramPrintFormatter $formatter,
+        LegacyOdontogramPatientHistoryService $legacyHistoryService,
+    ): View {
+
         $this->authorize('create', [Odontogram::class, $clinicVisit]);
 
         $odontogram = $this->service->getOrCreateForVisit($clinicVisit, auth()->user());
@@ -42,7 +50,55 @@ class OdontogramController extends Controller
         // no mutation, presentation-only).
         $structured = $formatter->format($odontogram);
 
-        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits', 'structured'));
+        /*
+         * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-04 — the patient's
+         * PREVIOUS odontograms, read-only, below the active chart.
+         *
+         * The patient comes from the already-authorized visit, never from a
+         * request parameter, and the service re-applies the RME branch set and the
+         * doctor's clinical patient scope. The CURRENT visit is excluded so the
+         * chart being edited is never also listed as its own history.
+         */
+        $odontogramHistory = $this->service->patientHistoryForVisit($clinicVisit, auth()->user());
+
+        /*
+         * FIX-04 — fold the PUBLISHED Legacy Odontogram archive into the same
+         * read-only history, newest first alongside the native charts.
+         *
+         * The legacy side re-checks its own read permission, branch scope and
+         * doctor clinical scope and returns an EMPTY collection for an operator
+         * who may not read the archive, so a doctor without archive access simply
+         * sees the native history. It is NOT gated by the migration feature flag:
+         * a rollback must never remove a patient's history from their treating
+         * doctor.
+         */
+        $odontogramHistory = $odontogramHistory
+            ->concat($legacyHistoryService
+                ->publishedRecordsFor($request->user(), (int) $clinicVisit->patient_id)
+                ->map(fn (LegacyOdontogramRecord $record) => [
+                    'source' => 'legacy',
+                    'source_label' => 'Legacy',
+                    'odontogram_id' => null,
+                    'visit_id' => null,
+                    'visit_number' => null,
+                    'date' => $record->odontogram_date,
+                    'branch_code' => $record->branch?->code,
+                    'branch_name' => $record->branch?->name,
+                    // The archive is a scan of a paper chart: it carries no
+                    // structured tooth map and no attributable doctor. Never invent one.
+                    'doctor_name' => null,
+                    'status' => $record->status,
+                    'dmft' => null,
+                    'structured' => null,
+                    'view_url' => route('rme.legacy-odontograms.show', $record),
+                ]))
+            // One clinical timeline, newest first, regardless of source.
+            ->sortByDesc(fn (array $row) => $row['date'] instanceof \DateTimeInterface
+                ? $row['date']->format('Y-m-d')
+                : (string) $row['date'])
+            ->values();
+
+        return view('rme.visits.odontogram.show', compact('clinicVisit', 'odontogram', 'parentOdontogram', 'adjacentVisits', 'structured', 'odontogramHistory'));
     }
 
     public function update(UpdateOdontogramPlaceholderRequest $request, Odontogram $odontogram): RedirectResponse
