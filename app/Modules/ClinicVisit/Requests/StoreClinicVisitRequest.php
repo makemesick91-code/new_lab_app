@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -237,7 +238,11 @@ class StoreClinicVisitRequest extends FormRequest
         $rmNumbers = app(PatientMedicalRecordNumberService::class);
         $registeredAt = $this->input('new_patient.registered_at')
             ? Carbon::parse($this->input('new_patient.registered_at'))
-            : Carbon::today();
+            // FIX-03 — closes the residual recorded in
+            // docs/sprints/fix-clinic-ops-branch-context-wa-1.md: this fallback
+            // composed a new patient's RM year from the UTC day while the visit
+            // beside it already used ClinicalClock.
+            : app(ClinicalClock::class)->today();
 
         $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
 

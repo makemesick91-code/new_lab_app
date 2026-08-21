@@ -1,0 +1,122 @@
+---
+description: POST-RME-ODONTOGRAM-STABILIZATION-1 — viewing a chart writes nothing, repository artifact hygiene, clinical calendar owns the RM year
+globs:
+  - "app/Modules/Odontogram/**"
+  - "app/Modules/Patient/**"
+  - "app/Modules/ClinicVisit/**"
+  - "resources/views/rme/visits/odontogram/**"
+  - ".gitignore"
+alwaysApply: false
+---
+
+# POST-RME-ODONTOGRAM-STABILIZATION-1
+
+Four durable rules. They add to, and never weaken, the consent and completion
+authority established by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3.
+
+**Supersession.** Section 1 below supersedes the sentence in
+`109-rme-exam-consent-odontogram-history.mdc` §2 (CORRECTIVE-03) that reads
+*"Opening the page still works, and still creates the empty placeholder row
+(`getOrCreateForVisit`)"*, and the parenthetical *"(opening the page creates
+one)"* in §4. Opening the page no longer creates anything. Rule 109 §4's
+operative rule — empty drafts are excluded from history — **remains in force**,
+now as belt-and-braces for rows that already exist in production. Every other
+section of rule 109 is unchanged, including its own supersession of rule 100
+§§1/1a/2. Rule 110 §4 is the RM-number application of
+`92`/LEGACY-RME-DATE-TZ-1, which remains the parent authority for the clinical
+calendar.
+
+## 1. Viewing the active odontogram must not create persistent clinical data
+
+`GET /rme/visits/{clinicVisit}/odontogram` is a **read**. It must not INSERT a
+`trx_odontograms` row.
+
+- `OdontogramController::show()` resolves through `OdontogramService::draftForVisit()`,
+  which returns the saved chart or an **unsaved** in-memory instance. It never writes.
+- A persistent chart is created only by the first authorized, consented clinical
+  write: `OdontogramService::saveForVisit()`, reached through
+  `PATCH rme/visits/{clinicVisit}/odontogram` (`rme.visits.odontogram.store`).
+- `saveForVisit()` asserts `RmeVisitConsentService::assertOdontogramAuthoringAllowed()`
+  **before** the insert. A refused write must leave no row behind — never assert
+  after creating.
+- Anything that renders a URL from the model must branch on `$odontogram->exists`
+  first. An unsaved model has no route key and `route()` will throw.
+
+Do not "fix" a stray empty row by filtering it out downstream. Empty
+auto-created placeholders are not clinical history and must not be created in
+the first place; `hasRecordedTeeth()` and the history query's
+`whereNotNull('tooth_map_payload')` remain only as belt-and-braces for rows that
+already exist in production.
+
+**Known coupling, deliberately not changed.**
+`LegacyOdontogramNativeReferenceRepository::earliestVisitWithOdontogramForPatient()`
+uses `whereHas('odontogram')` and therefore still counts pre-existing empty
+rows. Narrowing it to non-empty payloads would change Legacy Odontogram import
+admissibility for existing production data — an owner decision and a separate
+evidenced sprint, never a side effect.
+
+## 2. The consent and completion gates are unchanged
+
+Re-stated because this sprint touches the same surfaces:
+
+- Valid signed treatment consent for the **current `in_progress` encounter** is
+  required before mutating the active RME or the active Odontogram.
+- A previous encounter's chart is history and permanently read-only. No
+  signature reopens it.
+- RME/Odontogram save, completeness or finalization **must not** complete an
+  examination. Only an explicit, authorized "Selesai Pemeriksaan" may move
+  `in_progress → cashier_pending`.
+
+## 3. Runtime SQLite artifacts must never be tracked
+
+No SQLite database may be tracked at the repository root.
+
+Cause to remember: `config/database.php` resolves the sqlite connection's file
+from `DB_DATABASE` (`env('DB_DATABASE', database_path('database.sqlite'))`). A
+local environment file legitimately holds the *PostgreSQL database name*
+`asia_dental_lab`, so any command run with `DB_CONNECTION=sqlite` resolves that
+name as a **relative path** and writes a real database into the working
+directory.
+
+- The guard is `tests/Feature/Architecture/RepositoryArtifactHygieneTest.php`,
+  which detects by the `SQLite format 3\0` header, not by name or extension —
+  the committed artifact had no extension at all.
+- Ignore rules must be **anchored and narrow** (`/asia_dental_lab`). Never add a
+  blanket `*.db`; `database/.gitignore` already covers the legitimate
+  `database/database.sqlite` fixture path.
+- The *PostgreSQL database name* of the same spelling is legitimate
+  configuration. Removing the FILE must never edit the environment example,
+  `config/ci_runner.php`, `scripts/backup_postgres.sh` or
+  `scripts/restore_postgres.sh`.
+
+## 4. The clinical calendar owns the RM year and the registration date
+
+Any derivation of "today" that becomes a **clinical or business calendar date**
+must come from `App\Support\Clinical\ClinicalClock` (`Asia/Makassar`), never from
+`Carbon::now()` / `Carbon::today()` / `date()`.
+
+`config/app.php` hard-codes `'timezone' => 'UTC'` **on purpose** — technical
+instants (`created_at`, queue timestamps, audit times) stay UTC. That makes a
+raw `Carbon::today()` the UTC calendar day, which for the first eight hours of
+every clinical day is *yesterday*, and on 1 January is the *previous year*.
+
+Sites that must stay on `ClinicalClock`:
+
+- `PatientMedicalRecordNumberService::composeForRegistration()` (the RM year)
+- `PatientService::resolveRegisteredAt()` (the persisting site)
+- `StorePatientRequest`, `UpdatePatientRequest`, `StoreClinicVisitRequest`
+  (the RM uniqueness pre-checks — they must compose the same value the service
+  will persist)
+
+Constraints:
+
+- A **supplied** date is a calendar date and is used verbatim. Never
+  timezone-convert it; that corrupts history to fix a clock.
+- The Nomor RM format `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}`, its parser, and branch
+  authority are unchanged.
+- **Never renumber an existing patient.** The fix is prospective. Historical
+  reconciliation requires its own sprint with evidence and an explicit owner
+  decision.
+- Branch is server-side authority; never trust a request `branch_id`. For Legacy
+  RME / Legacy Odontogram the branch code encoded in the Nomor RM is the
+  authority and an unknown/ambiguous/inactive code fails **closed**.

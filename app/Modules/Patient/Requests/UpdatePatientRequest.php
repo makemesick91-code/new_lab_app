@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Requests;
 
 use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Foundation\Http\FormRequest;
@@ -91,7 +92,10 @@ class UpdatePatientRequest extends FormRequest
             $rmNumbers = app(PatientMedicalRecordNumberService::class);
             $registeredAt = $this->input('registered_at')
                 ? Carbon::parse($this->input('registered_at'))
-                : ($patient?->registered_at ? Carbon::parse($patient->registered_at) : Carbon::today());
+                : ($patient?->registered_at
+                    ? Carbon::parse($patient->registered_at)
+                    // FIX-03 — clinical calendar day, never the UTC one.
+                    : app(ClinicalClock::class)->today());
 
             $composed = $rmNumbers->composeForRegistration($branch->code, $registeredAt, $manual);
 

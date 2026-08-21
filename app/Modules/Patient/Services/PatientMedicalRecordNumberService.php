@@ -4,7 +4,7 @@ namespace App\Modules\Patient\Services;
 
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Support\MedicalRecordNumberParts;
-use Carbon\Carbon;
+use App\Support\Clinical\ClinicalClock;
 use Carbon\CarbonInterface;
 use InvalidArgumentException;
 
@@ -36,6 +36,14 @@ class PatientMedicalRecordNumberService
     public const PREFIX = 'DG';
 
     /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-03 — the clinical calendar is
+     * the authority for the registration YEAR baked into a patient's Nomor RM.
+     */
+    public function __construct(
+        private readonly ClinicalClock $clock,
+    ) {}
+
+    /**
      * Compose the final medical record number from its components.
      */
     public function compose(string $branchCode, int|string $year, string $manualRmNumber): string
@@ -57,10 +65,29 @@ class PatientMedicalRecordNumberService
 
     /**
      * Convenience composer that derives the year from a registration date.
+     *
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-03 — when no registration date
+     * is supplied, "today" is TODAY IN THE CLINIC, resolved through
+     * {@see ClinicalClock} (Asia/Makassar), not through the process clock.
+     *
+     * This closes the residual recorded in
+     * docs/sprints/fix-clinic-ops-branch-context-wa-1.md ("Known residual"),
+     * which that sprint reported rather than fixed because it touches RM-number
+     * composition. `config/app.php` hard-codes `'timezone' => 'UTC'` on purpose
+     * — technical instants stay UTC — so the previous `Carbon::now()` fallback
+     * resolved the UTC calendar day. Between 00:00 and 08:00 WITA the UTC date
+     * is still YESTERDAY, so a patient registered in that window on 1 January
+     * was issued an RM number carrying the PREVIOUS year, permanently, while
+     * the visit created in the same registration already used ClinicalClock and
+     * so carried the correct year. One transaction, two different years.
+     *
+     * A caller that DOES supply a date is trusted verbatim: that value is a
+     * calendar date a human entered or the workflow already stamped, and
+     * pushing it through a timezone conversion would corrupt it.
      */
     public function composeForRegistration(string $branchCode, ?CarbonInterface $registeredAt, string $manualRmNumber): string
     {
-        $registeredAt = $registeredAt ?? Carbon::now();
+        $registeredAt = $registeredAt ?? $this->clock->today();
 
         return $this->compose($branchCode, (int) $registeredAt->format('Y'), $manualRmNumber);
     }

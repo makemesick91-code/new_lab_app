@@ -15,6 +15,22 @@ class OdontogramRepository implements OdontogramRepositoryInterface
         return Odontogram::query()->where('clinic_visit_id', $clinicVisitId)->first();
     }
 
+    /**
+     * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — must be called inside a
+     * transaction; the lock is released with it.
+     *
+     * On SQLite `lockForUpdate()` is a documented no-op (the engine serialises
+     * writes anyway), so this is a PostgreSQL-effective guard that stays
+     * portable for the test suite.
+     */
+    public function findByClinicVisitForUpdate(int $clinicVisitId): ?Odontogram
+    {
+        return Odontogram::query()
+            ->where('clinic_visit_id', $clinicVisitId)
+            ->lockForUpdate()
+            ->first();
+    }
+
     public function createForClinicVisit(ClinicVisit $clinicVisit, array $data = []): Odontogram
     {
         $existing = $this->findByClinicVisit($clinicVisit->id);
@@ -94,13 +110,16 @@ class OdontogramRepository implements OdontogramRepositoryInterface
             /*
              * Clinical-content predicate lives IN the query so `limit` bounds REAL
              * history: filtering empty drafts only in PHP, after the limit, would
-             * let a long-history patient's auto-created empty rows push genuine
-             * findings out of the result and hide clinical data from the doctor.
+             * let a long-history patient's empty rows push genuine findings out of
+             * the result and hide clinical data from the doctor.
              *
-             * IS NOT NULL is the whole predicate, and deliberately so. Opening the
-             * odontogram page auto-creates a draft with tooth_map_payload = NULL
-             * (createForClinicVisit), so those rows — the only ones this needs to
-             * exclude — are already covered. It is also the only form that is safe
+             * IS NOT NULL is the whole predicate, and deliberately so. An empty
+             * draft carries tooth_map_payload = NULL, so those rows — the only
+             * ones this needs to exclude — are already covered.
+             * POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 stopped the page from
+             * auto-creating them on every open, but did not delete the ones
+             * already in production, so this predicate still earns its place.
+             * It is also the only form that is safe
              * on BOTH drivers: the column is `jsonb`, and comparing jsonb to an
              * empty string is a hard PostgreSQL error (no jsonb = text operator)
              * that sqlite would never surface, so a string comparison here would
