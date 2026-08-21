@@ -106,20 +106,31 @@ describe('RME workflow clarity copy', function (): void {
             ->assertSee('Dipakai untuk konfirmasi kehadiran kunjungan dan tindak lanjut piutang. Sistem tidak mengirim pesan WhatsApp otomatis.');
     });
 
-    it('shows the cashier-facing consent verification status on the RME visit detail and never the KTP number', function (): void {
+    it('shows consent status on the RME visit detail without the cashier framing, and never the KTP number', function (): void {
+        /*
+         * SUPERSEDED BY FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03. This
+         * test previously required the copy "TTD Surat Persetujuan Tindakan belum
+         * diverifikasi kasir". The cashier no longer verifies consent at all —
+         * consent is taken by the doctor at the START of the examination and is
+         * no part of payment eligibility — so that sentence was removed with the
+         * gate it described.
+         *
+         * The half of this test that is still a real contract, and the reason it
+         * was written, is the PRIVACY assertion: the visit detail names the
+         * consent status but never renders the patient's KTP. That is kept, and
+         * the superseded copy is now asserted ABSENT rather than present.
+         */
         $patient = Patient::factory()->create(['ktp_number' => '3209090909090038']);
         $visit = ClinicVisit::factory()->create([
             'branch_id' => $this->branch->id,
             'patient_id' => $patient->id,
-            'consent_signed_by_patient' => false,
-            'consent_signed_by_doctor' => false,
         ]);
 
         $this->actingAs(userWith(['view_clinic_visits']))
             ->get(route('rme.visits.show', $visit))
             ->assertOk()
             ->assertSee('Persetujuan Tindakan')
-            ->assertSee('TTD Surat Persetujuan Tindakan belum diverifikasi kasir')
+            ->assertDontSee('diverifikasi kasir')
             ->assertDontSee('3209090909090038')
             ->assertDontSee('Nomor KTP');
     });

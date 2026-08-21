@@ -107,6 +107,15 @@ it('changing the primary via makePrimary swaps roles atomically, audits, and dri
     $candidate = ssService()->generateForVisit($ctx['visit']->fresh(['medicalRecord']));
     $candidate = ssService()->approve($candidate, $actor);
 
+    /*
+     * CORRECTIVE-03 — the ROLE SWAP is a clinical write, so it needs a live
+     * consented encounter. The candidate above was generated from the finished
+     * visit, which is the real order of events; the correction happens while the
+     * patient is back in the chair, and that is exactly what must drift the
+     * already-approved candidate.
+     */
+    ssOpenEncounter($ctx, $actor);
+
     app(MedicalRecordDiagnosisService::class)->makePrimary($ctx['mr'], $secondary, $actor);
 
     expect($primary->fresh()->diagnosis_role)->toBe(MedicalRecordDiagnosis::ROLE_SECONDARY)

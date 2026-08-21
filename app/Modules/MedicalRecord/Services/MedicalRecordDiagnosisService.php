@@ -43,8 +43,17 @@ class MedicalRecordDiagnosisService
          * the FHIR Condition preview and the SATUSEHAT source hash), so it is
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
+         *
+         * CORRECTIVE-03 — the ACTOR the caller vouched for is the actor the gate
+         * authorises. Every method here already receives $actor explicitly and
+         * writes it to the audit trail, but the gate was falling back to
+         * Auth::user(), so a legitimate non-HTTP caller was judged against an
+         * empty session. Passing it through matches DiagnosisRolloutService and
+         * keeps one actor for both the decision and the record of it. Not a
+         * widening: an unresolvable actor still fails closed, and the encounter,
+         * scope and consent conditions are unchanged.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
 
         $this->assertRmeBranch($medicalRecord);
 
@@ -127,8 +136,17 @@ class MedicalRecordDiagnosisService
          * the FHIR Condition preview and the SATUSEHAT source hash), so it is
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
+         *
+         * CORRECTIVE-03 — the ACTOR the caller vouched for is the actor the gate
+         * authorises. Every method here already receives $actor explicitly and
+         * writes it to the audit trail, but the gate was falling back to
+         * Auth::user(), so a legitimate non-HTTP caller was judged against an
+         * empty session. Passing it through matches DiagnosisRolloutService and
+         * keeps one actor for both the decision and the record of it. Not a
+         * widening: an unresolvable actor still fails closed, and the encounter,
+         * scope and consent conditions are unchanged.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
 
         $this->assertRmeBranch($medicalRecord);
 
@@ -183,8 +201,17 @@ class MedicalRecordDiagnosisService
          * the FHIR Condition preview and the SATUSEHAT source hash), so it is
          * gated exactly like the rest of the record. Asserted in the service so
          * the CLI and any future controller inherit it.
+         *
+         * CORRECTIVE-03 — the ACTOR the caller vouched for is the actor the gate
+         * authorises. Every method here already receives $actor explicitly and
+         * writes it to the audit trail, but the gate was falling back to
+         * Auth::user(), so a legitimate non-HTTP caller was judged against an
+         * empty session. Passing it through matches DiagnosisRolloutService and
+         * keeps one actor for both the decision and the record of it. Not a
+         * widening: an unresolvable actor still fails closed, and the encounter,
+         * scope and consent conditions are unchanged.
          */
-        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id);
+        app(RmeVisitConsentService::class)->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
 
         $this->assertRmeBranch($medicalRecord);
 

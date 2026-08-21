@@ -49,6 +49,51 @@ if (! function_exists('ssMakeVisit')) {
     }
 }
 
+if (! function_exists('ssOpenEncounter')) {
+    /**
+     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 + CORRECTIVE-03 —
+     * reopen a SATUSEHAT fixture's visit as a live, consented encounter so
+     * clinical content can be written into it.
+     *
+     * `ssMakeVisit()` produces a COMPLETED visit, which is right for SATUSEHAT:
+     * a candidate is created from a finished encounter. But clinical writes —
+     * including a structured diagnosis — are only legal DURING the examination,
+     * with a signed consent. In production the diagnosis is recorded while the
+     * patient is in the chair and the visit finishes afterwards; the fixture has
+     * to model that order rather than write onto an already-closed visit.
+     *
+     * Pair with ssCloseEncounter() when the test's later assertions depend on the
+     * visit being finished again.
+     */
+    function ssOpenEncounter(array $ctx, ?User $actor = null): void
+    {
+        $visit = $ctx['visit'];
+
+        $visit->forceFill([
+            'status' => ClinicVisit::STATUS_IN_PROGRESS,
+            'completed_at' => null,
+        ])->save();
+
+        rmeSignedConsentFor($visit->refresh());
+
+        if ($actor !== null) {
+            test()->actingAs($actor);
+        }
+    }
+}
+
+if (! function_exists('ssCloseEncounter')) {
+    function ssCloseEncounter(array $ctx): void
+    {
+        $ctx['visit']->forceFill([
+            'status' => ClinicVisit::STATUS_COMPLETED,
+            'completed_at' => now(),
+        ])->save();
+
+        $ctx['visit']->refresh();
+    }
+}
+
 if (! function_exists('ssAddIdentifiers')) {
     function ssAddIdentifiers(array $ctx): void
     {
