@@ -917,6 +917,59 @@ function legacyRmeNativeVisit(Patient $patient, string $visitDate): ClinicVisit
 }
 
 /**
+ * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 — make a visit a
+ * legitimate, consented, ACTIVE encounter.
+ *
+ * Current-RME authoring now requires POSITIVE authority: the patient must have an
+ * `in_progress` examination with a signed consent. `rmeSignedConsentFor()` alone is
+ * no longer enough for a fixture that intends to WRITE a record, because a consent
+ * on a queued or finished visit authorises nothing.
+ *
+ * Tests about medical-record mechanics should use this; tests about the gate
+ * itself must build the state explicitly so the rules stay under test.
+ */
+function rmeActiveConsentedEncounter(ClinicVisit $visit): ClinicVisit
+{
+    // One patient is examined once at a time. The gate fails closed on two
+    // concurrent in_progress visits (a second encounter's consent must never
+    // authorise writes attributed to the first), so a fixture that opens a new
+    // encounter closes any earlier one, exactly as the clinic would.
+    ClinicVisit::query()
+        ->where('patient_id', $visit->patient_id)
+        ->where('id', '!=', $visit->id)
+        ->where('status', ClinicVisit::STATUS_IN_PROGRESS)
+        ->update(['status' => ClinicVisit::STATUS_COMPLETED]);
+
+    if ($visit->status !== ClinicVisit::STATUS_IN_PROGRESS) {
+        $visit->forceFill(['status' => ClinicVisit::STATUS_IN_PROGRESS])->save();
+        $visit->refresh();
+    }
+
+    rmeSignedConsentFor($visit);
+
+    return $visit;
+}
+
+/**
+ * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-03 — a visit that is a
+ * legitimate, consented, ACTIVE encounter and is therefore a writable odontogram
+ * workspace.
+ *
+ * The active odontogram is now gated exactly like the RME beside it, so a fixture
+ * that intends to CHART something must build the state the clinic would: the
+ * doctor started the examination and the patient signed. Tests about the GATE
+ * itself must still build their state explicitly, so the rules stay under test.
+ *
+ * @param  array<string, mixed>  $attributes
+ */
+function rmeConsentedOdontogramVisit(array $attributes = []): ClinicVisit
+{
+    return rmeActiveConsentedEncounter(
+        ClinicVisit::factory()->create($attributes + ['status' => ClinicVisit::STATUS_IN_PROGRESS]),
+    );
+}
+
+/**
  * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — give a visit a signed consent.
  *
  * RME payment now requires a signed PERSETUJUAN TINDAKAN MEDIS, so any test

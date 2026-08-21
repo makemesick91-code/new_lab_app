@@ -39,6 +39,9 @@ function fcoActionsVisit(array $overrides = []): ClinicVisit
 
 it('lets a clinically authorised user finish an examination', function () {
     $visit = fcoActionsVisit();
+    // CORRECTIVE-03 — clinical authority is necessary but no longer sufficient:
+    // the examination also needs the patient's signed consent.
+    rmeSignedConsentFor($visit);
     $doctorUser = userWith(['view_clinic_visits', 'manage_clinic_visits', 'complete_rme_examination']);
 
     $this->actingAs($doctorUser)

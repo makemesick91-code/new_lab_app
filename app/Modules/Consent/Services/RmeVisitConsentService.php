@@ -4,11 +4,15 @@ namespace App\Modules\Consent\Services;
 
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\Consent\Interfaces\RmeVisitConsentRepositoryInterface;
 use App\Modules\Consent\Models\RmeVisitConsent;
 use App\Modules\Prescription\Services\PrescriptionCanvasDecoder;
+use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Support\Clinical\ClinicalClock;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -94,16 +98,30 @@ class RmeVisitConsentService
     */
 
     /**
-     * Consent belongs to the moment AFTER the doctor has finished examining and
-     * BEFORE the cashier takes payment, which is exactly the cashier_pending
-     * state. Signing earlier would be consent to a treatment that has not been
-     * decided; signing on a terminal visit would be back-dating evidence.
+     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-01 — the consent window.
      *
-     * Fails closed: anything that is not cashier_pending is refused.
+     * Consent is signable during the EXAMINATION and at no other time:
+     * `in_progress`, i.e. after the authorized doctor has explicitly clicked
+     * "Mulai Pemeriksaan", and before they finish it.
+     *
+     *   - `registered` / `waiting`: the doctor has not started. There is no
+     *     treatment decided yet, so a signature there would be consent to nothing
+     *     in particular — exactly the hollow consent this gate exists to prevent.
+     *   - `cashier_pending`: the examination is over and the treatment already
+     *     happened. Signing now would be recording agreement after the fact.
+     *   - `completed` / `cancelled`: terminal, so signing would be back-dating
+     *     evidence onto a closed encounter.
+     *
+     * Fails closed: anything that is not `in_progress` is refused.
      */
+    public function isWithinConsentWindow(ClinicVisit $visit): bool
+    {
+        return $visit->status === ClinicVisit::STATUS_IN_PROGRESS;
+    }
+
     public function isSignable(ClinicVisit $visit): bool
     {
-        return $visit->status === ClinicVisit::STATUS_CASHIER_PENDING;
+        return $this->isWithinConsentWindow($visit);
     }
 
     public function assertSignable(ClinicVisit $visit): void
@@ -113,8 +131,229 @@ class RmeVisitConsentService
         }
 
         throw ValidationException::withMessages([
-            'clinic_visit_id' => 'Persetujuan tindakan medis baru dapat ditandatangani setelah dokter menyelesaikan pemeriksaan.',
+            'clinic_visit_id' => 'Persetujuan tindakan medis hanya dapat ditandatangani selama pemeriksaan dokter berlangsung. Mulai pemeriksaan terlebih dahulu; setelah pemeriksaan diselesaikan, persetujuan tidak dapat lagi ditandatangani untuk kunjungan ini.',
         ]);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | RME authoring authority
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * CORRECTIVE-02 — POSITIVE authority. The service must establish that a
+     * legitimate, authorized, consented examination is happening; it must never
+     * infer permission from the mere absence of a blocker.
+     *
+     * The earlier shape asked "does this patient have an open UNCONSENTED
+     * encounter?" and allowed the write when the answer was no. That is an
+     * absence-of-blocker rule, and it had a reproducer: CANCEL the live visit and
+     * the patient suddenly has no open unconsented encounter, so their canonical
+     * record — which for a returning patient is an old terminal visit's record —
+     * became writable again. Completing the visit did the same thing.
+     *
+     * So the question is inverted. A current-RME write is allowed only when ALL of
+     * these hold, established from server state:
+     *
+     *   1. the patient HAS a current encounter (ActiveEncounterResolver);
+     *   2. that encounter is `in_progress`;
+     *   3. the actor may work on that encounter (branch scope + clinical scope);
+     *   4. a valid signed consent exists for THAT SAME encounter and patient.
+     *
+     * Anything else fails closed, including "no encounter at all".
+     *
+     * READS ARE NEVER GATED by this. Historical native RME, the Legacy RME
+     * archive, previous odontograms and the Legacy Odontogram archive stay
+     * readable regardless: the doctor deciding today's treatment needs the
+     * history, and reading harms nobody.
+     *
+     * The ACTIVE ODONTOGRAM is deliberately outside this gate; its workflow is
+     * unchanged by this sprint.
+     */
+    public function resolveAuthorizedEncounter(?int $patientId, ?User $actor = null): ?ClinicVisit
+    {
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        if ($encounter === null) {
+            return null;
+        }
+
+        $actor ??= Auth::user();
+
+        // Fail closed on an unresolvable actor: skipping the scope check would
+        // silently drop one of the four conditions.
+        if (! $actor instanceof User || ! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            return null;
+        }
+
+        // The consent must belong to this encounter — and therefore to this
+        // patient, since a consent carries its visit.
+        return $this->hasValidConsent($encounter) ? $encounter : null;
+    }
+
+    public function canAuthorRmeForPatient(?int $patientId, ?User $actor = null): bool
+    {
+        return $this->resolveAuthorizedEncounter($patientId, $actor) !== null;
+    }
+
+    /**
+     * The single assertion every current-RME write funnels through.
+     *
+     * Returns the encounter it authorised, so a caller that needs to know which
+     * visit the work belongs to does not have to ask again (and cannot ask the
+     * request).
+     */
+    public function assertRmeAuthoringAllowedForPatient(?int $patientId, ?User $actor = null): ClinicVisit
+    {
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($patientId);
+
+        if ($encounter === null) {
+            // Distinguish "none" from "ambiguous" so the operator knows what to do.
+            $active = app(ActiveEncounterResolver::class)->activeFor($patientId);
+
+            throw ValidationException::withMessages([
+                'consent' => $active->count() > 1
+                    ? 'Pasien ini memiliki lebih dari satu pemeriksaan yang sedang berjalan. Selesaikan atau batalkan kunjungan yang tidak dipakai sebelum menulis rekam medis.'
+                    : 'Rekam medis hanya dapat ditulis saat pasien sedang dalam pemeriksaan. Mulai pemeriksaan terlebih dahulu.',
+            ]);
+        }
+
+        $actor ??= Auth::user();
+
+        // Fail closed on an unresolvable actor rather than skipping condition 3.
+        if (! $actor instanceof User || ! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Anda tidak berwenang menulis rekam medis untuk pemeriksaan pasien ini.',
+            ]);
+        }
+
+        if (! $this->hasValidConsent($encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Rekam medis kunjungan ini belum dapat ditulis karena Persetujuan Tindakan Medis belum ditandatangani.',
+            ]);
+        }
+
+        return $encounter;
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Active odontogram authoring authority
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * CORRECTIVE-03 — the SAME positive authority, now covering the ACTIVE
+     * odontogram.
+     *
+     * This supersedes the earlier contract, under which consent gated only RME
+     * authoring and the odontogram workflow was left unchanged. That split was
+     * indefensible: an odontogram is a clinical finding recorded on a patient
+     * during a treatment decision, exactly like the note beside it, so consenting
+     * to one and not the other consents to nothing coherent.
+     *
+     * An odontogram row is bound to ONE visit — unlike handwriting, which Sprint
+     * 64.0.2 stores on the patient's canonical record — so authority here is
+     * stricter than the RME gate and can be exact: the chart being written must
+     * BE the live encounter's chart. That is what keeps history permanently
+     * read-only. A previous visit's chart is evidence of what was found then;
+     * signing a consent today authorises recording today's findings, never
+     * rewriting an earlier encounter's.
+     *
+     * All four RME conditions still hold, in this order, so the refusal names the
+     * real reason:
+     *
+     *   1. the patient HAS a single current `in_progress` encounter;
+     *   2. the actor may work on that encounter (branch + clinical scope);
+     *   3. the odontogram belongs to THAT encounter (else it is history);
+     *   4. a valid signed consent exists for that encounter.
+     */
+    public function assertOdontogramAuthoringAllowed(?ClinicVisit $visit, ?User $actor = null): ClinicVisit
+    {
+        if ($visit === null) {
+            // A chart with no resolvable visit has no encounter to authorise it.
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram ini tidak terhubung ke kunjungan mana pun sehingga tidak dapat diubah.',
+            ]);
+        }
+
+        $encounter = app(ActiveEncounterResolver::class)->currentFor($visit->patient_id);
+
+        if ($encounter === null) {
+            $active = app(ActiveEncounterResolver::class)->activeFor($visit->patient_id);
+
+            throw ValidationException::withMessages([
+                'consent' => $active->count() > 1
+                    ? 'Pasien ini memiliki lebih dari satu pemeriksaan yang sedang berjalan. Selesaikan atau batalkan kunjungan yang tidak dipakai sebelum mengubah odontogram.'
+                    : 'Odontogram hanya dapat diubah saat pasien sedang dalam pemeriksaan. Mulai pemeriksaan terlebih dahulu.',
+            ]);
+        }
+
+        $actor ??= Auth::user();
+
+        if (! $actor instanceof User || ! $this->actorMayWorkOnEncounter($actor, $encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Anda tidak berwenang mengubah odontogram untuk pemeriksaan pasien ini.',
+            ]);
+        }
+
+        if ($encounter->id !== $visit->id) {
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram kunjungan sebelumnya adalah riwayat dan bersifat hanya-baca. Catat temuan pada odontogram kunjungan yang sedang berjalan.',
+            ]);
+        }
+
+        if (! $this->hasValidConsent($encounter)) {
+            throw ValidationException::withMessages([
+                'consent' => 'Odontogram kunjungan ini belum dapat diubah karena Persetujuan Tindakan Medis belum ditandatangani.',
+            ]);
+        }
+
+        return $encounter;
+    }
+
+    /**
+     * Presentation predicate for the odontogram page: may this chart be edited
+     * right now? Never the authorisation answer — assertOdontogramAuthoringAllowed()
+     * is. The page stays viewable either way.
+     */
+    public function canAuthorOdontogramFor(?ClinicVisit $visit, ?User $actor = null): bool
+    {
+        if ($visit === null) {
+            return false;
+        }
+
+        try {
+            $this->assertOdontogramAuthoringAllowed($visit, $actor);
+        } catch (ValidationException) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * May this actor work on this encounter? Branch scope plus the same clinical
+     * patient scope every single-record ability already applies.
+     */
+    private function actorMayWorkOnEncounter(User $actor, ClinicVisit $encounter): bool
+    {
+        if (! app(RmeWorkingBranchScope::class)->allows($actor, $encounter->branch_id)) {
+            return false;
+        }
+
+        return app(DoctorPatientScopeService::class)->doctorCanAccessVisit($actor, $encounter);
+    }
+
+    /**
+     * Presentation predicate for the visit detail page: does THIS visit still need
+     * a signature before its examination can be recorded? Never an authorisation
+     * answer — assertRmeAuthoringAllowedForPatient() is.
+     */
+    public function requiresConsentBeforeRmeAuthoring(ClinicVisit $visit): bool
+    {
+        return $this->isWithinConsentWindow($visit) && ! $this->hasValidConsent($visit);
     }
 
     /*

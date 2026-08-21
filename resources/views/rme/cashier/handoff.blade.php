@@ -106,7 +106,6 @@
                                 <th scope="col" class="px-3 py-3 font-medium">Waktu Kunjungan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Status Kunjungan</th>
                                 <th scope="col" class="px-3 py-3 font-medium">RME</th>
-                                <th scope="col" class="px-3 py-3 font-medium">Consent</th>
                                 <th scope="col" class="px-3 py-3 font-medium">Pembayaran</th>
                                 <th scope="col" class="px-4 py-3 text-right font-medium">Aksi</th>
                             </tr>
@@ -116,7 +115,6 @@
                                 @php
                                     $invoice = $visit->rmeInvoice ?? null;
                                     [$rmeLabel, $rmeTone] = $rmeStatusLabel($visit);
-                                    $consentOk = $visit->hasVerifiedConsent();
                                     $isCashierPending = $visit->status === $cashierPendingStatus;
                                 @endphp
                                 <tr class="hover:bg-navy-50">
@@ -149,11 +147,6 @@
                                         <x-ui.badge tone="neutral">{{ ucfirst(str_replace('_', ' ', $visit->status)) }}</x-ui.badge>
                                     </td>
                                     <td class="px-3 py-3"><x-ui.badge :tone="$rmeTone">{{ $rmeLabel }}</x-ui.badge></td>
-                                    <td class="px-3 py-3">
-                                        <x-ui.badge :tone="$consentOk ? 'success' : 'warning'">
-                                            {{ $consentOk ? 'Lengkap' : 'Belum' }}
-                                        </x-ui.badge>
-                                    </td>
                                     <td class="px-3 py-3">
                                         @if ($invoice)
                                             @php [$payLabel, $payTone] = $paymentStatusLabel[$invoice->status] ?? [$invoice->status, 'neutral']; @endphp

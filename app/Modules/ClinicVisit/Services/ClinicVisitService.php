@@ -8,6 +8,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Interfaces\ClinicVisitRepositoryInterface;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
@@ -516,6 +517,29 @@ class ClinicVisitService
             if ($actor !== null && $actor->cannot('completeExamination', $visit)) {
                 throw ValidationException::withMessages([
                     'status' => 'Anda tidak berwenang menyelesaikan pemeriksaan. Tindakan ini dilakukan oleh dokter.',
+                ]);
+            }
+
+            /*
+             * CORRECTIVE-03 — a consent is a PREREQUISITE of finishing the
+             * examination, not merely of writing the record.
+             *
+             * Without this the workflow has an unrecoverable state. Consent is
+             * signable only while the visit is `in_progress` (CORRECTIVE-01), so
+             * an unsigned visit pushed to `cashier_pending` can never be consented
+             * afterwards — the record can never be written, and the treatment
+             * still arrives at the cashier as a bill. Refusing here keeps the
+             * visit exactly where the missing signature can still be obtained.
+             *
+             * Enforced in the service rather than only the controller so a
+             * command, job or another service cannot close an examination the
+             * patient never agreed to. The cashier-owned `completed` transition is
+             * untouched: it is reached from `cashier_pending`, which by this rule
+             * already had a consent.
+             */
+            if (! app(RmeVisitConsentService::class)->hasValidConsent($visit)) {
+                throw ValidationException::withMessages([
+                    'status' => 'Pemeriksaan belum dapat diselesaikan karena Persetujuan Tindakan Medis belum ditandatangani. Lengkapi persetujuan terlebih dahulu.',
                 ]);
             }
         }

@@ -251,6 +251,34 @@ class PermissionSeeder extends Seeder
         'view_legacy_rme_migration_operations',
         'manage_legacy_rme_migration_operations',
         'approve_legacy_rme_migration_wave',
+
+        // FIX-04b — legacy (historical) ODONTOGRAM chart archive.
+        //
+        // A SEPARATE SET from the legacy RME archive above, on purpose: the two
+        // capabilities are independent, and holding one must never imply the
+        // other. An operator may be trusted with old RME documents and not with
+        // odontogram charts, or the reverse.
+        //
+        // Granted to NO role by default. The archive is operated by Super Admin
+        // from Master Data RME, who passes via the single global Gate::before;
+        // widening this to an operational role is an explicit later decision
+        // rather than a side effect of shipping the runtime.
+        'view_legacy_odontogram_imports',
+        'create_legacy_odontogram_imports',
+        'review_legacy_odontogram_imports',
+        'publish_legacy_odontogram_imports',
+        'void_legacy_odontogram_records',
+
+        // Clinical READ of a published odontogram archive.
+        //
+        // A separate permission on purpose. The five above are the INTAKE side
+        // (upload, review, publish, retract); granting one of them to a doctor
+        // just so the archive is readable would hand out archive management
+        // with it. This one grants reading and nothing else, and it is
+        // deliberately NOT in LegacyOdontogramWorkspaceScope::GOVERNANCE_PERMISSIONS,
+        // so its holder stays pinned to their own branches instead of widening
+        // to every RME branch.
+        'view_legacy_odontogram_archive',
     ];
 
     public function run(): void

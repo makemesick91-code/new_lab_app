@@ -4,7 +4,9 @@ namespace App\Modules\MedicalRecord\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ActiveEncounterResolver;
 use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\LegacyRme\Services\LegacyRmePatientHistoryService;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordHandwritingRepositoryInterface;
 use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
@@ -308,6 +310,25 @@ class MedicalRecordController extends Controller
             'prevRmPage' => $prevRmPage,
             'nextRmPage' => $nextRmPage,
             'hasRequiredHandwriting' => $this->service->hasRequiredHandwriting($activeSheet),
+            /*
+             * FIX-02 / CORRECTIVE-02 — may this user author current RME right now?
+             *
+             * Resolved by POSITIVE authority: the patient must have an authorized,
+             * consented examination in progress. Not "does this sheet's visit lack
+             * consent" — that question let a terminal visit read as writable.
+             *
+             * Presentation only. Disabling a control is a courtesy; the service
+             * asserts the same authority, so a crafted POST is refused regardless.
+             */
+            'canAuthorRme' => app(RmeVisitConsentService::class)
+                ->canAuthorRmeForPatient($patientId, $request->user()),
+            // The encounter the doctor is actually in, if any — drives the banner
+            // and the "sign consent" link so both name the right visit.
+            'activeEncounter' => app(ActiveEncounterResolver::class)->currentFor($patientId),
+            // Adding a sheet is a current-RME write like any other, so it follows
+            // the same single authority rather than a per-visit predicate.
+            'addSheetConsentRequired' => ! app(RmeVisitConsentService::class)
+                ->canAuthorRmeForPatient($patientId, $request->user()),
             // SATUSEHAT-4B — branch-scoped rollout state for the active sheet
             // (drives the informational/warning/pilot banner + override form).
             'diagnosisEnforcement' => $this->diagnosisRollout->enforcementStateFor($activeSheet),

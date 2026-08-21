@@ -38,10 +38,17 @@
         $canOperateVisit = auth()->user()?->can('operateFromDetail', $visit) ?? false;
         // FIX-05 — "Selesai Pemeriksaan" additionally needs clinical authority.
         $canCompleteExamination = auth()->user()?->can('completeExamination', $visit) ?? false;
+        // CORRECTIVE-03 — "Selesai Pemeriksaan" also requires a signed consent.
+        // Consent can only be taken while the visit is in_progress, so finishing
+        // an unsigned examination would strand it: unconsented, unwritable, and
+        // already at the cashier. The server refuses the transition regardless;
+        // hiding the button here just stops the doctor walking into the refusal.
+        $examinationConsentSigned = app(\App\Modules\Consent\Services\RmeVisitConsentService::class)
+            ->hasValidConsent($visit);
         $validNextStatuses = collect(\App\Modules\ClinicVisit\Models\ClinicVisit::VALID_TRANSITIONS[$visit->status] ?? [])
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_COMPLETED)
             ->reject(fn ($status) => $status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING
-                && ! $canCompleteExamination)
+                && (! $canCompleteExamination || ! $examinationConsentSigned))
             ->all();
     @endphp
 
@@ -118,21 +125,30 @@
             </x-ui.alert>
         @endif
 
-        {{-- FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the consent gate, shown
-             at the moment it becomes actionable: the doctor has finished, the
-             patient is on the way to the cashier, and payment is blocked until the
-             Surat Persetujuan Tindakan Medis is signed. Surfacing it here means the
-             cashier never learns about the requirement by having a payment
-             rejected. Presentation only — the server is the authority. --}}
-        @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_CASHIER_PENDING)
+        {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — the consent gate,
+             shown at the moment it is actually actionable.
+
+             It used to appear only at cashier_pending, because consent was the
+             PAYMENT gate. Consent is now taken at the START of the examination and
+             is what unlocks writing this visit's RME, so it is surfaced for the
+             whole live encounter and the doctor meets it before charting rather
+             than the cashier meeting it at the counter.
+
+             Presentation only — RmeVisitConsentService is the authority. --}}
+        {{-- CORRECTIVE-01 — consent becomes actionable ONLY once the doctor has
+             explicitly started the examination. Before that there is no decided
+             treatment to consent to; after it, signing would be after the fact. --}}
+        @if ($visit->status === \App\Modules\ClinicVisit\Models\ClinicVisit::STATUS_IN_PROGRESS)
             @php $visitSignedConsent = $visit->consents()->whereNull('voided_at')->latest('signed_at')->first(); @endphp
 
             @if ($visitSignedConsent === null)
-                <x-ui.alert variant="warning" title="Consent belum ditandatangani">
+                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <p class="max-w-xl text-sm">
-                            Surat Persetujuan Tindakan Medis untuk kunjungan ini belum ditandatangani.
-                            Kasir belum dapat memproses pembayaran sampai persetujuan diambil.
+                            Rekam medis dan odontogram kunjungan ini belum dapat ditulis sampai
+                            Surat Persetujuan Tindakan Medis ditandatangani pasien atau pemberi
+                            persetujuan, dan pemeriksaan belum dapat diselesaikan.
+                            Riwayat klinis pasien tetap dapat dibaca.
                         </p>
                         @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])
                             <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $visit)">
@@ -142,11 +158,12 @@
                     </div>
                 </x-ui.alert>
             @else
-                <x-ui.alert variant="success" title="Consent sudah ditandatangani">
+                <x-ui.alert variant="success" title="Persetujuan Tindakan Medis sudah ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <p class="max-w-xl text-sm">
                             {{ $visitSignedConsent->consent_number }} &middot;
-                            {{ $visitSignedConsent->signed_at?->format('d/m/Y H:i') }}. Pembayaran sudah dapat diproses.
+                            {{ $visitSignedConsent->signed_at?->format('d/m/Y H:i') }}.
+                            Penulisan rekam medis kunjungan ini sudah terbuka.
                         </p>
                         @can('view', $visitSignedConsent)
                             <x-ui.button variant="secondary" :href="route('rme.consents.show', $visitSignedConsent)">
@@ -214,15 +231,19 @@
                     <dd class="mt-0.5 text-xs text-gray-500">Konfirmasi kehadiran &amp; tindak lanjut piutang. Tidak ada kiriman WhatsApp otomatis.</dd>
                 </div>
                 <div>
-                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Persetujuan Tindakan</dt>
+                    <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Persetujuan Tindakan Medis</dt>
                     <dd class="mt-1 text-sm">
-                        @if ($visit->hasVerifiedConsent())
-                            <x-ui.badge tone="success">TTD Surat Persetujuan Tindakan terverifikasi</x-ui.badge>
+                        @if ($visit->hasSignedConsentDocument())
+                            <x-ui.badge tone="success">Sudah ditandatangani</x-ui.badge>
                         @else
-                            <x-ui.badge tone="warning">TTD Surat Persetujuan Tindakan belum diverifikasi kasir</x-ui.badge>
+                            <x-ui.badge tone="warning">Belum ditandatangani</x-ui.badge>
                         @endif
                     </dd>
-                    <dd class="mt-1 text-xs text-gray-500">Checklist verifikasi fisik dikonfirmasi kasir saat pembayaran. Tidak ada tanda tangan digital.</dd>
+                    {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — the signed
+                         document is what unlocks RME authoring for this visit. It is no
+                         longer verified by the cashier and is no longer a payment
+                         condition. --}}
+                    <dd class="mt-1 text-xs text-gray-500">Ditandatangani pasien/pemberi persetujuan saat pemeriksaan dokter. Membuka penulisan RME kunjungan ini.</dd>
                 </div>
                 @if ($visit->patient?->date_of_birth)
                     <div>

@@ -10,8 +10,13 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
  * Hotfix Sprint 60.7 — Doctor → Cashier handoff status.
  *
  * Derives a single, cashier-readable "handoff status" for a clinic visit from the
- * existing visit status, medical record finalization, consent verification, and
- * active invoice/payment state. This is read-only/visibility logic: it never
+ * existing visit status, medical record finalization, and active invoice/payment
+ * state.
+ *
+ * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — the CONSENT_PENDING rung
+ * is removed. Consent is taken at the start of the doctor's examination and gates
+ * RME authoring, not payment, so the cashier is never waiting on it and it must
+ * not appear in this pipeline as something that holds a patient up at the counter. This is read-only/visibility logic: it never
  * mutates state and never changes payment, consent, or RME workflow rules. It only
  * classifies what the front office/cashier is currently waiting on so the
  * doctor → cashier handoff is visible without manual WhatsApp confirmation.
@@ -21,8 +26,6 @@ class CashierHandoffStatusService
     public const WAITING_DOCTOR = 'waiting_doctor';
 
     public const PENDING_RME = 'pending_rme';
-
-    public const CONSENT_PENDING = 'consent_pending';
 
     public const READY_TO_PAY = 'ready_to_pay';
 
@@ -41,7 +44,6 @@ class CashierHandoffStatusService
     public const QUEUE_GROUPS = [
         self::WAITING_DOCTOR,
         self::PENDING_RME,
-        self::CONSENT_PENDING,
         self::READY_TO_PAY,
         self::IN_PAYMENT,
     ];
@@ -60,15 +62,10 @@ class CashierHandoffStatusService
             'tone' => 'info',
             'hint' => 'Dokter sedang mengisi rekam medis / tindakan, belum difinalisasi.',
         ],
-        self::CONSENT_PENDING => [
-            'label' => 'Consent Belum Lengkap',
-            'tone' => 'warning',
-            'hint' => 'Surat persetujuan tindakan belum dikonfirmasi pasien & dokter.',
-        ],
         self::READY_TO_PAY => [
             'label' => 'Siap Bayar',
             'tone' => 'success',
-            'hint' => 'RME final & consent lengkap. Siap dibuatkan tagihan / dibayar.',
+            'hint' => 'RME final. Siap dibuatkan tagihan / dibayar.',
         ],
         self::IN_PAYMENT => [
             'label' => 'Dalam Proses Pembayaran',
@@ -112,10 +109,6 @@ class CashierHandoffStatusService
             $invoice = $visit->rmeInvoice;
             if ($invoice !== null && $invoice->status === RmeInvoice::STATUS_PARTIAL) {
                 return self::IN_PAYMENT;
-            }
-
-            if (! $visit->hasVerifiedConsent()) {
-                return self::CONSENT_PENDING;
             }
 
             return self::READY_TO_PAY;

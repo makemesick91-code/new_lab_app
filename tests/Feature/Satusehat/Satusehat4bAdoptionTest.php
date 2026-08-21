@@ -59,6 +59,8 @@ it('counts overrides and rollout modes in the adoption metrics', function () {
     $configurer = userWith(['configure_diagnosis_rollout']);
     $doctor = userWith(['override_diagnosis_requirement']);
     $ctx = ssMakeVisit(['visit_date' => now()->toDateString()]);
+    // CORRECTIVE-03 — clinical content is written DURING a consented encounter.
+    ssOpenEncounter($ctx);
 
     app(DiagnosisRolloutService::class)->setMode($ctx['branch'], 'pilot_enforced', 'pilot adopsi diagnosis cabang ini', $configurer);
     app(DiagnosisRolloutService::class)->grantOverride($ctx['mr'], 'Pasien emergensi, koding menyusul.', $doctor);

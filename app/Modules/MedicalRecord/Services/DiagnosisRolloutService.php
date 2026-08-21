@@ -5,6 +5,7 @@ namespace App\Modules\MedicalRecord\Services;
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchService;
+use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\MedicalRecord\Models\ClinicalDiagnosis;
 use App\Modules\MedicalRecord\Models\DiagnosisRequirementOverride;
 use App\Modules\MedicalRecord\Models\DiagnosisRolloutSetting;
@@ -216,6 +217,14 @@ class DiagnosisRolloutService
      */
     public function grantOverride(MedicalRecord $medicalRecord, string $reason, User $actor): DiagnosisRequirementOverride
     {
+        /*
+         * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-02 — granting an
+         * emergency override is an authoring act on this visit's record (it
+         * unlocks finalization), so it waits for consent like every other write.
+         */
+        app(RmeVisitConsentService::class)
+            ->assertRmeAuthoringAllowedForPatient($medicalRecord->patient_id, $actor);
+
         $mode = $this->modeForBranch((int) $medicalRecord->branch_id);
         if ($mode !== DiagnosisRolloutSetting::MODE_PILOT_ENFORCED) {
             throw ValidationException::withMessages([

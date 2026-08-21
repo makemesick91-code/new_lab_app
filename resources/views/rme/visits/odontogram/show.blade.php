@@ -9,8 +9,17 @@
         // D/M/F/DMF-T tally are generated, read-only outputs derived only from the
         // saved table data; the doctor never draws on the image. Odontogram remains
         // editable after finalization (Sprint 59).
-        $canUpdate = auth()->user()?->can('update', $odontogram) ?? false;
-        $canFinalize = (! $isFinalized) && (auth()->user()?->can('finalize', $odontogram) ?? false);
+        //
+        // CORRECTIVE-03 — authoring additionally requires a signed Persetujuan
+        // Tindakan Medis on the LIVE encounter. `$odontogramAuthoringAllowed` is
+        // supplied by the controller from RmeVisitConsentService, which is the
+        // authority; this is presentation only, and the server refuses the write
+        // regardless of what is rendered here.
+        $canUpdate = ($odontogramAuthoringAllowed ?? false)
+            && (auth()->user()?->can('update', $odontogram) ?? false);
+        $canFinalize = ($odontogramAuthoringAllowed ?? false)
+            && (! $isFinalized)
+            && (auth()->user()?->can('finalize', $odontogram) ?? false);
 
         // FDI display order for the generated visual: center → outer per side.
         // Permanent (quadrants 1–4).
@@ -147,6 +156,34 @@
                 @endif
             </x-slot:actions>
         </x-ui.page-header>
+
+        {{-- CORRECTIVE-03 — why this chart is read-only right now. The page stays
+             open: the doctor needs to SEE the chart to decide the treatment the
+             patient is being asked to consent to. --}}
+        @if (($odontogramConsentRequired ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
+            <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                <p class="text-sm">
+                    Odontogram dapat dilihat, tetapi belum dapat diubah.
+                    Pasien harus menandatangani form consent sebelum dokter
+                    dapat mencatat atau mengubah odontogram.
+                </p>
+                <div class="mt-3">
+                    <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
+                        Buka Detail Kunjungan
+                    </x-ui.button>
+                </div>
+            </x-ui.alert>
+        @elseif (! ($odontogramAuthoringAllowed ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
+            {{-- Not the live encounter: this chart is clinical evidence of a past
+                 visit, and consent signed today does not reopen it. --}}
+            <x-ui.alert variant="info" title="Odontogram riwayat — hanya-baca">
+                <p class="text-sm">
+                    Odontogram ini milik kunjungan yang tidak sedang berjalan, sehingga
+                    bersifat hanya-baca. Catat temuan pada odontogram kunjungan yang
+                    sedang diperiksa.
+                </p>
+            </x-ui.alert>
+        @endif
 
         @include('rme.visits.partials.visit-workflow-nav', [
             'clinicVisit' => $clinicVisit,
@@ -529,4 +566,16 @@
         </x-ui.card>
 
     </div>
+
+    {{-- ============================================================ --}}
+    {{-- FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-04            --}}
+    {{-- Riwayat Odontogram Pasien — read-only, previous visits only.  --}}
+    {{-- Deliberately placed AFTER the closing </div> of the           --}}
+    {{-- x-data="odontogramEditor(...)" wrapper: the history card has  --}}
+    {{-- its own per-row Alpine state and must never share scope with  --}}
+    {{-- the active editor, so a stray binding can never reach the     --}}
+    {{-- chart being edited. The active editor above is UNCHANGED.     --}}
+    {{-- ============================================================ --}}
+    @include('rme.visits.odontogram.partials.patient-odontogram-history')
+
 </x-settings-shell>

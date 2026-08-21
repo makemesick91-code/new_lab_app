@@ -5,6 +5,8 @@
 use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
+use App\Modules\ClinicVisit\Services\ClinicVisitService;
+use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Invoice\Models\Invoice;
 use App\Modules\LabOrder\Models\LabCaseCandidate;
 use App\Modules\LabOrder\Models\LabOrder;
@@ -76,9 +78,21 @@ function e2eConversionPayload(LabService $service, array $overrides = []): array
  *
  * @return array{0: ClinicVisit, 1: MedicalRecord}
  */
-function e2eVisitReadyForFinalize(Branch $branch): array
+function e2eVisitReadyForFinalize(Branch $branch, ?User $doctorUser = null): array
 {
-    $visit = ClinicVisit::factory()->inProgress()->create(['branch_id' => $branch->id]);
+    /*
+     * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 — the visit must belong to the
+     * DOCTOR who will write on it. Clinical authoring now checks the doctor's
+     * patient scope (CORRECTIVE-02 condition 3), and this suite acts as a real
+     * Doctor-role user, for whom that scope is not a no-op.
+     */
+    $doctorUser ??= test()->doctor;
+    $doctorId = Doctor::query()->where('user_id', $doctorUser->id)->value('id');
+
+    $visit = ClinicVisit::factory()->inProgress()->create(array_filter([
+        'branch_id' => $branch->id,
+        'doctor_id' => $doctorId,
+    ]));
     $record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $branch->id,
@@ -100,6 +114,25 @@ function e2eVisitReadyForFinalize(Branch $branch): array
 }
 
 /**
+ * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01 — finalize the clinical
+ * document, then have the doctor EXPLICITLY finish the examination.
+ *
+ * These are two different facts now. Finalizing a record no longer moves the
+ * visit, so without the second step the visit stays `in_progress` and
+ * `RmeInvoiceService::create()` refuses to bill it — which is the intended
+ * workflow, not a bug. Every billing scenario below therefore goes through here.
+ */
+function e2eFinalizeAndCompleteExamination(ClinicVisit $visit, MedicalRecord $record, ?User $doctorUser = null): void
+{
+    $doctorUser ??= test()->doctor;
+
+    test()->actingAs($doctorUser);
+
+    app(MedicalRecordService::class)->finalize($record->fresh());
+    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING);
+}
+
+/**
  * Run finalize → invoice → pay for a lab-required treatment; returns paid invoice context.
  *
  * @return array{0: ClinicVisit, 1: MedicalRecord, 2: RmeInvoice, 3: Treatment}
@@ -110,9 +143,9 @@ function e2ePaidLabInvoiceFlow(
     User $kasir,
     array $itemOverrides = [],
 ): array {
-    [$visit, $record] = e2eVisitReadyForFinalize($branch);
+    [$visit, $record] = e2eVisitReadyForFinalize($branch, $doctor);
 
-    app(MedicalRecordService::class)->finalize($record->fresh());
+    e2eFinalizeAndCompleteExamination($visit, $record, $doctor);
 
     $treatment = Treatment::factory()->requiresLab()->create(['name' => 'E2E Treatment Lab Required']);
 
@@ -242,7 +275,7 @@ it('candidate generation and conversion are idempotent across repeated calls', f
 
 it('paid rme invoice without lab-required treatment does not create lab case candidate', function () {
     [$visit, $record] = e2eVisitReadyForFinalize($this->branch);
-    app(MedicalRecordService::class)->finalize($record->fresh());
+    e2eFinalizeAndCompleteExamination($visit, $record);
 
     $treatment = Treatment::factory()->create(['requires_lab' => false]);
 
@@ -265,7 +298,7 @@ it('paid rme invoice without lab-required treatment does not create lab case can
 
 it('partial rme payment marks invoice partial and does not create lab case candidate', function () {
     [$visit, $record] = e2eVisitReadyForFinalize($this->branch);
-    app(MedicalRecordService::class)->finalize($record->fresh());
+    e2eFinalizeAndCompleteExamination($visit, $record);
 
     $treatment = Treatment::factory()->requiresLab()->create();
     $invoice = app(RmeInvoiceService::class)->create(
@@ -364,13 +397,30 @@ it('cross-branch user cannot view or convert lab case candidate from another bra
 
 // ─── Scenario 6: Visit status transition on finalize ───────────────────────────
 
-it('medical record finalization moves in_progress visit to cashier_pending before billing', function () {
+it('medical record finalization leaves the visit in_progress until the doctor finishes the examination', function () {
+    /*
+     * SUPERSEDED BY FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-01. This test
+     * previously asserted that finalizing the RECORD moved the visit to
+     * cashier_pending — completing a clinical DOCUMENT silently ended the
+     * doctor's EXAMINATION. Those are different facts, and since Sprint 59 a
+     * finalized record is editable again, so "final" was never a sound proxy for
+     * "the examination is over".
+     *
+     * What the scenario still pins is preserved and inverted: the document
+     * reaches FINAL, the visit does NOT move, and only the doctor's explicit
+     * "Selesai Pemeriksaan" opens the cashier.
+     */
     [$visit, $record] = e2eVisitReadyForFinalize($this->branch);
 
     expect($visit->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 
+    $this->actingAs($this->doctor);
     app(MedicalRecordService::class)->finalize($record->fresh());
 
-    expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
+    expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
         ->and($record->fresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
+
+    app(ClinicVisitService::class)->transitionStatus($visit->fresh(), ClinicVisit::STATUS_CASHIER_PENDING);
+
+    expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING);
 });

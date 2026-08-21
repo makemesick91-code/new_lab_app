@@ -45,7 +45,9 @@ beforeEach(function () {
     ]);
 });
 
-function consentHttpVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_CASHIER_PENDING): ClinicVisit
+// CORRECTIVE-01 — signing happens during the examination; tests that pay pass
+// STATUS_CASHIER_PENDING explicitly.
+function consentHttpVisit(?Branch $branch = null, string $status = ClinicVisit::STATUS_IN_PROGRESS): ClinicVisit
 {
     $branch ??= test()->branch;
 
@@ -96,8 +98,8 @@ function consentHttpFormPayload(array $overrides = []): array
 |--------------------------------------------------------------------------
 */
 
-it('rejects a crafted payment POST that claims consent without a signed document', function () {
-    $visit = consentHttpVisit();
+it('accepts a payment POST regardless of any consent claim it carries', function () {
+    $visit = consentHttpVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
@@ -109,14 +111,16 @@ it('rejects a crafted payment POST that claims consent without a signed document
             'consent_signed_by_patient' => 1,
             'consent_signed_by_doctor' => 1,
         ])
-        ->assertSessionHasErrors('consent_signed_by_patient');
+        ->assertSessionHasNoErrors();
 
-    expect(RmePayment::count())->toBe(0);
-    expect($invoice->refresh()->status)->not->toBe(RmeInvoice::STATUS_PAID);
+    expect(RmePayment::count())->toBe(1);
+    expect($invoice->refresh()->status)->toBe(RmeInvoice::STATUS_PAID);
+    // PRESERVED: the request still cannot write the attestation columns.
+    expect($visit->refresh()->consent_signed_by_patient)->toBeFalse();
 });
 
-it('rejects a payment POST that omits consent entirely', function () {
-    $visit = consentHttpVisit();
+it('accepts a payment POST that mentions consent not at all', function () {
+    $visit = consentHttpVisit(status: ClinicVisit::STATUS_CASHIER_PENDING);
     $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
@@ -125,20 +129,27 @@ it('rejects a payment POST that omits consent entirely', function () {
             'amount' => 150000,
             'paid_at' => now()->toDateTimeString(),
         ])
-        ->assertSessionHasErrors('consent_signed_by_patient');
+        ->assertSessionHasNoErrors();
 
-    expect(RmePayment::count())->toBe(0);
+    // SUPERSEDED by FIX-03 — consent is not a payment condition. Inverted rather
+    // than deleted so a reintroduced payment consent gate fails here.
+    expect(RmePayment::count())->toBe(1);
 });
 
-it('accepts the payment once the consent has been signed over HTTP', function () {
+it('signs during the examination and pays afterwards, over HTTP', function () {
+    // SUPERSEDED by CORRECTIVE-01 — the order is consent-DURING-EXAM then pay,
+    // not consent-at-the-counter then pay.
     $visit = consentHttpVisit();
-    $invoice = consentHttpInvoice($visit);
 
     $this->actingAs($this->cashier)
         ->post(route('rme.visits.consent.store', $visit), consentHttpFormPayload())
         ->assertRedirect();
 
     expect(RmeVisitConsent::count())->toBe(1);
+
+    // The doctor finishes; only then is there an invoice.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($this->cashier)
         ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [
@@ -178,24 +189,35 @@ it('denies a crafted consent POST from a user without the consent permission', f
     expect(RmeVisitConsent::count())->toBe(0);
 });
 
-it('refuses to open the consent form before the doctor has finished', function () {
+it('opens the consent form as soon as the doctor has started the examination', function () {
+    // SUPERSEDED by FIX-02 — consent is taken at the START of the examination.
     $visit = consentHttpVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->actingAs($this->cashier)
         ->get(route('rme.visits.consent.create', $visit))
-        ->assertRedirect(route('rme.visits.show', $visit))
-        ->assertSessionHas('error');
+        ->assertOk();
 });
 
-it('refuses a crafted consent POST before the doctor has finished', function () {
-    $visit = consentHttpVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
+it('accepts a consent POST for a live visit, and still refuses one on a terminal visit', function () {
+    // SUPERSEDED by FIX-02. The timing rule moved; what stays is that a FINISHED
+    // visit can never be back-dated a consent.
+    $live = consentHttpVisit(status: ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->actingAs($this->cashier)
-        ->from(route('rme.visits.show', $visit))
-        ->post(route('rme.visits.consent.store', $visit), consentHttpFormPayload())
+        ->from(route('rme.visits.show', $live))
+        ->post(route('rme.visits.consent.store', $live), consentHttpFormPayload())
+        ->assertSessionHasNoErrors();
+
+    expect(RmeVisitConsent::count())->toBe(1);
+
+    $finished = consentHttpVisit(status: ClinicVisit::STATUS_COMPLETED);
+
+    $this->actingAs($this->cashier)
+        ->from(route('rme.visits.show', $finished))
+        ->post(route('rme.visits.consent.store', $finished), consentHttpFormPayload())
         ->assertSessionHasErrors('clinic_visit_id');
 
-    expect(RmeVisitConsent::count())->toBe(0);
+    expect(RmeVisitConsent::count())->toBe(1);
 });
 
 it('requires the documentation answer to be present in the request', function () {
@@ -381,7 +403,6 @@ it('lets a real Kasir complete the consent-then-pay workflow', function () {
      * This test exists to keep that mistake from being reintroduced.
      */
     $visit = consentHttpVisit();
-    $invoice = consentHttpInvoice($visit);
 
     $kasir = userInRole('Kasir');
     $kasir->forceFill(['branch_id' => $this->branch->id])->save();
@@ -397,6 +418,10 @@ it('lets a real Kasir complete the consent-then-pay workflow', function () {
     $this->actingAs($kasir)
         ->post(route('rme.visits.consent.store', $visit), consentHttpFormPayload())
         ->assertRedirect();
+
+    // The doctor finishes the examination; the cashier then bills and collects.
+    $visit->forceFill(['status' => ClinicVisit::STATUS_CASHIER_PENDING])->save();
+    $invoice = consentHttpInvoice($visit->refresh());
 
     $this->actingAs($kasir)
         ->post(route('rme.cashier.payment.store', [$visit, $invoice]), [

@@ -30,22 +30,16 @@ class CreateRmePaymentRequest extends FormRequest
             'selected_receivable_ids' => ['nullable', 'array'],
             'selected_receivable_ids.*' => ['integer'],
             /*
-             * FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — these two fields
-             * used to be `required|accepted`, which made the request itself the
-             * consent decision: the payment service wrote them onto the visit
-             * and then asserted against what it had just written, so a crafted
-             * POST could author its own consent.
+             * FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — the
+             * consent_signed_by_patient / consent_signed_by_doctor fields are
+             * GONE from this request.
              *
-             * The decision now lives in a signed PERSETUJUAN TINDAKAN MEDIS
-             * that only RmeVisitConsentService can create, and only from a real
-             * signature. The checkboxes remain on the cashier form as an
-             * acknowledgement that the operator has sighted the signed document,
-             * so they are still accepted and still validated as booleans — but
-             * they no longer decide anything, and omitting them can no longer
-             * unlock a payment.
+             * Consent is no longer any part of payment eligibility, so the
+             * cashier form no longer collects it and this request no longer
+             * accepts it. Anything a client still submits under those names is
+             * simply not validated data here and can never reach the payment
+             * service. Nothing may add a consent rule back to this request.
              */
-            'consent_signed_by_patient' => ['nullable', 'boolean'],
-            'consent_signed_by_doctor' => ['nullable', 'boolean'],
         ];
     }
 
@@ -100,9 +94,6 @@ class CreateRmePaymentRequest extends FormRequest
 
     public function messages(): array
     {
-        return [
-            'consent_signed_by_patient.boolean' => 'Konfirmasi Surat Persetujuan Tindakan Medis tidak valid.',
-            'consent_signed_by_doctor.boolean' => 'Konfirmasi Surat Persetujuan Tindakan Medis tidak valid.',
-        ];
+        return [];
     }
 }

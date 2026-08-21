@@ -38,6 +38,13 @@ beforeEach(function () {
         'queue_number' => 1,
     ]);
 
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 — writing a
+    // patient's RME now requires a legitimate ACTIVE encounter: in_progress plus a
+    // signed Persetujuan Tindakan Medis. These tests are about medical-record
+    // mechanics, not the gate, so the fixture establishes that encounter. The gate
+    // itself is under test in RmeExamConsentCorrectiveTest.
+    rmeActiveConsentedEncounter($this->visit);
+
     $this->record = MedicalRecord::factory()->create([
         'clinic_visit_id' => $this->visit->id,
         'branch_id' => $this->branch->id,

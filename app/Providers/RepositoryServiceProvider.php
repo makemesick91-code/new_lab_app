@@ -139,6 +139,17 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
+use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramNativeReferenceRepositoryInterface;
+use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramRecordRepositoryInterface;
+use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
+use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
+use App\Modules\LegacyOdontogram\Policies\LegacyOdontogramImportPolicy;
+use App\Modules\LegacyOdontogram\Policies\LegacyOdontogramRecordPolicy;
+use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramImportRepository;
+use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramNativeReferenceRepository;
+use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramRecordRepository;
+use App\Modules\LegacyOdontogram\Services\LegacyOdontogramAuditService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmePdfInspectorInterface;
@@ -331,6 +342,12 @@ class RepositoryServiceProvider extends ServiceProvider
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImportRepositoryInterface::class => LegacyRmeImportRepository::class,
         LegacyRmeRecordRepositoryInterface::class => LegacyRmeRecordRepository::class,
+
+        // FIX-04b — legacy ODONTOGRAM chart archive. Its own repositories,
+        // deliberately not shared with the legacy RME archive above.
+        LegacyOdontogramImportRepositoryInterface::class => LegacyOdontogramImportRepository::class,
+        LegacyOdontogramRecordRepositoryInterface::class => LegacyOdontogramRecordRepository::class,
+        LegacyOdontogramNativeReferenceRepositoryInterface::class => LegacyOdontogramNativeReferenceRepository::class,
         // LEGACY-RME-PDF-1B — PDF inspection, rendering and optional scanning.
         // Bound as interfaces so a test can swap in a deterministic fake and the
         // suite never depends on Poppler being installed.
@@ -445,6 +462,8 @@ class RepositoryServiceProvider extends ServiceProvider
         // LEGACY-RME-PDF-1A — legacy (historical) RME PDF archive
         LegacyRmeImport::class => LegacyRmeImportPolicy::class,
         LegacyRmeRecord::class => LegacyRmeRecordPolicy::class,
+        LegacyOdontogramImport::class => LegacyOdontogramImportPolicy::class,
+        LegacyOdontogramRecord::class => LegacyOdontogramRecordPolicy::class,
         // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
         LegacyRmeMigrationWave::class => LegacyRmeMigrationWavePolicy::class,
     ];
@@ -466,6 +485,10 @@ class RepositoryServiceProvider extends ServiceProvider
         // always scoped by `withChannel()` and restored in a `finally`, so a
         // long-lived queue worker cannot inherit a stale value.
         $this->app->singleton(LegacyRmeAuditService::class);
+
+        // FIX-04b — one audit facade per request, so the payload allow-list is
+        // applied by a single instance rather than by several that could drift.
+        $this->app->singleton(LegacyOdontogramAuditService::class);
 
         // Sprint 16.8.4 — analytics repository swap via feature flag (default: live ledger)
         $this->app->bind(InventoryAnalyticsRepositoryInterface::class, function ($app) {

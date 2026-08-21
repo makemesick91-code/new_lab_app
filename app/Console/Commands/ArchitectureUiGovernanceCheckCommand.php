@@ -329,11 +329,18 @@ class ArchitectureUiGovernanceCheckCommand extends Command
             }
         }
 
-        // Payment detail must be built on the adopted foundation components,
-        // including the consent-gate alert.
+        // Payment detail must be built on the adopted foundation components.
+        //
+        // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03 — `x-ui.alert` is no
+        // longer required here. It was required because the payment page carried
+        // the consent-gate alert; consent is now taken at the start of the
+        // doctor's examination and is not a payment condition, so that alert was
+        // removed. The requirement is dropped rather than satisfied by decorative
+        // markup: a component-adoption rule must describe what the page actually
+        // needs to show, not force a page to keep a banner whose subject moved.
         $cashierPayment = @file_get_contents($base.'/'.$cashierPaymentView) ?: '';
         if ($cashierPayment !== '') {
-            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button', 'x-ui.alert'] as $component) {
+            foreach (['x-ui.page-header', 'x-ui.card', 'x-ui.badge', 'x-ui.button'] as $component) {
                 if (! str_contains($cashierPayment, $component)) {
                     $errors[] = "Cashier payment view does not use the {$component} component.";
                 }

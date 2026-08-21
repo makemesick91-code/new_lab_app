@@ -56,6 +56,8 @@ it('a mapped structured diagnosis fully satisfies the diagnosis gate', function 
 
 it('service refuses duplicate diagnosis, second primary, and inactive master', function () {
     $ctx = ssMakeVisit();
+    // CORRECTIVE-03 — clinical content is written DURING a consented encounter.
+    ssOpenEncounter($ctx);
     $actor = superAdmin();
     $service = app(MedicalRecordDiagnosisService::class);
 
@@ -121,6 +123,8 @@ it('doctor-facing search returns only ACTIVE masters and never synthetic entries
 
 it('diagnosis routes are permission + policy gated (unauthorized user cannot record)', function () {
     $ctx = ssMakeVisit();
+    // CORRECTIVE-03 — clinical content is written DURING a consented encounter.
+    ssOpenEncounter($ctx);
     $master = ClinicalDiagnosis::factory()->create();
 
     // No permission at all → search 403.

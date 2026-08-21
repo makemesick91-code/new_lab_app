@@ -116,7 +116,10 @@ it('Odontogram page shows prev/next links to adjacent visits of the same patient
 // ─── Table-first odontogram editor ───────────────────────────────────────────
 
 it('odontogram page renders the table-only Daengtisia input for a manager (Hotfix Sprint 60.3)', function () {
-    $visit = ClinicVisit::factory()->create(['branch_id' => $this->branch->id]);
+    // CORRECTIVE-03 — the editor renders on a consented live encounter. The page
+    // itself still opens without consent; only the input controls are withheld,
+    // which RmeExamConsentCorrective3Test pins separately.
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $this->branch->id]);
 
     $this->actingAs($this->manager)
         ->get(route('rme.visits.odontogram.show', $visit))

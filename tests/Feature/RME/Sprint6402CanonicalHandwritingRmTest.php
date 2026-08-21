@@ -23,12 +23,27 @@ beforeEach(function () {
 
 function hw2Visit(Branch $branch, Patient $patient, string $date): ClinicVisit
 {
-    return ClinicVisit::factory()->create([
+    $visit = ClinicVisit::factory()->create([
         'branch_id' => $branch->id,
         'patient_id' => $patient->id,
         'visit_date' => $date,
         'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ]);
+
+    // FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / CORRECTIVE-02 — writing a
+    // patient's RME now requires a legitimate ACTIVE encounter: in_progress plus a
+    // signed Persetujuan Tindakan Medis. These tests are about medical-record
+    // mechanics, not the gate, so the fixture establishes that encounter. The gate
+    // itself is under test in RmeExamConsentCorrectiveTest.
+    // Only an in_progress visit becomes THE active encounter; a status the test
+    // chose deliberately (cancelled, completed) is never overridden.
+    if ($visit->status === ClinicVisit::STATUS_IN_PROGRESS) {
+        rmeActiveConsentedEncounter($visit);
+    } else {
+        rmeSignedConsentFor($visit);
+    }
+
+    return $visit;
 }
 
 function hw2Sheet(Branch $branch, ClinicVisit $visit): MedicalRecord
@@ -332,7 +347,9 @@ it('allows finalizing visit 2 when handwriting exists only on canonical visit 1'
     expect($sheet2->refresh()->status)->toBe(MedicalRecord::STATUS_FINAL);
 });
 
-it('finalizing visit 2 transitions only visit 2 to cashier_pending', function () {
+it('finalizing visit 2 transitions no visit at all', function () {
+    // SUPERSEDED by FIX-01 — finalization no longer advances the workflow. The
+    // preserved property: finalizing one sheet never touches another visit.
     $patient = Patient::factory()->create(['branch_id' => $this->branch->id]);
     $visit1 = hw2Visit($this->branch, $patient, now()->subDays(10)->toDateString());
     $visit2 = hw2Visit($this->branch, $patient, now()->subDays(2)->toDateString());
@@ -350,8 +367,10 @@ it('finalizing visit 2 transitions only visit 2 to cashier_pending', function ()
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]))
         ->assertRedirect();
 
-    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_CASHIER_PENDING)
-        ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
+    // visit1 was closed when visit2's examination opened (one active encounter at
+    // a time). Neither status moves as a result of finalizing visit2's sheet.
+    expect($visit2->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+        ->and($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED);
 });
 
 it('does not transition canonical visit 1 when finalizing visit 2', function () {
@@ -371,7 +390,9 @@ it('does not transition canonical visit 1 when finalizing visit 2', function () 
     $this->actingAs($this->manager)
         ->post(route('rme.visits.medical-record.finalize', [$visit2, $sheet2]));
 
-    expect($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS)
+    // visit1 was closed when visit2's examination opened; finalizing visit2's
+    // sheet still moves nothing — neither visit1's status nor sheet1's.
+    expect($visit1->refresh()->status)->toBe(ClinicVisit::STATUS_COMPLETED)
         ->and($sheet1->refresh()->status)->toBe(MedicalRecord::STATUS_DRAFT);
 });
 

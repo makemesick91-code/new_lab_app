@@ -32,6 +32,9 @@ function s4bFinalizableCtx(): array
 {
     $ctx = ssMakeVisit();
     $ctx['mr']->update(['status' => MedicalRecord::STATUS_DRAFT, 'finalized_at' => null]);
+    // CORRECTIVE-03 — finalizing a record is a clinical write, so it needs the
+    // live consented encounter the doctor actually finalizes from.
+    ssOpenEncounter($ctx, superAdmin());
     MedicalRecordHandwriting::factory()->create([
         'medical_record_id' => $ctx['mr']->id,
         'clinic_visit_id' => $ctx['visit']->id,

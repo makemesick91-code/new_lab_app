@@ -89,51 +89,40 @@ it('renders the polished invoice detail page', function () {
         ->assertSee($visit->patient->name);
 });
 
-it('renders the polished payment page with a visible consent gate', function () {
+it('never renders a consent gate on the payment page', function () {
+    /*
+     * SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03.
+     *
+     * The payment page used to report the consent state and carry two
+     * acknowledgement checkboxes, because consent was the payment gate. Consent
+     * is now taken at the start of the doctor's examination and gates RME
+     * authoring, so the cashier has nothing here to verify, acknowledge or wait
+     * for — and consent must never be shown as a reason a payment cannot proceed.
+     *
+     * Inverted rather than deleted: a reintroduced consent gate fails here.
+     */
     [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
 
     $this->actingAs($this->cashier)
         ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
         ->assertOk()
         ->assertSee('Pembayaran Tagihan RME')
-        ->assertSee('Verifikasi Surat Persetujuan Tindakan')
-        // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — the page now reports the
-        // real consent state and offers the way to resolve it, instead of asking
-        // the cashier to assert consent on the patient's behalf.
-        ->assertSee('Consent belum ditandatangani')
-        // This fixture holds manage_rme_billing only, so it may not capture a
-        // signature: it is told who can, rather than shown an action it would
-        // be refused. The action itself is asserted in the next test.
-        ->assertSee('Hubungi petugas yang berwenang')
-        ->assertDontSee('Pilih Form Consent')
-        // The checkbox field names stay unchanged (payment logic preserved).
-        ->assertSee('consent_signed_by_patient', false)
-        ->assertSee('consent_signed_by_doctor', false);
+        ->assertDontSee('Verifikasi Surat Persetujuan Tindakan')
+        ->assertDontSee('Consent belum ditandatangani')
+        ->assertDontSee('consent_signed_by_patient', false)
+        ->assertDontSee('consent_signed_by_doctor', false);
 });
 
-it('offers Pilih Form Consent to a cashier who may capture the signature', function () {
+it('still renders the payment page normally once a consent exists elsewhere in the visit', function () {
+    // A signed consent changes nothing on this page: it is not a payment input.
     [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
-
-    $operator = userWith(['view_clinic_visits', 'manage_rme_billing', 'manage_rme_consents', 'view_rme_consents']);
-
-    $this->actingAs($operator)
-        ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
-        ->assertOk()
-        ->assertSee('Consent belum ditandatangani')
-        ->assertSee('Pilih Form Consent')
-        ->assertSee(route('rme.visits.consent.create', $visit));
-});
-
-it('shows the signed consent state on the payment page once consent exists', function () {
-    [$visit, $invoice] = uix5UnpaidInvoice($this->branch, $this->cashier);
-    $consent = rmeSignedConsentFor($visit);
+    rmeSignedConsentFor($visit);
 
     $this->actingAs($this->cashier)
         ->get(route('rme.cashier.payment.create', [$visit, $invoice]))
         ->assertOk()
-        ->assertSee('Consent sudah ditandatangani')
-        ->assertSee($consent->consent_number)
-        ->assertDontSee('Consent belum ditandatangani');
+        ->assertSee('Pembayaran Tagihan RME')
+        ->assertDontSee('Consent sudah ditandatangani');
 });
 
 it('still processes a full payment and renders the receipt after the polish', function () {
@@ -180,15 +169,16 @@ it('uses x-ui foundation components in the cashier list view', function () {
     expect($view)->not->toMatch('/\b(?:bg|text|border|ring)-teal-\d/');
 });
 
-it('renders the payment consent gate through the x-ui.alert pattern with status badges', function () {
+it('keeps the payment page on the design-system foundation components', function () {
     $view = file_get_contents(resource_path('views/rme/cashier/payment/create.blade.php'));
 
     expect($view)->toContain('x-ui.page-header');
     expect($view)->toContain('x-ui.card');
     expect($view)->toContain('x-ui.badge');
     expect($view)->toContain('x-ui.button');
-    // Consent gate uses the design-system alert component.
-    expect($view)->toContain('x-ui.alert');
+    // FIX-03 — x-ui.alert is no longer required here: the consent alert it was
+    // asserting is removed, and a component-adoption rule must describe what the
+    // page actually needs to show rather than force a banner whose subject moved.
     // No gold CTA, no legacy teal.
     expect($view)->not->toContain('variant="gold"');
     expect($view)->not->toMatch('/\b(?:bg|text|border|ring)-teal-\d/');

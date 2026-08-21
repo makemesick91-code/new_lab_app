@@ -1,7 +1,6 @@
 <?php
 
 use App\Modules\Branch\Models\Branch;
-use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
 use Database\Seeders\BranchSeeder;
 
@@ -25,7 +24,7 @@ beforeEach(function () {
 
 it('odontogram fill page no longer renders the general Catatan Umum inputs', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -37,7 +36,7 @@ it('odontogram fill page no longer renders the general Catatan Umum inputs', fun
 
 it('odontogram fill page renders the table-only Daengtisia columns', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
 
     // Hotfix Sprint 60.3 — single GIGI / DIAGNOSA / PERAWATAN / DOKTER table.
     $this->actingAs($manager)
@@ -54,7 +53,7 @@ it('odontogram fill page renders the table-only Daengtisia columns', function ()
 
 it('saving odontogram persists additional conditions', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -71,7 +70,7 @@ it('saving odontogram persists additional conditions', function () {
 
 it('saving odontogram persists odontogram notes', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -88,7 +87,7 @@ it('saving odontogram persists odontogram notes', function () {
 
 it('additional_conditions over 5000 chars is rejected', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -105,7 +104,7 @@ it('additional_conditions over 5000 chars is rejected', function () {
 
 it('saved additional conditions remain available on print', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -127,7 +126,7 @@ it('saved additional conditions remain available on print', function () {
 
 it('saved odontogram notes remain available on print', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -149,7 +148,7 @@ it('saved odontogram notes remain available on print', function () {
 
 it('saved fields are visible on print page', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -168,7 +167,7 @@ it('saved fields are visible on print page', function () {
 
 it('finalizing odontogram does not clear additional conditions', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -186,7 +185,7 @@ it('finalizing odontogram does not clear additional conditions', function () {
 
 it('finalizing odontogram does not clear odontogram notes', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -204,7 +203,7 @@ it('finalizing odontogram does not clear odontogram notes', function () {
 
 it('finalized odontogram still exposes the editable table for a manager (Sprint 59)', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -229,7 +228,7 @@ it('finalized odontogram still exposes the editable table for a manager (Sprint 
 
 it('saving tooth-specific data still works with additional fields', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $visit->branch_id,
@@ -255,7 +254,7 @@ it('saving tooth-specific data still works with additional fields', function () 
 
 it('clinic_id null visit odontogram still opens and saves additional fields', function () {
     $manager = userWith(['manage_clinic_visits']);
-    $visit = ClinicVisit::factory()->create([
+    $visit = rmeConsentedOdontogramVisit([
         'branch_id' => Branch::where('code', Branch::MAIN_CODE)->firstOrFail()->id,
         'clinic_id' => null,
     ]);
@@ -280,7 +279,7 @@ it('clinic_id null visit odontogram still opens and saves additional fields', fu
 it('additional RME branch visit odontogram is allowed', function () {
     $manager = userWith(['manage_clinic_visits']);
     $rmeBranch = Branch::factory()->create(['code' => 'ATG3', 'is_rme_enabled' => true]);
-    $visit = ClinicVisit::factory()->create(['branch_id' => $rmeBranch->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $rmeBranch->id]);
 
     $this->actingAs($manager)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -303,7 +302,7 @@ it('additional RME branch visit odontogram is allowed', function () {
 it('non-RME branch visit odontogram remains forbidden', function () {
     $manager = userWith(['manage_clinic_visits']);
     $nonRme = Branch::factory()->create(['is_rme_enabled' => false]);
-    $visit = ClinicVisit::factory()->create(['branch_id' => $nonRme->id]);
+    $visit = rmeConsentedOdontogramVisit(['branch_id' => $nonRme->id]);
     $odontogram = Odontogram::factory()->create([
         'clinic_visit_id' => $visit->id,
         'branch_id' => $nonRme->id,

@@ -77,7 +77,16 @@ it('classifies an in-progress visit as pending RME finalization', function () {
         ->toBe(CashierHandoffStatusService::PENDING_RME);
 });
 
-it('classifies a cashier_pending visit without verified consent as consent pending', function () {
+it('classifies a cashier_pending visit with a final RME as ready to pay even without consent', function () {
+    /*
+     * SUPERSEDED by FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03.
+     *
+     * There is no CONSENT_PENDING rung any more. Consent is taken at the start of
+     * the examination and gates RME authoring, so the cashier is never waiting on
+     * it and it must not appear in this pipeline as something holding a patient up
+     * at the counter. Inverted rather than deleted, so a reintroduced consent rung
+     * fails here.
+     */
     $visit = handoffVisit($this->branch, 'Pasien Consent', [
         'status' => ClinicVisit::STATUS_CASHIER_PENDING,
         'consent_signed_by_patient' => false,
@@ -91,7 +100,8 @@ it('classifies a cashier_pending visit without verified consent as consent pendi
     ]);
 
     expect(app(CashierHandoffStatusService::class)->determineKey($visit->fresh()))
-        ->toBe(CashierHandoffStatusService::CONSENT_PENDING);
+        ->toBe(CashierHandoffStatusService::READY_TO_PAY)
+        ->and(CashierHandoffStatusService::QUEUE_GROUPS)->not->toContain('consent_pending');
 });
 
 it('classifies a cashier_pending visit with final RME and verified consent as ready to pay', function () {
@@ -140,7 +150,9 @@ it('shows visits waiting for doctor input in the queue', function () {
         ->assertSee('Menunggu Input Dokter');
 });
 
-it('shows a consent-pending visit as not ready to pay', function () {
+it('never shows consent as a reason a visit is not ready to pay', function () {
+    // SUPERSEDED by FIX-03 — the handoff board has no Consent column and no
+    // consent rung. The visit is listed and is ready to pay.
     $visit = handoffVisit($this->branch, 'Pasien Belum Consent', [
         'status' => ClinicVisit::STATUS_CASHIER_PENDING,
         'consent_signed_by_patient' => false,
@@ -157,7 +169,8 @@ it('shows a consent-pending visit as not ready to pay', function () {
         ->get(route('rme.cashier.handoff'))
         ->assertOk()
         ->assertSee('Pasien Belum Consent')
-        ->assertSee('Consent Belum Lengkap');
+        ->assertDontSee('Consent Belum Lengkap')
+        ->assertSee('Siap Bayar');
 });
 
 it('shows a ready-to-pay visit with a billing action', function () {

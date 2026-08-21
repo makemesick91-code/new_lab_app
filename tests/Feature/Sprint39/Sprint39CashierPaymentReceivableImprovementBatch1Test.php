@@ -126,33 +126,29 @@ describe('cashier payment receivable clarity', function (): void {
         ]);
     }
 
-    it('shows the read-only consent verification status and never the KTP number on the cashier billing detail', function (): void {
-        $invoice = sprint39Invoice($this->branch, $this->cashier, RmeInvoice::STATUS_UNPAID, [
-            'consent_signed_by_patient' => false,
-            'consent_signed_by_doctor' => false,
-        ], ['ktp_number' => '3209090909090039']);
+    it('keeps the cashier billing detail free of any consent verification block, and never shows the KTP number', function (): void {
+        /*
+         * SUPERSEDED BY FIX-RME-EXAM-CONSENT-ODONTOGRAM-HISTORY-3 / FIX-03. These
+         * two tests required "Status Persetujuan Tindakan (TTD)" with
+         * "Belum Diverifikasi" / "Terverifikasi" on the cashier's screen. Consent
+         * is no longer a cashier concern in any form: nothing in the payment path
+         * consults it, the cashier must not be asked to verify or wait for it,
+         * and it must never be rendered as a reason a payment cannot proceed.
+         *
+         * Merged into one test asserting the block's ABSENCE, and keeping the two
+         * assertions that remain true and are worth pinning: the manual-WhatsApp
+         * notice, and that the cashier screen never renders the patient's KTP.
+         */
+        $invoice = sprint39Invoice($this->branch, $this->cashier, RmeInvoice::STATUS_UNPAID, [], ['ktp_number' => '3209090909090039']);
 
         $this->actingAs($this->cashier)
             ->get(route('rme.cashier.show', [$invoice->clinicVisit, $invoice]))
             ->assertOk()
-            ->assertSee('Status Persetujuan Tindakan (TTD)')
-            ->assertSee('Belum Diverifikasi')
             ->assertSee('Sistem tidak mengirim pesan WhatsApp otomatis')
+            ->assertDontSee('Status Persetujuan Tindakan (TTD)')
+            ->assertDontSee('Belum Diverifikasi')
             ->assertDontSee('3209090909090039')
             ->assertDontSee('Nomor KTP');
-    });
-
-    it('shows the consent verification status as verified when both parties signed', function (): void {
-        $invoice = sprint39Invoice($this->branch, $this->cashier, RmeInvoice::STATUS_UNPAID, [
-            'consent_signed_by_patient' => true,
-            'consent_signed_by_doctor' => true,
-        ]);
-
-        $this->actingAs($this->cashier)
-            ->get(route('rme.cashier.show', [$invoice->clinicVisit, $invoice]))
-            ->assertOk()
-            ->assertSee('Status Persetujuan Tindakan (TTD)')
-            ->assertSee('Terverifikasi');
     });
 
     it('shows payment and remaining-balance clarity on the cashier payment screen', function (): void {
