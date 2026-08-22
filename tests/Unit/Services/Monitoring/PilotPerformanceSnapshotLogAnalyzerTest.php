@@ -148,7 +148,9 @@ it('keeps overall ok for historical-only grouped stack traces via service', func
     $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-stack-');
     file_put_contents($logPath, implode(PHP_EOL, $lines));
 
-    $snapshot = (new PilotPerformanceSnapshotService)->collect([
+    // Disk is pinned well clear of the 20 GB WATCH boundary so the aggregate below
+    // reflects the log status alone, on any host.
+    $snapshot = (new PilotPerformanceSnapshotService(diskProbe: pilotSnapshotDiskProbe(100.0)))->collect([
         'skip_db' => true,
         'skip_http' => true,
         'since' => '24h',

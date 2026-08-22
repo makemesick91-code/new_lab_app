@@ -1,0 +1,100 @@
+---
+description: TEST-BASELINE-MONITORING-FAILURES-1 — the Monitoring baseline is zero known failures, and a monitoring assertion never depends on host capacity
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Support/Health/**"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+  - "tests/Feature/Foundation/*Monitoring*"
+alwaysApply: false
+---
+
+# TEST-BASELINE-MONITORING-FAILURES-1 — Monitoring baseline
+
+## The baseline — authoritative
+
+```
+KNOWN_MONITORING_FAILURES = 0
+```
+
+Restored at `6b56ad9` → this sprint. The two failures that had been carried as
+"pre-existing" were `PilotPerformanceSnapshotLogAnalyzerTest:162` and
+`PilotPerformanceSnapshotCommandTest:227`, both `-'OK' +'WATCH'`. Neither was a
+monitor defect. Both are closed; nothing replaces them in the baseline.
+
+This sits under [92-full-suite-baseline-failure-debt](92-full-suite-baseline-failure-debt.mdc),
+whose `EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0` is only meaningful if the suite is
+also deterministic. A host-dependent test satisfies the count while destroying the
+property.
+
+## R1 — A Monitoring failure is root-caused, never normalised
+
+A failing Monitoring test is a defect until proven otherwise. It may not be
+carried forward as accepted noise, added to an allowlist, skipped, quarantined
+indefinitely, or excluded from a filter. Fix the runtime, or fix the test contract
+with evidence.
+
+## R2 — "Pre-existing" is a measurement, not a memory
+
+A failure may be labelled PRE-EXISTING only after it is reproduced **with the same
+failure signature** on the exact clean base authority — a pristine worktree at the
+base SHA, no local modifications. Prose from an earlier sprint is not evidence.
+Record the base SHA, the test, and the signature.
+
+## R3 — A monitoring assertion never depends on host capacity
+
+`PilotPerformanceSnapshotService::collect()` returns `overall_status` =
+`Classifier::worst(app, database, resources, http, logs)`. Any section left
+unstubbed silently participates in that aggregate.
+
+Free disk is the one graded, machine-dependent input. `classifyDiskFreeGb` is
+`<10 GB → FIX`, `<20 GB → WATCH`, `>=20 GB → OK`, so the identical assertion passes
+on a spacious runner and fails on a full laptop.
+
+A test that asserts `overall_status` or an exit code **must pin every section it is
+not testing**: `skip_db` and `skip_http` for those two, and
+`pilotSnapshotDiskProbe($freeGb)` (tests/Pest.php) injected as the `diskProbe`
+constructor argument for the disk. Deriving the expectation from the observed
+sections instead — recomputing `worst()` in the test — is forbidden: it encodes the
+host-dependence rather than removing it, and it goes vacuous exactly on the hosts
+where the coupling bites.
+
+## R4 — The disk alarm stays reachable and fail-closed
+
+The seam added for R3 is a constructor argument only. It must never become a
+`collect()` option, a command flag, a config key, an env var, or a container
+binding. There must remain **no code path** that emits `STATUS_OK` for the
+`resources` section while the real disk is below the FIX threshold, and an
+unreadable disk must stay WATCH-plus-warning, never OK.
+`PilotPerformanceSnapshotResourceSectionTest` pins both halves: the escalation
+(5 GB → FIX → exit 3, 15 GB → WATCH → exit 1, unreadable → WATCH + warning) and the
+wiring (the container resolves the real probe; no file outside
+`app/Services/Monitoring/PilotPerformanceSnapshot*` may name the probe).
+
+## R5 — A test contract change preserves the remaining assertions
+
+When a product or runtime contract changes, a dependent Monitoring test is updated
+to the new evidenced contract and keeps every assertion the change does not
+invalidate. Deleting a test, loosening `toBe(1)` to `toBeGreaterThanOrEqual(1)`, or
+relaxing a threshold solely to obtain green is forbidden.
+
+Prove the update did not hollow the test out: mutate the runtime the test claims to
+protect and confirm the test now fails. This sprint's mutation — dropping
+`$sections['logs']['status']` from the `worst()` call — went **undetected** before
+the fix on a low-disk host and **fails** after it.
+
+## R6 — Known residual host couplings (documented, not fixed here)
+
+Evidenced during this sprint's scan, out of scope because none is currently
+failing and each is in a different module. Do not "discover" them again as new:
+
+| Site | Coupling | Margin on the 2026-08 dev host |
+|---|---|---|
+| `tests/Feature/LegacyRme/LegacyRmeIngestionCapacityTest` (`:62,:107,:119,:128,:222`) | `disk_free_space` vs `min_free_disk_bytes` = 2 GiB | ~13 GB — real coupling, inert |
+| `app/Support/Health/HealthCheckService:117` | `storage_free_percent` vs warn 15 | 3 points (18% vs 15%) — assertions scoped away |
+| `scripts/ci/self-hosted-runner-health.sh:246-260` | `df` vs `CI_RUNNER_MIN_FREE_DISK_GB` = 15 | 1 GB (16 vs 15) — assertions scoped away |
+
+A snapshot section other than `resources` is still unpinned in these tests:
+`collectAppHealth()` reads `app()->isDownForMaintenance()` and classifies it
+INVESTIGATE. It is a boolean, false in any sane checkout, and is not a graded
+measurement — accepted as residual, listed so it is not mistaken for a new finding.

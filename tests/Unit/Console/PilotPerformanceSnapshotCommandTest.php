@@ -214,7 +214,9 @@ it('returns zero fail-on-watch when only historical logs would have previously c
     $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-fow-');
     file_put_contents($logPath, implode(PHP_EOL, $lines));
 
-    $service = new PilotPerformanceSnapshotService;
+    // Disk pinned clear of the 20 GB WATCH boundary: the exit code below must come
+    // from the historical log verdict, not from whatever disk the host happens to have.
+    $service = new PilotPerformanceSnapshotService(diskProbe: pilotSnapshotDiskProbe(100.0));
     $snapshot = $service->collect([
         'skip_db' => true,
         'skip_http' => true,
@@ -234,7 +236,12 @@ it('returns fail-on-watch exit code 1 for fresh log watch status', function () {
     $logPath = tempnam(sys_get_temp_dir(), 'pilot-log-fow-fresh-');
     file_put_contents($logPath, '[2026-07-01 11:00:00] production.ERROR: fresh exception'.PHP_EOL);
 
-    $service = new PilotPerformanceSnapshotService;
+    // Every other section is pinned healthy — database and http are skipped, the disk
+    // is well clear of its boundary — so the WATCH and the exit code 1 can only have
+    // come from the fresh log event reaching the aggregate. Without the pin this
+    // assertion also passes on a host whose own disk is low, which would let the log
+    // status stop reaching `overall_status` entirely without failing anything.
+    $service = new PilotPerformanceSnapshotService(diskProbe: pilotSnapshotDiskProbe(100.0));
     $snapshot = $service->collect([
         'skip_db' => true,
         'skip_http' => true,
@@ -245,6 +252,7 @@ it('returns fail-on-watch exit code 1 for fresh log watch status', function () {
     @unlink($logPath);
 
     expect($snapshot['sections']['logs']['status'])->toBe('WATCH')
+        ->and($snapshot['overall_status'])->toBe('WATCH')
         ->and(PilotPerformanceSnapshotClassifier::exitCodeForStatus($snapshot['overall_status']))->toBe(1);
 });
 

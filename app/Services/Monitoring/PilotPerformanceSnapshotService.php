@@ -11,6 +11,7 @@ class PilotPerformanceSnapshotService
     public function __construct(
         private readonly PilotPerformanceSnapshotClassifier $classifier = new PilotPerformanceSnapshotClassifier,
         private readonly PilotPerformanceSnapshotLogAnalyzer $logAnalyzer = new PilotPerformanceSnapshotLogAnalyzer,
+        private readonly PilotPerformanceSnapshotDiskProbe $diskProbe = new PilotPerformanceSnapshotDiskProbe,
     ) {}
 
     /**
@@ -390,8 +391,8 @@ class PilotPerformanceSnapshotService
     private function collectResourceHealth(array &$warnings): array
     {
         $storagePath = storage_path();
-        $diskFreeBytes = @disk_free_space($storagePath);
-        $diskFreeGb = $diskFreeBytes !== false ? round($diskFreeBytes / 1024 / 1024 / 1024, 2) : null;
+        $diskFreeBytes = $this->diskProbe->freeBytes($storagePath);
+        $diskFreeGb = $diskFreeBytes !== null ? round($diskFreeBytes / 1024 / 1024 / 1024, 2) : null;
 
         $memory = $this->readMemInfo();
         $loadAvg = function_exists('sys_getloadavg') ? sys_getloadavg() : null;
