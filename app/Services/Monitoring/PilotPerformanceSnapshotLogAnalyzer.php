@@ -69,6 +69,7 @@ class PilotPerformanceSnapshotLogAnalyzer
      *   historical_stack_trace_line_count:int,
      *   orphan_unparseable_error_like_count:int,
      *   attached_unparseable_line_count:int,
+     *   undated_error_like_count:int,
      *   timestamped_lines:int,
      *   timestamp_parse_status:string,
      *   log_grouping_status:string,
@@ -90,6 +91,7 @@ class PilotPerformanceSnapshotLogAnalyzer
         $historicalStackTraceCount = 0;
         $orphanUnparseableCount = 0;
         $attachedUnparseableCount = 0;
+        $undatedErrorLikeCount = 0;
         $timestampedLines = 0;
         $oldestFresh = null;
         $latestFresh = null;
@@ -110,6 +112,7 @@ class PilotPerformanceSnapshotLogAnalyzer
             &$freshStackTraceCount,
             &$historicalStackTraceCount,
             &$attachedUnparseableCount,
+            &$undatedErrorLikeCount,
             &$timestampedLines,
             &$oldestFresh,
             &$latestFresh,
@@ -123,6 +126,20 @@ class PilotPerformanceSnapshotLogAnalyzer
             $timestamp = $this->extractTimestamp($currentHeader);
 
             if ($timestamp === null) {
+                // The line matched the event-header shape but its timestamp could not be
+                // parsed, so this event cannot be aged against the lookback window. It is
+                // counted explicitly rather than dropped: an error event whose freshness
+                // is unknown must never be silently discarded, and must never be able to
+                // leave the logs section reporting OK.
+                if ($this->isErrorLike($currentHeader)) {
+                    $undatedErrorLikeCount++;
+                }
+
+                // Reset the grouping state so the orphaned continuation lines cannot leak
+                // into the next event and be attributed to the wrong timestamp.
+                $currentHeader = null;
+                $currentContinuations = [];
+
                 return;
             }
 
@@ -206,8 +223,8 @@ class PilotPerformanceSnapshotLogAnalyzer
 
         $flushEvent();
 
-        $errorLikeTotal = $freshEventCount + $historicalEventCount + $orphanUnparseableCount + $attachedUnparseableCount;
-        $timestampParseStatus = $this->resolveTimestampParseStatus($errorLikeTotal, $timestampedLines, $orphanUnparseableCount);
+        $errorLikeTotal = $freshEventCount + $historicalEventCount + $orphanUnparseableCount + $attachedUnparseableCount + $undatedErrorLikeCount;
+        $timestampParseStatus = $this->resolveTimestampParseStatus($errorLikeTotal, $timestampedLines, $orphanUnparseableCount, $undatedErrorLikeCount);
         $logGroupingStatus = $this->resolveLogGroupingStatus(
             $freshStackTraceCount + $historicalStackTraceCount,
             $attachedUnparseableCount,
@@ -224,6 +241,7 @@ class PilotPerformanceSnapshotLogAnalyzer
             'historical_stack_trace_line_count' => $historicalStackTraceCount,
             'orphan_unparseable_error_like_count' => $orphanUnparseableCount,
             'attached_unparseable_line_count' => $attachedUnparseableCount,
+            'undated_error_like_count' => $undatedErrorLikeCount,
             'timestamped_lines' => $timestampedLines,
             'timestamp_parse_status' => $timestampParseStatus,
             'log_grouping_status' => $logGroupingStatus,
@@ -285,8 +303,14 @@ class PilotPerformanceSnapshotLogAnalyzer
         }
     }
 
-    private function resolveTimestampParseStatus(int $errorLikeTotal, int $timestampedLines, int $orphanUnparseableCount): string
+    private function resolveTimestampParseStatus(int $errorLikeTotal, int $timestampedLines, int $orphanUnparseableCount, int $undatedErrorLikeCount = 0): string
     {
+        // An error event whose own header timestamp failed to parse means freshness was
+        // not fully determinable, so the parse status may never be reported as 'ok'.
+        if ($undatedErrorLikeCount > 0) {
+            return $timestampedLines === 0 ? 'failed' : 'partial';
+        }
+
         if ($errorLikeTotal === 0) {
             return 'ok';
         }

@@ -1,0 +1,139 @@
+---
+description: MONITORING-LOGS-WATCH-ROOT-CAUSE-1 — a WATCH from a real log event is correct and is never suppressed; the logs section never reports OK without evidence
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Console/Commands/PilotPerformanceSnapshot*"
+  - "app/Console/Commands/SlowQueryAudit*"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+alwaysApply: false
+---
+
+# MONITORING-LOGS-WATCH-ROOT-CAUSE-1 — logs status truthfulness
+
+Extends [112-monitoring-baseline-zero-known-failures](112-monitoring-baseline-zero-known-failures.mdc).
+Rule 112 R4 pinned the fail-closed property for the **disk** half of the snapshot
+aggregate. This rule pins the same property for the **logs** half, which is the only
+section that answers "is the application healthy" from evidence it has to go and read.
+
+## R1 — A WATCH caused by a real log event is CORRECT, and is never suppressed
+
+`logs = WATCH` means the analyzer counted between 1 and 20 error-like events with a
+parsed timestamp inside the lookback window (default `--since=24h`). That is the
+monitor working, not the monitor malfunctioning.
+
+The following are forbidden as a means of reaching green, in every combination:
+
+- truncating, deleting, rotating or editing `storage/logs/laravel.log`
+- deleting individual log lines, or rewriting an `ERROR` to a lower level
+- adding a message-substring allowlist, an exception-class ignore, or any rule keyed
+  on the text of a known event
+- shortening the lookback window, or raising the `fresh → WATCH` threshold
+- disabling the logs section, or dropping it from the `worst()` aggregate
+
+Recovery is by **ageing** — the event leaves the window — or by **fixing the runtime
+that emits the error**. There is no third mechanism, and `--since` is a diagnostic
+lens, not a remediation.
+
+Evidenced on production during this sprint: the fresh count fell from 5 to 4 between
+`2026-08-22T06:07Z` and `2026-08-22T06:18Z` with no intervention, because the oldest
+event crossed its 24h boundary at `06:16:25Z`.
+
+## R2 — The logs section never reports OK without evidence
+
+> The logs section may report OK only when it actually read the log and actually
+> determined that no error event falls inside the lookback window.
+> **Absence of evidence is never evidence of absence.**
+
+Three fail-open paths violated this and are now closed. Each had the same shape: an
+unknown was rendered as a clean bill of health.
+
+| Input | Was | Is |
+|---|---|---|
+| Error event whose header timestamp fails `Carbon::parse` | counted in **no** bucket, `timestamp_parse_status` still `ok` → **OK** | `undated_error_like_count`, parse status `partial`/`failed` → **WATCH** |
+| Log file present but unopenable | `readTail` returned `''`, indistinguishable from empty → **OK**, plus a fabricated non-zero `tail_bytes_scanned` | `readTail` returns `null` → **WATCH** + warning, `tail_bytes_scanned = 0` |
+| Log file absent | **OK**, silently | **OK**, but always accompanied by a warning and a "not verified" reason |
+
+The absent-file case deliberately keeps status OK. Laravel creates the file on first
+write, so absence normally means nothing was logged, and escalating would fire on
+every fresh checkout — a permanent false WATCH, which R3 forbids just as firmly. What
+may never happen is reporting it *silently*.
+
+`filesize()` and `fopen()` in this path are diagnostics-suppressed (`@`) because their
+failure is handled explicitly. Without that the promoted warning aborts the whole
+snapshot: a monitor that dies on an unreadable log is strictly worse than one that
+reports WATCH and says why.
+
+## R3 — A false WATCH is a defect too
+
+Fail-closed does not license alarm-by-default. A status that can never recover is as
+untruthful as one that can never fire. Any new escalation must be shown not to fire on
+a healthy, well-formed log, and `PilotPerformanceSnapshotLogSourceTest` carries that
+negative control alongside every fail-closed assertion.
+
+The production negative control for this sprint: all 118 timestamped headers in the
+live log parse cleanly under a single uniform format, the file is present and
+readable, and 775 KB sits far inside the 2 MiB tail budget — so none of the new
+escalations can fire there, and production's verdict was unchanged by this sprint.
+
+## R4 — Unparseable noise escalates, it never masks
+
+Severity is driven by the **parsed fresh count**. An undetermined-freshness signal may
+only raise the status via `worst()`; it may never short-circuit and discard a count
+that was already correct.
+
+The closed defect: 150 fresh events (contractually FIX) alongside 21 orphan lines
+returned a flat WATCH, understating a FIX-level burst precisely when the log was
+noisiest. Fixed by moving the guard inside the `freshCount === 0` branch.
+
+## R5 — The scan budget is disclosed, not silently applied
+
+The tail scan is capped at 2 MiB, which is a **byte** budget, not the requested
+**time** window. When the cap bites, the oldest part of the window was never read and
+the counts are a lower bound. `tail_truncated` plus a warning now say so.
+
+Known residual, deliberately not fixed here: a truncated scan that finds zero fresh
+errors still reports OK, and could in principle hide an in-window error that fell
+outside the byte budget. The correct fix is a **window-coverage** check — compare the
+oldest timestamp actually present in the scanned tail against the cutoff, and treat
+"the tail never reached back to the cutoff" as undetermined freshness. Escalating on
+truncation alone is wrong: it would fire permanently on any host writing >2 MiB/day,
+which is R3's false WATCH. Production writes ~775 KB total, so this is currently
+inert.
+
+## R6 — Operator tooling shares the application log, and monitoring counts it
+
+`php artisan tinker` writes real `ERROR` records into `storage/logs/laravel.log`
+(psysh config-directory failures, parse errors from a mistyped `--execute`). Those are
+genuine ERROR entries and the monitor is right to count them. Three of the five events
+behind this sprint's WATCH were exactly this, one of them created by the investigation
+itself, which pushed natural recovery back by roughly 13 hours.
+
+The remedy is operational, never a filter:
+
+- do not run `tinker` against production; prefer a purpose-built read-only command
+- the monitor's canonical read is `php artisan pilot:performance-snapshot --json`,
+  which is side-effect free
+- never add a psysh/tooling suppression rule — that would blind the monitor to the
+  next real error that happens to share a phrase
+
+## R7 — The monitoring clock is UTC, not the clinical clock
+
+`PilotPerformanceSnapshotService` passes `now()`, and Monolog writes the header in the
+same application timezone, so both sides of the freshness comparison agree. Monitoring
+must **not** be moved onto `ClinicalClock`/WITA: that clock exists for clinical "today"
+semantics, while a technical instant stays UTC. Report both to humans; compare in one.
+
+Graphify surfaces `ClinicalClock::now()` as a graph neighbour of the analyzer because
+both declare `.now()`. That is a naming adjacency, not a dependency — Monitoring
+contains zero `ClinicalClock` references.
+
+## R8 — The snapshot is a real production job
+
+`daengtisiams-pilot-snapshot.timer` runs `pilot:performance-snapshot` weekly on
+production (`OnCalendar=Sat *-*-* 19:30:00` UTC, `Persistent=true`) as the dedicated
+`daengtisiams` runtime identity. A fail-open in this chain is therefore not a
+theoretical blemish — it silently produces a green weekly evidence record.
+
+Do not conclude from "no repo script invokes it" that the command is unscheduled; the
+timer lives on the host, not in the checkout.
