@@ -25,3 +25,12 @@ browser_required: false
 test_profiles: []
 
 go_tag: test-baseline-monitoring-failures-1-go
+
+# Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
+full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
+
+# Carried forward, unchanged by this sprint. The Legacy RME programme stays closed
+# and at rest (capability OFF, admission empty, no batch opened), and the
+# prescription WhatsApp provider stays on hold pending its external dependency.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
