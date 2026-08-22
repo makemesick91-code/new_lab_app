@@ -1,32 +1,36 @@
-# Active sprint manifest — LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1
+# TEST-BASELINE-MONITORING-FAILURES-1 — Sprint Manifest
 #
-# Validated by: php artisan sprint:manifest-check
+# Restores the Monitoring baseline to zero known failures by removing the live
+# host disk reading from the pilot performance snapshot's aggregate assertions.
+# The production monitor is unchanged: the same disk is read, classified by the
+# same thresholds, and still escalates WATCH/FIX into overall_status.
 
-id: LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1
+id: TEST-BASELINE-MONITORING-FAILURES-1
 type: RUNTIME_FIX
-module: LegacyOdontogram
-title: "An empty native odontogram placeholder is not clinical evidence for the legacy odontogram native-reference cutoff"
+module: Monitoring
+title: "Monitoring baseline restored to zero known failures — snapshot aggregate no longer depends on host free disk"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true             # the native-reference read boundary now requires meaningful clinical content
-schema_change: false             # no migration, no table, no column, no index
-frontend_change: false           # no Blade/JS change — the rule messages and codes are unchanged
-security_impact: true            # changes which documents may enter a patient's clinical archive (eligibility boundary)
-branch_isolation_impact: false   # the resolver stays deliberately un-branch-scoped; no BranchContext change
-ledger_impact: false             # no inventory ledger / billing / payment behaviour change
+# Impact flags — MUST match reality.
+runtime_change: true          # PilotPerformanceSnapshotService gains an injected disk probe (behaviour-preserving)
+schema_change: false
+frontend_change: false
+security_impact: false        # no policy/middleware/permission/route change
+branch_isolation_impact: false
+ledger_impact: false
 
-deploy_required: true            # the corrected cutoff must reach production to be verified in realtime
-browser_required: false          # server-side domain rule only
+deploy_required: true
+browser_required: false
 
-go_tag: legacy-odontogram-native-reference-cutoff-1-go
+test_profiles: []
 
-test_profiles:
-  - rme
-  - security
+go_tag: test-baseline-monitoring-failures-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
 
-# Carried forward, unchanged by this sprint.
+# Carried forward, unchanged by this sprint. The Legacy RME programme stays closed
+# and at rest (capability OFF, admission empty, no batch opened), and the
+# prescription WhatsApp provider stays on hold pending its external dependency.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

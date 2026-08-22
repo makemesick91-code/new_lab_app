@@ -16,7 +16,13 @@ alwaysApply: false
 ```
 EXPECTED_FULL_SUITE_FAILURE_BASELINE = 0
 LEGACY_9_FAILURE_BASELINE            = RETIRED
+KNOWN_MONITORING_FAILURES            = 0
 ```
+
+The Monitoring half of that zero, and the determinism it depends on, is held by
+[112-monitoring-baseline-zero-known-failures](112-monitoring-baseline-zero-known-failures.mdc).
+A count of zero is not enough on its own: a host-dependent test satisfies the count
+while destroying the determinism property this baseline is built on.
 
 Retired at `3234265` on run `31980550379`
 (`0 failed, 6552 warnings, 1 risky, 13 passed / 29344 assertions`).

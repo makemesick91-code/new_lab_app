@@ -78,6 +78,7 @@ use App\Modules\QualityControl\Services\QualityControlService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Technician\Models\Technician;
 use App\Modules\Technician\Services\TechnicianAssignmentEligibility;
+use App\Services\Monitoring\PilotPerformanceSnapshotDiskProbe;
 use App\Support\Clinical\ClinicalClock;
 use Database\Seeders\PermissionSeeder;
 use Database\Seeders\RoleSeeder;
@@ -1072,4 +1073,31 @@ function pdfPageCount(string $bytes): int
 
         return (int) $m[1];
     });
+}
+
+/**
+ * A pilot-snapshot disk probe pinned to a fixed number of free gigabytes (or null
+ * for "unreadable").
+ *
+ * `overall_status` is the worst of every snapshot section, so the free disk of
+ * whichever machine runs the suite silently participates in it. Left unpinned, an
+ * assertion that the aggregate is 'OK' passes on a spacious CI runner and fails on
+ * a nearly full laptop, and — worse — an assertion that it is 'WATCH' passes on the
+ * full laptop even if the log status stopped reaching the aggregate at all. Pinning
+ * the disk makes the aggregate a property of the code under test on every host.
+ *
+ * Pass a value comfortably clear of the classifier's 20 GB WATCH boundary when the
+ * disk is meant to be uninteresting; pass a low value to exercise the boundary.
+ */
+function pilotSnapshotDiskProbe(?float $freeGb): PilotPerformanceSnapshotDiskProbe
+{
+    return new class($freeGb) extends PilotPerformanceSnapshotDiskProbe
+    {
+        public function __construct(private readonly ?float $freeGb) {}
+
+        public function freeBytes(string $path): ?float
+        {
+            return $this->freeGb === null ? null : $this->freeGb * 1024 * 1024 * 1024;
+        }
+    };
 }
