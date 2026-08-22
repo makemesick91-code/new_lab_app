@@ -3,6 +3,7 @@
 namespace App\Services\Monitoring;
 
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -13,6 +14,7 @@ class PilotPerformanceSnapshotService
         private readonly PilotPerformanceSnapshotClassifier $classifier = new PilotPerformanceSnapshotClassifier,
         private readonly PilotPerformanceSnapshotLogAnalyzer $logAnalyzer = new PilotPerformanceSnapshotLogAnalyzer,
         private readonly PilotPerformanceSnapshotDiskProbe $diskProbe = new PilotPerformanceSnapshotDiskProbe,
+        private readonly MonitoringLogSourceResolver $logSourceResolver = new MonitoringLogSourceResolver,
     ) {}
 
     /**
@@ -528,121 +530,46 @@ class PilotPerformanceSnapshotService
             ];
         }
 
-        $logPath = $logPathOverride ?? storage_path('logs/laravel.log');
+        $now = now();
+        $cutoff = $now->copy()->subSeconds($since['seconds']);
 
-        if (! is_file($logPath)) {
-            // Absence is reported, never assumed healthy. Laravel creates this file on the
-            // first write, so a missing file normally means nothing has been logged — but
-            // the monitor cannot prove that from absence alone, and it must not present an
-            // unverified section as a clean bill of health.
-            $warnings[] = 'Laravel log file not found at the scanned path; log health was not verified. '
-                .'Confirm the configured log channel still writes to this file.';
+        // Which files carry this application's log events is a question only the effective
+        // logging configuration can answer. Reading a hardcoded storage/logs/laravel.log
+        // was correct only while the configured channel happened to write there; the
+        // moment it does not, the monitor reports on a file the application has abandoned.
+        $resolution = $this->resolveLogSources($logPathOverride, $cutoff, $now);
+        $scan = $this->scanLogSources($resolution['sources'], $since, $now, $cutoff, $warnings);
 
-            return [
-                'status' => PilotPerformanceSnapshotClassifier::STATUS_OK,
-                'reason' => 'Laravel log file not found; log health not verified.',
-                'metrics' => [
-                    'lookback_window' => $since['label'],
-                    'fresh_error_like_count' => 0,
-                    'historical_tail_error_like_count' => 0,
-                    'critical_fresh_count' => 0,
-                    'unparseable_error_like_count' => 0,
-                    'fresh_stack_trace_line_count' => 0,
-                    'historical_stack_trace_line_count' => 0,
-                    'orphan_unparseable_error_like_count' => 0,
-                    'attached_unparseable_line_count' => 0,
-                    'log_grouping_status' => 'none',
-                    'timestamp_parse_status' => 'ok',
-                    'file_exists' => false,
-                ],
-            ];
-        }
-
-        // Suppressed for the same reason as readTail(): the failure is handled explicitly
-        // on the next line, and the promoted warning would otherwise abort the snapshot.
-        $size = @filesize($logPath);
-
-        if ($size === false) {
-            $warnings[] = 'Could not read Laravel log file size.';
-
-            return [
-                'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
-                'reason' => 'Could not read Laravel log file.',
-                'metrics' => [
-                    'lookback_window' => $since['label'],
-                    'fresh_error_like_count' => null,
-                    'historical_tail_error_like_count' => null,
-                    'timestamp_parse_status' => 'failed',
-                    'file_exists' => true,
-                ],
-            ];
-        }
-
-        $maxTailBytes = 2 * 1024 * 1024;
-        $tail = $this->readTail($logPath, $maxTailBytes);
-
-        // The file exists and its size was readable, so a failed open is a genuine
-        // anomaly (permissions, races, a vanished inode). Fail closed: an unreadable log
-        // is an unknown, and an unknown is never OK. Previously this returned an empty
-        // string, which the analyzer could not distinguish from "scanned it, found
-        // nothing" — reporting OK while having observed nothing at all.
-        if ($tail === null) {
-            $warnings[] = 'Could not open Laravel log file for reading; log health was not evaluated.';
-
-            return [
-                'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
-                'reason' => 'Could not read Laravel log file.',
-                'metrics' => [
-                    'lookback_window' => $since['label'],
-                    'fresh_error_like_count' => null,
-                    'historical_tail_error_like_count' => null,
-                    'timestamp_parse_status' => 'failed',
-                    'tail_bytes_scanned' => 0,
-                    'file_exists' => true,
-                ],
-            ];
-        }
-
-        $metrics = $this->logAnalyzer->analyzeTail(
-            $tail,
-            $since['label'],
-            $since['seconds'],
-            now(),
-        );
-        $metrics['tail_bytes_scanned'] = min($size, $maxTailBytes);
-
-        // The scan is capped at a byte budget, not at the requested time window. When the
-        // cap bites, the oldest part of the lookback window was never read, so the counts
-        // are a floor rather than a total. Surface that instead of letting the reader
-        // assume the whole window was covered.
-        $metrics['tail_truncated'] = $size > $maxTailBytes;
-
-        // Truncation alone is not the defect — reporting a full-window verdict from a
-        // partial scan is. The window is covered when the whole file was read, or when
-        // the scanned tail still reaches back past the cutoff. A truncated tail whose
-        // oldest event is NEWER than the cutoff never saw the start of the window, so an
-        // in-window error could be sitting in the bytes that were skipped.
-        $cutoff = now()->copy()->subSeconds($since['seconds']);
-        $oldestScanned = $metrics['oldest_scanned_event_at'] ?? null;
-
-        $metrics['window_fully_covered'] = ! $metrics['tail_truncated']
-            || ($oldestScanned !== null && Carbon::parse($oldestScanned)->lessThanOrEqualTo($cutoff));
-
-        if ($metrics['tail_truncated']) {
+        if ($resolution['source_set_truncated'] ?? false) {
+            // The window asked for more rotated days than the resolver will expand, so its
+            // oldest stretch was never looked at. Say so rather than answering from the
+            // part that fit.
             $warnings[] = sprintf(
-                'Log scan truncated to the last %d bytes of a %d byte file; error counts for the %s window are a lower bound.',
-                $maxTailBytes,
-                $size,
+                'Lookback window %s spans more rotated log files than are scanned in one pass; the oldest part of the window was not covered.',
                 $since['label'],
             );
+
+            if ($scan['metrics'] !== null) {
+                $scan['metrics']['window_fully_covered'] = false;
+                $scan['source_metrics']['source_coverage_complete'] = false;
+            }
         }
 
-        if (! $metrics['window_fully_covered']) {
-            $warnings[] = sprintf(
-                'Log scan did not reach the start of the %s window; raise the scan budget or rotate the log.',
-                $since['label'],
-            );
+        if ($scan['metrics'] === null) {
+            // Nothing readable was observed at all, so there is no analysis to classify.
+            // Fail closed rather than emit an all-zero "clean" section.
+            return [
+                'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
+                'reason' => $scan['reason'],
+                // The full metric key set is emitted even when nothing could be read. The
+                // JSON payload is a contract for downstream consumers, and a verdict that
+                // silently drops half the schema is harder to alert on than one that says
+                // "unknown" in every field it could not fill.
+                'metrics' => array_merge($this->emptyLogMetrics($since['label']), $scan['source_metrics']),
+            ];
         }
+
+        $metrics = array_merge($scan['metrics'], $scan['source_metrics']);
 
         $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
             $metrics['fresh_error_like_count'],
@@ -676,6 +603,339 @@ class PilotPerformanceSnapshotService
             'reason' => $classification['reason'],
             'metrics' => $metrics,
         ];
+    }
+
+    /**
+     * Resolve which log files the monitor is required to read.
+     *
+     * An explicit `log_path` override still exists for callers that point the monitor at
+     * one specific file; it is treated as an unrotated single source. Everything else
+     * comes from the effective logging configuration.
+     *
+     * @return array{sources:list<MonitoringLogSource>, monitored_channels:list<string>, default_channel:string, resolution_status:string}
+     */
+    private function resolveLogSources(?string $logPathOverride, CarbonInterface $cutoff, CarbonInterface $now): array
+    {
+        if ($logPathOverride !== null) {
+            return [
+                'sources' => [new MonitoringLogSource(
+                    channel: 'override',
+                    driver: 'single',
+                    path: $logPathOverride,
+                    support: MonitoringLogSource::SUPPORT_SUPPORTED,
+                )],
+                'monitored_channels' => ['override'],
+                'default_channel' => 'override',
+                'resolution_status' => 'resolved',
+                'source_set_truncated' => false,
+            ];
+        }
+
+        return $this->logSourceResolver->resolve($cutoff, $now);
+    }
+
+    /**
+     * Read and analyse every resolved source, then fold the results into one verdict.
+     *
+     * Coverage is the point of this method. Counts alone cannot distinguish "scanned the
+     * whole window and found nothing" from "never looked at most of it", and only the
+     * first of those may ever be reported as OK. So each source is asked whether it was
+     * read back as far as it was responsible for, and anything the monitor could not read
+     * — an unsupported driver, a vanished file, a failed open — marks the window as not
+     * fully covered rather than being quietly dropped from the total.
+     *
+     * @param  list<MonitoringLogSource>  $sources
+     * @param  array{seconds:int, label:string}  $since
+     * @param  list<string>  $warnings
+     * @return array{metrics:array<string, mixed>|null, source_metrics:array<string, mixed>, reason:string}
+     */
+    private function scanLogSources(array $sources, array $since, CarbonInterface $now, CarbonInterface $cutoff, array &$warnings): array
+    {
+        $maxTailBytes = 2 * 1024 * 1024;
+
+        $aggregate = null;
+        $descriptors = [];
+        $read = 0;
+        $absent = 0;
+        $unreadable = 0;
+        $unsupported = 0;
+        $coverageComplete = true;
+
+        foreach ($sources as $source) {
+            if (! $source->isSupported()) {
+                $unsupported++;
+                $coverageComplete = false;
+                $descriptors[] = ['channel' => $source->channel, 'driver' => $source->driver, 'file' => null, 'status' => 'unsupported'];
+
+                $warnings[] = sprintf(
+                    'Log channel "%s" uses the %s driver, which this monitor cannot read; its error events are not covered.',
+                    $source->channel,
+                    $source->driver,
+                );
+
+                continue;
+            }
+
+            $path = (string) $source->path;
+            $file = basename($path);
+
+            if (! is_file($path)) {
+                $absent++;
+                $tolerated = $this->absentSourceIsProvenEmpty($source, $now);
+                $descriptors[] = [
+                    'channel' => $source->channel,
+                    'driver' => $source->driver,
+                    'file' => $file,
+                    'status' => $tolerated ? 'absent_proven_empty' : 'absent',
+                ];
+
+                if ($tolerated) {
+                    // A rotating day-file is created on the first write of its day. When
+                    // the directory it lives in is readable and the day is still inside
+                    // the channel's retention horizon, "not there" is an observation that
+                    // nothing was written, not an unknown — nothing could have removed it.
+                    continue;
+                }
+
+                $coverageComplete = false;
+                $warnings[] = sprintf(
+                    'Configured log source %s (channel "%s") is missing; log health for that source was not verified.',
+                    $file,
+                    $source->channel,
+                );
+
+                continue;
+            }
+
+            // Suppressed for the same reason as readTail(): the failure is handled on the
+            // next line, and a promoted warning would otherwise abort the whole snapshot.
+            $size = @filesize($path);
+            $tail = $size === false ? null : $this->readTail($path, $maxTailBytes);
+
+            if ($tail === null) {
+                // The file is there but could not be read (permissions, a race, a vanished
+                // inode). An unreadable log is an unknown, and an unknown is never OK.
+                $unreadable++;
+                $coverageComplete = false;
+                $descriptors[] = ['channel' => $source->channel, 'driver' => $source->driver, 'file' => $file, 'status' => 'unreadable'];
+                $warnings[] = sprintf(
+                    'Could not open log source %s (channel "%s") for reading; log health was not evaluated.',
+                    $file,
+                    $source->channel,
+                );
+
+                continue;
+            }
+
+            $read++;
+            $metrics = $this->logAnalyzer->analyzeTail($tail, $since['label'], $since['seconds'], $now);
+            $metrics['tail_bytes_scanned'] = min((int) $size, $maxTailBytes);
+            $truncated = (int) $size > $maxTailBytes;
+
+            // Each source only has to reach back as far as it is responsible for: a
+            // day-file cannot hold anything from before its own day started.
+            $requiredFrom = $source->requiredCoverageFrom($cutoff);
+            $oldestScanned = $metrics['oldest_scanned_event_at'] ?? null;
+            $sourceCovered = ! $truncated
+                || ($oldestScanned !== null && Carbon::parse($oldestScanned)->lessThanOrEqualTo($requiredFrom));
+
+            if ($truncated) {
+                $warnings[] = sprintf(
+                    'Log scan truncated to the last %d bytes of a %d byte file (%s); error counts for the %s window are a lower bound.',
+                    $maxTailBytes,
+                    $size,
+                    $file,
+                    $since['label'],
+                );
+            }
+
+            if (! $sourceCovered) {
+                $coverageComplete = false;
+                $warnings[] = sprintf(
+                    'Log scan of %s did not reach the start of the %s window; raise the scan budget or rotate the log.',
+                    $file,
+                    $since['label'],
+                );
+            }
+
+            $metrics['tail_truncated'] = $truncated;
+            $descriptors[] = ['channel' => $source->channel, 'driver' => $source->driver, 'file' => $file, 'status' => 'read'];
+            $aggregate = $aggregate === null ? $metrics : $this->mergeLogMetrics($aggregate, $metrics);
+        }
+
+        $sourceMetrics = [
+            'log_sources' => $descriptors,
+            'log_sources_read' => $read,
+            'log_sources_absent' => $absent,
+            'log_sources_unreadable' => $unreadable,
+            'log_sources_unsupported' => $unsupported,
+            'source_coverage_complete' => $coverageComplete && $read > 0,
+            // Retained because existing consumers read it: true when at least one
+            // configured source was actually present and read.
+            'file_exists' => $read > 0,
+        ];
+
+        if ($read === 0) {
+            // Every configured source was missing, unreadable or unreadable-by-design. The
+            // monitor observed nothing whatsoever, which is the one state that must never
+            // be dressed up as a clean bill of health.
+            $warnings[] = 'No configured Laravel log source could be read; log health was not verified. '
+                .'Confirm the configured log channel still writes to a readable file.';
+
+            return [
+                'metrics' => null,
+                'source_metrics' => $sourceMetrics,
+                'reason' => 'No readable Laravel log source; log health not verified.',
+            ];
+        }
+
+        $aggregate['window_fully_covered'] = $coverageComplete;
+
+        return [
+            'metrics' => $aggregate,
+            'source_metrics' => $sourceMetrics,
+            'reason' => '',
+        ];
+    }
+
+    /**
+     * The log metric schema with every countable field marked unknown.
+     *
+     * Used when no source could be read: the shape of the payload stays constant so
+     * dashboards and alerts keep parsing, while `null` says plainly that the monitor did
+     * not measure this rather than that it measured zero.
+     *
+     * @return array<string, mixed>
+     */
+    private function emptyLogMetrics(string $lookbackWindow): array
+    {
+        return [
+            'lookback_window' => $lookbackWindow,
+            'fresh_error_like_count' => null,
+            'historical_tail_error_like_count' => null,
+            'critical_fresh_count' => null,
+            'unparseable_error_like_count' => null,
+            'fresh_stack_trace_line_count' => null,
+            'historical_stack_trace_line_count' => null,
+            'orphan_unparseable_error_like_count' => null,
+            'attached_unparseable_line_count' => null,
+            'undated_error_like_count' => null,
+            'timestamped_lines' => null,
+            'timestamp_parse_status' => 'failed',
+            'log_grouping_status' => 'none',
+            'oldest_fresh_error_at' => null,
+            'latest_fresh_error_at' => null,
+            'latest_historical_error_at' => null,
+            'oldest_scanned_event_at' => null,
+            'tail_bytes_scanned' => 0,
+            'tail_truncated' => false,
+            'window_fully_covered' => false,
+        ];
+    }
+
+    /**
+     * Whether a missing source is an observation rather than a blind spot.
+     *
+     * Only a rotating day-file qualifies, and only when its directory could actually be
+     * listed and its day is still young enough that the channel's own retention cannot
+     * have deleted it. A `single` file is never rotated, so its absence means it was
+     * removed or the channel moved — precisely the drift this monitor exists to catch.
+     */
+    private function absentSourceIsProvenEmpty(MonitoringLogSource $source, CarbonInterface $now): bool
+    {
+        if ($source->driver !== 'daily' || $source->coversFrom === null) {
+            return false;
+        }
+
+        $directory = dirname((string) $source->path);
+
+        if (! is_dir($directory) || ! is_readable($directory)) {
+            return false;
+        }
+
+        $retentionDays = (int) config('logging.channels.'.$source->channel.'.days', 14);
+
+        if ($retentionDays <= 0) {
+            return false;
+        }
+
+        return $source->coversFrom->greaterThanOrEqualTo($now->copy()->subDays($retentionDays)->startOfDay());
+    }
+
+    /**
+     * Fold a second source's analysis into the running total.
+     *
+     * Counts add up. A stack that writes the same record to two files will therefore count
+     * it twice — which can only ever overstate severity, never understate it, so it cannot
+     * turn a failing system green. Statuses take the worse of the two, and the timestamp
+     * extremes widen, so one degraded source is never averaged away by a healthy one.
+     *
+     * @param  array<string, mixed>  $carry
+     * @param  array<string, mixed>  $next
+     * @return array<string, mixed>
+     */
+    private function mergeLogMetrics(array $carry, array $next): array
+    {
+        foreach ([
+            'fresh_error_like_count',
+            'historical_tail_error_like_count',
+            'critical_fresh_count',
+            'unparseable_error_like_count',
+            'fresh_stack_trace_line_count',
+            'historical_stack_trace_line_count',
+            'orphan_unparseable_error_like_count',
+            'attached_unparseable_line_count',
+            'undated_error_like_count',
+            'timestamped_lines',
+            'tail_bytes_scanned',
+        ] as $key) {
+            $carry[$key] = (int) ($carry[$key] ?? 0) + (int) ($next[$key] ?? 0);
+        }
+
+        $carry['tail_truncated'] = ($carry['tail_truncated'] ?? false) || ($next['tail_truncated'] ?? false);
+
+        $carry['timestamp_parse_status'] = $this->worstOf(
+            $carry['timestamp_parse_status'] ?? 'ok',
+            $next['timestamp_parse_status'] ?? 'ok',
+            ['ok' => 0, 'partial' => 1, 'failed' => 2, 'invalid_since' => 2],
+        );
+
+        $carry['log_grouping_status'] = $this->worstOf(
+            $carry['log_grouping_status'] ?? 'none',
+            $next['log_grouping_status'] ?? 'none',
+            ['grouped' => 0, 'none' => 1, 'partial' => 2],
+        );
+
+        foreach (['oldest_fresh_error_at', 'oldest_scanned_event_at'] as $key) {
+            $carry[$key] = $this->pickTimestamp($carry[$key] ?? null, $next[$key] ?? null, earliest: true);
+        }
+
+        foreach (['latest_fresh_error_at', 'latest_historical_error_at'] as $key) {
+            $carry[$key] = $this->pickTimestamp($carry[$key] ?? null, $next[$key] ?? null, earliest: false);
+        }
+
+        return $carry;
+    }
+
+    /**
+     * @param  array<string, int>  $ranking
+     */
+    private function worstOf(string $a, string $b, array $ranking): string
+    {
+        return ($ranking[$b] ?? 0) > ($ranking[$a] ?? 0) ? $b : $a;
+    }
+
+    private function pickTimestamp(?string $a, ?string $b, bool $earliest): ?string
+    {
+        if ($a === null || $b === null) {
+            return $a ?? $b;
+        }
+
+        $keepB = $earliest
+            ? Carbon::parse($b)->lessThan(Carbon::parse($a))
+            : Carbon::parse($b)->greaterThan(Carbon::parse($a));
+
+        return $keepB ? $b : $a;
     }
 
     /**

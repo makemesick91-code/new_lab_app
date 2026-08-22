@@ -227,8 +227,12 @@ Pint / git diff --check    clean
 
 1. `Carbon` date rollover mis-bucketing — cannot produce a false green.
 2. `worst()` degrading an unknown status to OK — unreachable from current callers.
-3. The scanned log path is hardcoded rather than resolved from the configured channel.
-   Production is `LOG_CHANNEL=stack` / `LOG_STACK=single` → `laravel.log`, so it is
+3. ~~The scanned log path is hardcoded rather than resolved from the configured channel.~~
+   **CLOSED by [MONITORING-LOG-SOURCE-RESILIENCE-1](monitoring-log-source-resilience-1.md).**
+   Production is `LOG_CHANNEL=stack` / `LOG_STACK=single` → `laravel.log`, so it was
    correct today, but a switch to `daily` would write `laravel-YYYY-MM-DD.log` and the
-   monitor would go permanently green while errors accumulated elsewhere. The absent-file
-   warning added here makes that visible; resolving the path from config is the real fix.
+   monitor would go permanently green while errors accumulated elsewhere. Sources are now
+   resolved from the effective logging configuration, rotation is covered across the whole
+   window, and unresolvable/missing/unreadable sources fail closed. Note that the
+   absent-file contract recorded in this sprint (missing file → `OK` + warning) was
+   **superseded** there: absence is now scored as unverified.

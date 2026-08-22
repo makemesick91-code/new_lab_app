@@ -55,7 +55,12 @@ return [
         'governance_summary_artifact' => 'foundation-governance-summary.json',
         // Deploy runner status/log (reference/telemetry/deploy-vps-runner.sh).
         'deploy_log_glob' => 'storage/logs/deploy-*.log',
-        'laravel_log' => 'logs/laravel.log',
+        // NOTE: a `laravel_log` path used to live here. MONITORING-LOG-SOURCE-RESILIENCE-1
+        // retired it: the application log is whatever the effective `config/logging.php`
+        // channel writes to, resolved by MonitoringLogSourceResolver. A second path
+        // declared here could disagree with the running logger — and being the one the
+        // monitor actually read, it would win, which is precisely the false green this
+        // sprint removed. Do not reintroduce it.
     ],
 
     // Writable paths MON-1 probes for the storage/cache permission health check

@@ -2,6 +2,7 @@
 
 namespace App\Services\Foundation;
 
+use App\Services\Monitoring\MonitoringLogSourceResolver;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Health\HealthCheckService;
 use Illuminate\Support\Facades\Artisan;
@@ -42,6 +43,10 @@ class FoundationMonitoringStatusService
     public function __construct(
         private readonly HealthCheckService $health,
         private readonly SensitiveValueMasker $masker,
+        // Shared with the pilot snapshot on purpose: "where does this application log"
+        // must have exactly one answer, or the two monitors can disagree about whether
+        // the same system is healthy.
+        private readonly MonitoringLogSourceResolver $logSourceResolver = new MonitoringLogSourceResolver,
     ) {}
 
     /**
@@ -404,19 +409,58 @@ class FoundationMonitoringStatusService
     private function applicationLogSignal(): array
     {
         return $this->guard('laravel_log', 'Application Log — Recent Errors', function () {
-            $path = storage_path((string) config('foundation_monitoring.paths.laravel_log'));
+            // The monitored files come from the effective logging configuration, not from a
+            // fixed `logs/laravel.log`. A hardcoded path reports on whatever happens to sit
+            // there once the configured channel moves — and this signal used to answer GO
+            // for a missing file, so a relocated log read as a clean bill of health.
+            $now = now();
+            $resolution = $this->logSourceResolver->resolve($now->copy()->subDay(), $now);
 
-            if (! is_file($path)) {
-                return [
-                    'status' => self::GO,
-                    'unsafe' => false,
-                    'summary' => 'belum ada file log',
-                    'remediation' => null,
-                    'details' => ['log_exists' => false],
-                ];
+            $lines = [];
+            $filesRead = 0;
+            $unreadable = 0;
+
+            foreach ($resolution['sources'] as $source) {
+                if (! $source->isSupported()) {
+                    $unreadable++;
+
+                    continue;
+                }
+
+                if (! is_file((string) $source->path)) {
+                    continue;
+                }
+
+                $tail = $this->tail((string) $source->path, (int) config('foundation_monitoring.thresholds.log_tail_lines', 200));
+
+                if ($tail === []) {
+                    // Present but unreadable, or genuinely empty. Either way it added no
+                    // evidence; only a successful read may support a GO.
+                    if (! is_readable((string) $source->path)) {
+                        $unreadable++;
+
+                        continue;
+                    }
+                }
+
+                $filesRead++;
+                $lines = array_merge($lines, $tail);
             }
 
-            $lines = $this->tail($path, (int) config('foundation_monitoring.thresholds.log_tail_lines', 200));
+            if ($filesRead === 0) {
+                // Nothing was read at all. Absence of evidence is not evidence of health.
+                return [
+                    'status' => self::WATCH,
+                    'unsafe' => false,
+                    'summary' => 'tidak ada sumber log yang bisa dibaca',
+                    'remediation' => 'Pastikan channel log yang dikonfigurasi menulis ke berkas yang terbaca.',
+                    'details' => [
+                        'log_exists' => false,
+                        'monitored_channels' => $resolution['monitored_channels'],
+                        'unreadable_sources' => $unreadable,
+                    ],
+                ];
+            }
             $errors = 0;
             $warnings = 0;
             foreach ($lines as $line) {
@@ -428,7 +472,9 @@ class FoundationMonitoringStatusService
             }
 
             $watch = (int) config('foundation_monitoring.thresholds.log_error_watch', 1);
-            $status = $errors >= $watch ? self::WATCH : self::GO;
+            // A source this monitor cannot read may be carrying the very errors being
+            // counted, so a clean count across the readable ones is not a clean system.
+            $status = ($errors >= $watch || $unreadable > 0) ? self::WATCH : self::GO;
 
             // Sanitized single-line excerpt of the most recent error, masked.
             $lastErrorExcerpt = null;
@@ -450,6 +496,9 @@ class FoundationMonitoringStatusService
                     'warning_count' => $warnings,
                     'window_lines' => count($lines),
                     'last_error_excerpt' => $lastErrorExcerpt,
+                    'monitored_channels' => $resolution['monitored_channels'],
+                    'sources_read' => $filesRead,
+                    'unreadable_sources' => $unreadable,
                 ],
             ];
         });

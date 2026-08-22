@@ -1,0 +1,128 @@
+---
+description: MONITORING-LOG-SOURCE-RESILIENCE-1 — Monitoring derives its log sources from the effective logging configuration, covers rotation across the whole window, and fails closed on anything it cannot read
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Services/Foundation/FoundationMonitoringStatusService.php"
+  - "config/logging.php"
+  - "config/foundation_monitoring.php"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Feature/Foundation/*Monitoring*"
+alwaysApply: false
+---
+
+# MONITORING-LOG-SOURCE-RESILIENCE-1 — log source authority
+
+[113-monitoring-logs-watch-truthfulness](113-monitoring-logs-watch-truthfulness.mdc)
+established that the logs section may only report OK when it actually read a log and
+actually aged its events. It left one assumption standing: that the log is at
+`storage/logs/laravel.log`.
+
+That was true only by coincidence. Production resolves `stack -> [single] -> laravel.log`,
+so a hardcoded path happened to hit the right file. Change `LOG_CHANNEL` to `daily`, or add
+a member to `LOG_STACK`, and the application writes its errors somewhere else while the
+monitor keeps reading a file that has stopped moving — and reports OK for a system that is
+actively failing. Rule 113 R2 forbids reporting OK without evidence; this rule fixes the
+case where the evidence was real but came from the wrong file.
+
+## R1 — The effective logging configuration is the only source authority
+
+The set of files Monitoring reads is derived from `config('logging.*')` via
+`App\Services\Monitoring\MonitoringLogSourceResolver`. A hardcoded `laravel.log` is not
+sufficient authority and must not be reintroduced — in either monitor, in config, or in a
+test fixture.
+
+There is exactly **one** resolver, shared by `PilotPerformanceSnapshotService` and
+`FoundationMonitoringStatusService`. Two monitors that disagree about where the application
+logs will eventually disagree about whether it is healthy.
+
+A **second** path knob is worse than none. `config/foundation_monitoring.php` used to carry
+its own `paths.laravel_log`; it was retired, because a declared path that disagrees with the
+running logger is the one the monitor would actually read, and it would win silently. Do not
+add one back.
+
+## R2 — A stack resolves to its real members
+
+For a `stack` channel, resolve the configured `channels` — recursively, since Laravel allows
+stacks of stacks, with a cycle and depth guard so resolution always terminates. Never assume
+`stack == single`, and never treat the shipped `LOG_STACK=single` default as runtime logic.
+
+Every supported member is scanned. The worst finding across members survives the fold; a
+healthy sibling never averages away a failing one.
+
+## R3 — Rotation is covered across the whole window, not just today
+
+For `daily`, resolve every day-file whose day intersects the lookback window, using Monolog's
+`{filename}-{date}` convention applied to the *configured* path (never an assumed
+`laravel.log`), with day boundaries in `config('app.timezone')` — the same clock Monolog
+stamps filenames with.
+
+A 24h window read at 00:00:30 spans two calendar days, and today's file covers thirty seconds
+of it. Scanning only the current day is how a monitor reports a clean bill of health minutes
+after midnight while yesterday's file still holds a live error inside the window.
+
+## R4 — Full-window coverage is required before OK
+
+Generalises 113 R5 from one file to a source set. The logs section may report OK only when
+every required source was read back as far as it is responsible for — the window cutoff for
+a `single` file, the later of the cutoff and its own day-start for a day-file.
+
+If coverage cannot be proven, the verdict is not OK. `source_coverage_complete` carries this,
+and it is false whenever any required source was unresolved, unsupported, missing (except as
+allowed by R5), unreadable, or truncated short of its required reach.
+
+## R5 — Unresolvable, missing and unreadable sources fail closed
+
+- **No supported source configured at all** (e.g. the default channel is `syslog`) → the
+  monitor has nothing to observe → not OK.
+- **Nothing readable was actually read** → not OK. Absence of evidence is never evidence of
+  absence.
+- **An unsupported member of a monitored stack** (syslog, stderr, Slack, a custom monolog
+  handler) → reported, never silently dropped → coverage incomplete → not OK. Omitting it
+  is exactly how a partial scan gets presented as a full one.
+- **A `single` file that is missing** → not OK. A `single` file is never rotated away, so its
+  absence means it was removed or the channel moved — the precise drift this rule exists to
+  catch.
+- **A present file that cannot be opened** → not OK, with no fabricated byte count.
+
+  **Supersession.** MONITORING-LOGS-WATCH-ROOT-CAUSE-1 scored a missing log file as OK plus a
+  warning, reasoning that Laravel creates it on first write so absence usually means nothing
+  was logged. That reasoning cannot distinguish a quiet system from a relocated log, and the
+  relocated case is the dangerous one. Absence is now scored as what it is: unverified. A
+  quiet fresh checkout reporting WATCH is the accepted cost, and it is honest — Monitoring GO
+  has never meant Monitoring green.
+
+- **The one tolerated absence**: a `daily` day-file may be missing without breaking coverage
+  when its directory was successfully listed *and* the day is still inside the channel's own
+  `days` retention horizon — nothing could have removed it, so "not there" is an observation
+  that the day was empty rather than a blind spot. Outside retention, or with an unlistable
+  directory, absence proves nothing and fails closed.
+
+A `null` channel is exempt from all of the above because it provably keeps nothing. Detect it
+by its handler class (`Monolog\Handler\NullHandler`), never by the channel being *named*
+`null` — the shipped `null` channel's driver is `monolog`.
+
+## R6 — Configuration is the runtime authority, including when cached
+
+Resolve through `config()`, never `env()`. Production runs with `config:cache`, where `env()`
+is not the runtime authority; a resolver reading `env()` would disagree with the running
+application in exactly the deployment that matters.
+
+## R7 — Monitored paths come only from trusted config
+
+Log paths are never taken from request input, and no route or CLI option accepts one. The
+`log_path` seam on `PilotPerformanceSnapshotService::collect()` is internal and test-only;
+it must not be exposed to HTTP or given a CLI flag.
+
+## R8 — Counting across sources may overstate severity, never understate it
+
+Counts are summed across sources. A stack writing the same record to two files therefore
+counts it twice, which can only push a verdict *worse*, never green. Do not add
+deduplication without evidence that a real configuration double-counts in a way that changes
+an operational decision — and never replace the sum with a max, which would let a burst split
+across two files be demoted.
+
+## R9 — The metric schema is stable across verdicts
+
+The logs payload is a contract for dashboards and alerts. Even when nothing could be read,
+every metric key is emitted, with `null` for anything unmeasured. A verdict that silently
+drops half the schema is harder to alert on than one that says "unknown" in each field.
