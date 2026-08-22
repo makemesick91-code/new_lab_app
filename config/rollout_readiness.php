@@ -240,6 +240,14 @@ return [
     'thresholds' => [
         // Restore-drill evidence older than this many hours => WATCH (re-run).
         'restore_drill_stale_hours' => env('ROLLOUT_RESTORE_DRILL_STALE_HOURS', 720), // 30 days
+        // RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1: a drill cannot complete in
+        // the future, so a `completed_at` dated after now is untrusted rather
+        // than "maximally fresh". This tolerance exists only to absorb ordinary
+        // clock jitter between the host that ran the drill and the host reading
+        // the evidence (the evidence may be transported to a second candidate
+        // path). It is NOT a licence to accept future-dated evidence: beyond
+        // this many minutes the timestamp is rejected and the age is unknown.
+        'restore_drill_future_skew_minutes' => env('ROLLOUT_RESTORE_DRILL_FUTURE_SKEW_MINUTES', 5),
         // Backup considered stale (WATCH) if older than this many hours.
         'backup_stale_hours' => env('ROLLOUT_BACKUP_STALE_HOURS', 48),
         // Lightweight capacity smoke: a bounded read query slower than this

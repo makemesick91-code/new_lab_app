@@ -138,5 +138,44 @@ php artisan rollout:restore-drill-evidence --strict
 php artisan rollout:five-branch-readiness --stage=1
 ```
 
+### 7.1 Timestamp contract (RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1)
+
+`completed_at` is the ONLY field the freshness verdict is derived from, and it has
+exactly one legal form — the one `scripts/rollout-restore-drill.sh` writes with
+`date -u +%Y-%m-%dT%H:%M:%SZ`:
+
+```
+YYYY-MM-DDTHH:MM:SSZ        UTC, second precision, literal trailing Z
+```
+
+The validator parses it format-exactly and requires an exact round-trip, so a
+timestamp is accepted only when it faithfully identifies the instant it claims.
+Anything the parser would have to change to make legal is rejected rather than
+silently becoming a plausible date. Rejected examples: `2026-02-30T10:00:00Z`
+(invalid calendar date), `2026-00-15T10:00:00Z` (month zero — rolls *backward*),
+`2026-08-00T10:00:00Z` (day zero), `2026-08-20T25:00:00Z` (out-of-range hour),
+`2025-01-01T00:00:00Z +2 years` (relative modifier), `yesterday`, `now`, a bare
+epoch integer, an offset such as `+08:00`, and any surrounding whitespace.
+
+`--json` reports the trust state as `timestamp_status`:
+
+| `timestamp_status` | `age_hours` | Verdict | What the operator does |
+|---|---|---|---|
+| `valid` | number | `GO` if `age_hours <= 720`, else `WATCH` (`evidence_stale`) | nothing / re-run when stale |
+| `missing` | `null` | `WATCH` (`evidence_timestamp_missing`) | re-run the drill so `completed_at` is written |
+| `unparseable` | `null` | `WATCH` (`evidence_timestamp_unparseable`) | fix the producer/hand-edited evidence and re-run |
+| `future` | `null` | `WATCH` (`evidence_timestamp_future`) | check host clock/NTP, then re-run |
+
+**Malformed evidence is UNKNOWN, not OLD.** `evidence_stale` means "the drill
+expired, run it again"; `evidence_timestamp_*` means "this evidence's own timestamp
+cannot be trusted, so its age is unknown". Do not treat them as the same signal.
+
+A drill cannot complete in the future, so a future-dated `completed_at` is never
+"fresh". Only ordinary clock jitter is tolerated, bounded by
+`ROLLOUT_RESTORE_DRILL_FUTURE_SKEW_MINUTES` (default 5).
+
+**Never hand-edit `completed_at` to clear a WATCH.** The freshness verdict is
+evidence, not a target — the only way to make it GO is to run a real drill.
+
 and confirm `restore_drill_evidence` is now **GO** and Stage-1 clears (independent
 of the Stage-3 five-branch count, which stays WATCH until 5 branches are RME-enabled).

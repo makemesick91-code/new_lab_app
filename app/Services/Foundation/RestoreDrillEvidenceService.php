@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\DeveloperConsole\SensitiveValueMasker;
+use App\Support\Foundation\RestoreDrillTimestampParser;
 use Throwable;
 
 /**
@@ -34,10 +35,22 @@ class RestoreDrillEvidenceService
 
     public const UNKNOWN = 'UNKNOWN';
 
+    /** Trust state of the evidence's own `completed_at` timestamp. */
+    public const TS_VALID = 'valid';
+
+    public const TS_MISSING = 'missing';
+
+    public const TS_UNPARSEABLE = 'unparseable';
+
+    public const TS_FUTURE = 'future';
+
     /** @var array<int, string> */
     private const VERIFICATION_ENUM = [self::GO, self::WATCH, self::FAIL, self::UNKNOWN];
 
-    public function __construct(private readonly SensitiveValueMasker $masker) {}
+    public function __construct(
+        private readonly SensitiveValueMasker $masker,
+        private readonly RestoreDrillTimestampParser $timestamps,
+    ) {}
 
     /**
      * Evaluate the latest (or an explicit) restore-drill evidence file.
@@ -199,12 +212,21 @@ class RestoreDrillEvidenceService
             $issues[] = 'restore_target_not_recognized_disposable';
         }
 
-        $ageHours = $this->ageHours($data, $found);
+        // Age is only computed from a TRUSTED instant. An untrustworthy
+        // timestamp yields no age at all and is never treated as recent.
+        [$timestampStatus, $ageHours] = $this->evidenceAge($data);
         $staleHours = (float) config('rollout_readiness.thresholds.restore_drill_stale_hours', 720);
         $stale = $ageHours !== null && $ageHours > $staleHours;
         if ($stale) {
             $status = self::WATCH;
             $issues[] = 'evidence_stale';
+        }
+
+        // Fail closed: a missing / unfaithful / future completed_at leaves the
+        // drill unageable, so it can never satisfy the freshness requirement.
+        if ($timestampStatus !== self::TS_VALID) {
+            $status = self::WATCH;
+            $issues[] = 'evidence_timestamp_'.$timestampStatus;
         }
 
         if (strtoupper((string) ($data['decision'] ?? '')) === self::WATCH) {
@@ -215,6 +237,7 @@ class RestoreDrillEvidenceService
         $details['issues'] = $issues;
         $details['age_hours'] = $ageHours !== null ? round($ageHours, 1) : null;
         $details['stale'] = $stale;
+        $details['timestamp_status'] = $timestampStatus;
 
         if ($status === self::GO) {
             return [
@@ -235,9 +258,11 @@ class RestoreDrillEvidenceService
             'status' => self::WATCH,
             'unsafe' => false,
             'summary' => 'bukti uji restore perlu perhatian: '.implode(', ', $issues),
-            'remediation' => $stale
-                ? 'Ulangi restore drill staging; bukti terakhir sudah kedaluwarsa.'
-                : 'Lengkapi/ulangi restore drill staging hingga bukti lengkap dan valid.',
+            'remediation' => match (true) {
+                $stale => 'Ulangi restore drill staging; bukti terakhir sudah kedaluwarsa.',
+                $timestampStatus !== self::TS_VALID => 'Waktu selesai drill tidak tepercaya ('.$timestampStatus.'); usia bukti tidak dapat dipastikan. Jalankan ulang drill agar `completed_at` ditulis dalam format kanonik UTC `YYYY-MM-DDTHH:MM:SSZ`.',
+                default => 'Lengkapi/ulangi restore drill staging hingga bukti lengkap dan valid.',
+            },
             'decision' => self::WATCH,
             'details' => $details,
         ];
@@ -417,20 +442,54 @@ class RestoreDrillEvidenceService
     }
 
     /**
+     * Resolve the trust state of `completed_at` and, only when it is trusted,
+     * the evidence age in hours.
+     *
+     * Evidence age must never be manufactured. Three inputs are explicitly NOT
+     * ageable, and each returns a null age plus a reason the caller turns into a
+     * WATCH:
+     *
+     *  - `missing`      — no usable `completed_at`. The file's mtime is NOT used
+     *                     as a substitute: mtime is an unrelated filesystem fact
+     *                     that a copy, rsync, or deploy resets, so it would
+     *                     present a freshly-written file as a freshly-run drill.
+     *  - `unparseable`  — present but not a faithful canonical timestamp (an
+     *                     invalid calendar date, a rolled-over field, a relative
+     *                     modifier, or trailing junk). Such a literal does not
+     *                     identify the instant it appears to.
+     *  - `future`       — faithful, but dated meaningfully after now. A drill
+     *                     cannot complete in the future; clock skew or a wrong
+     *                     year must not read as the freshest possible evidence.
+     *
+     * The remaining clamp only absorbs sub-tolerance clock jitter between the
+     * host that ran the drill and the host reading the evidence; anything beyond
+     * that tolerance has already been rejected as `future`.
+     *
      * @param  array<string, mixed>  $data
+     * @return array{0: string, 1: ?float}
      */
-    private function ageHours(array $data, string $file): ?float
+    private function evidenceAge(array $data): array
     {
-        $completed = (string) ($data['completed_at'] ?? '');
-        if ($completed !== '') {
-            $ts = strtotime($completed);
-            if ($ts !== false) {
-                return max(0.0, (time() - $ts) / 3600);
-            }
+        $raw = $data['completed_at'] ?? null;
+        $completed = is_string($raw) ? $raw : '';
+        if ($completed === '') {
+            return [self::TS_MISSING, null];
         }
-        $mtime = @filemtime($file);
 
-        return $mtime !== false ? max(0.0, (time() - $mtime) / 3600) : null;
+        $parsed = $this->timestamps->parse($completed);
+        if ($parsed === null) {
+            return [self::TS_UNPARSEABLE, null];
+        }
+
+        $now = now()->getTimestamp();
+        $deltaSeconds = $now - $parsed->getTimestamp();
+
+        $skewSeconds = max(0, (int) config('rollout_readiness.thresholds.restore_drill_future_skew_minutes', 5)) * 60;
+        if ($deltaSeconds < -$skewSeconds) {
+            return [self::TS_FUTURE, null];
+        }
+
+        return [self::TS_VALID, max(0.0, $deltaSeconds / 3600)];
     }
 
     /**

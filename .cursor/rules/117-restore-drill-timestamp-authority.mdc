@@ -1,0 +1,110 @@
+---
+description: Restore Drill evidence timestamp authority — faithful parsing, untrusted age, fail-closed freshness
+globs:
+  - "app/Services/Foundation/RestoreDrillEvidenceService.php"
+  - "app/Support/Foundation/RestoreDrillTimestampParser.php"
+  - "app/Services/Foundation/FiveBranchRolloutReadinessService.php"
+  - "app/Console/Commands/RolloutRestoreDrillEvidenceCommand.php"
+  - "scripts/rollout-restore-drill.sh"
+  - "config/rollout_readiness.php"
+alwaysApply: false
+---
+
+# Restore Drill evidence timestamp authority
+
+Source: `RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1`
+(`docs/sprints/restore-drill-timestamp-faithfulness-1.md`).
+
+Restore Drill evidence is operational safety evidence. Its age decides whether a
+drill counts as current, and that decision propagates into ROLL-5 rollout stage
+clearance. These rules are non-negotiable.
+
+## 1. Canonical evidence timestamp format
+
+`completed_at` has exactly **one** legal form, emitted by
+`scripts/rollout-restore-drill.sh` (`date -u +%Y-%m-%dT%H:%M:%SZ`):
+
+```
+Y-m-d\TH:i:s\Z      e.g. 2026-07-10T00:03:00Z      (UTC, second precision, Zulu)
+```
+
+No offsets, no fractional seconds, no epoch integers, no surrounding whitespace.
+Do not broaden this grammar unless a real producer starts emitting the new form —
+and then change the producer, the runbook, the template doc, and the parser
+together.
+
+## 2. Faithfulness is required
+
+Parse only through `App\Support\Foundation\RestoreDrillTimestampParser`. A literal
+is accepted **only if the parsed instant re-renders to the input byte-for-byte**.
+A permissively normalised timestamp is not valid Restore Drill evidence.
+
+Never reintroduce `strtotime()` (or a bare `Carbon::parse()`) on this field. It
+normalises invalid calendar dates in **both** directions (Feb 30 → Mar 2 forward;
+month-zero → previous December backward), rolls out-of-range fields over, ignores
+trailing junk, and **executes relative modifiers**.
+
+## 3. Evidence timestamps are data, not relative-date commands
+
+`"2025-01-01T00:00:00Z +2 years"`, `-1 year`, `yesterday`, and `now` are not
+timestamps. They are rejected. Never sanitise individual strings — fix the parser
+contract.
+
+## 4. An untrusted timestamp never yields an age
+
+Three states are explicitly unageable and each returns a `null` age:
+
+| state | meaning |
+|---|---|
+| `missing` | no usable `completed_at` |
+| `unparseable` | present but not faithful |
+| `future` | faithful but dated meaningfully after now |
+
+**Never fall back to `filemtime()`.** File mtime is an unrelated filesystem fact
+that a copy, rsync, or deploy resets; using it presents a freshly-*written* file as
+a freshly-*run* drill.
+
+## 5. A null age must not reach GO
+
+The staleness test is `age !== null && age > threshold`, so a `null` age is not
+"stale". Every unageable state must therefore raise its own explicit
+`evidence_timestamp_<state>` issue that forces `WATCH`. Fail closed — never let an
+unageable timestamp fall through the staleness check into `GO`.
+
+## 6. Future evidence is not fresh evidence
+
+A drill cannot complete in the future. Never clamp a negative age to `0.0` and call
+it recent. Only sub-tolerance clock jitter is absorbed, bounded by
+`rollout_readiness.thresholds.restore_drill_future_skew_minutes` (default 5).
+Anything beyond that is `future` → untrusted.
+
+## 7. Freshness boundary is inclusive
+
+`age_hours <= restore_drill_stale_hours` is **fresh**; strictly greater is stale.
+Threshold default 720h (30 days). Pin any change with boundary tests.
+
+## 8. Clock domain
+
+Restore Drill freshness is **operational instant arithmetic in UTC**. It is *not*
+`ClinicalClock` / Asia/Makassar business-date semantics. Human display must never
+change the represented instant or the computed age.
+
+## 9. Untrusted ≠ unsafe
+
+An untrusted timestamp is `WATCH` (incomplete evidence), never `FAIL`.
+`FAIL`/`unsafe` stays reserved for genuinely dangerous evidence: production
+overwrite, production-like environment, leaked secret/PII, or a failed drill.
+
+## 10. Do not build a universal timestamp parser
+
+Monitoring's log analyzer legitimately accepts several real logging formats and
+uses a different (parse-then-verify-digits) contract. Restore Drill has one
+producer and one format. Keep the two parsers separate — merging them forces one
+domain to accept input its own producer never emits.
+
+## 11. Non-destructive verification only
+
+Timestamp/freshness changes are verified in production by **inspecting** evidence.
+A parser sprint never authorises restoring over the live database, and evidence is
+never edited merely to turn a verdict green. If production has no drill evidence,
+the honest state is `WATCH — evidence absent`; report it, do not manufacture it.
