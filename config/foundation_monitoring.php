@@ -83,6 +83,26 @@ return [
 
     /*
     |----------------------------------------------------------------------
+    | Log scan budget
+    |----------------------------------------------------------------------
+    | Byte budget for one log-source scan in the pilot performance snapshot.
+    |
+    | A source larger than this is read tail-only, which leaves a prefix
+    | unexamined — and an unexamined prefix can never be reported as covered,
+    | because no byte-level fact rules out an in-window event hiding there.
+    | (It used to be settled from the oldest timestamp inside the scanned
+    | tail, which let one ancient log line certify bytes nobody read.)
+    |
+    | So this is the lever that makes a busy host provable again. It is
+    | clamped by the service to [64 KiB, 64 MiB]: buying coverage must not be
+    | a way to configure the monitor into an unbounded read.
+    */
+    'log_scan' => [
+        'max_source_bytes' => env('FOUNDATION_MONITORING_LOG_SCAN_MAX_BYTES', 2 * 1024 * 1024),
+    ],
+
+    /*
+    |----------------------------------------------------------------------
     | Signal registry
     |----------------------------------------------------------------------
     | type: endpoint | path | command | probe

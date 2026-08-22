@@ -53,20 +53,22 @@ final class MonitoringLogSource
         return $this->support === self::SUPPORT_SUPPORTED;
     }
 
-    /**
-     * The earliest instant this source must have been read back to for the lookback
-     * window to be covered by it.
+    /*
+     * There was a requiredCoverageFrom(CarbonInterface $cutoff) here, returning the
+     * earliest instant this source had to be read back to. It existed for one caller,
+     * which compared it against the oldest event timestamp found in the scanned tail and
+     * declared the source covered when the tail appeared to reach far enough back.
      *
-     * For a `single` file that is the window cutoff itself. For a `daily` file it is the
-     * later of the cutoff and the start of that file's own day — a day-file cannot be
-     * expected to contain anything from before its day began.
+     * That comparison is gone, and this method with it. It was not wrong about time — it
+     * was answering the wrong question. Whether a scan reached far enough back is settled
+     * by where the read started, not by which timestamps the read happened to contain;
+     * deciding it from content let a single ancient line certify bytes the monitor never
+     * opened. MonitoringLogScanCoverage now answers it from byte offsets alone, and takes
+     * no timestamp at all so the comparison cannot be reintroduced by accident.
+     *
+     * `coversFrom` below survives because it still answers a real, structural question:
+     * which day a rotating file belongs to. That is used to tell "this day-file was never
+     * written" apart from "this day-file went missing" — an observation about the file
+     * set, not a claim about unread bytes.
      */
-    public function requiredCoverageFrom(CarbonInterface $cutoff): CarbonInterface
-    {
-        if ($this->coversFrom === null) {
-            return $cutoff;
-        }
-
-        return $this->coversFrom->greaterThan($cutoff) ? $this->coversFrom : $cutoff;
-    }
 }

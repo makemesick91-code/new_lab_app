@@ -1,0 +1,106 @@
+---
+description: MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — log coverage is proven by the bytes actually read; a timestamp inside the scan can never certify bytes outside it
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Console/Commands/PilotPerformanceSnapshot*"
+  - "config/foundation_monitoring.php"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+alwaysApply: false
+---
+
+# MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — log coverage authority
+
+Extends [113-monitoring-logs-watch-truthfulness](113-monitoring-logs-watch-truthfulness.mdc),
+[114-monitoring-log-source-authority](114-monitoring-log-source-authority.mdc) and
+[115-monitoring-log-timestamp-authority](115-monitoring-log-timestamp-authority.mdc).
+
+Rule 114 settled **which files** the monitor may read. Rule 115 settled **what an
+event's timestamp means** once a line has been read. This rule settles the question
+those two leave open: **how the monitor knows it read enough.**
+
+## The defect this rule exists to prevent
+
+A source larger than the scan budget is read tail-only, so its prefix is skipped.
+Coverage used to be granted when the oldest event timestamp *inside the scanned tail*
+already sat before the lookback cutoff — reasoning that the skipped prefix must be
+older still. That silently assumed a strictly chronological file, and it made log
+**content** the authority over bytes the monitor never opened.
+
+Reproduced end to end: a real in-window `pilot.ERROR` in the unread prefix, one line
+beginning `[2019-01-01 00:00:00]` in the tail, and the section reported **OK** with the
+reason *"No fresh error events within lookback window."* Two files identical but for
+that single line gave WATCH and OK respectively.
+
+## R1 — Coverage is a fact about the read, never about its contents
+
+A log source counts as covered only when the read began at byte 0. No parsed event, no
+timestamp, no line count and no message may contribute to that decision.
+
+**An event cannot testify about bytes nobody read.**
+
+## R2 — Event time and scan coverage are separate authorities
+
+`oldest_scanned_event_at` answers *"how far back did the scan happen to see?"*. That is
+an observation about lines that were read. It must never be used to answer *"was the
+unscanned region safe?"*. Conflating the two is the defect, not an implementation
+detail of it.
+
+## R3 — The coverage decision must be structurally unable to see content
+
+`MonitoringLogScanCoverage` takes byte offsets and nothing else. Do not add a
+`CarbonInterface`, a parsed event, or a line to its constructor or to `isComplete()` in
+order to "improve" coverage. Behaviour can be re-broken by a later edit; a type that
+cannot accept a timestamp cannot be re-broken by accident, and a test pins that.
+
+## R4 — A partially read required source is never OK
+
+If any required source was read from a non-zero offset and the skipped bytes could hold
+an event inside the active observation window, the logs section must not report OK.
+Withdraw the coverage claim and say which bytes were skipped.
+
+Do not substitute a monotonic-ordering argument for a read. Laravel logs are written by
+several processes (PHP-FPM workers and the queue worker), may be appended with explicit
+past timestamps, and may be concatenated by restore or rotation. Strict chronology is
+not an invariant the monitor may rely on.
+
+## R5 — Caps are safety limits, and reaching one costs coverage
+
+The scan budget is a bound on work, not a licence to assume the remainder is clean.
+When the cap prevents the monitor from proving full coverage, the claim is withdrawn
+and the section fails closed. Raising the budget is the operator's lever
+(`foundation_monitoring.log_scan.max_source_bytes`); it is clamped so that buying
+coverage can never become an unbounded read.
+
+## R6 — Multi-source coverage is conjunctive
+
+For a `stack`, or for a `daily` channel whose window spans several day-files, coverage
+is complete only when **every** required source produced a valid coverage result. One
+source never certifies another: an ancient line in today's file says nothing about
+yesterday's unread bytes, and a complete read of one stack member says nothing about an
+unsupported, missing or unreadable sibling.
+
+## R7 — Valid but unexpected content must not manufacture a claim
+
+Log content is not trusted input. Laravel builds its `LineFormatter` with
+`allowInlineLineBreaks: true`, so a newline inside a **message or a context array
+value** becomes a real physical line — and any line starting `[Y-m-d H:i:s]` is read as
+an event header. Forged headers are therefore reachable wherever unbounded text (an
+exception message, a driver error carrying SQL and bindings) reaches a log call.
+
+This rule does not forbid that; it makes it harmless to coverage. A monitor must stay
+correct in the presence of syntactically valid content it did not expect, whatever the
+content's origin — no public unauthenticated attacker is required for this to matter.
+
+## R8 — Fixes address the invariant, not the sample payload
+
+Ignoring `INFO`, trusting only `ERROR`, or filtering a known string would leave content
+in control of the decision and merely raise the price of the same exploit. Fix what is
+allowed to *decide*, never which payload happens to be in the reproducer.
+
+## R9 — Both directions are pinned
+
+Fail-closed alone is not success. A monitor that can never go green is its own defect
+(rule 113 R3). Every change here keeps a proven-recoverable path: a fully read source
+with no fresh errors reports OK, one fresh error reports WATCH, and 150 fresh errors
+still escalate.

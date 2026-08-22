@@ -76,7 +76,7 @@ class PilotPerformanceSnapshotLogAnalyzer
      *   oldest_fresh_error_at:?string,
      *   latest_fresh_error_at:?string,
      *   latest_historical_error_at:?string,
-     *   oldest_scanned_event_at:?string,
+     *   oldest_scanned_event_at:?string, // observation only — never a coverage authority
      *   tail_bytes_scanned:int,
      *   file_exists:bool
      * }
@@ -148,10 +148,19 @@ class PilotPerformanceSnapshotLogAnalyzer
 
             $timestampedLines++;
 
-            // Track the oldest event of ANY level that the scan actually reached. This is
-            // how the caller decides whether the scanned tail reached back past the
-            // lookback cutoff, i.e. whether "no fresh errors" is a statement about the
-            // whole window or only about the part that fit inside the byte budget.
+            // Track the oldest event of ANY level that the scan actually reached.
+            //
+            // This is an OBSERVATION — "the oldest thing I saw" — and nothing more. It
+            // used to be the caller's coverage authority: if this timestamp already sat
+            // before the lookback cutoff, the unscanned prefix was assumed older still
+            // and the window was declared fully covered. That handed the coverage
+            // decision to the log's own contents, so one line beginning
+            // `[2019-01-01 00:00:00]` could certify bytes the monitor never opened.
+            //
+            // Coverage is now decided by MonitoringLogScanCoverage from the read offset
+            // alone. This value stays because it is genuinely useful for reading a
+            // report — it says how far back the scan happened to see — but it must never
+            // again be used to answer "was the unscanned region safe?".
             if ($oldestScannedEvent === null || $timestamp->lt(Carbon::parse($oldestScannedEvent))) {
                 $oldestScannedEvent = $timestamp->toIso8601String();
             }

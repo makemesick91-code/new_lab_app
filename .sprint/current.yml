@@ -1,28 +1,35 @@
-# MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — Sprint Manifest
+# MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — Sprint Manifest
 #
-# Closes the Carbon date-rollover residual that MONITORING-LOGS-WATCH-ROOT-CAUSE-1
-# deferred on the stated grounds that rollover "only ever moves a timestamp later,
-# so it cannot manufacture a false green". That reasoning was wrong, and being wrong
-# is why the residual survived two sprints: Carbon rolls month `00` BACKWARD into the
-# previous year (`2026-00-15` -> `2025-12-15`), carrying an error event out of the
-# lookback window into `historical`, where it stops driving the verdict — a false
-# green. Rolling forward is not harmless either: it publishes a fresh error and a
-# `latest_fresh_error_at` for an instant that never occurred — a false WATCH resting
-# on fabricated evidence. `extractTimestamp` now requires the parsed instant to
-# reproduce the exact calendar digits the line contained, and routes anything else
-# into the existing unageable path, which already fails closed.
+# Closes the coverage-anchor residual that MONITORING-LOG-TIMESTAMP-ROLLOVER-1 recorded
+# but did not test: that `oldest_scanned_event_at` "may be anchorable by an injected valid
+# ancient benign log line". It is, and the consequence is a false green.
+#
+# A log source larger than the scan budget is read tail-only, so its prefix is skipped.
+# Coverage was then granted when the oldest event timestamp inside the SCANNED TAIL
+# already sat before the lookback cutoff — reasoning that the skipped prefix must be older
+# still. That silently assumed a strictly chronological file, and it made log CONTENT the
+# authority over bytes the monitor never opened. Reproduced end to end: a real in-window
+# `pilot.ERROR` in the unread prefix, one line beginning `[2019-01-01 00:00:00]` in the
+# tail, and the section reported OK — "No fresh error events within lookback window."
+# Two files identical but for that single line differed WATCH vs OK.
+#
+# Coverage is now a fact about the read: a source counts as covered only when the read
+# began at byte 0. MonitoringLogScanCoverage takes byte offsets and no timestamp at all,
+# so the comparison cannot be reintroduced by accident. `oldest_scanned_event_at` survives
+# as an observation and decides nothing. The scan budget becomes the operator's lever, and
+# is clamped so buying coverage can never become an unbounded read.
 
-id: MONITORING-LOG-TIMESTAMP-ROLLOVER-1
+id: MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1
 type: RUNTIME_FIX
 module: Monitoring
-title: "Monitoring event freshness derives from the timestamp the log actually wrote; a date the parser had to invent is unageable, never a confident verdict"
+title: "Monitoring log coverage is proven by the bytes actually read; a timestamp inside the scan cannot certify bytes outside it"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # PilotPerformanceSnapshotLogAnalyzer::extractTimestamp
+runtime_change: true          # PilotPerformanceSnapshotService, MonitoringLogScanCoverage, MonitoringLogSource
 schema_change: false
 frontend_change: false
-security_impact: false        # no policy/middleware/permission/route change
+security_impact: true         # closes a content-controlled integrity path (false green); no policy/middleware/permission/route change
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -31,7 +38,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: monitoring-log-timestamp-rollover-1-go
+go_tag: monitoring-log-coverage-anchor-injection-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
