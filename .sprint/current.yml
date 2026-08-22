@@ -1,25 +1,28 @@
-# MONITORING-LOG-SOURCE-RESILIENCE-1 — Sprint Manifest
+# MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — Sprint Manifest
 #
-# Removes Monitoring's dependency on a hardcoded `storage/logs/laravel.log`. That path is
-# correct today only by coincidence — production resolves `stack -> [single] -> laravel.log`.
-# The moment the configured channel becomes `daily`, or the stack gains a member, the
-# application writes its errors elsewhere and the monitor keeps reading a file that has
-# stopped moving, reporting OK for a system that is actively failing. The monitored sources
-# are now derived from the effective Laravel logging configuration, rotation is covered
-# across the whole lookback window, and anything unresolvable, missing or unreadable fails
-# closed instead of being silently dropped from the total.
+# Closes the Carbon date-rollover residual that MONITORING-LOGS-WATCH-ROOT-CAUSE-1
+# deferred on the stated grounds that rollover "only ever moves a timestamp later,
+# so it cannot manufacture a false green". That reasoning was wrong, and being wrong
+# is why the residual survived two sprints: Carbon rolls month `00` BACKWARD into the
+# previous year (`2026-00-15` -> `2025-12-15`), carrying an error event out of the
+# lookback window into `historical`, where it stops driving the verdict — a false
+# green. Rolling forward is not harmless either: it publishes a fresh error and a
+# `latest_fresh_error_at` for an instant that never occurred — a false WATCH resting
+# on fabricated evidence. `extractTimestamp` now requires the parsed instant to
+# reproduce the exact calendar digits the line contained, and routes anything else
+# into the existing unageable path, which already fails closed.
 
-id: MONITORING-LOG-SOURCE-RESILIENCE-1
+id: MONITORING-LOG-TIMESTAMP-ROLLOVER-1
 type: RUNTIME_FIX
 module: Monitoring
-title: "Monitoring resolves its log sources from the effective logging configuration; single/daily/stack covered, unreadable sources fail closed"
+title: "Monitoring event freshness derives from the timestamp the log actually wrote; a date the parser had to invent is unageable, never a confident verdict"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # log source resolution + coverage aggregation in both monitors
+runtime_change: true          # PilotPerformanceSnapshotLogAnalyzer::extractTimestamp
 schema_change: false
 frontend_change: false
-security_impact: false        # no policy/middleware/permission/route change; paths stay config-only
+security_impact: false        # no policy/middleware/permission/route change
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -28,7 +31,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: monitoring-log-source-resilience-1-go
+go_tag: monitoring-log-timestamp-rollover-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0

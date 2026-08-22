@@ -126,10 +126,33 @@ and returned **OK**. A real `ERROR` produced a green monitor.
 It also leaked its continuation lines onto the **next** event, because the early
 return never cleared the grouping state.
 
-A related, unreachable-in-practice variant is recorded rather than fixed: `Carbon`
-rolls `2026-02-30` forward to `2026-03-02` instead of throwing, so a malformed date
-can silently land in the wrong bucket. It only ever moves a timestamp *later*, so it
-cannot manufacture a false green, and Laravel's formatter never emits one.
+A related variant is recorded rather than fixed: `Carbon` rolls `2026-02-30`
+forward to `2026-03-02` instead of throwing, so a malformed date can silently land
+in the wrong bucket. It only ever moves a timestamp *later*, so it cannot
+manufacture a false green, and Laravel's formatter never emits one.
+
+> **SUPERSEDED by MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — the paragraph above is
+> factually wrong, and being wrong is why the residual stayed open.**
+>
+> Rollover does **not** only move a timestamp later. `Carbon` rolls month `00`
+> *backwards into the previous year* (`2026-00-15` → `2025-12-15`) and day `00`
+> backwards into the previous month (`2026-08-00` → `2026-07-31`). A backwards
+> roll carries an error event out of the lookback window, where it is counted as
+> ordinary history and stops contributing to the verdict — which is exactly a
+> false green, produced by the same fail-open shape D1 was written to close.
+> Rolling forward is not harmless either: it reports a fresh error and publishes a
+> `latest_fresh_error_at` for an instant that never occurred, so the resulting
+> WATCH rests on fabricated evidence and cannot be cleared by fixing anything real.
+>
+> "Laravel's formatter never emits one" is true and still not sufficient. The
+> analyzer's authority is the *bytes on disk*, not the formatter that was supposed
+> to have written them, and the same permissive parse also honoured arbitrary
+> relative modifiers in the trailing segment (`[… 10:00:00 -1 year]`), an
+> unbounded age shift that likewise reported `timestamp_parse_status: ok`.
+>
+> `extractTimestamp` now requires the parsed instant to reproduce the exact
+> calendar digits the line contained, and routes anything else into this same
+> unageable path. See `docs/sprints/monitoring-log-timestamp-rollover-1.md`.
 
 ### D2 — an unreadable log read as OK
 
