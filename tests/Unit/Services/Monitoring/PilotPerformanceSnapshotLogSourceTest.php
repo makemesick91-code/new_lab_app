@@ -198,6 +198,44 @@ it('reports that the scan was truncated so the counts are not read as a full-win
         ->and(collect($snapshot['warnings'])->contains(fn (string $w) => str_contains($w, 'Log scan truncated')))->toBeTrue();
 });
 
+it('never reports OK when the truncated scan never reached the start of the window', function () {
+    // The confirmed false green. An in-window error sits before the 2 MiB boundary and is
+    // pushed out of the scanned tail by later traffic. The scan then finds nothing, and
+    // before this sprint answered the 24h question with an unqualified
+    // "No fresh error events within lookback window." and status OK.
+    $error = '[2026-08-21 16:00:00] pilot.ERROR: SQLSTATE[08006] connection failure during a payment write'.PHP_EOL;
+    $filler = '[2026-08-22 11:00:00] pilot.INFO: healthy request padding the file past the tail budget'.PHP_EOL;
+
+    $snapshot = pilotSnapshotForLogContents(
+        $error.str_repeat($filler, (int) ceil((2 * 1024 * 1024 + 8192) / strlen($filler)))
+    );
+    $metrics = $snapshot['sections']['logs']['metrics'];
+
+    expect($metrics['tail_truncated'])->toBeTrue()
+        ->and($metrics['window_fully_covered'])->toBeFalse()
+        ->and($metrics['fresh_error_like_count'])->toBe(0)   // the error really is unseen
+        ->and($snapshot['sections']['logs']['status'])->toBe('WATCH')
+        ->and($snapshot['sections']['logs']['reason'])->toContain('did not reach the start')
+        ->and($snapshot['overall_status'])->toBe('WATCH');
+});
+
+it('still reports OK when a truncated scan did reach back past the cutoff', function () {
+    // Negative control for the rule above. Truncation on its own must not raise an alarm,
+    // or every host writing more than the budget per day would sit in a permanent WATCH.
+    // Here the scanned tail still starts before the cutoff, so the window IS covered.
+    $filler = '[2026-08-20 09:00:00] pilot.INFO: old benign traffic, entirely before the cutoff'.PHP_EOL;
+
+    $snapshot = pilotSnapshotForLogContents(
+        str_repeat($filler, (int) ceil((2 * 1024 * 1024 + 8192) / strlen($filler)))
+    );
+    $metrics = $snapshot['sections']['logs']['metrics'];
+
+    expect($metrics['tail_truncated'])->toBeTrue()
+        ->and($metrics['window_fully_covered'])->toBeTrue()
+        ->and($snapshot['sections']['logs']['status'])->toBe('OK')
+        ->and($snapshot['overall_status'])->toBe('OK');
+});
+
 it('does not claim truncation for a log that fits inside the tail budget', function () {
     $snapshot = pilotSnapshotForLogContents('[2026-08-22 11:00:00] pilot.INFO: small and complete'.PHP_EOL);
 

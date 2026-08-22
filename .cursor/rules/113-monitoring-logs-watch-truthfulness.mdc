@@ -86,20 +86,36 @@ The closed defect: 150 fresh events (contractually FIX) alongside 21 orphan line
 returned a flat WATCH, understating a FIX-level burst precisely when the log was
 noisiest. Fixed by moving the guard inside the `freshCount === 0` branch.
 
-## R5 — The scan budget is disclosed, not silently applied
+## R5 — A verdict never claims more window than the scan actually covered
 
 The tail scan is capped at 2 MiB, which is a **byte** budget, not the requested
-**time** window. When the cap bites, the oldest part of the window was never read and
-the counts are a lower bound. `tail_truncated` plus a warning now say so.
+**time** window. Truncation on its own is not the defect; answering a full-window
+question from a partial scan is.
 
-Known residual, deliberately not fixed here: a truncated scan that finds zero fresh
-errors still reports OK, and could in principle hide an in-window error that fell
-outside the byte budget. The correct fix is a **window-coverage** check — compare the
-oldest timestamp actually present in the scanned tail against the cutoff, and treat
-"the tail never reached back to the cutoff" as undetermined freshness. Escalating on
-truncation alone is wrong: it would fire permanently on any host writing >2 MiB/day,
-which is R3's false WATCH. Production writes ~775 KB total, so this is currently
-inert.
+This was a **confirmed false green**, reproduced by execution on the real service with
+filler volume as the only variable — the same in-window `SQLSTATE[08006]` error:
+
+```
+  13,096 B  (under the cap)  → logs=WATCH   correct
+2,600,096 B (over the cap)   → logs=OK      "No fresh error events within lookback window."
+                                            fresh=0 orphan=0 parse=ok warnings=(none)
+```
+
+The orphan guard cannot rescue it: with `freshCount = 0`, orphan counts of 0/1/5/20 all
+return OK, and only ≥21 flips — under an unrelated reason that never mentions coverage.
+
+The window is **covered** when the whole file was read, or when the scanned tail still
+reaches back past the cutoff. `oldest_scanned_event_at` (the oldest event of **any**
+level the scan reached) is compared against the cutoff to decide
+`window_fully_covered`; an uncovered window with nothing countable is **WATCH**, with a
+reason that says so, plus a warning naming the remedy (raise the budget, or rotate).
+
+Escalating on truncation *alone* would be wrong — it would fire permanently on any host
+writing more than the budget per day, which is R3's false WATCH. That negative control
+is pinned: a truncated scan whose tail still starts before the cutoff stays **OK**.
+
+Production writes ~775 KB in total, so the scan is not truncated there and this rule
+changes nothing about its current verdict.
 
 ## R6 — Operator tooling shares the application log, and monitoring counts it
 

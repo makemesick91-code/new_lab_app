@@ -2,6 +2,7 @@
 
 namespace App\Services\Monitoring;
 
+use Carbon\Carbon;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -616,11 +617,29 @@ class PilotPerformanceSnapshotService
         // assume the whole window was covered.
         $metrics['tail_truncated'] = $size > $maxTailBytes;
 
+        // Truncation alone is not the defect — reporting a full-window verdict from a
+        // partial scan is. The window is covered when the whole file was read, or when
+        // the scanned tail still reaches back past the cutoff. A truncated tail whose
+        // oldest event is NEWER than the cutoff never saw the start of the window, so an
+        // in-window error could be sitting in the bytes that were skipped.
+        $cutoff = now()->copy()->subSeconds($since['seconds']);
+        $oldestScanned = $metrics['oldest_scanned_event_at'] ?? null;
+
+        $metrics['window_fully_covered'] = ! $metrics['tail_truncated']
+            || ($oldestScanned !== null && Carbon::parse($oldestScanned)->lessThanOrEqualTo($cutoff));
+
         if ($metrics['tail_truncated']) {
             $warnings[] = sprintf(
                 'Log scan truncated to the last %d bytes of a %d byte file; error counts for the %s window are a lower bound.',
                 $maxTailBytes,
                 $size,
+                $since['label'],
+            );
+        }
+
+        if (! $metrics['window_fully_covered']) {
+            $warnings[] = sprintf(
+                'Log scan did not reach the start of the %s window; raise the scan budget or rotate the log.',
                 $since['label'],
             );
         }
@@ -633,6 +652,7 @@ class PilotPerformanceSnapshotService
             $metrics['historical_tail_error_like_count'],
             $metrics['historical_stack_trace_line_count'],
             $metrics['undated_error_like_count'],
+            $metrics['window_fully_covered'],
         );
 
         if (

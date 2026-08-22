@@ -76,6 +76,7 @@ class PilotPerformanceSnapshotLogAnalyzer
      *   oldest_fresh_error_at:?string,
      *   latest_fresh_error_at:?string,
      *   latest_historical_error_at:?string,
+     *   oldest_scanned_event_at:?string,
      *   tail_bytes_scanned:int,
      *   file_exists:bool
      * }
@@ -96,6 +97,7 @@ class PilotPerformanceSnapshotLogAnalyzer
         $oldestFresh = null;
         $latestFresh = null;
         $latestHistorical = null;
+        $oldestScannedEvent = null;
 
         $currentHeader = null;
         /** @var list<string> */
@@ -117,6 +119,7 @@ class PilotPerformanceSnapshotLogAnalyzer
             &$oldestFresh,
             &$latestFresh,
             &$latestHistorical,
+            &$oldestScannedEvent,
             $cutoff,
         ): void {
             if ($currentHeader === null) {
@@ -144,6 +147,14 @@ class PilotPerformanceSnapshotLogAnalyzer
             }
 
             $timestampedLines++;
+
+            // Track the oldest event of ANY level that the scan actually reached. This is
+            // how the caller decides whether the scanned tail reached back past the
+            // lookback cutoff, i.e. whether "no fresh errors" is a statement about the
+            // whole window or only about the part that fit inside the byte budget.
+            if ($oldestScannedEvent === null || $timestamp->lt(Carbon::parse($oldestScannedEvent))) {
+                $oldestScannedEvent = $timestamp->toIso8601String();
+            }
 
             if (! $this->isErrorLike($currentHeader)) {
                 $currentHeader = null;
@@ -248,6 +259,7 @@ class PilotPerformanceSnapshotLogAnalyzer
             'oldest_fresh_error_at' => $oldestFresh,
             'latest_fresh_error_at' => $latestFresh,
             'latest_historical_error_at' => $latestHistorical,
+            'oldest_scanned_event_at' => $oldestScannedEvent,
             'tail_bytes_scanned' => strlen($tail),
             'file_exists' => true,
         ];

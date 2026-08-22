@@ -184,6 +184,7 @@ class PilotPerformanceSnapshotClassifier
         int $historicalCount,
         int $historicalStackTraceCount = 0,
         int $undatedErrorLikeCount = 0,
+        bool $windowFullyCovered = true,
     ): array {
         // Freshness is undetermined when the log could not be aged reliably: the
         // timestamps failed to parse outright, an error event carried an unparseable
@@ -202,6 +203,17 @@ class PilotPerformanceSnapshotClassifier
                     'reason' => $undatedErrorLikeCount > 0
                         ? 'Error events carry unparseable timestamps and could not be aged; freshness is unknown.'
                         : 'Unable to determine freshness from log timestamps.',
+                ];
+            }
+
+            // The scan is bounded by a byte budget, not by the requested window. If it
+            // never reached back past the cutoff then "no fresh errors" describes only the
+            // slice of the window that fit inside that budget — which is not the question
+            // that was asked, and must not be answered as though it were.
+            if (! $windowFullyCovered) {
+                return [
+                    'status' => self::STATUS_WATCH,
+                    'reason' => 'Log scan did not reach the start of the lookback window; freshness is unknown for the unscanned portion.',
                 ];
             }
 

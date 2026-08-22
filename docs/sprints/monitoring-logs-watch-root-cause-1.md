@@ -156,13 +156,32 @@ count. It understated the alarm exactly when the log was noisiest. Fixed by movi
 guard inside the `freshCount === 0` branch; undetermined freshness now escalates via
 `worst()` and can never suppress.
 
-### D5 — the scan budget was applied silently
+### D5 — a full-window verdict from a partial scan (false green)
 
-The 2 MiB cap is a byte budget, not a time window. `tail_truncated` and a warning now
-disclose when the counts are a lower bound. The residual — a truncated scan finding
-zero fresh errors still reports OK — is recorded in rule 113 R5 with the correct fix
-(a window-coverage check), deliberately not attempted here because escalating on
-truncation alone would be a permanent false WATCH on any busy host.
+The 2 MiB cap is a **byte** budget, not a time window. Reproduced by execution on the
+real service, with filler volume as the only variable and the same in-window
+`SQLSTATE[08006]` error present in both files:
+
+```
+  13,096 B  (under the cap)  → logs=WATCH   correct
+2,600,096 B (over the cap)   → logs=OK      "No fresh error events within lookback window."
+                                            fresh=0 orphan=0 parse=ok warnings=(none)
+```
+
+The orphan guard cannot rescue it — with `freshCount = 0`, orphan counts of 0/1/5/20
+all return OK, and only ≥21 flips under an unrelated reason.
+
+Fixed by a **window-coverage** check rather than by alarming on truncation: the
+analyzer now reports `oldest_scanned_event_at` (the oldest event of any level it
+reached), and the window counts as covered only when the whole file was read or the
+tail still reaches back past the cutoff. An uncovered window with nothing countable is
+**WATCH**. Escalating on truncation alone would fire permanently on any busy host —
+that negative control is pinned: a truncated scan whose tail starts before the cutoff
+stays **OK**.
+
+I had initially scoped this as "record, don't fix". The adversarial verification
+proved that wrong by executing it, and the sprint's own priority order puts
+NO FALSE GREEN above NO PERMANENT FALSE WATCH.
 
 ## Not changed, on purpose
 
@@ -185,18 +204,19 @@ truncation alone would be a permanent false WATCH on any busy host.
 | Mutation: analyzer stops counting undated events | **4 tests fail** |
 | Mutation: classifier masking restored | **1 test fails** |
 | Mutation: `readTail` swallows the failed open | **1 test fails** |
-| All mutations reverted | 52 passed |
+| Mutation: coverage always claimed complete | **1 test fails** |
+| All mutations reverted | 54 passed |
 
 ## Tests
 
-`tests/Unit/Services/Monitoring/PilotPerformanceSnapshotLogSourceTest.php` — 16 tests
+`tests/Unit/Services/Monitoring/PilotPerformanceSnapshotLogSourceTest.php` — 18 tests
 covering: no-false-green for unageable errors, continuation-leak containment,
 unreadable/absent/truncated log sources, masking, the inclusive window boundary
 (inside / exactly on / outside), unaided recovery by clock movement alone, and the
 observed production shape.
 
 ```
-Monitoring suite            52 passed  (206 assertions)   0 failures
+Monitoring suite            54 passed  (216 assertions)   0 failures
 Dependency regression      129 passed  (647 assertions)   0 failures, 1 pre-existing pgsql skip
 Pint / git diff --check    clean
 ```
@@ -205,10 +225,9 @@ Pint / git diff --check    clean
 
 ## Residuals recorded, not fixed
 
-1. Window-coverage check for a truncated tail (rule 113 R5) — inert at 775 KB.
-2. `Carbon` date rollover mis-bucketing — cannot produce a false green.
-3. `worst()` degrading an unknown status to OK — unreachable from current callers.
-4. The scanned log path is hardcoded rather than resolved from the configured channel.
+1. `Carbon` date rollover mis-bucketing — cannot produce a false green.
+2. `worst()` degrading an unknown status to OK — unreachable from current callers.
+3. The scanned log path is hardcoded rather than resolved from the configured channel.
    Production is `LOG_CHANNEL=stack` / `LOG_STACK=single` → `laravel.log`, so it is
    correct today, but a switch to `daily` would write `laravel-YYYY-MM-DD.log` and the
    monitor would go permanently green while errors accumulated elsewhere. The absent-file
