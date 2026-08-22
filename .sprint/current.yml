@@ -1,18 +1,18 @@
-# TEST-BASELINE-MONITORING-FAILURES-1 — Sprint Manifest
+# MONITORING-LOGS-WATCH-ROOT-CAUSE-1 — Sprint Manifest
 #
-# Restores the Monitoring baseline to zero known failures by removing the live
-# host disk reading from the pilot performance snapshot's aggregate assertions.
-# The production monitor is unchanged: the same disk is read, classified by the
-# same thresholds, and still escalates WATCH/FIX into overall_status.
+# Root-causes the production `logs = WATCH`. The WATCH itself was CORRECT: five real
+# ERROR events sat inside the 24h lookback window. Nothing was suppressed to make it
+# green. The audit that proved the WATCH correct also found the logs section could
+# report OK having observed nothing at all, and that is what this sprint fixes.
 
-id: TEST-BASELINE-MONITORING-FAILURES-1
+id: MONITORING-LOGS-WATCH-ROOT-CAUSE-1
 type: RUNTIME_FIX
 module: Monitoring
-title: "Monitoring baseline restored to zero known failures — snapshot aggregate no longer depends on host free disk"
+title: "Production logs=WATCH root-caused as correct; the logs section can no longer report OK without evidence"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # PilotPerformanceSnapshotService gains an injected disk probe (behaviour-preserving)
+runtime_change: true          # analyzer/classifier/service fail closed instead of fail open
 schema_change: false
 frontend_change: false
 security_impact: false        # no policy/middleware/permission/route change
@@ -24,7 +24,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: test-baseline-monitoring-failures-1-go
+go_tag: monitoring-logs-watch-root-cause-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0

@@ -183,15 +183,40 @@ class PilotPerformanceSnapshotClassifier
         int $orphanUnparseableCount,
         int $historicalCount,
         int $historicalStackTraceCount = 0,
+        int $undatedErrorLikeCount = 0,
+        bool $windowFullyCovered = true,
     ): array {
-        if ($timestampParseStatus === 'failed' || ($orphanUnparseableCount > 20 && $timestampParseStatus !== 'ok')) {
-            return [
-                'status' => self::STATUS_WATCH,
-                'reason' => 'Unable to determine freshness from log timestamps.',
-            ];
-        }
+        // Freshness is undetermined when the log could not be aged reliably: the
+        // timestamps failed to parse outright, an error event carried an unparseable
+        // header timestamp, or enough orphan lines survived that grouping is unreliable.
+        $freshnessUndetermined = $timestampParseStatus === 'failed'
+            || $undatedErrorLikeCount > 0
+            || ($orphanUnparseableCount > 20 && $timestampParseStatus !== 'ok');
 
         if ($freshCount === 0) {
+            // Fail closed. With no countable fresh event AND no trustworthy way to age
+            // the log, "no fresh errors" is not a finding — it is an absence of evidence,
+            // and it may never be reported as OK.
+            if ($freshnessUndetermined) {
+                return [
+                    'status' => self::STATUS_WATCH,
+                    'reason' => $undatedErrorLikeCount > 0
+                        ? 'Error events carry unparseable timestamps and could not be aged; freshness is unknown.'
+                        : 'Unable to determine freshness from log timestamps.',
+                ];
+            }
+
+            // The scan is bounded by a byte budget, not by the requested window. If it
+            // never reached back past the cutoff then "no fresh errors" describes only the
+            // slice of the window that fit inside that budget — which is not the question
+            // that was asked, and must not be answered as though it were.
+            if (! $windowFullyCovered) {
+                return [
+                    'status' => self::STATUS_WATCH,
+                    'reason' => 'Log scan did not reach the start of the lookback window; freshness is unknown for the unscanned portion.',
+                ];
+            }
+
             if ($historicalCount > 0) {
                 $reason = 'No fresh error events within lookback window; historical entries are informational only.';
 
@@ -221,6 +246,13 @@ class PilotPerformanceSnapshotClassifier
             $status = self::worst($status, self::STATUS_FIX);
         } elseif ($criticalFreshCount >= 3) {
             $status = self::worst($status, self::STATUS_INVESTIGATE);
+        }
+
+        // Undetermined freshness escalates, it never suppresses. The parsed fresh count
+        // still drives severity, so a genuine FIX-level burst can no longer be masked
+        // down to WATCH by unparseable noise elsewhere in the scanned tail.
+        if ($freshnessUndetermined) {
+            $status = self::worst($status, self::STATUS_WATCH);
         }
 
         $reason = match ($status) {

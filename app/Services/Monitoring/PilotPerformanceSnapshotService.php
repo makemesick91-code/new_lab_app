@@ -2,6 +2,7 @@
 
 namespace App\Services\Monitoring;
 
+use Carbon\Carbon;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -530,9 +531,16 @@ class PilotPerformanceSnapshotService
         $logPath = $logPathOverride ?? storage_path('logs/laravel.log');
 
         if (! is_file($logPath)) {
+            // Absence is reported, never assumed healthy. Laravel creates this file on the
+            // first write, so a missing file normally means nothing has been logged — but
+            // the monitor cannot prove that from absence alone, and it must not present an
+            // unverified section as a clean bill of health.
+            $warnings[] = 'Laravel log file not found at the scanned path; log health was not verified. '
+                .'Confirm the configured log channel still writes to this file.';
+
             return [
                 'status' => PilotPerformanceSnapshotClassifier::STATUS_OK,
-                'reason' => 'Laravel log file not found.',
+                'reason' => 'Laravel log file not found; log health not verified.',
                 'metrics' => [
                     'lookback_window' => $since['label'],
                     'fresh_error_like_count' => 0,
@@ -550,7 +558,9 @@ class PilotPerformanceSnapshotService
             ];
         }
 
-        $size = filesize($logPath);
+        // Suppressed for the same reason as readTail(): the failure is handled explicitly
+        // on the next line, and the promoted warning would otherwise abort the snapshot.
+        $size = @filesize($logPath);
 
         if ($size === false) {
             $warnings[] = 'Could not read Laravel log file size.';
@@ -570,6 +580,29 @@ class PilotPerformanceSnapshotService
 
         $maxTailBytes = 2 * 1024 * 1024;
         $tail = $this->readTail($logPath, $maxTailBytes);
+
+        // The file exists and its size was readable, so a failed open is a genuine
+        // anomaly (permissions, races, a vanished inode). Fail closed: an unreadable log
+        // is an unknown, and an unknown is never OK. Previously this returned an empty
+        // string, which the analyzer could not distinguish from "scanned it, found
+        // nothing" — reporting OK while having observed nothing at all.
+        if ($tail === null) {
+            $warnings[] = 'Could not open Laravel log file for reading; log health was not evaluated.';
+
+            return [
+                'status' => PilotPerformanceSnapshotClassifier::STATUS_WATCH,
+                'reason' => 'Could not read Laravel log file.',
+                'metrics' => [
+                    'lookback_window' => $since['label'],
+                    'fresh_error_like_count' => null,
+                    'historical_tail_error_like_count' => null,
+                    'timestamp_parse_status' => 'failed',
+                    'tail_bytes_scanned' => 0,
+                    'file_exists' => true,
+                ],
+            ];
+        }
+
         $metrics = $this->logAnalyzer->analyzeTail(
             $tail,
             $since['label'],
@@ -578,6 +611,39 @@ class PilotPerformanceSnapshotService
         );
         $metrics['tail_bytes_scanned'] = min($size, $maxTailBytes);
 
+        // The scan is capped at a byte budget, not at the requested time window. When the
+        // cap bites, the oldest part of the lookback window was never read, so the counts
+        // are a floor rather than a total. Surface that instead of letting the reader
+        // assume the whole window was covered.
+        $metrics['tail_truncated'] = $size > $maxTailBytes;
+
+        // Truncation alone is not the defect — reporting a full-window verdict from a
+        // partial scan is. The window is covered when the whole file was read, or when
+        // the scanned tail still reaches back past the cutoff. A truncated tail whose
+        // oldest event is NEWER than the cutoff never saw the start of the window, so an
+        // in-window error could be sitting in the bytes that were skipped.
+        $cutoff = now()->copy()->subSeconds($since['seconds']);
+        $oldestScanned = $metrics['oldest_scanned_event_at'] ?? null;
+
+        $metrics['window_fully_covered'] = ! $metrics['tail_truncated']
+            || ($oldestScanned !== null && Carbon::parse($oldestScanned)->lessThanOrEqualTo($cutoff));
+
+        if ($metrics['tail_truncated']) {
+            $warnings[] = sprintf(
+                'Log scan truncated to the last %d bytes of a %d byte file; error counts for the %s window are a lower bound.',
+                $maxTailBytes,
+                $size,
+                $since['label'],
+            );
+        }
+
+        if (! $metrics['window_fully_covered']) {
+            $warnings[] = sprintf(
+                'Log scan did not reach the start of the %s window; raise the scan budget or rotate the log.',
+                $since['label'],
+            );
+        }
+
         $classification = PilotPerformanceSnapshotClassifier::classifyFreshLogErrors(
             $metrics['fresh_error_like_count'],
             $metrics['critical_fresh_count'],
@@ -585,6 +651,8 @@ class PilotPerformanceSnapshotService
             $metrics['orphan_unparseable_error_like_count'],
             $metrics['historical_tail_error_like_count'],
             $metrics['historical_stack_trace_line_count'],
+            $metrics['undated_error_like_count'],
+            $metrics['window_fully_covered'],
         );
 
         if (
@@ -610,18 +678,34 @@ class PilotPerformanceSnapshotService
         ];
     }
 
-    private function readTail(string $path, int $maxBytes): string
+    /**
+     * Read the trailing window of the log file.
+     *
+     * Returns null when the file could not be opened, so the caller can tell "read it,
+     * it was empty" apart from "could not read it at all". Those two must never collapse
+     * into the same all-zero analysis.
+     */
+    private function readTail(string $path, int $maxBytes): ?string
     {
-        $size = filesize($path);
+        // Both calls are diagnostics-suppressed because their failure is handled
+        // explicitly below. Without this the emitted warning is promoted to an
+        // ErrorException by the framework's error handler and the whole snapshot aborts —
+        // a monitor that dies on an unreadable log is strictly worse than one that
+        // reports WATCH and says why.
+        $size = @filesize($path);
 
-        if ($size === false || $size === 0) {
+        if ($size === false) {
+            return null;
+        }
+
+        if ($size === 0) {
             return '';
         }
 
-        $handle = fopen($path, 'rb');
+        $handle = @fopen($path, 'rb');
 
         if ($handle === false) {
-            return '';
+            return null;
         }
 
         $offset = max(0, $size - $maxBytes);
