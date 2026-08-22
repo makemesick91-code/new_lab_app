@@ -10,6 +10,28 @@ use Illuminate\Support\Facades\Http;
 
 class PilotPerformanceSnapshotService
 {
+    /**
+     * Operator-tunable byte budget for a single log-source scan.
+     *
+     * Named as a constant because the "not covered" warning quotes it: telling an
+     * operator to raise a budget is only useful if the message says which one.
+     */
+    public const LOG_SCAN_BUDGET_CONFIG_KEY = 'foundation_monitoring.log_scan.max_source_bytes';
+
+    /** Default budget. Unchanged from the value this monitor has always used. */
+    public const LOG_SCAN_BUDGET_DEFAULT_BYTES = 2 * 1024 * 1024;
+
+    /** Below this a scan is too small to say anything useful, so configuration cannot go lower. */
+    public const LOG_SCAN_BUDGET_MIN_BYTES = 64 * 1024;
+
+    /**
+     * Hard ceiling. Coverage now costs real reads, which is exactly the pressure that
+     * tempts someone to raise this without limit; a monitor that can be configured into
+     * an unbounded read is a denial-of-service switch, so the budget is clamped and an
+     * over-large source simply stays uncovered.
+     */
+    public const LOG_SCAN_BUDGET_MAX_BYTES = 64 * 1024 * 1024;
+
     public function __construct(
         private readonly PilotPerformanceSnapshotClassifier $classifier = new PilotPerformanceSnapshotClassifier,
         private readonly PilotPerformanceSnapshotLogAnalyzer $logAnalyzer = new PilotPerformanceSnapshotLogAnalyzer,
@@ -538,7 +560,7 @@ class PilotPerformanceSnapshotService
         // was correct only while the configured channel happened to write there; the
         // moment it does not, the monitor reports on a file the application has abandoned.
         $resolution = $this->resolveLogSources($logPathOverride, $cutoff, $now);
-        $scan = $this->scanLogSources($resolution['sources'], $since, $now, $cutoff, $warnings);
+        $scan = $this->scanLogSources($resolution['sources'], $since, $now, $warnings);
 
         if ($resolution['source_set_truncated'] ?? false) {
             // The window asked for more rotated days than the resolver will expand, so its
@@ -649,9 +671,31 @@ class PilotPerformanceSnapshotService
      * @param  list<string>  $warnings
      * @return array{metrics:array<string, mixed>|null, source_metrics:array<string, mixed>, reason:string}
      */
-    private function scanLogSources(array $sources, array $since, CarbonInterface $now, CarbonInterface $cutoff, array &$warnings): array
+    /**
+     * The scan budget, clamped to a range the monitor can honour.
+     *
+     * A source larger than the budget is read tail-only and therefore never counts as
+     * covered, so this value is the lever an operator pulls to make a busy host provable
+     * again. It is clamped rather than trusted: raising coverage must not be a way to
+     * turn the monitor into an unbounded read of an arbitrarily large file.
+     */
+    private function resolveLogScanBudgetBytes(): int
     {
-        $maxTailBytes = 2 * 1024 * 1024;
+        $configured = config(self::LOG_SCAN_BUDGET_CONFIG_KEY, self::LOG_SCAN_BUDGET_DEFAULT_BYTES);
+
+        if (! is_numeric($configured)) {
+            return self::LOG_SCAN_BUDGET_DEFAULT_BYTES;
+        }
+
+        return max(
+            self::LOG_SCAN_BUDGET_MIN_BYTES,
+            min(self::LOG_SCAN_BUDGET_MAX_BYTES, (int) $configured),
+        );
+    }
+
+    private function scanLogSources(array $sources, array $since, CarbonInterface $now, array &$warnings): array
+    {
+        $maxTailBytes = $this->resolveLogScanBudgetBytes();
 
         $aggregate = null;
         $descriptors = [];
@@ -707,10 +751,9 @@ class PilotPerformanceSnapshotService
                 continue;
             }
 
-            // Suppressed for the same reason as readTail(): the failure is handled on the
-            // next line, and a promoted warning would otherwise abort the whole snapshot.
-            $size = @filesize($path);
-            $tail = $size === false ? null : $this->readTail($path, $maxTailBytes);
+            // One stat, inside readTail(). A second one here would be a separate
+            // observation of a file that can change underneath both.
+            $tail = $this->readTail($path, $maxTailBytes);
 
             if ($tail === null) {
                 // The file is there but could not be read (permissions, a race, a vanished
@@ -728,23 +771,31 @@ class PilotPerformanceSnapshotService
             }
 
             $read++;
-            $metrics = $this->logAnalyzer->analyzeTail($tail, $since['label'], $since['seconds'], $now);
-            $metrics['tail_bytes_scanned'] = min((int) $size, $maxTailBytes);
-            $truncated = (int) $size > $maxTailBytes;
+            $coverage = $tail['coverage'];
+            $metrics = $this->logAnalyzer->analyzeTail($tail['content'], $since['label'], $since['seconds'], $now);
+            $metrics['tail_bytes_scanned'] = $coverage->bytesScanned;
+            $truncated = $coverage->isTruncated();
 
-            // Each source only has to reach back as far as it is responsible for: a
-            // day-file cannot hold anything from before its own day started.
-            $requiredFrom = $source->requiredCoverageFrom($cutoff);
-            $oldestScanned = $metrics['oldest_scanned_event_at'] ?? null;
-            $sourceCovered = ! $truncated
-                || ($oldestScanned !== null && Carbon::parse($oldestScanned)->lessThanOrEqualTo($requiredFrom));
+            // Coverage is settled by the read, never by what the read happened to contain.
+            //
+            // This used to ask whether the oldest event timestamp in the scanned tail was
+            // already older than the window cutoff, and if so declared the source covered
+            // — reasoning that the skipped prefix must be older still. That silently
+            // assumed a strictly chronological file and, worse, let the log's own contents
+            // certify bytes the monitor never opened: one line beginning
+            // `[2019-01-01 00:00:00]` inside the tail was enough to report "No fresh error
+            // events within lookback window" while a real in-window ERROR sat unread in
+            // the prefix. An event cannot testify about bytes nobody read, so the only
+            // thing that counts now is whether the read started at byte 0.
+            $sourceCovered = $coverage->isComplete();
 
             if ($truncated) {
                 $warnings[] = sprintf(
-                    'Log scan truncated to the last %d bytes of a %d byte file (%s); error counts for the %s window are a lower bound.',
-                    $maxTailBytes,
-                    $size,
+                    'Log scan truncated to the last %d bytes of a %d byte file (%s); the first %d bytes were not examined, so error counts for the %s window are a lower bound.',
+                    $coverage->bytesScanned,
+                    $coverage->fileBytes,
                     $file,
+                    $coverage->skippedBytes(),
                     $since['label'],
                 );
             }
@@ -752,13 +803,17 @@ class PilotPerformanceSnapshotService
             if (! $sourceCovered) {
                 $coverageComplete = false;
                 $warnings[] = sprintf(
-                    'Log scan of %s did not reach the start of the %s window; raise the scan budget or rotate the log.',
+                    'Log scan of %s did not reach the start of the %s window: %d bytes of the source were never read, and an event inside the window cannot be ruled out there. Raise %s or rotate the log.',
                     $file,
                     $since['label'],
+                    $coverage->skippedBytes(),
+                    self::LOG_SCAN_BUDGET_CONFIG_KEY,
                 );
             }
 
             $metrics['tail_truncated'] = $truncated;
+            $metrics['tail_bytes_skipped'] = $coverage->skippedBytes();
+            $metrics['source_bytes_total'] = $coverage->fileBytes;
             $descriptors[] = ['channel' => $source->channel, 'driver' => $source->driver, 'file' => $file, 'status' => 'read'];
             $aggregate = $aggregate === null ? $metrics : $this->mergeLogMetrics($aggregate, $metrics);
         }
@@ -828,6 +883,8 @@ class PilotPerformanceSnapshotService
             'latest_historical_error_at' => null,
             'oldest_scanned_event_at' => null,
             'tail_bytes_scanned' => 0,
+            'tail_bytes_skipped' => 0,
+            'source_bytes_total' => 0,
             'tail_truncated' => false,
             'window_fully_covered' => false,
         ];
@@ -888,6 +945,8 @@ class PilotPerformanceSnapshotService
             'undated_error_like_count',
             'timestamped_lines',
             'tail_bytes_scanned',
+            'tail_bytes_skipped',
+            'source_bytes_total',
         ] as $key) {
             $carry[$key] = (int) ($carry[$key] ?? 0) + (int) ($next[$key] ?? 0);
         }
@@ -945,7 +1004,17 @@ class PilotPerformanceSnapshotService
      * it was empty" apart from "could not read it at all". Those two must never collapse
      * into the same all-zero analysis.
      */
-    private function readTail(string $path, int $maxBytes): ?string
+    /**
+     * Read the last $maxBytes of a source, reporting what was physically examined.
+     *
+     * The coverage object is produced here, at the only place that knows the real read
+     * offset, so the caller cannot recompute it from a stale second stat() and drift.
+     * That drift is not hypothetical: coverage that disagrees with the bytes actually
+     * read is exactly how a monitor ends up certifying a region it never opened.
+     *
+     * @return array{content:string, coverage:MonitoringLogScanCoverage}|null
+     */
+    private function readTail(string $path, int $maxBytes): ?array
     {
         // Both calls are diagnostics-suppressed because their failure is handled
         // explicitly below. Without this the emitted warning is promoted to an
@@ -959,7 +1028,9 @@ class PilotPerformanceSnapshotService
         }
 
         if ($size === 0) {
-            return '';
+            // Nothing in the file, so nothing was skipped: an empty source is completely
+            // examined rather than merely unread.
+            return ['content' => '', 'coverage' => MonitoringLogScanCoverage::empty()];
         }
 
         $handle = @fopen($path, 'rb');
@@ -970,10 +1041,25 @@ class PilotPerformanceSnapshotService
 
         $offset = max(0, $size - $maxBytes);
         fseek($handle, $offset);
-        $content = stream_get_contents($handle) ?: '';
+        $content = stream_get_contents($handle);
         fclose($handle);
 
-        return $content;
+        if ($content === false) {
+            // The open succeeded but the read did not. `?: ''` used to collapse this into
+            // an empty string, which for a file below the budget is indistinguishable from
+            // "read the whole thing, found nothing" — coverage complete, zero events, OK,
+            // from a read that returned nothing. That is the same shape as the fopen
+            // failure MONITORING-LOGS-WATCH-ROOT-CAUSE-1 closed, and it is a false green.
+            // It also swallowed a legitimate one-byte file containing "0", which is falsy.
+            return null;
+        }
+
+        // strlen($content), not min($size, $maxBytes): if the file was appended to or
+        // rotated between the stat and the read, the honest number is what came back.
+        return [
+            'content' => $content,
+            'coverage' => MonitoringLogScanCoverage::fromRead($size, $offset, strlen($content)),
+        ];
     }
 
     /**

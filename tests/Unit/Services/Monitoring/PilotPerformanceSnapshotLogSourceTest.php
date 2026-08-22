@@ -225,10 +225,24 @@ it('never reports OK when the truncated scan never reached the start of the wind
         ->and($snapshot['overall_status'])->toBe('WATCH');
 });
 
-it('still reports OK when a truncated scan did reach back past the cutoff', function () {
-    // Negative control for the rule above. Truncation on its own must not raise an alarm,
-    // or every host writing more than the budget per day would sit in a permanent WATCH.
-    // Here the scanned tail still starts before the cutoff, so the window IS covered.
+it('no longer reports OK for a truncated scan just because the tail looks old', function () {
+    // SUPERSEDED by MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1.
+    //
+    // This test used to assert OK, and it was named "still reports OK when a truncated
+    // scan did reach back past the cutoff". Its reasoning was: the scanned tail begins
+    // before the cutoff, so the skipped prefix must be older still, so the window IS
+    // covered. Its stated motive was to keep a busy host out of a permanent WATCH.
+    //
+    // The motive was fair; the reasoning was not sound. "The tail begins before the
+    // cutoff" is a fact about the log's CONTENTS, and it only implies anything about the
+    // skipped prefix if the file is strictly chronological. Nothing enforces that, and
+    // the same expression is what made the false green reachable: prepend a real
+    // in-window ERROR to this very fixture and the monitor answered OK while the error
+    // sat unread. One line beginning `[2019-01-01 00:00:00]` was enough to buy coverage
+    // for two megabytes nobody opened.
+    //
+    // So truncation now costs coverage unconditionally. The permanent-WATCH concern is
+    // answered by the budget lever instead of by a guess — see the test below.
     $filler = '[2026-08-20 09:00:00] pilot.INFO: old benign traffic, entirely before the cutoff'.PHP_EOL;
 
     $snapshot = pilotSnapshotForLogContents(
@@ -237,6 +251,28 @@ it('still reports OK when a truncated scan did reach back past the cutoff', func
     $metrics = $snapshot['sections']['logs']['metrics'];
 
     expect($metrics['tail_truncated'])->toBeTrue()
+        ->and($metrics['window_fully_covered'])->toBeFalse()
+        ->and($snapshot['sections']['logs']['status'])->toBe('WATCH')
+        ->and($snapshot['overall_status'])->toBe('WATCH')
+        // The observation survives — it just no longer decides anything.
+        ->and($metrics['oldest_scanned_event_at'])->not->toBeNull();
+});
+
+it('reports OK again once the scan budget is large enough to read the whole source', function () {
+    // The recovery path, and the reason fail-closed-on-truncation is not a monitor that
+    // can never go green. Same file as above; the budget now covers it, so the read
+    // starts at byte 0 and the coverage claim is earned by the read rather than guessed
+    // from its contents.
+    $filler = '[2026-08-20 09:00:00] pilot.INFO: old benign traffic, entirely before the cutoff'.PHP_EOL;
+    $contents = str_repeat($filler, (int) ceil((2 * 1024 * 1024 + 8192) / strlen($filler)));
+
+    config()->set('foundation_monitoring.log_scan.max_source_bytes', 8 * 1024 * 1024);
+
+    $snapshot = pilotSnapshotForLogContents($contents);
+    $metrics = $snapshot['sections']['logs']['metrics'];
+
+    expect($metrics['tail_truncated'])->toBeFalse()
+        ->and($metrics['tail_bytes_skipped'])->toBe(0)
         ->and($metrics['window_fully_covered'])->toBeTrue()
         ->and($snapshot['sections']['logs']['status'])->toBe('OK')
         ->and($snapshot['overall_status'])->toBe('OK');
