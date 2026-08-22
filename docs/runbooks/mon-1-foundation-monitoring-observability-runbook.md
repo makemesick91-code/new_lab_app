@@ -94,6 +94,34 @@ php artisan inventory:procurement-workflow-audit --strict   # exit 2 on unsafe F
 php artisan rme:doctor-performance-access-audit --strict     # exit 2 on anomaly
 ```
 
+## Which log files does Monitoring read?
+
+Not a fixed path. Both the MON-1 `laravel_log` signal and the pilot snapshot resolve their
+sources from the effective logging configuration
+([rule 114](../../.cursor/rules/114-monitoring-log-source-authority.mdc)), so changing
+`LOG_CHANNEL` or `LOG_STACK` moves the monitor with the application instead of blinding it.
+
+To see what the running configuration resolves to — read-only, and safe on production
+because it boots nothing and writes no log record:
+
+```bash
+cd /var/www/asia-dental-lab-v2
+php -r '$c=require "bootstrap/cache/config.php"; $l=$c["logging"];
+  echo "default=".$l["default"]."\n";
+  echo "stack=".json_encode($l["channels"]["stack"]["channels"]??null)."\n";
+  echo "single.path=".($l["channels"]["single"]["path"]??"-")."\n";'
+```
+
+Do **not** use `php artisan tinker` for this. Tinker writes real `ERROR` records into the
+application log and will hold `logs = WATCH` for the next 24 hours
+([rule 113 R6](../../.cursor/rules/113-monitoring-logs-watch-truthfulness.mdc)).
+
+The snapshot reports what it actually read under `sections.logs.metrics`:
+`log_sources` (channel, driver, file, status), `log_sources_read`, `log_sources_absent`,
+`log_sources_unreadable`, `log_sources_unsupported`, and `source_coverage_complete`. If
+`source_coverage_complete` is `false`, the verdict is deliberately not OK — read the
+warnings to see which source was missing, unreadable, or unsupported.
+
 ## VPS smoke checklist (post-deploy)
 
 ```bash

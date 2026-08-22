@@ -17,7 +17,14 @@ it('masks sensitive data in the application-log error excerpt', function () {
         $absolute,
         "[2026-07-09 10:00:00] production.ERROR: KTP 3201234567890123 leaked password=super-secret-value budi@example.com\n"
     );
-    config(['foundation_monitoring.paths.laravel_log' => $relative]);
+    // The fixture is injected through the logging configuration because that is now the
+    // only authority for which file the monitor reads. MONITORING-LOG-SOURCE-RESILIENCE-1
+    // retired the separate `foundation_monitoring.paths.laravel_log` knob: a second path
+    // could disagree with the running logger and silently win.
+    config([
+        'logging.default' => 'single',
+        'logging.channels.single.path' => $absolute,
+    ]);
 
     try {
         $report = app(FoundationMonitoringStatusService::class)->collect();

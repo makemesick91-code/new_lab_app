@@ -167,23 +167,29 @@ it('treats an unreadable log file as WATCH and warns, never as OK', function () 
     expect($snapshot['sections']['logs']['status'])->toBe('WATCH')
         ->and($snapshot['sections']['logs']['metrics']['tail_bytes_scanned'])->toBe(0)
         ->and($snapshot['overall_status'])->toBe('WATCH')
-        ->and($snapshot['warnings'])->toContain('Could not open Laravel log file for reading; log health was not evaluated.');
+        ->and(implode(' | ', $snapshot['warnings']))
+        ->toContain('Could not open log source')
+        ->toContain('log health was not evaluated');
 });
 
-it('warns when the log file is absent so absence is never a silent clean bill of health', function () {
+it('treats an absent log source as WATCH, never as OK', function () {
     $snapshot = pilotSnapshotForLog(sys_get_temp_dir().'/pilot-log-definitely-absent-'.uniqid().'.log');
 
-    // The status stays OK on purpose: Laravel creates the file on first write, so a
-    // missing file normally means nothing was logged, and escalating here would fire on
-    // every fresh checkout — a permanent false WATCH, which is its own defect. What must
-    // never happen is reporting it silently, as if health had been verified.
-    expect($snapshot['sections']['logs']['status'])->toBe('OK')
+    // MONITORING-LOG-SOURCE-RESILIENCE-1 supersedes the previous contract here.
+    //
+    // This used to report OK, reasoning that Laravel creates the file on first write so a
+    // missing file just means nothing was logged. That reasoning holds for a log that has
+    // never existed — and not for the case this sprint is about, where the configured
+    // channel moved and the monitor is left staring at a path the application abandoned.
+    // Those two are indistinguishable from absence alone, so absence is now scored as what
+    // it is: the monitor did not verify anything. A quiet fresh checkout reporting WATCH
+    // is a cost worth paying to make a relocated log impossible to miss, and it is honest
+    // — Monitoring GO has never meant Monitoring green.
+    expect($snapshot['sections']['logs']['status'])->toBe('WATCH')
         ->and($snapshot['sections']['logs']['metrics']['file_exists'])->toBeFalse()
+        ->and($snapshot['sections']['logs']['metrics']['source_coverage_complete'])->toBeFalse()
         ->and($snapshot['sections']['logs']['reason'])->toContain('not verified')
-        ->and($snapshot['warnings'])->toContain(
-            'Laravel log file not found at the scanned path; log health was not verified. '
-            .'Confirm the configured log channel still writes to this file.'
-        );
+        ->and(implode(' | ', $snapshot['warnings']))->toContain('is missing; log health for that source was not verified');
 });
 
 it('reports that the scan was truncated so the counts are not read as a full-window total', function () {
