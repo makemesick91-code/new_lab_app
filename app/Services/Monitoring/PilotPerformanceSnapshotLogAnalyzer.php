@@ -302,17 +302,64 @@ class PilotPerformanceSnapshotLogAnalyzer
         return false;
     }
 
+    /**
+     * MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — reject dates the parser had to invent.
+     *
+     * `Carbon::parse()` is permissive: it throws on some impossible timestamps
+     * (month 13, day 32, hour 25) but silently *normalises* others by rolling them
+     * onto a neighbouring calendar date — `2026-02-30` becomes `2026-03-02`,
+     * `2026-08-00` becomes `2026-07-31`, and `2026-00-15` rolls back into the
+     * previous year as `2025-12-15`. The rolled value is a plausible instant that
+     * the log never recorded, so the event gets aged against the lookback window
+     * with false confidence instead of being reported as unageable.
+     *
+     * That confidence is the bug, in both directions. A corrupt header that rolls
+     * backwards out of the window is counted as an ordinary historical event and
+     * stops contributing to the logs verdict at all — a false green, and precisely
+     * the "an unageable ERROR must never disappear into logs=OK" guarantee this
+     * monitor is built on. A corrupt header that rolls forwards onto today is
+     * counted as fresh and publishes a `latest_fresh_error_at` for a moment that
+     * never happened — a false WATCH pinned to fabricated evidence.
+     *
+     * The check is therefore a faithfulness test, not a stricter grammar: parse as
+     * before, then require the result to reproduce the exact calendar digits that
+     * were written in the line. Anything that round-trips is accepted unchanged,
+     * which keeps every real format working — Laravel's `Y-m-d H:i:s`
+     * (`LogManager::$dateFormat`), Monolog's ISO-8601-with-offset default,
+     * fractional seconds, and explicit offsets all pass untouched. Only a value
+     * the parser had to *change* to make legal is rejected, and it is rejected
+     * into the existing null/unageable path, which already fails closed.
+     */
     private function extractTimestamp(string $line): ?CarbonInterface
     {
-        if (preg_match('/^\[(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[^\]]*)\]/', $line, $matches) !== 1) {
+        if (preg_match('/^\[((\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})[^\]]*)\]/', $line, $matches) !== 1) {
             return null;
         }
 
         try {
-            return Carbon::parse($matches[1]);
+            $timestamp = Carbon::parse($matches[1]);
         } catch (\Throwable) {
             return null;
         }
+
+        // The digits exactly as the log wrote them. Compared against the parsed
+        // value in its own timezone, so an explicit offset is still honoured while
+        // a normalised (rolled) date is caught.
+        $literal = sprintf(
+            '%s-%s-%s %s:%s:%s',
+            $matches[2],
+            $matches[3],
+            $matches[4],
+            $matches[5],
+            $matches[6],
+            $matches[7]
+        );
+
+        if ($timestamp->format('Y-m-d H:i:s') !== $literal) {
+            return null;
+        }
+
+        return $timestamp;
     }
 
     private function resolveTimestampParseStatus(int $errorLikeTotal, int $timestampedLines, int $orphanUnparseableCount, int $undatedErrorLikeCount = 0): string

@@ -1,0 +1,103 @@
+---
+description: MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — event freshness comes from the timestamp the log actually wrote; a date the parser had to invent is unageable, never a confident verdict
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Console/Commands/PilotPerformanceSnapshot*"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+alwaysApply: false
+---
+
+# MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — log timestamp authority
+
+Extends [113-monitoring-logs-watch-truthfulness](113-monitoring-logs-watch-truthfulness.mdc)
+and [114-monitoring-log-source-authority](114-monitoring-log-source-authority.mdc).
+Rule 114 settled **which files** the monitor may read. This rule settles **what an
+event's timestamp means** once a line has been read.
+
+## R1 — Freshness derives from the timestamp the log event carries
+
+An event's age is the distance between `now` and the timestamp embedded in that
+event's own header line, interpreted per the canonical log timestamp format. It is
+never derived from the file's `mtime`, never from the rotated filename's date, and
+never from the position of the line in the file.
+
+## R2 — A date the parser had to invent is not a date
+
+`Carbon::parse()` is inconsistently permissive: it throws on some impossible
+timestamps (`2026-13-01`, `2026-08-32`, hour `25`, minute `61`) but silently
+*normalises* others onto a neighbouring calendar date. Any parsed value that does
+not reproduce the exact calendar digits the line contained is **unageable** and
+must take the null/undated path, not a fresh/historical bucket.
+
+The check is a faithfulness test, not a format whitelist. Anything that round-trips
+is accepted unchanged — Laravel's `Y-m-d H:i:s`, Monolog's ISO-8601-with-offset,
+fractional seconds, explicit offsets. **Never replace it with a list of permitted
+formats:** production writes one format today, and a whitelist that guessed wrong
+would turn every real error into `undated` and produce a permanent, un-clearable
+WATCH storm.
+
+## R3 — Rollover moves timestamps in BOTH directions
+
+Do not repeat the superseded claim that rollover "only ever moves a timestamp
+later". It does not:
+
+| digits | becomes | direction |
+|---|---|---|
+| `2026-02-30` | `2026-03-02` | forward |
+| `2026-02-29` (non-leap) | `2026-03-01` | forward |
+| `2026-08-00` | `2026-07-31` | **backward**, previous month |
+| `2026-00-15` | `2025-12-15` | **backward, previous year** |
+
+A backward roll carries an error out of the window into `historical`, where it stops
+driving the verdict — a **false green**. A forward roll reports a fresh error and
+publishes a `latest_fresh_error_at` for an instant that never occurred — a **false
+WATCH** on fabricated evidence, which no operator can clear.
+
+## R4 — The header's trailing segment is not free text
+
+The trailing segment after the seconds field must not be handed to a permissive
+parser as-is. PHP relative modifiers (`-1 year`, `+5 days`, `next monday`) are
+honoured by `Carbon` and are an unbounded, caller-chosen age shift that otherwise
+still reports `timestamp_parse_status: ok`. R2's round-trip closes this class,
+because a modifier changes the digits.
+
+## R5 — The observation window is inclusive of its own start
+
+`event_timestamp >= window_start`, where `window_start = now - lookbackSeconds`.
+An event at exactly `now - 24h` is **fresh**; at `now - 24h - 1s` it is historical.
+Pin any change to this with the `now-23:59:59` / `now-24:00:00` / `now-24:00:01`
+triple.
+
+## R6 — Display timezone is not classification
+
+Rendering a timestamp in WITA (or any reporting timezone) is presentation only. The
+same instant must produce the same freshness verdict however it is written, and a
+UTC-day / local-day disagreement must never move an event across the window
+boundary.
+
+## R7 — Rotation boundary ≠ observation boundary
+
+A daily file's date boundary and the lookback window's boundary are independent. A
+previous day's file that intersects the active window is still inspected in full
+(rule 114). A timestamp fix must never reintroduce "current file only" logic.
+
+## R8 — `ClinicalClock` is not the monitoring clock
+
+Monitoring ages infrastructure events against `now()` in the application timezone.
+`ClinicalClock` is the clinical business-date authority (Asia/Makassar) and must not
+be wired into log ageing. The domains stay separate.
+
+## R9 — Unageable and future events fail closed
+
+An `ERROR` whose freshness cannot be determined must never be silently discarded and
+must never leave the logs section reporting OK. `undated_error_like_count > 0`
+forces `freshnessUndetermined` ⇒ WATCH, and OK is provably unreachable. A
+future-dated error is evidence of clock or parser corruption and must stay counted.
+
+## R10 — Rollover tests are deterministic
+
+Every calendar-boundary test freezes the clock (`Carbon::setTestNow`). A test that
+only fails in January, on a month end, or at midnight is not a regression test. The
+suite is named to match the `PilotPerformanceSnapshot` token in **both** NSF-R011
+critical-gate variants, so it runs on a real authoritative CI path.
