@@ -1,35 +1,43 @@
-# MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — Sprint Manifest
+# RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1 — Sprint Manifest
 #
-# Closes the coverage-anchor residual that MONITORING-LOG-TIMESTAMP-ROLLOVER-1 recorded
-# but did not test: that `oldest_scanned_event_at` "may be anchorable by an injected valid
-# ancient benign log line". It is, and the consequence is a false green.
+# Closes the residual that ROLL-5-1A left in RestoreDrillEvidenceService::ageHours():
+# a permissive strtotime() timestamp authority. The residual was audited and
+# reproduced before it was fixed — the objective was never "replace strtotime()
+# because it looks old".
 #
-# A log source larger than the scan budget is read tail-only, so its prefix is skipped.
-# Coverage was then granted when the oldest event timestamp inside the SCANNED TAIL
-# already sat before the lookback cutoff — reasoning that the skipped prefix must be older
-# still. That silently assumed a strictly chronological file, and it made log CONTENT the
-# authority over bytes the monitor never opened. Reproduced end to end: a real in-window
-# `pilot.ERROR` in the unread prefix, one line beginning `[2019-01-01 00:00:00]` in the
-# tail, and the section reported OK — "No fresh error events within lookback window."
-# Two files identical but for that single line differed WATCH vs OK.
+# Three defects compounded into one false green. (1) `max(0.0, …)` clamped a
+# negative age to zero, so ANY future instant reported as the freshest value
+# representable. (2) strtotime() normalises invalid calendar dates in BOTH
+# directions, rolls out-of-range fields over, ignores trailing junk, and executes
+# relative modifiers — so "2025-01-01T00:00:00Z +2 years", a genuinely 20-month-old
+# drill, resolved into the future and via (1) became maximally fresh. (3) when
+# parsing failed the age fell back to filemtime(), so a malformed evidence file
+# written today read as a drill run today.
 #
-# Coverage is now a fact about the read: a source counts as covered only when the read
-# began at byte 0. MonitoringLogScanCoverage takes byte offsets and no timestamp at all,
-# so the comparison cannot be reintroduced by accident. `oldest_scanned_event_at` survives
-# as an observation and decides nothing. The scan budget becomes the operator's lever, and
-# is clamped so buying coverage can never become an unbounded read.
+# 13 literals that are not valid evidence produced GO. The age decides `stale`,
+# which decides the restore_drill_evidence signal, which feeds ROLL-5 stage
+# clearance — a decision defect, not a display defect. Reproduced end to end, and
+# 28 of 56 new tests fail when the fix is reverted.
+#
+# Evidence timestamps now parse format-exactly against the one form the producer
+# writes (date -u +%Y-%m-%dT%H:%M:%SZ) and must round-trip byte-for-byte. Three
+# states are explicitly unageable — missing, unparseable, future — each yielding a
+# null age plus its own issue that forces WATCH, because a null age is not "stale"
+# and would otherwise fall through into GO. Every legitimate canonical literal keeps
+# its exact age and verdict; production holds no restore-drill evidence at all, so
+# nothing historical is invalidated.
 
-id: MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1
+id: RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1
 type: RUNTIME_FIX
-module: Monitoring
-title: "Monitoring log coverage is proven by the bytes actually read; a timestamp inside the scan cannot certify bytes outside it"
+module: Foundation
+title: "Restore Drill evidence age is computed only from a timestamp that faithfully identifies its own instant"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # PilotPerformanceSnapshotService, MonitoringLogScanCoverage, MonitoringLogSource
+runtime_change: true          # RestoreDrillEvidenceService, RestoreDrillTimestampParser, RolloutRestoreDrillEvidenceCommand, config/rollout_readiness.php
 schema_change: false
 frontend_change: false
-security_impact: true         # closes a content-controlled integrity path (false green); no policy/middleware/permission/route change
+security_impact: true         # closes a false-fresh integrity path in operational safety evidence; no policy/middleware/permission/route change
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -38,7 +46,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: monitoring-log-coverage-anchor-injection-1-go
+go_tag: restore-drill-timestamp-faithfulness-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0

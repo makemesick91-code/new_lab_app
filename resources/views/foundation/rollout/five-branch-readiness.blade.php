@@ -134,6 +134,10 @@
                 @endif
                 @if (array_key_exists('age_hours', $restoreDetails) && $restoreDetails['age_hours'] !== null)
                     <div class="flex justify-between gap-2"><dt class="text-ink-muted">Usia bukti</dt><dd>{{ $restoreDetails['age_hours'] }} jam</dd></div>
+                @elseif (! empty($restoreDetails['timestamp_status']) && $restoreDetails['timestamp_status'] !== 'valid')
+                    {{-- Say plainly that the age is unknown. An absent row and an
+                         untrustworthy timestamp must not look the same to an operator. --}}
+                    <div class="flex justify-between gap-2"><dt class="text-ink-muted">Usia bukti</dt><dd class="text-warning-700">tidak dapat dipastikan ({{ $restoreDetails['timestamp_status'] }})</dd></div>
                 @endif
             </dl>
             @if (! empty($restoreDetails['verification']))
