@@ -10,11 +10,11 @@ use App\Modules\MedicalRecord\Interfaces\MedicalRecordRepositoryInterface;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\MedicalRecord\Services\PatientRmWorkspaceResolver;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class MedicalRecordHandwritingController extends Controller
@@ -116,7 +116,10 @@ class MedicalRecordHandwritingController extends Controller
             now()->format('YmdHis'),
         );
 
-        Storage::disk('public')->put($path, $decoded);
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence is written to
+        // the private clinical disk. It must never reach the 'public' disk,
+        // which the web server serves without authentication.
+        ClinicalEvidenceStorage::disk()->put($path, $decoded);
 
         $hash = hash('sha256', $decoded);
 

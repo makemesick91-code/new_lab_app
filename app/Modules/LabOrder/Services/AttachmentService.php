@@ -7,6 +7,7 @@ use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Models\Attachment;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Models\LabOrder;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -36,7 +37,10 @@ class AttachmentService
             $storedName = Str::uuid()->toString().($extension ? '.'.$extension : '');
             $directory = 'lab-orders/'.$order->order_number;
 
-            $path = $file->storeAs($directory, $storedName, 'public');
+            $path = $file->storeAs($directory, $storedName, ClinicalEvidenceStorage::diskName());
+            // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — these attachments are
+            // patient-linked evidence and must not land on the 'public' disk,
+            // which the web server serves without authentication.
 
             $attachment = $this->attachments->create([
                 'entity_type' => LabOrder::ENTITY_TYPE,

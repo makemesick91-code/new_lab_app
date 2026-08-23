@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 beforeEach(function () {
     seedAccessControl();
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 });
 
 function sprint6DeliveryFor(?User $courier = null): Delivery

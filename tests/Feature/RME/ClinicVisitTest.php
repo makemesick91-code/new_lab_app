@@ -988,6 +988,7 @@ it('print view no longer advertises a missing odontogram', function () {
 
 it('print view displays saved handwriting preview', function () {
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
@@ -1013,7 +1014,7 @@ it('print view displays saved handwriting preview', function () {
         'handwriting_path' => 'handwritings/test/print-preview.png',
     ]);
 
-    Storage::disk('public')->put('handwritings/test/print-preview.png', base64_decode(
+    Storage::disk('clinical_evidence')->put('handwritings/test/print-preview.png', base64_decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
         true
     ));
@@ -1025,7 +1026,8 @@ it('print view displays saved handwriting preview', function () {
         ->assertOk()
         ->assertSee('RME Tulisan Tangan')
         ->assertSee('Tersimpan pada')
-        ->assertSee($handwriting->previewUrl(), false);
+        ->assertSee('data:image/png;base64,', false)
+        ->assertDontSee($handwriting->previewUrl(), false);
 });
 
 it('print view displays empty handwriting message when none exists', function () {
@@ -1053,6 +1055,7 @@ it('print view displays empty handwriting message when none exists', function ()
 
 it('print view does not require SOAP fields when handwriting exists', function () {
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
@@ -1083,7 +1086,7 @@ it('print view does not require SOAP fields when handwriting exists', function (
         'handwriting_path' => 'handwritings/test/print-no-soap.png',
     ]);
 
-    Storage::disk('public')->put('handwritings/test/print-no-soap.png', base64_decode(
+    Storage::disk('clinical_evidence')->put('handwritings/test/print-no-soap.png', base64_decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
         true
     ));
@@ -1093,7 +1096,8 @@ it('print view does not require SOAP fields when handwriting exists', function (
     $this->actingAs($this->manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee($handwriting->previewUrl(), false)
+        ->assertSee('data:image/png;base64,', false)
+        ->assertDontSee($handwriting->previewUrl(), false)
         ->assertDontSee('Subjektif (Anamnesis)')
         ->assertDontSee('Objektif (Pemeriksaan)')
         ->assertDontSee('Assessment (Diagnosis)')

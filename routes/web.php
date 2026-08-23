@@ -48,6 +48,7 @@ use App\Modules\Invoice\Controllers\PaymentController;
 use App\Modules\LabCapacity\Controllers\LabCapacityConfigController;
 use App\Modules\LabCapacity\Controllers\LabTechnicianCapacityController;
 use App\Modules\LabOrder\Controllers\AttachmentController;
+use App\Modules\LabOrder\Controllers\AttachmentDownloadController;
 use App\Modules\LabOrder\Controllers\ExternalLabController;
 use App\Modules\LabOrder\Controllers\LabCaseCandidateController;
 use App\Modules\LabOrder\Controllers\LabDeliveryTaskController;
@@ -69,12 +70,14 @@ use App\Modules\MedicalRecord\Controllers\DiagnosisRolloutController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordDiagnosisController;
 use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingController;
+use App\Modules\MedicalRecord\Controllers\MedicalRecordHandwritingImageController;
 use App\Modules\Odontogram\Controllers\OdontogramController;
 use App\Modules\Patient\Controllers\LegacyPatientImportController;
 use App\Modules\Patient\Controllers\PatientAuditController;
 use App\Modules\Patient\Controllers\PatientController;
 use App\Modules\Patient\Controllers\PatientDocumentController;
 use App\Modules\PaymentMethod\Controllers\PaymentMethodController;
+use App\Modules\Prescription\Controllers\RmePrescriptionCanvasController;
 use App\Modules\Prescription\Controllers\RmePrescriptionController;
 use App\Modules\Production\Controllers\AssignmentController as ProductionAssignmentController;
 use App\Modules\Production\Controllers\ProductionStepController;
@@ -665,6 +668,26 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
             ->middleware('permission:view_rme_consents|manage_rme_consents')
             ->name('consents.signature');
 
+        /*
+         * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — authorised read path for native
+         * clinical evidence binaries.
+         *
+         * These images were previously served straight off the public disk by
+         * the web server, with no authentication at all. They are now streamed
+         * only here, behind this group's RME permission gate plus the record's
+         * own policy (role, branch isolation and doctor/patient scope).
+         *
+         * Deliberately NOT behind 'visit.room': this reads evidence that already
+         * exists, and the cashier and print surfaces must keep working after the
+         * encounter is over.
+         */
+        Route::get('handwritings/{handwriting}/image', [MedicalRecordHandwritingImageController::class, 'legacy'])
+            ->name('handwritings.image');
+        Route::get('handwriting-pages/{handwritingPage}/image', [MedicalRecordHandwritingImageController::class, 'page'])
+            ->name('handwriting-pages.image');
+        Route::get('prescriptions/{rmePrescription}/canvas/{kind}', [RmePrescriptionCanvasController::class, 'show'])
+            ->name('prescriptions.canvas');
+
         // Sprint 20 Phase 1.6 — Odontogram Print View
         Route::get('odontograms/{odontogram}/print', [OdontogramController::class, 'print'])
             ->name('odontograms.print');
@@ -986,6 +1009,17 @@ Route::middleware('auth')->group(function () {
         ->name('lab-orders.attachments.upload');
     Route::delete('lab-orders/{labOrder}/attachments/{attachment}', [AttachmentController::class, 'destroy'])
         ->name('lab-orders.attachments.destroy');
+
+    /*
+     * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — attachments and legacy PoD
+     * signatures used to be linked straight off the publicly served disk.
+     * They now stream from the private clinical disk, each authorised against
+     * the policy of the entity that owns it.
+     */
+    Route::get('attachments/{attachment}/download', [AttachmentDownloadController::class, 'show'])
+        ->name('attachments.download');
+    Route::get('deliveries/{delivery}/receiver-signature', [AttachmentDownloadController::class, 'deliverySignature'])
+        ->name('deliveries.receiver-signature');
 });
 
 /*

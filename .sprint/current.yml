@@ -1,52 +1,53 @@
-# RESTORE-DRILL-EVIDENCE-READ-STATE-1 — Sprint Manifest
+# STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — Sprint Manifest
 #
-# Restore-drill evidence gates ROLL-5 Stage 1. The service read it with
-# `(string) @file_get_contents($path)`, which turns a failed read (`false`) into
-# an empty string. An empty string is indistinguishable from a file that
-# genuinely held nothing, so by the time the JSON decoder saw it the only
-# surviving fact was "this did not parse" — and every upstream fault was reported
-# to the operator as malformed JSON, including faults where not one byte was read.
+# ACTIVE CLINICAL-DATA CONFIDENTIALITY INCIDENT, remediated.
 #
-# MEASURED AT THE BASE COMMIT, not assumed. Twelve fixtures against unmodified
-# code as uid 1000 (so `chmod 000` genuinely denies the read) produced four real
-# conflations: a zero-byte file reported as "no evidence file"; an unreadable
-# file reported as "JSON cannot be parsed"; a failed read likewise; and
-# well-formed JSON of the wrong shape (`12345`, `null`) also reported as
-# unparseable. There is NO false GO here and none was introduced — every one of
-# those states was already non-GO. This is a state-integrity defect.
+# WHAT WAS FOUND. A storage inventory at the base commit found native clinical
+# evidence being written to Laravel's `public` disk. That disk is symlinked into
+# the document root, so nginx serves it directly — no session, no policy, no
+# branch check. PROVEN ON PRODUCTION, not inferred: a synthetic 32-byte non-PII
+# probe written into storage/app/public/handwritings/ was fetched over plain
+# HTTPS with no credentials and returned HTTP 200 with byte-identical content.
+# The probe was deleted. No patient file was ever retrieved to prove the point.
 #
-# ALREADY KNOWN, AND ACCEPTED. CriticalGateWarningContractTest carried a note
-# saying this service "casts a failed read to a string, so an unreadable evidence
-# file reports 'invalid JSON' rather than 'unreadable'", judged acceptable
-# because it still failed closed. The fail-closed half was correct and was
-# re-measured. The half that does not hold up is that a less specific reason is
-# therefore harmless: it sends an operator to fix a document's format when the
-# fault is a permission or an I/O failure. That reasoning is superseded in place.
+# SCALE. 46 RME handwriting images, 8 prescription/doctor-signature canvases and
+# 1 lab attachment — 55 patient-linked artifacts. Keys were only weakly
+# unguessable: handwritings/{branch}/{visit}/handwriting_p{N}_{YmdHis}.png, whose
+# sole entropy is a one-second timestamp, against an unauthenticated endpoint
+# with no rate limiting.
 #
-# THE FIX. A new RestoreDrillEvidenceReader decides the read outcome once, before
-# any content is interpreted, and never coerces `false` to a string. The decode
-# stage is split by json_last_error() so "the decoder rejected these bytes" and
-# "these bytes are not an evidence object" stop sharing a reason.
+# THIS VIOLATED THE PROJECT'S OWN SHIPPED RULE. STORAGE-R002 already said
+# "never a raw public disk URL" — but it was written for OBJECT storage, and
+# nothing enforced it for the LOCAL public disk. Every clinical module that
+# landed after STORAGE-1 (Lab evidence, SATUSEHAT, LegacyRme) was never audited
+# against it. STORAGE-R006 now states the rule for any served disk, and a static
+# governance test enforces it in CI.
 #
-# WHAT WAS DELIBERATELY NOT CHANGED. Candidate selection keeps its exact
-# `is_file && filesize > 0` predicate. Letting a read fault fall through to the
-# next candidate would have been strictly MORE PERMISSIVE — a secondary path
-# answering for a canonical file nobody could read. The measured differential
-# across all 13 states is READINESS_DELTAS = 0: every verdict is preserved, only
-# the reasons became true.
+# CONTAINMENT CAME FIRST, before any code: one reversible nginx deny on
+# /storage/, no file mutation, verified after the graceful reload settled.
+#
+# WHY THE MIGRATION IS SAFE. Object keys are preserved verbatim on the new disk,
+# so NO database column is rewritten — a migration that never touches the
+# database cannot corrupt a clinical reference. Copy and purge are separate
+# phases: nothing is deleted before a byte-identical SHA-256 copy is proven.
+#
+# STORAGE-1 IS NOT RE-RUN. Its GO tag (storage-1-object-storage-readiness-go @
+# d8a9c73) is untouched and not moved. Its object-storage scaffold stays OFF and
+# production stays on local storage; object-storage cutover remains a separate,
+# separately-authorized sprint.
 
-id: RESTORE-DRILL-EVIDENCE-READ-STATE-1
-type: RUNTIME_FIX
-module: Foundation
-title: "Restore-drill evidence reports the stage at which it stopped being trustworthy, without any state becoming more permissive"
+id: STORAGE-PUBLIC-CLINICAL-EVIDENCE-1
+type: SECURITY_FIX
+module: Storage
+title: "Clinical evidence moved off the publicly served disk to a private, policy-gated storage authority"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # new read-state boundary in the restore-drill evidence path
-schema_change: false
-frontend_change: false
-security_impact: true         # touches a fail-closed readiness gate; the differential proves no state loosened
-branch_isolation_impact: false
+runtime_change: true          # new private disk, new authorized read routes, write paths repointed
+schema_change: false          # object keys preserved verbatim; no column rewritten
+frontend_change: false        # Blade only; no JS/CSS/Vite asset change
+security_impact: true         # this sprint IS the security fix
+branch_isolation_impact: false # reuses MedicalRecordPolicy / RmePrescriptionPolicy unchanged
 ledger_impact: false
 
 deploy_required: true
@@ -54,7 +55,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: restore-drill-evidence-read-state-1-go
+go_tag: storage-public-clinical-evidence-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
@@ -64,3 +65,23 @@ full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_
 # prescription WhatsApp provider stays on hold pending its external dependency.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+
+# SCOPE AUDIT — KNOWN, JUSTIFIED, AND DELIBERATELY NOT SILENCED.
+#
+# `sprint:scope-audit` returns NO-GO: SECURITY_FIX sets allow_refactor=false and
+# this change touches 14 app/*.php files, over its >10 "looks like a refactor"
+# threshold. The heuristic is doing its job — it exists so a fix cannot smuggle a
+# refactor — but it assumes a security fix is narrow.
+#
+# This one cannot be. FOUR independent services wrote clinical evidence to the
+# served disk (MedicalRecord handwriting, Prescription canvases, LabOrder
+# attachments, Delivery PoD photos), and each has a read side that had to move
+# with it. Fixing any subset would have left the rest exposed, so 14 files is the
+# true minimum for this incident, not breadth for its own sake.
+#
+# The type was NOT downgraded to make the gate pass. SECURITY_FIX is audit_level
+# 3 and escalates security_regression + full_required; reclassifying to a type
+# with allow_refactor=true would have bought a green line by WEAKENING the gates
+# that matter. The audit is advisory (not a CI or deploy gate), so it is recorded
+# here as a justified exception instead.
+scope_audit_exception: "14 app/*.php files vs >10 threshold — four independent public-disk writers, each with a read side; type deliberately kept at SECURITY_FIX"

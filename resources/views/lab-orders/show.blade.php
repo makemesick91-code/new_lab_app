@@ -205,7 +205,7 @@
                                 <td class="px-3 py-2 text-ink-soft">{{ $attachment->uploader?->name ?? '—' }}</td>
                                 <td class="px-3 py-2">
                                     <div class="flex items-center justify-end gap-2">
-                                        <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="text-brand-600 hover:text-brand-700">Unduh</a>
+                                        <a href="{{ route('attachments.download', $attachment) }}" target="_blank" class="text-brand-600 hover:text-brand-700">Unduh</a>
                                         @can('deleteAttachment', $order)
                                             <form method="POST" action="{{ route('lab-orders.attachments.destroy', [$order, $attachment]) }}" onsubmit="return confirm('Hapus lampiran ini?');">
                                                 @csrf @method('DELETE')

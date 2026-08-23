@@ -7,7 +7,11 @@
     // label maps went with it: they were only ever read by the removed block.
     $medicalRecord = $visit->medicalRecord;
     // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
-    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages()->filter(fn ($p) => $p['has_content']) : collect();
+    // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1: pass true so handwriting is embedded
+    // inline. This partial is shared by the browser print view and the dompdf
+    // PDF export, and dompdf cannot present a session cookie to the authorised
+    // image route, so a linked image would export blank.
+    $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect();
 @endphp
 
 {{-- Patient & Visit Info --}}

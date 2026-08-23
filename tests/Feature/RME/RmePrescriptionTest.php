@@ -117,8 +117,8 @@ it('can store prescription with prescription and signature canvases', function (
     expect($prescription)->not->toBeNull()
         ->and($prescription->prescription_canvas_path)->not->toBeNull()
         ->and($prescription->doctor_signature_canvas_path)->not->toBeNull()
-        ->and(Storage::disk('public')->exists($prescription->prescription_canvas_path))->toBeTrue()
-        ->and(Storage::disk('public')->exists($prescription->doctor_signature_canvas_path))->toBeTrue();
+        ->and(Storage::disk('clinical_evidence')->exists($prescription->prescription_canvas_path))->toBeTrue()
+        ->and(Storage::disk('clinical_evidence')->exists($prescription->doctor_signature_canvas_path))->toBeTrue();
 });
 
 it('can update an existing prescription', function () {
@@ -155,8 +155,8 @@ it('can print prescription with fields and canvas images', function () {
         'allergy_note' => 'Paracetamol',
     ]);
 
-    $rxUrl = $prescription->fresh()->prescriptionCanvasUrl();
-    $sigUrl = $prescription->fresh()->signatureCanvasUrl();
+    $rxUrl = $prescription->fresh()->prescriptionCanvasDataUri();
+    $sigUrl = $prescription->fresh()->signatureCanvasDataUri();
 
     $this->actingAs($viewer)
         ->get(route('rme.prescriptions.print', $prescription))

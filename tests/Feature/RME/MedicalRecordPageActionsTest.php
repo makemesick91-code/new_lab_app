@@ -51,6 +51,7 @@ function mrPageVisit(array $recordAttrs = []): ClinicVisit
 function mrPageWithHandwriting(array $recordAttrs = []): ClinicVisit
 {
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $visit = mrPageVisit($recordAttrs);
     $record = MedicalRecord::where('clinic_visit_id', $visit->id)->firstOrFail();

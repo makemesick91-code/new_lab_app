@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 beforeEach(function () {
     seedAccessControl();
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 });
 
 it('uploads QC evidence and links it to the order', function () {
@@ -25,7 +26,7 @@ it('uploads QC evidence and links it to the order', function () {
     expect($attachment->entity_type)->toBe('trx_lab_orders');
     expect($attachment->entity_id)->toBe($order->id);
     expect($attachment->category)->toBe('QC_PHOTO');
-    Storage::disk('public')->assertExists($attachment->file_path);
+    Storage::disk('clinical_evidence')->assertExists($attachment->file_path);
 });
 
 it('creates an audit log on QC evidence upload', function () {

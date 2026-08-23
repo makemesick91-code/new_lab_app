@@ -45,6 +45,11 @@ class StorageGovernanceService
                 'title' => 'No destructive migration without a separate plan',
                 'description' => 'Production/storage migrations must not delete or move existing files without an explicit, separate migration plan.',
             ],
+            [
+                'id' => 'STORAGE-R006',
+                'title' => 'Clinical evidence never on a publicly served disk',
+                'description' => 'Patient-linked clinical evidence (RME handwriting, prescription and doctor-signature canvases, patient documents, lab and delivery attachments) must be written only to a private disk that the web server does not serve. It must never be placed on a disk that is symlinked into the document root, and it must be read back solely through an authenticated route whose policy enforces role, branch and patient scope. Introduced by STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 after clinical images were found retrievable without any authentication.',
+            ],
         ];
     }
 

@@ -175,6 +175,7 @@ it('rme print page includes finalized medical record status', function () {
 
 it('rme print page includes handwriting preview when saved', function () {
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $visit = hardenVisit($this->branch);
     $record = MedicalRecord::factory()->final()->create([
@@ -191,7 +192,7 @@ it('rme print page includes handwriting preview when saved', function () {
         'handwriting_path' => 'handwritings/test/harden-print.png',
     ]);
 
-    Storage::disk('public')->put('handwritings/test/harden-print.png', base64_decode(
+    Storage::disk('clinical_evidence')->put('handwritings/test/harden-print.png', base64_decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
         true
     ));
@@ -202,7 +203,12 @@ it('rme print page includes handwriting preview when saved', function () {
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
         ->assertSee('RME Tulisan Tangan')
-        ->assertSee($handwriting->previewUrl(), false);
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — the print composition embeds the
+        // image inline and must NOT carry a link: dompdf cannot authenticate, so
+        // a URL here would export blank, and a public URL is what this sprint
+        // removed. Asserting both halves keeps either regression visible.
+        ->assertSee('data:image/png;base64,', false)
+        ->assertDontSee($handwriting->previewUrl(), false);
 });
 
 it('rme print page shows safe empty handwriting message when no handwriting exists', function () {

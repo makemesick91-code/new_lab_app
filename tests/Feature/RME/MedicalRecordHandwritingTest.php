@@ -16,6 +16,7 @@ beforeEach(function () {
     seedAccessControl();
 
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $this->manager = userWith(['manage_clinic_visits']);
@@ -259,7 +260,7 @@ it('viewer sees handwriting preview on draft without edit canvas', function () {
         'handwriting_path' => 'handwritings/test/preview.png',
     ]);
 
-    Storage::disk('public')->put('handwritings/test/preview.png', base64_decode(
+    Storage::disk('clinical_evidence')->put('handwritings/test/preview.png', base64_decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
         true
     ));
@@ -325,7 +326,7 @@ it('blank/transparent handwriting submission does not erase existing handwriting
     $fresh = $this->record->fresh()->latestHandwriting();
     expect($fresh)->not->toBeNull()
         ->and($fresh->handwriting_path)->toBe($existingPath);
-    expect(Storage::disk('public')->exists($existingPath))->toBeTrue();
+    expect(Storage::disk('clinical_evidence')->exists($existingPath))->toBeTrue();
 });
 
 it('blank handwriting submission is rejected even when none exists yet (Sprint 59.1)', function () {
@@ -376,7 +377,7 @@ it('valid handwriting update overwrites the stored path with real content (Sprin
 
     $latest = $this->record->fresh()->latestHandwriting();
     expect($latest)->not->toBeNull();
-    expect(Storage::disk('public')->exists($latest->handwriting_path))->toBeTrue();
+    expect(Storage::disk('clinical_evidence')->exists($latest->handwriting_path))->toBeTrue();
 });
 
 it('latestHandwriting returns the most recently saved record', function () {

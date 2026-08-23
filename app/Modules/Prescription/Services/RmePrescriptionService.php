@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Interfaces\RmePrescriptionRepositoryInterface;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -201,7 +202,9 @@ class RmePrescriptionService
             now()->format('YmdHis'),
         );
 
-        Storage::disk('public')->put($path, $bytes);
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — prescription and signature
+        // canvases are clinical evidence and stay on the private disk.
+        ClinicalEvidenceStorage::disk()->put($path, $bytes);
 
         return $path;
     }
