@@ -193,16 +193,62 @@ class PilotPerformanceSnapshotClassifier
             || $undatedErrorLikeCount > 0
             || ($orphanUnparseableCount > 20 && $timestampParseStatus !== 'ok');
 
-        if ($freshCount === 0) {
-            // Fail closed. With no countable fresh event AND no trustworthy way to age
-            // the log, "no fresh errors" is not a finding — it is an absence of evidence,
-            // and it may never be reported as OK.
+        /*
+         * MONITORING-UNDATED-SEVERITY-ESCALATION-1 — unageable ERROR evidence carries
+         * weight, not merely presence.
+         *
+         * `undated_error_like_count` and `fresh_error_like_count` are produced by the
+         * same event-grouping pass in the analyzer and carry the same unit: one
+         * error-like log event. A run of N identical ERROR events counts N in the fresh
+         * bucket when its headers parse and N in the undated bucket when they do not.
+         * The two differ in whether the monitor can say *when* the error happened —
+         * never in whether an error happened at all.
+         *
+         * Rule 113 R2 and rule 115 R9 already settled what to do with that: an
+         * unageable ERROR may never read as OK, because absence of evidence is not
+         * evidence of absence. Both statements describe a floor, and the floor they
+         * describe is exactly the fresh ladder's first rung — `undated > 0` forcing
+         * WATCH is `freshCount >= 1` forcing WATCH. The remaining rungs were simply
+         * never extended, so undated evidence contributed one unit of severity and
+         * then stopped: 1 and 1000 returned the same WATCH, and the identical burst of
+         * 150 events reported FIX with parseable dates and WATCH without them. Two
+         * levels of operational confidence bought by corruption in a date field.
+         *
+         * Since the monitor cannot rule out that an unageable event falls inside the
+         * window, the fail-closed reading is that it does, and the canonical in-window
+         * ladder is the one that applies. The two buckets are therefore summed onto it.
+         *
+         * Summing only ever raises: the total is >= the parsed fresh count, so the
+         * parsed count still sets the floor and rule 113 R4 ("unparseable noise
+         * escalates, it never masks") holds by construction. It is also monotonic in
+         * both arguments — more adverse evidence can never buy a calmer verdict.
+         *
+         * Two alternatives were rejected on evidence. Classifying the buckets
+         * independently and taking the worst understates mixed evidence — 15 fresh
+         * plus 15 undated is up to 30 in-window events reported as WATCH, which is R4's
+         * failure mode relocated to another boundary. Giving undated evidence its own,
+         * higher thresholds would discount evidence the monitor has no basis to
+         * discount, which is the false confidence this reasoning exists to remove.
+         *
+         * Deliberately not done: `criticalFreshCount` stays fresh-only. The analyzer
+         * tests CRITICAL_PATTERN only on events it could age, so there is no measured
+         * critical count for the undated bucket, and inventing one would assert
+         * severity the monitor never observed. Volume escalation covers the case.
+         */
+        $errorEvidenceCount = $freshCount + $undatedErrorLikeCount;
+
+        if ($errorEvidenceCount === 0) {
+            // No countable error evidence of either kind. `undatedErrorLikeCount` is
+            // necessarily zero here, so freshness can only be undetermined because of a
+            // parse failure or surviving orphan lines.
+            //
+            // Fail closed. With nothing countable AND no trustworthy way to age the log,
+            // "no fresh errors" is not a finding — it is an absence of evidence, and it
+            // may never be reported as OK.
             if ($freshnessUndetermined) {
                 return [
                     'status' => self::STATUS_WATCH,
-                    'reason' => $undatedErrorLikeCount > 0
-                        ? 'Error events carry unparseable timestamps and could not be aged; freshness is unknown.'
-                        : 'Unable to determine freshness from log timestamps.',
+                    'reason' => 'Unable to determine freshness from log timestamps.',
                 ];
             }
 
@@ -237,8 +283,8 @@ class PilotPerformanceSnapshotClassifier
         }
 
         $status = match (true) {
-            $freshCount > 100 => self::STATUS_FIX,
-            $freshCount > 20 => self::STATUS_INVESTIGATE,
+            $errorEvidenceCount > 100 => self::STATUS_FIX,
+            $errorEvidenceCount > 20 => self::STATUS_INVESTIGATE,
             default => self::STATUS_WATCH,
         };
 
@@ -255,7 +301,18 @@ class PilotPerformanceSnapshotClassifier
             $status = self::worst($status, self::STATUS_WATCH);
         }
 
-        $reason = match ($status) {
+        // An operator has to be able to act on the verdict, so the reason names what
+        // drove it. When untrusted timestamps contributed, say so — the remedy for a
+        // corrupt date field is not the remedy for a genuine error burst. The
+        // fresh-only wording is preserved verbatim so an unaffected verdict reads
+        // exactly as it always has.
+        $reason = $undatedErrorLikeCount > 0
+            ? match ($status) {
+                self::STATUS_FIX => 'Error events exceed FIX threshold within lookback window; some carry unparseable timestamps and could not be aged.',
+                self::STATUS_INVESTIGATE => 'Error events exceed INVESTIGATE threshold within lookback window; some carry unparseable timestamps and could not be aged.',
+                default => 'Error events carry unparseable timestamps and could not be aged; freshness is unknown.',
+            }
+        : match ($status) {
             self::STATUS_FIX => 'Fresh error events exceed FIX threshold within lookback window.',
             self::STATUS_INVESTIGATE => 'Fresh error events exceed INVESTIGATE threshold within lookback window.',
             default => 'Fresh error events detected within lookback window.',

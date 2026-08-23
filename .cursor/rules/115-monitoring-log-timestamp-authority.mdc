@@ -95,6 +95,33 @@ must never leave the logs section reporting OK. `undated_error_like_count > 0`
 forces `freshnessUndetermined` ⇒ WATCH, and OK is provably unreachable. A
 future-dated error is evidence of clock or parser corruption and must stay counted.
 
+> **Superseded in part by MONITORING-UNDATED-SEVERITY-ESCALATION-1 — see
+> [118-monitoring-undated-severity-escalation](118-monitoring-undated-severity-escalation.mdc).**
+>
+> Everything above stays true and is still enforced. What it did not say — and what
+> was wrongly read into it — is that WATCH is where undated evidence *stops*.
+>
+> The sentence "`undated_error_like_count > 0` forces `freshnessUndetermined` ⇒ WATCH"
+> describes a **floor**, not a ceiling. Because no rung above it was ever extended to
+> the undated bucket, magnitude was ignored entirely: `undated = 1` and
+> `undated = 1000` returned the same WATCH, so an identical burst of 150 ERROR events
+> reported **FIX** with parseable timestamps and **WATCH** without them. Two severity
+> levels of operational confidence bought by corruption in a date field. Reproduced
+> against the unmodified classifier before it was changed.
+>
+> The correction rests on a measured fact: `undated_error_like_count` and
+> `fresh_error_like_count` come out of the same event-grouping pass and carry the same
+> unit — one error-like log event, 1:1 at every magnitude. The two counts are now
+> summed onto the canonical in-window ladder (1 → WATCH, > 20 → INVESTIGATE,
+> > 100 → FIX). The first rung of that ladder had in fact **already** been applied
+> here, since `undated > 0 ⇒ WATCH` is numerically identical to `fresh >= 1 ⇒ WATCH`;
+> only the higher rungs were missing.
+>
+> R2 of this rule is unaffected and load-bearing in the other direction: severity may
+> never be *reduced* by loosening the parser so fewer events land in `undated`. After
+> escalation a parser regression produces a FIX storm rather than a WATCH storm, which
+> raises the cost of breaking R2 — it does not license relaxing it.
+
 ## R10 — Rollover tests are deterministic
 
 Every calendar-boundary test freezes the clock (`Carbon::setTestNow`). A test that
