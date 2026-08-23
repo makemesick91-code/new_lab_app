@@ -235,3 +235,51 @@ gh run view <run-id> --json jobs \
 **Restoring the automatic cadence** means setting `status` to `RETIRED` in the
 canonical JSON. That is a governance act reserved for the consolidated closure —
 never a side effect of another sprint.
+
+---
+
+## Diagnosing a Critical Gate warning (CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1)
+
+The Critical Gate declares how many warnings it expects — currently **zero**, in
+`config/ci_runner.php` → `critical_gate_warning_contract`. Anything above that is
+**unexplained** and fails the gate.
+
+**A recurring warning is never a baseline until it is attributed.** Name the
+emitting component, the exact resource it reads, and its effect on the exit code
+before deciding anything.
+
+Pest truncates warning text to terminal width, so CI logs alone will not give you
+a full path. Recover it locally instead — boot the application under an error
+handler that prints the message and a backtrace, and read the caller off frame 1.
+
+Once you have the caller, classify the resource honestly:
+
+| Finding | Correct response |
+|---|---|
+| Absent **by design**, framework treats it as optional | Provision the resource in a form that means "nothing here" — e.g. an empty file. The read then succeeds and the state is explicit |
+| Absent but genuinely **required** | Fix the producer, its ordering, or the job dependency. Never downgrade a mandatory input failure to a warning |
+| Emitted by a **dependency** | Fix configuration, the call contract, or the version. Never patch `vendor/`, never blanket-suppress |
+
+**Never** close a warning with the suppression operator, `error_reporting(0)`,
+stderr filtering, a broad PHPUnit suppression toggle, or a `grep -v`. The guard in
+`tests/Feature/Cicd/CriticalGateWarningContractTest.php` scans every workflow,
+every `scripts/ci/*.sh` and `phpunit.xml` for exactly those shapes.
+
+**Never** raise `expected_warning_count` to absorb a new warning, and never add a
+warning-text allowlist — an expected condition belongs at its causal boundary.
+
+Verify the contract locally against any captured gate log:
+
+```bash
+php artisan ci:assert-critical-gate-warning-contract \
+  --log=storage/ci-evidence/nsf-r011-critical-tests.log --json
+```
+
+It fails closed when the evidence is missing, unreadable, empty, carries no
+summary, or reports zero tests — a gate whose evidence cannot be read is never
+reported as clean. The test exit status keeps strict precedence in the workflow,
+so this assertion can never turn a red gate green.
+
+Note the Critical Gate does **not** require frontend build artifacts
+(`tests/TestCase.php` calls `withoutVite()`); do not add a build step to chase a
+missing file without proving the consumer first.

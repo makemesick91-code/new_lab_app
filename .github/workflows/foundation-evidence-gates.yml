@@ -342,6 +342,32 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
+
       # LEGACY-RME-PDF-1B — Poppler is a RUNTIME DEPENDENCY of this gate, not an
       # optional extra: the LegacyRme selection exercises the real pdfinfo and
       # pdftoppm adapters. The self-hosted variant inherits both binaries from
@@ -398,7 +424,27 @@ jobs:
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
             echo "::error::CI runtime ran out of memory — zero tests may have executed."
           fi
-          exit "$TEST_STATUS"
+
+          # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — warning contract.
+          #
+          # STRICT PRECEDENCE: a failing suite exits HERE, before the contract
+          # is consulted, so this assertion can never turn a red gate green.
+          # It adds only the signal the gate never had — warnings were printed
+          # but never judged, so a genuinely new one was indistinguishable
+          # from a 2222-warning baseline. Nothing is filtered: the contract
+          # reads the evidence this step just wrote and fails closed when that
+          # evidence is missing, unreadable, empty, or carries no summary.
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            exit "$TEST_STATUS"
+          fi
+          set +e
+          php artisan ci:assert-critical-gate-warning-contract \
+            --log=storage/ci-evidence/nsf-r011-critical-tests.log \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          CONTRACT_STATUS="${PIPESTATUS[0]}"
+          set -e
+          echo "critical_gate_warning_contract_exit_status=${CONTRACT_STATUS}" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$CONTRACT_STATUS"
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
@@ -590,6 +636,32 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
+
       # Hard production-database isolation guard. On a persistent runner this
       # matters more than on an ephemeral one: state survives between jobs, so a
       # misconfigured environment must never reach a real database. It runs in
@@ -620,7 +692,22 @@ jobs:
           if grep -qa 'Allowed memory size' storage/ci-evidence/nsf-r011-critical-tests.log; then
             echo "::error::CI runtime ran out of memory — zero tests may have executed."
           fi
-          exit "$TEST_STATUS"
+
+          # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — warning contract.
+          # Identical contract to the GitHub-hosted variant, run through the
+          # authoritative runtime wrapper. STRICT PRECEDENCE is preserved: a
+          # failing suite exits here, before the contract is consulted.
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            exit "$TEST_STATUS"
+          fi
+          set +e
+          bash scripts/ci/self-hosted-php.sh php artisan ci:assert-critical-gate-warning-contract \
+            --log=storage/ci-evidence/nsf-r011-critical-tests.log \
+            2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          CONTRACT_STATUS="${PIPESTATUS[0]}"
+          set -e
+          echo "critical_gate_warning_contract_exit_status=${CONTRACT_STATUS}" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$CONTRACT_STATUS"
 
       - name: Note skipped critical regression tests (docs-only change)
         if: ${{ needs.classify.outputs.run_critical_tests == 'false' }}
@@ -752,6 +839,32 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
+
       # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
       - name: Assert non-production database (CICD-CTRL-3)
         run: php artisan ci:assert-non-production-database
@@ -857,6 +970,32 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
 
       # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
       - name: Assert non-production database (CICD-CTRL-3)
@@ -1058,6 +1197,32 @@ jobs:
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
 
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
+
       # CICD-CTRL-3 — hard production-database isolation guard, before migrations.
       - name: Assert non-production database (CICD-CTRL-3)
         run: php artisan ci:assert-non-production-database
@@ -1186,6 +1351,32 @@ jobs:
 
       - name: Prepare CI evidence directory
         run: mkdir -p storage/ci-evidence storage/framework/{cache,sessions,views} bootstrap/cache
+
+      # CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — represent the "no
+      # file-based configuration" state explicitly instead of leaving it to a
+      # failed read.
+      #
+      # The application environment file is OPTIONAL by framework design and is
+      # deliberately never committed (INFRA-SEC-ENV-1), so CI configures the
+      # application through this job's `env:` block. The framework nevertheless
+      # resolves that path and reads it on EVERY application boot, and with
+      # nothing there the read failed and PHPUnit recorded a warning against
+      # every test that boots the application — 128 of the Critical Gate's 129
+      # files, while the gate still exited 0.
+      #
+      # Writing an EMPTY file is not a way to hide that warning, it is the
+      # accurate representation of the state CI is already in: the read
+      # succeeds and yields zero variables, which resolves byte-for-byte the
+      # same configuration as before (verified by comparing the resolved
+      # config hash with and without the file). No value is injected, no
+      # secret-bearing file is created or committed, and no diagnostic output
+      # is filtered. Truncating rather than appending also guarantees a
+      # persistent self-hosted workspace can never carry a stale one into a job.
+      - name: Provision the CI environment file
+        shell: bash
+        run: |
+          printf '' > .env
+          echo "ci_environment_file=provisioned bytes=$(wc -c < .env) configuration_source=job-env-block"
 
       # LEGACY-RME-PDF-1B — the full suite includes the real Poppler adapter
       # tests, so the same runtime dependency the critical gate installs is

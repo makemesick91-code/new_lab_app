@@ -1,0 +1,86 @@
+---
+description: CI warnings must be attributable, judged and fixed at their causal boundary — never suppressed, never normalised as baseline noise
+globs:
+  - ".github/workflows/**"
+  - "scripts/ci/**"
+  - "config/ci_runner.php"
+  - "app/Support/Cicd/**"
+  - "tests/Feature/Cicd/**"
+alwaysApply: false
+---
+
+# Critical Gate warning contract — CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1
+
+Authority: `config/ci_runner.php` → `critical_gate_warning_contract`,
+`App\Support\Cicd\CriticalGateWarningContract`,
+`php artisan ci:assert-critical-gate-warning-contract`,
+`tests/Feature/Cicd/CriticalGateWarningContractTest.php`.
+
+## R1 — A recurring CI warning is never normalised as baseline noise
+
+A warning may not be accepted as "just how the gate looks" until three things
+are evidenced: the exact component that emits it, the exact resource it reads,
+and its effect on the exit code. Until then it is an open defect, not a
+baseline. The Critical Gate carried 2222 warnings across 128 of 129 files for
+months precisely because nobody had to name the emitter.
+
+## R2 — Required gates hold zero UNEXPLAINED warnings
+
+`expected_warning_count` is a DECLARED baseline, currently `0`. Raising it to
+absorb a new warning is a governance violation — the correct response to a new
+warning is to attribute it and fix its cause. There is deliberately **no
+warning-text allowlist**: an expected condition is represented at its causal
+boundary, never by pattern-matching the text of a warning that is still being
+emitted.
+
+## R3 — Fix at the causal boundary; never suppress
+
+Banned as a stabilisation mechanism: the `@` operator added to silence a
+diagnostic, `error_reporting(0)`, stderr filtering (`2>/dev/null`,
+`grep -v warning`), broad PHPUnit suppression toggles
+(`ignoreSuppressionOfPhpWarnings`, `restrictWarnings`), and turning WARN into
+PASS by string filter. Enforced by test against every workflow, every
+`scripts/ci/*.sh` and `phpunit.xml`. Equally banned: adding an expensive build
+step, or committing a generated artifact, on the *assumption* that a missing
+file is the cause — prove the consumer first.
+
+## R4 — Missing, unreadable, read-failed, empty and valid are FIVE states
+
+CI tooling must never collapse them. In particular `file_get_contents(...) ?: ''`
+and `(string) file_get_contents(...)` fold a READ FAILURE into VALID EMPTY
+CONTENT. Check `is_file()`, then `is_readable()`, then compare the result
+`=== false` explicitly. Every non-readable state fails CLOSED — a gate whose
+evidence cannot be read is never reported as clean.
+
+`App\Services\Monitoring\PilotPerformanceSnapshotService::readMemInfo()` is the
+reference implementation of this shape.
+
+## R5 — Diagnostics never obscure the authoritative exit code
+
+A warning-cleanup change must preserve real failure detection. In both Critical
+Gate variants the test exit status is checked and exits FIRST; the warning
+contract is consulted only on an otherwise-green run, so it can never turn a red
+gate green. Pinned by test in both variants.
+
+## R6 — The environment file state is declared, not left to a failed read
+
+The application environment file is optional by framework design and is never
+committed. Every CI job that boots the application provisions an EMPTY one, so
+the framework's read succeeds and yields zero variables — byte-for-byte the
+configuration the job's `env:` block already resolved. Never populate it from
+the tracked example file in CI: that would inject values the job never intended
+and change what CI actually tests.
+
+## R7 — The Critical Gate does NOT require frontend build artifacts
+
+Evidenced, not assumed: `tests/TestCase.php` calls `withoutVite()`, the gate
+never builds the frontend, and no manifest path appeared in any warning. The
+"absent build manifest" explanation for the warning volume is **retracted** and
+must not be revived without new evidence. Do not add `npm run build` to the
+Critical Gate to chase a missing file.
+
+## R8 — Coverage must hold on both runner variants
+
+The gate has two variants sharing one required check name. Any warning
+assertion, provisioning step or filter token must exist in BOTH, or coverage
+silently depends on which runner the job was routed to.

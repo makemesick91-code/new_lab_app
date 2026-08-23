@@ -1,47 +1,55 @@
-# MONITORING-UNDATED-SEVERITY-ESCALATION-1 — Sprint Manifest
+# CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — Sprint Manifest
 #
-# Closes the residual that MONITORING-LOG-TIMESTAMP-ROLLOVER-1 left behind:
-# undated_error_like_count could not escalate past WATCH. The residual was audited
-# and reproduced before it was fixed — the objective was never "make a large number
-# trigger FIX because it looks scary".
+# The NSF-R011 Critical Test Gate concluded `success` while reporting
+# `Tests: 2222 warnings, 9 passed` — 128 of its 129 test files marked WARN. The
+# objective was never "make CI output visually clean". It was to make the gate's
+# warnings attributable, actionable, deterministic and truthful.
 #
-# Rule 113 R2 and rule 115 R9 pinned that an unageable ERROR may never read as OK.
-# Both describe a FLOOR. No rule, doc, test or comment anywhere asserted a ceiling,
-# and no rung above the first was ever extended to the undated bucket — so magnitude
-# was ignored entirely. undated=1 and undated=1000 both returned WATCH, and the
-# identical burst of 150 ERROR events reported FIX with parseable timestamps and
-# WATCH without them: two severity levels of operational confidence bought by
-# corruption in a date field. Mixed evidence understated too — fresh=15 with
-# undated=100 is up to 115 in-window error events reported as WATCH.
+# ROOT CAUSE, evidenced rather than assumed. Every warning was ONE PHP warning:
+#   file_get_contents(<workspace>/…): Failed to open stream: No such file or directory
+#   raised at vendor/vlucas/phpdotenv/src/Store/File/Reader.php:73
+#   reached via Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables::bootstrap()
+# The target is the application's environment file at the repository root. It is
+# OPTIONAL by framework design (`safeLoad`) and is deliberately never committed
+# (INFRA-SEC-ENV-1), so CI configures the application through each job's `env:`
+# block — but the framework still resolves the path and reads it on EVERY
+# application boot. That is exactly 128 of 129: every test that boots the
+# application warned, and the single file that never boots it (a pure unit test
+# with no `uses(TestCase::class)`) passed. The one PASS file was
+# PilotPerformanceSnapshotClassifierTest, and its 9 tests are the `9 passed`.
 #
-# The correction rests on a measured fact, not an assumption: undated_error_like_count
-# and fresh_error_like_count come out of the same event-grouping pass and carry the
-# same unit — one error-like log event, 1:1 at every magnitude, with no double count
-# into any other bucket. Since the monitor cannot rule out that an unageable event
-# falls inside the window, the fail-closed reading is that it does, so the two counts
-# are summed onto the canonical in-window ladder. That ladder's first rung had already
-# been applied here (undated > 0 is numerically identical to fresh >= 1); only the
-# higher rungs were missing.
+# The earlier "absent frontend build manifest" explanation is NOT the cause and
+# stays retracted: tests/TestCase.php calls withoutVite(), the gate never builds
+# the frontend, and no manifest path appears in any warning.
 #
-# Summing can only ever raise, so rule 113 R4 ("noise escalates, it never masks")
-# holds by construction and monotonicity is exhaustive over a 9x9 grid. Every change
-# in the decision matrix is an escalation; nothing is downgraded. Severity was NOT
-# reached by loosening the parser, relaxing coverage, shortening the window, or
-# editing a log. Escalation adds no cheaper path to a severe verdict than already
-# existed: forging a well-formed ERROR header is easier than forging a corrupt-dated
-# one and already reached FIX.
+# The gate exited 0 because PHPUnit records a PHP warning as a test WARNING, not
+# a failure, and nothing in the workflow ever judged the warning count.
+#
+# THE FIX IS AT THE CAUSAL BOUNDARY. CI now writes an EMPTY environment file in
+# every job that boots the application. That is not a way to hide the warning —
+# it is the accurate representation of the state CI is already in: the read
+# succeeds and yields zero variables. Verified behaviour-neutral by comparing the
+# resolved-configuration hash with and without the file (identical), and by a
+# faithful CI simulation: `511 warnings, 9 passed` -> `520 passed`, same 4040
+# assertions. Nothing is suppressed — no `@`, no stderr filter, no warning-text
+# allowlist, no PHPUnit suppression toggle.
+#
+# The second half is the signal itself. A 2222-warning baseline made a genuinely
+# NEW warning indistinguishable, so the gate now declares an expected warning
+# count (zero) and fails on anything unexplained — with the test exit status
+# keeping strict precedence, so the contract can never turn a red gate green.
 
-id: MONITORING-UNDATED-SEVERITY-ESCALATION-1
-type: RUNTIME_FIX
-module: Monitoring
-title: "Unageable ERROR evidence carries severity weight, not merely presence; undated and fresh events share one ladder"
+id: CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1
+type: INFRA_RELEASE
+module: Cicd
+title: "Critical Gate warnings are attributable and judged; the environment-file read state is declared, not left to a failed read"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # PilotPerformanceSnapshotClassifier::classifyFreshLogErrors only
+runtime_change: true          # new App\Support\Cicd\CriticalGateWarningContract + ci: command; no product request path touched
 schema_change: false
 frontend_change: false
-security_impact: true         # closes an under-severity path in operational monitoring evidence; no policy/middleware/permission/route change
+security_impact: true         # closes a signal-dilution path that could hide a genuine CI failure; no policy/middleware/permission/route change
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -50,7 +58,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: monitoring-undated-severity-escalation-1-go
+go_tag: cicd-critical-gate-file-get-contents-warn-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
