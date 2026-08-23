@@ -52,7 +52,7 @@ measured the real thing rather than a drifted approximation.
 
 ## 3. The residual ledger
 
-Eighteen unique residuals. Repeated references to the same item across docs and
+Twenty unique residuals. Repeated references to the same item across docs and
 rules were folded into one row rather than counted separately.
 
 **Form note.** This is a table, not a chart, on purpose. The data's job here is
@@ -81,14 +81,15 @@ ledger auditable.
 | R-17 | Source | `TODO` / `FIXME` / `HACK` / `XXX` in shipped source | scan of `app/`, `config/`, `routes/`, `database/`, `resources/` returns **0** | **NOT_APPLICABLE** | No | — (none exist) |
 | R-18 | Storage | Empty `handwritings/`, `prescriptions/`, `lab-orders/` directory shells remain under the public disk | 0 files inside; `public_real_files=0`; nginx denies the prefix regardless | **ACCEPTED_RISK** | No | this sprint |
 | R-19 | Governance | Commit `17d5ccf` subject reads "WATCH: Wave-1 not executed" | superseded by `2ffe00c` ("record the executed Wave-1 migration"), which is what the GO tag points at; immutable git history, correctly **not** rewritten | **SUPERSEDED** | No | `legacy-rme-pdf-roll-4-wave-1-…-go` |
+| R-20 | CI | `RmePrescriptionTest` — and `run_rme_tests` generally — is selected by no required CI gate | verified empirically with `pest --list-tests` against the gate's own 36-token filter: `ClinicalEvidencePrivacyTest` → **22 selected**, `RmePrescriptionTest` → **0**; both runner variants' filters are byte-identical, so this is not drift | **ACCEPTED_RISK** | No | this sprint (§8a) |
 
 ### Totals
 
 ```
-TOTAL_UNIQUE_RESIDUALS = 19
+TOTAL_UNIQUE_RESIDUALS = 20
 
 CLOSED           = 3    (R-01, R-03, R-04)
-ACCEPTED_RISK    = 8    (R-02, R-05, R-06, R-07, R-12, R-14, R-15, R-18)
+ACCEPTED_RISK    = 9    (R-02, R-05, R-06, R-07, R-12, R-14, R-15, R-18, R-20)
 BLOCKED_EXTERNAL = 3    (R-09, R-10, R-16)
 DEFERRED         = 3    (R-08, R-11, R-13)
 REAL_DEFECT      = 0
@@ -306,6 +307,37 @@ numbers are left alone and the collision is recorded here instead.
 **Trigger to act:** if a future tool ever resolves rules by numeric prefix rather
 than filename, this becomes a correctness issue and must be renumbered in one
 deliberate pass that also rewrites the references.
+
+---
+
+## 8a. What actually runs in required CI
+
+The audit's own guards were checked against the gate rather than assumed into it.
+
+`tests/Feature/Storage/ClinicalEvidencePrivacyTest.php` is a registered member of
+`critical_gate_mandatory_suites` — the registry that exists precisely because "a
+control that exists but is never selected by the gate is not a control."
+Empirically, the Critical gate's 36-token filter selects **22** of its tests,
+including the writer scan this sprint extended to `database/`. Both runner
+variants carry byte-identical filters, so the protection is real on whichever
+runner the classifier picks.
+
+`RmePrescriptionTest` is selected by **0** gates: it is not in the mandatory
+registry, and while the classifier does emit `run_rme_tests=true`, no job
+consumes that output. That is pre-existing and deliberate — the registry's own
+doctrine is that "adding a suite is a governance decision, not a reflex" — so it
+is recorded as **R-20** rather than reflexively appended to the filter. The
+hardened canvas assertion is therefore covered by the consolidated Full Suite
+that runs next, not by a required gate today.
+
+The classifier resolves this diff to **`unknown_high_risk`**, because
+`database/factories/` is not a recognised path and uncertainty always resolves to
+the stronger gate. Every module suite and the build run as a result.
+
+**Trigger to reconsider:** if a future change makes the prescription canvas path
+security- or privacy-relevant, promote the suite into
+`critical_gate_mandatory_suites` deliberately — and verify the promotion in
+**both** runner variants, because a token added to one is protection in neither.
 
 ---
 

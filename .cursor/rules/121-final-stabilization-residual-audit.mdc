@@ -110,3 +110,20 @@ local runs.
 `READY_FOR_AUTHORITATIVE_CONSOLIDATED_FULL_SUITE=true` with
 `FULL_SUITE_EXECUTION_COUNT=0`. The consolidated run is a separate,
 explicitly authorised sprint.
+
+## R13 — A guard that no gate selects is not a guard
+
+Before claiming a test protects an invariant, verify the gate actually selects it
+— empirically (`pest --list-tests` against the gate's own filter), not by reading
+the filter and assuming. `--filter` is a substring match, so a shorter token can
+select a longer class name; asking "is my class name in the filter" is the wrong
+question.
+
+Promotion into `critical_gate_mandatory_suites` is a deliberate governance
+decision, not a reflex, and a token added to one runner variant is protection in
+neither — verify **both**.
+
+Measured at this sprint: `ClinicalEvidencePrivacyTest` → 22 tests selected
+(registered mandatory); `RmePrescriptionTest` → 0 (not registered, and no job
+consumes the classifier's `run_rme_tests` output). Recorded as residual R-20
+rather than silently appended to the filter.
