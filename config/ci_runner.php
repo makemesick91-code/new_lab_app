@@ -141,6 +141,65 @@ return [
     ],
 
     /*
+     * Test suites the NSF-R011 critical gate MUST actually select —
+     * CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1.
+     *
+     * `critical_gate_required_filters` above declares that a TOKEN is present.
+     * That is not the same claim as "this suite runs", and the difference was
+     * load-bearing: every file in tests/Unit/Services/Monitoring was selected
+     * only because its filename happened to begin with `PilotPerformanceSnapshot`.
+     * MonitoringLogSourceResilienceTest — the suite pinning that the monitor
+     * reads where the application actually writes — did not, so it was absent
+     * from the critical gate while its seven siblings ran. Coverage rested on a
+     * filename coincidence, and renaming any sibling would have removed it just
+     * as silently.
+     *
+     * Each entry is a repository-relative test file. The scanner derives the
+     * name PHPUnit filters against and requires some token in EVERY critical
+     * variant's filter to match it. A declared file that no token selects, or
+     * that no longer exists, FAILS the gate — a rename can move coverage, but
+     * it can never quietly delete it.
+     *
+     * Membership is the monitor-truthfulness contract: the suites that keep the
+     * production monitor from reporting OK without evidence (log-source
+     * resolution, timestamp faithfulness, physical scan coverage, the undated
+     * severity ladder, restore-drill timestamps). Scope stays bounded on
+     * purpose — tests/Feature/Foundation/FoundationMonitoring* covers the
+     * read-only MON-1 console rather than the monitor's own verdict, and is
+     * deliberately NOT promoted here. Adding a suite is a governance decision,
+     * not a reflex.
+     */
+    'critical_gate_mandatory_suites' => [
+        // MONITORING-LOG-SOURCE-RESILIENCE-1 — the monitor reads where the
+        // application writes; a missing or unreadable source fails closed.
+        'tests/Unit/Services/Monitoring/MonitoringLogSourceResilienceTest.php',
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotLogSourceTest.php',
+
+        // MONITORING-LOG-TIMESTAMP-ROLLOVER-1 — a malformed date is rejected by
+        // literal round-trip, never silently rolled into a valid one.
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotTimestampRolloverTest.php',
+
+        // MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1 — coverage is byte-offset,
+        // so log content can never certify bytes that were not read.
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotCoverageAnchorTest.php',
+
+        // MONITORING-UNDATED-SEVERITY-ESCALATION-1 — undated and fresh errors
+        // share one severity ladder.
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotUndatedSeverityTest.php',
+
+        // The analyzer, classifier and resource section behind every verdict,
+        // plus the command that is the only production entry point.
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotLogAnalyzerTest.php',
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotClassifierTest.php',
+        'tests/Unit/Services/Monitoring/PilotPerformanceSnapshotResourceSectionTest.php',
+        'tests/Unit/Console/PilotPerformanceSnapshotCommandTest.php',
+
+        // RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1 — drill evidence is only as
+        // trustworthy as the timestamp it carries.
+        'tests/Feature/Foundation/RestoreDrillTimestampFaithfulnessTest.php',
+    ],
+
+    /*
      * The Critical Gate warning contract — CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1.
      *
      * The gate used to conclude `success` while reporting

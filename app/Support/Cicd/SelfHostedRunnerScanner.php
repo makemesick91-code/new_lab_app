@@ -387,6 +387,177 @@ class SelfHostedRunnerScanner
     }
 
     /**
+     * Every mandatory critical suite is actually selected, by every variant.
+     *
+     * CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1. criticalGateSelfTestPosture()
+     * above asks "is this token in the filter?". That question cannot detect
+     * the failure it needs to: a suite whose name no token matches is simply
+     * absent, and absence is exactly what a green gate looks like. Every file
+     * in tests/Unit/Services/Monitoring ran only because its filename began
+     * with `PilotPerformanceSnapshot`; the one that did not — the suite pinning
+     * that the monitor reads where the application writes — never ran in a
+     * required gate at all.
+     *
+     * So this asks the question the other one cannot: for each DECLARED suite,
+     * does some token in each critical variant's filter match the name PHPUnit
+     * builds from that file? Coverage stops depending on what a file is called
+     * and starts depending on what the contract says must run.
+     *
+     * The match is a case-insensitive LITERAL substring test. PHPUnit treats
+     * --filter as a regex, so a literal hit here guarantees a real selection,
+     * while a token that could only match through regex syntax is reported as
+     * unselected. That asymmetry is deliberate: this check errs toward FAIL,
+     * never toward a coverage claim it cannot substantiate.
+     *
+     * @return array{ok: bool, exists: bool, issues: list<string>, declared: list<string>, suites: list<array{path: string, exists: bool, identity: string, matched_by: array<int, string>}>, critical_filters: list<string>}
+     */
+    public function criticalGateSuiteCoveragePosture(): array
+    {
+        $raw = array_values(array_filter(array_map(
+            static fn ($path): string => is_string($path)
+                ? trim(str_replace('\\', '/', $path))
+                : '',
+            (array) config('ci_runner.critical_gate_mandatory_suites', [])
+        ), static fn (string $path): bool => $path !== ''));
+
+        // Normalise before de-duplicating so './a' and 'a' cannot both be
+        // counted, and a duplicate can never pad the declared set.
+        $declared = [];
+        foreach ($raw as $path) {
+            $normalised = $this->normaliseSuitePath($path);
+            if (! in_array($normalised, $declared, true)) {
+                $declared[] = $normalised;
+            }
+        }
+
+        $workflow = $this->readFile('ci_workflow');
+
+        if ($workflow === null) {
+            return [
+                'ok' => false,
+                'exists' => false,
+                'issues' => ['the CI workflow is missing'],
+                'declared' => $declared,
+                'suites' => [],
+                'critical_filters' => [],
+            ];
+        }
+
+        $issues = [];
+
+        if ($declared === []) {
+            $issues[] = 'no mandatory critical suite is declared';
+        }
+
+        // Same anchor as criticalGateSelfTestPosture(): narrow every workflow
+        // filter to the critical gate's own by a token only it carries, so a
+        // renamed job or an added selective filter cannot skew the check.
+        preg_match_all('/--filter=\'([^\']+)\'/', $workflow, $matches);
+        $criticalFilters = array_values(array_filter(
+            $matches[1] ?? [],
+            static fn (string $filter): bool => str_contains($filter, 'FoundationGovernance')
+        ));
+
+        $variants = count((array) config('ci_runner.self_hosted_heavy_jobs', [])) + 1;
+
+        if (count($criticalFilters) < $variants) {
+            $issues[] = sprintf(
+                'expected %d critical gate filter(s), found %d — a variant is missing its test filter',
+                $variants,
+                count($criticalFilters)
+            );
+        }
+
+        $suites = [];
+
+        foreach ($declared as $path) {
+            $exists = is_file(base_path($path));
+            $identity = $this->testIdentity($path);
+            $matchedBy = [];
+
+            if (! $exists) {
+                $issues[] = "mandatory critical suite '{$path}' does not exist — the registry is stale";
+            }
+
+            foreach ($criticalFilters as $index => $filter) {
+                $hit = null;
+
+                foreach (explode('|', $filter) as $token) {
+                    $token = trim($token);
+
+                    if ($token !== '' && stripos($identity, $token) !== false) {
+                        $hit = $token;
+                        break;
+                    }
+                }
+
+                if ($hit === null) {
+                    $issues[] = "critical gate filter #{$index} does not select mandatory suite '{$path}'";
+
+                    continue;
+                }
+
+                $matchedBy[$index] = $hit;
+            }
+
+            $suites[] = [
+                'path' => $path,
+                'exists' => $exists,
+                'identity' => $identity,
+                'matched_by' => $matchedBy,
+            ];
+        }
+
+        return [
+            'ok' => $issues === [],
+            'exists' => true,
+            'issues' => $issues,
+            'declared' => $declared,
+            'suites' => $suites,
+            'critical_filters' => $criticalFilters,
+        ];
+    }
+
+    /**
+     * The name PHPUnit filters against, derived from a test file's path.
+     *
+     * `tests/Unit/Services/Monitoring/FooTest.php` becomes
+     * `Tests\Unit\Services\Monitoring\FooTest`. Pest prefixes its generated
+     * class with `P\` and appends `::<description>`; both forms contain this
+     * string, so substring matching stays correct for either without having to
+     * boot the test runner to find out.
+     */
+    private function testIdentity(string $relativePath): string
+    {
+        $normalised = $this->normaliseSuitePath($relativePath);
+        $segments = explode('/', preg_replace('/\.php$/i', '', $normalised) ?? '');
+        $segments = array_values(array_filter($segments, static fn (string $s): bool => $s !== ''));
+
+        if ($segments !== []) {
+            $segments[0] = ucfirst($segments[0]);
+        }
+
+        return implode('\\', $segments);
+    }
+
+    /**
+     * A repository-relative test path in one canonical shape.
+     *
+     * Windows separators become '/', and any number of leading './' segments
+     * are removed so 'tests/x.php' and './tests/x.php' are the same declared
+     * suite rather than two. The strip is anchored on the './' pair, not a
+     * character class, so a directory whose name legitimately starts with a
+     * dot survives it intact.
+     */
+    private function normaliseSuitePath(string $path): string
+    {
+        $normalised = trim(str_replace('\\', '/', $path));
+        $normalised = preg_replace('#^(?:\./)+#', '', $normalised) ?? $normalised;
+
+        return ltrim($normalised, '/');
+    }
+
+    /**
      * Split a workflow into its named steps.
      *
      * @return list<array{name: string, body: string}>

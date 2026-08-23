@@ -1,0 +1,79 @@
+---
+description: Mandatory critical test suites are selected by an explicit registry, never by a filename coincidence
+globs:
+  - ".github/workflows/**"
+  - "config/ci_runner.php"
+  - "app/Support/Cicd/**"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+alwaysApply: false
+---
+
+# Critical Gate mandatory suite coverage — CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1
+
+The NSF-R011 Critical Test Gate selects tests with a fixed `--filter` allowlist.
+Two separate questions are asked about that allowlist, and confusing them is the
+defect this rule exists to prevent:
+
+- `config/ci_runner.critical_gate_required_filters` — **is this TOKEN present?**
+- `config/ci_runner.critical_gate_mandatory_suites` — **does this SUITE run?**
+
+The first cannot detect the failure that matters. A suite whose name no token
+matches is simply absent from the gate, and absence is indistinguishable from
+green.
+
+## Rules
+
+1. **A mandatory critical contract is selected by an explicit registry.** Its
+   execution must never depend on a filename or token coincidence. Declare the
+   test file in `critical_gate_mandatory_suites`.
+
+2. **A mandatory contract must be selected DIRECTLY.** Equivalent behaviour
+   covered by another, incidentally-matched suite is additional defence, never
+   the authority. "It is tested elsewhere" does not satisfy this rule.
+
+3. **Renaming or moving a mandatory suite must preserve its selection or fail
+   the gate.** It must never silently drop out. Both outcomes are acceptable;
+   silence is not.
+
+4. **A stale registry entry fails closed.** A declared suite that no longer
+   exists is a dead contract and must FAIL, never be skipped.
+
+5. **An empty mandatory selection is not success.** Zero declared suites
+   trivially satisfies "all declared suites are selected"; the scanner rejects
+   it explicitly.
+
+6. **Coverage holds for EVERY critical variant.** GitHub-hosted and self-hosted
+   are checked independently — a token in one variant never covers for the
+   other.
+
+7. **Critical scope stays bounded.** Do not promote a whole test directory to
+   avoid registry maintenance. `--filter` matches case-insensitively against the
+   full `Class::method` name, so a bare word also matches it inside Pest test
+   DESCRIPTIONS: the measured cost of a bare `Monitoring` token was 15 unrelated
+   files. Prefer the narrowest token that selects the declared suite, and let
+   the registry — not the token's breadth — carry the durability.
+
+8. **The Selective Module Gate and the Full Suite are not substitutes.** They
+   have different authority, and the Full Suite is currently deferred under the
+   global temporary policy. A mandatory contract runs in the Critical Gate.
+
+9. **Adding a suite to `tests/Unit/Services/Monitoring` requires declaring it.**
+   The directory's completeness is asserted, so a new monitoring suite cannot be
+   added undeclared and inherit the original silent-omission failure mode.
+
+## Where it is enforced
+
+- `App\Support\Cicd\SelfHostedRunnerScanner::criticalGateSuiteCoveragePosture()`
+  derives the name PHPUnit filters against from each declared path and requires
+  a token in every critical variant to match it.
+- `App\Services\Foundation\SelfHostedRunnerGovernanceService` surfaces it as
+  `CICDCTRL3-CRITICAL-SUITE-COVERAGE`; a break makes the decision FAIL.
+- `tests/Feature/Cicd/CriticalGateSuiteCoverageTest.php` — itself selected by
+  the `Cicd` token, so the contract runs inside the gate it protects.
+
+The match is a case-insensitive **literal** substring test. PHPUnit treats
+`--filter` as a regex, so a literal hit guarantees a real selection, while a
+token that could only match through regex syntax is reported as unselected. That
+asymmetry is deliberate: the check errs toward FAIL, never toward a coverage
+claim it cannot substantiate.
