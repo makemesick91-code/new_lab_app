@@ -4,8 +4,8 @@ namespace Database\Factories;
 
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Prescription\Models\RmePrescription;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Database\Eloquent\Factories\Factory;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * @extends Factory<RmePrescription>
@@ -58,8 +58,24 @@ class RmePrescriptionFactory extends Factory
                 $prescription->clinic_visit_id,
             );
 
-            Storage::disk('public')->put($rxPath, $png);
-            Storage::disk('public')->put($sigPath, $png);
+            /*
+             * FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — the fixture writes through the
+             * SAME authority as production (RmePrescriptionService::storeCanvas).
+             *
+             * It previously wrote to the 'public' disk. Production reads these
+             * columns back through ClinicalEvidenceStorage::dataUri(), which
+             * resolves against the private clinical disk, so a fixture on the
+             * public disk produced a row whose canvases silently read back as
+             * null. A print test then asserted assertSee(null) — which passes
+             * against any response — so "renders the canvas" was never proven.
+             *
+             * A fixture must not be able to reintroduce the storage layout the
+             * public-disk incident removed; the governance scan in
+             * tests/Feature/Storage/ClinicalEvidencePrivacyTest.php now covers
+             * database/ for exactly that reason.
+             */
+            ClinicalEvidenceStorage::disk()->put($rxPath, $png);
+            ClinicalEvidenceStorage::disk()->put($sigPath, $png);
 
             $prescription->update([
                 'prescription_canvas_path' => $rxPath,

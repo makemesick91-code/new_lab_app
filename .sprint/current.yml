@@ -1,87 +1,79 @@
-# STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — Sprint Manifest
+# FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — Sprint Manifest
 #
-# ACTIVE CLINICAL-DATA CONFIDENTIALITY INCIDENT, remediated.
+# WHAT THIS SPRINT IS. The last gate before the one authoritative consolidated
+# Full Suite. It does not hunt for new work. It takes every residual, WATCH,
+# TODO, deferred item and known risk the corrective series accumulated,
+# reconciles each one against the CURRENT production authority, and returns one
+# of five classifications per item — with the evidence that justifies it.
 #
-# WHAT WAS FOUND. A storage inventory at the base commit found native clinical
-# evidence being written to Laravel's `public` disk. That disk is symlinked into
-# the document root, so nginx serves it directly — no session, no policy, no
-# branch check. PROVEN ON PRODUCTION, not inferred: a synthetic 32-byte non-PII
-# probe written into storage/app/public/handwritings/ was fetched over plain
-# HTTPS with no credentials and returned HTTP 200 with byte-identical content.
-# The probe was deleted. No patient file was ever retrieved to prove the point.
+# WHAT IT IS NOT. It is not an implementation sprint. If the audit had proven an
+# unresolved runtime, security, clinical or data-integrity defect, the correct
+# outcome was NO-GO plus a named corrective sprint — never a fix smuggled in
+# under an audit heading.
 #
-# SCALE. 46 RME handwriting images, 8 prescription/doctor-signature canvases and
-# 1 lab attachment — 55 patient-linked artifacts. Keys were only weakly
-# unguessable: handwritings/{branch}/{visit}/handwriting_p{N}_{YmdHis}.png, whose
-# sole entropy is a one-second timestamp, against an unauthenticated endpoint
-# with no rate limiting.
+# WHAT THE AUDIT ACTUALLY CHANGED. Three files, all test/fixture/governance,
+# RUNTIME_BEHAVIOR_CHANGE=false:
 #
-# THIS VIOLATED THE PROJECT'S OWN SHIPPED RULE. STORAGE-R002 already said
-# "never a raw public disk URL" — but it was written for OBJECT storage, and
-# nothing enforced it for the LOCAL public disk. Every clinical module that
-# landed after STORAGE-1 (Lab evidence, SATUSEHAT, LegacyRme) was never audited
-# against it. STORAGE-R006 now states the rule for any served disk, and a static
-# governance test enforces it in CI.
+#   1. database/factories/RmePrescriptionFactory.php — the fixture wrote
+#      prescription and doctor-signature canvases to the 'public' disk while
+#      production writes them through ClinicalEvidenceStorage. Never an
+#      exposure: nothing in production invokes a factory. But it reproduced,
+#      inside the suite, the exact storage layout the public-disk incident
+#      removed.
 #
-# CONTAINMENT CAME FIRST, before any code: one reversible nginx deny on
-# /storage/, no file mutation, verified after the graceful reload settled.
+#   2. tests/Feature/RME/RmePrescriptionTest.php — because of (1) the canvases
+#      read back as null, and the test named "can print prescription with fields
+#      and canvas images" asserted assertSee(null). assertSee casts null to ''
+#      and every response contains '', so the assertion was vacuous: the test
+#      could not fail when there was no canvas. That is a false green, and
+#      "no false green" outranks almost everything else in this project.
 #
-# WHY THE MIGRATION IS SAFE. Object keys are preserved verbatim on the new disk,
-# so NO database column is rewritten — a migration that never touches the
-# database cannot corrupt a clinical reference. Copy and purge are separate
-# phases: nothing is deleted before a byte-identical SHA-256 copy is proven.
+#   3. tests/Feature/Storage/ClinicalEvidencePrivacyTest.php — the anti-
+#      regression writer scan covered app_path() only, which is how (1) survived
+#      the incident sprint. It now covers database/ as well. tests/ is
+#      deliberately still excluded: that file writes to the public disk on
+#      purpose, to prove the migration moves objects off it.
 #
-# STORAGE-1 IS NOT RE-RUN. Its GO tag (storage-1-object-storage-readiness-go @
-# d8a9c73) is untouched and not moved. Its object-storage scaffold stays OFF and
-# production stays on local storage; object-storage cutover remains a separate,
-# separately-authorized sprint.
+# Both new guards were mutation-tested: with the factory reverted, the scan
+# fails and the canvas assertion fails. The first mutation run passed falsely
+# because a previous run had left the fixture PNG on the real clinical disk —
+# the filesystem was cleaned and the mutation re-run before the result was
+# believed.
+#
+# WHAT THE AUDIT DELIBERATELY DID NOT TOUCH. Odontogram::hasRecordedTeeth() was
+# audited read-only and left exactly as it is: on production 31 of 32 rows pass
+# the predicate and all 31 carry a clinically meaningful tooth status, so the
+# theorised over-report has zero instances and changing it would move zero rows.
+# The 20 dangling storage references were classified, not cleaned: they are
+# historical Lab-V1 delivery/QC attachments whose read path aborts 404 after
+# authorisation. Deleting rows to make a number look better is not remediation.
 
-id: STORAGE-PUBLIC-CLINICAL-EVIDENCE-1
-type: SECURITY_FIX
-module: Storage
-title: "Clinical evidence moved off the publicly served disk to a private, policy-gated storage authority"
+id: FINAL-STABILIZATION-RESIDUAL-AUDIT-1
+type: DOCS_ONLY
+module: Governance
+title: "Every stabilization residual reconciled against production authority, classified, and pinned"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # new private disk, new authorized read routes, write paths repointed
-schema_change: false          # object keys preserved verbatim; no column rewritten
-frontend_change: false        # Blade only; no JS/CSS/Vite asset change
-security_impact: true         # this sprint IS the security fix
-branch_isolation_impact: false # reuses MedicalRecordPolicy / RmePrescriptionPolicy unchanged
+runtime_change: false          # no app/, config/, routes/ or migration change
+schema_change: false           # no migration
+frontend_change: false         # no JS/CSS/Vite asset change
+security_impact: false         # verifies the security fix; introduces no new surface
+branch_isolation_impact: false
 ledger_impact: false
 
-deploy_required: true
+deploy_required: true          # production must advance to the audited authority
 browser_required: false
 
 test_profiles: []
 
-go_tag: storage-public-clinical-evidence-1-go
+go_tag: final-stabilization-residual-audit-1-go
 
-# Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
+# Rule 107 is still ACTIVE. This audit certifies READINESS for the consolidated
+# Full Suite; it does not run it and must not.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
 
-# Carried forward, unchanged by this sprint. The Legacy RME programme stays closed
-# and at rest (capability OFF, admission empty, no batch opened), and the
-# prescription WhatsApp provider stays on hold pending its external dependency.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-# SCOPE AUDIT — KNOWN, JUSTIFIED, AND DELIBERATELY NOT SILENCED.
-#
-# `sprint:scope-audit` returns NO-GO: SECURITY_FIX sets allow_refactor=false and
-# this change touches 14 app/*.php files, over its >10 "looks like a refactor"
-# threshold. The heuristic is doing its job — it exists so a fix cannot smuggle a
-# refactor — but it assumes a security fix is narrow.
-#
-# This one cannot be. FOUR independent services wrote clinical evidence to the
-# served disk (MedicalRecord handwriting, Prescription canvases, LabOrder
-# attachments, Delivery PoD photos), and each has a read side that had to move
-# with it. Fixing any subset would have left the rest exposed, so 14 files is the
-# true minimum for this incident, not breadth for its own sake.
-#
-# The type was NOT downgraded to make the gate pass. SECURITY_FIX is audit_level
-# 3 and escalates security_regression + full_required; reclassifying to a type
-# with allow_refactor=true would have bought a green line by WEAKENING the gates
-# that matter. The audit is advisory (not a CI or deploy gate), so it is recorded
-# here as a justified exception instead.
-scope_audit_exception: "14 app/*.php files vs >10 threshold — four independent public-disk writers, each with a read side; type deliberately kept at SECURITY_FIX"
+residual_ledger: docs/sprints/final-stabilization-residual-audit-1.md

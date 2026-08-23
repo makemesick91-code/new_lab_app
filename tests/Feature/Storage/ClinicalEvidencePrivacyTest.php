@@ -205,9 +205,32 @@ it('uses the authorised route rather than a public URL on screen', function () {
 it('has no application code writing to the publicly served disk', function () {
     $offenders = [];
 
-    $rii = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(app_path()));
+    /*
+     * FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — database/ is scanned alongside app/.
+     *
+     * The scan originally covered app_path() only. A model factory under
+     * database/ was still writing prescription and doctor-signature canvases to
+     * the 'public' disk, and because Database\Factories is a production
+     * autoload namespace rather than a dev-only one, "not application code" was
+     * not a property the scan could rely on. Nothing invoked it in production,
+     * so it was never an exposure — but it did reproduce, inside the test
+     * suite, exactly the storage layout this sprint removed, and it made a
+     * print assertion vacuous.
+     *
+     * tests/ is deliberately NOT scanned: this very file writes to the public
+     * disk on purpose, to prove the migration moves objects off it.
+     */
+    $roots = [app_path(), database_path()];
 
-    foreach ($rii as $file) {
+    $files = [];
+
+    foreach ($roots as $root) {
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root)) as $file) {
+            $files[] = $file;
+        }
+    }
+
+    foreach ($files as $file) {
         if ($file->isDir() || $file->getExtension() !== 'php') {
             continue;
         }
@@ -224,7 +247,7 @@ it('has no application code writing to the publicly served disk', function () {
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $contents)) {
-                $offenders[] = str_replace(app_path().'/', '', $file->getPathname());
+                $offenders[] = str_replace(base_path().'/', '', $file->getPathname());
                 break;
             }
         }
