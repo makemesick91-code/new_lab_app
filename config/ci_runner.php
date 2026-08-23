@@ -202,6 +202,17 @@ return [
         // is never reported as a malformed one, and no read fault is permitted
         // to become more permissive than the flattened state it replaced.
         'tests/Feature/Foundation/RestoreDrillEvidenceReadStateTest.php',
+
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — clinical evidence stays off any
+        // publicly served disk and is readable only through an authenticated,
+        // policy-gated route.
+        //
+        // This DELIBERATELY BROADENS the registry beyond monitor truthfulness.
+        // The precedent is earned: the exposure this suite pins was live in
+        // production, was proven with an unauthenticated fetch, and was missed
+        // for weeks precisely because nothing in CI asserted it. A control that
+        // exists but is never selected by the gate is not a control.
+        'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
     ],
 
     /*

@@ -144,7 +144,7 @@
                 @forelse ($order->attachments as $attachment)
                     <li class="flex items-center justify-between border-b border-hairline pb-1">
                         <span class="text-navy">{{ $attachment->file_name }} <span class="text-xs text-ink-muted">({{ $attachment->category }})</span></span>
-                        <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="text-brand-600 hover:text-brand-700">Unduh</a>
+                        <a href="{{ route('attachments.download', $attachment) }}" target="_blank" class="text-brand-600 hover:text-brand-700">Unduh</a>
                     </li>
                 @empty
                     <li class="text-ink-muted">Belum ada bukti yang diunggah.</li>

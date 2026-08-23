@@ -140,25 +140,40 @@ class MedicalRecord extends Model
      *
      * @return Collection<int, array<string, mixed>>
      */
-    public function orderedHandwritingPages(): Collection
+    /**
+     * @param  bool  $embedBinary  When true, `preview_url` carries inline image
+     *                             bytes (a data URI) instead of a link to the
+     *                             authorized streaming route.
+     *
+     *                             Print and PDF templates must pass true:
+     *                             STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 moved these
+     *                             images behind an authenticated route, and
+     *                             dompdf cannot present a session cookie, so a
+     *                             linked image would silently render blank in
+     *                             the exported PDF.
+     */
+    public function orderedHandwritingPages(bool $embedBinary = false): Collection
     {
         $legacy = $this->latestHandwriting();
 
         $pages = collect([[
             'page_number' => 1,
             'is_legacy' => true,
-            'preview_url' => $legacy?->previewUrl(),
+            'preview_url' => $embedBinary ? $legacy?->previewDataUri() : $legacy?->previewUrl(),
             'saved_at' => $legacy?->saved_at,
-            'has_content' => $legacy !== null && $legacy->previewUrl() !== null,
+            // Deliberately unchanged semantics: "a page was recorded", not "the
+            // binary is currently readable". Keeping this as a path check avoids
+            // a disk stat per page and preserves existing Sprint 60 behaviour.
+            'has_content' => $legacy !== null && filled($legacy->handwriting_path),
         ]]);
 
         foreach ($this->handwritingPages()->get() as $page) {
             $pages->push([
                 'page_number' => $page->page_number,
                 'is_legacy' => false,
-                'preview_url' => $page->previewUrl(),
+                'preview_url' => $embedBinary ? $page->previewDataUri() : $page->previewUrl(),
                 'saved_at' => $page->saved_at,
-                'has_content' => $page->previewUrl() !== null,
+                'has_content' => filled($page->handwriting_path),
             ]);
         }
 

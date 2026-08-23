@@ -1,0 +1,51 @@
+---
+description: Clinical evidence must never live on a publicly served disk; it is private-disk only and read solely through an authenticated, policy-gated route.
+globs:
+alwaysApply: true
+---
+
+# Clinical evidence is private-disk only (STORAGE-PUBLIC-CLINICAL-EVIDENCE-1)
+
+## What happened
+
+RME handwriting, prescription and doctor-signature canvases, lab attachments and
+proof-of-delivery photos were written to Laravel's `public` disk. That disk is
+symlinked into the document root, so nginx served them **with no session, no
+policy and no branch check**. Proven on production with a synthetic non-PII
+probe: HTTP 200, byte-identical, unauthenticated. 55 patient-linked artifacts
+were exposed.
+
+The project already had the rule — `STORAGE-R002`, "never a raw public disk
+URL". It was written for *object* storage and nothing enforced it for the
+*local* public disk, so every clinical module shipped after STORAGE-1 inherited
+the gap silently.
+
+## The rules
+
+1. **`ClinicalEvidenceStorage` is the only storage authority** for patient-linked
+   binaries. Ask it for the disk; never name a disk at the call site.
+2. **Never write clinical evidence to a served disk.** This includes
+   `Storage::disk('public')->put(...)` *and* `$file->storeAs($dir, $name, 'public')`
+   — the second form is how two writers hid from the first audit.
+3. **Object key possession is not authorization.** Every read goes through a
+   controller that authorizes first (`MedicalRecordPolicy`, `RmePrescriptionPolicy`,
+   `LabOrderPolicy`, `DeliveryPolicy`) and never returns the filesystem key.
+4. **Print and PDF embed inline base64, never a link.** `print-body` is shared by
+   the browser print view and the dompdf export; dompdf cannot present a session
+   cookie, so a linked image exports blank. `orderedHandwritingPages(true)`.
+5. **A storage disk is a data authority, not a cache.** No silent fallback to
+   another disk when a write or read fails.
+6. **Migrations preserve object keys verbatim** so no database column is
+   rewritten. Copy and purge are separate phases; nothing is deleted before a
+   byte-identical SHA-256 copy is proven.
+7. **`tests/Feature/Storage/ClinicalEvidencePrivacyTest.php` is a mandatory
+   critical suite** (`config/ci_runner.php`). A control that CI never selects is
+   not a control.
+
+## Traps
+
+- A Blade comment `{{-- --}}` inside an `@php` block is parsed as PHP and breaks
+  the template. Run `php artisan view:cache` after editing any Blade file.
+- `systemctl reload nginx` is graceful: a request right after the reload can be
+  served by an old worker on the old config. Re-verify after workers cycle.
+- Grepping only `disk('public')` misses `storeAs(..., 'public')`.

@@ -8,6 +8,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\MedicalRecord\Models\MedicalRecord;
 use App\Modules\Patient\Models\Patient;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Factories\RmePrescriptionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -96,17 +97,39 @@ class RmePrescription extends Model
         return $this->canvasUrl($this->doctor_signature_canvas_path);
     }
 
+    /** Inline bytes for print templates (no session cookie available). */
+    public function prescriptionCanvasDataUri(): ?string
+    {
+        return ClinicalEvidenceStorage::dataUri($this->prescription_canvas_path);
+    }
+
+    /** Inline bytes for print templates (no session cookie available). */
+    public function signatureCanvasDataUri(): ?string
+    {
+        return ClinicalEvidenceStorage::dataUri($this->doctor_signature_canvas_path);
+    }
+
+    /**
+     * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — canvases (including the doctor's
+     * signature) are clinical evidence. They previously resolved to a raw
+     * public-disk URL; they now resolve to an authenticated, policy-gated route.
+     */
     private function canvasUrl(?string $path): ?string
     {
         if (blank($path)) {
             return null;
         }
 
-        if (str_starts_with($path, 'data:image/')) {
+        if (ClinicalEvidenceStorage::isInlineDataUri($path)) {
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        $kind = $path === $this->doctor_signature_canvas_path ? 'signature' : 'prescription';
+
+        return route('rme.prescriptions.canvas', [
+            'rmePrescription' => $this->getKey(),
+            'kind' => $kind,
+        ]);
     }
 
     /**

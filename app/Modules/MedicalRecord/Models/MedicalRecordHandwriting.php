@@ -6,11 +6,11 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Factories\MedicalRecordHandwritingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 class MedicalRecordHandwriting extends Model
 {
@@ -58,6 +58,15 @@ class MedicalRecordHandwriting extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /**
+     * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — screen preview source.
+     *
+     * This used to return a raw public-disk URL, which made the handwriting
+     * readable by anyone who could guess the path. It now returns an
+     * authenticated, policy-gated route; the object key is never exposed and
+     * possession of a URL grants nothing without a session that passes
+     * MedicalRecordPolicy::view.
+     */
     public function previewUrl(): ?string
     {
         $path = $this->handwriting_path;
@@ -66,11 +75,27 @@ class MedicalRecordHandwriting extends Model
             return null;
         }
 
-        if (str_starts_with($path, 'data:image/')) {
+        if (ClinicalEvidenceStorage::isInlineDataUri($path)) {
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        return route('rme.handwritings.image', ['handwriting' => $this->getKey()]);
+    }
+
+    /**
+     * Print/PDF preview source. dompdf cannot present a session cookie, so a
+     * print template must embed the bytes inline rather than link to the
+     * authorized route. Returns null when the object is missing so the template
+     * renders an honest empty state instead of a broken image.
+     */
+    public function previewDataUri(): ?string
+    {
+        return ClinicalEvidenceStorage::dataUri($this->handwriting_path);
+    }
+
+    public function hasStoredImage(): bool
+    {
+        return ClinicalEvidenceStorage::exists($this->handwriting_path);
     }
 
     protected static function newFactory(): MedicalRecordHandwritingFactory

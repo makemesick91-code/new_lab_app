@@ -19,6 +19,7 @@ beforeEach(function () {
     $this->branch = Branch::factory()->create(['code' => 'HW2', 'is_rme_enabled' => true]);
     $this->manager = userWith(['manage_clinic_visits', 'complete_rme_examination']);
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 });
 
 function hw2Visit(Branch $branch, Patient $patient, string $date): ClinicVisit

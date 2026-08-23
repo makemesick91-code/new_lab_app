@@ -17,7 +17,7 @@ it('foundation summary includes STORAGE_GOVERNANCE section with the STORAGE-R ru
 
     $ruleIds = collect($summary['storage_governance']['rules'])->pluck('id')->all();
 
-    expect($ruleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005']);
+    expect($ruleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005', 'STORAGE-R006']);
 });
 
 it('storage governance watches when object storage is enabled but misconfigured', function () {

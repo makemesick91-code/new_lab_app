@@ -12,6 +12,7 @@ use Spatie\Permission\Models\Role;
 beforeEach(function () {
     seedAccessControl();
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 });
 
 function additionalDelivery(?User $courier = null): Delivery

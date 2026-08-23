@@ -86,7 +86,7 @@
                         @if ($delivery->receiver_signature_data)
                             <img src="{{ $delivery->receiver_signature_data }}" alt="Tanda tangan penerima" class="max-h-32 max-w-full">
                         @elseif ($delivery->receiver_signature_path)
-                            <img src="{{ asset('storage/'.$delivery->receiver_signature_path) }}" alt="Tanda tangan penerima (legacy)" class="max-h-32 max-w-full">
+                            <img src="{{ route('deliveries.receiver-signature', $delivery) }}" alt="Tanda tangan penerima (legacy)" class="max-h-32 max-w-full">
                         @endif
                     </div>
                 </div>
@@ -121,7 +121,7 @@
                     @forelse ($delivery->attachments as $attachment)
                         <li class="flex items-center justify-between border-b border-hairline pb-2">
                             <span class="text-navy">{{ $attachment->file_name }} <span class="text-xs text-ink-muted">({{ $attachment->category }})</span></span>
-                            <a href="{{ asset('storage/'.$attachment->file_path) }}" target="_blank" class="font-medium text-brand-700 hover:text-brand-800">Buka</a>
+                            <a href="{{ route('attachments.download', $attachment) }}" target="_blank" class="font-medium text-brand-700 hover:text-brand-800">Buka</a>
                         </li>
                     @empty
                         <li class="text-ink-muted">Belum ada bukti yang diunggah.</li>

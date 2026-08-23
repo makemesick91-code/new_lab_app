@@ -99,6 +99,25 @@ return [
         // FIX-04b — legacy ODONTOGRAM chart archive. Its own private disk, kept
         // separate from the legacy RME archive so the two capabilities can be
         // retained, audited and (if ever needed) purged independently.
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — canonical private authority for
+        // NATIVE clinical evidence (RME handwriting pages, prescription and
+        // doctor-signature canvases).
+        //
+        // These artifacts previously lived on the 'public' disk, which is
+        // symlinked to public/storage and therefore served unauthenticated by
+        // the web server. This disk is deliberately NOT symlinked, NOT served,
+        // and private: the only read path is an authenticated, policy-gated
+        // controller. Object keys are preserved verbatim from the public disk
+        // so the migration needs no database rewrite.
+        'clinical_evidence' => [
+            'driver' => 'local',
+            'root' => storage_path('app/clinical-evidence-private'),
+            'serve' => false,
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'legacy_odontogram_private' => [
             'driver' => 'local',
             'root' => storage_path('app/legacy-odontogram-private'),

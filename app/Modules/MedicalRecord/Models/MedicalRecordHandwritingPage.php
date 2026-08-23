@@ -6,11 +6,11 @@ use App\Models\User;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Database\Factories\MedicalRecordHandwritingPageFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Sprint 60 — one row per RM page beyond Page 1 (1 canvas = 1 RM page).
@@ -72,6 +72,10 @@ class MedicalRecordHandwritingPage extends Model
         return $this->belongsTo(User::class, 'updated_by');
     }
 
+    /**
+     * STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — authenticated, policy-gated preview.
+     * See MedicalRecordHandwriting::previewUrl() for the rationale.
+     */
     public function previewUrl(): ?string
     {
         $path = $this->handwriting_path;
@@ -80,11 +84,22 @@ class MedicalRecordHandwritingPage extends Model
             return null;
         }
 
-        if (str_starts_with($path, 'data:image/')) {
+        if (ClinicalEvidenceStorage::isInlineDataUri($path)) {
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        return route('rme.handwriting-pages.image', ['handwritingPage' => $this->getKey()]);
+    }
+
+    /** Inline bytes for print/PDF, where no session cookie is available. */
+    public function previewDataUri(): ?string
+    {
+        return ClinicalEvidenceStorage::dataUri($this->handwriting_path);
+    }
+
+    public function hasStoredImage(): bool
+    {
+        return ClinicalEvidenceStorage::exists($this->handwriting_path);
     }
 
     protected static function newFactory(): MedicalRecordHandwritingPageFactory

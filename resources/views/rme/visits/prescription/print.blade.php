@@ -99,8 +99,8 @@
         $branch = $clinicVisit->branch;
         // FIX-01 — never fall back to another branch's name/address.
         $branchTitle = strtoupper($branch?->name ?: '');
-        $rxUrl = $prescription->prescriptionCanvasUrl();
-        $sigUrl = $prescription->signatureCanvasUrl();
+        $rxUrl = $prescription->prescriptionCanvasDataUri();
+        $sigUrl = $prescription->signatureCanvasDataUri();
         $dash = '—';
     @endphp
 

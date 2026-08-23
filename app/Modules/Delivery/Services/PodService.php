@@ -8,6 +8,7 @@ use App\Modules\Delivery\Models\Delivery;
 use App\Modules\LabOrder\Interfaces\AttachmentRepositoryInterface;
 use App\Modules\LabOrder\Models\AuditLog;
 use App\Modules\LabOrder\Services\AuditLogService;
+use App\Support\Storage\ClinicalEvidenceStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -116,7 +117,10 @@ class PodService
         $extension = $file->getClientOriginalExtension() ?: $file->guessExtension();
         $storedName = Str::uuid()->toString().($extension ? '.'.$extension : '');
         $directory = 'deliveries/'.$delivery->delivery_number;
-        $path = $file->storeAs($directory, $storedName, 'public');
+        $path = $file->storeAs($directory, $storedName, ClinicalEvidenceStorage::diskName());
+        // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 — these attachments are
+        // patient-linked evidence and must not land on the 'public' disk,
+        // which the web server serves without authentication.
 
         return $this->attachments->create([
             'entity_type' => Delivery::ENTITY_TYPE,

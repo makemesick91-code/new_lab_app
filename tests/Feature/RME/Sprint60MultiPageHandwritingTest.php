@@ -18,6 +18,7 @@ beforeEach(function () {
     seedAccessControl();
 
     Storage::fake('public');
+    Storage::fake('clinical_evidence');
 
     $this->branch = Branch::where('code', Branch::MAIN_CODE)->firstOrFail();
     $this->manager = userWith(['manage_clinic_visits']);
@@ -67,7 +68,7 @@ function s60BlankPng(): string
 
 function s60SaveLegacyPageOne(MedicalRecord $record): MedicalRecordHandwriting
 {
-    Storage::disk('public')->put('handwritings/legacy/page1.png', base64_decode(
+    Storage::disk('clinical_evidence')->put('handwritings/legacy/page1.png', base64_decode(
         'iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FABJADveWkH6oAAAAAElFTkSuQmCC',
         true
     ));
