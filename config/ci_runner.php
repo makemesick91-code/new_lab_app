@@ -141,6 +141,71 @@ return [
     ],
 
     /*
+     * The Critical Gate warning contract — CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1.
+     *
+     * The gate used to conclude `success` while reporting
+     * `Tests: 2222 warnings, 9 passed` — 128 of its 129 test files marked WARN.
+     * Failures were always enforced, but warnings had no contract at all, so
+     * 99.6% of the gate's own output was noise and a genuinely new warning was
+     * indistinguishable from the baseline.
+     *
+     * Root cause of that baseline: the application environment file is OPTIONAL
+     * by framework design and is deliberately never committed, so CI supplies
+     * configuration through each job's `env:` block instead. The framework
+     * still resolves the path and reads it on every application boot, and with
+     * nothing there the read failed and PHPUnit recorded a warning on every
+     * test that boots the application — which is every test except the one
+     * file that never boots it. CI now writes an EMPTY environment file, which
+     * makes the by-design "no file-based configuration" state explicit: the
+     * read succeeds and yields zero variables, byte-for-byte the configuration
+     * CI already resolved.
+     *
+     * `expected_warning_count` is a DECLARED baseline, not a tolerance to be
+     * raised. There is deliberately no warning-text allowlist: an expected
+     * condition is represented at its causal boundary, never by matching the
+     * text of a warning that is still being emitted.
+     */
+    'critical_gate_warning_contract' => [
+        'enabled' => (bool) env('CI_CRITICAL_GATE_WARNING_CONTRACT_ENABLED', true),
+
+        // Raising this to absorb a new warning is a governance violation.
+        'expected_warning_count' => (int) env('CI_CRITICAL_GATE_EXPECTED_WARNINGS', 0),
+
+        'log' => 'storage/ci-evidence/nsf-r011-critical-tests.log',
+
+        'command' => 'ci:assert-critical-gate-warning-contract',
+
+        /*
+         * Every job that boots the application under test must provision the
+         * environment file first. Matched by STEP NAME so the marker carries no
+         * filename literal — the release-evidence safety scan bans that literal
+         * in captured governance text.
+         */
+        'environment_provisioning_step' => 'Provision the CI environment file',
+
+        'environment_provisioning_jobs' => [
+            'critical_test_gate',
+            'critical_test_gate_self_hosted',
+            'selective_module_gate',
+            'release_safety_gate',
+            'nsf10_release_evidence_gate',
+            'full_suite_gate',
+        ],
+
+        /*
+         * Shapes that would make the gate lie rather than fix its cause. None
+         * of these may appear in the workflow or in the CI shell helpers.
+         */
+        'forbidden_suppression_markers' => [
+            'error_reporting(0)',
+            'grep -v warning',
+            'grep -v file_get_contents',
+            'ignoreSuppressionOfPhpWarnings',
+            'restrictWarnings',
+        ],
+    ],
+
+    /*
      * Steps whose exit status MUST survive a pipe.
      *
      * A shell pipeline reports the status of its LAST command, so
