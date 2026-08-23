@@ -4,6 +4,7 @@ use App\Services\Foundation\FiveBranchRolloutReadinessService;
 use App\Services\Foundation\RestoreDrillEvidenceService;
 use App\Support\Foundation\RestoreDrillTimestampParser;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Blade;
 
 uses()->group('Foundation', 'RolloutReadiness', 'RollFive', 'RestoreDrill');
 
@@ -355,6 +356,24 @@ it('surfaces the timestamp trust state to operators in the command JSON', functi
     $result = rdService()->evaluate($path);
     expect($result['details'])->toHaveKey('timestamp_status')
         ->and($result['details']['timestamp_status'])->toBe(RestoreDrillEvidenceService::TS_UNPARSEABLE);
+});
+
+it('states plainly on the readiness page that an untrusted age is unknown', function () {
+    // A vanished "Usia bukti" row and a trustworthy age must not look the same.
+    $details = ['age_hours' => null, 'timestamp_status' => RestoreDrillEvidenceService::TS_UNPARSEABLE];
+
+    $html = Blade::render(
+        '@if (array_key_exists(\'age_hours\', $restoreDetails) && $restoreDetails[\'age_hours\'] !== null)'
+        .'<span>{{ $restoreDetails[\'age_hours\'] }} jam</span>'
+        .'@elseif (! empty($restoreDetails[\'timestamp_status\']) && $restoreDetails[\'timestamp_status\'] !== \'valid\')'
+        .'<span>tidak dapat dipastikan ({{ $restoreDetails[\'timestamp_status\'] }})</span>'
+        .'@endif',
+        ['restoreDetails' => $details],
+    );
+
+    expect($html)->toContain('tidak dapat dipastikan')
+        ->and($html)->toContain('unparseable')
+        ->and($html)->not->toContain('jam');
 });
 
 it('does not let a forged-fresh timestamp clear the restore-drill rollout signal', function () {
