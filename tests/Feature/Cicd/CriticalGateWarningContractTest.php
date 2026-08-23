@@ -396,22 +396,32 @@ it('does not let the suppressed-read pattern spread through application code', f
      * uses the suppression operator correctly, so the remedy was to provision
      * the resource — never to copy that shape into application code.
      *
-     * Three application files predate this sprint and were audited here rather
-     * than rewritten, because none of them contributes to the Critical Gate
-     * baseline (an empty environment file alone takes it to zero) and two of
-     * them are already correct:
+     * The files below are audited here rather than rewritten, because none of
+     * them contributes to the Critical Gate baseline (an empty environment file
+     * alone takes it to zero) and each uses the operator correctly:
      *
      *   - PilotPerformanceSnapshotService::readMemInfo() — exemplary: an
      *     is_readable() guard, then an explicit `=== false` check. A read
      *     failure is never folded into empty content.
-     *   - RestoreDrillEvidenceService — casts a failed read to a string, so an
-     *     unreadable evidence file reports "invalid JSON" rather than
-     *     "unreadable". It still FAILS CLOSED (verified: the cast yields '',
-     *     json_decode returns null, and the `! is_array` branch calls fail()),
-     *     so the decision is correct and only the reason is less specific.
+     *   - RestoreDrillEvidenceReader::read() — same shape, and the reason this
+     *     class exists. RESTORE-DRILL-EVIDENCE-READ-STATE-1 moved the
+     *     restore-drill read here from RestoreDrillEvidenceService, which used
+     *     to cast a failed read to a string.
      *   - ArchitectureUiGovernanceCheckCommand — 74 presence probes over
      *     optional design-system files, where "unreadable" and "absent" are
      *     deliberately the same outcome.
+     *
+     * SUPERSEDED, recorded so the earlier reasoning is not silently rewritten:
+     * this inventory previously carried RestoreDrillEvidenceService with the
+     * note that it "casts a failed read to a string, so an unreadable evidence
+     * file reports 'invalid JSON' rather than 'unreadable'", judged acceptable
+     * because it still failed closed. The fail-closed half of that judgement was
+     * correct and was re-measured at the base commit — no verdict was ever
+     * wrong. The half that did not hold up is the conclusion that a less
+     * specific reason was therefore harmless: it sent an operator to fix a
+     * document's format when the actual fault was a permission or an I/O
+     * failure. That reason is now decided at the read boundary, before any
+     * content is interpreted, and the coercion is gone.
      *
      * This is an EXACT-SET assertion, not an allowlist with headroom: a new
      * file adopting the pattern fails, and so does cleaning one up without
@@ -419,8 +429,8 @@ it('does not let the suppressed-read pattern spread through application code', f
      */
     $audited = [
         'app/Console/Commands/ArchitectureUiGovernanceCheckCommand.php',
-        'app/Services/Foundation/RestoreDrillEvidenceService.php',
         'app/Services/Monitoring/PilotPerformanceSnapshotService.php',
+        'app/Support/Foundation/RestoreDrillEvidenceReader.php',
     ];
 
     $appFiles = new RecursiveIteratorIterator(

@@ -3,6 +3,7 @@
 namespace App\Services\Foundation;
 
 use App\Support\DeveloperConsole\SensitiveValueMasker;
+use App\Support\Foundation\RestoreDrillEvidenceReader;
 use App\Support\Foundation\RestoreDrillTimestampParser;
 use Throwable;
 
@@ -44,12 +45,33 @@ class RestoreDrillEvidenceService
 
     public const TS_FUTURE = 'future';
 
+    /**
+     * RESTORE-DRILL-EVIDENCE-READ-STATE-1 — stable machine-readable issue codes.
+     *
+     * Every one of these is non-GO. They are separate because they have separate
+     * remediations, not because they lead to different verdicts: "the file is not
+     * readable by this process" and "the document is malformed" both block the
+     * drill, but only one of them is fixed by editing the document.
+     */
+    public const ISSUE_ABSENT = 'evidence_absent';
+
+    public const ISSUE_EMPTY = 'evidence_empty';
+
+    public const ISSUE_UNREADABLE = 'evidence_unreadable';
+
+    public const ISSUE_READ_FAILED = 'evidence_read_failed';
+
+    public const ISSUE_INVALID_JSON = 'invalid_json';
+
+    public const ISSUE_NOT_AN_OBJECT = 'evidence_not_an_object';
+
     /** @var array<int, string> */
     private const VERIFICATION_ENUM = [self::GO, self::WATCH, self::FAIL, self::UNKNOWN];
 
     public function __construct(
         private readonly SensitiveValueMasker $masker,
         private readonly RestoreDrillTimestampParser $timestamps,
+        private readonly RestoreDrillEvidenceReader $reader,
     ) {}
 
     /**
@@ -85,22 +107,57 @@ class RestoreDrillEvidenceService
         $found = $this->locateEvidence($path);
 
         if ($found === null) {
+            // No usable candidate. Distinguish "nothing was ever written" from
+            // "a file is sitting there with nothing in it": both mean no drill
+            // has been evidenced (WATCH), but only one of them is a file the
+            // operator can go and look at.
+            $emptyCandidate = $this->firstEmptyCandidate($path);
+
+            $details = [
+                'evidence_present' => false,
+                'runbook_present' => is_file(base_path($runbook)),
+                'checked_paths' => $this->candidatePaths($path),
+                'read_state' => $emptyCandidate !== null
+                    ? RestoreDrillEvidenceReader::READ_EMPTY
+                    : RestoreDrillEvidenceReader::READ_ABSENT,
+                'issues' => [$emptyCandidate !== null ? self::ISSUE_EMPTY : self::ISSUE_ABSENT],
+            ];
+
+            if ($emptyCandidate !== null) {
+                $details['evidence_file'] = basename($emptyCandidate);
+            }
+
             return [
                 'status' => self::WATCH,
                 'unsafe' => false,
-                'summary' => 'belum ada bukti uji restore — jalankan drill staging sesuai runbook',
+                'summary' => $emptyCandidate !== null
+                    ? 'file bukti uji restore ada tetapi kosong (0 byte) — belum ada drill yang terekam'
+                    : 'belum ada bukti uji restore — jalankan drill staging sesuai runbook',
                 'remediation' => 'Lakukan restore drill ke DB staging/disposable (bukan produksi) sesuai `'.$runbook.'`, lalu validasi dengan `php artisan rollout:restore-drill-evidence --strict`.',
                 'decision' => self::WATCH,
-                'details' => [
-                    'evidence_present' => false,
-                    'runbook_present' => is_file(base_path($runbook)),
-                    'checked_paths' => $this->candidatePaths($path),
-                ],
+                'details' => $details,
             ];
         }
 
-        $raw = (string) @file_get_contents($found);
         $basename = basename($found);
+
+        // Read state is decided BEFORE any content is interpreted. A failed read
+        // is never turned into an empty string, so it can never reach the JSON
+        // decoder and be reported as a malformed document.
+        $read = $this->reader->read($found);
+
+        if ($read['state'] !== RestoreDrillEvidenceReader::READ_OK) {
+            return $this->readFailure($read['state'], $basename, $runbook);
+        }
+
+        $raw = $read['contents'];
+
+        // A reader that reports success without bytes has not read anything, and
+        // casting that absence to a string is the exact defect this contract
+        // exists to prevent. Treat it as the read failure it is.
+        if (! is_string($raw)) {
+            return $this->readFailure(RestoreDrillEvidenceReader::READ_FAILED, $basename, $runbook);
+        }
 
         // Secret / PII scan on the RAW payload BEFORE trusting any field. A leak
         // is an unsafe FAIL and the offending content is never echoed back.
@@ -109,7 +166,7 @@ class RestoreDrillEvidenceService
             return $this->fail(
                 'bukti uji restore ditolak: terdeteksi pola sensitif ('.$leak.')',
                 'Hapus data sensitif dari bukti (tanpa rahasia/KTP/NIK/dump mentah), lalu buat ulang bukti.',
-                ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'issues' => ['leaked_'.$leak]],
+                ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'read_state' => RestoreDrillEvidenceReader::READ_OK, 'issues' => ['leaked_'.$leak]],
                 unsafe: true,
             );
         }
@@ -125,15 +182,29 @@ class RestoreDrillEvidenceService
                 'summary' => 'template bukti uji restore (placeholder) — belum ada drill nyata',
                 'remediation' => 'Isi bukti dari drill staging/disposable nyata, lalu jalankan `php artisan rollout:restore-drill-evidence --strict`.',
                 'decision' => self::WATCH,
-                'details' => ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'issues' => ['template_placeholder']],
+                'details' => ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'read_state' => RestoreDrillEvidenceReader::READ_OK, 'issues' => ['template_placeholder']],
             ];
         }
 
         if (! is_array($data)) {
+            // "The decoder rejected these bytes" and "the decoder accepted these
+            // bytes but they are not an evidence object" are different faults.
+            // Reporting a well-formed `12345` as unparseable sends the operator
+            // looking for a syntax error that is not there.
+            $decodeFailed = json_last_error() !== JSON_ERROR_NONE;
+
             return $this->fail(
-                'bukti uji restore tidak valid: JSON tidak dapat diurai',
+                $decodeFailed
+                    ? 'bukti uji restore tidak valid: JSON tidak dapat diurai'
+                    : 'bukti uji restore tidak valid: JSON terbaca tetapi bukan objek bukti',
                 'Perbaiki format JSON bukti sesuai `'.(string) config('rollout_readiness.restore_drill.evidence_template_doc').'`.',
-                ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'issues' => ['invalid_json']],
+                [
+                    'evidence_present' => true,
+                    'evidence_file' => $basename,
+                    'schema_valid' => false,
+                    'read_state' => RestoreDrillEvidenceReader::READ_OK,
+                    'issues' => [$decodeFailed ? self::ISSUE_INVALID_JSON : self::ISSUE_NOT_AN_OBJECT],
+                ],
             );
         }
 
@@ -142,7 +213,7 @@ class RestoreDrillEvidenceService
             return $this->fail(
                 'bukti uji restore tidak valid: skema tidak lengkap',
                 'Lengkapi field wajib bukti sesuai template restore-drill.',
-                ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'issues' => $schemaIssues],
+                ['evidence_present' => true, 'evidence_file' => $basename, 'schema_valid' => false, 'read_state' => RestoreDrillEvidenceReader::READ_OK, 'issues' => $schemaIssues],
             );
         }
 
@@ -316,6 +387,18 @@ class RestoreDrillEvidenceService
         return array_values((array) config('rollout_readiness.paths.restore_drill_evidence', []));
     }
 
+    /**
+     * Candidate selection is deliberately unchanged by
+     * RESTORE-DRILL-EVIDENCE-READ-STATE-1: the same file is chosen for
+     * evaluation as before, so no readiness verdict moves. What changed is how
+     * the CHOSEN file's read outcome is classified once it has been chosen.
+     *
+     * Keeping this predicate matters for a reason that is easy to miss: an
+     * existing but unreadable candidate is still selected here, so it still
+     * blocks rather than silently falling through to a later candidate. Making
+     * a read fault fall through would be strictly more permissive — it would let
+     * a secondary path answer for a canonical file nobody could read.
+     */
     private function locateEvidence(?string $path): ?string
     {
         foreach ($this->candidatePaths($path) as $rel) {
@@ -326,6 +409,87 @@ class RestoreDrillEvidenceService
         }
 
         return null;
+    }
+
+    /**
+     * The first candidate that exists but holds zero bytes, if any.
+     *
+     * Only consulted when no candidate was usable, to tell "no file" apart from
+     * "a file with nothing in it". Both are WATCH; they are not the same fact.
+     */
+    private function firstEmptyCandidate(?string $path): ?string
+    {
+        foreach ($this->candidatePaths($path) as $rel) {
+            $abs = $this->absolutePath($rel);
+            if (is_file($abs) && filesize($abs) === 0) {
+                return $abs;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Translate a non-OK read state into a verdict, naming the actual fault.
+     *
+     * Every branch is non-GO, exactly as before this contract existed. The
+     * severity of each branch matches what the same physical condition already
+     * produced: a file that exists but yields no bytes to the reader was a FAIL
+     * and stays a FAIL; a file that is not there, or is there and empty, was a
+     * WATCH and stays a WATCH. Only the reported reason changes.
+     *
+     * @return array{status: string, unsafe: bool, summary: string, remediation: ?string, decision: string, details: array<string, mixed>}
+     */
+    private function readFailure(string $state, string $basename, string $runbook): array
+    {
+        $details = static fn (string $issue, bool $present): array => [
+            'evidence_present' => $present,
+            'evidence_file' => $basename,
+            'schema_valid' => false,
+            'read_state' => $state,
+            'issues' => [$issue],
+        ];
+
+        return match ($state) {
+            // Vanished between selection and read. No evidence, same as absent.
+            RestoreDrillEvidenceReader::READ_ABSENT => [
+                'status' => self::WATCH,
+                'unsafe' => false,
+                'summary' => 'file bukti uji restore hilang saat dibaca — belum ada bukti yang dapat divalidasi',
+                'remediation' => 'Jalankan ulang restore drill staging sesuai `'.$runbook.'`, lalu validasi ulang.',
+                'decision' => self::WATCH,
+                'details' => $details(self::ISSUE_ABSENT, false),
+            ],
+
+            // Truncated between selection and read. A file with no evidence in it.
+            RestoreDrillEvidenceReader::READ_EMPTY => [
+                'status' => self::WATCH,
+                'unsafe' => false,
+                'summary' => 'file bukti uji restore kosong (0 byte) — belum ada drill yang terekam',
+                'remediation' => 'Jalankan ulang restore drill staging sesuai `'.$runbook.'`, lalu validasi ulang.',
+                'decision' => self::WATCH,
+                'details' => $details(self::ISSUE_EMPTY, false),
+            ],
+
+            RestoreDrillEvidenceReader::READ_UNREADABLE => $this->fail(
+                'bukti uji restore tidak dapat dibaca: izin akses file ditolak',
+                'Perbaiki kepemilikan/izin file bukti agar dapat dibaca oleh runtime aplikasi, lalu validasi ulang. Isi bukti TIDAK diubah oleh perintah ini.',
+                $details(self::ISSUE_UNREADABLE, true),
+            ),
+
+            RestoreDrillEvidenceReader::READ_FAILED => $this->fail(
+                'bukti uji restore gagal dibaca: operasi baca file tidak berhasil',
+                'Periksa kesehatan penyimpanan/mount dan pastikan file bukti stabil saat dibaca, lalu validasi ulang.',
+                $details(self::ISSUE_READ_FAILED, true),
+            ),
+
+            // Unknown read state: fail closed rather than guess at the content.
+            default => $this->fail(
+                'bukti uji restore gagal dibaca: status baca tidak dikenal',
+                'Periksa log; status baca bukti tidak dikenali sehingga bukti tidak dapat dipercaya.',
+                $details(self::ISSUE_READ_FAILED, true),
+            ),
+        };
     }
 
     private function absolutePath(string $rel): string
@@ -399,6 +563,10 @@ class RestoreDrillEvidenceService
             'evidence_present' => true,
             'evidence_file' => $basename,
             'schema_valid' => true,
+            // Reached only after a successful read, so this is always OK here.
+            // Reported anyway so every outcome carries its read state and a
+            // consumer never has to infer it from the absence of the key.
+            'read_state' => RestoreDrillEvidenceReader::READ_OK,
             'drill_id' => $this->masker->mask((string) ($data['drill_id'] ?? '')),
             'environment' => $this->masker->mask((string) ($data['environment'] ?? '')),
             'restore_target' => $this->masker->mask((string) ($data['restore_target'] ?? '')),

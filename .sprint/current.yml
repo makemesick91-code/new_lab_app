@@ -1,49 +1,51 @@
-# CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1 — Sprint Manifest
+# RESTORE-DRILL-EVIDENCE-READ-STATE-1 — Sprint Manifest
 #
-# The NSF-R011 critical gate selects tests with a fixed `--filter` allowlist.
-# The only contract over that allowlist asked whether a TOKEN was present
-# (config/ci_runner.php `critical_gate_required_filters`, CICD-CTRL-3D). That
-# question cannot detect the failure that matters: a suite whose name no token
-# matches is simply absent from the gate, and absence looks exactly like green.
+# Restore-drill evidence gates ROLL-5 Stage 1. The service read it with
+# `(string) @file_get_contents($path)`, which turns a failed read (`false`) into
+# an empty string. An empty string is indistinguishable from a file that
+# genuinely held nothing, so by the time the JSON decoder saw it the only
+# surviving fact was "this did not parse" — and every upstream fault was reported
+# to the operator as malformed JSON, including faults where not one byte was read.
 #
-# ROOT CAUSE, measured rather than assumed. Every one of the eight suites in
-# tests/Unit/Services/Monitoring was selected because its filename began with
-# `PilotPerformanceSnapshot`. MonitoringLogSourceResilienceTest — the suite that
-# pins that the monitor reads where the application actually writes, and fails
-# closed on a missing or unreadable source — does not carry that prefix, so it
-# matched no token in either critical variant. Measured with the real runner at
-# the base SHA: the critical filter selected 2252 tests across 130 files and
-# EXACTLY ZERO of them came from that file. Its coverage was a filename
-# coincidence, and renaming any sibling would have removed that sibling's
-# coverage just as silently.
+# MEASURED AT THE BASE COMMIT, not assumed. Twelve fixtures against unmodified
+# code as uid 1000 (so `chmod 000` genuinely denies the read) produced four real
+# conflations: a zero-byte file reported as "no evidence file"; an unreadable
+# file reported as "JSON cannot be parsed"; a failed read likewise; and
+# well-formed JSON of the wrong shape (`12345`, `null`) also reported as
+# unparseable. There is NO false GO here and none was introduced — every one of
+# those states was already non-GO. This is a state-integrity defect.
 #
-# WHY NOT "ADD A TOKEN". A bare `Monitoring` token closes this instance and
-# creates two new problems: measured, it also sweeps in 15 unrelated files —
-# matched through the word appearing in test DESCRIPTIONS, not because they
-# carry a monitoring contract — and it still leaves coverage resting on what
-# files happen to be called. The fix therefore adds the half the authority was
-# missing rather than widening the half it had.
+# ALREADY KNOWN, AND ACCEPTED. CriticalGateWarningContractTest carried a note
+# saying this service "casts a failed read to a string, so an unreadable evidence
+# file reports 'invalid JSON' rather than 'unreadable'", judged acceptable
+# because it still failed closed. The fail-closed half was correct and was
+# re-measured. The half that does not hold up is that a less specific reason is
+# therefore harmless: it sends an operator to fix a document's format when the
+# fault is a permission or an I/O failure. That reasoning is superseded in place.
 #
-# THE FIX. config/ci_runner.php gains `critical_gate_mandatory_suites`: the test
-# FILES that must actually run. The existing scanner derives the name PHPUnit
-# filters against and requires some token in EVERY critical variant to match it.
-# A declared suite that no token selects, that no longer exists, or that only
-# one variant covers FAILS the gate. A rename can now move coverage; it can no
-# longer delete it. Scope stays bounded — the narrow token adds exactly the one
-# missing file, and the directory's completeness is itself asserted so a future
-# monitoring suite cannot be added undeclared.
+# THE FIX. A new RestoreDrillEvidenceReader decides the read outcome once, before
+# any content is interpreted, and never coerces `false` to a string. The decode
+# stage is split by json_last_error() so "the decoder rejected these bytes" and
+# "these bytes are not an evidence object" stop sharing a reason.
+#
+# WHAT WAS DELIBERATELY NOT CHANGED. Candidate selection keeps its exact
+# `is_file && filesize > 0` predicate. Letting a read fault fall through to the
+# next candidate would have been strictly MORE PERMISSIVE — a secondary path
+# answering for a canonical file nobody could read. The measured differential
+# across all 13 states is READINESS_DELTAS = 0: every verdict is preserved, only
+# the reasons became true.
 
-id: CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1
-type: INFRA_RELEASE
-module: Cicd
-title: "Mandatory Monitoring critical suites are selected by an explicit registry, not by a filename coincidence"
+id: RESTORE-DRILL-EVIDENCE-READ-STATE-1
+type: RUNTIME_FIX
+module: Foundation
+title: "Restore-drill evidence reports the stage at which it stopped being trustworthy, without any state becoming more permissive"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # new scanner posture + governance check; no product request path touched
+runtime_change: true          # new read-state boundary in the restore-drill evidence path
 schema_change: false
 frontend_change: false
-security_impact: true         # closes a CI false-green path: a mandatory regression contract could leave the gate unnoticed
+security_impact: true         # touches a fail-closed readiness gate; the differential proves no state loosened
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -52,7 +54,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: ci-monitoring-critical-token-coverage-1-go
+go_tag: restore-drill-evidence-read-state-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
