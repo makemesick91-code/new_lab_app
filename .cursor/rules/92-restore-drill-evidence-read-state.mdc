@@ -1,0 +1,54 @@
+---
+description: Restore-drill evidence read-state contract — a read fault is never reported as a parse fault
+globs:
+  - "app/Services/Foundation/RestoreDrillEvidenceService.php"
+  - "app/Support/Foundation/RestoreDrillEvidenceReader.php"
+  - "app/Console/Commands/RolloutRestoreDrillEvidenceCommand.php"
+  - "tests/Feature/Foundation/RestoreDrill*"
+alwaysApply: false
+---
+
+# RESTORE-DRILL-EVIDENCE-READ-STATE-1
+
+Restore-drill evidence gates the ROLL-5 rollout. When it cannot be trusted, the
+operator must be told **at which stage** trust was lost — because the stages have
+different fixes.
+
+## The rules
+
+1. **Read state before content.** `RestoreDrillEvidenceReader::read()` decides
+   `absent | unreadable | read_failed | empty | ok` before anything is parsed or
+   validated. Nothing downstream may re-derive it.
+2. **Never coerce a failed read.** No `(string) file_get_contents(...)`, no
+   `?: ''`, no `?? ''` between a read and its classification. `contents` is
+   non-null only for `empty` and `ok`. Suppression (`@`) is warning-noise control
+   only — the state is always the explicit `=== false` check.
+3. **`invalid_json` is narrow.** It means bytes were read and the decoder
+   rejected them. Well-formed JSON of the wrong shape is
+   `evidence_not_an_object`. A filesystem fault is never `invalid_json`.
+4. **Empty ≠ read failure.** A successfully-read zero-byte file is `empty`
+   (WATCH — no evidence recorded). Bytes that are not valid evidence are FAIL.
+5. **Trust before freshness.** An age is computed only from a trusted instant.
+   Untrusted evidence is never given an age (see
+   `RestoreDrillTimestampParser`, RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1).
+6. **Every untrusted state is non-GO.** absent, empty, unreadable, read_failed,
+   invalid_json, not_an_object, invalid schema, unsafe, invalid/future timestamp,
+   stale. There is no exception.
+7. **Truthfulness must not buy permissiveness.** Candidate selection
+   (`is_file && filesize > 0`) is fixed. A read fault on the selected candidate
+   blocks; it must not fall through to a later path. Changing a reason is allowed;
+   moving a verdict is a separate, explicitly-justified decision.
+8. **Non-destructive verification.** Never mutate canonical evidence, never run a
+   live restore, and never `chmod` the production evidence file to exercise a
+   state. Use fixtures and the injected reader.
+
+## When touching this code
+
+- Re-run the readiness differential before/after. The expected result is
+  `READINESS_DELTAS = 0`.
+- `tests/Feature/Foundation/RestoreDrillEvidenceReadStateTest.php` is declared in
+  `config/ci_runner.php` `critical_gate_mandatory_suites`. Renaming it moves its
+  coverage; deleting it from the registry fails the gate.
+- `tests/Feature/Cicd/CriticalGateWarningContractTest.php` holds an EXACT-SET
+  inventory of files using `@file_get_contents`. Adding or removing one without
+  updating that inventory fails CI, by design.

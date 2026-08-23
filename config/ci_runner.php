@@ -197,6 +197,11 @@ return [
         // RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1 — drill evidence is only as
         // trustworthy as the timestamp it carries.
         'tests/Feature/Foundation/RestoreDrillTimestampFaithfulnessTest.php',
+
+        // RESTORE-DRILL-EVIDENCE-READ-STATE-1 — an unreadable or unread artifact
+        // is never reported as a malformed one, and no read fault is permitted
+        // to become more permissive than the flattened state it replaced.
+        'tests/Feature/Foundation/RestoreDrillEvidenceReadStateTest.php',
     ],
 
     /*

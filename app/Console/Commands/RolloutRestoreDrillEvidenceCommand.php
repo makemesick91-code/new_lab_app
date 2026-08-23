@@ -93,7 +93,7 @@ class RolloutRestoreDrillEvidenceCommand extends Command
         if (! empty($details)) {
             $this->newLine();
             $this->line('  Details:');
-            foreach (['evidence_present', 'evidence_file', 'environment', 'restore_target', 'production_overwrite', 'source_backup_file', 'source_backup_size_bytes', 'age_hours', 'timestamp_status', 'stale', 'evidence_decision'] as $k) {
+            foreach (['evidence_present', 'evidence_file', 'read_state', 'environment', 'restore_target', 'production_overwrite', 'source_backup_file', 'source_backup_size_bytes', 'age_hours', 'timestamp_status', 'stale', 'evidence_decision'] as $k) {
                 if (array_key_exists($k, $details)) {
                     $val = $details[$k];
                     $this->line(sprintf('   - %s: %s', $k, is_bool($val) ? ($val ? 'true' : 'false') : (string) $val));

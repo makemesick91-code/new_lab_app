@@ -179,3 +179,33 @@ evidence, not a target — the only way to make it GO is to run a real drill.
 
 and confirm `restore_drill_evidence` is now **GO** and Stage-1 clears (independent
 of the Stage-3 five-branch count, which stays WATCH until 5 branches are RME-enabled).
+
+### 7.2 Read-state contract (RESTORE-DRILL-EVIDENCE-READ-STATE-1)
+
+`php artisan rollout:restore-drill-evidence` now tells you **at which stage** the
+evidence stopped being trustworthy. Before this contract, any failure to obtain
+the bytes — a missing permission, an I/O error — was reported as "JSON tidak
+dapat diurai", which sent operators to edit a document whose format was fine.
+
+Read the `issues` code and the `read_state` detail, not the prose:
+
+| `issues` code | `read_state` | What actually happened | What to fix |
+|---|---|---|---|
+| `evidence_absent` | `absent` | No evidence file at any candidate path | Run the drill (§2–§5), then re-validate |
+| `evidence_empty` | `empty` | The file exists but holds 0 bytes | Re-run the drill; the previous run wrote nothing |
+| `evidence_unreadable` | `unreadable` | The file is there; the app runtime may not read it | Fix ownership/permissions so the runtime identity can read it. **Do not edit the file's contents** |
+| `evidence_read_failed` | `read_failed` | The read was attempted and failed | Check storage/mount health; the file may be changing while it is read |
+| `invalid_json` | `ok` | Bytes were read and the decoder rejected them | Fix the JSON syntax against the evidence template |
+| `evidence_not_an_object` | `ok` | Valid JSON, but not an evidence object | Replace with a real evidence payload, not a bare value |
+| `missing_<field>` | `ok` | Valid evidence object, required field absent | Complete the field |
+| `evidence_timestamp_*` | `ok` | `completed_at` is not a faithful canonical UTC literal (§7.1) | Rewrite as `YYYY-MM-DDTHH:MM:SSZ` |
+| `evidence_stale` | `ok` | Trusted evidence, older than the freshness window | Re-run the drill |
+
+Every one of these is non-GO. The distinction is the remediation, not the
+verdict.
+
+**Never do this to reproduce a state on production:** do not `chmod` the
+canonical evidence file, do not truncate or corrupt it, and do not run a restore
+to see what the validator says. The validator only ever reads. Exercise states
+with a throwaway file and `--path`, which leaves the canonical evidence
+untouched.
