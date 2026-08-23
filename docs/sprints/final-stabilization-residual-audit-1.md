@@ -52,7 +52,7 @@ measured the real thing rather than a drifted approximation.
 
 ## 3. The residual ledger
 
-Twenty unique residuals. Repeated references to the same item across docs and
+Twenty-one unique residuals. Repeated references to the same item across docs and
 rules were folded into one row rather than counted separately.
 
 **Form note.** This is a table, not a chart, on purpose. The data's job here is
@@ -82,13 +82,14 @@ ledger auditable.
 | R-18 | Storage | Empty `handwritings/`, `prescriptions/`, `lab-orders/` directory shells remain under the public disk | 0 files inside; `public_real_files=0`; nginx denies the prefix regardless | **ACCEPTED_RISK** | No | this sprint |
 | R-19 | Governance | Commit `17d5ccf` subject reads "WATCH: Wave-1 not executed" | superseded by `2ffe00c` ("record the executed Wave-1 migration"), which is what the GO tag points at; immutable git history, correctly **not** rewritten | **SUPERSEDED** | No | `legacy-rme-pdf-roll-4-wave-1-…-go` |
 | R-20 | CI | `RmePrescriptionTest` — and `run_rme_tests` generally — is selected by no required CI gate | verified empirically with `pest --list-tests` against the gate's own 36-token filter: `ClinicalEvidencePrivacyTest` → **22 selected**, `RmePrescriptionTest` → **0**; both runner variants' filters are byte-identical, so this is not drift | **ACCEPTED_RISK** | No | this sprint (§8a) |
+| R-21 | Governance / CI | **4 tests failing on the GO-tagged authority** — sibling exact-list pins never updated when `STORAGE-R006` shipped | `STORAGE-R006` exists in `StorageGovernanceService` **at the base commit**, but only 1 of 5 pinning tests was updated; `Lb1`/`Stateless1`/`Replica1`/`CacheRedis` GovernanceIntegrationTest still pinned `R001–R005`. Reproduced in isolation; repinned; all 5 suites now **30 passed / 0 failed** | **CLOSED** | No | this sprint (§7a) |
 
 ### Totals
 
 ```
-TOTAL_UNIQUE_RESIDUALS = 20
+TOTAL_UNIQUE_RESIDUALS = 21
 
-CLOSED           = 3    (R-01, R-03, R-04)
+CLOSED           = 4    (R-01, R-03, R-04, R-21)
 ACCEPTED_RISK    = 9    (R-02, R-05, R-06, R-07, R-12, R-14, R-15, R-18, R-20)
 BLOCKED_EXTERNAL = 3    (R-09, R-10, R-16)
 DEFERRED         = 3    (R-08, R-11, R-13)
@@ -292,6 +293,58 @@ and the canvas assertion fails. Both guards bite.
 > failures. CI runs on a fresh checkout, so it is not a CI-correctness issue —
 > but it is a real trap for anyone mutation-testing this area, which is precisely
 > why it is in the ledger instead of being quietly forgotten.
+
+---
+
+## 7a. Four tests were already failing on the GO-tagged authority
+
+This is the finding that justifies running an audit before the Full Suite rather
+than trusting that the series was clean.
+
+`STORAGE-PUBLIC-CLINICAL-EVIDENCE-1` added a sixth rule, `STORAGE-R006`, to
+`StorageGovernanceService`. Five Architecture tests pin the storage rule list
+**exactly**. The sprint updated one of them — `Storage1GovernanceIntegrationTest`
+— and left four still asserting `R001–R005`:
+
+```
+Lb1GovernanceIntegrationTest.php:32
+Stateless1GovernanceIntegrationTest.php:30
+Replica1GovernanceIntegrationTest.php:31
+CacheRedisGovernanceIntegrationTest.php:36
+```
+
+**These were failing on `dccfbe7` — the current GO tag, the commit running in
+production.** Verified pre-existing rather than assumed: `STORAGE-R006` is present
+in the service at the base commit (`git show dccfbe7:…` confirms), the stale
+five-element pin is present in the test at the base commit, and this sprint's diff
+touches neither file.
+
+**Why nothing caught it.** The Critical gate's 36-token filter does not select
+these suites, and the repository-wide Full Suite has been deferred since
+2026-08-19. A test can fail for days when the only gate that runs it is switched
+off — which is precisely the condition this audit existed to check before that
+gate is switched back on.
+
+**Fixed as audit-owned work**: the four pins now include `STORAGE-R006`, and the
+service's own docblock — which still said "Publishes the STORAGE-R001..R005
+rules" while publishing six — was corrected. That docblock is the only change
+this sprint makes under `app/`, and it is a comment: no executable statement
+changed, `RUNTIME_BEHAVIOR_CHANGE` stays **false**. The runtime was always
+correct; only the assertions and the comment describing it were stale.
+
+Verified: the five governance-integration suites now run **30 passed / 91
+assertions / 0 failed**.
+
+**Swept for siblings rather than fixing only the one that failed.** A script
+compared every governance service's published rule ids against every exact-list
+`toBe([...])` pin in `tests/`. It flagged the OBS family as stale too — a **false
+positive**: OBS-1 and OBS-2 are deliberately separate services publishing
+`OBS-R001..R012` and `OBS-R013..R024`, and each test correctly pins its own half.
+Re-run keyed by service file rather than by id prefix, every pinned set matches
+exactly one service. The four STORAGE pins were the only real staleness.
+
+**Durable trigger:** adding a rule to any governance service means updating
+*every* exact-list pin for that family, not just the one named after the sprint.
 
 ---
 

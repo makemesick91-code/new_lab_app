@@ -127,3 +127,22 @@ Measured at this sprint: `ClinicalEvidencePrivacyTest` → 22 tests selected
 (registered mandatory); `RmePrescriptionTest` → 0 (not registered, and no job
 consumes the classifier's `run_rme_tests` output). Recorded as residual R-20
 rather than silently appended to the filter.
+
+## R14 — Adding a governance rule means repinning EVERY exact-list assertion
+
+Several Architecture tests pin a rule family with an exact `toBe([...])`. Adding a
+rule to a governance service therefore breaks every one of them, not just the test
+named after the sprint that added it. `STORAGE-R006` shipped with only 1 of 5 pins
+updated, leaving four tests failing on the GO-tagged commit running in production.
+
+Sweep by comparing each service's published ids against every exact-list pin —
+**keyed by service file, not by id prefix**: OBS-1 and OBS-2 are deliberately
+separate services publishing `OBS-R001..R012` and `OBS-R013..R024`, so a
+prefix-keyed sweep reports both as stale when neither is.
+
+Correct the service's own docblock too when the rule count changes.
+
+**A test can fail for days when the only gate that runs it is switched off.**
+While the Full Suite is deferred, a suite outside the Critical filter has no gate
+at all — which is exactly why the pre-Full-Suite audit must run these locally
+rather than trust that CI would have noticed.

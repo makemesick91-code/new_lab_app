@@ -27,7 +27,7 @@ it('foundation summary still includes STORAGE_GOVERNANCE with STORAGE-R rules un
 
     $ruleIds = collect($summary['storage_governance']['rules'])->pluck('id')->all();
 
-    expect($ruleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005']);
+    expect($ruleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005', 'STORAGE-R006']);
 });
 
 it('foundation-governance-summary combined decision stays GO', function () {

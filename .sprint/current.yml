@@ -11,8 +11,21 @@
 # outcome was NO-GO plus a named corrective sprint — never a fix smuggled in
 # under an audit heading.
 #
-# WHAT THE AUDIT ACTUALLY CHANGED. Three files, all test/fixture/governance,
-# RUNTIME_BEHAVIOR_CHANGE=false:
+# WHAT THE AUDIT ACTUALLY CHANGED. Test/fixture/governance only,
+# RUNTIME_BEHAVIOR_CHANGE=false. The single change under app/ is one docblock
+# line — a comment, no executable statement:
+#
+#   0. FOUR TESTS WERE ALREADY FAILING ON THE GO-TAGGED AUTHORITY. The previous
+#      sprint added STORAGE-R006 but updated only one of the five Architecture
+#      tests that pin the storage rule list exactly; Lb1, Stateless1, Replica1
+#      and CacheRedis still asserted R001-R005. Verified pre-existing: R006 is
+#      in the service at the base commit and the stale pin is in the tests at
+#      the base commit, and this sprint touches neither file. Nothing caught it
+#      because the Critical gate does not select those suites and the Full Suite
+#      has been deferred since 2026-08-19 — a test can fail for days when the
+#      only gate that runs it is switched off. Repinned, plus the service's own
+#      docblock which still said "R001..R005" while publishing six. Five suites
+#      now run 30 passed / 0 failed.
 #
 #   1. database/factories/RmePrescriptionFactory.php — the fixture wrote
 #      prescription and doctor-signature canvases to the 'public' disk while
@@ -55,7 +68,8 @@ title: "Every stabilization residual reconciled against production authority, cl
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: false          # no app/, config/, routes/ or migration change
+runtime_change: false          # one app/ docblock line (comment only); no executable
+                               # statement, no config/, routes/ or migration change
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
 security_impact: false         # verifies the security fix; introduces no new surface
