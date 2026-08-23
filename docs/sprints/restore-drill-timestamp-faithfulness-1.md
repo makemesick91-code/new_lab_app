@@ -219,6 +219,8 @@ The separate, **pre-existing** `MonitoringLogSourceResilienceTest` token gap is
 deliberately NOT touched here — it is unrelated to Restore Drill and remains its own
 governance item.
 
+> **Superseded 2026-08-23 by CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1:** that reasoning was insufficient. Equivalent properties covered by an incidentally-matched sibling is additional defence, never the authority — and the sibling's own selection rested on the same filename coincidence, so a rename would have removed both. Measured at the base SHA, the critical filter selected 2252 tests across 130 files and ZERO from this suite. The gap is now CLOSED: `config/ci_runner.critical_gate_mandatory_suites` declares the suites that must run and `SelfHostedRunnerScanner::criticalGateSuiteCoveragePosture()` fails the gate on any drift.
+
 ---
 
 ## 8. Verification results

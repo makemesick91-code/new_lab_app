@@ -150,6 +150,14 @@ class SelfHostedRunnerGovernanceService
             ? $this->pass('CICDCTRL3-DB-GUARD', 'Production database guard is strict: testing-only environment, local-only hosts, explicit production denylist.')
             : $this->fail('CICDCTRL3-DB-GUARD', 'Database guard posture failed: '.implode('; ', $guard['issues']).'.');
 
+        $suiteCoverage = $this->scanner->criticalGateSuiteCoveragePosture();
+        $checks[] = $suiteCoverage['ok']
+            ? $this->pass('CICDCTRL3-CRITICAL-SUITE-COVERAGE', sprintf(
+                'All %d mandatory critical suites are selected by every critical gate variant.',
+                count($suiteCoverage['declared'])
+            ))
+            : $this->fail('CICDCTRL3-CRITICAL-SUITE-COVERAGE', 'Mandatory critical suite coverage failed: '.implode('; ', $suiteCoverage['issues']).'.');
+
         $runtimeControl = $this->ciRuntimeControl->collect();
         $runtimeDecision = (string) ($runtimeControl['decision'] ?? 'FAIL');
         $checks[] = $this->decisionCheck('CICDCTRL3-CICDCTRL1-GATE', $runtimeDecision, 'CICD-CTRL-1 safe CI runtime control is GO.');
@@ -168,6 +176,7 @@ class SelfHostedRunnerGovernanceService
             'workflow_ok' => $workflow['ok'],
             'deploy_isolation_ok' => $deploy['ok'],
             'health_script_ok' => $health['ok'],
+            'critical_suite_coverage_ok' => $suiteCoverage['ok'],
             'pipeline_exit_ok' => $pipeline['ok'],
             'pipeline_exit_unprotected' => $pipeline['unprotected'],
             'runtime_evidence_ok' => $evidence['ok'],

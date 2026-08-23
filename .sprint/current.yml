@@ -1,55 +1,49 @@
-# CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1 — Sprint Manifest
+# CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1 — Sprint Manifest
 #
-# The NSF-R011 Critical Test Gate concluded `success` while reporting
-# `Tests: 2222 warnings, 9 passed` — 128 of its 129 test files marked WARN. The
-# objective was never "make CI output visually clean". It was to make the gate's
-# warnings attributable, actionable, deterministic and truthful.
+# The NSF-R011 critical gate selects tests with a fixed `--filter` allowlist.
+# The only contract over that allowlist asked whether a TOKEN was present
+# (config/ci_runner.php `critical_gate_required_filters`, CICD-CTRL-3D). That
+# question cannot detect the failure that matters: a suite whose name no token
+# matches is simply absent from the gate, and absence looks exactly like green.
 #
-# ROOT CAUSE, evidenced rather than assumed. Every warning was ONE PHP warning:
-#   file_get_contents(<workspace>/…): Failed to open stream: No such file or directory
-#   raised at vendor/vlucas/phpdotenv/src/Store/File/Reader.php:73
-#   reached via Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables::bootstrap()
-# The target is the application's environment file at the repository root. It is
-# OPTIONAL by framework design (`safeLoad`) and is deliberately never committed
-# (INFRA-SEC-ENV-1), so CI configures the application through each job's `env:`
-# block — but the framework still resolves the path and reads it on EVERY
-# application boot. That is exactly 128 of 129: every test that boots the
-# application warned, and the single file that never boots it (a pure unit test
-# with no `uses(TestCase::class)`) passed. The one PASS file was
-# PilotPerformanceSnapshotClassifierTest, and its 9 tests are the `9 passed`.
+# ROOT CAUSE, measured rather than assumed. Every one of the eight suites in
+# tests/Unit/Services/Monitoring was selected because its filename began with
+# `PilotPerformanceSnapshot`. MonitoringLogSourceResilienceTest — the suite that
+# pins that the monitor reads where the application actually writes, and fails
+# closed on a missing or unreadable source — does not carry that prefix, so it
+# matched no token in either critical variant. Measured with the real runner at
+# the base SHA: the critical filter selected 2252 tests across 130 files and
+# EXACTLY ZERO of them came from that file. Its coverage was a filename
+# coincidence, and renaming any sibling would have removed that sibling's
+# coverage just as silently.
 #
-# The earlier "absent frontend build manifest" explanation is NOT the cause and
-# stays retracted: tests/TestCase.php calls withoutVite(), the gate never builds
-# the frontend, and no manifest path appears in any warning.
+# WHY NOT "ADD A TOKEN". A bare `Monitoring` token closes this instance and
+# creates two new problems: measured, it also sweeps in 15 unrelated files —
+# matched through the word appearing in test DESCRIPTIONS, not because they
+# carry a monitoring contract — and it still leaves coverage resting on what
+# files happen to be called. The fix therefore adds the half the authority was
+# missing rather than widening the half it had.
 #
-# The gate exited 0 because PHPUnit records a PHP warning as a test WARNING, not
-# a failure, and nothing in the workflow ever judged the warning count.
-#
-# THE FIX IS AT THE CAUSAL BOUNDARY. CI now writes an EMPTY environment file in
-# every job that boots the application. That is not a way to hide the warning —
-# it is the accurate representation of the state CI is already in: the read
-# succeeds and yields zero variables. Verified behaviour-neutral by comparing the
-# resolved-configuration hash with and without the file (identical), and by a
-# faithful CI simulation: `511 warnings, 9 passed` -> `520 passed`, same 4040
-# assertions. Nothing is suppressed — no `@`, no stderr filter, no warning-text
-# allowlist, no PHPUnit suppression toggle.
-#
-# The second half is the signal itself. A 2222-warning baseline made a genuinely
-# NEW warning indistinguishable, so the gate now declares an expected warning
-# count (zero) and fails on anything unexplained — with the test exit status
-# keeping strict precedence, so the contract can never turn a red gate green.
+# THE FIX. config/ci_runner.php gains `critical_gate_mandatory_suites`: the test
+# FILES that must actually run. The existing scanner derives the name PHPUnit
+# filters against and requires some token in EVERY critical variant to match it.
+# A declared suite that no token selects, that no longer exists, or that only
+# one variant covers FAILS the gate. A rename can now move coverage; it can no
+# longer delete it. Scope stays bounded — the narrow token adds exactly the one
+# missing file, and the directory's completeness is itself asserted so a future
+# monitoring suite cannot be added undeclared.
 
-id: CICD-CRITICAL-GATE-FILE-GET-CONTENTS-WARN-1
+id: CI-MONITORING-CRITICAL-TOKEN-COVERAGE-1
 type: INFRA_RELEASE
 module: Cicd
-title: "Critical Gate warnings are attributable and judged; the environment-file read state is declared, not left to a failed read"
+title: "Mandatory Monitoring critical suites are selected by an explicit registry, not by a filename coincidence"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # new App\Support\Cicd\CriticalGateWarningContract + ci: command; no product request path touched
+runtime_change: true          # new scanner posture + governance check; no product request path touched
 schema_change: false
 frontend_change: false
-security_impact: true         # closes a signal-dilution path that could hide a genuine CI failure; no policy/middleware/permission/route change
+security_impact: true         # closes a CI false-green path: a mandatory regression contract could leave the gate unnoticed
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -58,7 +52,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: cicd-critical-gate-file-get-contents-warn-1-go
+go_tag: ci-monitoring-critical-token-coverage-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
