@@ -1,0 +1,151 @@
+---
+description: MONITORING-UNDATED-SEVERITY-ESCALATION-1 — an ERROR whose timestamp cannot be trusted is adverse evidence with weight, not merely presence; undated and fresh error events share one severity ladder
+globs:
+  - "app/Services/Monitoring/**"
+  - "app/Console/Commands/PilotPerformanceSnapshot*"
+  - "tests/Unit/Services/Monitoring/**"
+  - "tests/Unit/Console/PilotPerformanceSnapshot*"
+alwaysApply: false
+---
+
+# MONITORING-UNDATED-SEVERITY-ESCALATION-1 — the weight of unageable ERROR evidence
+
+Extends [113-monitoring-logs-watch-truthfulness](113-monitoring-logs-watch-truthfulness.mdc)
+and [115-monitoring-log-timestamp-authority](115-monitoring-log-timestamp-authority.mdc).
+Rule 113 R2 and rule 115 R9 pinned the **floor** for unageable ERROR evidence — it may
+never read as OK. This rule pins what happens **above** that floor.
+
+## R1 — Unknown timestamp is not "no error"
+
+An ERROR-like event whose timestamp cannot be trusted must never be treated as an
+absence of error evidence. The monitor knows an error happened; it only fails to know
+*when*. Those are two different confidences and collapsing the second into the first
+is how a real burst gets reported as calm.
+
+State them separately and always:
+
+- **error-existence confidence** — equal between a fresh and an undated event
+- **timestamp confidence** — present for one, absent for the other
+
+## R2 — `undated` and `fresh` are the same unit, and share one ladder
+
+`undated_error_like_count` and `fresh_error_like_count` come out of the **same
+event-grouping pass** in `PilotPerformanceSnapshotLogAnalyzer` and count the same
+thing: one error-like log event. This is measured, not assumed — a run of N identical
+ERROR events counts N in the fresh bucket with parseable headers and N in the undated
+bucket without, 1:1 at every magnitude.
+
+Because the monitor cannot rule out that an unageable event falls inside the window,
+the fail-closed reading is that it does. The two counts are therefore **summed** onto
+the canonical in-window ladder:
+
+```
+errorEvidenceCount = fresh_error_like_count + undated_error_like_count
+
+  0        -> OK        (only with complete coverage and determinable freshness)
+  1 .. 20  -> WATCH
+ 21 .. 100 -> INVESTIGATE
+   > 100   -> FIX
+```
+
+This is not a second set of thresholds. The ladder's first rung was **already** applied
+to undated evidence — `undated > 0 ⇒ WATCH` is numerically identical to
+`fresh >= 1 ⇒ WATCH`. Only the higher rungs were missing.
+
+The closed defect: `undated = 1` and `undated = 1000` both returned WATCH, so an
+identical burst of 150 ERROR events reported **FIX** when its timestamps parsed and
+**WATCH** when they did not. Two severity levels bought by corruption in a date field.
+
+Forbidden as a means of reaching a calmer verdict: giving undated evidence its own
+higher thresholds, classifying the buckets independently and taking the worst
+(understates `15 + 15`, which is up to 30 in-window events, as WATCH), or ignoring
+magnitude.
+
+## R3 — Severity is monotonic in adverse evidence
+
+Adding adverse log evidence must never reduce the resulting severity, on either axis.
+Summing satisfies this by construction: the total is always `>= freshCount`, so rule
+113 R4 ("unparseable noise escalates, it never masks") holds — the parsed fresh count
+still sets the floor and can never be discarded.
+
+Pin it exhaustively over a count grid, not at hand-picked points. A classifier change
+that passes three chosen examples and breaks the property elsewhere is the failure
+mode this check exists for.
+
+## R4 — Escalation may never be reached by weakening a foundation
+
+Severity must come from classifying the evidence, never from changing what counts as
+evidence. Specifically forbidden:
+
+- loosening the timestamp parser so fewer events land in `undated` (reverses
+  MONITORING-LOG-TIMESTAMP-ROLLOVER-1; rule 115 R2)
+- letting undated evidence relax `window_fully_covered`, the physical byte-offset
+  coverage authority, or the missing/unreadable/unsupported source paths — those
+  already fail closed and escalation may only ever raise them
+- shortening the lookback window, changing log retention, editing/truncating/rotating
+  the log, or adding a message allowlist (rule 113 R1)
+
+## R5 — Escalation keys on high-confidence ERROR evidence, not on malformed text
+
+To reach the undated bucket a line must clear three gates: the well-formed Laravel
+header shape `[YYYY-MM-DD HH:MM:SS…]`, a **failed** faithfulness round-trip, and
+`ERROR_PATTERN`. An `INFO` line with an impossible date counts zero; plain text
+containing the word `ERROR` is an orphan, not an undated event.
+
+This is what makes escalation safe against alarm-flooding: the undated bucket demands
+*more* structure than a fresh event, so anyone able to forge N corrupt-dated ERROR
+headers can forge N well-formed ones more easily — and the well-formed path already
+reached FIX. **Escalation adds no cheaper path to a severe verdict than already
+existed.** Keep that pinned by test; do not widen `ERROR_PATTERN` or drop the header
+requirement without re-establishing it.
+
+## R6 — Undated evidence clears by rotation, never by ageing
+
+An undated event cannot age out — it has no usable age. It leaves the verdict when its
+line leaves the physically scanned tail (rotation, or source replacement). Nothing is
+persisted. Before changing recognition or thresholds, check the change cannot create an
+un-clearable state; rule 113 R3's "a false WATCH is a defect too" applies with more
+force now that FIX is reachable.
+
+**Consciously accepted:** a fresh event ages out on its own, so a fresh-driven alert
+self-clears; an undated one does not, so escalation converts a self-clearing WATCH into
+a FIX that persists until rotation. That is the accepted cost of not discounting error
+evidence the monitor cannot date. It is bounded, nothing is persisted, and it cannot
+fire on a healthy log.
+
+Named residual: a parser regression that mislabels valid timestamps would now produce a
+FIX storm rather than a WATCH storm — and one that does not self-clear. That raises the
+cost of breaking rule 115 R2. The remedy is keeping faithfulness intact, not discounting
+the evidence.
+
+## R7 — The verdict names its driver, and the evidence stays visible
+
+When untrusted timestamps contributed, the reason says so — the remedy for a corrupt
+date field is not the remedy for a genuine error burst. It must distinguish **three**
+cases, because collapsing them misinforms: fresh-only, all-undated, and mixed. Reporting
+"freshness is unknown" over a mix hides events positively confirmed inside the window
+behind a corruption story; reporting "some" when every event is undated under-states a
+total parse failure. Reasons are static literals and carry no log content, no counts and
+no paths.
+Classification never replaces the metrics it was derived from: `fresh_error_like_count`,
+`undated_error_like_count` and `timestamp_parse_status` all remain in the payload.
+
+The fresh-only wording is preserved verbatim, so a verdict unaffected by undated
+evidence reads exactly as it always has.
+
+## R8 — MON-1's log signal is a separate question, deliberately
+
+`FoundationMonitoringStatusService::applicationLogSignal` counts `.ERROR:` **tail
+lines** with no timestamp, ageing, or lookback concept. It has no undated blind spot —
+a corrupt-dated ERROR line already counts there — and it was **not** merged into this
+ladder. Do not "unify" them: one answers *how many error lines are in the recent tail*,
+the other answers *how many error events fall inside a lookback window*. There is one
+authority per question, which is the property worth keeping.
+
+## R9 — Prove the classifier with fixtures, never with production logs
+
+Boundary and volume behaviour is proven with deterministic fixtures outside production.
+Never write malformed or synthetic ERROR lines into a production log to exercise
+escalation, and never delete lines to clear it (rule 113 R1 and R6). Production
+verification is read-only: run the canonical side-effect-free snapshot and report what
+the real evidence says, including when it says WATCH or FIX.

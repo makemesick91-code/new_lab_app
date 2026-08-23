@@ -1,43 +1,47 @@
-# RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1 — Sprint Manifest
+# MONITORING-UNDATED-SEVERITY-ESCALATION-1 — Sprint Manifest
 #
-# Closes the residual that ROLL-5-1A left in RestoreDrillEvidenceService::ageHours():
-# a permissive strtotime() timestamp authority. The residual was audited and
-# reproduced before it was fixed — the objective was never "replace strtotime()
-# because it looks old".
+# Closes the residual that MONITORING-LOG-TIMESTAMP-ROLLOVER-1 left behind:
+# undated_error_like_count could not escalate past WATCH. The residual was audited
+# and reproduced before it was fixed — the objective was never "make a large number
+# trigger FIX because it looks scary".
 #
-# Three defects compounded into one false green. (1) `max(0.0, …)` clamped a
-# negative age to zero, so ANY future instant reported as the freshest value
-# representable. (2) strtotime() normalises invalid calendar dates in BOTH
-# directions, rolls out-of-range fields over, ignores trailing junk, and executes
-# relative modifiers — so "2025-01-01T00:00:00Z +2 years", a genuinely 20-month-old
-# drill, resolved into the future and via (1) became maximally fresh. (3) when
-# parsing failed the age fell back to filemtime(), so a malformed evidence file
-# written today read as a drill run today.
+# Rule 113 R2 and rule 115 R9 pinned that an unageable ERROR may never read as OK.
+# Both describe a FLOOR. No rule, doc, test or comment anywhere asserted a ceiling,
+# and no rung above the first was ever extended to the undated bucket — so magnitude
+# was ignored entirely. undated=1 and undated=1000 both returned WATCH, and the
+# identical burst of 150 ERROR events reported FIX with parseable timestamps and
+# WATCH without them: two severity levels of operational confidence bought by
+# corruption in a date field. Mixed evidence understated too — fresh=15 with
+# undated=100 is up to 115 in-window error events reported as WATCH.
 #
-# 13 literals that are not valid evidence produced GO. The age decides `stale`,
-# which decides the restore_drill_evidence signal, which feeds ROLL-5 stage
-# clearance — a decision defect, not a display defect. Reproduced end to end, and
-# 28 of 56 new tests fail when the fix is reverted.
+# The correction rests on a measured fact, not an assumption: undated_error_like_count
+# and fresh_error_like_count come out of the same event-grouping pass and carry the
+# same unit — one error-like log event, 1:1 at every magnitude, with no double count
+# into any other bucket. Since the monitor cannot rule out that an unageable event
+# falls inside the window, the fail-closed reading is that it does, so the two counts
+# are summed onto the canonical in-window ladder. That ladder's first rung had already
+# been applied here (undated > 0 is numerically identical to fresh >= 1); only the
+# higher rungs were missing.
 #
-# Evidence timestamps now parse format-exactly against the one form the producer
-# writes (date -u +%Y-%m-%dT%H:%M:%SZ) and must round-trip byte-for-byte. Three
-# states are explicitly unageable — missing, unparseable, future — each yielding a
-# null age plus its own issue that forces WATCH, because a null age is not "stale"
-# and would otherwise fall through into GO. Every legitimate canonical literal keeps
-# its exact age and verdict; production holds no restore-drill evidence at all, so
-# nothing historical is invalidated.
+# Summing can only ever raise, so rule 113 R4 ("noise escalates, it never masks")
+# holds by construction and monotonicity is exhaustive over a 9x9 grid. Every change
+# in the decision matrix is an escalation; nothing is downgraded. Severity was NOT
+# reached by loosening the parser, relaxing coverage, shortening the window, or
+# editing a log. Escalation adds no cheaper path to a severe verdict than already
+# existed: forging a well-formed ERROR header is easier than forging a corrupt-dated
+# one and already reached FIX.
 
-id: RESTORE-DRILL-TIMESTAMP-FAITHFULNESS-1
+id: MONITORING-UNDATED-SEVERITY-ESCALATION-1
 type: RUNTIME_FIX
-module: Foundation
-title: "Restore Drill evidence age is computed only from a timestamp that faithfully identifies its own instant"
+module: Monitoring
+title: "Unageable ERROR evidence carries severity weight, not merely presence; undated and fresh events share one ladder"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true          # RestoreDrillEvidenceService, RestoreDrillTimestampParser, RolloutRestoreDrillEvidenceCommand, config/rollout_readiness.php
+runtime_change: true          # PilotPerformanceSnapshotClassifier::classifyFreshLogErrors only
 schema_change: false
 frontend_change: false
-security_impact: true         # closes a false-fresh integrity path in operational safety evidence; no policy/middleware/permission/route change
+security_impact: true         # closes an under-severity path in operational monitoring evidence; no policy/middleware/permission/route change
 branch_isolation_impact: false
 ledger_impact: false
 
@@ -46,7 +50,7 @@ browser_required: false
 
 test_profiles: []
 
-go_tag: restore-drill-timestamp-faithfulness-1-go
+go_tag: monitoring-undated-severity-escalation-1-go
 
 # Rule 107 is still ACTIVE, so the Full Suite is deferred, not passed.
 full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
