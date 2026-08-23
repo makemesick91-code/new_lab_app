@@ -107,14 +107,26 @@ persisted. Before changing recognition or thresholds, check the change cannot cr
 un-clearable state; rule 113 R3's "a false WATCH is a defect too" applies with more
 force now that FIX is reachable.
 
+**Consciously accepted:** a fresh event ages out on its own, so a fresh-driven alert
+self-clears; an undated one does not, so escalation converts a self-clearing WATCH into
+a FIX that persists until rotation. That is the accepted cost of not discounting error
+evidence the monitor cannot date. It is bounded, nothing is persisted, and it cannot
+fire on a healthy log.
+
 Named residual: a parser regression that mislabels valid timestamps would now produce a
-FIX storm rather than a WATCH storm. The remedy is keeping faithfulness intact, not
-discounting the evidence.
+FIX storm rather than a WATCH storm — and one that does not self-clear. That raises the
+cost of breaking rule 115 R2. The remedy is keeping faithfulness intact, not discounting
+the evidence.
 
 ## R7 — The verdict names its driver, and the evidence stays visible
 
 When untrusted timestamps contributed, the reason says so — the remedy for a corrupt
-date field is not the remedy for a genuine error burst. Reasons carry no log content.
+date field is not the remedy for a genuine error burst. It must distinguish **three**
+cases, because collapsing them misinforms: fresh-only, all-undated, and mixed. Reporting
+"freshness is unknown" over a mix hides events positively confirmed inside the window
+behind a corruption story; reporting "some" when every event is undated under-states a
+total parse failure. Reasons are static literals and carry no log content, no counts and
+no paths.
 Classification never replaces the metrics it was derived from: `fresh_error_like_count`,
 `undated_error_like_count` and `timestamp_parse_status` all remain in the payload.
 

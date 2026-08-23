@@ -235,7 +235,12 @@ class PilotPerformanceSnapshotClassifier
          * critical count for the undated bucket, and inventing one would assert
          * severity the monitor never observed. Volume escalation covers the case.
          */
-        $errorEvidenceCount = $freshCount + $undatedErrorLikeCount;
+        // Each term is floored at zero independently. A count is only ever produced by
+        // `++` from zero, so a negative value is not reachable from the analyzer — but
+        // summing two variables loses the accidental immunity the old single-variable
+        // `$freshCount === 0` test had, and a cancelling pair (1 + -1) would otherwise
+        // read as "no evidence". Flooring keeps a malformed input failing closed.
+        $errorEvidenceCount = max(0, $freshCount) + max(0, $undatedErrorLikeCount);
 
         if ($errorEvidenceCount === 0) {
             // No countable error evidence of either kind. `undatedErrorLikeCount` is
@@ -302,20 +307,34 @@ class PilotPerformanceSnapshotClassifier
         }
 
         // An operator has to be able to act on the verdict, so the reason names what
-        // drove it. When untrusted timestamps contributed, say so — the remedy for a
-        // corrupt date field is not the remedy for a genuine error burst. The
-        // fresh-only wording is preserved verbatim so an unaffected verdict reads
-        // exactly as it always has.
-        $reason = $undatedErrorLikeCount > 0
-            ? match ($status) {
-                self::STATUS_FIX => 'Error events exceed FIX threshold within lookback window; some carry unparseable timestamps and could not be aged.',
-                self::STATUS_INVESTIGATE => 'Error events exceed INVESTIGATE threshold within lookback window; some carry unparseable timestamps and could not be aged.',
+        // drove it — the remedy for a corrupt date field is not the remedy for a
+        // genuine error burst.
+        //
+        // Three cases, because collapsing them misinforms. Reporting "freshness is
+        // unknown" over a mix would hide events that were positively confirmed inside
+        // the window behind a corruption story, and reporting "some" when every event
+        // is undated under-states a total parse failure. The fresh-only wording is
+        // preserved verbatim, so a verdict untouched by undated evidence reads exactly
+        // as it always has.
+        //
+        // Every branch is a static literal: no count, no path and no log content is
+        // interpolated, so a reason can never carry evidence text into an alert.
+        $reason = match (true) {
+            $undatedErrorLikeCount <= 0 => match ($status) {
+                self::STATUS_FIX => 'Fresh error events exceed FIX threshold within lookback window.',
+                self::STATUS_INVESTIGATE => 'Fresh error events exceed INVESTIGATE threshold within lookback window.',
+                default => 'Fresh error events detected within lookback window.',
+            },
+            $freshCount <= 0 => match ($status) {
+                self::STATUS_FIX => 'Error events exceed FIX threshold within lookback window; all carry unparseable timestamps and could not be aged.',
+                self::STATUS_INVESTIGATE => 'Error events exceed INVESTIGATE threshold within lookback window; all carry unparseable timestamps and could not be aged.',
                 default => 'Error events carry unparseable timestamps and could not be aged; freshness is unknown.',
-            }
-        : match ($status) {
-            self::STATUS_FIX => 'Fresh error events exceed FIX threshold within lookback window.',
-            self::STATUS_INVESTIGATE => 'Fresh error events exceed INVESTIGATE threshold within lookback window.',
-            default => 'Fresh error events detected within lookback window.',
+            },
+            default => match ($status) {
+                self::STATUS_FIX => 'Fresh error events, plus further events whose unparseable timestamps could not be aged, exceed FIX threshold within lookback window.',
+                self::STATUS_INVESTIGATE => 'Fresh error events, plus further events whose unparseable timestamps could not be aged, exceed INVESTIGATE threshold within lookback window.',
+                default => 'Fresh error events detected within lookback window, plus further events whose unparseable timestamps could not be aged.',
+            },
         };
 
         return [

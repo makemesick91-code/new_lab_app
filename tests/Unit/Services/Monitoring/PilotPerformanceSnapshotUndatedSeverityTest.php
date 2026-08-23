@@ -359,3 +359,60 @@ it('keeps the undated count visible in the payload after classification', functi
         ->and($snapshot['sections']['logs']['metrics']['undated_error_like_count'])->toBe(30)
         ->and($snapshot['sections']['logs']['status'])->toBe('INVESTIGATE');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Reason accuracy and input robustness (adversarial review follow-ups)
+|--------------------------------------------------------------------------
+*/
+
+it('does not report confirmed fresh errors as a pure timestamp problem', function () {
+    // A mix is not a corruption story. Saying "freshness is unknown" over 5 events
+    // that were positively confirmed inside the window would send an operator after
+    // the date writer while a real error burst goes unread.
+    $mixed = undatedSeverityReason(5, 1);
+
+    expect($mixed)->not->toContain('freshness is unknown')
+        ->and($mixed)->toContain('Fresh error events detected within lookback window')
+        ->and($mixed)->toContain('could not be aged');
+
+    expect(undatedSeverityReason(15, 15))->toContain('exceed INVESTIGATE threshold')
+        ->and(undatedSeverityReason(15, 15))->toContain('could not be aged')
+        ->and(undatedSeverityReason(60, 60))->toContain('exceed FIX threshold')
+        ->and(undatedSeverityReason(60, 60))->toContain('could not be aged');
+});
+
+it('says all rather than some when every event is undated', function () {
+    expect(undatedSeverityReason(0, 150))->toContain('all carry unparseable timestamps')
+        ->and(undatedSeverityReason(0, 21))->toContain('all carry unparseable timestamps')
+        ->and(undatedSeverityReason(0, 1))->toContain('freshness is unknown');
+});
+
+it('keeps the fresh-only reason wording byte identical', function () {
+    // A verdict untouched by undated evidence must read exactly as it always has.
+    expect(undatedSeverityReason(5, 0, 'ok'))->toBe('Fresh error events detected within lookback window.')
+        ->and(undatedSeverityReason(25, 0, 'ok'))->toBe('Fresh error events exceed INVESTIGATE threshold within lookback window.')
+        ->and(undatedSeverityReason(120, 0, 'ok'))->toBe('Fresh error events exceed FIX threshold within lookback window.');
+});
+
+it('carries no log content into the reason', function () {
+    // Reasons are static literals. Nothing read out of the log may reach an alert.
+    foreach ([[0, 1], [0, 150], [5, 5], [150, 150], [150, 0]] as [$f, $u]) {
+        $reason = undatedSeverityReason($f, $u);
+
+        expect($reason)->not->toContain('SQLSTATE')
+            ->and($reason)->not->toContain('production.ERROR')
+            ->and($reason)->not->toContain('/app/');
+    }
+});
+
+it('fails closed on a malformed negative count instead of cancelling it out', function () {
+    // Not reachable from the analyzer, whose counters only ever increment from zero.
+    // But summing two variables loses the accidental immunity the single-variable
+    // zero test had, and a cancelling pair must not read as "no evidence".
+    expect(undatedSeverityStatus(1, -1, 'partial'))->toBe('WATCH')
+        ->and(undatedSeverityStatus(-1, 1, 'partial'))->toBe('WATCH')
+        ->and(undatedSeverityStatus(-100, 100, 'partial', 0, true, 10))->toBe('FIX')
+        ->and(undatedSeverityStatus(-5, 0))->toBe('OK')
+        ->and(undatedSeverityStatus(0, -5))->toBe('OK');
+});

@@ -184,10 +184,26 @@ clears when the line leaves the **physically scanned tail** — by log rotation,
 the source being replaced — exactly as any other tail-resident evidence does. No new
 permanent state is introduced, and the count is not persisted anywhere.
 
+**Consciously accepted — the persistence asymmetry.** A fresh event ages out of the
+window on its own, so a fresh-driven alert self-clears. An undated event has no usable
+age, so it stays counted until rotation evicts it from the scanned tail. Escalation
+therefore converts what was a self-clearing WATCH into a **persistent FIX** for as long
+as the corrupt lines remain in the tail. That is accepted deliberately: the alternative
+is discounting error evidence because the monitor cannot date it, which is the exact
+false confidence this sprint removes. It is bounded (rotation clears it), nothing is
+persisted, and it cannot fire on a healthy log.
+
 The residual risk worth naming: rule 115 R2 warns that a parser regression which
 mislabels valid timestamps would produce a WATCH storm. After this sprint such a
-regression would produce a **FIX** storm. That argues for keeping the parser
-faithfulness test intact — which is pinned here — not for discounting the evidence.
+regression would produce a **FIX** storm, and — by the asymmetry above — one that does
+not self-clear. That raises the cost of breaking R2. It argues for keeping the parser
+faithfulness test intact, which is pinned here, not for discounting the evidence.
+
+Same reasoning applies to the pre-existing log-injection class documented by
+MONITORING-LOG-COVERAGE-ANCHOR-INJECTION-1: an actor who could forge headers could
+already reach FIX by the valid-dated route, but a forged *undated* burst now reaches FIX
+and does not age out. No new threshold weakness — 101 events are still required — but
+the durability difference is real and is accepted on the same fail-closed grounds.
 
 ## 9. Downstream impact
 
@@ -209,12 +225,40 @@ thresholds; the critical-fresh escalation; the lookback window; log retention; t
 schema. Severity was never reached by loosening a parser, shortening a window,
 editing a log, or relaxing a gate.
 
+## 10b. Independent adversarial review
+
+An independent reviewer extracted the real pre-fix class at the base SHA (renamed, not
+reimplemented) and ran a differential harness against the candidate:
+
+| Grid | Cases | False greens | Downgrades | Reason drift |
+|---|---:|---:|---:|---:|
+| Production domain (non-negative ints) | 216,000 | **0** | **0** | **0** |
+| Dense monotonicity sweep (fresh 0–130 × undated 0–130 × flags) | 3,294,912 | — | **0 violations** | — |
+
+No CRITICAL and no HIGH findings. Over non-negative inputs `errorEvidenceCount === 0`
+is *strictly narrower* than the old `freshCount === 0` gate, so the OK path became
+harder to reach, not easier. Three lower-severity findings were raised and two were
+fixed in this sprint:
+
+- **Fixed (reason accuracy).** A mix such as `fresh=5, undated=1` reported "freshness is
+  unknown", hiding events positively confirmed inside the window behind a corruption
+  story — and "some carry unparseable timestamps" under-stated the all-undated case.
+  The reason now has three branches (fresh-only / all-undated / mixed), each a static
+  literal, with the fresh-only wording preserved byte-identically.
+- **Fixed (input robustness).** Summing two variables lost the accidental immunity the
+  single-variable zero test had, so a cancelling pair (`fresh=1, undated=-1`) would have
+  read as "no evidence" → OK. Each term is now floored at zero independently. Not
+  reachable from the analyzer — its counters only increment from zero — but a latent
+  footgun the old shape did not have.
+- **Accepted, documented (§8).** The persistence asymmetry: escalation turns a
+  self-clearing WATCH into a FIX that clears only on rotation.
+
 ## 11. Files
 
 | File | Change |
 |---|---|
 | `app/Services/Monitoring/PilotPerformanceSnapshotClassifier.php` | `classifyFreshLogErrors` — combined error-evidence count on the canonical ladder; driver-naming reasons |
-| `tests/Unit/Services/Monitoring/PilotPerformanceSnapshotUndatedSeverityTest.php` | New — 17 tests, contract + boundaries + mixed evidence + exhaustive monotonicity + negative controls + preserved foundations |
+| `tests/Unit/Services/Monitoring/PilotPerformanceSnapshotUndatedSeverityTest.php` | New — 22 tests, contract + boundaries + mixed evidence + exhaustive monotonicity + negative controls + preserved foundations |
 | `.cursor/rules/118-monitoring-undated-severity-escalation.mdc` | New durable rule |
 | `.cursor/rules/115-monitoring-log-timestamp-authority.mdc` | R9 superseded **in place**, old reasoning retained |
 | `CLAUDE.md`, `.sprint/current.yml`, this document | Governance |
@@ -223,10 +267,10 @@ editing a log, or relaxing a gate.
 
 - Reproducer before fix: `6 failed, 11 passed` — the 11 passing are genuine negative
   controls and preserved foundations, not tautologies.
-- After fix: `17 passed (1714 assertions)`.
+- After fix: `22 passed (1747 assertions)`.
 - **Mutation control:** restoring the pre-fix ceiling (`errorEvidenceCount = freshCount`)
-  fails **7 of 17**. Mutation removed and green re-verified.
+  fails **10 of 22**. Mutation removed and green re-verified.
 - Monitoring regression `PilotPerformanceSnapshot|RestoreDrill|MonitoringLog`:
-  **238 passed, 0 failed**. `KNOWN_MONITORING_FAILURES = 0` holds.
+  **243 passed, 0 failed**. `KNOWN_MONITORING_FAILURES = 0` holds.
 - Full Suite: **not run.** Rule 107 is ACTIVE.
   `FULL_SUITE_EXECUTION_COUNT=0`, `FULL_SUITE_STATUS=DEFERRED_BY_GLOBAL_TEMPORARY_POLICY`.
