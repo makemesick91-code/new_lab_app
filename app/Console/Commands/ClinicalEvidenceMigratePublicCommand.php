@@ -107,7 +107,7 @@ class ClinicalEvidenceMigratePublicCommand extends Command
             $rows[] = $row;
         }
 
-        $dbCheck = $this->verifyDatabaseReferences($target);
+        $dbCheck = $this->verifyDatabaseReferences($target, $source);
 
         $summary = [
             'phase' => $purge ? 'purge_source' : ($apply ? 'apply' : 'dry_run'),
@@ -118,10 +118,18 @@ class ClinicalEvidenceMigratePublicCommand extends Command
             'db_references_checked' => $dbCheck['checked'],
             'db_references_resolved' => $dbCheck['resolved'],
             'db_references_unresolved' => $dbCheck['unresolved'],
+            'db_references_dangling_before_migration' => $dbCheck['dangling_before_migration'],
+            'db_references_broken_by_migration' => $dbCheck['broken_by_migration'],
             'db_references_inline' => $dbCheck['inline'],
             'source_objects_remaining' => count($this->discover($source)),
         ];
-        $summary['decision'] = ($failures === 0 && $dbCheck['unresolved'] === 0) ? 'OK' : 'FAIL';
+        // A reference whose object is absent from the SOURCE too was already
+        // dangling before this command ran — the migration did not break it and
+        // cannot repair it. Counting it as a failure would make the decision
+        // permanently red on any database carrying historic orphan rows, which
+        // is precisely how a gate stops being read. Only a reference the
+        // migration itself failed to carry across is a migration failure.
+        $summary['decision'] = ($failures === 0 && $dbCheck['broken_by_migration'] === 0) ? 'OK' : 'FAIL';
 
         $manifestPath = $this->writeManifest($summary, $rows, $dbCheck);
         $summary['manifest'] = $manifestPath;
@@ -157,11 +165,12 @@ class ClinicalEvidenceMigratePublicCommand extends Command
      * Inline data-URI rows are counted separately: they never touched the
      * filesystem, so "not on disk" is correct for them rather than a defect.
      *
-     * @return array{checked: int, resolved: int, unresolved: int, inline: int, unresolved_samples: list<string>}
+     * @return array{checked: int, resolved: int, unresolved: int, dangling_before_migration: int, broken_by_migration: int, inline: int, unresolved_samples: list<string>}
      */
-    private function verifyDatabaseReferences(Filesystem $target): array
+    private function verifyDatabaseReferences(Filesystem $target, Filesystem $source): array
     {
         $checked = $resolved = $unresolved = $inline = 0;
+        $danglingBefore = $brokenByMigration = 0;
         $samples = [];
 
         foreach (self::DB_REFERENCES as $ref) {
@@ -174,7 +183,7 @@ class ClinicalEvidenceMigratePublicCommand extends Command
                 ->where($ref['column'], '!=', '')
                 ->orderBy('id')
                 ->select(['id', $ref['column']])
-                ->chunk(500, function ($records) use ($ref, $target, &$checked, &$resolved, &$unresolved, &$inline, &$samples) {
+                ->chunk(500, function ($records) use ($ref, $target, $source, &$checked, &$resolved, &$unresolved, &$inline, &$danglingBefore, &$brokenByMigration, &$samples) {
                     foreach ($records as $record) {
                         $path = (string) $record->{$ref['column']};
                         $checked++;
@@ -193,6 +202,15 @@ class ClinicalEvidenceMigratePublicCommand extends Command
 
                         $unresolved++;
 
+                        if ($source->exists($path)) {
+                            // The object is still on the source disk but did not
+                            // reach the target: this migration genuinely failed
+                            // to carry it, and that must block.
+                            $brokenByMigration++;
+                        } else {
+                            $danglingBefore++;
+                        }
+
                         // Table/column/id only — never the patient-linked path
                         // itself, which encodes branch and visit identifiers.
                         if (count($samples) < 20) {
@@ -206,6 +224,8 @@ class ClinicalEvidenceMigratePublicCommand extends Command
             'checked' => $checked,
             'resolved' => $resolved,
             'unresolved' => $unresolved,
+            'dangling_before_migration' => $danglingBefore,
+            'broken_by_migration' => $brokenByMigration,
             'inline' => $inline,
             'unresolved_samples' => $samples,
         ];

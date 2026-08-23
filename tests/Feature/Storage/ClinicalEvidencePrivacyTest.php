@@ -371,3 +371,69 @@ it('refuses an attachment whose owner type has no registered authoriser', functi
         ->get(route('attachments.download', $attachment))
         ->assertNotFound();
 });
+
+/* ---------------------------------------------------------------------------
+ | 8. Unresolved references are classified, not lumped together
+ |
+ | Production carries historic sys_attachments rows whose file was never
+ | written. Counting those as migration failures would leave the decision
+ | permanently red, which is how a gate stops being read.
+ * ------------------------------------------------------------------------ */
+
+it('does not fail the migration for a reference that was already dangling', function () {
+    $actor = userWith(['manage_lab_orders']);
+
+    // Points at an object that exists on neither disk — dangling before the
+    // command ever ran, so the migration neither broke it nor can repair it.
+    Attachment::create([
+        'entity_type' => LabOrder::ENTITY_TYPE,
+        'entity_id' => 1,
+        'category' => 'CASE_PHOTO',
+        'file_name' => 'gone.png',
+        'file_path' => 'lab-orders/never/written.png',
+        'mime_type' => 'image/png',
+        'file_size' => 10,
+        'uploaded_by' => $actor->id,
+        'uploaded_at' => now(),
+    ]);
+
+    $this->artisan('clinical-evidence:migrate-public', ['--apply' => true])
+        ->assertExitCode(0);
+
+    $manifests = glob(storage_path('app/clinical-evidence-migration/manifest-apply-*.json'));
+    $manifest = json_decode((string) file_get_contents(end($manifests)), true);
+
+    expect($manifest['summary']['decision'])->toBe('OK')
+        ->and($manifest['database_reference_check']['dangling_before_migration'])->toBeGreaterThan(0)
+        ->and($manifest['database_reference_check']['broken_by_migration'])->toBe(0);
+});
+
+it('fails the migration when an object the source still holds did not reach the target', function () {
+    $actor = userWith(['manage_lab_orders']);
+
+    // The object exists on the source but sits outside the migrated prefixes,
+    // so it is never carried across: the reference is genuinely broken by this
+    // migration and must block.
+    Storage::disk('public')->put('unmigrated-prefix/left-behind.png', clinicalPngBytes());
+
+    Attachment::create([
+        'entity_type' => LabOrder::ENTITY_TYPE,
+        'entity_id' => 1,
+        'category' => 'CASE_PHOTO',
+        'file_name' => 'left-behind.png',
+        'file_path' => 'unmigrated-prefix/left-behind.png',
+        'mime_type' => 'image/png',
+        'file_size' => 10,
+        'uploaded_by' => $actor->id,
+        'uploaded_at' => now(),
+    ]);
+
+    $this->artisan('clinical-evidence:migrate-public', ['--apply' => true])
+        ->assertExitCode(1);
+
+    $manifests = glob(storage_path('app/clinical-evidence-migration/manifest-apply-*.json'));
+    $manifest = json_decode((string) file_get_contents(end($manifests)), true);
+
+    expect($manifest['summary']['decision'])->toBe('FAIL')
+        ->and($manifest['database_reference_check']['broken_by_migration'])->toBeGreaterThan(0);
+});
