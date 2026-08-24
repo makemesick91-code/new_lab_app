@@ -132,8 +132,15 @@ rather than silently appended to the filter.
 
 Several Architecture tests pin a rule family with an exact `toBe([...])`. Adding a
 rule to a governance service therefore breaks every one of them, not just the test
-named after the sprint that added it. `STORAGE-R006` shipped with only 1 of 5 pins
-updated, leaving four tests failing on the GO-tagged commit running in production.
+named after the sprint that added it. `STORAGE-R006` shipped with only 1 of 7 pins
+updated, leaving six assertions across six files failing on the GO-tagged commit
+running in production.
+
+**Pins come in two shapes and a grep only finds one.** Four files pinned the exact
+id list `['STORAGE-R001'…'R005']`; two more pinned `toHaveCount(5)`. A search for
+`'STORAGE-R005'` finds the first four and misses the count assertions completely,
+because a count never names what it counts. Sweep both shapes — and then run the
+suite, because the sweep found four and the suite found the other two.
 
 Sweep by comparing each service's published ids against every exact-list pin —
 **keyed by service file, not by id prefix**: OBS-1 and OBS-2 are deliberately

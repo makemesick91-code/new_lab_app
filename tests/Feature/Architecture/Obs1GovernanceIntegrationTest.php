@@ -28,7 +28,7 @@ it('foundation summary still includes STORAGE/STATELESS/LB/REPLICA/CACHE_REDIS s
         ->and($summary)->toHaveKey('cache_redis_governance')
         ->and($summary)->toHaveKey('cache_governance');
 
-    expect(collect($summary['storage_governance']['rules'])->pluck('id')->all())->toHaveCount(5)
+    expect(collect($summary['storage_governance']['rules'])->pluck('id')->all())->toHaveCount(6)
         ->and(collect($summary['stateless_governance']['rules'])->pluck('id')->all())->toHaveCount(8)
         ->and(collect($summary['lb_governance']['rules'])->pluck('id')->all())->toHaveCount(10)
         ->and(collect($summary['database_replica_governance']['rules'])->pluck('id')->all())->toHaveCount(12)
