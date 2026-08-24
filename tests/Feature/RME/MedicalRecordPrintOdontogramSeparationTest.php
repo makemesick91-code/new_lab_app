@@ -103,16 +103,28 @@ it('rme pdf export does not render the odontogram section either', function () {
     ]);
     $visit->load('patient');
 
+    /*
+     * FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — pin the name instead of taking
+     * whatever faker produced. A name long enough to overflow the fixed-width
+     * "Nama Pasien" cell wraps in `pdftotext -layout`, and the old contiguous
+     * comparison below failed on it even though the document was correct.
+     */
+    $visit->patient->forceFill(['name' => 'Alexandria Catherine Santoso'])->save();
+    $visit->refresh()->load('patient');
+
     $response = $this->actingAs($manager)->get(route('rme.visits.pdf', $visit));
     $response->assertOk();
 
+    $raw = pdfExtractText($response->getContent());
+
     // Section titles are CSS-uppercased, so compare case-insensitively.
-    $text = strtoupper(pdfExtractText($response->getContent()));
+    $text = strtoupper($raw);
 
     // A bare "does not contain" on a PDF is vacuous unless extraction demonstrably
     // works, so first prove the extractor really reads this document: the patient's
-    // own name and the medical-record section must both come back.
-    expect($text)->toContain(strtoupper($visit->patient->name));
+    // own name and the medical-record section must both come back. The name is
+    // read out of its own layout cell, so a wrap does not break the proof.
+    expect(pdfLayoutFieldValue($raw, 'Nama Pasien'))->toBe($visit->patient->name);
     expect($text)->toContain('DATA PASIEN');
     expect($text)->toContain('REKAM MEDIS');
 

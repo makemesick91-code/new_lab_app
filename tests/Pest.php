@@ -1075,6 +1075,298 @@ function pdfPageCount(string $bytes): int
     });
 }
 
+/*
+|--------------------------------------------------------------------------
+| Wrap-tolerant reading of `pdftotext -layout` output
+|--------------------------------------------------------------------------
+|
+| FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1.
+|
+| `pdftotext -layout` serialises the VISUAL layout of a PDF, so a value that is
+| semantically one string is not necessarily one contiguous substring of the
+| extraction. A value that overflows its cell wraps, and the columns beside it
+| are interleaved into the same lines. On the RME receipt a 26-character patient
+| name comes back as:
+|
+|   Nama Pasien     Miss Marcella O'Conner     No. Rekam Medis     MRN-U8XPPPBS
+|                   DVM
+|
+| and in the item table the description is split AROUND its own numeric row:
+|
+|   Perawatan Saluran Akar Gigi Molar Pertama Rahang Bawah
+|                                        1     Rp 1.250.000     Rp 1.250.000
+|   Kanan Kunjungan Kedua
+|
+| So `expect($text)->toContain($patient->name)` is a broken contract: it asserts
+| a layout property (never wraps) while claiming to assert a content property
+| (the name is on the receipt). It fails on ~6% of faker names even though the
+| document is perfectly correct, and no amount of escaping changes that.
+|
+| The fix is to read the value out of ITS OWN COLUMN and rejoin the wrap, which
+| is both wrap-tolerant and stricter than the substring search it replaces:
+| text from a neighbouring column can no longer satisfy the assertion, because
+| it is outside the band being read.
+|
+| Deliberately NOT done: stripping all whitespace from the extraction, or
+| flattening the whole page into one string. Both would let the patient-name
+| column and the adjacent medical-record column fuse into a single haystack and
+| match things that are not actually in the field under test.
+*/
+
+/**
+ * Collapse whitespace runs so a rejoined wrap compares equal to the original.
+ *
+ * This normalises SPACING only — no character is removed — so it cannot make a
+ * missing or wrong value look present.
+ */
+function pdfNormalizeText(string $value): string
+{
+    return trim((string) preg_replace('/\s+/u', ' ', $value));
+}
+
+/**
+ * Split one layout line into its column cells.
+ *
+ * `-layout` separates columns with runs of two or more spaces and pads with
+ * single spaces inside a cell, so the run length is what distinguishes "next
+ * column" from "next word". Each cell is returned with the character column it
+ * starts at, which is what makes a column band addressable.
+ *
+ * @return array<int, array{col: int, text: string}>
+ */
+function pdfLayoutSegments(string $line): array
+{
+    $chars = preg_split('//u', rtrim($line, "\r"), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+    $segments = [];
+    $current = '';
+    $start = 0;
+    $spaces = 0;
+
+    foreach ($chars as $index => $char) {
+        if ($char === ' ') {
+            $spaces++;
+
+            if ($current !== '' && $spaces >= 2) {
+                $segments[] = ['col' => $start, 'text' => $current];
+                $current = '';
+            }
+
+            continue;
+        }
+
+        if ($current === '') {
+            $start = $index;
+        } elseif ($spaces === 1) {
+            $current .= ' ';
+        }
+
+        $current .= $char;
+        $spaces = 0;
+    }
+
+    if ($current !== '') {
+        $segments[] = ['col' => $start, 'text' => $current];
+    }
+
+    return $segments;
+}
+
+/**
+ * The value block printed BENEATH a label that owns its own line.
+ *
+ * The RME visit PDF stacks its identity fields instead of tabulating them:
+ *
+ *   NAMA PASIEN
+ *
+ *   Alexandria Catherine … Purnomo
+ *   Hadiwinata Suryadi
+ *
+ *   NO. REKAM MEDIS
+ *
+ * A blank line separates one field from the next, but never separates a wrapped
+ * value from its own continuation, so the first non-blank run after the label is
+ * the value and the blank line after it closes the field.
+ *
+ * @param  array<int, string>  $lines
+ */
+function pdfLayoutStackedValue(array $lines, int $labelIndex, int $column): string
+{
+    $fragments = [];
+
+    for ($next = $labelIndex + 1; $next < count($lines); $next++) {
+        $slice = trim(mb_substr($lines[$next], $column));
+
+        if ($slice === '') {
+            // Still looking for the value, or the value just ended.
+            if ($fragments === []) {
+                continue;
+            }
+
+            break;
+        }
+
+        $fragments[] = $slice;
+    }
+
+    return pdfNormalizeText(implode(' ', $fragments));
+}
+
+/**
+ * The value of a labelled cell, rejoined across the wraps the layout
+ * introduced — whether the value sits BESIDE the label or BENEATH it.
+ *
+ * The value is read from the column band that starts where the value cell
+ * starts and ends where the NEXT cell on that row starts, so the neighbouring
+ * column is structurally excluded. A following line continues the cell only
+ * while the label's own column stays empty — the moment anything appears there
+ * a new row has begun and the cell is closed.
+ *
+ * Returns null when the label is not in the document at all, so a missing
+ * label fails an assertion instead of quietly comparing empty strings.
+ */
+function pdfLayoutFieldValue(string $text, string $label): ?string
+{
+    $lines = preg_split('/\R/u', $text) ?: [];
+
+    // Labels are routinely CSS-uppercased on the way into the PDF, so match the
+    // label case-insensitively. The VALUE is always returned exactly as printed.
+    $label = mb_strtolower(pdfNormalizeText($label));
+
+    foreach ($lines as $index => $line) {
+        $segments = pdfLayoutSegments($line);
+
+        foreach ($segments as $position => $segment) {
+            if (mb_strtolower($segment['text']) !== $label) {
+                continue;
+            }
+
+            $value = $segments[$position + 1] ?? null;
+
+            if ($value === null) {
+                /*
+                 * Nothing beside the label. Either the label owns its line and
+                 * the value is stacked beneath it, or the cell is empty — and
+                 * an empty cell must not silently borrow the row below.
+                 */
+                return count($segments) === 1
+                    ? pdfLayoutStackedValue($lines, $index, $segment['col'])
+                    : '';
+            }
+
+            $valueStart = $value['col'];
+            $neighbour = $segments[$position + 2] ?? null;
+            $width = $neighbour !== null ? $neighbour['col'] - $valueStart : null;
+
+            $fragments = [$value['text']];
+
+            for ($next = $index + 1; $next < count($lines); $next++) {
+                // Anything in the label's own column means the next row started.
+                if (trim(mb_substr($lines[$next], 0, $valueStart)) !== '') {
+                    break;
+                }
+
+                $slice = trim(mb_substr($lines[$next], $valueStart, $width));
+
+                if ($slice === '') {
+                    break;
+                }
+
+                $fragments[] = $slice;
+            }
+
+            return pdfNormalizeText(implode(' ', $fragments));
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Every full-width line of the layout, rejoined in reading order.
+ *
+ * A centred header or a section title owns its whole line, so it can be reached
+ * neither by a label nor by a column heading. Joining ONLY the lines that hold a
+ * single cell keeps every tabular row — and therefore every opportunity for two
+ * columns to fuse into a value that was never printed — out of the haystack.
+ */
+function pdfLayoutFullWidthText(string $text): string
+{
+    $collected = [];
+
+    foreach (preg_split('/\R/u', $text) ?: [] as $line) {
+        $segments = pdfLayoutSegments($line);
+
+        if (count($segments) === 1) {
+            $collected[] = $segments[0]['text'];
+        }
+    }
+
+    return pdfNormalizeText(implode(' ', $collected));
+}
+
+/**
+ * Everything printed under one column heading, rejoined in reading order.
+ *
+ * Used for tabular cells, where a wrapped value is split around its own numeric
+ * row and so cannot be rebuilt by looking at the following line alone. The band
+ * runs from the heading's column to the next heading's column, which keeps the
+ * quantity and money columns out of the haystack.
+ *
+ * Both headings must appear on the same line — that is what proves they are
+ * headings of the same table rather than two unrelated words.
+ *
+ * Returns null when the heading row is not found.
+ */
+function pdfLayoutColumnText(string $text, string $fromHeading, ?string $toHeading = null): ?string
+{
+    $lines = preg_split('/\R/u', $text) ?: [];
+    $fromHeading = pdfNormalizeText($fromHeading);
+    $toHeading = $toHeading === null ? null : pdfNormalizeText($toHeading);
+
+    foreach ($lines as $index => $line) {
+        $start = null;
+        $width = null;
+
+        foreach (pdfLayoutSegments($line) as $segment) {
+            if ($start === null) {
+                if ($segment['text'] === $fromHeading) {
+                    $start = $segment['col'];
+                }
+
+                continue;
+            }
+
+            if ($toHeading !== null && $segment['text'] === $toHeading) {
+                $width = $segment['col'] - $start;
+                break;
+            }
+        }
+
+        if ($start === null) {
+            continue;
+        }
+
+        if ($toHeading !== null && $width === null) {
+            continue;
+        }
+
+        $collected = [];
+
+        for ($next = $index + 1; $next < count($lines); $next++) {
+            $slice = trim(mb_substr($lines[$next], $start, $width));
+
+            if ($slice !== '') {
+                $collected[] = $slice;
+            }
+        }
+
+        return pdfNormalizeText(implode(' ', $collected));
+    }
+
+    return null;
+}
+
 /**
  * A pilot-snapshot disk probe pinned to a fixed number of free gigabytes (or null
  * for "unreadable").

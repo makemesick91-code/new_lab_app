@@ -38,6 +38,21 @@ beforeEach(function () {
     $this->cashier = userWith(['view_clinic_visits', 'manage_rme_billing']);
 });
 
+/**
+ * A patient name long enough to overflow the receipt's fixed-width "Nama
+ * Pasien" cell, so the wrap is exercised on EVERY run instead of whenever
+ * faker happens to produce a long one.
+ *
+ * Deliberately carries no apostrophe. The historical failure was blamed on
+ * `Miss Marcella O'Conner DVM` looking like this repository's documented
+ * faker-vs-Blade-escaping flake, and a plain name that fails identically is
+ * the cheapest permanent refutation of that reading.
+ */
+function receiptWrappingPatientName(): string
+{
+    return 'Alexandria Catherine Santoso';
+}
+
 function receiptVisit(): ClinicVisit
 {
     $visit = ClinicVisit::factory()->cashierPending()->create(['branch_id' => test()->branch->id]);
@@ -50,6 +65,15 @@ function receiptVisit(): ClinicVisit
     ]);
 
     rmeSignedConsentFor($visit);
+    $visit->refresh();
+
+    /*
+     * Pin the name. Faker generated one that overflowed the cell on roughly 6%
+     * of runs, which is exactly how often the old contiguity assertion failed
+     * against a perfectly correct receipt. Pinning it removes the coin flip in
+     * both directions: the wrap is always covered, and never random.
+     */
+    $visit->patient->forceFill(['name' => receiptWrappingPatientName()])->save();
 
     return $visit->refresh();
 }
@@ -199,9 +223,13 @@ it('keeps every financial value on the one-page receipt', function () {
     // Prove extraction works before asserting anything about content.
     expect($text)->toContain($invoice->invoice_number);
 
-    // Every item, with its own money, must be readable.
+    // Every item, with its own money, must be readable. The description is read
+    // out of the TINDAKAN column: a long one wraps, and the layout splits it
+    // AROUND its own qty/price line, so it is not one contiguous substring.
+    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+
     foreach ($invoice->items as $item) {
-        expect($text)->toContain($item->description);
+        expect($treatments)->toContain(pdfNormalizeText($item->description));
         expect($text)->toContain(number_format($item->subtotal, 0, ',', '.'));
     }
 
@@ -211,11 +239,24 @@ it('keeps every financial value on the one-page receipt', function () {
     expect($text)->toContain('Jumlah Dibayar');
     expect($text)->toContain('LUNAS');
 
-    // Identity of the transaction.
-    expect($text)->toContain($visit->patient->name);
+    /*
+     * Identity of the transaction. The patient name is read out of its own
+     * layout cell and compared for EQUALITY, which is strictly stronger than
+     * the substring search it replaces: the neighbouring "No. Rekam Medis"
+     * column is outside the band, so it can no longer satisfy the assertion,
+     * and a partially rendered name no longer passes either.
+     */
+    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($visit->patient->name);
+    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->toBe($visit->patient->medical_record_number);
     expect($text)->toContain($visit->visit_number);
-    // The clinic name is CSS-uppercased in the header, so compare case-insensitively.
-    expect(strtoupper($text))->toContain(strtoupper($this->branch->name));
+    /*
+     * The clinic name is CSS-uppercased in the header, so compare
+     * case-insensitively — and read it out of the full-width header lines,
+     * because a long clinic name wraps there exactly as the patient name wraps
+     * in its cell.
+     */
+    expect(strtoupper(pdfLayoutFullWidthText($text)))
+        ->toContain(strtoupper(pdfNormalizeText($this->branch->name)));
 });
 
 it('never truncates an unusually long receipt — it continues instead', function () {
@@ -248,8 +289,10 @@ it('never truncates an unusually long receipt — it continues instead', functio
     expect(pdfPageCount($bytes))->toBeGreaterThan(1);
 
     // ...and every single row survives, including the last one and the total.
+    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+
     foreach ($invoice->items as $item) {
-        expect($text)->toContain($item->description);
+        expect($treatments)->toContain(pdfNormalizeText($item->description));
     }
     expect($text)->toContain('Tindakan Uji Panjang Nomor 40');
     expect($text)->toContain(number_format($invoice->grand_total, 0, ',', '.'));
@@ -298,4 +341,146 @@ it('still renders the on-screen receipt with a declared page box', function () {
         // The missing @page rule was the root cause of the second sheet.
         ->assertSee('@page', false)
         ->assertSee('Unduh PDF');
+});
+
+/*
+|--------------------------------------------------------------------------
+| D — the PDF text contract itself
+|--------------------------------------------------------------------------
+|
+| FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1.
+|
+| The one authorised consolidated Full Suite (run 32700184849) reddened here on
+| `expect($text)->toContain($visit->patient->name)`. The receipt was correct:
+| `pdftotext -layout` had wrapped a 26-character name inside its fixed-width
+| cell and interleaved the neighbouring column, so the name was present but not
+| contiguous. The assertion was testing a layout property while claiming to test
+| a content property.
+|
+| These cases pin the corrected contract from both ends: the value is read out
+| of its own column and must match exactly, and a wrong, partial or misplaced
+| value must still fail.
+*/
+
+/**
+ * Render a receipt for one specific patient name and return its extracted text.
+ *
+ * @return array{0: ClinicVisit, 1: string}
+ */
+function receiptTextForPatientName(string $name): array
+{
+    [$visit, $invoice] = receiptPaidInvoice([
+        ['description' => 'Konsultasi Dokter Gigi', 'qty' => 1, 'unit_price' => 75000],
+    ]);
+
+    $visit->patient->forceFill(['name' => $name])->save();
+    $visit->refresh();
+
+    return [$visit, pdfExtractText(receiptPdfBytes($visit, $invoice))];
+}
+
+it('reads every patient-name shape out of its own layout cell', function (string $name, bool $wraps) {
+    if (! pdfToTextAvailable()) {
+        test()->markTestSkipped('poppler-utils (pdftotext) is not installed.');
+    }
+
+    [$visit, $text] = receiptTextForPatientName($name);
+
+    // The contract: the field holds exactly this name, wrapped or not.
+    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($name);
+
+    /*
+     * And the coverage claim itself is pinned. If a long fixture stops wrapping
+     * — a wider cell, a smaller font — this reddens rather than silently
+     * ceasing to exercise the class that took the Full Suite down. A failure
+     * here means "pick a longer name", not "the receipt is broken".
+     */
+    expect(str_contains($text, $name))->toBe(
+        ! $wraps,
+        $wraps
+            ? "'{$name}' no longer wraps in the receipt cell, so this case no longer covers the contiguity defect — lengthen the fixture."
+            : "'{$name}' unexpectedly wraps; it was chosen as the short control."
+    );
+})->with([
+    'short plain' => ['Budi Santoso', false],
+    // Short AND apostrophe-bearing: the historical failure was misread as an
+    // escaping bug, and this is the standing refutation of that reading.
+    'short apostrophe' => ["O'Brien", false],
+    // Long AND apostrophe-free: fails identically to the faker name that
+    // reddened the Full Suite, which is what proves length is the cause.
+    'long plain' => ['Alexandria Catherine Santoso', true],
+    'long apostrophe' => ["Miss Marcella O'Conner DVM", true],
+]);
+
+it('rejects a wrong or partially rendered patient name', function () {
+    if (! pdfToTextAvailable()) {
+        test()->markTestSkipped('poppler-utils (pdftotext) is not installed.');
+    }
+
+    $name = receiptWrappingPatientName();
+    [, $text] = receiptTextForPatientName($name);
+
+    $field = pdfLayoutFieldValue($text, 'Nama Pasien');
+
+    // A different patient must not satisfy it.
+    expect($field)->not->toBe('Bambang Wijaya');
+
+    // Neither must a name that lost its wrapped tail — the exact failure mode a
+    // merely "wrap-tolerant" assertion would let through.
+    expect($field)->not->toBe('Alexandria Catherine');
+
+    // Nor a token soup: the words are all present in the document, and that is
+    // deliberately not enough.
+    expect($field)->not->toBe('Catherine Alexandria Santoso');
+});
+
+it('keeps the patient name out of the neighbouring medical-record column', function () {
+    if (! pdfToTextAvailable()) {
+        test()->markTestSkipped('poppler-utils (pdftotext) is not installed.');
+    }
+
+    /*
+     * The wrapped name and the medical-record number share the same physical
+     * lines. Reading either field must not drag the other in — which is what a
+     * whole-page whitespace-stripping comparison would have done.
+     */
+    [$visit, $text] = receiptTextForPatientName(receiptWrappingPatientName());
+
+    $mrn = $visit->patient->medical_record_number;
+
+    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->toBe($mrn);
+    expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->not->toContain($mrn);
+    expect(pdfLayoutFieldValue($text, 'No. Rekam Medis'))->not->toBe('MRN-NOTTHISONE');
+});
+
+it('reads a treatment description that the layout split around its own money row', function () {
+    if (! pdfToTextAvailable()) {
+        test()->markTestSkipped('poppler-utils (pdftotext) is not installed.');
+    }
+
+    /*
+     * The item table wraps differently from the identity grid: the tail of a
+     * long description lands BELOW its own qty/price line, so "join the next
+     * line" cannot rebuild it. The TINDAKAN column band can.
+     */
+    $long = 'Perawatan Saluran Akar Gigi Molar Pertama Rahang Bawah Kanan Kunjungan Kedua';
+
+    [$visit, $invoice] = receiptPaidInvoice([
+        ['description' => $long, 'qty' => 1, 'unit_price' => 1250000],
+        ['description' => 'Konsultasi', 'qty' => 1, 'unit_price' => 75000],
+    ]);
+
+    $text = pdfExtractText(receiptPdfBytes($visit, $invoice));
+    $treatments = pdfLayoutColumnText($text, 'TINDAKAN', 'QTY');
+
+    // Not contiguous in the raw extraction...
+    expect(str_contains($text, $long))->toBeFalse(
+        'The long description no longer wraps, so this case no longer covers the split-cell defect — lengthen it.'
+    );
+
+    // ...but complete in its own column, and the money columns stayed out of it.
+    expect($treatments)->toContain(pdfNormalizeText($long));
+    expect($treatments)->toContain('Konsultasi');
+    expect($treatments)->not->toContain('1.250.000');
+    expect($treatments)->not->toContain('Tindakan Yang Tidak Pernah Ada');
 });
