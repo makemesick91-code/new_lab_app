@@ -1,0 +1,111 @@
+---
+description: Final stabilization programme closure — what "closed" means, the one-run Full Suite rule, tree identity between tested/merged/deployed, and the scope closure does NOT claim.
+globs:
+alwaysApply: true
+---
+
+# AUTHORITATIVE CONSOLIDATED FULL SUITE & PROGRAMME CLOSURE
+
+Canonical document:
+`docs/sprints/authoritative-consolidated-full-suite-and-closure-1.md`.
+This rule is the durable mirror. Where they differ, the document governs.
+Pinned by `tests/Feature/Cicd/AuthoritativeConsolidatedFullSuiteClosureContractTest.php`.
+
+## CLOSE-R01 — What "the stabilization programme is closed" means
+
+The programme is closed only when ALL of the following hold:
+
+- `FINAL-STABILIZATION-RESIDUAL-AUDIT-1` is GO;
+- exactly one explicitly-authorised consolidated Full Suite has PASSED;
+- the exact passed candidate tree is the merged tree AND the deployed tree;
+- final production verification passes;
+- no blocking residual remains;
+- the final authority is GO-tagged.
+
+Anything less is not closure. In particular a green *required-gate* set is not
+closure, because the required gates deliberately do not run the whole suite.
+
+## CLOSE-R02 — One-run Full Suite rule
+
+A failed final authoritative Full Suite is **NOT** automatically rerun.
+
+```
+FULL SUITE FAIL
+  -> freeze the exact failure set
+  -> root-cause with TARGETED tests only
+  -> corrective sprint
+  -> a new complete-suite execution requires NEW explicit user authorisation
+```
+
+Forbidden as a route to closure: rerunning the job, "rerun failed jobs",
+re-dispatching after an edit, allowlisting a failure, marking a real failure
+flaky without reproducing it, or skipping/quarantining a failing test.
+
+A run that was cancelled, timed out, lost its runner, or produced partial
+output is **not** a PASS and **not** a consumed authorisation — but restarting
+it is still a new execution and still needs authorisation.
+
+## CLOSE-R03 — Tree identity, not commit identity
+
+A squash merge legitimately produces a different commit SHA than the tested
+candidate. That is acceptable **only** when the git *tree* is identical:
+
+```
+FULL_SUITE_PASSED_CANDIDATE_TREE == RUNTIME_MERGE_TREE == DEPLOYED_TREE
+```
+
+If the trees differ, the Full Suite did not test what was deployed, and the
+result is NO-GO. Verify with `git rev-parse <sha>^{tree}` on each side —
+never infer identity from a passing pipeline.
+
+After a PASS and before merge/deploy the candidate is **immutable**: no
+runtime, test, config, migration, CI, rules or governance-semantic change.
+Any such change invalidates the evidence.
+
+## CLOSE-R04 — What closure does NOT claim
+
+Closure of the stabilization programme does **not** mean any separately
+authorised external integration or deferred roadmap item is complete. These
+retain their audited classifications and remain OFF:
+
+- WhatsApp / Meta prescription delivery — `BLOCKED_EXTERNAL` (awaits credentials);
+- SATUSEHAT external submission and production activation — `BLOCKED_EXTERNAL`
+  (its GO tag is deliberately ABSENT; integration stays DISABLED);
+- object-storage production cutover — `DEFERRED` (production authority remains
+  the private local disk);
+- the historical dangling storage references — `ACCEPTED_RISK`, classified and
+  deliberately **not** deleted.
+
+Never describe closure as "everything finished".
+
+## CLOSE-R05 — Retiring the temporary Full-Suite policy is a separate act
+
+The `GLOBAL TEMPORARY FULL-SUITE POLICY` (rule `107`) must **not** be flipped to
+`RETIRED` inside the closure candidate itself, for two independent reasons:
+
+1. **Truth.** Policy s10 retires it only once closure is *finished*; at candidate
+   freeze the Full Suite has not yet run.
+2. **Safety.** `RETIRED` re-authorises the automatic `push`-to-base path, so
+   merging the closure PR would immediately fire a SECOND, unauthorised Full
+   Suite — breaking CLOSE-R02 mechanically.
+
+Retirement is therefore a distinct, explicitly-authorised post-closure
+governance act. On retirement, mark the policy document and rule `107`
+`RETIRED after consolidated Full Suite closure` and **keep both** as historical
+evidence.
+
+## CLOSE-R06 — A dispatched Full Suite must be proven to have executed
+
+The Full Suite *step* is guarded by `run_critical_tests != 'false'`. A change
+set of Markdown alone resolves to `docs_only`, which sets that output to
+`false`: the job then reports success having executed **no tests**.
+
+Before trusting any authoritative run, confirm both:
+
+- the classifier resolved the change set to a profile with
+  `run_critical_tests=true` (updating `.sprint/current.yml` guarantees this —
+  it matches no classifier pattern and resolves to `unknown_high_risk`); and
+- the run reports a real `Tests:` line with a non-zero test count.
+
+A skipped Full Suite is a false green and does **not** consume the
+authorisation.

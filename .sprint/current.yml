@@ -1,93 +1,69 @@
-# FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — Sprint Manifest
+# AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-AND-CLOSURE-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The last gate before the one authoritative consolidated
-# Full Suite. It does not hunt for new work. It takes every residual, WATCH,
-# TODO, deferred item and known risk the corrective series accumulated,
-# reconciles each one against the CURRENT production authority, and returns one
-# of five classifications per item — with the evidence that justifies it.
+# WHAT THIS SPRINT IS. The final closure gate of the DaengtisiaMS stabilization
+# programme. FINAL-STABILIZATION-RESIDUAL-AUDIT-1 certified
+# READY_FOR_AUTHORITATIVE_CONSOLIDATED_FULL_SUITE=true with
+# FULL_SUITE_EXECUTION_COUNT=0. This sprint freezes that authority as an
+# immutable candidate, runs EXACTLY ONE explicitly authorised consolidated Full
+# Suite against it, and — only on a genuine PASS — merges, deploys and tags the
+# same tree.
 #
-# WHAT IT IS NOT. It is not an implementation sprint. If the audit had proven an
-# unresolved runtime, security, clinical or data-integrity defect, the correct
-# outcome was NO-GO plus a named corrective sprint — never a fix smuggled in
-# under an audit heading.
+# WHAT IT IS NOT. It is not an implementation sprint and it is not a licence to
+# debug the Full Suite. A failed run is NO-GO plus a named corrective sprint. It
+# is never rerun automatically: a second complete-suite execution needs new
+# explicit user authorisation.
 #
-# WHAT THE AUDIT ACTUALLY CHANGED. Test/fixture/governance only,
-# RUNTIME_BEHAVIOR_CHANGE=false. The single change under app/ is one docblock
-# line — a comment, no executable statement:
+# WHY THE MANIFEST IS PART OF THE CHANGE SET (deliberate, load-bearing).
+# `.sprint/current.yml` matches no CI classifier pattern, so it resolves the
+# change set to `unknown_high_risk` and therefore `run_critical_tests=true`. The
+# Full Suite STEP is guarded by `if: run_critical_tests != 'false'`. A
+# docs-only change set would resolve to `docs_only`, the step would SKIP, and
+# the dispatch would produce a green "Full Suite" job that executed no tests —
+# a false green consuming the one-shot authorisation. The manifest is what makes
+# the authoritative run actually run.
 #
-#   0. FOUR TESTS WERE ALREADY FAILING ON THE GO-TAGGED AUTHORITY. The previous
-#      sprint added STORAGE-R006 but updated only one of the five Architecture
-#      tests that pin the storage rule list exactly; Lb1, Stateless1, Replica1
-#      and CacheRedis still asserted R001-R005. Verified pre-existing: R006 is
-#      in the service at the base commit and the stale pin is in the tests at
-#      the base commit, and this sprint touches neither file. Nothing caught it
-#      because the Critical gate does not select those suites and the Full Suite
-#      has been deferred since 2026-08-19 — a test can fail for days when the
-#      only gate that runs it is switched off. Repinned, plus the service's own
-#      docblock which still said "R001..R005" while publishing six. Five suites
-#      now run 30 passed / 0 failed.
+# WHY THE TEMPORARY FULL-SUITE POLICY STAYS ACTIVE IN THIS CANDIDATE.
+# Retiring it here would be false at freeze time (policy s10 retires only once
+# closure is FINISHED) and — mechanically — would flip `full_suite_authorized`
+# to true for the post-merge `push` to base, so merging this very PR would fire
+# a SECOND, unauthorised Full Suite. The policy therefore stays ACTIVE; its
+# retirement is a distinct post-closure governance act requiring the user's
+# explicit decision. This is recorded as rule CLOSE-R05.
 #
-#   1. database/factories/RmePrescriptionFactory.php — the fixture wrote
-#      prescription and doctor-signature canvases to the 'public' disk while
-#      production writes them through ClinicalEvidenceStorage. Never an
-#      exposure: nothing in production invokes a factory. But it reproduced,
-#      inside the suite, the exact storage layout the public-disk incident
-#      removed.
-#
-#   2. tests/Feature/RME/RmePrescriptionTest.php — because of (1) the canvases
-#      read back as null, and the test named "can print prescription with fields
-#      and canvas images" asserted assertSee(null). assertSee casts null to ''
-#      and every response contains '', so the assertion was vacuous: the test
-#      could not fail when there was no canvas. That is a false green, and
-#      "no false green" outranks almost everything else in this project.
-#
-#   3. tests/Feature/Storage/ClinicalEvidencePrivacyTest.php — the anti-
-#      regression writer scan covered app_path() only, which is how (1) survived
-#      the incident sprint. It now covers database/ as well. tests/ is
-#      deliberately still excluded: that file writes to the public disk on
-#      purpose, to prove the migration moves objects off it.
-#
-# Both new guards were mutation-tested: with the factory reverted, the scan
-# fails and the canvas assertion fails. The first mutation run passed falsely
-# because a previous run had left the fixture PNG on the real clinical disk —
-# the filesystem was cleaned and the mutation re-run before the result was
-# believed.
-#
-# WHAT THE AUDIT DELIBERATELY DID NOT TOUCH. Odontogram::hasRecordedTeeth() was
-# audited read-only and left exactly as it is: on production 31 of 32 rows pass
-# the predicate and all 31 carry a clinically meaningful tooth status, so the
-# theorised over-report has zero instances and changing it would move zero rows.
-# The 20 dangling storage references were classified, not cleaned: they are
-# historical Lab-V1 delivery/QC attachments whose read path aborts 404 after
-# authorisation. Deleting rows to make a number look better is not remediation.
+# RUNTIME BLAST RADIUS. Zero. No app/, config/, routes/, database/, resources/
+# or scripts/ file is touched. The change set is: this manifest, one sprint doc,
+# one durable rule mirror, one governance contract test, and the CLAUDE.md
+# closure record.
 
-id: FINAL-STABILIZATION-RESIDUAL-AUDIT-1
+id: AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-AND-CLOSURE-1
 type: DOCS_ONLY
 module: Governance
-title: "Every stabilization residual reconciled against production authority, classified, and pinned"
+title: "One authorised consolidated Full Suite on the frozen final authority, then programme closure"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: false          # one app/ docblock line (comment only); no executable
-                               # statement, no config/, routes/ or migration change
+runtime_change: false          # no executable statement changed anywhere
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # verifies the security fix; introduces no new surface
+security_impact: false         # asserts the security posture; adds no surface
 branch_isolation_impact: false
 ledger_impact: false
 
-deploy_required: true          # production must advance to the audited authority
+deploy_required: true          # production must advance to the Full-Suite-tested authority
 browser_required: false
 
 test_profiles: []
 
-go_tag: final-stabilization-residual-audit-1-go
+go_tag: authoritative-consolidated-full-suite-and-closure-1-go
 
-# Rule 107 is still ACTIVE. This audit certifies READINESS for the consolidated
-# Full Suite; it does not run it and must not.
-full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
+# Rule 107 remains ACTIVE. This sprint uses its ONE authorised manual path:
+# workflow_dispatch with BOTH run_full_suite=true and
+# full_suite_policy_override=true -> AUTHORISED_CONSOLIDATED_FULL_SUITE.
+full_suite_status: AUTHORISED_CONSOLIDATED_RUN   # AUTHORIZED_MAX_EXECUTIONS=1
+full_suite_authorization: EXPLICIT_USER_AUTHORIZATION_FOR_FINAL_CLOSURE
 
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
 residual_ledger: docs/sprints/final-stabilization-residual-audit-1.md
+closure_record: docs/sprints/authoritative-consolidated-full-suite-and-closure-1.md
