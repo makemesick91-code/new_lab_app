@@ -213,6 +213,19 @@ return [
         // for weeks precisely because nothing in CI asserted it. A control that
         // exists but is never selected by the gate is not a control.
         'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
+
+        // FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — the Full Suite baseline contract,
+        // and the receipt regression that proved it had a hole.
+        //
+        // Both are selected today, but only through a filter token that any
+        // future edit could drop silently. The one authorised consolidated Full
+        // Suite (run 32700184849) reddened on exactly the shape this guard now
+        // pins, and it reddened because the guard did not yet cover assertions
+        // against PDF-extracted text. Declaring them here makes the selection
+        // enforced rather than incidental — the same reasoning the entry above
+        // records: a control that exists but is never selected is not a control.
+        'tests/Feature/Cicd/FullSuiteBaselineContractTest.php',
+        'tests/Feature/RME/RmeReceiptOnePageTest.php',
     ],
 
     /*

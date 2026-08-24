@@ -1,0 +1,65 @@
+---
+description: Asserting content against PDF-extracted text (pdftotext -layout)
+globs: tests/**/*.php
+alwaysApply: false
+---
+
+# PDF text is a layout serialisation, not a string
+
+`pdftotext -layout` serialises the **visual** layout of a PDF. A value that overflows its
+cell wraps, and the columns beside it are interleaved into the same lines. A semantically
+continuous field is therefore **not** guaranteed to be a contiguous substring:
+
+```
+Nama Pasien     Miss Marcella O'Conner     No. Rekam Medis     MRN-U8XPPPBS
+                DVM
+```
+
+This took down the one authorised consolidated Full Suite (run 32700184849) on a receipt
+that was completely correct.
+
+## Rules
+
+1. **Never** assert a wrap-capable dynamic value is contiguous in PDF-extracted text:
+
+   ```php
+   expect($text)->toContain($visit->patient->name);   // FORBIDDEN
+   ```
+
+   Read the field out of its own column instead:
+
+   ```php
+   expect(pdfLayoutFieldValue($text, 'Nama Pasien'))->toBe($visit->patient->name);
+   expect(pdfLayoutColumnText($text, 'TINDAKAN', 'QTY'))->toContain(pdfNormalizeText($item->description));
+   expect(pdfLayoutFullWidthText($text))->toContain(pdfNormalizeText($branch->name));
+   ```
+
+   Helpers live in `tests/Pest.php` beside `pdfExtractText`. `FullSuiteBaselineContractTest`
+   enforces this.
+
+2. **Do not** flatten the page or strip all whitespace to make the match work. That fuses
+   adjacent columns and matches values that were never printed. Per-token containment is
+   equally unsafe — the tokens exist elsewhere.
+
+3. **Do not fix a test flake in the runtime.** If the PDF contains all required semantic
+   content and only extraction contiguity differs, the *test contract* is wrong. Changing
+   valid escaping, CSS, column width or font to satisfy a brittle assertion hides the
+   defect. Escalate instead if the document genuinely clips, overlaps or loses characters.
+
+4. **Length, not escaping.** A long name with no apostrophe fails identically; a short name
+   with one passes. Do not re-diagnose this as the faker-vs-Blade-escaping class — that
+   reading is disproven and `e()` fixes nothing here.
+
+5. **Pin the fixture.** A test covering wrapping must use a deterministic value known to
+   wrap; faker entered the branch on ~6% of runs. Do not encode a character threshold — the
+   wrap point is a proportional-font pixel width. Assert the *behaviour* (that the fixture
+   still wraps) so the coverage claim fails loudly instead of silently lapsing.
+
+6. Every new negative control must prove a **wrong** or **partially rendered** value still
+   fails. A wrap-tolerant assertion that cannot fail is worse than the brittle one.
+
+## Full Suite
+
+Run 32700184849's failure is immutable evidence. `e7b8dde4…` is a failed closure candidate:
+unmerged, undeployed, NO-GO, never production authority. A complete-suite execution requires
+a new explicit user authorisation.
