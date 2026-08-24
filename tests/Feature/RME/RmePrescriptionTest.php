@@ -158,6 +158,18 @@ it('can print prescription with fields and canvas images', function () {
     $rxUrl = $prescription->fresh()->prescriptionCanvasDataUri();
     $sigUrl = $prescription->fresh()->signatureCanvasDataUri();
 
+    /*
+     * FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — assert the canvases actually
+     * resolved BEFORE asserting the response contains them.
+     *
+     * assertSee(null) casts to '' and every response contains '', so when the
+     * fixture stored the canvas on a disk this read path does not consult,
+     * both assertions below passed while proving nothing. A test named
+     * "with canvas images" must fail when there is no canvas image.
+     */
+    expect($rxUrl)->toStartWith('data:image/')
+        ->and($sigUrl)->toStartWith('data:image/');
+
     $this->actingAs($viewer)
         ->get(route('rme.prescriptions.print', $prescription))
         ->assertOk()

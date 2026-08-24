@@ -33,7 +33,7 @@ it('foundation summary still includes STORAGE/STATELESS/LB/REPLICA and the earli
     $lbRuleIds = collect($summary['lb_governance']['rules'])->pluck('id')->all();
     $replicaRuleIds = collect($summary['database_replica_governance']['rules'])->pluck('id')->all();
 
-    expect($storageRuleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005'])
+    expect($storageRuleIds)->toBe(['STORAGE-R001', 'STORAGE-R002', 'STORAGE-R003', 'STORAGE-R004', 'STORAGE-R005', 'STORAGE-R006'])
         ->and($statelessRuleIds)->toBe([
             'STATELESS-R001', 'STATELESS-R002', 'STATELESS-R003', 'STATELESS-R004',
             'STATELESS-R005', 'STATELESS-R006', 'STATELESS-R007', 'STATELESS-R008',

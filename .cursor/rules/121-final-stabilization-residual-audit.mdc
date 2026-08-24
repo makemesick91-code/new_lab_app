@@ -1,0 +1,155 @@
+---
+description: Residuals are classified against measured production state, never cleaned or reclassified to reach GO
+globs:
+  - "docs/sprints/final-stabilization-residual-audit-1.md"
+  - "database/factories/**"
+  - "tests/Feature/Storage/**"
+  - "app/Support/Storage/**"
+  - "app/Modules/Odontogram/Models/Odontogram.php"
+alwaysApply: false
+---
+
+# Final stabilization residual audit — FINAL-STABILIZATION-RESIDUAL-AUDIT-1
+
+Canonical ledger: `docs/sprints/final-stabilization-residual-audit-1.md`.
+GO tag: `final-stabilization-residual-audit-1-go`.
+
+## R1 — Every residual carries a classification and its evidence
+
+One of `CLOSED`, `ACCEPTED_RISK`, `BLOCKED_EXTERNAL`, `DEFERRED`, `REAL_DEFECT`
+(or `SUPERSEDED` / `NOT_APPLICABLE` where evidence warrants). `UNKNOWN`, `TBD`,
+`MAYBE` and `REVIEW LATER` are not classifications and may not survive a GO.
+
+`ACCEPTED_RISK` requires a stated risk, why it is non-blocking, the current
+fail-safe, and a trigger to reopen. `BLOCKED_EXTERNAL` requires the dependency,
+its owner, what internal work is already complete, and what event unblocks it.
+
+## R2 — Classify from the running system, not from an old document
+
+A residual is confirmed or retired by reading current source, current tests and
+current production state. If code disproves an old sprint note, the note is
+`SUPERSEDED` and gets corrected — but historical `NO-GO` / `WATCH` events are
+never rewritten to pretend they did not happen. Distinguish
+"historical NO-GO, closed by tag X" from "current NO-GO".
+
+## R3 — Never reach GO by making the evidence look better
+
+Forbidden: reclassifying a `REAL_DEFECT` as accepted risk without evidence,
+deleting `TODO` markers instead of classifying them, deleting or truncating
+production logs to clear a monitor WATCH, deleting dangling DB rows to improve a
+count, downgrading a `SECURITY_FIX` to a lighter audit type to pass a scope
+threshold, disabling or allowlisting tests, or manufacturing restore-drill
+evidence. An honest WATCH outranks a manufactured GO.
+
+## R4 — An audit sprint does not become an implementation sprint
+
+Audit-owned changes are docs, rules, governance tests, status corrections and
+test fixtures — `RUNTIME_BEHAVIOR_CHANGE=false`. If the audit proves a defect
+needing a runtime change, the outcome is **NO-GO plus a named corrective
+sprint**, not a fix under an audit heading.
+
+## R5 — Clinical evidence never reaches a publicly served disk
+
+The rule binds every write form: `disk('public')`, `store(…,'public')`,
+`storeAs(…,'public')`, `storePublicly*`, `public_path()`. The anti-regression
+scan in `tests/Feature/Storage/ClinicalEvidencePrivacyTest.php` covers **`app/`
+and `database/`** — a model factory is not exempt, because
+`Database\Factories` is a production autoload namespace. `tests/` stays excluded
+on purpose: that file writes to the public disk deliberately to prove the
+migration moves objects off it.
+
+## R6 — A computed value must be proven real before it is asserted
+
+`assertSee(null)` casts to `''` and passes against any response. A test that
+computes a value and then asserts the response contains it must first assert the
+value is what it claims to be. A test named for a thing it cannot fail to find
+is a false green.
+
+## R7 — The global `/storage/` deny is permanent defence in depth
+
+It is not removed because a new public asset failed to render. A genuinely
+public asset requires an explicit delivery decision.
+
+## R8 — The 20 dangling `sys_attachments` references are accepted, not normalised
+
+They are historical Lab-V1 delivery/QC rows whose objects never existed on the
+source disk. Access fails closed: `abort_unless($disk->exists($path), 404)`
+**after** authorisation. Broken references are not acceptable in general — these
+specific rows are. **Reopen if** the count exceeds 20, or a dangling reference
+appears in any table other than `sys_attachments`: that is new breakage.
+
+## R9 — `Odontogram::hasRecordedTeeth()` is not changed on theory
+
+Measured on production: 31 of 32 rows pass the predicate and all 31 carry a
+meaningful tooth status; ambiguous rows = 0; reclassification delta = 0. Any
+future change must first re-run that measurement and show a non-zero delta.
+Note when measuring: the payload stores `teeth` as a JSON **object**, and PHP's
+`is_array()` is true for a decoded object — SQL that tests
+`jsonb_typeof = 'array'` does **not** model the PHP predicate.
+
+## R10 — Production audit commands are read-only and leave no trace
+
+Read a command's signature from source before invoking it. Prefer an existing
+read-only or dry-run default. Never `tinker` on production and never guess an
+Artisan flag — both write real `pilot.ERROR` lines and pin the log monitor to
+WATCH. Target and verify `NEW_APPLICATION_ERRORS=0` / `NEW_TOOLING_ERRORS=0`
+against a baseline captured *before* the first audit command.
+
+## R11 — Verify a negative before reporting it
+
+`grep -r` does not follow symlinks encountered during traversal, so a scan of
+`/etc/nginx/sites-enabled/` finds nothing while the directive is present. A
+surprising zero is a reason to re-check the instrument before filing a blocker.
+The same applies to a mutation test that unexpectedly passes: check for stale
+state — these tests write to the real local disk, so artifacts survive between
+local runs.
+
+## R12 — The Full Suite stays deferred through this audit
+
+`GLOBAL TEMPORARY FULL-SUITE POLICY` remains ACTIVE. This audit certifies
+`READY_FOR_AUTHORITATIVE_CONSOLIDATED_FULL_SUITE=true` with
+`FULL_SUITE_EXECUTION_COUNT=0`. The consolidated run is a separate,
+explicitly authorised sprint.
+
+## R13 — A guard that no gate selects is not a guard
+
+Before claiming a test protects an invariant, verify the gate actually selects it
+— empirically (`pest --list-tests` against the gate's own filter), not by reading
+the filter and assuming. `--filter` is a substring match, so a shorter token can
+select a longer class name; asking "is my class name in the filter" is the wrong
+question.
+
+Promotion into `critical_gate_mandatory_suites` is a deliberate governance
+decision, not a reflex, and a token added to one runner variant is protection in
+neither — verify **both**.
+
+Measured at this sprint: `ClinicalEvidencePrivacyTest` → 22 tests selected
+(registered mandatory); `RmePrescriptionTest` → 0 (not registered, and no job
+consumes the classifier's `run_rme_tests` output). Recorded as residual R-20
+rather than silently appended to the filter.
+
+## R14 — Adding a governance rule means repinning EVERY exact-list assertion
+
+Several Architecture tests pin a rule family with an exact `toBe([...])`. Adding a
+rule to a governance service therefore breaks every one of them, not just the test
+named after the sprint that added it. `STORAGE-R006` shipped with only 1 of 7 pins
+updated, leaving six assertions across six files failing on the GO-tagged commit
+running in production.
+
+**Pins come in two shapes and a grep only finds one.** Four files pinned the exact
+id list `['STORAGE-R001'…'R005']`; two more pinned `toHaveCount(5)`. A search for
+`'STORAGE-R005'` finds the first four and misses the count assertions completely,
+because a count never names what it counts. Sweep both shapes — and then run the
+suite, because the sweep found four and the suite found the other two.
+
+Sweep by comparing each service's published ids against every exact-list pin —
+**keyed by service file, not by id prefix**: OBS-1 and OBS-2 are deliberately
+separate services publishing `OBS-R001..R012` and `OBS-R013..R024`, so a
+prefix-keyed sweep reports both as stale when neither is.
+
+Correct the service's own docblock too when the rule count changes.
+
+**A test can fail for days when the only gate that runs it is switched off.**
+While the Full Suite is deferred, a suite outside the Critical filter has no gate
+at all — which is exactly why the pre-Full-Suite audit must run these locally
+rather than trust that CI would have noticed.

@@ -7,7 +7,7 @@ use App\Support\Storage\ObjectStorageReadinessService;
 /**
  * STORAGE-1 — read-only object storage governance rule catalog.
  *
- * Publishes the STORAGE-R001..R005 rules into the foundation governance
+ * Publishes the STORAGE-R001..R006 rules into the foundation governance
  * summary and reports the current readiness signal. This does not gate
  * release decisions on its own; it is informational, matching the
  * "OFF by default" foundation posture of STORAGE-1.
