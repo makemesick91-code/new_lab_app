@@ -1,0 +1,95 @@
+---
+description: Temporary-file ownership and cleanup contract for tests (FIX-PDF-TEMPFILE-LEAK-1)
+globs:
+  - "tests/**/*.php"
+alwaysApply: false
+---
+
+# Test temporary-file ownership
+
+## `tempnam()` creates a file, it does not just reserve a name
+
+This is the rule the whole file exists for. `tempnam()` returns a path **and
+creates the file at it**. Any code that derives a second path from the returned
+one therefore owns **two** filesystem artifacts:
+
+```php
+// WRONG — owns two paths, cleans one.
+$path = tempnam(sys_get_temp_dir(), 'thing-').'.pdf';
+// tempnam created /tmp/thing-ABC123     <- leaked, zero bytes, forever
+// the write lands on /tmp/thing-ABC123.pdf  <- the only one unlink() sees
+```
+
+Prefer removing the second artifact over adding a second `unlink`. If the tool
+you are feeding does not care about the extension, **use the allocation itself
+as the path** — then there is no path left to forget:
+
+```php
+// RIGHT — one owned path.
+$path = tempnam(sys_get_temp_dir(), 'thing-');
+file_put_contents($path, $bytes);
+
+try {
+    return $callback($path);
+} finally {
+    @unlink($path);
+}
+```
+
+Poppler (`pdftotext`, `pdfinfo`) dispatches on the file header, not the
+filename — a `.pdf` suffix buys nothing there. Verify the requirement for your
+own tool before keeping a suffix; do not carry one out of habit.
+
+If a suffix genuinely *is* required, the derived path must be accounted for
+**and** the original allocation must be explicitly removed or reused. Both
+paths are yours.
+
+## Every temporary artifact has one explicit owner
+
+A test-created temporary file must have a single owner and deterministic
+cleanup. Make it obvious from the code which paths are created, which one
+carries the payload, and which are removed.
+
+## Cleanup runs on the failure path too
+
+Use `finally`. Cleanup must execute when the callback or the rendering
+operation throws — **and must preserve the original failure**. Never swallow an
+exception in order to clean up; the primary failure is the more valuable signal.
+
+## Leak tests compare the owned set, not the directory
+
+Assert on the artifacts *this helper* created, before versus after. A global
+count of the temporary directory is **not authoritative**: other processes on
+the machine may add or remove files in the same window, so the count moves for
+reasons unrelated to the code under test.
+
+Strongest available assertion: from inside the callback, verify that exactly one
+artifact is live and that it **is** the path handed out. That catches the
+derive-and-forget shape directly rather than inferring it from a count.
+
+## Never glob-delete the temporary directory
+
+```
+rm -f /tmp/thing-*
+```
+
+is not cleanup. It hides continued leakage, and it deletes pre-existing files
+that belong to other processes, other sprints, or standing evidence. Clean the
+artifacts you created. Measure pre-existing ones; do not delete them to
+manufacture a zero count.
+
+## Keep temporary allocation atomic and opaque
+
+Do not replace `tempnam()` with `uniqid()`, a timestamp, or a fixed filename to
+avoid cleanup complexity — that discards atomic collision-safe allocation and
+introduces races between concurrent test processes. Never weaken permissions
+(`chmod 0777`). Never build a temporary filename from user- or record-derived
+input such as a patient name or medical-record number; temporary names stay
+opaque.
+
+## Anti-regression
+
+Pinned behaviourally by `tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php`,
+declared in `config/ci_runner.php` → `critical_gate_mandatory_suites` so its CI
+selection is enforced rather than incidental. Sprint record:
+`docs/sprints/fix-pdf-tempfile-leak-1.md`.
