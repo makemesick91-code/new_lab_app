@@ -1,93 +1,86 @@
-# FINAL-STABILIZATION-RESIDUAL-AUDIT-1 — Sprint Manifest
+# FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The last gate before the one authoritative consolidated
-# Full Suite. It does not hunt for new work. It takes every residual, WATCH,
-# TODO, deferred item and known risk the corrective series accumulated,
-# reconciles each one against the CURRENT production authority, and returns one
-# of five classifications per item — with the evidence that justifies it.
+# WHAT THIS SPRINT IS. The corrective sprint for the single failure that reddened
+# the one authorised consolidated Full Suite (run 32700184849):
 #
-# WHAT IT IS NOT. It is not an implementation sprint. If the audit had proven an
-# unresolved runtime, security, clinical or data-integrity defect, the correct
-# outcome was NO-GO plus a named corrective sprint — never a fix smuggled in
-# under an audit heading.
+#     tests/Feature/RME/RmeReceiptOnePageTest.php:215
+#     expect($text)->toContain($visit->patient->name);
 #
-# WHAT THE AUDIT ACTUALLY CHANGED. Test/fixture/governance only,
-# RUNTIME_BEHAVIOR_CHANGE=false. The single change under app/ is one docblock
-# line — a comment, no executable statement:
+# against `pdftotext -layout` output. `-layout` serialises the VISUAL layout, so a
+# value that overflows its fixed-width cell wraps and the neighbouring column is
+# interleaved into the same lines. The receipt was CORRECT — the full name is
+# rendered, nothing clipped, nothing mis-escaped. The assertion was testing a
+# layout property while claiming to test a content property, and it failed on
+# roughly 6% of faker names.
 #
-#   0. FOUR TESTS WERE ALREADY FAILING ON THE GO-TAGGED AUTHORITY. The previous
-#      sprint added STORAGE-R006 but updated only one of the five Architecture
-#      tests that pin the storage rule list exactly; Lb1, Stateless1, Replica1
-#      and CacheRedis still asserted R001-R005. Verified pre-existing: R006 is
-#      in the service at the base commit and the stale pin is in the tests at
-#      the base commit, and this sprint touches neither file. Nothing caught it
-#      because the Critical gate does not select those suites and the Full Suite
-#      has been deferred since 2026-08-19 — a test can fail for days when the
-#      only gate that runs it is switched off. Repinned, plus the service's own
-#      docblock which still said "R001..R005" while publishing six. Five suites
-#      now run 30 passed / 0 failed.
+# THE APOSTROPHE READING IS DISPROVEN. The faker name `Miss Marcella O'Conner DVM`
+# makes this look like the documented faker-vs-Blade-escaping flake class. It is
+# not. Reproduced on the clean base authority e1675586:
 #
-#   1. database/factories/RmePrescriptionFactory.php — the fixture wrote
-#      prescription and doctor-signature canvases to the 'public' disk while
-#      production writes them through ClinicalEvidenceStorage. Never an
-#      exposure: nothing in production invokes a factory. But it reproduced,
-#      inside the suite, the exact storage layout the public-disk incident
-#      removed.
+#     Miss Marcella O'Conner DVM     26  FAIL
+#     Alexandria Catherine Santoso   28  FAIL   <- no apostrophe, fails identically
+#     Budi Santoso                   12  pass
+#     O'Brien                         7  pass   <- apostrophe, passes
 #
-#   2. tests/Feature/RME/RmePrescriptionTest.php — because of (1) the canvases
-#      read back as null, and the test named "can print prescription with fields
-#      and canvas images" asserted assertSee(null). assertSee casts null to ''
-#      and every response contains '', so the assertion was vacuous: the test
-#      could not fail when there was no canvas. That is a false green, and
-#      "no false green" outranks almost everything else in this project.
+# It is length. `e()` would have changed nothing. No character threshold is encoded
+# anywhere — the wrap point is a proportional-font pixel width, so the fixture is
+# pinned by demonstrated behaviour instead.
 #
-#   3. tests/Feature/Storage/ClinicalEvidencePrivacyTest.php — the anti-
-#      regression writer scan covered app_path() only, which is how (1) survived
-#      the incident sprint. It now covers database/ as well. tests/ is
-#      deliberately still excluded: that file writes to the public disk on
-#      purpose, to prove the migration moves objects off it.
+# WHAT IT IS NOT. Not a runtime fix. RUNTIME_BEHAVIOR_CHANGE=false: four test files,
+# zero application files. No Blade, CSS, column width, font size, escaping, model,
+# route, permission or migration was touched. Fixing a broken test by changing
+# correct production output would have hidden the defect rather than removed it.
 #
-# Both new guards were mutation-tested: with the factory reverted, the scan
-# fails and the canvas assertion fails. The first mutation run passed falsely
-# because a previous run had left the fixture PNG on the real clinical disk —
-# the filesystem was cleaned and the mutation re-run before the result was
-# believed.
+# WHAT MEASUREMENT ADDED TO THE BRIEF. Measuring rather than assuming turned up two
+# more layout shapes the naive contract also breaks on: a long treatment description
+# is split AROUND its own qty/price row (so "join the next line" cannot rebuild it),
+# and the RME visit PDF stacks its labels above full-width values. Running the new
+# guard then found a third live instance — the centred clinic-name header — and a
+# second affected file, MedicalRecordPrintOdontogramSeparationTest. All corrected.
 #
-# WHAT THE AUDIT DELIBERATELY DID NOT TOUCH. Odontogram::hasRecordedTeeth() was
-# audited read-only and left exactly as it is: on production 31 of 32 rows pass
-# the predicate and all 31 carry a clinically meaningful tooth status, so the
-# theorised over-report has zero instances and changing it would move zero rows.
-# The 20 dangling storage references were classified, not cleaned: they are
-# historical Lab-V1 delivery/QC attachments whose read path aborts 404 after
-# authorisation. Deleting rows to make a number look better is not remediation.
+# WHY THE EXISTING GUARDS MISSED IT. FullSuiteBaselineContractTest pinned two shapes,
+# both against a rendered HTML BODY. Neither regex matches a comparison against
+# PDF-extracted text. The third shape is now pinned, scoped narrowly: only files that
+# extract PDF text, and only the free-text property list the assertSee guard already
+# uses. `->toContain` is NOT banned wholesale. Arguments are read with a paren counter
+# so one safe assertion cannot launder an unsafe one beside it, and comments are
+# stripped with the tokenizer so documenting the defect does not report itself.
+#
+# FULL SUITE. Not authorised for this sprint. The previous authorisation was consumed
+# by run 32700184849 and it failed. FULL_SUITE_EXECUTION_COUNT=0. Targeted
+# reproduction only. This sprint may carry its own GO tag; it does NOT close the
+# stabilization programme.
 
-id: FINAL-STABILIZATION-RESIDUAL-AUDIT-1
-type: DOCS_ONLY
-module: Governance
-title: "Every stabilization residual reconciled against production authority, classified, and pinned"
+id: FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1
+type: RUNTIME_FIX
+module: RME
+title: "PDF field assertions read their own column instead of assuming contiguity across layout wrapping"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: false          # one app/ docblock line (comment only); no executable
-                               # statement, no config/, routes/ or migration change
+runtime_change: false          # tests/ only; zero app/, resources/, routes/, config/ changes
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # verifies the security fix; introduces no new surface
+security_impact: false         # no authorization, escaping or storage surface touched
 branch_isolation_impact: false
 ledger_impact: false
 
-deploy_required: true          # production must advance to the audited authority
-browser_required: false
+deploy_required: true          # production must advance to the corrected authority
 
-test_profiles: []
+browser_required: false        # no UI surface; proven against real renderer output
 
-go_tag: final-stabilization-residual-audit-1-go
+test_profiles:
+  - rme
+  - cicd
 
-# Rule 107 is still ACTIVE. This audit certifies READINESS for the consolidated
-# Full Suite; it does not run it and must not.
-full_suite_status: DEFERRED_BY_GLOBAL_TEMPORARY_POLICY   # FULL_SUITE_EXECUTION_COUNT=0
+go_tag: fix-receipt-pdf-text-contiguity-1-go
+
+# Rule 107 is still ACTIVE, and the one-off authorisation that superseded it has
+# been consumed by a FAILED run. A new explicit user authorisation is required
+# before any further complete-suite execution.
+full_suite_status: NOT_AUTHORIZED_AFTER_PREVIOUS_FAILURE   # FULL_SUITE_EXECUTION_COUNT=0
 
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-residual_ledger: docs/sprints/final-stabilization-residual-audit-1.md
+residual_ledger: docs/sprints/fix-receipt-pdf-text-contiguity-1.md
