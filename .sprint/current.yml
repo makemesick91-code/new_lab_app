@@ -1,71 +1,66 @@
-# FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1 — Sprint Manifest
+# FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The corrective sprint for a pre-existing time-of-day test
-# determinism defect in the Lab operational analytics suite:
+# WHAT THIS SPRINT IS. The corrective sprint for the temporary-artifact leaks
+# FIX-PDF-TEMPFILE-LEAK-1 measured and deliberately left in place. That sprint
+# fixed the one call site every PDF assertion routes through and recorded the
+# rest as a follow-up candidate. This closes them.
 #
-#   tests/Feature/LabWorkflow/LabOperationalAnalyticsMetricTest.php
-#   'due_date' => now()->subDays(2)->toDateString()   // day granularity
-#   opLog($late, DELIVERED, now());                   // instant granularity
-#   expect($sla['median_lateness_days'])->toBeGreaterThan(1.0);
+# THE SURFACE WAS LARGER THAN RECORDED. The handover listed four prefixes and
+# ~188 orphans. Re-measured on this base authority, ten prefixes across eight
+# test files held 392, and SIX of those call sites had no cleanup on any path at
+# all — not a missed `finally`, no cleanup written:
 #
-# The runtime measures lateness as an ELAPSED duration from the END of the due
-# day. The fixture pinned the deadline to a calendar date but the delivery to the
-# live wall clock, so the same three records were 1.00 days late just after
-# midnight and 2.00 days late just before it. Against a `> 1.0` assertion the
-# result was decided by what time the runner happened to start.
+#   ffcache            79   tempnam(...).'.php'   allocation orphaned
+#   lrme-poppler-      20   tempnam(...).'.pdf'   allocation orphaned
+#   leg                12   tempnam(...).'.csv'   BOTH artifacts orphaned
+#   bad                 0   same shape as leg     (leaks; /tmp had been reaped)
+#   ctl3a-home-        51   mkdir, never removed
+#   ctl3a-bin-         36   mkdir, never removed
+#   ctl3d-bin-         11   mkdir, never removed   <- not in the handover
+#   ctl3c-             40   mkdir, never removed   <- not in the handover
+#   rdrs1-            124   mkdir, never removed   <- not in the handover
+#   ci-bare-host-      16   mkdir, never removed   <- not in the handover
+#   infra-sec-env-1-    3   cleaned on the passing path only
 #
-# WINDOW REPRODUCED, NOT ESTIMATED. Pinned by binary search under a controlled
-# clock — never by waiting for real midnight: the assertion fails throughout
-# [00:00:00, 00:07:11] and passes from 00:07:12 in the application timezone.
-# 00:07:11 -> 1.0 (FAIL), 00:07:12 -> 1.01 (PASS). That is 7m12s of every day,
-# ~0.5% of runs, and it contains the reported CI failure instant 00:02:59Z.
+# BASELINE LEAK REPRODUCED, NOT INFERRED. Five suites run at the base authority
+# baecf7c produced 131 fresh orphans in a single pass while all 98 tests PASSED.
+# That is the measurement the fix is judged against — not the standing /tmp
+# census, which is contaminated by every earlier run on this machine.
 #
-# TIME AUTHORITY ESTABLISHED FROM CODE, NOT FROM CI's CLOCK. Lab operational
-# analytics has no domain clock: resolvePeriod() uses today() and slaCompliance()
-# uses Carbon::parse(...)->endOfDay(), both of which resolve in the application
-# timezone, which config/app.php hardcodes to UTC. ClinicalClock (Asia/Makassar)
-# is the CLINICAL-date authority and was deliberately NOT borrowed — nothing in
-# this module's dates is clinical. A boundary case at 16:00Z (Asia/Makassar
-# midnight) pins that decision behaviourally.
+# TWO LIFECYCLES, TWO OWNERS. Where an artifact is created, used and destroyed
+# inside one call, a `finally` is the whole contract and `pdfWithTempFile`
+# remains the pattern; ffcache and lrme-poppler needed only the single-artifact
+# correction. Where it must OUTLIVE its creator — a stub PATH a child process
+# still has to read, an UploadedFile whose request has not run — no `finally`
+# can reach it, and the registry behind tempArtifactFile()/tempArtifactDir() is
+# the owner. That registry deletes exactly what it recorded: never a glob, so a
+# concurrent test process and the historical orphans are safe by construction.
 #
-# THE FALSE FIX WAS REJECTED. Changing `> 1.0` to `>= 1.0` would have gone green
-# without touching the defect. Proven false, not merely asserted: with the
-# runtime mutated to return a mean instead of a median, the weakened assertion
-# passes 12/12 while the new boundary suite fails 10/14. The repaired assertion
-# is exact (2.0) because the fixture establishes the value arithmetically.
+# HISTORICAL ORPHANS PRESERVED. The 447-artifact baseline is identical before
+# and after. HISTORICAL_ORPHANS_DELETED_BY_SPRINT=0. Correctness is proven by a
+# zero task-created delta, not by making the census look clean.
 #
-# RUNTIME WAS NOT CHANGED, AND THAT IS THE FINDING. The metric is deterministic
-# given its inputs; only the inputs were not. Zero app/ changes.
+# TWO DEFECTS IN THE GUARD ITSELF, FOUND BY MUTATION. The symlink test used a
+# link to a FILE, where `unlink()` is safe regardless — it passed with the
+# guard removed. The catastrophic shape is a link to a DIRECTORY, which
+# `is_dir()` follows. And the confinement test failed by DELETING composer.json.
+# Both repaired; a guard whose failure mode is damage is not a guard.
 #
-# SIBLING OF THE SAME CLASS, FIXED. The QC first-pass test placed its first
-# attempt 10 minutes before a live `now()` inside a calendar-month window, so
-# during the first 10 minutes of every 1st the failed attempt fell out of period
-# and the test silently became a 2/2 first-pass assertion. Same causal defect,
-# one-line blast radius, fixed here. Reproduced at 2026-06-01 00:05:00.
-#
-# SIBLINGS AUDITED AND CLEARED. throughput, external turnaround and technician
-# KPI move both endpoints together or are not period-filtered on the moving
-# column, so they are duration-stable. Classified, not assumed.
-#
-# TEMPFILE SIBLING LEAKS (ffcache-, ctl3a-, lrme-poppler-, leg/bad) are NOT in
-# scope; they remain the FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 backlog.
-#
-# FULL SUITE. Not authorised for this sprint. The previous authorisation was
-# consumed by run 32700184849 and it FAILED. FULL_SUITE_EXECUTION_COUNT=0.
-# Targeted reproduction only. This sprint may carry its own GO tag; it does NOT
-# close the stabilization programme.
+# FULL SUITE. Not authorised. The previous authorisation was consumed by run
+# 32700184849 and it FAILED. FULL_SUITE_EXECUTION_COUNT=0. This sprint may carry
+# its own GO tag; it does NOT close the stabilization programme.
 
-id: FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1
+id: FIX-TEST-TEMPFILE-SIBLING-LEAKS-1
 type: RUNTIME_FIX
 module: TEST_INFRASTRUCTURE
-title: "Lab analytics median lateness is decided by the fixture's arithmetic instead of the hour CI starts"
+title: 'Every temporary artifact a test creates has exactly one owner that can reach it'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: false          # tests/ only; zero app/, config/, resources/, routes/ changes
+runtime_change: false          # tests/ + config/ci_runner.php only; zero app/, routes/, resources/
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # no authorization surface; global clock state is released per test
+security_impact: false         # no authorization surface; the remover is /tmp-confined and never follows a link
 branch_isolation_impact: false # branch scoping untouched
 ledger_impact: false
 
@@ -74,10 +69,9 @@ deploy_required: true          # production must advance to the corrected author
 browser_required: false        # no UI surface
 
 test_profiles:
-  - lab
   - cicd
 
-go_tag: fix-lab-analytics-median-lateness-day-boundary-1-go
+go_tag: fix-test-tempfile-sibling-leaks-1-go
 
 # Rule 107 is still ACTIVE, and the one-off authorisation that superseded it has
 # been consumed by a FAILED run. A new explicit user authorisation is required
@@ -87,4 +81,4 @@ full_suite_status: NOT_AUTHORIZED_AFTER_PREVIOUS_FAILURE   # FULL_SUITE_EXECUTIO
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-residual_ledger: docs/sprints/fix-lab-analytics-median-lateness-day-boundary-1.md
+residual_ledger: docs/sprints/fix-test-tempfile-sibling-leaks-1.md
