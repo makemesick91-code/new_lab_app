@@ -149,6 +149,41 @@ function labOpsActor(): User
 }
 
 /**
+ * Pin the reference instant a time-sensitive fixture is built from.
+ *
+ * FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1 — a test whose expected value
+ * is an elapsed duration, an age, a lateness or an SLA verdict must not read the
+ * host's live wall clock, because the host decides what time of day the suite
+ * runs and therefore what the fixture's duration happens to be. Freeze first,
+ * then derive every fixture timestamp from `now()`, so the fixture and the
+ * expectation share one authority.
+ *
+ * The instant is interpreted in the application timezone — the same authority
+ * the code under test uses (`today()`, `Carbon::parse(...)->endOfDay()`). It is
+ * deliberately not `Asia/Makassar`: `ClinicalClock` is the clinical-date
+ * authority, and no non-clinical module may borrow it without evidence that its
+ * own dates are clinical.
+ *
+ * Always pair with {@see freeTestClock()} so the frozen instant cannot leak into
+ * a later test.
+ */
+function pinTestClock(string $instant): Carbon
+{
+    $frozen = Carbon::parse($instant, config('app.timezone'));
+    Carbon::setTestNow($frozen);
+
+    return $frozen;
+}
+
+/**
+ * Release a pinned clock. Safe to call when nothing was pinned.
+ */
+function freeTestClock(): void
+{
+    Carbon::setTestNow();
+}
+
+/**
  * Assign a technician to an order through the real service (management actor).
  */
 function assignOrder(LabOrder $order, ?Technician $technician = null, ?User $actor = null): LabOrderAssignment
