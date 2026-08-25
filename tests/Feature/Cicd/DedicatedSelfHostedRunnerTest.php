@@ -449,8 +449,7 @@ it('forbids docker, sudo and lxd for the runner service user', function () {
  */
 function bareHostBinDir(): string
 {
-    $dir = sys_get_temp_dir().'/ci-bare-host-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0700, true);
+    $dir = tempArtifactDir('ci-bare-host-', 0700);
 
     foreach (['bash', 'id', 'df', 'awk', 'hostname', 'grep', 'tr', 'cut', 'tail', 'basename', 'sed'] as $binary) {
         $resolved = trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));

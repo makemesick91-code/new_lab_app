@@ -21,7 +21,13 @@ pest()->extend(DuskTestCase::class)
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — drain the temporary-artifact
+    // registry after every test, passing or failing. See tempArtifactStore().
+    ->afterEach(fn () => releaseTempArtifacts())
     ->in('Feature');
+
+// Unit tests may allocate through the same owner, so they get the same drain.
+pest()->afterEach(fn () => releaseTempArtifacts())->in('Unit');
 
 /*
 |--------------------------------------------------------------------------
@@ -1057,6 +1063,160 @@ function pdfToTextAvailable(): bool
 function pdfInfoAvailable(): bool
 {
     return pdfToolAvailable('pdfinfo');
+}
+
+// ---------------------------------------------------------------------------
+// FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — ownership for DEFERRED temporary
+// artifacts.
+// ---------------------------------------------------------------------------
+
+/**
+ * `pdfWithTempFile` covers the SCOPED case: create, use and destroy inside a
+ * single call, where a `finally` is the entire contract. It cannot cover a
+ * fixture that must OUTLIVE the function which created it — a stub PATH
+ * directory a child process still has to read, or an `UploadedFile` whose HTTP
+ * request has not run yet. Those artifacts had no owner at all, which is why
+ * 392 of them had accumulated in the temporary directory across ten prefixes.
+ *
+ * The registry IS the owner. Every path allocated through `tempArtifactFile()`
+ * or `tempArtifactDir()` is recorded, and `releaseTempArtifacts()` removes
+ * exactly the recorded paths. Never a glob, never a prefix sweep: a concurrent
+ * test process's artifacts and the historical orphans of earlier runs are
+ * untouched by construction, not by luck.
+ *
+ * The drain is wired into the global `afterEach` at the top of this file, so a
+ * call site cannot forget it, and it runs on the failing path as well as the
+ * passing one — which is precisely where the explicit per-test cleanup calls
+ * that already existed were being skipped.
+ *
+ * Pinned by tests/Feature/Cicd/TempFileSiblingLeakContractTest.php.
+ *
+ * @param  string|null  $add  path to record, or null to only read
+ * @param  bool  $clear  true to empty the registry and return what it held
+ * @return array<string, string>
+ */
+function tempArtifactStore(?string $add = null, bool $clear = false): array
+{
+    static $paths = [];
+
+    if ($clear) {
+        $held = $paths;
+        $paths = [];
+
+        return $held;
+    }
+
+    if ($add !== null) {
+        $paths[$add] = $add;
+    }
+
+    return $paths;
+}
+
+/**
+ * One atomically allocated temporary FILE, owned by the registry.
+ *
+ * The allocation `tempnam()` returns IS the artifact. No suffix is derived
+ * from it: deriving one would make the caller the owner of two paths while
+ * cleaning a single one, which is the exact defect FIX-PDF-TEMPFILE-LEAK-1
+ * closed for `dms-pdf-` and this sprint closes for its siblings. The 0600 mode
+ * `tempnam()` assigns is kept for the same reason.
+ */
+function tempArtifactFile(string $prefix): string
+{
+    $path = tempnam(sys_get_temp_dir(), $prefix);
+
+    if ($path === false) {
+        throw new RuntimeException("could not allocate a temporary file for prefix: {$prefix}");
+    }
+
+    tempArtifactStore($path);
+
+    return $path;
+}
+
+/**
+ * One atomically allocated temporary DIRECTORY, owned by the registry.
+ *
+ * `mkdir()` is the atomic primitive here: it fails rather than silently
+ * reusing an existing path, so a collision is loud instead of shared. The name
+ * carries 48 bits of CSPRNG entropy — not `uniqid()`, whose predictability
+ * would reintroduce the race the atomicity is there to prevent.
+ */
+function tempArtifactDir(string $prefix, int $mode = 0o700): string
+{
+    $path = rtrim(sys_get_temp_dir(), '/').'/'.$prefix.bin2hex(random_bytes(6));
+
+    if (! @mkdir($path, $mode)) {
+        throw new RuntimeException("could not allocate a temporary directory: {$path}");
+    }
+
+    tempArtifactStore($path);
+
+    return $path;
+}
+
+/**
+ * Remove one owned artifact, recursively, without ever following a link.
+ *
+ * `is_link()` is tested FIRST and on every entry. Owned fixtures deliberately
+ * contain symlinks to real system binaries (`ci-bare-host-` links `/bin/bash`
+ * and friends onto a stub PATH); descending through one and deleting its
+ * target would destroy the host, so the link itself is unlinked and never
+ * traversed.
+ *
+ * The path is also confined to the temporary directory. A registry entry can
+ * only ever have come from the two allocators above, but confinement makes
+ * "this can never delete outside /tmp" a property of the code rather than a
+ * property of every future caller's discipline.
+ */
+function tempArtifactRemove(string $path): bool
+{
+    $root = rtrim(sys_get_temp_dir(), '/').'/';
+
+    if (! str_starts_with($path, $root) || $path === $root) {
+        return false;
+    }
+
+    if (is_link($path) || is_file($path)) {
+        return @unlink($path);
+    }
+
+    if (! is_dir($path)) {
+        return false;
+    }
+
+    foreach ((scandir($path) ?: []) as $entry) {
+        if ($entry === '.' || $entry === '..') {
+            continue;
+        }
+
+        tempArtifactRemove($path.'/'.$entry);
+    }
+
+    return @rmdir($path);
+}
+
+/**
+ * Drain the registry: remove every recorded artifact and forget it.
+ *
+ * Idempotent by design — an artifact a test already cleaned up explicitly is
+ * simply absent, so the existing hand-written cleanup calls remain correct and
+ * this is purely the net beneath them.
+ *
+ * @return int artifacts that were still present and are now gone
+ */
+function releaseTempArtifacts(): int
+{
+    $removed = 0;
+
+    foreach (tempArtifactStore(clear: true) as $path) {
+        if (tempArtifactRemove($path)) {
+            $removed++;
+        }
+    }
+
+    return $removed;
 }
 
 /**

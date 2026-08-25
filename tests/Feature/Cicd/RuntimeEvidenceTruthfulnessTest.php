@@ -72,7 +72,7 @@ function rtGeneratedEvidence(string $mode): string
 {
     $body = rtStepBody('critical_test_gate_self_hosted', 'Write NSF-R011 critical evidence summary');
 
-    $workdir = sys_get_temp_dir().'/ctl3c-'.bin2hex(random_bytes(6));
+    $workdir = tempArtifactDir('ctl3c-', 0o777);
     mkdir($workdir.'/scripts/ci', 0o777, true);
     mkdir($workdir.'/storage/ci-evidence', 0o777, true);
 

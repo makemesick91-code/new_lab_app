@@ -237,6 +237,14 @@ return [
         // required ever asserted the property. Declaring it makes the
         // selection enforced rather than incidental.
         'tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php',
+
+        // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — the same ownership contract for
+        // the artifacts that must OUTLIVE their creator, which no `finally`
+        // can reach. Ten prefixes across eight test files had accumulated 392
+        // orphans between them; six of those call sites had no cleanup on any
+        // path at all. Declared here for the same reason as the entry above:
+        // the property is only protected if something required asserts it.
+        'tests/Feature/Cicd/TempFileSiblingLeakContractTest.php',
     ],
 
     /*

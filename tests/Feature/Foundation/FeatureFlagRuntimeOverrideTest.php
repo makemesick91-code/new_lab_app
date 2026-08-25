@@ -80,7 +80,11 @@ function ffCachedService(array $env): FeatureFlagService
 {
     $registry = ffBuildRegistry($env);
 
-    $path = tempnam(sys_get_temp_dir(), 'ffcache').'.php';
+    // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — one allocation, one artifact. The
+    // previous `.'.php'` derivation left the `tempnam()` file itself orphaned on
+    // every call. `require` dispatches on content, never on the extension, so
+    // the suffix bought nothing and cost one zero-byte orphan per invocation.
+    $path = tempnam(sys_get_temp_dir(), 'ffcache');
     file_put_contents($path, '<?php return '.var_export($registry, true).';');
 
     try {
