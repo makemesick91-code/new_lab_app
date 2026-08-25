@@ -13,6 +13,9 @@ use App\Modules\Technician\Models\Technician;
 
 beforeEach(fn () => seedAccessControl());
 
+// A pinned clock must never outlive the test that pinned it, on either path.
+afterEach(fn () => freeTestClock());
+
 /** Full-tier, all-branch scope for direct service assertions. */
 function opScope(?int $branchId = null, ?int $technicianId = null): array
 {
@@ -108,6 +111,15 @@ it('throughput counts DELIVERED transitions in period with previous-period delta
 });
 
 it('SLA compliance: on-time when delivered before due, late when after; boundary is on-time', function () {
+    // Pinned, and pinned AT the instant this test used to fail in CI.
+    //
+    // Lateness is an ELAPSED duration measured from the END of the due day, so
+    // the late case below used to be `1 + <time of day>` days late: ~1.00 during
+    // the first 7m12s of every UTC day, ~2.00 by the end of it. The old
+    // `> 1.0` assertion was therefore decided by what time the runner started —
+    // it failed at 00:02:59Z and passed on a rerun of the same commit.
+    pinTestClock('2026-05-15 00:02:59');
+
     // On-time: delivered today, due today (end of due day).
     $onTime = opV2Order(['status' => LabWorkflowState::DELIVERED, 'due_date' => now()->toDateString()]);
     opLog($onTime, LabWorkflowState::DELIVERED, now());
@@ -116,9 +128,13 @@ it('SLA compliance: on-time when delivered before due, late when after; boundary
     $boundary = opV2Order(['status' => LabWorkflowState::DELIVERED, 'due_date' => now()->toDateString()]);
     opLog($boundary, LabWorkflowState::DELIVERED, now()->endOfDay());
 
-    // Late: due 2 days ago, delivered now.
-    $late = opV2Order(['status' => LabWorkflowState::DELIVERED, 'due_date' => now()->subDays(2)->toDateString()]);
-    opLog($late, LabWorkflowState::DELIVERED, now());
+    // Late: due three days ago, delivered at the start of today — exactly two
+    // full days past the end of its due day, which is where the runtime starts
+    // counting. Anchoring the delivery to the DUE DAY rather than to "now" is
+    // what makes 2.00 the arithmetic of the fixture instead of of the clock.
+    $dueDay = now()->copy()->subDays(3)->startOfDay();
+    $late = opV2Order(['status' => LabWorkflowState::DELIVERED, 'due_date' => $dueDay->toDateString()]);
+    opLog($late, LabWorkflowState::DELIVERED, $dueDay->copy()->addDays(3)->startOfDay());
 
     $sla = opAnalytics()['kpi']['sla'];
 
@@ -126,7 +142,8 @@ it('SLA compliance: on-time when delivered before due, late when after; boundary
         ->and($sla['on_time'])->toBe(2)
         ->and($sla['late'])->toBe(1)
         ->and($sla['compliance_pct'])->toBe(66.7)
-        ->and($sla['median_lateness_days'])->toBeGreaterThan(1.0);
+        // Exact, not a threshold: the fixture establishes the value arithmetically.
+        ->and($sla['median_lateness_days'])->toBe(2.0);
 });
 
 it('SLA excludes completed orders that never had a due_date', function () {
@@ -141,6 +158,13 @@ it('SLA excludes completed orders that never had a due_date', function () {
 });
 
 it('QC first-pass yield and rework rate use the first QC attempt', function () {
+    // Pinned mid-month for the same reason, one period wider: the first attempt
+    // sits 10 minutes before the reference and the window is the calendar month.
+    // On the host clock those 10 minutes landed in the PREVIOUS month during the
+    // first 10 minutes of every 1st, dropping the failed attempt out of the
+    // window and quietly turning this into a 2/2 first-pass assertion.
+    pinTestClock('2026-05-15 09:30:00');
+
     // First attempt PASSED → first pass, no rework.
     $clean = opV2Order(['status' => LabWorkflowState::MODEL_DONE]);
     opLog($clean, LabWorkflowState::QC_PASSED, now());

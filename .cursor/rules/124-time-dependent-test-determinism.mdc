@@ -1,0 +1,76 @@
+---
+description: FIX-LAB-ANALYTICS-MEDIAN-LATENESS-DAY-BOUNDARY-1 — time-dependent tests pin a reference clock instead of reading the host's
+globs:
+  - "tests/**"
+alwaysApply: false
+---
+
+# Time-dependent test determinism
+
+A test whose expected result depends on elapsed time, a calendar date, a
+day-boundary, an age, a lateness, an SLA verdict or any duration must not depend
+on the host's live wall clock — unless live-clock behaviour is itself the subject
+under test.
+
+## Why this rule exists
+
+`LabOperationalAnalyticsMetricTest` asserted `median_lateness_days > 1.0` from a
+fixture that pinned the deadline to a calendar date but the delivery to `now()`:
+
+```php
+'due_date' => now()->subDays(2)->toDateString(),   // day granularity
+opLog($late, DELIVERED, now());                    // instant granularity
+```
+
+The runtime measures lateness as an elapsed duration from the **end of the due
+day**, so those same records were `1.00` days late just after midnight and
+`2.00` just before it. The assertion was decided by what hour CI started: it
+failed at `00:02:59Z` and passed on a rerun of the same commit. The reproduced
+failure window was `[00:00:00, 00:07:11]` — 7m12s of every day.
+
+## Rules
+
+1. **Pin an explicit reference instant.** Use `pinTestClock('Y-m-d H:i:s')`
+   (`tests/Pest.php`) and derive every fixture timestamp from `now()` afterwards,
+   so the fixture and the expectation share one authority. Pair it with
+   `freeTestClock()`; never leave a pinned clock behind on either the success or
+   the exception path.
+
+2. **Anchor both endpoints of a duration.** Pinning the clock is necessary but
+   not sufficient: a fixture that measures "N days late" must anchor the delivery
+   to the **deadline**, not to "now". If the expected value only holds at the
+   instant you happened to pick, the fixture is still under-determined.
+
+3. **The CI runner's UTC clock is infrastructure, not business time.** Establish
+   the time authority from the code under test. `ClinicalClock` (Asia/Makassar)
+   is the clinical-date authority; no non-clinical module may borrow it without
+   evidence that its own dates are clinical. Lab operational analytics resolves
+   in the application timezone (`config/app.php`, UTC) — that is why its boundary
+   is UTC midnight.
+
+4. **Cover the boundary that actually broke.** A regression for a reproduced
+   day-boundary flake must include the failing window itself — both edges — not
+   merely a convenient midday fixture. Prefer an invariance assertion: the same
+   records, at every instant across the boundary, must produce the same value.
+
+5. **Never widen a threshold to stabilise a clock flake.** Do not change `>` to
+   `>=`, broaden a tolerance, or round a failing metric away. First establish the
+   business contract, then remove the unintended clock dependence. Prefer an
+   exact expectation when the fixture establishes the value arithmetically.
+
+6. **Reproduce before you fix.** A suspected time-of-day flake must be reproduced
+   by controlling the clock at the failing instant. A later green rerun of the
+   same commit is evidence of flakiness, not of correction. Never `sleep` toward
+   a boundary.
+
+7. **Watch the period, not just the day.** The same defect appears one window
+   wider: a fixture offset backwards from a live `now()` inside a calendar-month
+   report window falls out of period at the start of a month. `subMinutes(10)`
+   broke the QC first-pass test during the first 10 minutes of every 1st.
+
+## Not in scope of this rule
+
+Do not ban `now()` in tests. A fixture whose two endpoints move together
+(`sent_at => now()->subDays(4)`, `returned_at => now()`) is duration-stable, and
+a record simply placed "in the current period" is fine. The defect is a fixture
+whose **expected value** moves with the host clock.
