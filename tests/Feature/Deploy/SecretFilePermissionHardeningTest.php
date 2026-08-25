@@ -41,8 +41,7 @@ function currentGroup(): string
  */
 function makeSecretFixtureDir(array $files): string
 {
-    $dir = sys_get_temp_dir().'/infra-sec-env-1-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0700, true);
+    $dir = tempArtifactDir('infra-sec-env-1-', 0700);
 
     foreach ($files as $name => $mode) {
         $path = $dir.'/'.$name;

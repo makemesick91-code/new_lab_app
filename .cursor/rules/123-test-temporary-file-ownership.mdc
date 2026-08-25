@@ -87,9 +87,52 @@ introduces races between concurrent test processes. Never weaken permissions
 input such as a patient name or medical-record number; temporary names stay
 opaque.
 
+## Two lifecycles, two owners
+
+`finally` is the whole contract only when the artifact is created, used and
+destroyed inside one call. `pdfWithTempFile` is that pattern.
+
+An artifact that must **outlive** its creator has no `finally` that can reach
+it — a stub PATH directory a child process still has to read, an `UploadedFile`
+whose HTTP request has not run yet. Those go through `tempArtifactFile()` /
+`tempArtifactDir()` in `tests/Pest.php`; the registry behind them is the owner,
+and the global `afterEach` drains it on the failing path as well as the passing
+one. That is where the pre-existing hand-written cleanup calls were being
+skipped.
+
+Registry cleanup removes **exactly the recorded paths**. It is never a prefix
+glob: a concurrent test process's artifacts and the historical orphans of
+earlier runs must be safe by construction, not by luck.
+
+## The remover never follows a link, and never leaves /tmp
+
+A link to a *file* is not the dangerous case — `unlink()` never follows a
+symlink, so even an unguarded remover destroys only the link. The catastrophic
+case is a link to a *directory*: `is_dir()` follows it, so a remover without an
+`is_link()` test descends INTO the target and deletes its contents. Fixtures
+deliberately contain such links (`ci-bare-host-` symlinks `/bin/bash` onto a
+stub PATH). Test the dangerous shape, not the benign one.
+
+Confinement to `sys_get_temp_dir()` is a property of the code, not of every
+future caller's discipline.
+
+## A guard whose failure mode is damage is not a guard
+
+Both rules above were found by mutation, not by review. Removing the symlink
+guard left the file-link test passing, and the confinement test proved its point
+by deleting `composer.json`. Point destructive assertions at a fixture you
+created.
+
 ## Anti-regression
 
-Pinned behaviourally by `tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php`,
-declared in `config/ci_runner.php` → `critical_gate_mandatory_suites` so its CI
-selection is enforced rather than incidental. Sprint record:
-`docs/sprints/fix-pdf-tempfile-leak-1.md`.
+Pinned behaviourally by `tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php`
+(scoped lifecycle) and `tests/Feature/Cicd/TempFileSiblingLeakContractTest.php`
+(deferred lifecycle), both declared in `config/ci_runner.php` →
+`critical_gate_mandatory_suites` so their CI selection is enforced rather than
+incidental. The sibling guard also asserts, by tokenising rather than grepping,
+that no call site derives a second path from a `tempnam()` allocation — a
+textual scan matches the guard's own prose and reports itself. `tempnam()` is
+not banned; it is the correct atomic primitive. Deriving from it is the defect.
+
+Sprint records: `docs/sprints/fix-pdf-tempfile-leak-1.md`,
+`docs/sprints/fix-test-tempfile-sibling-leaks-1.md`.

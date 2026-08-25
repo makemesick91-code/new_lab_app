@@ -43,8 +43,10 @@ function runShell(string $script, array $env = []): array
  */
 function stubPsqlBin(string $reportedVersion): string
 {
-    $dir = sys_get_temp_dir().'/ctl3a-bin-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0o777, true);
+    // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — this stub PATH must outlive the
+    // function so the child process can read it, so the registry owns it. It
+    // previously had NO cleanup on any path at all.
+    $dir = tempArtifactDir('ctl3a-bin-', 0o777);
 
     file_put_contents($dir.'/psql', <<<SH
         #!/usr/bin/env bash
@@ -82,8 +84,7 @@ function stubPsqlBin(string $reportedVersion): string
  */
 function stubRuntimeBin(array $stubs = []): string
 {
-    $dir = sys_get_temp_dir().'/ctl3d-bin-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0o777, true);
+    $dir = tempArtifactDir('ctl3d-bin-', 0o777);
 
     $real = [
         'bash' => (new ExecutableFinder)->find('bash', '/bin/bash'),
@@ -105,7 +106,7 @@ function stubRuntimeBin(array $stubs = []): string
 /** Environment that isolates the health check from this developer machine. */
 function healthEnv(array $overrides = []): array
 {
-    $home = sys_get_temp_dir().'/ctl3a-home-'.bin2hex(random_bytes(6));
+    $home = tempArtifactDir('ctl3a-home-', 0o777);
     mkdir($home.'/.ssh', 0o777, true);
 
     return array_merge([
@@ -171,7 +172,9 @@ it('still succeeds through tee when the producer succeeds', function () {
 
 it('preserves the evidence while propagating the failure', function () {
     // Evidence must not be sacrificed to recover the exit status.
-    $evidence = tempnam(sys_get_temp_dir(), 'ctl3a-evidence-');
+    // Registry-owned so the evidence survives an assertion failure below
+    // without surviving the test run.
+    $evidence = tempArtifactFile('ctl3a-evidence-');
 
     $pattern = <<<SH
         set -eo pipefail
@@ -193,7 +196,7 @@ it('preserves the evidence while propagating the failure', function () {
 it('runs the real health-check step pattern from the workflow and fails closed on NO-GO', function () {
     // Force a NO-GO by presenting a production SSH key, then run the exact
     // shell pattern the workflow step uses around the real script.
-    $home = sys_get_temp_dir().'/ctl3a-home-'.bin2hex(random_bytes(6));
+    $home = tempArtifactDir('ctl3a-home-', 0o777);
     mkdir($home.'/.ssh', 0o777, true);
     file_put_contents($home.'/.ssh/daengtisiams_vps_ed25519', "not-a-real-key\n");
 
@@ -237,8 +240,14 @@ it('flags a safety-critical step that pipes into tee without propagating the sta
     config()->set('ci_runner.files.ci_workflow', $rel);
     config()->set('ci_runner.strict_pipeline_steps', ['Runner health check (CICD-CTRL-3)']);
 
-    $posture = (new SelfHostedRunnerScanner)->pipelineExitPosture();
-    @unlink(base_path($rel));
+    try {
+        $posture = (new SelfHostedRunnerScanner)->pipelineExitPosture();
+    } finally {
+        // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — the fixture lives in the project
+        // tree, so the temp-artifact registry cannot own it; a `finally` is the
+        // owner instead. Previously a throw above stranded it in the repository.
+        @unlink(base_path($rel));
+    }
 
     expect($posture['ok'])->toBeFalse()
         ->and($posture['unprotected'])->toContain('Runner health check (CICD-CTRL-3)');
@@ -265,8 +274,11 @@ it('accepts a safety-critical step that declares shell bash', function () {
     config()->set('ci_runner.files.ci_workflow', $rel);
     config()->set('ci_runner.strict_pipeline_steps', ['Runner health check (CICD-CTRL-3)']);
 
-    $posture = (new SelfHostedRunnerScanner)->pipelineExitPosture();
-    @unlink(base_path($rel));
+    try {
+        $posture = (new SelfHostedRunnerScanner)->pipelineExitPosture();
+    } finally {
+        @unlink(base_path($rel));
+    }
 
     expect($posture['ok'])->toBeTrue()
         ->and($posture['unprotected'])->toBe([]);
@@ -336,8 +348,7 @@ it('fails closed when the PostgreSQL major does not match the authoritative gate
 });
 
 it('fails closed when the CI database is unreachable', function () {
-    $bin = sys_get_temp_dir().'/ctl3a-bin-'.bin2hex(random_bytes(6));
-    mkdir($bin, 0o777, true);
+    $bin = tempArtifactDir('ctl3a-bin-', 0o777);
     file_put_contents($bin.'/psql', "#!/usr/bin/env bash\nexit 2\n");
     chmod($bin.'/psql', 0o755);
 
@@ -374,7 +385,7 @@ it('fails closed when the runtime user is in a root-equivalent group', function 
 
 it('fails closed when a production SSH key is present on the runner', function () {
     $bin = stubPsqlBin('16.14');
-    $home = sys_get_temp_dir().'/ctl3a-home-'.bin2hex(random_bytes(6));
+    $home = tempArtifactDir('ctl3a-home-', 0o777);
     mkdir($home.'/.ssh', 0o777, true);
     file_put_contents($home.'/.ssh/daengtisiams_deploy', "not-a-real-key\n");
 
@@ -464,8 +475,11 @@ it('flags workflow evidence that hard-codes a container engine', function () {
 
     config()->set('ci_runner.files.ci_workflow', $rel);
 
-    $posture = (new SelfHostedRunnerScanner)->runtimeEvidencePosture();
-    @unlink(base_path($rel));
+    try {
+        $posture = (new SelfHostedRunnerScanner)->runtimeEvidencePosture();
+    } finally {
+        @unlink(base_path($rel));
+    }
 
     expect($posture['ok'])->toBeFalse()
         ->and($posture['forbidden_present'])->toContain('engine=rootless podman');

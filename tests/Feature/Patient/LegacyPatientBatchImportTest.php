@@ -51,7 +51,14 @@ function legacyCsv(array $rows): UploadedFile
     $content = stream_get_contents($handle);
     fclose($handle);
 
-    $path = tempnam(sys_get_temp_dir(), 'leg').'.csv';
+    // FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — the fixture must survive this
+    // function (the HTTP request has not run yet), so the registry owns it and
+    // the global afterEach drains it. The previous `tempnam(...).'.csv'` owned
+    // two paths and cleaned neither: the zero-byte allocation AND the populated
+    // CSV both accumulated. `mimes:csv,txt` validates the guessed type of the
+    // CONTENT, and the client name below still carries the extension, so the
+    // temporary path needs none.
+    $path = tempArtifactFile('leg');
     file_put_contents($path, $content);
 
     return new UploadedFile($path, 'legacy.csv', 'text/csv', null, true);
@@ -98,7 +105,7 @@ it('forbids a user without manage patients from every import action', function (
 });
 
 it('rejects a CSV with a mismatched header', function () {
-    $path = tempnam(sys_get_temp_dir(), 'bad').'.csv';
+    $path = tempArtifactFile('bad');
     file_put_contents($path, "foo,bar\n1,2\n");
     $file = new UploadedFile($path, 'bad.csv', 'text/csv', null, true);
 

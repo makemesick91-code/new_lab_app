@@ -57,8 +57,7 @@ function rdrsValidPayload(array $overrides = []): array
 /** Write raw bytes to a unique temp evidence path and return it. */
 function rdrsWriteRaw(string $body): string
 {
-    $dir = sys_get_temp_dir().'/rdrs1-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0755, true);
+    $dir = tempArtifactDir('rdrs1-', 0755);
     $path = $dir.'/latest.json';
     file_put_contents($path, $body);
 
@@ -68,8 +67,7 @@ function rdrsWriteRaw(string $body): string
 /** A path inside an existing directory where no file was ever written. */
 function rdrsAbsentPath(): string
 {
-    $dir = sys_get_temp_dir().'/rdrs1-'.bin2hex(random_bytes(6));
-    mkdir($dir, 0755, true);
+    $dir = tempArtifactDir('rdrs1-', 0755);
 
     return $dir.'/latest.json';
 }

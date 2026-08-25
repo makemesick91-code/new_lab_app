@@ -64,9 +64,18 @@ beforeEach(function () {
     Bus::fake();
 });
 
+/**
+ * FIX-TEST-TEMPFILE-SIBLING-LEAKS-1 — one allocation, one artifact.
+ *
+ * The previous `.'.pdf'` derivation stranded the `tempnam()` file on every
+ * call. Poppler dispatches on the `%PDF-` header and so does this module's own
+ * inspector, so `pdfinfo` and `pdftoppm` read the bare allocation identically.
+ * Callers already own the returned path in a `finally`; now there is only one
+ * path for them to own.
+ */
 function lrmePopplerTempPdf(string $contents): string
 {
-    $path = tempnam(sys_get_temp_dir(), 'lrme-poppler-').'.pdf';
+    $path = tempnam(sys_get_temp_dir(), 'lrme-poppler-');
     file_put_contents($path, $contents);
 
     return $path;
