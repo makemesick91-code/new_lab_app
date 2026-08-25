@@ -215,36 +215,70 @@ it('accumulates nothing across repeated invocations', function () {
 // Safety properties of the remover.
 // ---------------------------------------------------------------------------
 
-it('never follows a symlink out of the fixture it is removing', function () {
+it('never descends through a symlinked directory while removing a fixture', function () {
     // `ci-bare-host-` deliberately links real system binaries onto a stub PATH.
-    // A remover that descended through a link would delete /bin/bash. The link
-    // must go; its target must not.
-    $outside = tempArtifactFile('tsl1-target-');
-    file_put_contents($outside, 'must survive');
+    //
+    // A link to a FILE is not the dangerous case: `unlink()` never follows a
+    // symlink, so even an unguarded remover destroys only the link. The
+    // catastrophic case is a link to a DIRECTORY — `is_dir()` follows it, so a
+    // remover without the `is_link()` test scandirs INTO the target and deletes
+    // its contents before failing to rmdir it. This test therefore builds the
+    // dangerous shape, not the benign one.
+    $victim = tempArtifactDir('tsl1-victim-');
+    file_put_contents($victim.'/precious.txt', 'must survive');
 
     $dir = tempArtifactDir('tsl1-link-');
-    symlink($outside, $dir.'/link-to-target');
+    symlink($victim, $dir.'/link-to-victim');
 
-    expect(is_link($dir.'/link-to-target'))->toBeTrue();
+    expect(is_link($dir.'/link-to-victim'))->toBeTrue()
+        ->and(is_dir($dir.'/link-to-victim'))->toBeTrue()
+        ->and(is_file($dir.'/link-to-victim'))->toBeFalse();
 
-    // Remove only the directory; the registry still holds the target.
+    // Remove only the holder. The victim is a separate registry entry.
     tempArtifactRemove($dir);
 
     expect(file_exists($dir))->toBeFalse()
-        ->and(is_file($outside))->toBeTrue()
-        ->and(file_get_contents($outside))->toBe('must survive');
+        ->and(is_dir($victim))->toBeTrue()
+        ->and(is_file($victim.'/precious.txt'))->toBeTrue()
+        ->and(file_get_contents($victim.'/precious.txt'))->toBe('must survive');
+
+    // A link to a file must also leave its target alone.
+    $fileVictim = tempArtifactFile('tsl1-filevictim-');
+    file_put_contents($fileVictim, 'also survives');
+    $holder = tempArtifactDir('tsl1-link2-');
+    symlink($fileVictim, $holder.'/link-to-file');
+
+    tempArtifactRemove($holder);
+
+    expect(file_exists($holder))->toBeFalse()
+        ->and(file_get_contents($fileVictim))->toBe('also survives');
 
     releaseTempArtifacts();
 
-    expect(file_exists($outside))->toBeFalse();
+    expect(file_exists($victim))->toBeFalse()
+        ->and(file_exists($fileVictim))->toBeFalse();
 });
 
 it('refuses to remove anything outside the temporary directory', function () {
     // Confinement is a property of the code, not of every future caller's
-    // discipline. base_path() is a real, populated directory that must survive.
-    expect(tempArtifactRemove(base_path('composer.json')))->toBeFalse()
-        ->and(is_file(base_path('composer.json')))->toBeTrue();
+    // discipline.
+    //
+    // The probe is a fixture this test creates INSIDE the project tree, never a
+    // tracked file. An earlier draft pointed at composer.json, and when the
+    // confinement was mutated away to check this assertion could fail, it
+    // failed by deleting composer.json. A guard whose failure mode is damage is
+    // not a guard, so the blast radius is now a file we own.
+    $outside = base_path('storage/framework/tsl1-outside-'.bin2hex(random_bytes(6)).'.txt');
+    file_put_contents($outside, 'outside the temporary directory');
 
+    try {
+        expect(tempArtifactRemove($outside))->toBeFalse()
+            ->and(is_file($outside))->toBeTrue();
+    } finally {
+        @unlink($outside);
+    }
+
+    // The temporary directory itself is never a removable artifact.
     expect(tempArtifactRemove(rtrim(sys_get_temp_dir(), '/').'/'))->toBeFalse()
         ->and(is_dir(sys_get_temp_dir()))->toBeTrue();
 });
