@@ -1026,10 +1026,29 @@ function pdfInfoAvailable(): bool
 
 /**
  * Write PDF bytes to a temp file, run a Poppler binary over it, then clean up.
+ *
+ * FIX-PDF-TEMPFILE-LEAK-1 — the helper owns EXACTLY ONE path, and it is the
+ * one `tempnam()` created.
+ *
+ * `tempnam()` does not just reserve a name, it creates the file. Deriving a
+ * second path from the returned one — the previous `.'.pdf'` — therefore made
+ * this helper the owner of two artifacts while its `finally` cleaned only the
+ * derived one, stranding a zero-byte orphan on every PDF assertion in the
+ * suite. Keeping the allocation itself as the document path removes the second
+ * artifact rather than adding a second unlink, so there is no path left to
+ * forget.
+ *
+ * The suffix is not needed: Poppler dispatches on the file header, not on the
+ * filename, and `pdftotext`/`pdfinfo` read this path identically with or
+ * without one. Dropping it also keeps the 0600 mode `tempnam()` assigns, and
+ * closes the window in which the derived name — never atomically reserved —
+ * could have been created by another process between derivation and write.
+ *
+ * Pinned by tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php.
  */
 function pdfWithTempFile(string $bytes, callable $callback): mixed
 {
-    $path = tempnam(sys_get_temp_dir(), 'dms-pdf-').'.pdf';
+    $path = tempnam(sys_get_temp_dir(), 'dms-pdf-');
     file_put_contents($path, $bytes);
 
     try {

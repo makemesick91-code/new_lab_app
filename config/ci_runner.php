@@ -226,6 +226,17 @@ return [
         // records: a control that exists but is never selected is not a control.
         'tests/Feature/Cicd/FullSuiteBaselineContractTest.php',
         'tests/Feature/RME/RmeReceiptOnePageTest.php',
+
+        // FIX-PDF-TEMPFILE-LEAK-1 — the temporary-file ownership contract for
+        // the shared PDF inspection helper.
+        //
+        // The helper this pins is called by every PDF assertion in the suite,
+        // so a regression in it leaks once per assertion rather than once. It
+        // is selected today by the `Cicd` token, but the leak it closes was
+        // invisible for the same reason the entries above were: nothing
+        // required ever asserted the property. Declaring it makes the
+        // selection enforced rather than incidental.
+        'tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php',
     ],
 
     /*
