@@ -197,3 +197,69 @@ A new explicit user authorisation is required before any further complete-suite
 execution. This sprint carries its own GO tag and does **not** close the
 stabilization programme, which remains
 `NO_GO_PENDING_NEW_AUTHORIZED_FULL_SUITE`.
+
+---
+
+## 9. Discovered during this sprint — a pre-existing SLA flake (NOT fixed here)
+
+The Selective Module Gate reddened on run `32790351218`. The cause is **not this
+sprint's change** and is recorded here so it is not rediscovered from scratch.
+
+**Failing test:** `tests/Feature/LabWorkflow/LabOperationalAnalyticsMetricTest.php:129`
+
+```php
+->and($sla['median_lateness_days'])->toBeGreaterThan(1.0);
+```
+
+**Reported as:** `Failed asserting that 1.0 is greater than 1.0.`
+
+### Mechanism
+
+`LabOperationalAnalyticsService` computes lateness as:
+
+```php
+$lateness[] = round($due->diffInMinutes($delivered) / 1440, 2); // days late
+```
+
+The `late` fixture uses `due_date = now()->subDays(2)->toDateString()` — a
+**date**, compared against the **end** of that due day — and delivers at `now()`.
+Just after midnight the gap is only marginally over one day, and `round(…, 2)`
+collapses it onto the boundary:
+
+| Wall-clock `now()` | Gap (min) | Rounded value | `> 1.0` |
+|---|---|---|---|
+| 00:00 | 1441 | 1.00 | **FAIL** |
+| 00:03 | 1444 | 1.00 | **FAIL** |
+| 00:05 | 1446 | 1.00 | **FAIL** |
+| 00:07 | 1448 | 1.01 | pass |
+| 00:30 | 1471 | 1.02 | pass |
+
+So the test fails **only when it executes within roughly the first seven minutes
+of a day** — about 0.5% of runs. CI executed it at `00:02:59Z`, inside that
+window. The base-branch run of the same gate passed at `21:59Z`, outside it.
+
+### Why it is not this sprint's change
+
+- This branch touches no file under `tests/Feature/LabWorkflow/` or
+  `app/Modules/LabOrder/` — `git diff --name-only 9576af9f..HEAD` over both paths
+  is empty.
+- The only behavioural change is the PDF temp-file helper, which that suite does
+  not call.
+- The failure is fully explained by wall-clock time and reproduces from the
+  service's own formula without involving any temporary file.
+
+### Why it was not fixed here
+
+Out of the declared surface for a test-infrastructure lifecycle fix, and the
+correct repair is a judgement call in the Lab domain rather than a mechanical
+one: relaxing the assertion to `>=` would silently drop the "median lateness is
+meaningfully more than one day" property it exists to assert, so the fixture
+should be made deterministic instead (a wider `late` offset, or a frozen clock).
+That belongs to a sprint that owns the Lab analytics contract.
+
+### Why it still matters
+
+The stabilization programme is blocked on a **single** authorised Full Suite
+run. A test with a ~0.5% time-of-day failure rate can redden that run for a
+reason unrelated to whatever it is meant to certify. Recommended as a small,
+self-contained follow-up before the next authorisation is spent.
