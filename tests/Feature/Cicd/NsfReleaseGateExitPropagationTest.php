@@ -106,7 +106,14 @@ function runNsfStepBody(string $job, string $stepName, int $producerExit): array
     preg_match('/\|\s*tee\s+(\S+)/', $body, $m);
     expect($m[1] ?? null)->not->toBeNull("step '{$stepName}' no longer tees into an evidence file");
 
-    $workdir = sys_get_temp_dir().'/ctl3b-'.bin2hex(random_bytes(6));
+    // The workdir must OUTLIVE nothing — but it must not outlive the TEST, and
+    // a raw mkdir here had no owner that could reach it, so every dataset row
+    // stranded one tree. `tempArtifactDir()` registers the root with the
+    // canonical owner drained by the global afterEach, on the failing path as
+    // well as the passing one. The nested evidence directory is created INSIDE
+    // that owned root, so the recursive drain reaches it without a second
+    // registration. FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1.
+    $workdir = tempArtifactDir('ctl3b-');
     mkdir($workdir.'/storage/ci-evidence', 0o777, true);
     $evidence = $workdir.'/'.$m[1];
 
@@ -319,7 +326,9 @@ it('would report the full suite green if its strict shell were removed', functio
     $body = nsfStepBody('full_suite_gate', 'Run full Pest suite');
     $patched = preg_replace('/php artisan [^\n|]*/', '(echo "STUB"; exit 1) ', $body, 1);
 
-    $workdir = sys_get_temp_dir().'/fix6-fullsuite-'.bin2hex(random_bytes(6));
+    // Owned by the registry for the same reason as runNsfStepBody() above.
+    // FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1.
+    $workdir = tempArtifactDir('fix6-fullsuite-');
     mkdir($workdir.'/storage/ci-evidence', 0o777, true);
 
     $argv = nsfShellArgv(null);
@@ -429,4 +438,83 @@ it('runs NSF-10 only when NSF-9 genuinely succeeded', function () {
     // release-safety result.
     expect($job['needs'])->toBe('release_safety_gate')
         ->and($job['if'])->toContain("needs.release_safety_gate.result == 'success'");
+});
+
+// ---------------------------------------------------------------------------
+// FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1 — R-22.
+//
+// These pins live beside `runNsfStepBody()` on purpose. The prefix-independent
+// structural guard in CiGateWorkdirOwnershipContractTest stops a raw allocation
+// from being written here again under ANY name; these prove the allocation this
+// helper actually performs is owned and reachable on every path the gate takes.
+// ---------------------------------------------------------------------------
+
+/**
+ * Registry entries created since a snapshot, in allocation order.
+ *
+ * @param  array<string, string>  $before
+ * @return list<string>
+ */
+function nsfNewlyOwned(array $before): array
+{
+    return array_values(array_diff(array_keys(tempArtifactStore()), array_keys($before)));
+}
+
+it('hands the release-gate workdir to the canonical owner and drains it', function () {
+    [$job, $step] = nsfBlockingSteps()[0];
+
+    $before = tempArtifactStore();
+    [$code, , $evidence] = runNsfStepBody($job, $step, producerExit: 0);
+    $owned = nsfNewlyOwned($before);
+
+    expect($code)->toBe(0)
+        ->and($owned)->toHaveCount(1, 'the gate workdir is not owned by the artifact registry')
+        // The evidence file must live INSIDE the owned root, or the drain would
+        // remove the root while stranding what the step actually wrote.
+        ->and($evidence)->toStartWith($owned[0].'/')
+        ->and(is_dir($owned[0]))->toBeTrue();
+
+    releaseTempArtifacts();
+
+    expect(file_exists($owned[0]))->toBeFalse();
+});
+
+it('drains the release-gate workdir when the gate FAILS', function () {
+    [$job, $step] = nsfBlockingSteps()[0];
+
+    $before = tempArtifactStore();
+    [$code] = runNsfStepBody($job, $step, producerExit: 1);
+    $owned = nsfNewlyOwned($before);
+
+    // Guards the guard: if the failure path ever stopped failing, a cleanup
+    // assertion on it would prove nothing.
+    expect($code)->not->toBe(0, 'the failing producer no longer fails the step')
+        ->and($owned)->toHaveCount(1);
+
+    releaseTempArtifacts();
+
+    expect(file_exists($owned[0]))->toBeFalse('a failed release gate stranded its workdir');
+});
+
+it('leaves nothing behind across repeated release-gate invocations', function () {
+    $steps = nsfBlockingSteps();
+    $before = tempArtifactStore();
+
+    for ($i = 0; $i < 10; $i++) {
+        [$job, $step] = $steps[$i % count($steps)];
+
+        // Alternating outcome: a leak that only happened on one of the two
+        // paths would still be caught.
+        runNsfStepBody($job, $step, producerExit: $i % 2);
+    }
+
+    $owned = nsfNewlyOwned($before);
+
+    expect($owned)->toHaveCount(10, 'repeated invocations did not each register exactly one workdir');
+
+    releaseTempArtifacts();
+
+    foreach ($owned as $path) {
+        expect(file_exists($path))->toBeFalse("repeated invocation stranded: {$path}");
+    }
 });

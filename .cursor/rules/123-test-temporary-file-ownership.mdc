@@ -1,5 +1,5 @@
 ---
-description: Temporary-file ownership and cleanup contract for tests (FIX-PDF-TEMPFILE-LEAK-1)
+description: Temporary-artifact ownership and cleanup contract for tests (FIX-PDF-TEMPFILE-LEAK-1, FIX-TEST-TEMPFILE-SIBLING-LEAKS-1, FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1)
 globs:
   - "tests/**/*.php"
 alwaysApply: false
@@ -123,6 +123,60 @@ guard left the file-link test passing, and the confinement test proved its point
 by deleting `composer.json`. Point destructive assertions at a fixture you
 created.
 
+## The allocation API is the ownership authority — a prefix list is not
+
+R-22. The registry above was built and ten prefixes were closed with it, but
+nothing required governed test code to *go through* it. Two release-gate call
+sites built a path from the temporary root and called `mkdir()` directly, so no
+assertion about the registry's behaviour could see them: 42 tests passed and
+stranded 18 directory trees on every run.
+
+A temporary directory in a governed test surface is created by
+`tempArtifactDir()` — or by a call site with a documented lifecycle owner of its
+own, declared in the guard's allowlist and re-measured. Raw temporary `mkdir()`
+is not banned repository-wide; inside the governed surface it requires an
+explicit, reviewed owner.
+
+**A new prefix must never need to be registered anywhere to earn cleanup.**
+`tempArtifactDir('brand-new-thing-')` is protected the moment it is written.
+That is the property that makes the API the authority.
+
+## A known-prefix census is diagnostic, never the verdict
+
+The readiness audit that found R-22 demonstrated the deeper defect: counting a
+known list of prefixes before and after a run reported `447 / 447 / delta 0`
+while an unknown prefix leaked +18 elsewhere. A census can only report on names
+it was told about in advance, so it is structurally incapable of reporting the
+one thing that matters — an allocation nobody registered.
+
+Keep prefix counts for diagnostics and historical accounting. Never conclude
+"no leak" from one.
+
+## Measure unattributed growth in a root you own
+
+`sys_get_temp_dir()` is resolved once per process, so an allocation cannot be
+redirected mid-run. To measure *everything* an allocation shape produces —
+including a prefix you have never seen — run it in a child process with its
+temporary directory pointed at a root the test allocated. You then own 100% of
+that root's contents, the measurement is exact, and no concurrent process on the
+machine can perturb it. Never scan or delete shared `/tmp` to reach that answer.
+
+## A detector that skips an expression for mentioning the canonical call
+
+Mutation of this sprint's own guard found it: a ternary returning
+`tempArtifactDir()` on the passing path and a raw path on the failing one — the
+exact "cleaned up only on success" defect — earned a free pass from a
+`str_contains($rhs, 'tempArtifactDir(')` skip. Strip the canonical calls from
+the expression first, then ask whether it still reaches for the temporary root.
+Containing an owner is not the same as having one.
+
+## Stopping a wrapper PID is not stopping its test process
+
+`pkill` on `artisan test` leaves the Pest/PHP child running. Orphans then race
+over shared release/governance evidence and manufacture failures that look like
+code defects. Verify the actual process tree before rerunning any
+shared-evidence suite.
+
 ## Anti-regression
 
 Pinned behaviourally by `tests/Feature/Cicd/PdfTempFileLifecycleContractTest.php`
@@ -134,5 +188,12 @@ that no call site derives a second path from a `tempnam()` allocation — a
 textual scan matches the guard's own prose and reports itself. `tempnam()` is
 not banned; it is the correct atomic primitive. Deriving from it is the defect.
 
+The allocation-API authority is pinned by
+`tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php`, also declared in
+`critical_gate_mandatory_suites`. Its detector is assembled from string
+fragments so the guard can police its own file — a guard excluded from the
+surface it guards guards nothing.
+
 Sprint records: `docs/sprints/fix-pdf-tempfile-leak-1.md`,
-`docs/sprints/fix-test-tempfile-sibling-leaks-1.md`.
+`docs/sprints/fix-test-tempfile-sibling-leaks-1.md`,
+`docs/sprints/fix-ci-gate-workdir-tempfile-leak-1.md`.

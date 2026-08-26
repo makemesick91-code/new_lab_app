@@ -245,6 +245,15 @@ return [
         // path at all. Declared here for the same reason as the entry above:
         // the property is only protected if something required asserts it.
         'tests/Feature/Cicd/TempFileSiblingLeakContractTest.php',
+
+        // FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1 — R-22. The registry above is the
+        // OWNER, but nothing required that governed test code actually go
+        // through it, so two release-gate call sites allocated their workdir
+        // with a raw mkdir and stranded 18 trees per green run. This suite
+        // asserts the property the registry cannot assert about itself: that
+        // the surface uses the allocation API at all, under any prefix,
+        // including one nobody has registered anywhere.
+        'tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php',
     ],
 
     /*
