@@ -1,0 +1,142 @@
+---
+description: FINAL-PRE-FULL-SUITE-READINESS-CHECK-1 — a readiness audit measures and hands off; it never repairs what it finds, and readiness GO never authorises a Full Suite
+globs:
+  - "tests/**"
+  - ".github/**"
+  - "scripts/ci/**"
+  - "docs/sprints/**"
+alwaysApply: false
+---
+
+# Final pre-Full-Suite readiness gate
+
+## 1. A readiness audit is an instrument, not a repair shop
+
+A readiness audit measures. It does not fix.
+
+When an audit finds a defect that needs an application, test, CI, runtime-config,
+migration, security or business-logic change, it **stops**, records the evidence,
+classifies the blocker and returns **NO-GO**. The fix belongs to a separate
+corrective sprint with its own tag, its own CI and its own deploy.
+
+The reason is not process purity. An audit that repairs what it finds becomes
+the only witness to its own repair, and there is then nothing left to certify it.
+
+Permitted inside a readiness sprint:
+
+```
+readiness manifest · residual ledger · governance docs · runbooks
+AI knowledge · sprint status · audit evidence
+```
+
+Expected, and asserted before the candidate is frozen:
+
+```
+RUNTIME_APPLICATION_FILES_CHANGED = 0
+TEST_SEMANTICS_CHANGED            = false
+CI_SEMANTICS_CHANGED              = false
+```
+
+## 2. Readiness GO is not Full Suite authorisation
+
+Readiness GO means exactly one thing:
+
+```
+READY_TO_REQUEST_NEW_AUTHORITATIVE_FULL_SUITE_AUTHORIZATION = true
+```
+
+It is not programme closure. It does not create
+`authoritative-consolidated-full-suite-and-closure-1-go`. It does not permit a
+complete-suite run — locally, by dispatch, by rerunning historical evidence, or
+under any alias such as "run all repository tests".
+
+Final stabilisation closure needs all of: readiness GO · a **new** explicit user
+authorisation · exactly one authorised Full Suite · that suite passing · the
+tested tree identical to the merged and deployed tree · production verification ·
+every blocker counter at zero.
+
+If an authorised Full Suite fails, times out, is cancelled, is partial or loses
+its runner, there is **no automatic rerun**. Another attempt needs another
+explicit authorisation. Targeted debugging never needs one.
+
+## 3. Ownership is the authority; a census is only a symptom check
+
+Established by R-22 and re-verified here.
+
+```
+AUTHORITATIVE   the canonical allocation API and its registry owner
+DIAGNOSTIC      known-prefix counts and historical accounting
+```
+
+A known-prefix census can only report on names it was told about in advance, so
+it can never report the one thing that matters: an allocation nobody registered.
+The previous audit's census reported delta 0 while an unknown prefix leaked.
+
+Therefore:
+
+- a new prefix must **never** need central registration to earn cleanup —
+  `tempArtifactDir('brand-new-thing-')` is owned the moment it is written;
+- an allocation that **bypasses** the canonical API is detected even under a
+  prefix nobody has seen;
+- the honest way to measure a leak is to give the process a **private temporary
+  root and count everything left in it**. That is prefix-independent by
+  construction. A prefix census is a corroborating second instrument, never the
+  primary one.
+
+## 4. Guards fail closed, and containing an owner is not having one
+
+- A guard or parser that faults must fail closed or become an explicit failure.
+  A failed scan must never be indistinguishable from a clean scan.
+- Ownership analysis applies to **every** execution path. An expression that
+  returns a canonical allocation on one branch and a raw path on another is
+  **not** owned — and the unowned branch is usually the failing one, which is
+  precisely the path a leak guard exists for.
+- A recursive temporary-cleanup routine must not follow a symlink out of the
+  root it owns. Prove it with a disposable task-owned dummy target, never a
+  repository or production path.
+- An exemption allowlist must be self-invalidating: if an entry no longer needs
+  the exemption, the guard fails until the entry is removed. A standing
+  exemption is how a guard rots into decoration.
+
+## 5. Historical residue is not an active defect — and is not swept
+
+Orphans from earlier runs are housekeeping evidence. Measure them, classify
+them, leave them.
+
+```
+HISTORICAL_ORPHANS_DELETED_BY_READINESS = 0
+```
+
+Artifacts an audit's own runs create are removed **by exact recorded path**,
+never by a prefix glob, and never by a global temporary-directory sweep.
+
+## 6. Truthful WATCH beats manufactured GO
+
+A WATCH that reflects reality is a valid readiness outcome. It is never resolved
+by truncating a log, clearing errors, fabricating evidence or relabelling the
+verdict.
+
+- Restore-drill evidence that is absent stays **absent**; it is never invented,
+  and no live restore is run to manufacture it.
+- Production log errors are classified individually into application versus
+  tooling before any conclusion is drawn.
+- A monitoring signal that cannot be established from a reliable in-app source
+  stays **UNKNOWN**. Never fake green from an unreliable source.
+
+## 7. Do not run Tinker/PsySH on production
+
+Not for diagnostics, not for `--help`, not for `--version`. PsySH writes real
+`ERROR` lines into the application log and pins the monitoring verdict to WATCH
+for a day. Use the source, the runbook, or a safe read-only command.
+
+## 8. The audit must audit its own instrument
+
+An audit that only covers what it remembered to list will certify a gap it
+cannot see. Before drawing a coverage conclusion, reconcile the suites actually
+run against the **mandatory registry** and against the domains the readiness
+contract names, and close any gap found.
+
+Equally, coverage is bounded on purpose: a readiness audit runs the canonical
+domain suites, not every directory in the repository. Running everything is a
+complete suite under another alias, and that requires an authorisation a
+readiness sprint does not hold.

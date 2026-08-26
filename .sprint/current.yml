@@ -1,72 +1,77 @@
-# FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1 — Sprint Manifest
+# FINAL-PRE-FULL-SUITE-READINESS-CHECK-1 — Sprint Manifest (RETRY)
 #
-# WHAT THIS SPRINT IS. The corrective for R-22, the blocker raised by
-# FINAL-PRE-FULL-SUITE-READINESS-CHECK-1. Two release-gate call sites allocated
-# their workdir with a raw mkdir instead of the canonical owner, so 42 passing
-# tests stranded 18 directory trees on every run.
+# WHAT THIS SPRINT IS. The re-run of the final readiness audit, on the authority
+# left by FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1. The previous attempt found R-22,
+# correctly refused to patch it, and returned NO-GO. That corrective shipped in
+# its own sprint. This retry starts fresh from its GO tag and re-measures
+# everything — including the corrective's own claims.
 #
-# THE REAL DEFECT IS THE AUTHORITY, NOT THE TWO CALL SITES. The readiness audit
-# proved that a KNOWN-prefix census reported 447 / 447 / delta 0 while an
-# unknown prefix leaked +18 elsewhere. A census can only report on names it was
-# told about in advance, so it can never report the one thing that matters: an
-# allocation nobody registered. Adding `ctl3b` and `fix6-fullsuite` to a list
-# would have closed the symptom and left the defect.
+# THIS IS AN AUDIT, NOT A CORRECTIVE. It measures and hands off. A readiness
+# audit that repairs what it finds becomes the only witness to its own repair,
+# and there is then nothing left to certify it. Any new substantive defect is a
+# NO-GO plus a separate corrective sprint, never an in-place fix.
+#   RUNTIME_APPLICATION_FILES_CHANGED=0  TEST_SEMANTICS_CHANGED=false
+#   CI_SEMANTICS_CHANGED=false
 #
-# So the authority moved:
+# R-22 RE-VERIFIED BY OWNERSHIP, NOT BY CENSUS. The instrument that false-greened
+# last time was a known-prefix census, which can only report names it was told
+# about in advance. This audit gave the test process a PRIVATE TEMPORARY ROOT and
+# counted everything left in it — prefix-independent by construction. Every suite
+# drained to zero. The shared-directory census was kept only as a corroborating
+# second instrument, and it agreed (R-22 total 111 -> 111, dms-pdf 55 -> 55).
 #
-#   AUTHORITATIVE   the canonical allocation API and its registry owner
-#   DIAGNOSTIC      known-prefix counts, historical accounting
+# A GAP FOUND IN THE AUDIT'S OWN INSTRUMENT. The first chain covered 7 of ~68
+# Feature directories and omitted tests/Feature/LegacyOdontogram and
+# tests/Feature/Storage — the latter being a MANDATORY registry entry. Both were
+# added. Coverage is still deliberately bounded: running every directory would be
+# a complete suite under another alias, which this sprint has no authority for.
 #
-# A new prefix must never need central registration to earn cleanup.
-# tempArtifactDir('brand-new-thing-') is protected the moment it is written —
-# proven by mutation M4, while M3 proves an unknown prefix that BYPASSES the API
-# is still caught.
+# HISTORICAL RESIDUE PRESERVED. 111 standing R-22 trees and the older sibling
+# families measured, classified as housekeeping, and left in place.
+# HISTORICAL_ORPHANS_DELETED_BY_READINESS=0.
 #
-# A DEFECT IN THIS SPRINT'S OWN GUARD, FOUND BY MUTATION. M6 first reported
-# PASS: a ternary handing back tempArtifactDir() on the passing path and a raw
-# path on the failing one earned a free pass from a `str_contains` skip.
-# Containing an owner is not having one, and the exempted path was the failing
-# one — exactly the path a leak guard exists for. Fixed and pinned permanently.
-#
-# HISTORICAL ORPHANS PRESERVED. 111 standing trees (104 ctl3b, 7 fix6-fullsuite)
-# measured, not assumed, and left in place.
-# HISTORICAL_R22_ORPHANS_DELETED_BY_SPRINT=0. The 18 trees this sprint's own
-# reproduction created were removed by exact path, never by a glob sweep.
-#
-# FULL SUITE. Not authorised. The previous authorisation was consumed by run
-# 32700184849 and it FAILED. FULL_SUITE_EXECUTION_COUNT=0. This sprint carries
-# its own GO tag; it does NOT close the stabilization programme, and the next
-# step is to repeat the readiness check, not to run a Full Suite.
+# FULL SUITE. Not authorised, and structurally unreachable from this sprint's
+# path: `full_suite_gate` needs `full_suite_authorized == 'true'` AND a
+# schedule/dispatch/push event. On `pull_request` no event branch matches; on
+# push-to-base the ACTIVE temporary policy forces the flag false. The single
+# historical authorisation was consumed by run 32700184849, which FAILED.
+# THIS_SPRINT_FULL_SUITE_EXECUTION_COUNT=0.
 
-id: FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1
-type: RUNTIME_FIX
-module: TEST_INFRASTRUCTURE
-title: 'Temporary-resource ownership is decided by the allocation API, not by a list of known prefixes'
+id: FINAL-PRE-FULL-SUITE-READINESS-CHECK-1
+type: DOCS_ONLY
+module: GOVERNANCE
+title: 'Final pre-Full-Suite readiness audit — retry on the R-22 corrective authority'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: false          # tests/ + config/ci_runner.php only; zero app/, routes/, resources/
+runtime_change: false          # zero app/, routes/, resources/, config/, database/
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # no authorization surface; the remover stays /tmp-confined and never follows a link
+security_impact: false         # no authorization surface touched; audit is read-only
 branch_isolation_impact: false # branch scoping untouched
 ledger_impact: false
 
-deploy_required: true          # production must advance to the corrected authority
+deploy_required: true          # the user requires the readiness authority deployed
 
 browser_required: false        # no UI surface
 
 test_profiles:
   - cicd
 
-go_tag: fix-ci-gate-workdir-tempfile-leak-1-go
+go_tag: final-pre-full-suite-readiness-check-1-go
 
-# Rule 107 is still ACTIVE, and the one-off authorisation that superseded it has
-# been consumed by a FAILED run. A new explicit user authorisation is required
-# before any further complete-suite execution.
+# The DOCS_ONLY profile makes deployment conditional on `runtime_change`, which
+# is false here. `deploy_required` is nevertheless true: the readiness authority
+# is explicitly required to reach production even though it changes no runtime
+# behaviour. Recorded rather than silently flipped.
+
+# Rule 107 is still ACTIVE. The one-off authorisation that superseded it was
+# consumed by a FAILED run. A new explicit user authorisation is required before
+# any further complete-suite execution, and readiness GO is not that
+# authorisation — it only permits ASKING for one.
 full_suite_status: NOT_AUTHORIZED_AFTER_PREVIOUS_FAILURE   # FULL_SUITE_EXECUTION_COUNT=0
 
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-residual_ledger: docs/sprints/fix-ci-gate-workdir-tempfile-leak-1.md
+residual_ledger: docs/sprints/final-pre-full-suite-readiness-check-1.md
