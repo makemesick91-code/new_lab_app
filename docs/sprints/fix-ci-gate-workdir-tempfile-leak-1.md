@@ -93,9 +93,23 @@ it here would reopen call sites that measurement shows are closed.
 | M5 | allocation no longer registers | FAIL | **FAIL** |
 | M6 | owned only on the success path | FAIL | **FAIL** (both layers) |
 | M7 | drain follows a symlink out of the owned root | FAIL | **FAIL** |
+| M8 | detector's fail-closed throw removed | FAIL | **FAIL** |
 
 M3 and M4 together are the whole sprint: an unknown prefix is caught when it
 bypasses the API, and welcomed when it uses it.
+
+### The detector fails closed, and the claim is scoped honestly
+
+`preg_*` returns an empty match set on an engine fault, which is
+indistinguishable from "this file is clean" — the same fail-open shape the
+monitoring correctives kept finding. The detector therefore raises on
+`preg_last_error()` rather than absorbing it (M8).
+
+Scope stated plainly: the detector's own patterns are **linear**. Driving
+`pcre.backtrack_limit` down to 20 does not fault them (measured), which is a
+stronger property than failing closed. The check is defence in depth for a
+future pattern edit that is not linear, and its test says so rather than
+pretending to exercise a live path.
 
 ### A defect in this sprint's own guard, found by mutation
 

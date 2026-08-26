@@ -72,6 +72,24 @@ function cgwl1DocumentedOwners(): array
 }
 
 /**
+ * Fail CLOSED when the pattern engine faults.
+ *
+ * `preg_*` returns false and an empty match set on a backtrack/recursion limit,
+ * which is indistinguishable from "this file is clean". A detector that treats
+ * an engine fault as an all-clear is the same fail-open shape the monitoring
+ * correctives kept finding: a control reporting OK without evidence.
+ */
+function cgwl1AssertPatternEngineHealthy(string $stage): void
+{
+    if (preg_last_error() !== PREG_NO_ERROR) {
+        throw new RuntimeException(
+            "temporary-allocation detector faulted during {$stage}: ".preg_last_error_msg()
+                .' — treat as UNKNOWN, never as clean'
+        );
+    }
+}
+
+/**
  * Raw temporary-DIRECTORY allocations in one PHP source: allocations rooted in
  * the process temporary directory that did NOT come from a canonical allocator.
  *
@@ -102,7 +120,13 @@ function cgwl1RawTempDirAllocations(string $source): array
     // Shape 1 — a variable rooted in the temporary directory that is later
     // handed to mkdir(). A canonical allocator on the right-hand side is the
     // whole point of the API and is never an offence.
+    //
+    // A failed match returns no matches, which reads exactly like a clean file.
+    // That is a fail-OPEN detector, and this programme has repeatedly been bitten
+    // by controls that report OK without evidence — so an engine fault is raised
+    // rather than absorbed.
     preg_match_all('/\$(\w+)\s*=\s*([^;]*'.$tempRoot.'\s*\([^;]*)/', $source, $matches, PREG_SET_ORDER);
+    cgwl1AssertPatternEngineHealthy('temp-rooted assignment scan');
 
     foreach ($matches as [, $var, $rhs]) {
         // Canonical allocator calls are removed BEFORE asking whether the
@@ -124,6 +148,7 @@ function cgwl1RawTempDirAllocations(string $source): array
 
     // Shape 2 — the same allocation with no variable in between.
     preg_match_all('/@?'.$mk.'\s*\(\s*[^;]*'.$tempRoot.'\s*\(/', $source, $inline);
+    cgwl1AssertPatternEngineHealthy('inline allocation scan');
 
     foreach (($inline[0] ?? []) as $occurrence) {
         $found[] = trim($occurrence);
@@ -177,6 +202,36 @@ it('detects a raw allocation hidden beside a canonical one in the same expressio
     expect(cgwl1RawTempDirAllocations($mixed))->not->toBeEmpty(
         'a raw allocation escaped by sharing an expression with a canonical one'
     );
+});
+
+it('fails closed when the pattern engine faults', function () {
+    // HONEST SCOPE. This proves the MECHANISM, not a live path. The detector's
+    // own patterns are linear: measured, driving `pcre.backtrack_limit` down to
+    // 20 does not fault them, which is a stronger property than failing closed.
+    // The check is defence in depth for a future pattern edit that is not.
+    $limit = ini_get('pcre.backtrack_limit');
+    ini_set('pcre.backtrack_limit', '10');
+
+    try {
+        // Catastrophic by construction, and deliberately NOT one of the
+        // detector's patterns.
+        @preg_match('/(a+)+$/', str_repeat('a', 200).'b');
+
+        expect(preg_last_error())->not->toBe(
+            PREG_NO_ERROR,
+            'could not induce an engine fault; this control proves nothing as written'
+        )
+            ->and(fn () => cgwl1AssertPatternEngineHealthy('induced fault'))
+            ->toThrow(RuntimeException::class);
+    } finally {
+        ini_set('pcre.backtrack_limit', (string) $limit);
+    }
+
+    // A healthy engine stays silent, and the detector still works afterwards.
+    @preg_match('/x/', 'x');
+    cgwl1AssertPatternEngineHealthy('healthy engine');
+
+    expect(cgwl1RawTempDirAllocations('<?php $x = 1;'))->toBe([]);
 });
 
 it('lets no governed CI gate test allocate a temporary workdir outside the canonical owner', function () {
