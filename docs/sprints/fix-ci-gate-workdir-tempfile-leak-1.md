@@ -58,7 +58,7 @@ A new prefix must never need a central registration to earn cleanup.
 | file | change |
 |---|---|
 | `tests/Feature/Cicd/NsfReleaseGateExitPropagationTest.php` | both workdirs → `tempArtifactDir()`; 3 call-site lifecycle pins added |
-| `tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php` | **new** — prefix-independent guard (8 tests) |
+| `tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php` | **new** — prefix-independent guard (9 tests) |
 | `config/ci_runner.php` | new suite declared in `critical_gate_mandatory_suites` |
 | `.cursor/rules/123-test-temporary-file-ownership.mdc` | extended (no parallel rule system) |
 
@@ -134,9 +134,12 @@ Measured, preserved, never deleted to make a metric look clean:
 | `fix6-fullsuite` | 7 |
 | **total** | **111** |
 
-`HISTORICAL_R22_ORPHANS_DELETED_BY_SPRINT=0`. The 18 trees this sprint's own
-reproduction created are its own residue and were removed by exact path — never
-by a glob sweep. Correctness is a zero task-created delta, not a clean census.
+`HISTORICAL_R22_ORPHANS_DELETED_BY_SPRINT=0`. The 153 trees this sprint's own
+reproduction and mutation runs created are its own residue and were removed **by
+exact path**, classified against the pre-reproduction snapshot — never by a glob
+sweep. The survivors were then verified to be exactly the original 111, and
+`TASK_CREATED_R22_ORPHANS_AFTER=0`. Correctness is a zero task-created delta,
+not a clean census.
 
 The other families the previous sprint closed (`ctl3c-` 40, `ctl3a-bin-` 36,
 `ctl3a-home-` 51, `ctl3d-bin-` 11, `ci-bare-host-` 16, `rdrs1-` 124,
@@ -158,7 +161,7 @@ Every raw temporary-**directory** allocation in `tests/Feature/Cicd`:
 ## 5. CI selection
 
 The guard is selected by the critical filter in **both** runner variants (the
-filter string appears twice in the workflow and selects all 8 tests), and is
+filter string appears twice in the workflow and selects every test in the suite), and is
 declared in `critical_gate_mandatory_suites` so the scanner fails the gate if a
 future filter edit ever drops it. A control that exists but is never selected is
 not a control.
