@@ -1,77 +1,49 @@
-# FINAL-PRE-FULL-SUITE-READINESS-CHECK-1 — Sprint Manifest (RETRY)
+# AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The re-run of the final readiness audit, on the authority
-# left by FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1. The previous attempt found R-22,
-# correctly refused to patch it, and returned NO-GO. That corrective shipped in
-# its own sprint. This retry starts fresh from its GO tag and re-measures
-# everything — including the corrective's own claims.
+# WHAT THIS SPRINT IS. The final stabilization programme closure. It carries the
+# closure contract into the repository BEFORE the authoritative Full Suite runs,
+# so that the tested tree, the merged tree, the deployed tree and the tree the
+# final GO tag points at are all THE SAME TREE. Nothing about the suite result
+# may be written into the repository afterwards.
 #
-# THIS IS AN AUDIT, NOT A CORRECTIVE. It measures and hands off. A readiness
-# audit that repairs what it finds becomes the only witness to its own repair,
-# and there is then nothing left to certify it. Any new substantive defect is a
-# NO-GO plus a separate corrective sprint, never an in-place fix.
-#   RUNTIME_APPLICATION_FILES_CHANGED=0  TEST_SEMANTICS_CHANGED=false
-#   CI_SEMANTICS_CHANGED=false
+# ORDERING IS THE WHOLE POINT. A closure sprint that runs the suite first and
+# then commits its evidence has not tested the tree it ships. The evidence of
+# the run therefore lives in the annotated GO tag and the CI run, never in a
+# post-PASS commit.
 #
-# R-22 RE-VERIFIED BY OWNERSHIP, NOT BY CENSUS. The instrument that false-greened
-# last time was a known-prefix census, which can only report names it was told
-# about in advance. This audit gave the test process a PRIVATE TEMPORARY ROOT and
-# counted everything left in it — prefix-independent by construction. Every suite
-# drained to zero. The shared-directory census was kept only as a corroborating
-# second instrument, and it agreed (R-22 total 111 -> 111, dms-pdf 55 -> 55).
+# NO PRETEND PASS. Until the run actually passes, `full_suite_status` below is
+# PENDING and the closure document says PENDING. The GO tag is the only place
+# a PASS is ever asserted, and it is created only from real CI evidence.
 #
-# A GAP FOUND IN THE AUDIT'S OWN INSTRUMENT. The first chain covered 7 of ~68
-# Feature directories and omitted tests/Feature/LegacyOdontogram and
-# tests/Feature/Storage — the latter being a MANDATORY registry entry. Both were
-# added. Coverage is still deliberately bounded: running every directory would be
-# a complete suite under another alias, which this sprint has no authority for.
+# THE TEMPORARY FULL-SUITE POLICY STAYS ACTIVE THROUGH THIS SPRINT. Retiring it
+# in this candidate would make the post-merge push to base an AUTHORISED
+# automatic Full Suite, which would start a second, unauthorised run the moment
+# this candidate merges. Retirement is a separate, separately-authorised act.
 #
-# HISTORICAL RESIDUE PRESERVED. 111 standing R-22 trees and the older sibling
-# families measured, classified as housekeeping, and left in place.
-# HISTORICAL_ORPHANS_DELETED_BY_READINESS=0.
-#
-# FULL SUITE. Not authorised, and structurally unreachable from this sprint's
-# path: `full_suite_gate` needs `full_suite_authorized == 'true'` AND a
-# schedule/dispatch/push event. On `pull_request` no event branch matches; on
-# push-to-base the ACTIVE temporary policy forces the flag false. The single
-# historical authorisation was consumed by run 32700184849, which FAILED.
-# THIS_SPRINT_FULL_SUITE_EXECUTION_COUNT=0.
-
-id: FINAL-PRE-FULL-SUITE-READINESS-CHECK-1
+# Impact flags — MUST match reality.
+id: AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2
 type: DOCS_ONLY
 module: GOVERNANCE
-title: 'Final pre-Full-Suite readiness audit — retry on the R-22 corrective authority'
+title: 'Authoritative consolidated Full Suite #2 and final stabilization programme closure'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-
-# Impact flags — MUST match reality.
 runtime_change: false          # zero app/, routes/, resources/, config/, database/
 schema_change: false           # no migration
 frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # no authorization surface touched; audit is read-only
+security_impact: false         # no authorization surface touched
 branch_isolation_impact: false # branch scoping untouched
 ledger_impact: false
-
-deploy_required: true          # the user requires the readiness authority deployed
-
+deploy_required: true          # the closure authority is required to reach production
 browser_required: false        # no UI surface
-
 test_profiles:
   - cicd
 
-go_tag: final-pre-full-suite-readiness-check-1-go
+go_tag: authoritative-consolidated-full-suite-2-final-program-closure-go
 
-# The DOCS_ONLY profile makes deployment conditional on `runtime_change`, which
-# is false here. `deploy_required` is nevertheless true: the readiness authority
-# is explicitly required to reach production even though it changes no runtime
-# behaviour. Recorded rather than silently flipped.
-
-# Rule 107 is still ACTIVE. The one-off authorisation that superseded it was
-# consumed by a FAILED run. A new explicit user authorisation is required before
-# any further complete-suite execution, and readiness GO is not that
-# authorisation — it only permits ASKING for one.
-full_suite_status: NOT_AUTHORIZED_AFTER_PREVIOUS_FAILURE   # FULL_SUITE_EXECUTION_COUNT=0
+# One explicit user authorisation; one attempt. Set to PENDING deliberately —
+# it is NOT updated after the run, because updating it would mutate the tested
+# tree. The GO tag carries the outcome.
+full_suite_status: PENDING_AUTHORIZED_EXECUTION   # FULL_SUITE_2_MAX_ATTEMPTS=1
 
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-
-residual_ledger: docs/sprints/final-pre-full-suite-readiness-check-1.md
+residual_ledger: docs/sprints/authoritative-consolidated-full-suite-2-final-closure.md

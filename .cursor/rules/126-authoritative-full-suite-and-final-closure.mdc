@@ -1,0 +1,74 @@
+---
+description: Authoritative Full Suite execution and final programme closure — authorisation, tree identity, and evidence rules
+alwaysApply: true
+---
+
+# Authoritative Full Suite & Final Closure
+
+Source of truth: `docs/sprints/authoritative-consolidated-full-suite-2-final-closure.md`.
+These rules bind every future complete-suite execution and every programme closure.
+
+## Authorisation
+
+1. **One attempt per explicit authorisation.** An authorisation is consumed the
+   moment the authoritative run is TRIGGERED, not when it passes. Readiness GO
+   is not an authorisation — it only permits ASKING for one.
+2. **No automatic rerun.** FAIL, TIMEOUT, CANCELLED, PARTIAL, runner loss,
+   wrong SHA, misrouted workflow and platform outage are all terminal. A new
+   explicit user authorisation is required. Infrastructure failure is not a
+   self-service second attempt.
+3. **The canonical path is the only path.** `workflow_dispatch` on
+   `foundation-evidence-gates.yml` with BOTH `run_full_suite` and
+   `full_suite_policy_override` true while the temporary policy is ACTIVE.
+   Never reach a complete suite under another alias, another job name, or by
+   running "almost everything".
+
+## Tree identity
+
+4. **The tested tree is immutable from trigger.** No code, test, CI, rule,
+   documentation, formatting, evidence, version or dependency change once the
+   authoritative attempt starts.
+5. **One tree, end to end.** candidate tree == tested tree == merged tree ==
+   deployed tree == GO-tag tree. A squash merge may change the SHA; it may
+   never change the tree.
+6. **No post-PASS evidence commit.** Writing the run id, the counts or the PASS
+   into the repository after the run changes the tree and invalidates the very
+   evidence it records. Run-specific evidence belongs in the annotated GO tag
+   and the CI run.
+7. **A post-suite tree change invalidates the suite.** If a durable rule is
+   discovered only after PASS, that is a NO-GO and a new authorisation, not a
+   quiet amendment.
+8. **Base movement is a closure blocker.** If the base advances so that merging
+   can no longer reproduce the tested tree, do not merge.
+
+## Retirement of the temporary policy
+
+9. **Never retire the temporary Full-Suite policy inside the closure
+   candidate.** With the policy RETIRED, `push` to base is an AUTHORISED
+   automatic Full Suite, so merging the candidate would immediately start a
+   second, unauthorised run. Retirement is a separate act with its own
+   authorisation, performed after closure.
+
+## Measurement honesty
+
+10. **Prefix census is diagnostic; the allocation API is authoritative.** A
+    census can only report names it was told about in advance. Temporary
+    resource ownership is proven by a private root that is drained to zero.
+11. **Unknown-prefix non-canonical allocation fails closed.**
+12. **Killing a wrapper does not prove the children died.** Verify child
+    processes before declaring isolation.
+13. **Shared-evidence suites run serially** unless isolation is proven.
+14. **Monitoring and restore-drill WATCH stay truthful.** A WATCH is never
+    relabelled GO to reach closure, and restore evidence is never manufactured.
+15. **Production diagnostics never use an interactive REPL.** It writes real
+    ERROR lines into the application log and pins monitoring to WATCH.
+16. **Clinical evidence never returns to public storage.**
+
+## Closure
+
+17. **Full Suite PASS alone is not closure.** Closure additionally requires the
+    identical tree merged, deployed on the VPS with exit 0, production health
+    and privacy verified, zero new production errors, and the annotated GO tag
+    pointing at that same tree.
+18. **The deploy runs on the VPS, never locally**, and a started deploy is not
+    a successful deploy — only an authoritative exit 0 is.
