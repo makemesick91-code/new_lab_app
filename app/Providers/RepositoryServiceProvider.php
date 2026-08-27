@@ -139,6 +139,8 @@ use App\Modules\LabService\Interfaces\LabServiceRepositoryInterface;
 use App\Modules\LabService\Models\LabService;
 use App\Modules\LabService\Policies\LabServicePolicy;
 use App\Modules\LabService\Repositories\LabServiceRepository;
+use App\Modules\LegacyImport\Interfaces\LegacyImportDailyQuotaRepositoryInterface;
+use App\Modules\LegacyImport\Repositories\LegacyImportDailyQuotaRepository;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramNativeReferenceRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramRecordRepositoryInterface;
@@ -348,6 +350,11 @@ class RepositoryServiceProvider extends ServiceProvider
         LegacyOdontogramImportRepositoryInterface::class => LegacyOdontogramImportRepository::class,
         LegacyOdontogramRecordRepositoryInterface::class => LegacyOdontogramRecordRepository::class,
         LegacyOdontogramNativeReferenceRepositoryInterface::class => LegacyOdontogramNativeReferenceRepository::class,
+
+        // FEATURE-LEGACY-IMPORT-HUB-1 — the cross-capability daily quota
+        // ledger. One binding, shared by all three importers, so the
+        // ceiling cannot be enforced by three slightly different counters.
+        LegacyImportDailyQuotaRepositoryInterface::class => LegacyImportDailyQuotaRepository::class,
         // LEGACY-RME-PDF-1B — PDF inspection, rendering and optional scanning.
         // Bound as interfaces so a test can swap in a deterministic fake and the
         // suite never depends on Poppler being installed.

@@ -771,7 +771,7 @@
                 <p class="menu-group-title pt-2">Administrasi Sistem</p>
             @endif
 
-            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data', 'view_legacy_rme_imports', 'create_legacy_rme_imports'])
+            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
                 @unless($user?->hasRole('Admin Klinik'))
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
@@ -793,18 +793,7 @@
                         @can('manage patients')
                             <a href="{{ route('settings.patients.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.patients.*') && ! request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Pasien</a>
-                            <a href="{{ route('settings.patients.import.index') }}"
-                               class="menu-subitem {{ request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Impor Pasien Legacy</a>
                         @endcan
-                        {{-- LEGACY-RME-PDF-1B. Gated by its own permissions, and hidden entirely
-                             while the archive feature flag is off. The sidebar is never the
-                             security boundary — the routes are permission-gated server-side. --}}
-                        @canany(['view_legacy_rme_imports', 'create_legacy_rme_imports'])
-                            @if (app(\App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard::class)->enabled())
-                                <a href="{{ route('settings.rme.legacy-imports.index') }}"
-                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-imports.*') ? $linkActive : $linkIdle }}">Impor Arsip RME Lama</a>
-                            @endif
-                        @endcanany
                         @can('manage lab services')
                             <a href="{{ route('settings.lab-services.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.lab-services.*') ? $linkActive : $linkIdle }}">Layanan Lab</a>
@@ -834,6 +823,56 @@
                     </div>
                 </div>
                 @endunless
+            @endcanany
+
+            {{-- FEATURE-LEGACY-IMPORT-HUB-1 — one canonical home for every legacy import.
+
+                 The three importers previously sat in two different places (or, for
+                 Legacy Odontogram, nowhere), so an operator had to already know where
+                 to look. They are gathered here, each still gated by its OWN
+                 permissions and its OWN feature flag.
+
+                 THE SIDEBAR IS NOT THE SECURITY BOUNDARY. Every route below carries
+                 permission middleware, every controller re-checks the flag, and every
+                 policy adds the per-row branch scope. Hiding a link is a courtesy to
+                 the operator, never a control. --}}
+            @canany(['manage patients', 'view_legacy_rme_imports', 'create_legacy_rme_imports', 'view_legacy_odontogram_imports', 'create_legacy_odontogram_imports'])
+                <div class="pt-2">
+                    <button type="button" @click="toggle('legacy-imports')" class="{{ $groupToggle }}" :aria-expanded="isOpen('legacy-imports')">
+                        <span class="flex items-center gap-3">
+                            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M3 7.5A1.5 1.5 0 014.5 6h4.379a1.5 1.5 0 011.06.44l1.122 1.12A1.5 1.5 0 0012.12 8H19.5A1.5 1.5 0 0121 9.5v8A1.5 1.5 0 0119.5 19h-15A1.5 1.5 0 013 17.5v-10z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M12 11v5m0 0l-2-2m2 2l2-2" />
+                            </svg>
+                            <span>Import Data Legacy</span>
+                        </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('legacy-imports') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <div data-sidebar-panel="legacy-imports" x-show="isOpen('legacy-imports')" class="mt-1 space-y-0.5 pl-8">
+                        @if (config('legacy_import_hub.enabled', true))
+                            <a href="{{ route('settings.legacy-imports.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.legacy-imports.*') ? $linkActive : $linkIdle }}">Ringkasan Import Legacy</a>
+                        @endif
+                        @can('manage patients')
+                            <a href="{{ route('settings.patients.import.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.patients.import.*') ? $linkActive : $linkIdle }}">Upload Legacy Pasien</a>
+                        @endcan
+                        @canany(['view_legacy_rme_imports', 'create_legacy_rme_imports'])
+                            @if (app(\App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-imports.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-imports.*') ? $linkActive : $linkIdle }}">Upload Legacy RME</a>
+                            @endif
+                        @endcanany
+                        @canany(['view_legacy_odontogram_imports', 'create_legacy_odontogram_imports'])
+                            @if (app(\App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard::class)->migrationEnabled())
+                                <a href="{{ route('settings.rme.legacy-odontograms.index') }}"
+                                   class="menu-subitem {{ request()->routeIs('settings.rme.legacy-odontograms.*') ? $linkActive : $linkIdle }}">Upload Legacy Odontogram</a>
+                            @endif
+                        @endcanany
+                    </div>
+                </div>
             @endcanany
 
             @canany(['manage users', 'manage roles', 'manage permissions'])

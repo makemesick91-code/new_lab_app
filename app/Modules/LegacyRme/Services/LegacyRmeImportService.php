@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Modules\LegacyRme\Services;
 
 use App\Models\User;
+use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
+use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeMalwareScannerInterface;
 use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
@@ -74,6 +76,10 @@ class LegacyRmeImportService
         private readonly LegacyRmeMigrationQuotaService $quota,
         private readonly LegacyRmeWaveBindingService $waveBinding,
         private readonly LegacyRmeSourcePatientBindingService $sourceBinding,
+        // FEATURE-LEGACY-IMPORT-HUB-1 — the cross-capability ceiling. It
+        // COMPOSES with the ROLL-4 wave quota above; it never replaces it,
+        // and it can only refuse.
+        private readonly LegacyImportDailyQuotaService $hubQuota,
     ) {}
 
     /**
@@ -137,6 +143,17 @@ class LegacyRmeImportService
         // rather than by inspection.
         $operations = $this->assertOperationsCleared($branch, $patient, $actor);
 
+        // FEATURE-LEGACY-IMPORT-HUB-1 — ADVISORY pre-check, before 20 MiB is
+        // written to disk. A courtesy so an operator already at the ceiling is
+        // told now rather than after the upload; never the gate. The
+        // authoritative reservation is taken inside the transaction below, and
+        // another operator may take the last slot between here and there.
+        $hubDenial = $this->hubQuota->preview(LegacyImportType::LEGACY_RME, $originBranchId);
+
+        if ($hubDenial !== null) {
+            throw ValidationException::withMessages(['legacy_import_quota' => $hubDenial]);
+        }
+
         try {
             $this->assertUploadedPdf($document);
 
@@ -199,6 +216,26 @@ class LegacyRmeImportService
                  * increment rolls back with it and no compensating write is
                  * needed.
                  */
+                /*
+                 * FEATURE-LEGACY-IMPORT-HUB-1 — the cross-capability ceiling.
+                 *
+                 * TAKEN FIRST, ALWAYS. Two lock orders exist on this path: this
+                 * bucket, and the ROLL-4 wave buckets below. Both order by
+                 * branch id internally, so the only way to form a cycle is for
+                 * some caller to take them in the opposite sequence. This is the
+                 * single site that takes both, and it takes them in this order.
+                 *
+                 * It composes with the wave quota rather than replacing it: this
+                 * one bounds what a BRANCH may archive today, the wave one bounds
+                 * what a WAVE may archive today across every branch in it. Either
+                 * may refuse; neither can turn the other's refusal into an
+                 * acceptance.
+                 */
+                $this->hubQuota->reserve(
+                    LegacyImportType::LEGACY_RME,
+                    $originBranchId,
+                );
+
                 if ($operations !== null) {
                     $this->quota->reserve($operations['wave'], $operations['branch'], $branch->branchCode);
                 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Modules\LegacyOdontogram\Services;
 
 use App\Models\User;
+use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
+use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramRecordRepositoryInterface;
 use App\Modules\LegacyOdontogram\Jobs\ProcessLegacyOdontogramPdfImport;
@@ -71,6 +73,10 @@ class LegacyOdontogramImportService
         private readonly LegacyOdontogramAuditService $audit,
         private readonly LegacyOdontogramFeatureGuard $feature,
         private readonly LegacyRmeMalwareScannerInterface $malware,
+        // FEATURE-LEGACY-IMPORT-HUB-1 — the canonical daily ceiling. Legacy
+        // Odontogram had no quota at all before this; it now shares the same
+        // counter and the same vocabulary as its two siblings.
+        private readonly LegacyImportDailyQuotaService $hubQuota,
     ) {}
 
     /**
@@ -88,6 +94,15 @@ class LegacyOdontogramImportService
         $cutoff = $this->dateRules->snapshotCutoff($patient);
 
         $branch = $this->resolveOriginBranch($patient, $actor);
+
+        // FEATURE-LEGACY-IMPORT-HUB-1 — ADVISORY pre-check, before 20 MiB is
+        // written to disk. Never the gate: the authoritative reservation shares
+        // the transaction that creates the staging row below.
+        $hubDenial = $this->hubQuota->preview(LegacyImportType::LEGACY_ODONTOGRAM, $branch->branchId);
+
+        if ($hubDenial !== null) {
+            throw ValidationException::withMessages(['legacy_import_quota' => $hubDenial]);
+        }
 
         try {
             $this->assertUploadedPdf($document);
@@ -134,25 +149,46 @@ class LegacyOdontogramImportService
         }
 
         try {
-            $import = DB::transaction(fn (): LegacyOdontogramImport => $this->imports->create([
-                'uuid' => $uuid,
-                'patient_id' => (int) $patient->getKey(),
-                // Server-resolved, never submitted.
-                'origin_branch_id' => $branch->branchId,
-                'source_branch_code' => $branch->branchCode,
-                'source_medical_record_number' => $patient->medical_record_number,
-                'selected_odontogram_date' => $selectedOdontogramDate,
-                'earliest_native_odontogram_date_snapshot' => $cutoff,
-                'original_filename' => $this->safeFilename($document),
-                'source_disk' => $this->storage->diskName(),
-                'source_pdf_path' => $path,
-                'source_pdf_sha256' => $sha256,
-                'mime_type' => 'application/pdf',
-                'size_bytes' => (int) $document->getSize(),
-                'status' => LegacyOdontogramImportStatus::UPLOADED,
-                'uploaded_by' => (int) $actor->getKey(),
-                'uploaded_at' => now(),
-            ]));
+            $import = DB::transaction(function () use (
+                $uuid, $patient, $branch, $selectedOdontogramDate, $cutoff, $document, $path, $sha256, $actor
+            ): LegacyOdontogramImport {
+                /*
+                 * FEATURE-LEGACY-IMPORT-HUB-1 — the AUTHORITATIVE reservation.
+                 *
+                 * Inside this transaction, taking `FOR UPDATE` on the day's
+                 * bucket, and therefore the only quota decision that may be
+                 * trusted: the pre-check above was advisory and another operator
+                 * may have taken the last slot since.
+                 *
+                 * Sharing the transaction with the row it counts is what makes
+                 * the ledger self-correcting — if the insert below fails, the
+                 * increment rolls back with it and no compensating write is
+                 * needed. The branch is the SERVER-RESOLVED one, derived from
+                 * the patient's Nomor RM; nothing the request supplied reaches
+                 * it.
+                 */
+                $this->hubQuota->reserve(LegacyImportType::LEGACY_ODONTOGRAM, $branch->branchId);
+
+                return $this->imports->create([
+                    'uuid' => $uuid,
+                    'patient_id' => (int) $patient->getKey(),
+                    // Server-resolved, never submitted.
+                    'origin_branch_id' => $branch->branchId,
+                    'source_branch_code' => $branch->branchCode,
+                    'source_medical_record_number' => $patient->medical_record_number,
+                    'selected_odontogram_date' => $selectedOdontogramDate,
+                    'earliest_native_odontogram_date_snapshot' => $cutoff,
+                    'original_filename' => $this->safeFilename($document),
+                    'source_disk' => $this->storage->diskName(),
+                    'source_pdf_path' => $path,
+                    'source_pdf_sha256' => $sha256,
+                    'mime_type' => 'application/pdf',
+                    'size_bytes' => (int) $document->getSize(),
+                    'status' => LegacyOdontogramImportStatus::UPLOADED,
+                    'uploaded_by' => (int) $actor->getKey(),
+                    'uploaded_at' => now(),
+                ]);
+            });
         } catch (\Throwable $exception) {
             // Compensate: the bytes are on disk but no row owns them.
             $this->storage->deleteDirectory(

@@ -146,6 +146,24 @@ class RoleSeeder extends Seeder
             // workspace branch scope, and the date/duplicate rules.
             'view_legacy_rme_imports',
             'create_legacy_rme_imports',
+
+            // FEATURE-LEGACY-IMPORT-HUB-1 — the legacy ODONTOGRAM archive, granted
+            // to exactly the same duties as the legacy RME archive above.
+            //
+            // WHY THIS WAS MISSING. FIX-04b created these permissions but assigned
+            // them to no role, so a capability that shipped complete was reachable
+            // only by Super Admin — and the Master Data RME sidebar group excludes
+            // Admin Klinik, so this role could not even see the legacy RME entry it
+            // already held. The hub surfaced both gaps.
+            //
+            // INTAKE ONLY. Review, publish and void are deliberately withheld here
+            // for the same reason they are withheld for legacy RME: the operator who
+            // files a chart must not be the one who certifies it into patient
+            // history. The same server-side gates still apply — the feature flag,
+            // the RM-derived branch, the workspace scope, and the date/duplicate
+            // rules.
+            'view_legacy_odontogram_imports',
+            'create_legacy_odontogram_imports',
         ],
         'Technician' => [
             'view dashboard',
@@ -453,6 +471,19 @@ class RoleSeeder extends Seeder
             'publish_legacy_rme_imports',
             'view_legacy_rme_migration_operations',
             'approve_legacy_rme_migration_wave',
+
+            // FEATURE-LEGACY-IMPORT-HUB-1 — the legacy ODONTOGRAM archive, granted
+            // to exactly the same duties as the legacy RME archive above: certify
+            // and publish, never file. `create_legacy_odontogram_imports` is
+            // withheld deliberately so this tier cannot review its own intake —
+            // the separation is the point, not an oversight.
+            //
+            // `void_legacy_odontogram_records` is also withheld: retracting
+            // published clinical evidence is a heavier act than publishing it, and
+            // it stays with Super Admin until an owner asks otherwise.
+            'view_legacy_odontogram_imports',
+            'review_legacy_odontogram_imports',
+            'publish_legacy_odontogram_imports',
         ],
         // Sprint 23 Phase 23.5 — Dedicated separated RME report viewers
         'Laporan Pasien RME' => [

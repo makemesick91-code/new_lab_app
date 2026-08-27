@@ -5,6 +5,8 @@ namespace App\Modules\Patient\Services;
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\LegacyImport\Services\LegacyImportDailyQuotaService;
+use App\Modules\LegacyImport\Support\LegacyImportType;
 use App\Modules\Patient\Models\LegacyPatientImportBatch;
 use App\Modules\Patient\Models\LegacyPatientImportRow;
 use App\Modules\Patient\Models\Patient;
@@ -62,6 +64,9 @@ class LegacyPatientImportService
     public function __construct(
         private readonly PatientMedicalRecordNumberService $rmNumbers,
         private readonly PatientDataCompletenessService $completeness,
+        // FEATURE-LEGACY-IMPORT-HUB-1 — the canonical daily ceiling, shared with
+        // the two archive importers so all three count the same way.
+        private readonly LegacyImportDailyQuotaService $hubQuota,
     ) {}
 
     /**
@@ -369,6 +374,25 @@ class LegacyPatientImportService
      * mst_patients inside a single transaction. Idempotent: a non-validated
      * batch is a no-op. Re-checks RM/KTP uniqueness under lock to avoid a
      * preview-to-commit race; a now-duplicate row is skipped, not overwritten.
+     *
+     * FEATURE-LEGACY-IMPORT-HUB-1 — THE DAILY CEILING IS CHARGED HERE, AND ONLY
+     * HERE.
+     *
+     * Staging is not acceptance. A staged batch writes nothing to `mst_patients`
+     * and can be discarded outright, so charging quota at upload would bill an
+     * operator for work they never committed. The unit is a COMMITTED PATIENT
+     * ROW, counted per branch, and it is reserved AFTER the rows are known —
+     * a row skipped by the RM/KTP re-check costs nothing, because by then it is
+     * known to have been skipped.
+     *
+     * The reservation is still inside this transaction, so exceeding the ceiling
+     * rolls the whole commit back: the operator gets their file back intact
+     * rather than a batch half-imported across two clinical days.
+     *
+     * Re-committing a COMMITTED batch returns before this point, so a retry can
+     * never be charged twice. {@see rollback()} deliberately does NOT refund:
+     * releasing a slot after the fact would need a compensating write that could
+     * itself fail, and the safe direction for a ceiling is to under-admit.
      */
     public function commit(LegacyPatientImportBatch $batch, ?int $committedBy): LegacyPatientImportBatch
     {
@@ -380,6 +404,9 @@ class LegacyPatientImportService
             $batch->update(['status' => LegacyPatientImportBatch::STATUS_COMMITTING]);
 
             $committed = 0;
+
+            /** @var array<int, int> $unitsByBranch branch id => committed rows */
+            $unitsByBranch = [];
 
             $rows = LegacyPatientImportRow::query()
                 ->where('batch_id', $batch->id)
@@ -437,7 +464,23 @@ class LegacyPatientImportService
                     'committed_patient_id' => $patient->id,
                 ]);
                 $committed++;
+
+                // Charged to the branch the row's `Cabang` column resolved to.
+                // That column is required and strict, so a committed row always
+                // has one; the null coalesce is a belt on a validated brace.
+                $chargedBranchId = (int) ($data['branch_id'] ?? 0);
+
+                if ($chargedBranchId > 0) {
+                    $unitsByBranch[$chargedBranchId] = ($unitsByBranch[$chargedBranchId] ?? 0) + 1;
+                }
             }
+
+            /*
+             * The ceiling, taken once for the whole batch, on every branch it
+             * touched. All-or-nothing: if any branch is over, this throws and
+             * the surrounding transaction discards every insert above.
+             */
+            $this->hubQuota->reserveMany(LegacyImportType::LEGACY_PATIENT, $unitsByBranch);
 
             $batch->update([
                 'status' => LegacyPatientImportBatch::STATUS_COMMITTED,

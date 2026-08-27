@@ -1,49 +1,54 @@
-# FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — Sprint Manifest
+# FEATURE-LEGACY-IMPORT-HUB-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. "Cetak RME" stops printing the `Data Pasien & Kunjungan`
-# card. The card restated as typed metadata what the clinician had already
-# written by hand on the RM sheet the same document reproduces immediately
-# below it, so page one duplicated page two.
+# WHAT THIS SPRINT IS. The three legacy importers that already exist — Legacy
+# Patient (Sprint 62.3), Legacy RME (LEGACY-RME-PDF-1A..ROLL-4) and Legacy
+# Odontogram (FIX-04b) — are given one canonical navigation home, one canonical
+# daily admission ceiling, and one place that reports whether each is actually
+# usable. Nothing about how a document is validated, resolved to a branch,
+# reviewed, published, voided or read changes.
 #
-# PRESENTATION ONLY. One Blade partial loses one section. No controller, no
-# service, no query, no route, no policy, no permission, no migration. The
-# patient, the visit and every removed field are untouched in the database and
-# still shown on the visit detail screen — this is a change to the print
-# COMPOSITION, never to the record.
+# WHAT IS GENUINELY NEW. Exactly two things:
 #
-# ONE PARTIAL, BOTH OUTPUTS. `rme.visits.print` and `rme.visits.pdf` are
-# separate wrappers that both include `rme.visits.partials.print-body`, so the
-# single edit removes the card from both canonical outputs and they cannot
-# drift apart later.
+#   1. `ops_legacy_import_daily_quotas` and the service over it — ONE ceiling of
+#      100 accepted records per branch per clinical day PER IMPORT TYPE, applied
+#      to all three importers through the same code path.
+#   2. `settings.legacy-imports.index` — the hub landing page and its sidebar
+#      group, which report server-computed status/limit/used/remaining.
 #
-# DOCUMENT IDENTIFICATION IS KEPT. Removing a duplicate card must not make a
-# printed clinical sheet unattributable. Each wrapper's <title> still carries
-# the patient name and visit number and its footer the visit number; the clinic
-# logo stays. Those are a document header, not the card.
+# WHAT IS DELIBERATELY NOT REPLACED. Legacy RME keeps its ROLL-4 wave/branch
+# quota. That counter answers a DIFFERENT question (how much may this WAVE take
+# today, across every branch in it) and the hub ceiling cannot express it. Both
+# apply; the tighter one wins; neither can widen the other. Replacing the wave
+# quota with the hub quota would delete a governance control, which is the one
+# thing a consolidation sprint must never do.
 #
-# frontend_change=false is literal, not convenient: only .blade.php changed,
-# and the validator's frontend set is JS/TS/Vue/CSS/SCSS/Vite/Tailwind/package.
-# No asset is rebuilt, so no `npm run build` is required.
+# schema_change=true is literal: one additive table, no column dropped, no
+# backfill, no destructive statement.
+#
+# security_impact=true is literal: routes/permission middleware and the sidebar
+# authorization surface are touched. No permission is created, widened, or
+# granted to a role that did not already hold it — the hub is reachable only by
+# an actor who already holds one of the three capabilities' own permissions.
 #
 # Impact flags — MUST match reality.
-id: FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1
-type: UI_POLISH
-module: RME
-title: 'Remove the duplicated Data Pasien & Kunjungan card from the RME print composition'
+id: FEATURE-LEGACY-IMPORT-HUB-1
+type: MODULE_SPRINT
+module: LegacyImport
+title: 'One Legacy Import Hub: canonical navigation, a 100/branch/clinical-day/type ceiling, and honest capability status'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true           # resources/views only — one Blade partial
-schema_change: false           # no migration
-frontend_change: false         # no JS/CSS/Vite/build asset changed
-security_impact: false         # no policy/middleware/permission/seeder touched
-branch_isolation_impact: false # branch scoping untouched; pinned by test
+runtime_change: true           # new module, service, controller, route, view
+schema_change: true            # one additive quota table
+frontend_change: false         # Blade only; no JS/CSS/Vite/package asset changed
+security_impact: true          # route middleware + sidebar authorization surface
+branch_isolation_impact: true  # the ceiling is per branch; scope is server-resolved
 ledger_impact: false
-deploy_required: true          # the fix must reach the production print surface
-browser_required: false        # non-interactive print/PDF output, covered by HTTP + PDF tests
+deploy_required: true          # the capability must reach production to be ACTIVE
+browser_required: false        # HTTP-level assertions cover the surface
 test_profiles:
   - focused
-  - ui_regression
+  - permission_regression
 
-go_tag: fix-rme-print-remove-patient-visit-duplicate-1-go
+go_tag: feature-legacy-import-hub-1-go
 
 # Carried forward from the closure manifest this sprint inherits. Not
 # boilerplate: dropping either makes the LegacyRme closure contract fail.

@@ -85,28 +85,50 @@ it('registers the five intake permissions plus the clinical read permission', fu
     }
 });
 
-it('grants the archive permissions to NO operational role by default', function () {
-    $permissions = [
-        'view_legacy_odontogram_imports',
-        'create_legacy_odontogram_imports',
-        'review_legacy_odontogram_imports',
-        'publish_legacy_odontogram_imports',
-        'void_legacy_odontogram_records',
-        'view_legacy_odontogram_archive',
+it('grants each archive permission to exactly the roles that were decided, and no others', function () {
+    /*
+     * FIX-04b shipped these permissions assigned to NO role, which meant a
+     * complete capability was reachable only by Super Admin — and the Master
+     * Data RME sidebar group excludes Admin Klinik, so the operators who would
+     * actually file charts had no way in at all.
+     *
+     * FEATURE-LEGACY-IMPORT-HUB-1 closed that with an owner decision: mirror the
+     * legacy RME archive exactly. This assertion is therefore no longer "nobody
+     * holds these" but the stricter "EXACTLY these roles hold each one" — a new
+     * grant to any other role fails here, and so does a grant of a duty that was
+     * deliberately withheld.
+     *
+     * SEPARATION OF DUTIES IS THE POINT. Admin Klinik files and never certifies;
+     * Supervisor RME certifies and never files; VOID stays with Super Admin,
+     * because retracting published clinical evidence is heavier than publishing
+     * it.
+     *
+     * @var array<string, list<string>>
+     */
+    $expected = [
+        'view_legacy_odontogram_imports' => ['Admin Klinik', 'Supervisor RME'],
+        'create_legacy_odontogram_imports' => ['Admin Klinik'],
+        'review_legacy_odontogram_imports' => ['Supervisor RME'],
+        'publish_legacy_odontogram_imports' => ['Supervisor RME'],
+        'void_legacy_odontogram_records' => [],
+        'view_legacy_odontogram_archive' => [],
     ];
 
-    foreach (Role::all() as $role) {
-        // Super Admin holds every permission by seeder design and additionally
-        // bypasses via Gate::before; it is the designated operator.
-        if ($role->name === 'Super Admin') {
-            continue;
-        }
+    foreach ($expected as $permission => $allowed) {
+        $holders = Role::all()
+            // Super Admin holds every permission by seeder design and
+            // additionally bypasses via Gate::before; it is never the subject of
+            // a least-privilege assertion.
+            ->reject(fn (Role $role): bool => $role->name === 'Super Admin')
+            ->filter(fn (Role $role): bool => $role->hasPermissionTo($permission))
+            ->pluck('name')
+            ->values()
+            ->all();
 
-        foreach ($permissions as $permission) {
-            expect($role->hasPermissionTo($permission))->toBeFalse(
-                sprintf('Role %s must not hold %s by default.', $role->name, $permission),
-            );
-        }
+        expect($holders)->toEqualCanonicalizing(
+            $allowed,
+            sprintf('Holders of %s drifted from the decided set.', $permission),
+        );
     }
 });
 
