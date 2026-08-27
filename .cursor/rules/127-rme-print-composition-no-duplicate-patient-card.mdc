@@ -1,0 +1,78 @@
+---
+description: FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — the RME print composition carries clinical content, not a restatement of what the clinician already wrote by hand
+globs:
+  - "resources/views/rme/visits/print.blade.php"
+  - "resources/views/rme/visits/print-pdf.blade.php"
+  - "resources/views/rme/visits/partials/print-body.blade.php"
+  - "app/Modules/ClinicVisit/Controllers/ClinicVisitController.php"
+  - "tests/Feature/RME/RmePrintPatientVisitDuplicateRemovalTest.php"
+  - "tests/Feature/RME/RmePdfPrintHardeningTest.php"
+  - "tests/Feature/RME/MedicalRecordPrintOdontogramSeparationTest.php"
+alwaysApply: false
+---
+
+# RME print composition — no duplicated patient/visit card
+
+## The rule
+
+**"Cetak RME" must not render the `Data Pasien & Kunjungan` card.** Do not
+reintroduce it, under that caption or any other, and do not reintroduce its cells
+individually: Nama Pasien, No. Rekam Medis, Ponsel, Nomor WA, No. Kunjungan,
+Tanggal Kunjungan, Cabang, Klinik, Antrian, Dokter, Tindakan Awal, Keluhan Utama.
+
+The reason is duplication, not privacy: the clinician has already written that
+information by hand on the RM sheet that the same document reproduces immediately
+below, so printing both made page one a restatement of page two.
+
+## Duplicate card ≠ document identification
+
+Removing the card must never strip the document of its identity. These are a
+document header/footer and are **deliberately kept**:
+
+* each wrapper's `<title>` — patient name + visit number;
+* each wrapper's footer — visit number + print timestamp;
+* the clinic logo and its `alt` text ("Logo Klinik Gigi Daengtisia") — branding.
+
+A bare `assertDontSee('Klinik')` would demand the logo be deleted. Assert the
+card's **cell markup** (`<dt>Klinik</dt>`) instead, and pair it with an assertion
+that the card's *values* are absent — that catches a relabelled card too.
+
+## One partial, both outputs
+
+`rme.visits.print` (browser) and `rme.visits.pdf` (dompdf) are separate wrappers
+that both include `rme.visits.partials.print-body`. Anything added to that partial
+lands in BOTH canonical outputs. Change it once; never fork the two so they can
+drift.
+
+## Data is untouched
+
+Nothing here deletes patient or visit data. Every removed field is still stored
+and still shown on the visit detail screen (`rme.visits.show`). A request to
+"remove X from the RME print" is a request about the print COMPOSITION only —
+never about the record, the schema, the workflow or the detail screen.
+
+## What must keep working
+
+* `RME Tulisan Tangan` renders, embedded inline as a `data:` URI from the private
+  `clinical_evidence` disk — never a link (dompdf cannot authenticate, and a
+  public URL is what STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 removed).
+* Print and PDF authorization and branch isolation are unchanged: unauthorized and
+  cross-branch actors get 403 on BOTH routes.
+* No empty `section-block`/`info-grid` residue is left behind — a wrapper emptied
+  of its rows still paints a bordered heading strip and reserves vertical space.
+
+## Known dead code (deliberate, not a defect)
+
+`ClinicVisitController::resolvePrintViewData()` still eager-loads `doctor`,
+`branch`, `clinic` and `initialTreatment`, which the composition no longer reads.
+Left in place on purpose: `preventLazyLoading` is not enabled in this application,
+so they are a harmless prefetch, and removing them would widen a print-only change
+into `ClinicVisit`. Clean up in a sprint that owns that controller, if ever.
+
+## CI selection
+
+A new print-regression suite must match a token in the NSF-R011 critical filter in
+**both** runner variants, or its protection never runs in a required gate. Add the
+token to both, keep the two filter strings identical, and prove selection by
+running `pest --filter='<the exact CI filter>' --list-tests` — never infer it from
+reading the regex.

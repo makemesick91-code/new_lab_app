@@ -166,10 +166,16 @@ it('does not show ktp on rme visit print', function () {
         'doctor_id' => $visit->doctor_id,
     ]);
 
+    // FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — the non-vacuous anchor
+    // used to be the "Nomor WA" cell of the "Data Pasien & Kunjungan" card.
+    // That card left the print composition, so the anchor moves to the medical
+    // record section, which is what the print now opens on. The claim under
+    // test — no KTP on the printed page — is unchanged, and keeping a positive
+    // anchor keeps it from passing merely because the page failed to render.
     $this->actingAs(userWith(['view_clinic_visits']))
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Nomor WA')
+        ->assertSee('Rekam Medis')
         ->assertDontSee('3201010101010005')
         ->assertDontSee('Nomor KTP');
 });

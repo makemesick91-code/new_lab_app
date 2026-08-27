@@ -5,6 +5,19 @@
     // odontogram model, table, workflow, UI and standalone print are unchanged —
     // only this print composition drops the section. The odontogram status/condition
     // label maps went with it: they were only ever read by the removed block.
+    //
+    // FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — the "Data Pasien &
+    // Kunjungan" card is NOT part of the RME print composition either. It
+    // restated as typed metadata what the clinician had already written by hand
+    // on the RM sheet reproduced immediately below it, so the first printed page
+    // duplicated the second. The patient, the visit and every one of those
+    // fields are unchanged in the database and still shown on the visit detail
+    // screen; only this composition drops the card, and it drops it for BOTH
+    // consumers (browser print and the dompdf export) because both include this
+    // one partial. Document IDENTIFICATION is deliberately kept and lives in the
+    // wrapper instead: each wrapper's <title> carries the patient name and visit
+    // number and its footer carries the visit number, which is what makes a
+    // printed sheet attributable without reinstating the duplicate.
     $medicalRecord = $visit->medicalRecord;
     // Sprint 60 — render every RM page (Page 1 legacy read-through + Page 2+).
     // STORAGE-PUBLIC-CLINICAL-EVIDENCE-1: pass true so handwriting is embedded
@@ -13,63 +26,6 @@
     // image route, so a linked image would export blank.
     $rmPages = $medicalRecord ? $medicalRecord->orderedHandwritingPages(true)->filter(fn ($p) => $p['has_content']) : collect();
 @endphp
-
-{{-- Patient & Visit Info --}}
-<div class="section-block">
-    <div class="section-title">Data Pasien &amp; Kunjungan</div>
-    <div class="info-grid">
-        <div class="info-row">
-            <dt>Nama Pasien</dt>
-            <dd>{{ $visit->patient?->name ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>No. Rekam Medis</dt>
-            <dd>{{ $visit->patient?->medical_record_number ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Ponsel</dt>
-            <dd>{{ $visit->patient?->phone ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Nomor WA</dt>
-            <dd>{{ $visit->patient?->whatsapp_number ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>No. Kunjungan</dt>
-            <dd>{{ $visit->visit_number ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Tanggal Kunjungan</dt>
-            <dd>{{ $visit->visit_date?->format('d/m/Y') ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Cabang</dt>
-            <dd>{{ $visit->branch?->name ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Klinik</dt>
-            <dd>{{ $visit->clinic?->name ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Antrian</dt>
-            <dd>#{{ $visit->queue_number ?? '—' }}</dd>
-        </div>
-        <div class="info-row">
-            <dt>Dokter</dt>
-            <dd>{{ $visit->doctor?->name ?? '—' }}</dd>
-        </div>
-        @if ($visit->initialTreatment)
-            <div class="info-row" style="grid-column: 1 / -1;">
-                <dt>Tindakan Awal</dt>
-                <dd>{{ $visit->initialTreatment->name }}</dd>
-            </div>
-        @endif
-        <div class="info-row" style="grid-column: 1 / -1;">
-            <dt>Keluhan Utama</dt>
-            <dd>{{ $visit->chief_complaint ?? '—' }}</dd>
-        </div>
-    </div>
-</div>
 
 {{-- Medical Record --}}
 <div class="section-block">

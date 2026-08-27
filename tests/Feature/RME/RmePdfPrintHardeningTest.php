@@ -128,7 +128,20 @@ it('cross branch user cannot open rme visit print page', function () {
 
 // ─── 4–9: Print content sections ─────────────────────────────────────────────
 
-it('rme print page includes patient doctor branch visit number and visit date', function () {
+/*
+ * AMENDED by FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1.
+ *
+ * These two tests described the Sprint 21.6 "Data Pasien & Kunjungan" card,
+ * which restated on the printed page what the clinician had already written by
+ * hand on the RM sheet reproduced immediately below it. The card is gone from
+ * the print composition; the underlying patient, visit, doctor, branch and
+ * initial-treatment data are untouched and still shown on the visit detail
+ * screen (`rme.visits.show`), which is what the module actually guarantees.
+ *
+ * What the PRINTED DOCUMENT must still do is identify itself, so that survives
+ * and is asserted here — via the title and footer, not via the card.
+ */
+it('rme print page still identifies its patient and visit without the duplicate card', function () {
     $visit = hardenVisit($this->branch, [
         'visit_number' => 'VIS-HARDEN-001',
         'visit_date' => '2026-06-10',
@@ -137,23 +150,31 @@ it('rme print page includes patient doctor branch visit number and visit date', 
     $this->actingAs($this->viewer)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
+        // Document identification (title + footer) — deliberately kept.
         ->assertSee($visit->patient->name)
-        ->assertSee($visit->patient->medical_record_number)
-        ->assertSee($visit->doctor->name)
-        ->assertSee($this->branch->name)
         ->assertSee('VIS-HARDEN-001')
-        ->assertSee('10/06/2026');
+        // The duplicated card and the cells only it carried — deliberately gone.
+        ->assertDontSee('Data Pasien')
+        ->assertDontSee('<dt>No. Rekam Medis</dt>', false)
+        ->assertDontSee('<dt>Dokter</dt>', false)
+        ->assertDontSee('<dt>Cabang</dt>', false)
+        ->assertDontSee('<dt>Tanggal Kunjungan</dt>', false)
+        ->assertDontSee('10/06/2026');
 });
 
-it('rme print page includes initial treatment when available', function () {
+it('rme print page no longer prints the initial treatment card row', function () {
     $treatment = Treatment::factory()->create(['name' => 'HARDEN_INITIAL_SCALING']);
     $visit = hardenVisit($this->branch, ['initial_treatment_id' => $treatment->id]);
+
+    // The visit keeps its initial treatment; only the printed duplicate goes.
+    expect($visit->refresh()->initial_treatment_id)->toBe($treatment->id);
 
     $this->actingAs($this->viewer)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
-        ->assertSee('Tindakan Awal')
-        ->assertSee('HARDEN_INITIAL_SCALING');
+        ->assertSee('Rekam Medis')
+        ->assertDontSee('Tindakan Awal')
+        ->assertDontSee('HARDEN_INITIAL_SCALING');
 });
 
 it('rme print page includes finalized medical record status', function () {
