@@ -1,49 +1,51 @@
-# AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2 — Sprint Manifest
+# FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The final stabilization programme closure. It carries the
-# closure contract into the repository BEFORE the authoritative Full Suite runs,
-# so that the tested tree, the merged tree, the deployed tree and the tree the
-# final GO tag points at are all THE SAME TREE. Nothing about the suite result
-# may be written into the repository afterwards.
+# WHAT THIS SPRINT IS. "Cetak RME" stops printing the `Data Pasien & Kunjungan`
+# card. The card restated as typed metadata what the clinician had already
+# written by hand on the RM sheet the same document reproduces immediately
+# below it, so page one duplicated page two.
 #
-# ORDERING IS THE WHOLE POINT. A closure sprint that runs the suite first and
-# then commits its evidence has not tested the tree it ships. The evidence of
-# the run therefore lives in the annotated GO tag and the CI run, never in a
-# post-PASS commit.
+# PRESENTATION ONLY. One Blade partial loses one section. No controller, no
+# service, no query, no route, no policy, no permission, no migration. The
+# patient, the visit and every removed field are untouched in the database and
+# still shown on the visit detail screen — this is a change to the print
+# COMPOSITION, never to the record.
 #
-# NO PRETEND PASS. Until the run actually passes, `full_suite_status` below is
-# PENDING and the closure document says PENDING. The GO tag is the only place
-# a PASS is ever asserted, and it is created only from real CI evidence.
+# ONE PARTIAL, BOTH OUTPUTS. `rme.visits.print` and `rme.visits.pdf` are
+# separate wrappers that both include `rme.visits.partials.print-body`, so the
+# single edit removes the card from both canonical outputs and they cannot
+# drift apart later.
 #
-# THE TEMPORARY FULL-SUITE POLICY STAYS ACTIVE THROUGH THIS SPRINT. Retiring it
-# in this candidate would make the post-merge push to base an AUTHORISED
-# automatic Full Suite, which would start a second, unauthorised run the moment
-# this candidate merges. Retirement is a separate, separately-authorised act.
+# DOCUMENT IDENTIFICATION IS KEPT. Removing a duplicate card must not make a
+# printed clinical sheet unattributable. Each wrapper's <title> still carries
+# the patient name and visit number and its footer the visit number; the clinic
+# logo stays. Those are a document header, not the card.
+#
+# frontend_change=false is literal, not convenient: only .blade.php changed,
+# and the validator's frontend set is JS/TS/Vue/CSS/SCSS/Vite/Tailwind/package.
+# No asset is rebuilt, so no `npm run build` is required.
 #
 # Impact flags — MUST match reality.
-id: AUTHORITATIVE-CONSOLIDATED-FULL-SUITE-2
-type: DOCS_ONLY
-module: GOVERNANCE
-title: 'Authoritative consolidated Full Suite #2 and final stabilization programme closure'
+id: FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1
+type: UI_POLISH
+module: RME
+title: 'Remove the duplicated Data Pasien & Kunjungan card from the RME print composition'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: false          # zero app/, routes/, resources/, config/, database/
+runtime_change: true           # resources/views only — one Blade partial
 schema_change: false           # no migration
-frontend_change: false         # no JS/CSS/Vite asset change
-security_impact: false         # no authorization surface touched
-branch_isolation_impact: false # branch scoping untouched
+frontend_change: false         # no JS/CSS/Vite/build asset changed
+security_impact: false         # no policy/middleware/permission/seeder touched
+branch_isolation_impact: false # branch scoping untouched; pinned by test
 ledger_impact: false
-deploy_required: true          # the closure authority is required to reach production
-browser_required: false        # no UI surface
+deploy_required: true          # the fix must reach the production print surface
+browser_required: false        # non-interactive print/PDF output, covered by HTTP + PDF tests
 test_profiles:
-  - cicd
+  - focused
+  - ui_regression
 
-go_tag: authoritative-consolidated-full-suite-2-final-program-closure-go
+go_tag: fix-rme-print-remove-patient-visit-duplicate-1-go
 
-# One explicit user authorisation; one attempt. Set to PENDING deliberately —
-# it is NOT updated after the run, because updating it would mutate the tested
-# tree. The GO tag carries the outcome.
-full_suite_status: PENDING_AUTHORIZED_EXECUTION   # FULL_SUITE_2_MAX_ATTEMPTS=1
-
+# Carried forward from the closure manifest this sprint inherits. Not
+# boilerplate: dropping either makes the LegacyRme closure contract fail.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
-residual_ledger: docs/sprints/authoritative-consolidated-full-suite-2-final-closure.md

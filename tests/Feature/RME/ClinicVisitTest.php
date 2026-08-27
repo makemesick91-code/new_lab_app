@@ -888,7 +888,15 @@ it('user cannot open the print view of a non-RME branch visit', function () {
         ->assertForbidden();
 });
 
-it('print view displays patient and visit info', function () {
+/*
+ * AMENDED by FIX-RME-PRINT-REMOVE-PATIENT-VISIT-DUPLICATE-1.
+ *
+ * The print no longer carries the "Data Pasien & Kunjungan" card, so the chief
+ * complaint is no longer typed onto the printed page — the clinician writes it
+ * on the RM sheet the document reproduces. What the printed DOCUMENT must still
+ * do is identify itself, and that is what this test now pins.
+ */
+it('print view identifies its patient and visit without the duplicate card', function () {
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->branch->id,
         'clinic_id' => $this->clinic->id,
@@ -900,12 +908,18 @@ it('print view displays patient and visit info', function () {
         'chief_complaint' => 'Gigi berlubang',
     ]);
 
+    // The complaint is still STORED on the visit; only the printed duplicate goes.
+    expect($visit->refresh()->chief_complaint)->toBe('Gigi berlubang');
+
     $this->actingAs($this->manager)
         ->get(route('rme.visits.print', $visit))
         ->assertOk()
+        // Document identification (title + footer) — kept.
         ->assertSee($this->patient->name)
         ->assertSee('VIS-20260610-005')
-        ->assertSee('Gigi berlubang');
+        // The duplicated card — gone.
+        ->assertDontSee('Data Pasien')
+        ->assertDontSee('Gigi berlubang');
 });
 
 it('print view displays medical record info if available', function () {
