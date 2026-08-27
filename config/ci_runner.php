@@ -254,6 +254,26 @@ return [
         // the surface uses the allocation API at all, under any prefix,
         // including one nobody has registered anywhere.
         'tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php',
+
+        // FEATURE-LEGACY-IMPORT-HUB-1 — the daily admission ceiling on legacy
+        // imports, and its wiring into all three importers.
+        //
+        // DECLARED DELIBERATELY, ON THE STORAGE-PUBLIC-CLINICAL-EVIDENCE-1
+        // PRECEDENT. This is a production admission control on a surface that
+        // writes patient master data and clinical archives, and its most likely
+        // failure is silent: an importer that simply stops calling the counter
+        // leaves every quota unit test green while the ceiling stops existing.
+        // A mutation run confirmed that shape — unwiring each importer in turn
+        // was caught ONLY by the integration suite. Selection is therefore
+        // enforced here rather than left to resting on the `LegacyImportHub`
+        // filter token, which a future edit could drop silently.
+        //
+        // The concurrency suite is deliberately NOT declared: it skips on any
+        // driver without row locks, and CI runs SQLite, so declaring a suite
+        // that can only ever skip there would read as evidence it is not.
+        'tests/Feature/LegacyImportHub/LegacyImportHubQuotaTest.php',
+        'tests/Feature/LegacyImportHub/LegacyImportHubIntegrationTest.php',
+        'tests/Feature/LegacyImportHub/LegacyImportHubSurfaceTest.php',
     ],
 
     /*

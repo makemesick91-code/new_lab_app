@@ -60,6 +60,7 @@ use App\Modules\LabOrder\Controllers\LabWorkflowEvidenceController;
 use App\Modules\LabOrder\Controllers\LabWorkflowOperationalDashboardController;
 use App\Modules\LabOrder\Controllers\LabWorkflowRequestController;
 use App\Modules\LabService\Controllers\LabServiceController;
+use App\Modules\LegacyImport\Controllers\LegacyImportHubController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramImportController;
 use App\Modules\LegacyOdontogram\Controllers\LegacyOdontogramRecordController;
 use App\Modules\LegacyRme\Controllers\LegacyRmeImportController;
@@ -229,6 +230,22 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::delete('patients/{patient}/documents/{document}', [PatientDocumentController::class, 'destroy'])
             ->name('patients.documents.destroy');
     });
+
+    // FEATURE-LEGACY-IMPORT-HUB-1 — Import Data Legacy (the landing page).
+    //
+    // ONE read-only page over the three legacy importers below it. It reports
+    // status, the daily ceiling, what has been used today and what is left; it
+    // decides nothing. The authoritative ceiling is taken inside the
+    // transaction that writes each record, never from anything rendered here.
+    //
+    // The middleware accepts the union of the three capabilities' own view
+    // permissions, so the hub can never be reached by an actor who could not
+    // already reach at least one importer. It grants no authority of its own —
+    // the controller re-checks reachability, and every card is rendered from
+    // the actor's own server-resolved branch scope.
+    Route::get('legacy-imports', [LegacyImportHubController::class, 'index'])
+        ->name('legacy-imports.index')
+        ->middleware('permission:manage patients|view_legacy_rme_imports|create_legacy_rme_imports|view_legacy_odontogram_imports|create_legacy_odontogram_imports');
 
     // LEGACY-RME-PDF-1B — Impor Arsip RME Lama (historical PDF archive).
     //

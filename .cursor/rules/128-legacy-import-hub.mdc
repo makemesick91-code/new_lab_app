@@ -1,0 +1,144 @@
+---
+description: Legacy Import Hub — one navigation home for the three legacy importers, and the 100/branch/clinical-day/type admission ceiling they all share.
+globs:
+  - "app/Modules/LegacyImport/**"
+  - "app/Modules/LegacyRme/Services/LegacyRmeImportService.php"
+  - "app/Modules/LegacyOdontogram/Services/LegacyOdontogramImportService.php"
+  - "app/Modules/Patient/Services/LegacyPatientImportService.php"
+  - "config/legacy_import_hub.php"
+  - "resources/views/settings/legacy-imports/**"
+  - "resources/views/layouts/partials/sidebar.blade.php"
+alwaysApply: false
+---
+
+# FEATURE-LEGACY-IMPORT-HUB-1 — the legacy import contract
+
+## The three capabilities
+
+There are exactly three legacy importers, and they are separate capabilities
+with separate permissions, separate storage and separate lifecycles:
+
+| Type | Route names | Feature flag |
+|---|---|---|
+| `legacy_patient` | `settings.patients.import.*` | none — its permission IS its availability |
+| `legacy_rme` | `settings.rme.legacy-imports.*` | `rme.legacy_pdf_archive` |
+| `legacy_odontogram` | `settings.rme.legacy-odontograms.*` | `rme.legacy_odontogram_archive` |
+
+They share ONE navigation group (`Import Data Legacy`) and ONE landing page
+(`settings.legacy-imports.index`). They share nothing else, and must not be
+merged into a single module.
+
+## The ceiling
+
+**100 ACCEPTED records, per BRANCH, per CLINICAL DAY, per IMPORT TYPE.**
+
+Every word is enforced, and every word has a test:
+
+- **ACCEPTED** — one unit is consumed when a record is admitted into its
+  canonical store, inside the same transaction that writes it. A refused
+  upload, a failed validation, a duplicate, an error row or a rolled-back
+  transaction consumes nothing. A retry of an already-accepted record is never
+  charged twice.
+- **BRANCH** — always SERVER-RESOLVED. For the two archives it is derived from
+  the branch-code segment of the patient's Nomor RM; for Legacy Patient it is
+  the branch the row's `Cabang` column resolved to (required and strict). A
+  request-supplied branch is NEVER the authority.
+- **CLINICAL DAY** — `ClinicalClock`, never `config('app.timezone')` and never
+  the host wall clock. Those resolve to UTC in production, which rolls the day
+  over at 08:00 WITA.
+- **IMPORT TYPE** — the three are counted separately. A full RME quota does not
+  reduce the Patient or Odontogram quota.
+
+`NULL` declines to limit. `0` admits nothing. They are not the same.
+
+## Where the ceiling is taken
+
+| Importer | Charged at | Unit |
+|---|---|---|
+| Legacy RME | inside `createFromUpload`'s transaction | one staged document |
+| Legacy Odontogram | inside `createFromUpload`'s transaction | one staged document |
+| Legacy Patient | inside `commit`'s transaction, after the rows are known | one COMMITTED patient row |
+
+Legacy Patient charges at COMMIT, not at upload: staging writes nothing to
+`mst_patients` and can be discarded outright, so charging at upload would bill
+an operator for work they never committed. A row skipped by the RM/KTP re-check
+costs nothing. Rollback deliberately does NOT refund.
+
+## Composition, not replacement
+
+Legacy RME keeps its ROLL-4 wave/branch quota UNCHANGED. That counter answers a
+different question — how much may this WAVE take today, across every branch
+enrolled in it — and the hub ceiling cannot express it.
+
+Both are evaluated. Either may refuse. Neither can turn the other's refusal
+into an acceptance. **Never delete the wave quota to "consolidate".**
+
+## Lock ordering — do not invert
+
+Legacy RME takes two locks. The order is fixed at its single call site:
+
+1. the hub bucket (`ops_legacy_import_daily_quotas`), then
+2. the ROLL-4 wave buckets.
+
+Both order by `branch_id` internally. A future caller that needs both MUST keep
+this order, or the two can form a deadlock cycle.
+
+`reserveMany` sorts branch ids before locking for the same reason.
+
+## Non-negotiables
+
+- The reservation runs INSIDE the transaction that writes the record, and takes
+  `FOR UPDATE` on a bucket row that exists BEFORE the decision. An unlocked
+  count is raceable no matter how many transactions wrap it.
+- A multi-branch batch is ALL-OR-NOTHING. Partial admission would split a file
+  across two clinical days or silently drop rows.
+- The hub page is a REPORT, never an authority. Nothing may be decided from it.
+- The sidebar is NOT the security boundary. Routes carry permission middleware,
+  controllers re-check, policies add the per-row branch scope. Pin the
+  middleware itself in a test — a controller re-check keeps behavioural tests
+  green while a layer is deleted.
+- The hub grants NO authority of its own. It is reachable only by an actor who
+  already holds one of the three capabilities' own permissions, and holding the
+  hub's weakest key never carries into an importer.
+- Counts, limits, branch codes and labels only. Never a patient name, a Nomor
+  RM, a KTP/NIK, a filename or a document path.
+- Legacy imports create no clinic visit, medical record, odontogram, invoice,
+  payment, prescription, lab order or SATUSEHAT resource. Unchanged by this
+  feature, and must stay that way.
+
+## Role grants (owner decision, FEATURE-LEGACY-IMPORT-HUB-1)
+
+Legacy Odontogram mirrors the legacy RME archive EXACTLY. FIX-04b had created
+its permissions and assigned them to no role, so the capability was reachable
+only by Super Admin.
+
+| Role | Legacy Odontogram |
+|---|---|
+| Admin Klinik | `view_` + `create_` — **intake only** |
+| Supervisor RME | `view_` + `review_` + `publish_` — **certify only** |
+| Super Admin | everything, incl. `void_legacy_odontogram_records` |
+| Doctor / Kasir / Owner / Perawat | none |
+
+**The omissions are load-bearing.** Admin Klinik gets no review/publish, so the
+operator who files a chart never certifies it into patient history. Supervisor
+RME gets no `create_`, so it cannot review its own intake. VOID stays with Super
+Admin, because retracting published clinical evidence is heavier than publishing
+it.
+
+`LegacyOdontogramFoundationTest` pins the EXACT holder set per permission — a
+grant to any other role, or of a withheld duty, fails there. Never relax it to
+"nobody holds these"; that assertion is now false by design.
+
+No permission was created by this feature. Only existing ones were assigned.
+
+## Testing
+
+- `tests/Feature/LegacyImportHub/` — quota, integration, surface (SQLite).
+- The concurrency suite REQUIRES PostgreSQL and skips elsewhere: SQLite
+  compiles `lockForUpdate()` to nothing, so a "passing" concurrency test there
+  would be false evidence. It drives the real service over a connection
+  `RefreshDatabase` does not wrap, because an uncommitted row cannot be
+  observed as locked by a second session.
+- The critical gate selects these suites via the `LegacyImportHub` filter token
+  AND `config/ci_runner.php` `critical_gate_mandatory_suites`. A new suite that
+  no token matches never runs.

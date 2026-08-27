@@ -70,6 +70,15 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'publish_legacy_rme_imports',
     'view_legacy_rme_migration_operations',
     'approve_legacy_rme_migration_wave',
+    // FEATURE-LEGACY-IMPORT-HUB-1 — the checker half of the legacy ODONTOGRAM
+    // archive, mirroring the legacy RME pair immediately above. The same two
+    // omissions are load-bearing here: `create_legacy_odontogram_imports` (that
+    // is the intake operator's, so this tier cannot review its own filing) and
+    // `void_legacy_odontogram_records` (retracting published clinical evidence
+    // is heavier than publishing it and stays with Super Admin).
+    'view_legacy_odontogram_imports',
+    'review_legacy_odontogram_imports',
+    'publish_legacy_odontogram_imports',
     // FIX-RME-CONSENT-WORKFLOW-PRINT-UX-2 / FIX-01 — capture and read the signed
     // PERSETUJUAN TINDAKAN MEDIS that gates RME payment. Supervisor RME holds the
     // full RME operational surface, so it holds both; the same pair also goes to
