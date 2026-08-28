@@ -244,6 +244,118 @@ See §9. It is the capability switch, it withdraws publish as well, and the
 admission report will read `FEATURE_DISABLED` rather than a wave reason so the
 distinction is visible in evidence.
 
+## 8c. FEATURE-LEGACY-IMPORT-HUB-1A — the four states, and activating a wave
+
+### Capability ON is not activation, and activation is not usability
+
+These are four different things. Treating any two of them as one is how
+production ran an entire release with the archive switched on and every upload
+refused, while the hub page reported "Aktif".
+
+| State | What is true | Can a document be accepted? |
+|---|---|---|
+| capability ON | `rme.legacy_pdf_archive` is on | **no** |
+| + admission active | branch codes admitted under an owner approval that covers them | **no** |
+| + wave active | a registered ROLL-4 wave is ACTIVE and bound to that approval | only for an assigned operator |
+| = end-to-end usable | all of the above, operator assigned, quota left | **yes** |
+
+Read the current state, do not assume it:
+
+```bash
+# One decision, with the first refusing gate named.
+php artisan legacy-rme:rollout-readiness
+php artisan legacy-rme:wave-status
+
+# The composed pre-flight — run this before opening any batch.
+php artisan legacy-rme:ops-readiness --json
+```
+
+The hub page at `settings.legacy-imports.index` now reports the same thing to an
+operator: `Belum Dibuka` plus the specific blocker, instead of a green badge and
+a permanent footnote. It remains a REPORT — the gate that admits a document is
+still taken inside the transaction that writes it.
+
+### Blocker codes
+
+`CAPABILITY_OFF` · `NO_BRANCH_ADMITTED` · `APPROVAL_MISSING` ·
+`APPROVAL_INCOMPLETE` · `WAVE_NOT_DECLARED` · `WAVE_NOT_REGISTERED` ·
+`WAVE_NOT_ACTIVE` · `WAVE_BINDING_MISMATCH` · `WAVE_UNREADABLE` ·
+`STATE_UNAVAILABLE`
+
+They are ordered like the runtime chain, so the reported blocker is always the
+first control actually refusing — never a later one that would send an operator
+to fix the wrong thing.
+
+`STATE_UNAVAILABLE` is the odd one out: it means the gate state could not be
+evaluated at all. It is reported as SHUT, never as "no gates apply" — an
+unevaluated gate must never read as an open one. Treat it as an infrastructure
+fault (database or wave store unreachable), not as a governance decision.
+
+### Activating a wave
+
+Two halves of ONE decision. Both must agree or the binding check fails closed.
+
+**Half 1 — the deployment's environment file (the AUTHORITY).** Edit on the
+server, then rebuild the config cache:
+
+```
+LEGACY_RME_ADMITTED_BRANCH_CODES=TKM1,LDK2,ATG3,SUN4
+LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES=TKM1,LDK2,ATG3,SUN4
+LEGACY_RME_ADMISSION_APPROVAL_REFERENCE=ROLL-4-WAVE-4-OWNER-APPROVAL-2026-08-28
+LEGACY_RME_WAVE=WAVE-4
+```
+
+The approved set must COVER the admitted set. Widening the allowlist without
+widening the approval fails closed (`APPROVAL_INCOMPLETE`) rather than inheriting
+the older, narrower decision — and a branch that is approved but NOT admitted is
+still refused, which is what makes a staged rollout safe.
+
+**Half 2 — the operational record (the MIRROR).** Every action is a dry run
+unless `--apply`, and the actor's permissions are checked exactly as in the
+browser:
+
+```bash
+php artisan legacy-rme:wave-admin register \
+  --wave=WAVE-4 --name='Wave 4 — multi-branch legacy RME migration' \
+  --branches=TKM1,LDK2,ATG3,SUN4 \
+  --per-branch-daily-quota=100 \
+  --planned-start-date=YYYY-MM-DD --planned-end-date=YYYY-MM-DD \
+  --reason='<owner approval reference>' --actor=<id|email> --apply
+
+php artisan legacy-rme:wave-admin approve  --wave=WAVE-4 --actor=<APPROVER> --reason='...' --apply
+php artisan legacy-rme:wave-admin activate --wave=WAVE-4 --actor=<id|email>  --reason='...' --apply
+
+# One assignment per branch. There is NO exemption for Super Admin: a permission
+# is not an assignment.
+php artisan legacy-rme:wave-admin assign --wave=WAVE-4 --branch=LDK2 --operator=<id|email> --actor=<id|email> --apply
+```
+
+The approver must differ from the creator while
+`LEGACY_RME_REQUIRE_SEPARATE_APPROVER=true`, and the publisher must differ from
+the maker of each document while `LEGACY_RME_REQUIRE_SEPARATE_PUBLISHER=true`.
+Account separation is what the application can verify; **human** separation is a
+staffing control it cannot see and must never be claimed on its behalf.
+
+### The daily ceiling is 100 per branch, per clinical day
+
+Two independent counters apply and the tighter one wins:
+
+- the hub ceiling — 100 accepted records per branch per clinical day per import
+  type (`ops_legacy_import_daily_quotas`), and
+- the wave's own per-branch quota, set to `100` above.
+
+Set the wave quota to 100 explicitly. The operations layer's own default is 25,
+so omitting it silently narrows the wave to a quarter of the approved ceiling.
+The clinical day rolls over on Asia/Makassar via `ClinicalClock`, never on UTC
+midnight.
+
+### Activation imports nothing
+
+Opening a wave migrates no patient data. A human still uploads each document, a
+reviewer reviews it, and a separate publisher publishes it. Nothing scans
+storage and nothing ingests on its own — if activation appeared to create
+records, stop and treat it as an incident.
+
 ## 9. Rollback to OFF (EMERGENCY STOP / end-of-wave close)
 
 1. Set `FEATURE_RME_LEGACY_PDF_ARCHIVE=false` in the environment file.

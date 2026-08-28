@@ -58,6 +58,8 @@
 
                         @if ($card['status'] === 'aktif')
                             <x-ui.badge tone="success">Aktif</x-ui.badge>
+                        @elseif ($card['status'] === 'belum_dibuka')
+                            <x-ui.badge tone="warning">Belum Dibuka</x-ui.badge>
                         @elseif ($card['status'] === 'nonaktif')
                             <x-ui.badge tone="warning">Nonaktif</x-ui.badge>
                         @elseif ($card['status'] === 'tanpa_akses')
@@ -95,10 +97,56 @@
                         </p>
                     @endif
 
-                    @if ($card['has_additional_gates'] && $card['status'] === 'aktif')
-                        <p class="mt-3 text-xs text-ink-muted">
-                            Selain kuota, impor RME masih memerlukan cabang yang sudah diizinkan dan gelombang
-                            migrasi aktif. Halaman ini tidak dapat memastikan keduanya.
+                    {{--
+                        FEATURE-LEGACY-IMPORT-HUB-1A — the extra gates are now REPORTED, not
+                        merely disclaimed. `blocker` is a stable machine code produced by
+                        LegacyRmeActivationStateService; the sentence for each one lives here
+                        so the service never has to carry operator-facing prose.
+                    --}}
+                    @if ($card['additional_gates'] !== null && $card['additional_gates']['open'])
+                        <p class="mt-3 text-xs text-success-700">
+                            Cabang yang diizinkan: {{ implode(', ', $card['additional_gates']['admitted_branch_codes']) }}.
+                            Gelombang migrasi {{ $card['additional_gates']['registered_wave'] }} sedang aktif, sehingga
+                            impor baru dapat dimulai untuk operator yang ditugaskan.
+                        </p>
+                    @elseif ($card['additional_gates'] !== null && $card['status'] !== 'nonaktif')
+                        <p class="mt-3 text-xs text-warning-700">
+                            @switch ($card['additional_gates']['blocker'])
+                                @case ('NO_BRANCH_ADMITTED')
+                                    Kapabilitas sudah menyala, tetapi belum ada cabang yang diizinkan memulai migrasi,
+                                    sehingga setiap unggahan masih ditolak di sisi server.
+                                    @break
+                                @case ('APPROVAL_MISSING')
+                                    Cabang sudah diizinkan, tetapi gelombang migrasi belum memiliki referensi persetujuan.
+                                    @break
+                                @case ('APPROVAL_INCOMPLETE')
+                                    Ada cabang yang diizinkan di luar cakupan persetujuan yang berlaku:
+                                    {{ implode(', ', $card['additional_gates']['unapproved_admitted_branch_codes']) }}.
+                                    @break
+                                @case ('WAVE_NOT_DECLARED')
+                                    Cabang sudah diizinkan, tetapi belum ada gelombang migrasi yang dideklarasikan.
+                                    @break
+                                @case ('WAVE_NOT_REGISTERED')
+                                    Gelombang {{ $card['additional_gates']['declared_wave'] }} belum terdaftar sebagai
+                                    gelombang migrasi operasional.
+                                    @break
+                                @case ('WAVE_NOT_ACTIVE')
+                                    Gelombang {{ $card['additional_gates']['registered_wave'] }} berstatus
+                                    {{ $card['additional_gates']['wave_status'] }}, sehingga belum menerima dokumen baru.
+                                    @break
+                                @case ('WAVE_BINDING_MISMATCH')
+                                    Catatan gelombang migrasi tidak cocok dengan persetujuan yang berlaku pada deployment ini.
+                                    @break
+                                @case ('WAVE_UNREADABLE')
+                                    Catatan gelombang migrasi tidak dapat dibaca, sehingga impor baru ditahan.
+                                    @break
+                                @case ('STATE_UNAVAILABLE')
+                                    Status gerbang migrasi tidak dapat dievaluasi saat ini, sehingga impor baru
+                                    ditahan sampai statusnya dapat dipastikan.
+                                    @break
+                                @default
+                                    Impor RME belum dapat dimulai karena gerbang admission atau gelombang migrasi belum terbuka.
+                            @endswitch
                         </p>
                     @endif
 

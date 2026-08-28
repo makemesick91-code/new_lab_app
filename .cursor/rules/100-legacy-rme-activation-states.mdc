@@ -1,0 +1,90 @@
+---
+description: FEATURE-LEGACY-IMPORT-HUB-1A — capability vs admission vs wave vs usable
+globs:
+  - "app/Modules/LegacyImport/**"
+  - "app/Modules/LegacyRme/**"
+  - "config/legacy_rme_rollout.php"
+  - "config/legacy_rme_operations.php"
+  - "config/legacy_import_hub.php"
+  - "resources/views/settings/legacy-imports/**"
+  - "tests/Feature/LegacyImportHub/**"
+alwaysApply: false
+---
+
+# Legacy RME activation states (permanent rules)
+
+## 1. Four states, never conflated
+
+```
+capability ON            !=  admission active
+admission active         !=  wave active
+wave active              !=  end-to-end usable
+```
+
+A document is accepted only when ALL of these hold: the capability flag is on,
+ROLL-3 admits the RM-derived branch under an approval that covers it, a
+registered ROLL-4 wave is ACTIVE and bound to that approval, the acting operator
+is assigned to that branch in that wave, and quota remains.
+
+FEATURE-LEGACY-IMPORT-HUB-1 shipped a hub that called the capability `aktif`
+whenever its flag and route were present. Production then ran a full release with
+the archive ON, nothing admitted and no wave — every upload refused, the page
+green. Never report a capability as active on the strength of a flag alone.
+
+## 2. Reporting rules
+
+- A permanently-true caveat is NOT a state. If a surface can be shut for a reason
+  the page can evaluate, it must evaluate it.
+- `has_additional_gates` = a property of the TYPE (fixed).
+  `additional_gates` = what those gates SAY NOW (evaluated, or `null`).
+- `status` for legacy RME is `belum_dibuka` when its gates are shut, never
+  `aktif`.
+- Every closure reports a stable machine `blocker` code; operator-facing prose
+  lives in the view, never in the service.
+- **A failure to EVALUATE the gates is not an ABSENCE of gates.** An exception
+  must report `STATE_UNAVAILABLE` with `open = false` and the same key shape a
+  real evaluation returns — never `null`, which means "this type has no extra
+  gates" and sends the card straight back to `aktif`.
+- Blockers are ordered like the runtime chain, so the one reported is the first
+  control actually refusing.
+
+## 3. The report has no authority
+
+`LegacyRmeActivationStateService` COMPOSES the existing gates and re-implements
+none of them. The per-branch verdict is taken from
+`LegacyRmeBranchAdmissionService::decideForBranchCode()` — never from a second
+reading of the allowlist. `open` is never permission: the ceiling that admits a
+document is still taken inside the transaction that writes it.
+
+Fail closed. An unreadable wave record reports shut with an explicit blocker,
+never "no wave needed".
+
+## 4. Activation rules
+
+- Admission is CONFIG/deploy-time authority; the wave row is the operational
+  MIRROR. When they disagree, ingestion stops until a human reconciles them —
+  neither side is assumed correct.
+- The approved branch set must COVER the admitted set. Approved-but-not-admitted
+  is still REFUSED: that is what makes a staged rollout safe, and it is the one
+  case where the allowlist is the only guard.
+- MAIN is permanently forbidden and is guarded twice (the `decide()` check and
+  the filter in `admittedBranchCodes()`). Keep both.
+- The branch is derived from the patient's Nomor RM. Never from a request body,
+  query string, session or BranchContext selection.
+- A permission is NOT an assignment. Every branch needs an explicit operator
+  assignment, with no exemption for Super Admin.
+- The per-branch daily ceiling is **100** per clinical day (Asia/Makassar via
+  `ClinicalClock`). The operations layer's own default is 25, so a wave must set
+  `--per-branch-daily-quota=100` explicitly or it silently narrows.
+- Activating a wave imports NOTHING. No scan, no bulk ingest, no auto-migration.
+
+## 5. Unchanged invariants
+
+Legacy RME is historical archive evidence. It never creates a clinic visit,
+native medical record, invoice, payment, odontogram, prescription, lab order or
+SATUSEHAT resource, and never enters visit/revenue KPI. The representative date
+is the EARLIEST confirmed clinical date and is chosen by a human, never derived
+from upload time, file metadata or OCR. Published records are immutable;
+correction is VOID + replacement. PDFs live on a private disk only. Never render
+a Nomor RM, KTP/NIK, patient name, filename or document path into gate state,
+audit payloads or the hub.
