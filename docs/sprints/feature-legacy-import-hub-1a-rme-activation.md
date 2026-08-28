@@ -229,3 +229,85 @@ blast radius. Neither deletes a document.
 
 The hub reports the closed state as `belum_dibuka` with blocker
 `NO_BRANCH_ADMITTED`, which is the honest resting state rather than a fault.
+
+---
+
+## 6. Production activation — executed 2026-08-28 (WITA)
+
+| Authority | Value |
+|---|---|
+| Candidate | `1173613` → tree `08d03e5d` |
+| Merge (PR #351) | `76bd7c0` → tree `08d03e5d` (identical — the squash preserved the tree exactly) |
+| CI run | `33130384816` — success, all six required gates |
+| VPS HEAD / tree | `76bd7c0` / `08d03e5d` |
+| Deploy | `scripts/deploy-vps-runner.sh start` **inside** the VPS — `exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES` |
+
+### What was applied
+
+```
+LEGACY_RME_ADMITTED_BRANCH_CODES          = TKM1,LDK2,ATG3,SUN4
+LEGACY_RME_ADMISSION_APPROVED_BRANCH_CODES= TKM1,LDK2,ATG3,SUN4
+LEGACY_RME_ADMISSION_APPROVAL_REFERENCE   = ROLL-4-WAVE-4-OWNER-APPROVAL-2026-08-28
+LEGACY_RME_WAVE                           = WAVE-4
+```
+
+`WAVE-4` — registered (actor 1, Super Admin), approved (actor 11, Supervisor RME
+— separate approver enforced), activated. Branches TKM1/LDK2/ATG3/SUN4 all
+`ACTIVE`, per-branch daily quota **100**, window 2026-08-28 → 2026-09-30.
+Operators: LDK2 → user 7 (Yuni FO), TKM1/ATG3/SUN4 → user 1 (Super Admin).
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `legacy-rme:rollout-readiness` | **GO** — `branch_admission` GO, `migration_operations_layer` GO (was WATCH on `branch_admission`) |
+| `legacy-rme:migration-status` | wave `WAVE-4` ACTIVE, **"Accepting new documents: yes"**, binding matches deployment approval |
+| `legacy-rme:ops-readiness` | WATCH (see below), `blockers=[]`, `stop_the_line=[]`, FAIL=0 |
+| Documents accepted by activation | **0** — every branch `accepted 0 · published 0 · in-flight 0 · failed 0`, storage 0 documents, reconciliation balanced |
+| Canonical domain health | `/login` `/health/live` `/health/ready` `/health/lb` → 200; `/storage/*` → 403 |
+| New Laravel errors | **0** — log byte-size unchanged from the pre-deploy baseline (791487), zero entries dated 2026-08-28 |
+
+### Two environment gotchas worth keeping
+
+1. **Order is load-bearing.** `createWave()` mirrors the DECLARED approval and
+   approved branch set at creation time and rejects branches outside it. The
+   environment must be set and the config cache rebuilt BEFORE the wave is
+   registered, or registration fails or records a null approval that then reads
+   as a binding mismatch.
+2. **`sed -i` on the environment file breaks its ownership.** The file is
+   `0640 root:daengtisiams` (INFRA-SEC-ENV-1) and `sed -i` recreates the inode
+   as `root:root`, silently cutting the runtime's read access. Owner and mode
+   must be re-asserted and verified immediately after any edit.
+
+### Accepted WATCH — batch sizing (owner decision)
+
+`legacy-rme:ops-readiness` reports `batch_size_policy` WATCH and
+`ready_for_routine_batch=false`, because `WAVE-4` declares no WAVE-level daily
+quota.
+
+That check passes only when the wave-level quota is **≤ 100/day across all four
+branches combined** — which would make the branches share one 100/day budget.
+Above 100 it reports "exceeds the routine envelope" instead. There is therefore
+no wave-level value that both satisfies the routine envelope and preserves the
+owner-approved 100 **per branch**; the envelope was derived from single-worker
+queue throughput bounded by human review capacity, and a four-branch wave is
+simply not a routine batch by that definition.
+
+The project owner reviewed the three options and chose to **accept the WATCH
+unchanged**. The reasoning is recorded because it will be asked again:
+
+- Every branch is still hard-capped at 100/day by TWO independent counters (the
+  hub ceiling and the wave's per-branch quota). Nothing is unbounded in practice.
+- Raising `LEGACY_RME_ROUTINE_MAX_DAILY` to 400 would turn the check green, but
+  that threshold exists because of human review throughput — and today a
+  **single** Supervisor RME account reviews and publishes for all four branches.
+  Turning a red light green by moving the line it measures against is the exact
+  habit this sprint was written to break.
+- Re-registering bounded at 400 would still WATCH, for a different reason.
+
+So the WATCH stands, honestly, and is reported rather than engineered away. It
+is non-blocking: `blockers=[]`, `stop_the_line=[]`, FAIL=0, and uploads are
+accepted right now. **There is no post-registration setter for the wave-level
+quota** — it can only be set at `register` — so revisiting this means cancelling
+the wave and re-registering under a new code. That is cheapest while few
+documents exist.
