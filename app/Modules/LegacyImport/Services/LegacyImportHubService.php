@@ -282,12 +282,15 @@ class LegacyImportHubService
     }
 
     /**
-     * The evaluated legacy RME activation state, or null when the archive
-     * module is not installed on this deployment.
+     * The evaluated legacy RME activation state, or null when the archive is not
+     * one of this deployment's import types at all.
      *
-     * Guarded because the hub also serves Legacy Patient, which predates the
-     * archive entirely: a hub page must not 500 because a capability it merely
-     * links to cannot be resolved.
+     * A FAILURE TO EVALUATE IS NOT AN ABSENCE OF GATES. The catch returns the
+     * service's explicit "unavailable" state — `open = false` — rather than
+     * null, because null means "this type has no extra gates" and would send
+     * the card straight back to reporting `aktif`. That is the precise failure
+     * this sprint exists to remove, so an unreadable gate must read as shut.
+     * The hub still must not 500 over a capability it merely links to.
      *
      * @param  list<Branch>  $branches
      * @return array<string, mixed>|null
@@ -304,7 +307,7 @@ class LegacyImportHubService
                 $branches,
             ));
         } catch (Throwable) {
-            return null;
+            return LegacyRmeActivationStateService::unavailable();
         }
     }
 

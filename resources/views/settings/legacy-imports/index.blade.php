@@ -140,6 +140,10 @@
                                 @case ('WAVE_UNREADABLE')
                                     Catatan gelombang migrasi tidak dapat dibaca, sehingga impor baru ditahan.
                                     @break
+                                @case ('STATE_UNAVAILABLE')
+                                    Status gerbang migrasi tidak dapat dievaluasi saat ini, sehingga impor baru
+                                    ditahan sampai statusnya dapat dipastikan.
+                                    @break
                                 @default
                                     Impor RME belum dapat dimulai karena gerbang admission atau gelombang migrasi belum terbuka.
                             @endswitch

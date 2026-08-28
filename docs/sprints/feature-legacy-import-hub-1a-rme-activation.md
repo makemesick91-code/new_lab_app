@@ -162,10 +162,10 @@ publishes it. Nothing scans storage, and nothing ingests on its own.
 
 | Check | Result |
 |---|---|
-| `LegacyImportHubOperationalStateTest` | 14 passed |
+| `LegacyImportHubOperationalStateTest` | 17 passed |
 | `LegacyRmeActivationContractTest` | 8 passed |
-| `tests/Feature/LegacyImportHub` + `tests/Feature/LegacyRme` | 993 passed, 9 skipped, 0 failed |
-| Mutation | 14 attempted, 13 killed, 1 equivalent, **0 real survivors** |
+| `tests/Feature/LegacyImportHub` + `tests/Feature/LegacyRme` | 996 passed, 9 skipped, 0 failed |
+| Mutation | 16 attempted, 15 killed, 1 equivalent, **0 real survivors** |
 | `sprint:manifest-check` / `sprint:scope-audit` | GO |
 | `foundation:devflow-check` / `foundation:shared-service-audit` | GO |
 | `pint --dirty`, `git diff --check` | clean |
@@ -190,6 +190,23 @@ That re-run surfaced two survivors, and only one of them was a real gap:
   `admittedBranchCodes()` — so removing one changes no observable behaviour.
   Removing **both** is KILLED, which proves the protection is genuinely covered
   rather than untested.
+
+### Two defects found by self-review, not by the tests
+
+Both were in this sprint's own new code, and both are now pinned:
+
+- **The hub disclosed gate state to an actor who may not view the capability.**
+  The two branches of the new gate paragraph disagreed — the closed one was
+  guarded by permission status, the open one was not. Fixed in the payload
+  rather than the template, so the page and its data cannot drift apart again.
+- **A failure to evaluate the gates was reported as an absence of gates.** The
+  hub's `catch` returned `null`, `null` means "this type has no extra gates",
+  and `status()` therefore fell through to **`aktif`** — restoring the exact lie
+  this sprint removes, via an exception. The catch now returns
+  `LegacyRmeActivationStateService::unavailable()` (`open = false`,
+  blocker `STATE_UNAVAILABLE`), with the same key shape as a real evaluation so
+  no consumer has to guard for a missing key. Reverting that one line to `null`
+  fails the new test, which is the proof it is load-bearing.
 
 ---
 

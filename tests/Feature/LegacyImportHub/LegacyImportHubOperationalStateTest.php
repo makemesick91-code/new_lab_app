@@ -34,6 +34,7 @@ use App\Modules\LegacyRme\Services\LegacyRmeBranchAdmissionService;
 use App\Modules\LegacyRme\Support\LegacyRmeWaveStatus;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use RuntimeException;
 
 uses(RefreshDatabase::class);
 
@@ -206,6 +207,46 @@ it('never reports MAIN as admitted, whatever the allowlist says', function () {
         ->get('branches');
 
     expect(collect($rows)->firstWhere('branch_code', 'MAIN')['admitted'])->toBeFalse();
+});
+
+it('reports shut, not aktif, when the gate state cannot be evaluated at all', function () {
+    legacyRmeBranch();
+
+    // A FAILURE TO EVALUATE IS NOT AN ABSENCE OF GATES. Before this was fixed
+    // the catch returned null, null meant "this type has no extra gates", and
+    // the card went straight back to reporting "Aktif" for a capability whose
+    // real state was unknown — the precise lie this sprint removes, restored by
+    // an exception. The page must still render.
+    $this->instance(
+        LegacyRmeActivationStateService::class,
+        new class extends LegacyRmeActivationStateService
+        {
+            public function __construct() {}
+
+            public function state(array $branchCodes = []): array
+            {
+                throw new RuntimeException('wave store unreachable');
+            }
+        }
+    );
+
+    $card = lihoRmeCard();
+
+    expect($card['status'])->toBe('belum_dibuka')
+        ->and($card['additional_gates']['open'])->toBeFalse()
+        ->and($card['additional_gates']['blocker'])
+        ->toBe(LegacyRmeActivationStateService::BLOCKER_STATE_UNAVAILABLE);
+});
+
+it('gives the unavailable state the same shape a real evaluation has', function () {
+    // Consumers must never have to guard for a missing key just because the
+    // evaluation failed.
+    legacyRmeBranch();
+
+    $real = app(LegacyRmeActivationStateService::class)->state(['TKM1']);
+
+    expect(array_keys(LegacyRmeActivationStateService::unavailable()))
+        ->toEqualCanonicalizing(array_keys($real));
 });
 
 it('withholds gate state from an actor who may not view the capability', function () {

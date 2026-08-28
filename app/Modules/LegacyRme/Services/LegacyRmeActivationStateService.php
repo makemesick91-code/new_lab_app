@@ -90,12 +90,52 @@ class LegacyRmeActivationStateService
     /** The wave record could not be read at all. */
     public const BLOCKER_WAVE_UNREADABLE = 'WAVE_UNREADABLE';
 
+    /** The state itself could not be evaluated. Never reported as open. */
+    public const BLOCKER_STATE_UNAVAILABLE = 'STATE_UNAVAILABLE';
+
     public function __construct(
         private readonly LegacyRmeFeatureGuard $feature,
         private readonly LegacyRmeBranchAdmissionService $admission,
         private readonly LegacyRmeWaveBindingService $binding,
         private readonly LegacyRmeOperationsGateService $operations,
     ) {}
+
+    /**
+     * The shape a caller reports when it could not evaluate the state at all.
+     *
+     * Every consumer gets the SAME keys as a real evaluation, so a caller can
+     * never trip over a missing one, and `open` is false — an unevaluated gate
+     * is reported as shut, never as fine. A reader that degraded to "no extra
+     * gates" here would silently reintroduce the exact claim this class exists
+     * to stop: a capability called active while every upload is refused.
+     *
+     * @return array<string, mixed>
+     */
+    public static function unavailable(): array
+    {
+        return [
+            'applies' => true,
+            'open' => false,
+            'blocker' => self::BLOCKER_STATE_UNAVAILABLE,
+
+            'capability_enabled' => null,
+
+            'admission_enforced' => null,
+            'admitted_branch_codes' => [],
+            'approved_branch_codes' => [],
+            'unapproved_admitted_branch_codes' => [],
+            'approval_recorded' => null,
+
+            'operations_enforced' => null,
+            'declared_wave' => null,
+            'registered_wave' => null,
+            'wave_status' => null,
+            'wave_ingesting' => false,
+            'binding_matches' => false,
+
+            'branches' => [],
+        ];
+    }
 
     /**
      * The deployment-wide activation state, plus a per-branch admission verdict
