@@ -236,7 +236,12 @@ class LegacyImportHubService
         }
 
         $hasAdditionalGates = $type === LegacyImportType::LEGACY_RME;
-        $gates = $hasAdditionalGates ? $legacyRmeState : null;
+        // Least disclosure: an actor who may not VIEW this capability is not
+        // told which branches its wave admitted or what that wave is doing.
+        // Gating it here rather than in the view keeps the payload and the page
+        // in step — a template-only guard is one edit away from leaking, and
+        // the open/closed branches of that template already disagreed once.
+        $gates = $hasAdditionalGates && $mayView ? $legacyRmeState : null;
 
         return [
             'type' => $type,

@@ -109,7 +109,7 @@
                             Gelombang migrasi {{ $card['additional_gates']['registered_wave'] }} sedang aktif, sehingga
                             impor baru dapat dimulai untuk operator yang ditugaskan.
                         </p>
-                    @elseif ($card['additional_gates'] !== null && $card['status'] !== 'nonaktif' && $card['status'] !== 'tanpa_akses')
+                    @elseif ($card['additional_gates'] !== null && $card['status'] !== 'nonaktif')
                         <p class="mt-3 text-xs text-warning-700">
                             @switch ($card['additional_gates']['blocker'])
                                 @case ('NO_BRANCH_ADMITTED')

@@ -208,6 +208,20 @@ it('never reports MAIN as admitted, whatever the allowlist says', function () {
     expect(collect($rows)->firstWhere('branch_code', 'MAIN')['admitted'])->toBeFalse();
 });
 
+it('withholds gate state from an actor who may not view the capability', function () {
+    legacyRmeBranch();
+
+    // A legacy PATIENT operator can reach the hub, but holds nothing on legacy
+    // RME. They are told the card exists and is out of their reach — not which
+    // branches its wave admitted, nor what that wave is currently doing.
+    $card = lihoRmeCard(lihOperator(['manage patients']));
+
+    expect($card['status'])->toBe('tanpa_akses')
+        ->and($card['may_view'])->toBeFalse()
+        ->and($card['has_additional_gates'])->toBeTrue()
+        ->and($card['additional_gates'])->toBeNull();
+});
+
 it('reports no gate state at all for a type that has none', function () {
     lihBranch();
 
