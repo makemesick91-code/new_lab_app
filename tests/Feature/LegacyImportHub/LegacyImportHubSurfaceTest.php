@@ -186,7 +186,11 @@ it('hides an archive entry while its migration flag is off', function () {
 */
 
 it('reports the ceiling, what was used and what is left', function () {
-    $branch = lihBranch();
+    // legacyRmeBranch() (not lihBranch()) because this test asserts `aktif`,
+    // and after FEATURE-LEGACY-IMPORT-HUB-1A that word means every gate is
+    // open — admission and a running wave included. The fixture admits and
+    // enrols the branch exactly as a real activation does.
+    $branch = legacyRmeBranch();
 
     lihConsume(LegacyImportType::LEGACY_RME, (int) $branch->id, 7);
 
@@ -218,7 +222,7 @@ it('reports a capability as nonaktif when its migration flag is off', function (
     expect($rme['capability_enabled'])->toBeFalse();
 });
 
-it('says legacy RME carries gates the page cannot evaluate', function () {
+it('marks only legacy RME as carrying gates beyond the flag and the route', function () {
     $branch = lihBranch();
 
     $actor = lihOperator(['view_legacy_rme_imports']);
@@ -226,10 +230,17 @@ it('says legacy RME carries gates the page cannot evaluate', function () {
 
     $overview = app(LegacyImportHubService::class)->overview($actor->refresh());
 
-    // Branch admission and an ACTIVE wave are decided elsewhere, so the card
-    // must not imply a green flag is the whole story.
+    // `has_additional_gates` is a property of the TYPE — does anything beyond
+    // the flag and the route govern it — and is fixed for its lifetime. What
+    // those gates currently SAY is `additional_gates`, asserted separately.
+    // Publishing only the first is what let a fully closed migration read as
+    // "Aktif" for an entire release.
     expect(collect($overview['types'])->firstWhere('type', LegacyImportType::LEGACY_RME)['has_additional_gates'])->toBeTrue();
     expect(collect($overview['types'])->firstWhere('type', LegacyImportType::LEGACY_PATIENT)['has_additional_gates'])->toBeFalse();
+
+    // A type without extra gates carries no gate state to report, rather than
+    // an empty one that could be misread as "evaluated and open".
+    expect(collect($overview['types'])->firstWhere('type', LegacyImportType::LEGACY_PATIENT)['additional_gates'])->toBeNull();
 });
 
 it('reports the clinical calendar the ceiling rolls over on', function () {

@@ -9,8 +9,10 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchContext;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\LegacyImport\Support\LegacyImportType;
+use App\Modules\LegacyRme\Services\LegacyRmeActivationStateService;
 use App\Services\Foundation\FeatureFlagService;
 use Illuminate\Support\Facades\Route;
+use Throwable;
 
 /**
  * FEATURE-LEGACY-IMPORT-HUB-1 — what the hub page reports, computed server-side.
@@ -22,11 +24,22 @@ use Illuminate\Support\Facades\Route;
  * have taken the slot it shows as free. Nothing may be decided from this output.
  *
  * "ACTIVE" IS REPORTED HONESTLY. A capability is only called active when its
- * feature flag is on AND its route is registered. Legacy RME has further gates
- * beyond this page's knowledge — ROLL-3 branch admission and a matching ACTIVE
- * ROLL-4 wave — so its card says so rather than implying that a green flag is
- * the whole story. Claiming "Aktif" for a surface that will refuse every upload
- * is exactly the failure this page exists to prevent.
+ * feature flag is on, its route is registered, AND every further gate that
+ * governs it is currently open. Legacy RME carries two more — ROLL-3 branch
+ * admission and a matching ACTIVE ROLL-4 wave — and they are EVALUATED here
+ * (FEATURE-LEGACY-IMPORT-HUB-1A) rather than merely disclaimed.
+ *
+ * That distinction is the whole point. The first version of this page shipped a
+ * hard-coded "there are other gates" caveat, which read identically whether
+ * those gates were wide open or completely shut — and production then ran for a
+ * release with the capability ON, no branch admitted and no wave, while this
+ * page reported "Aktif". Claiming "Aktif" for a surface that will refuse every
+ * upload is exactly the failure this page exists to prevent, so a permanently
+ * true caveat could not be the answer: only a state can be.
+ *
+ * THE EVALUATION IS BORROWED, NOT REBUILT. {@see LegacyRmeActivationStateService}
+ * composes the services that already decide admission and wave state; this class
+ * adds no rule of its own and remains a report with no authority.
  *
  * PII POLICY. Counts, limits, branch codes and labels. Never a patient name, a
  * Nomor RM, a KTP/NIK, a filename or a document path.
@@ -55,6 +68,7 @@ class LegacyImportHubService
         private readonly BranchService $branches,
         private readonly BranchContext $context,
         private readonly FeatureFlagService $flags,
+        private readonly LegacyRmeActivationStateService $legacyRmeActivation,
     ) {}
 
     public function enabled(): bool
@@ -131,10 +145,17 @@ class LegacyImportHubService
             ? []
             : $this->quota->consumedMatrixToday($types, $branchIds);
 
+        // Evaluated ONCE for the page, not once per card and never once per
+        // branch row: the admission/wave state is deployment-wide, and the
+        // per-branch verdicts are resolved in a single pass inside the state
+        // service. Recomputing it per card would multiply queries for an
+        // answer that cannot differ between them.
+        $legacyRmeState = $this->legacyRmeActivationState($branches);
+
         $cards = [];
 
         foreach ($types as $type) {
-            $cards[] = $this->card($user, $type, $branches, $matrix);
+            $cards[] = $this->card($user, $type, $branches, $matrix, $legacyRmeState);
         }
 
         return [
@@ -155,10 +176,18 @@ class LegacyImportHubService
     /**
      * @param  list<Branch>  $branches
      * @param  array<string, int>  $matrix
+     * @param  array<string, mixed>|null  $legacyRmeState  evaluated once by the
+     *                                                     caller; null for types
+     *                                                     that carry no extra gates
      * @return array<string, mixed>
      */
-    private function card(User $user, string $type, array $branches, array $matrix): array
-    {
+    private function card(
+        User $user,
+        string $type,
+        array $branches,
+        array $matrix,
+        ?array $legacyRmeState = null,
+    ): array {
         $registry = $this->registry($type);
 
         $limit = $this->quota->limitFor($type);
@@ -206,6 +235,9 @@ class LegacyImportHubService
             ];
         }
 
+        $hasAdditionalGates = $type === LegacyImportType::LEGACY_RME;
+        $gates = $hasAdditionalGates ? $legacyRmeState : null;
+
         return [
             'type' => $type,
             'label' => LegacyImportType::label($type),
@@ -227,18 +259,54 @@ class LegacyImportHubService
             'index_route' => $routeRegistered ? $indexRoute : null,
             'create_route' => $createRoute !== null && Route::has($createRoute) ? $createRoute : null,
 
-            'status' => $this->status($flagEnabled, $routeRegistered, $mayView),
+            'status' => $this->status($flagEnabled, $routeRegistered, $mayView, $gates),
 
-            // Legacy RME alone carries admission + wave gates this page cannot
-            // evaluate without a branch code and an operator assignment. Saying
-            // so is the difference between a status page and a promise.
-            'has_additional_gates' => $type === LegacyImportType::LEGACY_RME,
+            // Whether this TYPE is governed by gates beyond the flag and the
+            // route. A property of the capability, fixed for its lifetime.
+            'has_additional_gates' => $hasAdditionalGates,
+
+            // What those gates SAY RIGHT NOW, or null when the type has none.
+            // The pair matters: the first answers "could this be shut for a
+            // reason this page used to be unable to see?", the second answers
+            // "is it?". Publishing only the first is what let a fully closed
+            // migration read as "Aktif".
+            'additional_gates' => $gates,
 
             'rows' => $rows,
         ];
     }
 
-    private function status(bool $flagEnabled, bool $routeRegistered, bool $mayView): string
+    /**
+     * The evaluated legacy RME activation state, or null when the archive
+     * module is not installed on this deployment.
+     *
+     * Guarded because the hub also serves Legacy Patient, which predates the
+     * archive entirely: a hub page must not 500 because a capability it merely
+     * links to cannot be resolved.
+     *
+     * @param  list<Branch>  $branches
+     * @return array<string, mixed>|null
+     */
+    private function legacyRmeActivationState(array $branches): ?array
+    {
+        if (! in_array(LegacyImportType::LEGACY_RME, $this->typeKeys(), true)) {
+            return null;
+        }
+
+        try {
+            return $this->legacyRmeActivation->state(array_map(
+                static fn (Branch $branch): string => (string) $branch->code,
+                $branches,
+            ));
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $gates  evaluated extra gates, or null
+     */
+    private function status(bool $flagEnabled, bool $routeRegistered, bool $mayView, ?array $gates = null): string
     {
         if (! $routeRegistered) {
             return 'tidak_tersedia';
@@ -250,6 +318,13 @@ class LegacyImportHubService
 
         if (! $mayView) {
             return 'tanpa_akses';
+        }
+
+        // A capability whose own gates are shut cannot accept a single upload,
+        // so calling it "aktif" would be the same lie the flag check above
+        // already refuses to tell — one gate further down the chain.
+        if ($gates !== null && $gates['open'] === false) {
+            return 'belum_dibuka';
         }
 
         return 'aktif';

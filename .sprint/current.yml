@@ -1,54 +1,53 @@
-# FEATURE-LEGACY-IMPORT-HUB-1 — Sprint Manifest
+# FEATURE-LEGACY-IMPORT-HUB-1A-RME-ACTIVATION — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. The three legacy importers that already exist — Legacy
-# Patient (Sprint 62.3), Legacy RME (LEGACY-RME-PDF-1A..ROLL-4) and Legacy
-# Odontogram (FIX-04b) — are given one canonical navigation home, one canonical
-# daily admission ceiling, and one place that reports whether each is actually
-# usable. Nothing about how a document is validated, resolved to a branch,
-# reviewed, published, voided or read changes.
+# WHAT THIS SPRINT IS. FEATURE-LEGACY-IMPORT-HUB-1 left Legacy Patient and
+# Legacy Odontogram end-to-end usable and Legacy RME with its CAPABILITY ON but
+# NO branch admission and NO active migration wave — so every Legacy RME upload
+# would still be refused server-side. This sprint closes that activation gap and
+# makes the distinction impossible to mistake again.
 #
-# WHAT IS GENUINELY NEW. Exactly two things:
+# WHAT IS GENUINELY NEW IN CODE. Exactly one thing: the Import Hub stops
+# publishing a permanently-true disclaimer for Legacy RME and instead REPORTS the
+# evaluated operational state, composed read-only from the authorities that
+# already decide it (LegacyRmeFeatureGuard, LegacyRmeBranchAdmissionService,
+# LegacyRmeWaveBindingService, LegacyRmeOperationsGateService). Before this
+# sprint the hub said "Aktif" for a surface that refuses every upload — the exact
+# lie its own docblock says the page exists to prevent.
 #
-#   1. `ops_legacy_import_daily_quotas` and the service over it — ONE ceiling of
-#      100 accepted records per branch per clinical day PER IMPORT TYPE, applied
-#      to all three importers through the same code path.
-#   2. `settings.legacy-imports.index` — the hub landing page and its sidebar
-#      group, which report server-computed status/limit/used/remaining.
+# WHAT IS DELIBERATELY NOT CHANGED. No gate is weakened, widened or reordered.
+# No decision moves into the hub: the new state object composes the existing
+# authorities and re-implements none of them, so it can only report what those
+# services already decide. Admission remains config/deploy-time authority, the
+# wave row remains the operational mirror, ROLL-4 can still only narrow, the
+# branch is still derived from the Nomor RM and never read from a request, the
+# per-branch/clinical-day ceiling stays 100, published archives stay immutable
+# and corrections stay VOID + replacement.
 #
-# WHAT IS DELIBERATELY NOT REPLACED. Legacy RME keeps its ROLL-4 wave/branch
-# quota. That counter answers a DIFFERENT question (how much may this WAVE take
-# today, across every branch in it) and the hub ceiling cannot express it. Both
-# apply; the tighter one wins; neither can widen the other. Replacing the wave
-# quota with the hub quota would delete a governance control, which is the one
-# thing a consolidation sprint must never do.
-#
-# schema_change=true is literal: one additive table, no column dropped, no
-# backfill, no destructive statement.
-#
-# security_impact=true is literal: routes/permission middleware and the sidebar
-# authorization surface are touched. No permission is created, widened, or
-# granted to a role that did not already hold it — the hub is reachable only by
-# an actor who already holds one of the three capabilities' own permissions.
-#
-# Impact flags — MUST match reality.
-id: FEATURE-LEGACY-IMPORT-HUB-1
+# THE ACTIVATION ITSELF IS PRODUCTION OPERATIONS, NOT CODE. Admitting the
+# eligible branches and registering/approving/activating the wave happens on the
+# production host through the canonical commands, exactly as the runbook
+# prescribes. This sprint ships the honesty fix, the contract tests that lock the
+# composition, and the governance that records the four distinct states.
+
+id: FEATURE-LEGACY-IMPORT-HUB-1A-RME-ACTIVATION
 type: MODULE_SPRINT
 module: LegacyImport
-title: 'One Legacy Import Hub: canonical navigation, a 100/branch/clinical-day/type ceiling, and honest capability status'
+title: 'Legacy RME activation: branch admission, an active wave, and a hub that reports the real operational state'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true           # new module, service, controller, route, view
-schema_change: true            # one additive quota table
+
+# Impact flags — MUST match reality.
+runtime_change: true           # hub service + view report evaluated gates; new read-only state service
+schema_change: false           # no migration; every table already exists
 frontend_change: false         # Blade only; no JS/CSS/Vite/package asset changed
-security_impact: true          # route middleware + sidebar authorization surface
-branch_isolation_impact: true  # the ceiling is per branch; scope is server-resolved
+security_impact: false         # no permission, policy, route or middleware changed; report-only
+branch_isolation_impact: true  # the reported state is per RM-derived branch code
 ledger_impact: false
-deploy_required: true          # the capability must reach production to be ACTIVE
+deploy_required: true          # the activation must reach production to be usable
 browser_required: false        # HTTP-level assertions cover the surface
 test_profiles:
   - focused
   - permission_regression
-
-go_tag: feature-legacy-import-hub-1-go
+go_tag: feature-legacy-import-hub-1a-rme-activation-go
 
 # Carried forward from the closure manifest this sprint inherits. Not
 # boilerplate: dropping either makes the LegacyRme closure contract fail.
