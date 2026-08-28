@@ -64,7 +64,7 @@ It returns a stable machine `blocker` code and never operator-facing prose:
 ```
 CAPABILITY_OFF · NO_BRANCH_ADMITTED · APPROVAL_MISSING · APPROVAL_INCOMPLETE
 WAVE_NOT_DECLARED · WAVE_NOT_REGISTERED · WAVE_NOT_ACTIVE
-WAVE_BINDING_MISMATCH · WAVE_UNREADABLE
+WAVE_BINDING_MISMATCH · WAVE_UNREADABLE · STATE_UNAVAILABLE
 ```
 
 Blocker order mirrors the runtime chain, so an operator is always sent to the

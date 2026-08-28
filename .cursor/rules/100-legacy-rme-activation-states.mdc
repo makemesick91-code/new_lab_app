@@ -41,6 +41,10 @@ green. Never report a capability as active on the strength of a flag alone.
   `aktif`.
 - Every closure reports a stable machine `blocker` code; operator-facing prose
   lives in the view, never in the service.
+- **A failure to EVALUATE the gates is not an ABSENCE of gates.** An exception
+  must report `STATE_UNAVAILABLE` with `open = false` and the same key shape a
+  real evaluation returns — never `null`, which means "this type has no extra
+  gates" and sends the card straight back to `aktif`.
 - Blockers are ordered like the runtime chain, so the one reported is the first
   control actually refusing.
 

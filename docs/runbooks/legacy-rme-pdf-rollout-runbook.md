@@ -279,11 +279,17 @@ still taken inside the transaction that writes it.
 
 `CAPABILITY_OFF` · `NO_BRANCH_ADMITTED` · `APPROVAL_MISSING` ·
 `APPROVAL_INCOMPLETE` · `WAVE_NOT_DECLARED` · `WAVE_NOT_REGISTERED` ·
-`WAVE_NOT_ACTIVE` · `WAVE_BINDING_MISMATCH` · `WAVE_UNREADABLE`
+`WAVE_NOT_ACTIVE` · `WAVE_BINDING_MISMATCH` · `WAVE_UNREADABLE` ·
+`STATE_UNAVAILABLE`
 
 They are ordered like the runtime chain, so the reported blocker is always the
 first control actually refusing — never a later one that would send an operator
 to fix the wrong thing.
+
+`STATE_UNAVAILABLE` is the odd one out: it means the gate state could not be
+evaluated at all. It is reported as SHUT, never as "no gates apply" — an
+unevaluated gate must never read as an open one. Treat it as an infrastructure
+fault (database or wave store unreachable), not as a governance decision.
 
 ### Activating a wave
 
