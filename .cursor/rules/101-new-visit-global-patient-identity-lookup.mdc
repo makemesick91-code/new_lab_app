@@ -1,0 +1,144 @@
+---
+description: Global patient identity lookup for New Visit registration — and the visit branch authority it must never become
+globs:
+  - "app/Modules/Patient/Services/PatientSelectorSearchService.php"
+  - "app/Modules/Patient/Repositories/PatientRepository.php"
+  - "app/Modules/ClinicVisit/**"
+  - "app/Modules/RmeOnlineContext/**"
+  - "resources/views/rme/visits/**"
+  - "resources/views/components/patient-combobox.blade.php"
+alwaysApply: false
+---
+
+# REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — durable rules
+
+Source of truth: `docs/sprints/revision-new-visit-global-patient-lookup-1.md`.
+GO tag `revision-new-visit-global-patient-lookup-1-go`.
+
+Supersedes section 3 of
+`.cursor/rules/100-new-visit-patient-search-combobox.mdc` (branch-scoped New
+Visit lookup). Everything else in rule 100 remains in force.
+
+## 0. The distinction everything below serves
+
+```
+PATIENT IDENTITY  !=  VISIT BRANCH AUTHORITY
+```
+
+A patient may come from ANY branch. The visit happens at the OPERATOR's current
+authorized branch. Both halves must hold at once; either alone is a defect.
+
+## 1. Global patient identity lookup
+
+An authorized New Visit registration operator may search the **global RME
+patient registry** by patient **name** or **Nomor RM**, regardless of which
+branch the patient originally registered at, and without changing work branch.
+
+- `SEARCH_ALL_BRANCHES_BY_NAME = true`
+- `SEARCH_ALL_BRANCHES_BY_RM = true`
+
+"The registry" is every **active, RME-enabled** branch, plus legacy patients with
+`branch_id` null. It is NOT every row in `mst_patients`: MAIN, disabled and
+non-RME branches stay out, because no visit may be registered there.
+
+## 2. Global is not unrestricted
+
+Global widens the scope. It removes no gate:
+
+- The endpoint requires authentication and the ClinicVisit `create` ability.
+- A context-bound operator (Admin Klinik / Perawat / Kasir) with **no valid
+  working context** still reads **nothing**. Someone who is not working anywhere
+  cannot register anywhere, so they may not read the registry either.
+- `MIN_QUERY_LENGTH` (2) and `RESULT_LIMIT` (15) are unchanged server constants.
+  A blank or one-character query must never dump the registry.
+- The response still carries exactly `id, name, medical_record_number,
+  branch_label`. Never phone, WhatsApp, KTP/NIK, address, date of birth, email,
+  occupation or anything clinical. The wider scope makes this ceiling **more**
+  important, not less.
+
+Do not add a "browse all patients" endpoint, blank-query results, a total count,
+or pagination through the registry.
+
+## 3. The visit branch comes from the operator, never from the patient
+
+When a visit is created:
+
+- `visit.branch_id` = the operator's **authorized daily working context**.
+- NOT the selected patient's `branch_id`.
+- NOT the branch code embedded in the patient's Nomor RM.
+- NOT a request `branch_id` — for a context-bound operator that value is
+  overwritten server-side in `StoreClinicVisitRequest::prepareForValidation()`
+  before validation ever runs.
+
+`branch_label` in a search result is **informational disambiguation only**. It is
+not authority for anything.
+
+## 4. Selecting a cross-branch patient is not a transfer
+
+It must not:
+
+- change the operator's `DailyBranchContext`, or require Super Admin approval;
+- rewrite the patient's `medical_record_number`;
+- move the patient's `branch_id`;
+- create a duplicate or cloned patient row.
+
+The existing patient master row is reused as-is. Super Admin approval governs an
+**operator moving work branch**, never **serving a patient who originated
+elsewhere**.
+
+## 5. Search selectability == submit selectability
+
+Both resolve through the single `PatientSelectorSearchService`
+(`search()` / `isSelectable()` / `selectedOption()`). They must never diverge:
+offering a row the submit would reject, or rejecting a row the search offered,
+are both defects. Visibility is still not authorization — `patient_id` is
+re-asserted server-side on every submit.
+
+## 6. Global IDENTITY is not global CLINICAL HISTORY
+
+Being findable here grants exactly enough to identify and select a patient for a
+new authorized visit. It grants nothing else:
+
+- no cross-branch visit history,
+- no cross-branch RME or medical record,
+- no cross-branch odontogram,
+- no cross-branch payment, invoice or receivable history,
+- no private clinical attachments.
+
+Do not cite this rule to widen any of those. In particular,
+`ClinicVisitController::patientVisitOptions` lacking a branch check is a
+**recorded, separate finding** — this rule is not its justification.
+
+## 7. Do not globalise `RmeWorkingBranchScope`
+
+`RmeWorkingBranchScope` stays the canonical working-branch authority for the
+visit list, patient queue, RME reports, cashier, receivables and every other
+operational surface. Only the New Visit registration identity lookup is global.
+Do not relax the scope service itself to achieve a lookup requirement.
+
+## 8. Legacy RME is a different domain — do not conflate
+
+```
+LEGACY RME:      the RM branch code may determine the Legacy evidence branch.
+NATIVE NEW VISIT: DailyBranchContext determines the visit branch.
+```
+
+These rules are deliberately different. Never transplant one onto the other.
+
+## 9. The runtime guard from the predecessor sprint stands
+
+`PatientRepository::LIKE_ESCAPE` must never be a backslash: PDO on PHP <= 8.3
+with `pdo_pgsql` treats one inside a single-quoted literal as escaping the
+closing quote and the statement loses its placeholders. Keep the escape
+character and the escaping helper reading the same constant, keep the
+placeholder-parity guard suite, and keep both patient-search suites plus
+`NewVisitGlobalPatientLookupTest` declared in
+`config/ci_runner.php` `critical_gate_mandatory_suites` and selected by a token
+in **both** critical gate variants. SQLite green is not PostgreSQL green.
+
+## 10. Frontend
+
+The combobox already renders `name — RM · branch label` and needs no redesign
+for this rule. Keep the debounce at 300 ms, keep the monotonic request sequence
+and AbortController stale-response protection, and keep `patient_id` settable
+only by selecting a returned result.

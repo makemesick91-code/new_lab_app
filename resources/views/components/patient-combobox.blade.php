@@ -1,5 +1,6 @@
 {{--
     REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1
+    REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1
 
     ONE control for choosing a registered patient. It replaces the old pair (a
     search box that only hid <option> elements, plus a native <select> carrying
@@ -7,8 +8,14 @@
 
     The visible field is a combobox; the only thing that ever submits is the
     hidden `patient_id`, and that is set exclusively by selecting a returned
-    result. The result list is fetched from an authorized, branch-scoped,
-    server-bounded endpoint — nothing about the patient set is rendered here.
+    result. The result list is fetched from an authorized, server-bounded
+    endpoint — nothing about the patient set is rendered here.
+
+    The lookup searches the whole RME patient registry, so a patient registered
+    at another branch is findable. Each row therefore prints its origin branch
+    under the name: that label disambiguates identical names, and it is NOT the
+    branch the visit will be created at. The visit always follows the operator's
+    own authorized working branch.
 
     Dusk hooks `patient-search` / `patient-select` are preserved so the existing
     RME create smoke test keeps asserting the real control.
@@ -160,5 +167,6 @@
 
     <p class="text-xs text-ink-muted">
         Ketik nama pasien atau nomor RM, lalu pilih salah satu hasil pencarian.
+        Pasien dari cabang lain juga dapat ditemukan; kunjungan tetap dibuat di cabang kerja Anda.
     </p>
 </div>

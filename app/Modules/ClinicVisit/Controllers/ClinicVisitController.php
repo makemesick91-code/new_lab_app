@@ -177,8 +177,14 @@ class ClinicVisitController extends Controller
         // preloaded any more. It used to ship every patient row (across every
         // branch, phone numbers included) into this page's HTML for the browser
         // to filter. The combobox now asks `rme.visits.patient-search`, which
-        // applies the working-branch scope server-side and returns at most
+        // decides scope server-side and returns at most
         // PatientSelectorSearchService::RESULT_LIMIT identity-only rows.
+        //
+        // REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — that scope is now the
+        // whole RME patient registry, not this operator's working branch. The
+        // page's own `branch_id` (below, from the daily context) is unaffected:
+        // it is the branch the VISIT is created at, which is a separate
+        // authority from which patients may be found.
         return view('rme.visits.create', [
             'doctors' => $doctors,
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
@@ -191,13 +197,14 @@ class ClinicVisitController extends Controller
     }
 
     /**
-     * REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — authorized patient lookup
-     * for the single "Kunjungan Baru" combobox.
+     * REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — authorized GLOBAL patient
+     * identity lookup for the single "Kunjungan Baru" combobox.
      *
      * Gated by the same `create` ability as the page that uses it, so someone who
-     * may not register a visit cannot enumerate patients through it. Scope and
-     * result ceiling live in {@see PatientSelectorSearchService}; this method
-     * only hands the request's term over and returns what it is given.
+     * may not register a visit cannot enumerate the registry through it. Scope,
+     * fail-closed behaviour and the result ceiling all live in
+     * {@see PatientSelectorSearchService}; this method only hands the request's
+     * term over and returns what it is given.
      */
     public function patientSearch(PatientSearchRequest $request, PatientSelectorSearchService $search): JsonResponse
     {

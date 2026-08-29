@@ -35,24 +35,34 @@ Results come from `GET rme/visits/patient-search`
 (`rme.visits.patient-search` → `ClinicVisitController::patientSearch`), gated by
 the ClinicVisit `create` ability.
 
-## 3. Branch scope is `RmeWorkingBranchScope`, never re-derived
+## 3. Branch scope — SUPERSEDED by rule 101
 
-`PatientSelectorSearchService` takes its branch set from
-`RmeWorkingBranchScope::branchIdsFor()` — the same canonical authority
-`ClinicVisitPolicy` uses. Consequences that must not regress:
+> **This section's original rule is no longer in force.** It required
+> `PatientSelectorSearchService` to scope results to
+> `RmeWorkingBranchScope::branchIdsFor()`, so a context-bound role searched only
+> its own working branch. **REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1**
+> deliberately replaced that with a GLOBAL patient identity lookup. See
+> `.cursor/rules/101-new-visit-global-patient-identity-lookup.mdc`, which is the
+> authority for the branch dimension of this control.
 
-- A context-bound role (Admin Klinik / Perawat / Kasir) searches **only** its
-  active working branch.
+What survives from the original rule, unchanged and still binding:
+
 - No valid working context ⇒ **empty** scope, empty results. Fail closed. Never
   a MAIN or first-branch fallback.
-- Doctors are additionally narrowed by `DoctorPatientScopeService`.
-- Legacy patients with `branch_id` null stay selectable for an in-scope operator.
-- Patients of non-RME branches are never selectable.
-- The daily branch lock still owns mid-day moves; the search follows the working
-  branch only after an approved change.
+- Doctors are additionally narrowed by `DoctorPatientScopeService` (a CLINICAL
+  scope, not a branch scope).
+- Legacy patients with `branch_id` null stay selectable.
+- Patients of non-RME / inactive branches are never selectable.
+- The daily branch lock still owns mid-day working-branch moves. What changed is
+  that the search no longer follows the working branch at all — it is global on
+  both sides of an approved change.
+- `RmeWorkingBranchScope` itself is NOT relaxed. It remains the canonical
+  working-branch authority for every other surface; this control simply stopped
+  using it as its identity boundary.
 
 **The endpoint accepts no `branch_id` and no `limit`.** Do not add either. A
-request value must never widen, re-point, or raise the scope or the ceiling.
+request value must never widen, narrow, re-point, or raise the scope or the
+ceiling — and must never decide the branch a visit is created at.
 
 ## 4. Least disclosure
 
@@ -94,9 +104,14 @@ where it cannot be tested.
 `StoreClinicVisitRequest` re-asserts the submitted `patient_id` through
 `PatientSelectorSearchService::isSelectable()` — the **same** scope the search
 uses, so what is selectable and what is submittable cannot drift apart. A crafted
-id for another working branch, or for a non-RME branch, is rejected even though
-the dropdown would never have offered it. `Rule::exists` alone is not enough and
-must not be the only guard again.
+id for a non-RME branch, for a nonexistent patient, or from an operator with no
+valid working context is rejected even though the dropdown would never have
+offered it. `Rule::exists` alone is not enough and must not be the only guard
+again.
+
+Under rule 101 a patient from **another RME branch** is a legitimate selection,
+so it is accepted — but the check itself is untouched, and it never influences
+the branch the visit is created at.
 
 ## 9. Do not conflate with the cross-branch RM lookup
 

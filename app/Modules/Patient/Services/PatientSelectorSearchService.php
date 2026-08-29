@@ -3,6 +3,7 @@
 namespace App\Modules\Patient\Services;
 
 use App\Models\User;
+use App\Modules\Branch\Services\BranchService;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RME\Services\DoctorPatientScopeService;
@@ -19,19 +20,43 @@ use Illuminate\Database\Eloquent\Builder;
  * server decides what may be seen, and only the four identity fields the
  * dropdown actually draws come back.
  *
+ * REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 supersedes this service's original
+ * branch-scoped rule. The lookup is now GLOBAL PATIENT IDENTITY LOOKUP:
+ *
+ *     PATIENT IDENTITY  !=  VISIT BRANCH AUTHORITY
+ *
+ * An authorized registration operator searches the whole RME patient registry by
+ * name or Nomor RM, so a patient who registered at Telkomas can be served at
+ * Landak without anyone switching work branch. What that emphatically does NOT
+ * change is where the visit happens: the new ClinicVisit branch still comes from
+ * the operator's authorized daily working context, never from the patient's RM
+ * origin branch and never from a request `branch_id`. Selecting a cross-branch
+ * patient reuses the existing master row — no RM rewrite, no duplicate, no
+ * branch move, no context change.
+ *
+ * Equally deliberate: global IDENTITY discovery is not global CLINICAL HISTORY
+ * access. Being findable here grants exactly enough to identify and select a
+ * patient for a new authorized visit. Visit history, RME, odontogram and payment
+ * authorization are untouched by this service and stay independently scoped.
+ *
  * Authorization, by design:
- *  - Branch scope is delegated to {@see RmeWorkingBranchScope}, the canonical
- *    "which RME branches may this workspace read?" authority. A context-bound
- *    role (Admin Klinik / Perawat / Kasir) therefore searches ONLY its active
- *    working-branch — the daily branch context — and FAILS CLOSED to no results
- *    when it has no valid context. Scope is never re-derived here and a request
- *    `branch_id` is never consulted, so a crafted query cannot widen it.
+ *  - Registration authority is the gate. The endpoint sits behind the ClinicVisit
+ *    `create` ability, so global does not mean publicly enumerable.
+ *  - Branch scope is the active RME-enabled set — see {@see authorizedBranchIds}
+ *    for why that, and not every row in mst_patients, is "the registry".
+ *  - A context-bound role (Admin Klinik / Perawat / Kasir) still FAILS CLOSED to
+ *    no results when it has no valid working context. That protection predates
+ *    this revision and survives it.
+ *  - {@see RmeWorkingBranchScope} itself is NOT relaxed. It remains the canonical
+ *    working-branch authority for every other surface; this service simply stops
+ *    using it as the identity-lookup boundary.
  *  - Doctors are additionally narrowed to their own RM scope via
  *    {@see DoctorPatientScopeService}, exactly as every other doctor-facing
- *    patient query already is.
- *  - Legacy patients without a Cabang RME (`branch_id` null) stay selectable for
- *    an in-scope operator, mirroring the Lab Request selector; they would
- *    otherwise become unregisterable.
+ *    patient query already is. That is a CLINICAL scope, not a branch scope, and
+ *    widening branch reach for registration must not widen it.
+ *  - Legacy patients without a Cabang RME (`branch_id` null) stay selectable,
+ *    mirroring the Lab Request selector; they would otherwise become
+ *    unregisterable.
  *
  * This is NOT {@see CrossBranchPatientLookupService}. That service is the
  * deliberate cross-branch Nomor RM *duplicate-detection* panel; it never returns
@@ -64,6 +89,7 @@ class PatientSelectorSearchService
         private readonly PatientRepositoryInterface $patients,
         private readonly RmeWorkingBranchScope $workingScope,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly BranchService $branches,
     ) {}
 
     /**
@@ -172,22 +198,55 @@ class PatientSelectorSearchService
     }
 
     /**
+     * REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — the branches whose patients
+     * this registration lookup may read.
+     *
+     * GLOBAL, deliberately. A patient who first registered at Telkomas and
+     * walks into Landak today must be findable by the Landak operator. So the
+     * answer is the whole RME patient registry, not the operator's own branch.
+     *
+     * "The whole registry" means every ACTIVE, RME-enabled branch — the exact
+     * set a governance role (Owner, Supervisor RME, Super Admin) already reads
+     * today, plus the legacy no-branch patients {@see selectableQuery} keeps
+     * selectable. It is not "every row in mst_patients": MAIN, disabled and
+     * non-RME branches stay out, because nobody may register a visit there and
+     * exposing them would widen disclosure past what the change requires.
+     *
+     * Two guards remain, and they are the reason this is a wider scope rather
+     * than an absent one:
+     *
+     *  - Registration authority is still required. The endpoint is behind the
+     *    ClinicVisit `create` ability, so a user who may not register a visit
+     *    cannot enumerate the registry through it.
+     *  - A context-bound operator (Admin Klinik / Perawat / Kasir) still FAILS
+     *    CLOSED without a valid working context. Global means "any branch's
+     *    patient", not "no authority required": someone who is not working
+     *    anywhere cannot register anywhere, so they read nothing here either.
+     *    This is the same protection the working-branch scope gave, kept intact.
+     *
+     * A request value never reaches this method — the combobox sends no branch
+     * at all — so nothing here can be widened or re-pointed from the query
+     * string. And this is NOT a relaxation of {@see RmeWorkingBranchScope}: that
+     * canonical authority is untouched and every other surface it scopes (visit
+     * list, patient queue, RME reports, cashier, receivables) keeps reading one
+     * working branch. Only THIS registration identity lookup is global.
+     *
      * @return array<int, int>
      */
     private function authorizedBranchIds(?User $user): array
     {
-        // Fail closed on an unauthenticated caller. RmeWorkingBranchScope answers
-        // "every active RME branch" for a null user because all of its own
-        // callers sit behind `auth`; this selector is additionally rendered from
-        // a Blade component, so it refuses rather than inheriting an estate-wide
-        // default if it is ever resolved outside a request.
+        // Fail closed on an unauthenticated caller. This selector is also
+        // rendered from a Blade component, so it refuses rather than inheriting
+        // an estate-wide default if it is ever resolved outside a request.
         if ($user === null) {
             return [];
         }
 
-        // Never narrowed by a request value: the combobox sends no branch at all,
-        // and the canonical scope is the whole authority.
-        return $this->workingScope->branchIdsFor($user);
+        if ($this->workingScope->isContextBound($user) && $this->workingScope->activeBranchId($user) === null) {
+            return [];
+        }
+
+        return $this->branches->rmeEnabledIds();
     }
 
     /**

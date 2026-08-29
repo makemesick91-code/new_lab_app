@@ -9,9 +9,12 @@
  * What these tests pin, in order of how badly it would hurt to lose it:
  *  1. The response never carries phone / WhatsApp / KTP / address / DOB / email.
  *     The control this replaced rendered every patient's phone into the page.
- *  2. Branch scope comes from RmeWorkingBranchScope — a context-bound role sees
- *     only its working branch and fails closed without a context — and a request
- *     `branch_id` can never widen it.
+ *  2. SUPERSEDED by REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1. Branch scope
+ *     used to come from RmeWorkingBranchScope, so a context-bound role saw only
+ *     its own working branch. Registration identity lookup is now GLOBAL across
+ *     the RME patient registry. What survives unchanged: it still fails closed
+ *     without a working context, and a request `branch_id` is still never read
+ *     — it can neither widen the lookup nor decide the visit's branch.
  *  3. The page preloads NO patient list.
  *  4. Exactly one patient control exists on the form.
  *  5. `patient_id` is re-authorized at submit time, so being invisible in the
@@ -28,6 +31,7 @@ use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
+use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
@@ -245,7 +249,11 @@ it('denies a user who may not register a visit', function () {
         ->assertForbidden();
 });
 
-it('restricts a context-bound Admin Klinik to its own working branch', function () {
+it('lets a context-bound Admin Klinik reach every RME branch (global identity lookup)', function () {
+    // SUPERSEDED RULE: this used to assert the operator saw ONLY its own working
+    // branch. REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 deliberately reversed
+    // that: a patient registered at Telkomas must be findable by the Landak
+    // operator. The visit branch is a separate authority and is asserted below.
     $admin = rmeAdminClinicUser($this->ldk2);
     $admin->givePermissionTo('manage_clinic_visits');
 
@@ -255,7 +263,7 @@ it('restricts a context-bound Admin Klinik to its own working branch', function 
         ->json('results'))->pluck('id');
 
     expect($ids)->toContain($this->nurbaya->id)
-        ->and($ids)->not->toContain($this->budi->id);
+        ->and($ids)->toContain($this->budi->id);
 });
 
 it('fails closed for a context-bound role with no active working context', function () {
@@ -274,20 +282,35 @@ it('fails closed for a context-bound role with no active working context', funct
     }
 });
 
-it('ignores a request branch_id — it can neither widen nor redirect the scope', function () {
+it('still ignores a request branch_id — it can neither widen, narrow nor redirect the scope', function () {
+    // The endpoint reads no branch at all. Now that the scope is global, the
+    // point is the mirror image of the original one: a crafted branch_id cannot
+    // NARROW the result set to one branch either, and it certainly cannot become
+    // the branch a visit is later created at.
     $admin = rmeAdminClinicUser($this->ldk2);
     $admin->givePermissionTo('manage_clinic_visits');
 
-    $ids = collect($this->actingAs($admin)
+    $withCraftedBranch = collect($this->actingAs($admin)
         ->getJson(route('rme.visits.patient-search', ['q' => 'DG-', 'branch_id' => $this->tkm1->id]))
         ->assertOk()
         ->json('results'))->pluck('id');
 
-    expect($ids)->not->toContain($this->budi->id)
-        ->and($ids)->toContain($this->nurbaya->id);
+    $withoutBranch = collect($this->actingAs($admin)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'DG-']))
+        ->assertOk()
+        ->json('results'))->pluck('id');
+
+    expect($withCraftedBranch->sort()->values()->all())
+        ->toBe($withoutBranch->sort()->values()->all())
+        ->and($withCraftedBranch)->toContain($this->nurbaya->id)
+        ->and($withCraftedBranch)->toContain($this->budi->id);
 });
 
-it('follows the working branch only after an approved mid-day branch change', function () {
+it('keeps the daily branch lock intact while the lookup stays global on both sides of a mid-day change', function () {
+    // SUPERSEDED RULE: the search used to follow the working branch, so this
+    // test proved the daily lock by watching the RESULT SET move. It cannot do
+    // that any more — the lookup is global before and after. The lock itself is
+    // untouched and is still asserted directly, which is the stronger claim.
     $admin = rmeAdminClinicUser($this->ldk2);
     $admin->givePermissionTo('manage_clinic_visits');
 
@@ -295,29 +318,29 @@ it('follows the working branch only after an approved mid-day branch change', fu
         ->getJson(route('rme.visits.patient-search', ['q' => 'DG-']))->json('results'))->pluck('id');
 
     expect($before)->toContain($this->nurbaya->id)
-        ->and($before)->not->toContain($this->budi->id);
+        ->and($before)->toContain($this->budi->id);
 
-    // The daily branch lock owns the move: an operator cannot re-point their own
-    // working branch mid-day, so the search cannot be re-pointed either.
+    // The daily branch lock still owns the move: an operator cannot re-point
+    // their own working branch mid-day just because they can now SEE that
+    // branch's patients.
     expect(fn () => rmeMakeAdminClinicActive($admin, $this->tkm1))
         ->toThrow(ValidationException::class);
 
-    $stillLdk2 = collect($this->actingAs($admin)
-        ->getJson(route('rme.visits.patient-search', ['q' => 'DG-']))->json('results'))->pluck('id');
+    expect(app(RmeWorkingBranchScope::class)->activeBranchId($admin->fresh()))->toBe($this->ldk2->id);
 
-    expect($stillLdk2)->toContain($this->nurbaya->id)
-        ->and($stillLdk2)->not->toContain($this->budi->id);
-
-    // Super Admin approves the single-use change; the search follows immediately.
+    // Super Admin approves the single-use change; the WORKING BRANCH moves...
     $approvals = app(BranchChangeApprovalService::class);
     $request = $approvals->request($admin, (int) $this->tkm1->id, 'Pindah cabang untuk shift sore.');
     $approvals->approve((int) $request->id, userInRole('Super Admin'));
 
-    $after = collect($this->actingAs($admin)
+    expect(app(RmeWorkingBranchScope::class)->activeBranchId($admin->fresh()))->toBe($this->tkm1->id);
+
+    // ...and the lookup is still global, exactly as it was before the move.
+    $after = collect($this->actingAs($admin->fresh())
         ->getJson(route('rme.visits.patient-search', ['q' => 'DG-']))->json('results'))->pluck('id');
 
     expect($after)->toContain($this->budi->id)
-        ->and($after)->not->toContain($this->nurbaya->id);
+        ->and($after)->toContain($this->nurbaya->id);
 });
 
 it('keeps a patient of a non-RME branch out of the selector', function () {
@@ -382,19 +405,30 @@ it('creates the visit for an explicitly selected in-scope patient', function () 
         ->and($visit->queue_number)->not->toBeNull();
 });
 
-it('rejects a crafted patient_id from outside the working branch', function () {
+it('accepts a patient from another branch and creates the visit at the operator branch', function () {
+    // SUPERSEDED RULE: this used to reject a cross-branch patient_id. Under
+    // REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 that selection is legitimate —
+    // and the assertion that matters moves to WHERE the visit lands. The IDOR
+    // guard is unchanged and still proven by the non-RME, nonexistent-id and
+    // no-working-context cases around this one.
     $admin = rmeAdminClinicUser($this->ldk2);
     $admin->givePermissionTo('manage_clinic_visits');
 
     $this->actingAs($admin)
         ->post(route('rme.visits.store'), [
-            'branch_id' => $this->ldk2->id,
-            'patient_id' => $this->budi->id, // TKM1 — never offered to this operator
+            'branch_id' => $this->tkm1->id, // crafted: the patient's origin branch
+            'patient_id' => $this->budi->id, // TKM1 patient, served at Landak today
             'initial_treatment_id' => $this->treatment->id,
         ])
-        ->assertSessionHasErrors('patient_id');
+        ->assertSessionHasNoErrors();
 
-    expect(ClinicVisit::where('patient_id', $this->budi->id)->exists())->toBeFalse();
+    $visit = ClinicVisit::firstWhere('patient_id', $this->budi->id);
+
+    expect($visit)->not->toBeNull()
+        ->and($visit->branch_id)->toBe($this->ldk2->id)
+        ->and($visit->branch_id)->not->toBe($this->tkm1->id)
+        ->and($this->budi->fresh()->medical_record_number)->toBe('DG-TKM1-2025-0002')
+        ->and($this->budi->fresh()->branch_id)->toBe($this->tkm1->id);
 });
 
 it('rejects a patient of a non-RME branch even when the id is real', function () {
@@ -500,13 +534,30 @@ it('prefills a deep-linked patient only when the operator may select it', functi
 
     expect($allowed)->toContain('DG-LDK2-2025-8445');
 
-    $denied = $this->actingAs($admin)
+    // SUPERSEDED HALF: a patient of ANOTHER RME branch is now a legitimate
+    // selection, so a deep link to one legitimately prefills.
+    $crossBranch = $this->actingAs($admin)
         ->get(route('rme.visits.create', ['patient_id' => $this->budi->id]))
         ->assertOk()
         ->getContent();
 
-    expect($denied)->not->toContain('Budi Santoso')
-        ->and($denied)->not->toContain('DG-TKM1-2025-0002');
+    expect($crossBranch)->toContain('DG-TKM1-2025-0002');
+
+    // SURVIVING HALF: a patient outside the registry still prefills nothing, so
+    // a crafted link cannot leak a name the operator may not select.
+    $outsider = Patient::factory()->create([
+        'name' => 'Outsider NonRme',
+        'medical_record_number' => 'DG-NRME-2026-0009',
+        'branch_id' => $this->nonRme->id,
+    ]);
+
+    $denied = $this->actingAs($admin)
+        ->get(route('rme.visits.create', ['patient_id' => $outsider->id]))
+        ->assertOk()
+        ->getContent();
+
+    expect($denied)->not->toContain('Outsider NonRme')
+        ->and($denied)->not->toContain('DG-NRME-2026-0009');
 });
 
 // ---------------------------------------------------------------------------
