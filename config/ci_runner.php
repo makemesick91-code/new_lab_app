@@ -273,6 +273,30 @@ return [
         // that can only ever skip there would read as evidence it is not.
         'tests/Feature/LegacyImportHub/LegacyImportHubQuotaTest.php',
         'tests/Feature/LegacyImportHub/LegacyImportHubIntegrationTest.php',
+
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
+        // for Kasir and Admin Klinik, and the Super Admin approval that is the
+        // only way past it.
+        //
+        // DECLARED ON THE SAME PRECEDENT AS THE TWO ENTRIES ABOVE. This is a
+        // persistent authorization boundary over a FINANCIAL scope: the branch
+        // it pins decides which invoices, receivables and payments a cashier may
+        // act on. Its most likely failure is silent — a future caller that moves
+        // the working branch without going through the guard, or an
+        // `activeContextBranchId()` that stops consulting the durable authority,
+        // leaves every unit assertion green while the lock stops existing.
+        //
+        // Nothing else in the suite would notice: before this sprint the free
+        // re-selection was the DOCUMENTED behaviour, so no existing test
+        // forbids it. Selection is therefore enforced here rather than left to
+        // rest on a filter token a future edit could drop silently.
+        //
+        // The concurrency suite is deliberately NOT declared, for exactly the
+        // reason stated above: it skips on any driver without row locks, and CI
+        // runs SQLite.
+        'tests/Feature/AccessControl/DailyBranchContextLockTest.php',
+        'tests/Feature/AccessControl/DailyBranchContextBypassTest.php',
+        'tests/Feature/AccessControl/BranchChangeApprovalTest.php',
         'tests/Feature/LegacyImportHub/LegacyImportHubSurfaceTest.php',
     ],
 

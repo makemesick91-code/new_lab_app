@@ -222,7 +222,13 @@ use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Policies\RmeInvoicePolicy;
 use App\Modules\RmeInvoice\Repositories\RmeInvoiceRepository;
 use App\Modules\RmeInvoice\Repositories\RmePaymentRepository;
+use App\Modules\RmeOnlineContext\Interfaces\BranchChangeRequestRepositoryInterface;
+use App\Modules\RmeOnlineContext\Interfaces\DailyBranchContextRepositoryInterface;
 use App\Modules\RmeOnlineContext\Interfaces\UserOnlineContextRepositoryInterface;
+use App\Modules\RmeOnlineContext\Models\BranchChangeRequest;
+use App\Modules\RmeOnlineContext\Policies\BranchChangeRequestPolicy;
+use App\Modules\RmeOnlineContext\Repositories\BranchChangeRequestRepository;
+use App\Modules\RmeOnlineContext\Repositories\DailyBranchContextRepository;
 use App\Modules\RmeOnlineContext\Repositories\UserOnlineContextRepository;
 use App\Modules\Tariff\Interfaces\TariffRepositoryInterface;
 use App\Modules\Tariff\Models\Tariff;
@@ -287,6 +293,10 @@ class RepositoryServiceProvider extends ServiceProvider
         LabPickupTaskRepositoryInterface::class => LabPickupTaskRepository::class,
         AttachmentRepositoryInterface::class => AttachmentRepository::class,
         AuditLogRepositoryInterface::class => AuditLogRepository::class,
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the durable daily working-branch
+        // authority and its Super Admin approval trail.
+        DailyBranchContextRepositoryInterface::class => DailyBranchContextRepository::class,
+        BranchChangeRequestRepositoryInterface::class => BranchChangeRequestRepository::class,
         StatusLogRepositoryInterface::class => StatusLogRepository::class,
         AssignmentRepositoryInterface::class => AssignmentRepository::class,
         WorkLogRepositoryInterface::class => WorkLogRepository::class,
@@ -473,6 +483,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LegacyOdontogramRecord::class => LegacyOdontogramRecordPolicy::class,
         // LEGACY-RME-PDF-ROLL-4 — migration operations control plane
         LegacyRmeMigrationWave::class => LegacyRmeMigrationWavePolicy::class,
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
+        BranchChangeRequest::class => BranchChangeRequestPolicy::class,
     ];
 
     public function register(): void
@@ -544,6 +556,19 @@ class RepositoryServiceProvider extends ServiceProvider
         // Super Admin may do inside the module, and they gate the non-SATUSEHAT
         // clinical-diagnosis routes that share some of them.
         Gate::define('satusehat.access', fn (User $user) => $user->hasRole('Super Admin'));
+
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — who may decide a working-branch
+        // change request. Defined once and consumed by BOTH the approver route
+        // group (`can:branch-change-request.approve`) and the sidebar, so the
+        // menu and the server-side boundary cannot drift apart. Deliberately a
+        // role check and not a new permission: approval authority here IS the
+        // canonical Super Admin role, and inventing a permission would let it be
+        // granted to someone the daily lock is meant to constrain.
+        //
+        // This gate answers "may you reach the approval surface at all". It does
+        // NOT decide self-approval — Gate::before short-circuits it for a Super
+        // Admin. That comparison lives in BranchChangeApprovalService.
+        Gate::define('branch-change-request.approve', fn (User $user) => $user->hasRole('Super Admin'));
 
         // Super Admin can do everything (PRD §5).
         Gate::before(function (User $user, string $ability) {

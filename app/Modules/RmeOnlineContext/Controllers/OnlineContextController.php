@@ -9,6 +9,7 @@ use App\Modules\RmeOnlineContext\Requests\StartAdminClinicOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartDoctorOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartKasirOnlineContextRequest;
 use App\Modules\RmeOnlineContext\Requests\StartPerawatOnlineContextRequest;
+use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use App\Modules\RmeOnlineContext\Services\DoctorUserResolver;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,7 @@ class OnlineContextController extends Controller
         private readonly BranchService $branches,
         private readonly ClinicVisitService $visits,
         private readonly DoctorUserResolver $doctorResolver,
+        private readonly DailyBranchContextService $dailyBranchContext,
     ) {}
 
     public function select(Request $request): View|RedirectResponse
@@ -52,6 +54,15 @@ class OnlineContextController extends Controller
 
         $doctorAllowedBranches = $linkedDoctor?->branches ?? collect();
 
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — a Kasir or Admin Klinik who has
+        // already committed today sees the locked branch and the request route,
+        // not a free dropdown that would only fail on submit. The selector is
+        // still rendered for the roles whose day is open, and the server-side
+        // guard remains the boundary either way.
+        $dailyContext = $this->dailyBranchContext->currentFor($user);
+        $lockedBranchId = $dailyContext ? (int) $dailyContext->current_branch_id : null;
+        $rmeBranches = $this->branches->listRmeEnabled();
+
         return view('rme.online-context.select', [
             'requiresDoctor' => $requiresDoctor,
             'requiresAdmin' => $requiresAdmin,
@@ -59,9 +70,13 @@ class OnlineContextController extends Controller
             'requiresKasir' => $requiresKasir,
             'linkedDoctor' => $linkedDoctor,
             'doctorAllowedBranches' => $doctorAllowedBranches,
-            'rmeBranches' => $this->branches->listRmeEnabled(),
+            'rmeBranches' => $rmeBranches,
             'roomsByBranch' => $this->visits->activeRoomsByRmeBranch(),
             'currentContext' => $this->onlineContext->currentContextFor($user),
+            'dailyContext' => $dailyContext,
+            'lockedBranch' => $lockedBranchId
+                ? $rmeBranches->firstWhere('id', $lockedBranchId)
+                : null,
         ]);
     }
 

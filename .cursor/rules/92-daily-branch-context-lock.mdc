@@ -1,0 +1,122 @@
+---
+description: Daily working-branch lock for Kasir and Admin Klinik — durable server-side authority, Super Admin approved mid-day changes
+globs:
+  - "app/Modules/RmeOnlineContext/**"
+  - "app/Modules/Branch/Services/BranchContext.php"
+  - "database/migrations/*daily_branch_contexts*"
+  - "database/migrations/*branch_change_requests*"
+alwaysApply: false
+---
+
+# FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — durable rules
+
+## 1. The contract
+
+`Kasir` and `Admin Klinik` choose their working branch **once per clinical day**.
+That first selection is free. Every later, **different** branch is refused until a
+Super Admin approves it. Re-selecting the **same** branch is always allowed and
+idempotent. A new clinical day grants one new free selection.
+
+`Doctor` and `Perawat` are **not** locked. Do not extend the lock to another role
+without an explicit sprint — `DailyBranchContextService::LOCKED_ROLE_CONTEXTS` is
+the single declaration and is pinned by a test.
+
+## 2. The authority is a table, never the session
+
+`trx_daily_branch_contexts.current_branch_id` is the working-branch authority for
+a locked role. It **outranks** `trx_user_online_contexts`, which is only a session
+representation and is rewritten on every session start.
+
+`UserOnlineContextService::activeContextBranchId()` applies that override. It
+replaces a branch and never resurrects a `null`: an offline operator still has no
+working context.
+
+Never make the session, a cookie, a cache entry or a request field the authority.
+A disabled dropdown is not the feature.
+
+## 3. The guard lives in the service
+
+`UserOnlineContextService::startAdminClinicSession()` and `startKasirSession()`
+are the only paths that move a locked role's branch. The guard
+(`DailyBranchContextService::assertSelectable()`) is called there, **after** the
+branch-eligibility assert, so an approved switch can never become a route to a
+branch the user was not entitled to work in.
+
+Do not add a second branch-mutation path that skips the service.
+
+## 4. The uniqueness key is `(user_id, clinical_date)` — never with role_context
+
+A user holding both locked roles must not be able to open one role context at one
+branch and the other at a second branch on the same day. One human, one clinical
+day, one branch. `role_context` is audit metadata only.
+
+## 5. The clinical day is `ClinicalClock` (Asia/Makassar)
+
+Never `Carbon::today()`, never a UTC-derived date. The lock interval is a
+**calendar day**, not a rolling 24 hours from the first selection.
+
+## 6. An approval is an event, not a credential
+
+The switch is applied **inside** the approval transaction. There is no reusable
+approved token, so replay is impossible by construction. Never introduce an
+"approved, apply later" step.
+
+Every binding is re-asserted **under the row lock** at decision time:
+- **user** — the requester's context is the one locked, never the approver's;
+- **source** — the live context must still sit on `source_branch_id`, else the
+  request is stale and refused;
+- **destination** — re-validated for eligibility; an approval is **never** a grant
+  of access to a branch the user could not otherwise work in;
+- **clinical day** — a previous-day request is refused **without relying on a
+  cron**. Any `EXPIRED` stamping is housekeeping, done outside the decision
+  transaction (a write inside it is rolled back by the refusal).
+
+## 7. Self-approval
+
+`Gate::before` grants a Super Admin every ability before any policy runs, so a
+policy clause is **not** the self-approval boundary. The enforced comparison of
+requester and approver lives in `BranchChangeApprovalService`. Keep it there.
+
+## 8. No new permission
+
+Approval authority is the canonical `Super Admin` role, published once as the
+`branch-change-request.approve` gate and consumed by **both** the route group and
+the sidebar. Do not invent an `approve_branch_switch` permission — it could be
+granted to someone the lock is meant to constrain. The sidebar is never the
+boundary.
+
+## 9. Mass assignment
+
+`status`, `decided_by_user_id`, `decided_at`, `decision_note`, `applied_at` are
+**not** fillable on `BranchChangeRequest`; `current_branch_id` is written only by
+the services. Because `update()` honours `$fillable`, the repository uses
+`forceFill` for these server-derived writes, and `create()` states the initial
+`pending` status explicitly. If you add a decision field, keep it out of
+`$fillable` and write it through the repository.
+
+## 10. Concurrency invariants are database-level
+
+- `UNIQUE(user_id, clinical_date)` — two racing first selections cannot both win;
+  the loser re-reads the committed row and is judged against it.
+- partial unique index `WHERE status = 'pending'` — at most one open request per
+  user per clinical day.
+- `lockForUpdate()` on both the context and the request row.
+
+Do not replace any of these with an application-level check: the check they
+replace is raceable by exactly the double-submit it is meant to stop.
+
+Row locks are unobservable on SQLite. Concurrency proofs belong in
+`DailyBranchContextConcurrencyTest`, which runs on PostgreSQL 16 and **skips out
+loud** elsewhere.
+
+## 11. Migrations
+
+Additive only. Never `migrate:fresh` or `db:wipe` on production. Branch foreign
+keys are `restrictOnDelete` so a branch with working history cannot be deleted
+out from under the audit trail.
+
+## 12. Audit
+
+Every request, approval, rejection and cancellation is written to `sys_audit_logs`
+through the shared `AuditLogService`, with ids, dates and the decision only — no
+patient data and no financial figures.

@@ -1,53 +1,50 @@
-# FEATURE-LEGACY-IMPORT-HUB-1A-RME-ACTIVATION — Sprint Manifest
+# FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. FEATURE-LEGACY-IMPORT-HUB-1 left Legacy Patient and
-# Legacy Odontogram end-to-end usable and Legacy RME with its CAPABILITY ON but
-# NO branch admission and NO active migration wave — so every Legacy RME upload
-# would still be refused server-side. This sprint closes that activation gap and
-# makes the distinction impossible to mistake again.
+# WHAT THIS SPRINT IS. Kasir and Admin Klinik pick their working branch once per
+# clinical day. After that first free selection the branch is LOCKED, and moving
+# it requires a Super Admin approval bound to that one user, that one source,
+# that one destination and that one clinical day.
 #
-# WHAT IS GENUINELY NEW IN CODE. Exactly one thing: the Import Hub stops
-# publishing a permanently-true disclaimer for Legacy RME and instead REPORTS the
-# evaluated operational state, composed read-only from the authorities that
-# already decide it (LegacyRmeFeatureGuard, LegacyRmeBranchAdmissionService,
-# LegacyRmeWaveBindingService, LegacyRmeOperationsGateService). Before this
-# sprint the hub said "Aktif" for a surface that refuses every upload — the exact
-# lie its own docblock says the page exists to prevent.
+# WHY IT IS NOT A UI SPRINT. Before this sprint a cashier could change branch as
+# often as they liked simply by re-opening the online-context selector — and the
+# financial scope of the cashier workspace followed. A disabled dropdown would
+# have stopped an honest operator and nobody else, so the authority is a durable
+# row in `trx_daily_branch_contexts` that outranks the session-scoped online
+# context. The lock therefore survives logout, a second browser, a raw POST and
+# a tampered context row.
 #
-# WHAT IS DELIBERATELY NOT CHANGED. No gate is weakened, widened or reordered.
-# No decision moves into the hub: the new state object composes the existing
-# authorities and re-implements none of them, so it can only report what those
-# services already decide. Admission remains config/deploy-time authority, the
-# wave row remains the operational mirror, ROLL-4 can still only narrow, the
-# branch is still derived from the Nomor RM and never read from a request, the
-# per-branch/clinical-day ceiling stays 100, published archives stay immutable
-# and corrections stay VOID + replacement.
+# AN APPROVAL IS AN EVENT, NOT A CREDENTIAL. The branch switch is applied inside
+# the approval transaction, so there is no "approved" token to replay. Single-use
+# is a property of the design rather than a counter someone must remember to
+# decrement.
 #
-# THE ACTIVATION ITSELF IS PRODUCTION OPERATIONS, NOT CODE. Admitting the
-# eligible branches and registering/approving/activating the wave happens on the
-# production host through the canonical commands, exactly as the runbook
-# prescribes. This sprint ships the honesty fix, the contract tests that lock the
-# composition, and the governance that records the four distinct states.
+# WHAT IS DELIBERATELY NOT CHANGED. Doctor and Perawat keep their current free
+# branch selection — only the two roles named in the brief are locked. No branch
+# eligibility rule is relaxed: an approval can never grant access to a branch the
+# user could not otherwise work in, and the destination is re-validated under the
+# lock at decision time. No new permission is introduced; approval authority is
+# the canonical Super Admin role. No payment, invoice, consent, room, ledger or
+# clinical rule is touched.
 
-id: FEATURE-LEGACY-IMPORT-HUB-1A-RME-ACTIVATION
+id: FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
 type: MODULE_SPRINT
-module: LegacyImport
-title: 'Legacy RME activation: branch admission, an active wave, and a hub that reports the real operational state'
+module: RmeOnlineContext
+title: 'Daily working-branch lock for Kasir and Admin Klinik, with Super Admin approved mid-day changes'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true           # hub service + view report evaluated gates; new read-only state service
-schema_change: false           # no migration; every table already exists
-frontend_change: false         # Blade only; no JS/CSS/Vite/package asset changed
-security_impact: false         # no permission, policy, route or middleware changed; report-only
-branch_isolation_impact: true  # the reported state is per RM-derived branch code
+runtime_change: true            # new guard in the online-context service, new approval workflow
+schema_change: true             # two additive tables; no column dropped, no data rewritten
+frontend_change: false          # Blade only; no JS/CSS/Vite/package asset changed
+security_impact: true           # a new persistent authorization boundary + a new gate and policy
+branch_isolation_impact: true   # the working branch is now durable authority for two roles
 ledger_impact: false
-deploy_required: true          # the activation must reach production to be usable
-browser_required: false        # HTTP-level assertions cover the surface
+deploy_required: true           # the migration and the lock must reach production to exist
+browser_required: false         # HTTP-level assertions cover both surfaces
 test_profiles:
   - focused
   - permission_regression
-go_tag: feature-legacy-import-hub-1a-rme-activation-go
+go_tag: feature-daily-branch-context-lock-1-go
 
 # Carried forward from the closure manifest this sprint inherits. Not
 # boilerplate: dropping either makes the LegacyRme closure contract fail.

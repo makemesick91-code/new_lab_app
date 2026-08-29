@@ -22,6 +22,7 @@ class UserOnlineContextService
         private readonly BranchService $branches,
         private readonly BranchRepositoryInterface $branchRepository,
         private readonly DoctorUserResolver $doctorResolver,
+        private readonly DailyBranchContextService $dailyBranchContext,
     ) {}
 
     public function requiresDoctorContext(User $user): bool
@@ -170,7 +171,10 @@ class UserOnlineContextService
             return null;
         }
 
-        return (int) $this->currentContextFor($user)?->branch_id;
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — resolved through the same
+        // authority as every other branch read, so registration and the queue
+        // cannot end up on a different branch from the rest of the workspace.
+        return $this->activeContextBranchId($user);
     }
 
     /**
@@ -204,6 +208,37 @@ class UserOnlineContextService
 
         if (! $matchesRole || ! $this->branchIsRmeEnabled((int) $context->branch_id)) {
             return null;
+        }
+
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — THE DATABASE IS THE AUTHORITY.
+        //
+        // For a locked role the durable daily context outranks this session row.
+        // Without this the lock would only be as good as the row a session start
+        // happened to leave behind, and any path that wrote `branch_id` without
+        // going through the guard would silently become a bypass. It also makes
+        // an approved switch take effect immediately in every one of the
+        // operator's existing sessions, not just the one that was realigned.
+        //
+        // It only ever REPLACES a branch, never resurrects a null: an offline
+        // operator still has no working context and must go through the
+        // selector, where the lock holds them to this same branch.
+        //
+        // Scoped to the role context ACTUALLY IN USE. A user who worked as a
+        // Kasir this morning and whose account later became Perawat-only would
+        // otherwise be pinned by a daily context that no longer governs them —
+        // Perawat is deliberately not a locked role.
+        if (DailyBranchContextService::isLockedRoleContext((string) $context->role_context)) {
+            $lockedBranchId = $this->dailyBranchContext->lockedBranchIdFor($user);
+
+            if ($lockedBranchId !== null) {
+                // FAIL CLOSED. If the branch the day is committed to has since
+                // been deactivated or lost its RME flag, there is no working
+                // context at all. Falling back to the session row here would
+                // turn a deactivated branch into a route back to whatever that
+                // row happens to say — the precise bypass the override exists
+                // to close.
+                return $this->branchIsRmeEnabled($lockedBranchId) ? $lockedBranchId : null;
+            }
         }
 
         return (int) $context->branch_id;
@@ -272,6 +307,16 @@ class UserOnlineContextService
 
         $this->assertRmeBranch($branchId);
 
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the day's branch is committed on
+        // the FIRST selection. Ordered after the eligibility assert on purpose:
+        // an approved switch can then never become a path to a branch the user
+        // was not entitled to work in.
+        $this->dailyBranchContext->assertSelectable(
+            $user,
+            $branchId,
+            UserOnlineContext::ROLE_ADMIN_CLINIC,
+        );
+
         $now = now();
 
         return $this->contexts->upsertForUser((int) $user->id, [
@@ -317,6 +362,15 @@ class UserOnlineContextService
         }
 
         $this->assertRmeBranch($branchId);
+
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — see startAdminClinicSession().
+        // The cashier's day is committed here, which is why a logout, a second
+        // browser or a raw POST cannot move the financial scope.
+        $this->dailyBranchContext->assertSelectable(
+            $user,
+            $branchId,
+            UserOnlineContext::ROLE_KASIR,
+        );
 
         $now = now();
 

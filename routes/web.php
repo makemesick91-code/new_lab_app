@@ -96,6 +96,7 @@ use App\Modules\RmeInvoice\Controllers\RmeInvoiceController;
 use App\Modules\RmeInvoice\Controllers\RmePaymentController;
 use App\Modules\RmeInvoice\Controllers\RmeReceivableFollowUpController;
 use App\Modules\RmeInvoice\Controllers\RmeReportController;
+use App\Modules\RmeOnlineContext\Controllers\BranchChangeRequestController;
 use App\Modules\RmeOnlineContext\Controllers\OnlineContextController;
 use App\Modules\Satusehat\Controllers\SatusehatBranchGovernanceController;
 use App\Modules\Satusehat\Controllers\SatusehatBranchReadinessController;
@@ -560,6 +561,37 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         ->name('online-context.kasir');
     Route::post('online-context/offline', [OnlineContextController::class, 'offline'])
         ->name('online-context.offline');
+
+    /*
+     | FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — working-branch change requests.
+     |
+     | Registered alongside the online-context routes and BEFORE the permission
+     | gates, for the same reason those are: a Kasir or Admin Klinik who is
+     | locked out of their intended branch must be able to reach the request
+     | form without first satisfying a workspace permission they may not hold.
+     |
+     | Authorization is per action through BranchChangeRequestPolicy; the
+     | approver actions additionally sit behind the `branch-change-request.approve`
+     | gate, so the route boundary and the sidebar read the same definition.
+     */
+    Route::get('branch-change-requests/new', [BranchChangeRequestController::class, 'create'])
+        ->name('branch-change-requests.create');
+    Route::post('branch-change-requests', [BranchChangeRequestController::class, 'store'])
+        ->name('branch-change-requests.store');
+    Route::post('branch-change-requests/{branchChangeRequest}/cancel', [BranchChangeRequestController::class, 'cancel'])
+        ->name('branch-change-requests.cancel')
+        ->whereNumber('branchChangeRequest');
+
+    Route::middleware('can:branch-change-request.approve')->group(function () {
+        Route::get('branch-change-requests', [BranchChangeRequestController::class, 'index'])
+            ->name('branch-change-requests.index');
+        Route::post('branch-change-requests/{branchChangeRequest}/approve', [BranchChangeRequestController::class, 'approve'])
+            ->name('branch-change-requests.approve')
+            ->whereNumber('branchChangeRequest');
+        Route::post('branch-change-requests/{branchChangeRequest}/reject', [BranchChangeRequestController::class, 'reject'])
+            ->name('branch-change-requests.reject')
+            ->whereNumber('branchChangeRequest');
+    });
 
     Route::middleware('permission:view_clinic_visits|manage_clinic_visits')->group(function () {
         // Sprint 58.4 — Standalone RME dashboard (replaces the Sprint 58.3

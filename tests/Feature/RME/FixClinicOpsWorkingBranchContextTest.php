@@ -15,6 +15,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Services\RmePaymentService;
+use App\Modules\RmeOnlineContext\Services\BranchChangeApprovalService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
 use App\Support\Clinical\ClinicalClock;
@@ -191,7 +192,16 @@ it('refuses a cashier payment on an invoice from another branch', function () {
         ->and($foreignInvoice->payments()->count())->toBe(0);
 });
 
-it('follows the cashier to a new branch when the working context changes', function () {
+/*
+ | FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 changed the ROUTE to a mid-day branch
+ | change, not the consequence of one. The property this test has always
+ | asserted — cashier scope follows the working branch — is unchanged; what is
+ | no longer available is switching by simply calling the selector again.
+ |
+ | Both halves are worth keeping, so the original single test is now two: the
+ | switch is refused without an approval, and it takes effect with one.
+ */
+it('refuses to follow the cashier to a new branch without a Super Admin approval', function () {
     $ldkVisit = fcoVisit($this->ldk, ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
     fcoInvoice($ldkVisit, ['status' => RmeInvoice::STATUS_UNPAID, 'grand_total' => 100000]);
 
@@ -199,7 +209,26 @@ it('follows the cashier to a new branch when the working context changes', funct
     rmeMakeKasirActive($kasir, $this->tkm);
     $this->actingAs($kasir)->get(route('rme.cashier.index'))->assertOk()->assertDontSee('Pasien LDKX');
 
-    rmeMakeKasirActive($kasir, $this->ldk);
+    expect(fn () => rmeMakeKasirActive($kasir, $this->ldk))->toThrow(ValidationException::class);
+
+    // The financial scope did not move.
+    $this->actingAs($kasir)->get(route('rme.cashier.index'))->assertOk()->assertDontSee('Pasien LDKX');
+});
+
+it('follows the cashier to a new branch once a Super Admin approves the change', function () {
+    $ldkVisit = fcoVisit($this->ldk, ['status' => ClinicVisit::STATUS_CASHIER_PENDING]);
+    fcoInvoice($ldkVisit, ['status' => RmeInvoice::STATUS_UNPAID, 'grand_total' => 100000]);
+
+    $kasir = userInRole('Kasir');
+    rmeMakeKasirActive($kasir, $this->tkm);
+    $this->actingAs($kasir)->get(route('rme.cashier.index'))->assertOk()->assertDontSee('Pasien LDKX');
+
+    $approvals = app(BranchChangeApprovalService::class);
+    $request = $approvals->request($kasir, (int) $this->ldk->id, 'Bertugas di Landak sore ini.');
+    $approvals->approve((int) $request->id, userInRole('Super Admin'));
+
+    // The approval alone moves the scope — the cashier does not have to
+    // re-select, and every existing session resolves to the new branch.
     $this->actingAs($kasir)->get(route('rme.cashier.index'))->assertOk()->assertSee('Pasien LDKX');
 });
 
