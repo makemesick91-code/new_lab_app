@@ -99,7 +99,7 @@ returns the viewer's own history and nobody else's — proven by
 | `app/Modules/RmeInvoice/Controllers/RmeReportController.php` | both query builders, both filter arrays, the print filter summary |
 | `resources/views/rme/reports/patients.blade.php` | period indicator, *Reset ke Hari Ini*, today-aware empty state |
 | `resources/views/rme/reports/payments.blade.php` | same |
-| `tests/Feature/RME/RmeReportTodayDefaultTest.php` | **new** — 24 tests |
+| `tests/Feature/RME/RmeReportTodayDefaultTest.php` | **new** — 26 tests |
 | `tests/Feature/RME/RmeReportFilterTest.php` | fixture clock fix (see §7) |
 | `tests/Feature/RME/RmeReportExportTest.php` | fixture clock fix (see §7) |
 

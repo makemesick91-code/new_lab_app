@@ -239,6 +239,23 @@ it('falls back to today when the patient date filter is malformed', function () 
     }
 });
 
+it('falls back to today when the patient date filter is not even a string', function () {
+    rtdSeedThreeDays();
+
+    // ?date_from[]=... makes Request::input() return an array. A date bound that
+    // is not a string is not a date, and must not be allowed to slip past the
+    // parser into an unbounded period.
+    $this->actingAs($this->patientViewer)
+        ->get(route('rme.reports.patients', [
+            'date_from' => ['2020-01-01'],
+            'date_to' => ['2030-01-01'],
+        ]))
+        ->assertOk()
+        ->assertSee('RM-TDF-TODAY')
+        ->assertDontSee('RM-TDF-YDAY')
+        ->assertDontSee('RM-TDF-OLD');
+});
+
 /* --------------------------------------------------- patient export / print */
 
 it('defaults the patient CSV export to today', function () {
