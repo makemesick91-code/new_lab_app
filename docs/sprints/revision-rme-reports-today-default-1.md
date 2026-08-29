@@ -211,7 +211,44 @@ above correctly-scoped rows. Branch name only, no patient data — but the guard
 load-bearing there, so it is now pinned by
 `never echoes a foreign branch name into the printed filter summary`.
 
-## 10. Durable rules
+## 10. Security review
+
+Reviewed manually against the committed diff. (The `security-review` skill scopes
+the primary checkout, which from a task worktree diffs the wrong branch, so it
+would have reported on unrelated code.)
+
+**CRITICAL 0 · HIGH 0 · MEDIUM 0 · LOW 0.** One coverage gap was found and
+closed (§9, M8); it was a gap in the tests, not a defect in the shipped code —
+the guard it concerns is present and always was.
+
+| Dimension | Finding |
+|---|---|
+| Authorization | Unchanged. Routes keep `permission:view_rme_patient_reports` / `view_rme_payment_reports`. No policy, gate or permission touched. |
+| Branch isolation | Unchanged and mutation-proven. `reportScopeBranchIds()` still applied to every query; `RmeWorkingBranchScope` still the only authority; M8 and M11 both killed. |
+| Daily branch lock | Untouched. `RmeWorkingBranchScope` → `UserOnlineContextService::activeContextBranchId()` unchanged; the whole `tests/Feature/AccessControl` suite is green. |
+| Historical data exposure | **Reduced** — this is the point of the sprint. The default path no longer returns the branch's whole archive. |
+| Export exposure | Reduced identically; export shares the query builder, and M6/M7 prove screen and export cannot diverge. |
+| Query-string tampering | Bounds accept only strict `Y-m-d`; malformed, partial, empty **and non-string** (`?date_from[]=…`) inputs all fail closed to today. Crafted export URL with blank dates + foreign `branch_id` tested. |
+| SQL injection | Not reachable: values are bound parameters and, after normalization, can only ever be a `YYYY-MM-DD` literal. |
+| IDOR | No new object reference is exposed. The `branch_id` guard is unchanged and is now additionally pinned on the print-summary path. |
+| PII | No new field rendered or exported. The period label contains a date only. Existing KTP-absence assertions still green. |
+| Cross-request state | **Improved.** The request-scoped memo removes the stale-period class the naive controller-property implementation would have introduced. |
+
+### One deliberate decision worth stating
+
+The brief asked not to change semantics for Doctor / Supervisor RME / Owner /
+Super Admin. The route, controller and query builders are **shared**, so the
+today default necessarily applies to every viewer of these two reports.
+
+Their **authorization** is untouched — same permissions, same branch scope, and
+any period remains reachable with an explicit filter. What changed for them is
+the *default period*, uniformly. Making the default role-dependent was rejected
+on purpose: it would fork the period between roles on a shared query builder,
+which is exactly the "today-only screen, all-history export" divergence this
+sprint exists to eliminate, and it would put a role test inside a data-scope
+decision where the branch scope already lives.
+
+## 11. Durable rules
 
 1. RME Patient Report and RME Payment Report default to the **clinical today**.
 2. Historical data requires an **explicit** date filter.
