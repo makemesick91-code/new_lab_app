@@ -194,6 +194,39 @@ it('keeps the LIKE escape character and the escaping helper in agreement', funct
     expect($hit)->toHaveCount(1)
         ->and($hit[0]['name'])->toBe('Ratna 100% Sehat');
 
+    // The escape character must escape ITSELF, or choosing a printable one
+    // would quietly make any patient whose name contains it unfindable.
+    Patient::factory()->create([
+        'name' => 'Halo! Dunia',
+        'medical_record_number' => 'DG-LDK2-2026-0778',
+        'branch_id' => $this->ldk2->id,
+    ]);
+
+    $escapeChar = $this->actingAs($this->actor)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'Halo!']))
+        ->assertOk()
+        ->json('results');
+
+    expect($escapeChar)->toHaveCount(1)
+        ->and($escapeChar[0]['name'])->toBe('Halo! Dunia');
+
+    // A backslash left the escape list when the escape character changed. With
+    // an explicit non-backslash ESCAPE it is an ordinary character to LIKE on
+    // both engines, so it must still match itself and nothing more.
+    Patient::factory()->create([
+        'name' => 'Rina\\Backslash',
+        'medical_record_number' => 'DG-LDK2-2026-0779',
+        'branch_id' => $this->ldk2->id,
+    ]);
+
+    $backslash = $this->actingAs($this->actor)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'Rina\\B']))
+        ->assertOk()
+        ->json('results');
+
+    expect($backslash)->toHaveCount(1)
+        ->and($backslash[0]['name'])->toBe('Rina\\Backslash');
+
     // `%` alone is a wildcard only if the escaping is broken.
     $wildcard = $this->actingAs($this->actor)
         ->getJson(route('rme.visits.patient-search', ['q' => '%%']))

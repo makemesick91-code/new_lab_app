@@ -1,0 +1,102 @@
+---
+description: Raw SQL must be driver-safe and gate-selected — a backslash-terminated string literal breaks PDO placeholder binding on PostgreSQL, and a suite no filter token matches never runs
+globs:
+  - "app/**/Repositories/**/*.php"
+  - "app/**/Services/**/*.php"
+  - "config/ci_runner.php"
+  - ".github/workflows/foundation-evidence-gates.yml"
+alwaysApply: false
+---
+
+# Raw SQL driver parity, and the gate that has to select it
+
+Source: BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1. Every patient search on
+"Kunjungan Baru" returned HTTP 500 in production while the whole suite was
+green. Three separate things had to be true at once, and all three are now
+rules.
+
+## R1 — Never let a SQL string literal end on a backslash
+
+```php
+// FORBIDDEN — this is the production outage.
+->whereRaw("LOWER(name) LIKE LOWER(?) ESCAPE '\\'", [$like])
+```
+
+`ESCAPE '\'` is valid SQL and both PostgreSQL and SQLite execute it happily.
+The fault is one layer above the database: PDO must rewrite `?` into `$n`
+before pdo_pgsql can send a statement, and through **PHP 8.3** its parser
+treats a backslash inside a single-quoted literal as escaping the closing
+quote. The literal runs past where SQL ends it, swallows the placeholders
+behind it, and PDO binds fewer parameters than were supplied:
+
+```
+SQLSTATE[HY093]: Invalid parameter number: parameter was not defined
+```
+
+Use a LIKE escape character that cannot terminate a literal — `!` is
+conventional — and hold it in one named constant that both the SQL clause and
+the escaping helper read, so they cannot drift apart. The escape character must
+escape itself first, or a patient whose name contains it stops matching.
+
+This is not "avoid `whereRaw`". `whereRaw` with bound parameters is fine. The
+rule is about what the *literal text* of the fragment may contain.
+
+## R2 — SQLite green is not PostgreSQL green
+
+pdo_sqlite accepts positional `?` natively, so PDO never runs the rewriting
+parser and this entire class of fault is **genuinely absent** there — not
+merely untested. The suite defaults to SQLite; production is PostgreSQL 16.
+
+Any raw SQL fragment on a production path must be exercised on PostgreSQL
+before it is believed. Where that is impractical for a given assertion, encode
+the *mechanism* instead of the symptom: the guard in
+`tests/Feature/RME/NewVisitPatientSearchRuntimeTest.php` replays PDO's own
+tokenising rule in PHP and asserts a statement's placeholder count equals its
+binding count, which fails on every driver and every PHP version.
+
+## R3 — Production's PHP is the FPM pool's version, not the CLI default
+
+On this shared VPS `php -v` reports **8.5.8** — that is the co-tenant
+`aish-pos`. DaengtisiaMS is served by the `php8.3-fpm` pool `daengtisiams`
+(`/etc/php/8.3/fpm/pool.d/daengtisiams.conf`). The defect reproduces on 8.3 and
+**not** on 8.5, so reproducing from the VPS command line would have reported the
+bug as fixed while operators were still staring at the error.
+
+Resolve the serving runtime from the FPM pool before drawing any conclusion
+about a production-only failure.
+
+## R4 — A suite no filter token matches is not selected, and is therefore not a control
+
+The NSF-R011 critical gate selects tests through a hand-maintained `--filter`
+allowlist, in **two** variants (GitHub-hosted and self-hosted). The combobox
+suite already covered branch scope, IDOR, privacy, bounds and wildcards — and
+matched no token in either. It only ever ran where a developer ran it, on
+SQLite, so the one environment that fails was never pointed at it.
+
+When a suite guards a production-facing property:
+
+1. add a token that matches it to **both** filter variants; and
+2. declare its path in `config/ci_runner.php` `critical_gate_mandatory_suites`,
+   which is reconciled against the workflow by
+   `tests/Feature/Cicd/CriticalGateSuiteCoverageTest.php`.
+
+Doing only (1) leaves the selection incidental — a later edit can drop the
+token silently. Doing only (2) fails the reconciliation test.
+
+## R5 — A successful empty result is not an error
+
+`SUCCESS_WITH_RESULTS`, `SUCCESS_EMPTY_RESULTS` and `SEARCH_RUNTIME_ERROR` are
+three distinct states and must stay distinguishable end to end. The backend
+answers a valid query that matches nobody with `200` and an empty collection;
+the client renders "Tidak ada pasien yang sesuai." The generic
+"Gagal mencari pasien. Silakan coba lagi." belongs only to a real transport or
+server failure. Collapsing the middle state into the last one is what made a
+total outage look like an unhelpful UI.
+
+## What must NOT be done to make a search work
+
+Never relax any of these to get results back: the endpoint authorization, the
+`RmeWorkingBranchScope` branch authority, the daily branch context, the
+submit-time `patient_id` re-authorization, the server-side result ceiling, or
+the least-disclosure response fields. A search that fails is a bug in the query,
+not a reason to widen what may be seen.
