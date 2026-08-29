@@ -293,6 +293,20 @@ return [
         'tests/Feature/RME/NewVisitPatientSearchComboboxTest.php',
         'tests/Feature/RME/NewVisitPatientSearchRuntimeTest.php',
 
+        // REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — the global patient
+        // identity lookup, and the boundary it deliberately does NOT cross.
+        //
+        // Declared for the same reason as the two entries above, plus one this
+        // sprint adds: it holds a distinction that is easy to erase by accident.
+        // Identity lookup is global; visit branch authority is not. A future
+        // change that lets the patient's origin branch (or a request branch_id)
+        // decide the visit branch would register people at the wrong clinic and
+        // would still look correct in every branch-scoped test that remains.
+        // The suite also pins the widened scope's disclosure ceiling — four
+        // identity fields — which now spans the whole registry rather than one
+        // branch, so a leak here is worth more to an attacker than it was.
+        'tests/Feature/RME/NewVisitGlobalPatientLookupTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.

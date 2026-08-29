@@ -270,16 +270,28 @@ class StoreClinicVisitRequest extends FormRequest
     }
 
     /**
-     * REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the server-side patient
+     * REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — the server-side patient
      * boundary for visit creation.
      *
      * `Rule::exists` alone only proves the row is real, not that this operator
      * may register a visit for it. Being offered in the combobox is a UI
-     * convenience; this is the authorization, so a hand-crafted `patient_id`
-     * belonging to another working branch is rejected even though the dropdown
-     * would never have shown it. The scope is the very same
-     * {@see PatientSelectorSearchService} the search uses, so what is selectable
-     * and what is submittable can never drift apart.
+     * convenience; THIS is the authorization, and it is re-asserted on every
+     * submit so a hand-crafted `patient_id` still has to pass it.
+     *
+     * What changed with the global lookup is the legitimate scope, not the
+     * existence of the check. A patient from ANOTHER RME branch is now a valid
+     * selection — that is the whole point of the revision — while a patient
+     * outside the registry entirely (a non-RME or disabled branch), or an id
+     * submitted by an operator with no valid working context, is still refused.
+     *
+     * The scope is the very same {@see PatientSelectorSearchService} the search
+     * uses, so what is selectable and what is submittable cannot drift apart in
+     * either direction.
+     *
+     * Note what this method deliberately does NOT do: it never touches the visit
+     * branch. That is resolved independently from the operator's authorized
+     * working context, so accepting a Telkomas patient can never create a
+     * Telkomas visit for a Landak operator.
      */
     private function validateExistingPatientSelectable(Validator $validator): void
     {
@@ -299,7 +311,7 @@ class StoreClinicVisitRequest extends FormRequest
         if (! $selectable) {
             $validator->errors()->add(
                 'patient_id',
-                'Pasien yang dipilih tidak tersedia pada cabang kerja Anda.'
+                'Pasien yang dipilih tidak tersedia untuk pendaftaran kunjungan.'
             );
         }
     }
