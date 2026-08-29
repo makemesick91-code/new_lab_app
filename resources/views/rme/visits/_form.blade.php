@@ -80,12 +80,17 @@
                 </label>
             </div>
 
-            {{-- Mode: pasien terdaftar --}}
+            {{-- Mode: pasien terdaftar.
+                 REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — ONE searchable
+                 control. The previous pair (a filter box plus a native select
+                 preloaded with every patient) is gone; results now come from the
+                 authorized, branch-scoped, bounded server search. --}}
             <div class="mt-3" data-mode-panel="existing">
-                <x-patient-search-select
-                    :patients="$patients"
+                <x-patient-combobox
+                    :endpoint="route('rme.visits.patient-search')"
                     :selected="$prefillPatientId"
                     label="Pasien Terdaftar"
+                    required
                 />
                 @error('patient_id')<p class="mt-1 text-xs text-danger-700">{{ $message }}</p>@enderror
             </div>
@@ -190,14 +195,6 @@
                 </div>
             </div>
         </div>
-    @else
-        <div>
-            <x-patient-search-select
-                :patients="$patients"
-                :selected="old('patient_id', $visit?->patient_id)"
-                label="Pasien"
-            />
-        </div>
     @endif
     @if ($hideDoctorSelection)
         <div class="sm:col-span-2 rounded-lg border border-brand-100 bg-brand-50/50 px-3 py-2">
@@ -291,6 +288,16 @@
             modeInput.value = mode;
             panels.existing?.classList.toggle('hidden', mode !== 'existing');
             panels.new?.classList.toggle('hidden', mode !== 'new');
+
+            // REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — leaving "Pasien
+            // Terdaftar" clears the selected patient, aborts any pending search
+            // and empties the box. A hidden panel still submits its inputs, so
+            // this is what stops a stale patient_id riding along with a new
+            // patient registration. The server nulls it too (defence in depth).
+            if (mode !== 'existing') {
+                window.dispatchEvent(new CustomEvent('patient-selector-reset'));
+            }
+
             syncVisitTypeOptions();
             syncFollowUpPanel();
         };

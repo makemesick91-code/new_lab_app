@@ -392,7 +392,7 @@ it('generates a lab candidate carrying the RME branch context after payment', fu
 
 // ─── G. Regression ───────────────────────────────────────────────────────────
 
-it('keeps a legacy patient with clinic_id readable in the create form', function () {
+it('keeps a legacy patient with clinic_id selectable in the create form', function () {
     Patient::factory()->create([
         'branch_id' => null,
         'clinic_id' => Clinic::factory()->create()->id,
@@ -400,11 +400,23 @@ it('keeps a legacy patient with clinic_id readable in the create form', function
         'name' => 'Pasien Warisan',
     ]);
 
+    // REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the create form no longer
+    // renders the patient set, so "readable in the create form" is now proven
+    // where the selector actually reads: the authorized search endpoint. The
+    // hardening intent is unchanged — a legacy patient (branch_id null) is still
+    // usable for registration and still carries the legacy branch marker.
     $this->actingAs($this->admin)
         ->get(route('rme.visits.create'))
+        ->assertOk();
+
+    $results = $this->actingAs($this->admin)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'Pasien Warisan']))
         ->assertOk()
-        ->assertSee('Pasien Warisan')
-        ->assertSee('Legacy / belum ada cabang pasien');
+        ->json('results');
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['name'])->toBe('Pasien Warisan')
+        ->and($results[0]['branch_label'])->toBe('Legacy / belum ada cabang pasien');
 });
 
 it('still allows global lab order creation with a clinic_id (legacy lab behavior intact)', function () {

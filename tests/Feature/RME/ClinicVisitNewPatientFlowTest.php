@@ -113,11 +113,25 @@ it('rejects a duplicate final RM number in new mode', function () {
         ->assertSessionHasErrors('new_patient.manual_rm_number');
 });
 
-it('shows registered patients as medical_record_number — name in the create form', function () {
+it('offers registered patients by name and medical_record_number in the create form selector', function () {
     Patient::factory()->create(['medical_record_number' => 'DG-MAIN-2026-0001', 'name' => 'Nur Aisyah']);
 
+    // REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the selector no longer
+    // preloads patients into the page, so the offer is asserted where it now
+    // lives: the authorized search endpoint. The INTENT is unchanged (a
+    // registered patient is offered, identified by both name and Nomor RM); the
+    // page is only proven to still render, not to carry the patient set.
     $this->actingAs($this->actor)
         ->get(route('rme.visits.create'))
         ->assertOk()
-        ->assertSee('DG-MAIN-2026-0001 — Nur Aisyah');
+        ->assertDontSee('DG-MAIN-2026-0001');
+
+    $results = $this->actingAs($this->actor)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'Nur Aisyah']))
+        ->assertOk()
+        ->json('results');
+
+    expect($results)->toHaveCount(1)
+        ->and($results[0]['name'])->toBe('Nur Aisyah')
+        ->and($results[0]['medical_record_number'])->toBe('DG-MAIN-2026-0001');
 });
