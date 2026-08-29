@@ -159,6 +159,20 @@ Reported honestly rather than claimed:
 
 Adding any of them later must preserve the normalized period.
 
+## 8b. Blast radius outside the two reports
+
+Only two call sites reference these routes, and neither needed a change:
+
+- `OwnerDashboardKpiService::moduleShortcuts()` links to the **bare** route, so a
+  drilldown from the Owner dashboard now lands on today. Intended.
+- `StressBenchmarkRmePagesCommand` hits both reports with `?branch_id=` only, so
+  the benchmark now measures the today-scoped page rather than a full-archive
+  render. That is a real change in what the benchmark measures, and it is left
+  as-is deliberately: the benchmark should measure the page operators actually
+  open. Pinning it to a historical range would be a new benchmark decision, not
+  part of this revision. (`tests/Unit/Console/StressBenchmarkRmePagesCommandTest`
+  — 3 passed.)
+
 ## 9. Adversarial validation
 
 12 mutations attempted, **10 killed, 0 real survivors**, 2 not applicable.
