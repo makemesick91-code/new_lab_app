@@ -44,6 +44,7 @@ declare(strict_types=1);
 
 use App\Modules\RmeOnlineContext\Models\BranchChangeRequest;
 use App\Modules\RmeOnlineContext\Models\DailyBranchContext;
+use App\Modules\RmeOnlineContext\Services\DailyBranchContextService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -305,6 +306,76 @@ it('refuses a second pending request at the database level', function () {
         ->where('requester_user_id', $user->id)
         ->where('status', BranchChangeRequest::STATUS_PENDING)
         ->count())->toBe(1);
+});
+
+/*
+|--------------------------------------------------------------------------
+| THE ABORTED-TRANSACTION TRAP
+|--------------------------------------------------------------------------
+|
+| PostgreSQL aborts the ENTIRE transaction the moment any statement raises:
+| every later statement fails with 25P02 until a rollback. Catching a unique
+| violation and simply carrying on — the obvious shape, and the one that works
+| on SQLite — therefore leaves a POISONED connection on the database production
+| actually runs.
+|
+| Both violation handlers wrap their INSERT in a nested transaction, which
+| Laravel implements as a SAVEPOINT, so only the failed statement is discarded.
+| These two tests are what prove it: each provokes the violation and then keeps
+| querying on the same connection. Before the fix the follow-up query raised
+| 25P02 and the suites that only run on SQLite could not see it.
+*/
+
+it('leaves the connection usable after a duplicate request is refused', function () {
+    $a = dbcBranch('AAA');
+    $b = dbcBranch('BBB');
+    $c = dbcBranch('CCC');
+    $user = userInRole('Kasir');
+
+    dbcStart($user, $a);
+    dbcApprovals()->request($user, (int) $b->id, 'Permintaan pertama.');
+
+    expect(fn () => dbcApprovals()->request($user, (int) $c->id, 'Permintaan kedua.'))
+        ->toThrow(ValidationException::class);
+
+    // The query that used to raise 25P02.
+    expect(BranchChangeRequest::query()->where('requester_user_id', $user->id)->count())->toBe(1);
+
+    // And the connection is healthy enough to keep working normally.
+    dbcApprovals()->cancel(
+        (int) BranchChangeRequest::query()->where('requester_user_id', $user->id)->value('id'),
+        $user,
+    );
+
+    expect(BranchChangeRequest::query()
+        ->where('requester_user_id', $user->id)
+        ->where('status', BranchChangeRequest::STATUS_CANCELLED)
+        ->count())->toBe(1);
+});
+
+it('leaves the connection usable when the first-selection race handler catches its violation', function () {
+    // Drives the loser-of-the-race path directly: a daily context already
+    // exists, but the caller has not seen it, so assertSelectable() attempts the
+    // INSERT, catches the unique violation, and must then re-read under a lock
+    // on the SAME transaction. That re-read is the statement 25P02 killed.
+    $a = dbcBranch('AAA');
+    $b = dbcBranch('BBB');
+    $user = userInRole('Kasir');
+
+    dbcStart($user, $a);
+
+    $service = app(DailyBranchContextService::class);
+
+    // Same branch: the loser is idempotent and must NOT raise.
+    $service->assertSelectable($user, (int) $a->id, 'kasir');
+
+    // Different branch: the loser is refused — a ValidationException, never a
+    // QueryException from an aborted transaction.
+    expect(fn () => $service->assertSelectable($user, (int) $b->id, 'kasir'))
+        ->toThrow(ValidationException::class);
+
+    expect(DailyBranchContext::query()->where('user_id', $user->id)->count())->toBe(1)
+        ->and((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $a->id);
 });
 
 it('still allows a new pending request once the previous one is decided', function () {

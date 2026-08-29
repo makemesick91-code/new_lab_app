@@ -149,7 +149,22 @@ class DailyBranchContextService
 
             if ($context === null) {
                 try {
-                    $this->contexts->create([
+                    // THE INSERT IS WRAPPED IN ITS OWN NESTED TRANSACTION, WHICH
+                    // LARAVEL IMPLEMENTS AS A SAVEPOINT.
+                    //
+                    // PostgreSQL aborts the ENTIRE transaction the moment any
+                    // statement raises: every later statement fails with 25P02
+                    // ("current transaction is aborted") until a rollback. So
+                    // catching the unique violation and simply carrying on — the
+                    // obvious shape, and the one that works on SQLite — leaves a
+                    // poisoned connection on the database production actually
+                    // runs. The re-read below would fail, and with it the whole
+                    // first-selection race handler.
+                    //
+                    // Rolling back to a savepoint discards only the failed INSERT
+                    // and leaves the enclosing transaction usable. Found by CI on
+                    // PostgreSQL; a SQLite-only run cannot see it.
+                    DB::transaction(fn () => $this->contexts->create([
                         'user_id' => (int) $user->id,
                         'clinical_date' => $clinicalDate,
                         'role_context' => $roleContext,
@@ -157,7 +172,7 @@ class DailyBranchContextService
                         'current_branch_id' => $branchId,
                         'first_selected_at' => now(),
                         'change_count' => 0,
-                    ]);
+                    ]));
 
                     return;
                 } catch (QueryException $exception) {

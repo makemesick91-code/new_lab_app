@@ -99,7 +99,13 @@ class BranchChangeApprovalService
         $this->assertEligibleDestination($destinationBranchId);
 
         try {
-            $request = $this->requests->create([
+            // Wrapped in a nested transaction — a SAVEPOINT — for the same
+            // reason as DailyBranchContextService::assertSelectable(): on
+            // PostgreSQL a failed statement aborts the WHOLE transaction, so
+            // catching the unique violation and continuing would hand the
+            // caller a poisoned connection where every later query raises
+            // 25P02. Rolling back to the savepoint discards only this INSERT.
+            $request = DB::transaction(fn () => $this->requests->create([
                 'requester_user_id' => (int) $requester->id,
                 'clinical_date' => $clinicalDate,
                 'role_context' => (string) $context->role_context,
@@ -107,7 +113,7 @@ class BranchChangeApprovalService
                 'destination_branch_id' => $destinationBranchId,
                 'reason' => $reason,
                 'requested_at' => now(),
-            ]);
+            ]));
         } catch (QueryException $exception) {
             // The partial unique index refused a second PENDING row for this
             // user and day — including the double-submit an application-level
