@@ -28,6 +28,22 @@ class EnsureRmeOnlineContext
         'rme.online-context.perawat',
         'rme.online-context.kasir',
         'rme.online-context.offline',
+
+        // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — an operator whose day is locked
+        // to the wrong branch must be able to reach the request surface. Without
+        // this exemption a locked-but-offline cashier would be bounced back to
+        // the selector, where the only branch on offer is the one they are
+        // trying to get away from — a dead end.
+        //
+        // Exempting these routes widens nothing: BranchChangeRequestPolicy::create
+        // still requires a daily context that only a completed selection creates,
+        // and the approver actions sit behind the Super Admin gate.
+        'rme.branch-change-requests.create',
+        'rme.branch-change-requests.store',
+        'rme.branch-change-requests.cancel',
+        'rme.branch-change-requests.index',
+        'rme.branch-change-requests.approve',
+        'rme.branch-change-requests.reject',
     ];
 
     public function __construct(

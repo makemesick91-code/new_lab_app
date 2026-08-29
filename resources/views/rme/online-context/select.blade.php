@@ -82,26 +82,57 @@
                 $branchContextAction = $requiresAdmin
                     ? route('rme.online-context.admin-clinic')
                     : ($requiresPerawat ? route('rme.online-context.perawat') : route('rme.online-context.kasir'));
+
+                // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — a day already committed
+                // offers exactly one branch: the locked one. Perawat is out of
+                // scope and never has a daily context, so it is unaffected.
+                $dailyLocked = ($dailyContext ?? null) !== null && ($lockedBranch ?? null) !== null;
+                $selectableBranches = $dailyLocked ? collect([$lockedBranch]) : $rmeBranches;
             @endphp
+
+            @if ($dailyLocked)
+                <x-ui.alert variant="warning">
+                    Cabang kerja Anda hari ini terkunci di
+                    <strong>{{ $lockedBranch->name }}</strong>.
+                    Pindah cabang memerlukan persetujuan Super Admin.
+                </x-ui.alert>
+            @endif
+
             <x-ui.card>
                 <form method="POST"
                     action="{{ $branchContextAction }}"
                     class="space-y-5">
                     @csrf
                     <div>
-                        <label for="admin_branch_id" class="block text-sm font-medium text-navy">Cabang RME <span class="text-danger">*</span></label>
+                        <label for="admin_branch_id" class="block text-sm font-medium text-navy">
+                            Cabang RME <span class="text-danger">*</span>
+                            @if ($dailyLocked)
+                                <span aria-hidden="true">&#128274;</span>
+                                <span class="sr-only">terkunci untuk hari ini</span>
+                            @endif
+                        </label>
                         <select id="admin_branch_id" name="branch_id" required
                             class="mt-1 block w-full rounded-lg border-hairline bg-surface text-sm text-navy focus:border-brand-500 focus:ring-brand-500">
-                            <option value="">- Pilih cabang RME -</option>
-                            @foreach ($rmeBranches as $branch)
-                                <option value="{{ $branch->id }}" @selected(old('branch_id', $currentContext?->branch_id) == $branch->id)>
+                            @unless ($dailyLocked)
+                                <option value="">- Pilih cabang RME -</option>
+                            @endunless
+                            @foreach ($selectableBranches as $branch)
+                                <option value="{{ $branch->id }}" @selected($dailyLocked || old('branch_id', $currentContext?->branch_id) == $branch->id)>
                                     {{ $branch->code }} — {{ $branch->name }}
                                 </option>
                             @endforeach
                         </select>
                         @error('branch_id')<p class="mt-1 text-xs text-danger">{{ $message }}</p>@enderror
                     </div>
-                    <div class="flex justify-end border-t border-hairline pt-4">
+                    <div class="flex items-center justify-between gap-3 border-t border-hairline pt-4">
+                        @if ($dailyLocked)
+                            <a href="{{ route('rme.branch-change-requests.create') }}"
+                                class="text-sm font-medium text-brand-700 underline hover:text-brand-800">
+                                Ajukan Pindah Cabang
+                            </a>
+                        @else
+                            <span></span>
+                        @endif
                         <x-ui.button type="submit" variant="primary">Mulai Bertugas</x-ui.button>
                     </div>
                 </form>

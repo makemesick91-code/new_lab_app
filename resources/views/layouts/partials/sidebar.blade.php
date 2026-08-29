@@ -257,6 +257,21 @@
                 </div>
             @endcanany
 
+            {{-- FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the working-branch change
+                 approval queue. Gated by the same `branch-change-request.approve`
+                 gate the approver route group enforces, so the menu and the
+                 server-side boundary read one definition. The sidebar is not the
+                 boundary: a direct GET is refused by the route middleware. --}}
+            @can('branch-change-request.approve')
+                <div>
+                    <p class="menu-group-title pt-2">Konteks Kerja</p>
+                    <div class="mt-1 space-y-1">
+                        <a href="{{ route('rme.branch-change-requests.index') }}"
+                           class="menu-subitem {{ request()->routeIs('rme.branch-change-requests.index') ? $linkActive : $linkIdle }}">Permintaan Pindah Cabang</a>
+                    </div>
+                </div>
+            @endcan
+
             {{-- SATUSEHAT-1 — controlled submission filter + mapping/identifier governance.
                  FIX-08: the whole group is Super Admin only, using the same
                  `satusehat.access` gate the route group enforces. --}}
