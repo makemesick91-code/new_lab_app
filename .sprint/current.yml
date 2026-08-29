@@ -1,65 +1,102 @@
-# REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — Sprint Manifest
+# BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — Sprint Manifest
 #
-# Prompt classification: FEATURE_REVISION · NEW_VISIT · PATIENT_SELECTION ·
-# SEARCHABLE_COMBOBOX · PRIVACY_SENSITIVE · BRANCH_SCOPE_SENSITIVE. `type` below
-# is MODULE_SPRINT because that is the closest registered profile in
-# config/sprint_profiles.php — FEATURE_REVISION is not a defined type and
-# inventing one would fail the manifest check rather than describe the work.
+# Prompt classification: BUGFIX · PRODUCTION_REGRESSION · NEW_VISIT ·
+# PATIENT_SEARCH · RUNTIME_INTEGRATION · BRANCH_SECURITY_SENSITIVE ·
+# PRIVACY_SENSITIVE. `type` below is RUNTIME_FIX because that is the registered
+# profile in config/sprint_profiles.php that matches a production runtime
+# regression; PRODUCTION_REGRESSION is not a defined type and inventing one
+# would fail the manifest check rather than describe the work.
 #
-# WHAT THIS SPRINT IS. "Kunjungan Baru" chooses a registered patient through ONE
-# searchable combobox instead of a filter box plus a native select. The operator
-# types a name or a Nomor RM, the server answers with the patients they are
-# authorized to register, and an explicit choice sets patient_id.
+# WHAT BROKE. Every patient search on "Kunjungan Baru" returned HTTP 500 in
+# production. The operator saw only "Gagal mencari pasien. Silakan coba lagi.",
+# which is the frontend's generic transport-failure state — so a total outage of
+# the patient-selection step looked, to the person using it, exactly like a
+# system that simply would not cooperate.
 #
-# WHY IT IS NOT COSMETIC. The control it replaces rendered EVERY patient the
-# query returned into the create page as <option> elements — and the option label
-# included each patient's phone number. Worse, the query behind it was
-# `Patient::with('branch')->orderBy('name')` with a doctor-only scope, so for
-# Admin Klinik, Kasir, Perawat, Owner and Supervisor RME it was every patient in
-# every branch, active or not. Collapsing to one control is the visible half; the
-# invisible half is that the estate is no longer serialised into the page and the
-# search now runs inside the canonical working-branch scope.
+# THE ROOT CAUSE, EXACTLY. The search carried its LIKE escape character as a
+# backslash:
 #
-# WHY IT IS BRANCH-SCOPE-SENSITIVE. Branch authority is delegated to
-# RmeWorkingBranchScope — the same authority ClinicVisitPolicy already uses — so
-# a context-bound role (Admin Klinik / Perawat / Kasir) searches only its active
-# working branch and fails closed with no context. This is strictly a NARROWING
-# of what the page previously exposed. The endpoint accepts no branch_id at all,
-# so a crafted query cannot widen or re-point the scope, and the daily branch
-# lock still owns mid-day moves.
+#     LOWER(name) LIKE LOWER(?) ESCAPE '\'
 #
-# WHY IT IS PRIVACY-SENSITIVE. The response carries exactly four identity fields
-# (id, name, medical_record_number, branch_label) and is pinned by an exact
-# key-set assertion, so phone / WhatsApp / KTP / address / DOB / email cannot
-# reappear by accident.
+# That is valid SQL, and both PostgreSQL and SQLite accept it. But PDO has to
+# rewrite `?` into `$n` before pdo_pgsql can send a statement, and up to and
+# including PHP 8.3 its parser treats a backslash inside a single-quoted literal
+# as escaping the closing quote. The literal then never terminates where SQL
+# says it does, it swallows the placeholders that follow, and PDO sees fewer `?`
+# than the bindings Laravel passes:
+#
+#     SQLSTATE[HY093]: Invalid parameter number: parameter was not defined
+#
+# WHY EVERY TEST WAS GREEN. Two independent blind spots had to line up, and they
+# did:
+#
+#   1. DRIVER. pdo_sqlite accepts positional `?` natively, so PDO never runs the
+#      rewriting parser and the malformed literal is never tokenised. The suite
+#      runs SQLite by default. The fault is invisible there — not "untested",
+#      genuinely absent.
+#
+#   2. SELECTION. The combobox suite already covered branch scope, IDOR,
+#      privacy, bounds and wildcards — and matched NO token in either critical
+#      gate filter. The gate runs PostgreSQL 16 on PHP 8.3, which is the ONE
+#      combination that fails, and it was never pointed at this code. The
+#      coverage existed; nothing required it.
+#
+#   (A third, quieter trap sits underneath: the production VPS default CLI is
+#   PHP 8.5.8, but the application is served by the php8.3-fpm `daengtisiams`
+#   pool. Reproducing from the VPS command line would also have passed.)
+#
+# THE FIX. The LIKE escape character is now a private class constant that is not
+# a backslash, so no string literal in the statement can end on one. Semantics
+# are unchanged on both drivers: the explicit ESCAPE clause stays, and the
+# escaping helper reads the same constant so the two cannot drift.
+#
+# THE SECOND FIX, WHICH MATTERS AS MUCH. Both patient-search suites are now
+# declared in config/ci_runner.php `critical_gate_mandatory_suites` and selected
+# by a token in BOTH critical gate variants. A control that exists but is never
+# selected is not a control — the same reasoning the storage-privacy entry above
+# it records.
+#
+# AND A GUARD THAT DOES NOT DEPEND ON EITHER. The new suite reproduces PDO's own
+# tokenising rule in PHP and asserts the statement's placeholder count matches
+# its binding count. That fails on SQLite and on PHP 8.5 too, so this defect
+# class can never again hide behind whichever database the suite is pointed at.
 #
 # WHAT IS DELIBERATELY NOT CHANGED. No migration, no schema, no permission, no
-# policy, no route rename. No registration, queue, room, consent, RME/odontogram,
-# visit-completion, invoice or payment behaviour. Inactive patients stay
-# selectable exactly as before — "inactive" is not "unauthorized", and excluding
-# them would be an operational policy change nobody asked for. The legacy
-# x-patient-search-select component stays in place for the dental Lab Order form,
-# which is a different page and out of this sprint's scope.
+# policy, no route, no route rename. No authorization was relaxed to make search
+# work: branch scope still comes from RmeWorkingBranchScope, the endpoint still
+# accepts no branch_id, the daily branch context still owns mid-day moves, and
+# patient_id is still re-authorized at submit time. The response still carries
+# exactly four identity fields. The frontend is untouched — it was correct, and
+# rendering the error state for a real HTTP 500 is what it is supposed to do.
+#
+# RECORDED, NOT FIXED HERE (out of scope by the sprint's own rule):
+#   - ClinicVisitController::patientVisitOptions lacks a branch check.
+#   - The dental Lab Order form still exposes phone through the retired
+#     x-patient-search-select component.
+#   - CrossBranchPatientLookupService and LegacyRmePatientResolutionAuditService
+#     escape LIKE with a backslash but emit NO ESCAPE clause, so they cannot hit
+#     this fault; on SQLite their escaping is a no-op, which is a latent
+#     semantic difference, not a runtime error.
 
-id: REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1
-type: MODULE_SPRINT
+id: BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1
+type: RUNTIME_FIX
 module: ClinicVisit
-title: 'Kunjungan Baru selects a registered patient through one authorized searchable combobox'
+title: 'New Visit patient search survives PostgreSQL: the LIKE escape can no longer break PDO placeholder binding'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true            # new search endpoint, service, repository methods, submit-time re-validation
+runtime_change: true            # the search query the endpoint executes
 schema_change: false            # no migration, no column, no table
-frontend_change: true           # new Alpine module + Blade component; requires npm run build
-security_impact: true           # removes a full-estate patient preload; adds the submit-time patient boundary
-branch_isolation_impact: true   # patient search is now inside RmeWorkingBranchScope (a narrowing)
+frontend_change: false          # no Blade, JS or CSS change; no asset rebuild required
+security_impact: true           # touches the branch-scoped, privacy-bounded patient search path
+branch_isolation_impact: false  # scope authority unchanged — RmeWorkingBranchScope, no request branch_id
 ledger_impact: false
-deploy_required: true           # the single control only exists in production once deployed
-browser_required: false         # the browser-only behaviours are covered by tests/js state-machine tests
+deploy_required: true           # the outage only ends in production once deployed
+browser_required: true          # the failure was only ever visible in a real browser against a real endpoint
 test_profiles:
   - focused
   - permission_regression
-go_tag: revision-new-visit-patient-search-combobox-1-go
+go_tag: bugfix-new-visit-patient-search-runtime-1-go
 
 # Carried forward from the manifests this sprint inherits. Not boilerplate:
 # dropping either makes the LegacyRme closure contract fail.

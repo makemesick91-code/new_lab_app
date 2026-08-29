@@ -11,6 +11,30 @@ use Illuminate\Support\Collection;
 
 class PatientRepository implements PatientRepositoryInterface
 {
+    /**
+     * BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — the LIKE escape character.
+     *
+     * DELIBERATELY NOT A BACKSLASH, and that is the entire point of naming it.
+     *
+     * `ESCAPE '\'` is valid SQL and both PostgreSQL and SQLite accept it, but
+     * PDO must rewrite `?` into `$n` before pdo_pgsql can send the statement,
+     * and its parser (up to and including PHP 8.3, which serves production)
+     * treats a backslash inside a single-quoted literal as escaping the closing
+     * quote. The literal then swallows the placeholders that follow, PDO counts
+     * fewer `?` than there are bindings, and every search 500s with
+     * `SQLSTATE[HY093]: Invalid parameter number`.
+     *
+     * That fault is invisible to SQLite — which accepts positional `?` natively
+     * and so never runs the rewriting parser — which is exactly why a fully
+     * tested control still shipped broken. Choosing a character that can never
+     * terminate a string literal removes the hazard rather than dodging it.
+     *
+     * Any single character works as long as it is neither a backslash nor a
+     * quote; `!` is conventional and is itself escaped below when a patient's
+     * name legitimately contains one.
+     */
+    private const LIKE_ESCAPE = '!';
+
     public function listAll(): Collection
     {
         return Patient::query()->where('is_active', true)->orderBy('name')->get();
@@ -71,8 +95,13 @@ class PatientRepository implements PatientRepositoryInterface
                 // name could fail to match itself.
                 $like = '%'.$this->escapeLike($term).'%';
 
-                $query->whereRaw("LOWER(name) LIKE LOWER(?) ESCAPE '\\'", [$like])
-                    ->orWhereRaw("LOWER(medical_record_number) LIKE LOWER(?) ESCAPE '\\'", [$like]);
+                // The escape character is interpolated from a private class
+                // constant, never from input; the column names are literals.
+                // See LIKE_ESCAPE for why it must not be a backslash.
+                $escape = " ESCAPE '".self::LIKE_ESCAPE."'";
+
+                $query->whereRaw('LOWER(name) LIKE LOWER(?)'.$escape, [$like])
+                    ->orWhereRaw('LOWER(medical_record_number) LIKE LOWER(?)'.$escape, [$like]);
             })
             ->orderBy('name')
             ->orderBy('id')
@@ -121,10 +150,20 @@ class PatientRepository implements PatientRepositoryInterface
      * Escape LIKE metacharacters so a typed `%` or `_` matches literally instead
      * of turning one keystroke into a full-table wildcard. The explicit ESCAPE
      * clause at the call site keeps this identical on PostgreSQL and SQLite.
+     *
+     * The escape character escapes ITSELF first, so a patient whose name really
+     * contains one is still matched literally. Both this helper and the clause
+     * read {@see LIKE_ESCAPE}, so they cannot drift apart.
      */
     private function escapeLike(string $value): string
     {
-        return str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+        $escape = self::LIKE_ESCAPE;
+
+        return str_replace(
+            [$escape, '%', '_'],
+            [$escape.$escape, $escape.'%', $escape.'_'],
+            $value,
+        );
     }
 
     /**

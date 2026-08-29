@@ -274,6 +274,25 @@ return [
         'tests/Feature/LegacyImportHub/LegacyImportHubQuotaTest.php',
         'tests/Feature/LegacyImportHub/LegacyImportHubIntegrationTest.php',
 
+        // BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — the patient selector
+        // behind "Kunjungan Baru", and the SQL-level guard on the fault that
+        // took it down in production.
+        //
+        // DECLARED ON THE STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 PRECEDENT, and
+        // this entry is the reason the precedent keeps earning itself. The
+        // combobox suite already existed, already covered branch scope, IDOR,
+        // privacy, bounds and wildcards — and matched NO token in either
+        // critical filter. It therefore only ever ran where a developer ran it:
+        // on SQLite. The one combination that fails is PostgreSQL on PHP <= 8.3,
+        // which is exactly what the gate runs and exactly what serves
+        // production, so a control that was written correctly still let a total
+        // outage of the registration workflow reach real operators.
+        //
+        // Declaring both files makes that selection enforced instead of
+        // incidental: coverage that nothing required is not coverage.
+        'tests/Feature/RME/NewVisitPatientSearchComboboxTest.php',
+        'tests/Feature/RME/NewVisitPatientSearchRuntimeTest.php',
+
         // FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — the daily working-branch lock
         // for Kasir and Admin Klinik, and the Super Admin approval that is the
         // only way past it.
