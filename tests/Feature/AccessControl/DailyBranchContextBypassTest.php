@@ -123,6 +123,32 @@ it('lets the database override a tampered online-context row', function () {
         ->and(app(UserOnlineContextService::class)->activeContextBranchId($user))->toBe((int) $a->id);
 });
 
+it('leaves an already-online operator undisturbed until their next selection', function () {
+    // THE DEPLOYMENT-DAY PATH, and the reason the override is a replacement
+    // rather than a gate. On the day this ships, every Kasir and Admin Klinik
+    // already has a live online context and NO daily context yet. Their working
+    // branch must keep resolving exactly as before — the lock starts at their
+    // next selection, it does not strand anyone mid-shift.
+    $a = dbcBranch('AAA');
+    $user = userInRole('Kasir');
+
+    dbcStart($user, $a);
+
+    // Simulate the pre-migration state: a live session, no daily context.
+    DailyBranchContext::query()->where('user_id', $user->id)->delete();
+
+    $this->actingAs($user);
+
+    expect(app(UserOnlineContextService::class)->activeContextBranchId($user))->toBe((int) $a->id)
+        ->and(app(BranchContext::class)->forUser($user))->toBe((int) $a->id);
+
+    // And that next selection is a free first choice, as on any new day.
+    $b = dbcBranch('BBB');
+    dbcStart($user, $b);
+
+    expect((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $b->id);
+});
+
 it('fails closed when the locked branch is deactivated, rather than falling back to the session row', function () {
     // Found by self-review, not by the first draft of these tests. If the branch
     // a day is committed to loses its eligibility, the override must produce NO
