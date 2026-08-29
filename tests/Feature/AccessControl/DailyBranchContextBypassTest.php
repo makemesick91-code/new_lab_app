@@ -318,6 +318,34 @@ it('refuses the approval queue and the approve action to a non-super-admin', fun
         ->and((int) dbcDaily()->lockedBranchIdFor($user))->toBe((int) $a->id);
 });
 
+it('denies the approve gate itself to every non-super-admin role', function () {
+    // The gate, asserted DIRECTLY rather than through the policy behind it.
+    //
+    // Mutation testing found this gap: widening the gate to `fn () => true` left
+    // every HTTP assertion green, because BranchChangeRequestPolicy refused the
+    // action a layer later. Defence in depth is why nothing broke — but the gate
+    // is also what the sidebar reads, so a widened gate would advertise the
+    // approver menu to operators who cannot use it, and would remove one of the
+    // two layers with nothing turning red.
+    foreach (['Kasir', 'Admin Klinik', 'Perawat', 'Doctor', 'Owner', 'Supervisor RME', 'Admin Lab'] as $role) {
+        expect(userInRole($role)->can('branch-change-request.approve'))
+            ->toBeFalse("role {$role} must not hold the branch-change approval gate");
+    }
+
+    expect(dbcSuperAdmin()->can('branch-change-request.approve'))->toBeTrue();
+});
+
+it('keeps the approver menu out of a non-super-admin sidebar', function () {
+    $a = dbcBranch('AAA');
+    $user = userInRole('Kasir');
+    dbcStart($user, $a);
+
+    $this->actingAs($user)
+        ->get(route('rme.branch-change-requests.create'))
+        ->assertOk()
+        ->assertDontSee('Permintaan Pindah Cabang');
+});
+
 it('lets a super admin approve over HTTP and moves the branch', function () {
     $a = dbcBranch('AAA');
     $b = dbcBranch('BBB');

@@ -140,8 +140,6 @@ class BranchChangeApprovalService
      */
     public function approve(int $requestId, User $approver, ?string $decisionNote = null): BranchChangeRequest
     {
-        $this->expireIfStale($requestId);
-
         return DB::transaction(function () use ($requestId, $approver, $decisionNote): BranchChangeRequest {
             $request = $this->lockPendingRequest($requestId, $approver);
 
@@ -217,8 +215,6 @@ class BranchChangeApprovalService
      */
     public function reject(int $requestId, User $approver, ?string $decisionNote = null): BranchChangeRequest
     {
-        $this->expireIfStale($requestId);
-
         return DB::transaction(function () use ($requestId, $approver, $decisionNote): BranchChangeRequest {
             $request = $this->lockPendingRequest($requestId, $approver);
             $before = $this->auditPayload($request);
@@ -312,54 +308,37 @@ class BranchChangeApprovalService
             ]);
         }
 
-        if (! $request->isPending()) {
-            throw ValidationException::withMessages([
-                'request' => 'Permintaan ini sudah diputuskan.',
-            ]);
-        }
-
-        // FAIL CLOSED ON THE DAY BOUNDARY.
+        // FAIL CLOSED ON THE DAY BOUNDARY — CHECKED BEFORE THE STATUS.
         //
-        // The authoritative refusal, evaluated under the row lock. It is
-        // deliberately a pure check with no write: this runs inside the decision
-        // transaction, so anything written here would be rolled back by the very
-        // exception that refuses the decision. The EXPIRED bookkeeping is done
-        // by expireIfStale() before the transaction opens, where it commits.
+        // Ordered first on purpose. A previous-day request must be refused as
+        // KEDALUWARSA whether it is still PENDING or has already been stamped
+        // EXPIRED by the queue's housekeeping, and the operator deserves the
+        // message that says which of the two happened.
         //
-        // Correctness does not depend on that bookkeeping having run. Even on a
-        // deployment where no expiry ever fires, a request from a past clinical
-        // day is refused right here.
+        // The ordering also matters for the tests: an earlier draft stamped the
+        // row EXPIRED before opening this transaction, which meant the refusal
+        // always came from the isPending() check below and this guard was never
+        // exercised. Mutation testing caught it — deleting this condition left
+        // every test green. The bookkeeping now lives entirely in the queue
+        // listing (BranchChangeRequestRepository::expireStale), so this is the
+        // single, observable boundary.
+        //
+        // Correctness therefore does not wait for a cron: even on a deployment
+        // where no expiry ever runs, a request from a past clinical day is
+        // refused right here.
         if ($request->isStaleForClinicalDay($this->daily->clinicalToday())) {
             throw ValidationException::withMessages([
                 'request' => 'Permintaan ini berasal dari hari klinis sebelumnya dan sudah kedaluwarsa.',
             ]);
         }
 
-        return $request;
-    }
-
-    /**
-     * Commit the EXPIRED stamp for a stale request, outside any decision
-     * transaction, so the queue stops showing a request nobody can act on.
-     *
-     * Housekeeping only — see the fail-closed check in lockPendingRequest(),
-     * which is the boundary. This never throws: a decision on a stale request is
-     * refused there, with the message that explains why.
-     */
-    private function expireIfStale(int $requestId): void
-    {
-        $request = $this->requests->findById($requestId);
-
-        if ($request === null
-            || ! $request->isPending()
-            || ! $request->isStaleForClinicalDay($this->daily->clinicalToday())) {
-            return;
+        if (! $request->isPending()) {
+            throw ValidationException::withMessages([
+                'request' => 'Permintaan ini sudah diputuskan.',
+            ]);
         }
 
-        $this->requests->update($request, [
-            'status' => BranchChangeRequest::STATUS_EXPIRED,
-            'decided_at' => now(),
-        ]);
+        return $request;
     }
 
     /**

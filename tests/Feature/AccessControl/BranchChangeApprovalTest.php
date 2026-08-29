@@ -313,11 +313,66 @@ it('refuses to approve a request from a previous clinical day, with no cron requ
     dbcStart($user, $a);
     $request = dbcApprovals()->request($user, (int) $b->id, 'Permintaan kemarin.');
 
-    // Next clinical day. No expiry job has run.
+    // Next clinical day. NOTHING has expired the row: it is still PENDING, so
+    // the refusal can only come from the staleness guard itself.
+    //
+    // An earlier draft stamped the row EXPIRED before opening the decision
+    // transaction, which meant this test passed off the isPending() check and
+    // the staleness guard was never exercised at all. Mutation testing caught
+    // it. Asserting the row is still PENDING at the moment of the attempt is
+    // what keeps that from silently coming back.
+    Carbon::setTestNow(Carbon::parse('2026-08-30 03:00:00', 'UTC'));
+    expect($request->fresh()->status)->toBe(BranchChangeRequest::STATUS_PENDING);
+
+    try {
+        dbcApprovals()->approve((int) $request->id, $admin);
+        $this->fail('A previous-day request must never be approved.');
+    } catch (ValidationException $exception) {
+        expect(implode(' ', $exception->validator->errors()->all()))
+            ->toContain('kedaluwarsa');
+    }
+
+    // Refused, and nothing moved. On the new clinical day the user has no
+    // context at all yet — deliberately NOT cast to int, which would turn the
+    // null this asserts into a 0.
+    expect(dbcDaily()->lockedBranchIdFor($user))->toBeNull();
+    expect($request->fresh()->status)->toBe(BranchChangeRequest::STATUS_PENDING);
+});
+
+it('refuses to reject a request from a previous clinical day too', function () {
+    $a = dbcBranch('AAA');
+    $b = dbcBranch('BBB');
+    $user = userInRole('Kasir');
+
+    Carbon::setTestNow(Carbon::parse('2026-08-29 03:00:00', 'UTC'));
+    dbcStart($user, $a);
+    $request = dbcApprovals()->request($user, (int) $b->id, 'Permintaan kemarin.');
+
     Carbon::setTestNow(Carbon::parse('2026-08-30 03:00:00', 'UTC'));
 
-    expect(fn () => dbcApprovals()->approve((int) $request->id, $admin))
+    expect(fn () => dbcApprovals()->reject((int) $request->id, dbcSuperAdmin()))
         ->toThrow(ValidationException::class);
+
+    expect($request->fresh()->status)->toBe(BranchChangeRequest::STATUS_PENDING);
+});
+
+it('expires a stale request through the queue listing, as housekeeping', function () {
+    // The bookkeeping half, kept deliberately separate from the boundary above.
+    // The queue stops offering a request nobody can act on; the refusal does not
+    // depend on this having run.
+    $a = dbcBranch('AAA');
+    $b = dbcBranch('BBB');
+    $user = userInRole('Kasir');
+
+    Carbon::setTestNow(Carbon::parse('2026-08-29 03:00:00', 'UTC'));
+    dbcStart($user, $a);
+    $request = dbcApprovals()->request($user, (int) $b->id, 'Permintaan kemarin.');
+
+    Carbon::setTestNow(Carbon::parse('2026-08-30 03:00:00', 'UTC'));
+
+    $this->actingAs(dbcSuperAdmin())
+        ->get(route('rme.branch-change-requests.index'))
+        ->assertOk();
 
     expect($request->fresh()->status)->toBe(BranchChangeRequest::STATUS_EXPIRED);
 });
