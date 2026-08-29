@@ -298,6 +298,15 @@ return [
         'tests/Feature/AccessControl/DailyBranchContextBypassTest.php',
         'tests/Feature/AccessControl/BranchChangeApprovalTest.php',
         'tests/Feature/LegacyImportHub/LegacyImportHubSurfaceTest.php',
+
+        // REVISION-RME-REPORTS-TODAY-DEFAULT-1 — the RME reports' default period.
+        // Declared for the same reason as the branch-lock suites above: the
+        // guarantee is a NEGATIVE one (a bare report, and its CSV export, must
+        // never return the branch's whole history), and an all-history default
+        // was the DOCUMENTED behaviour until this sprint, so no other test
+        // forbids it. The suite also carries the branch × date matrix proving a
+        // historical filter cannot widen the authorised branch scope.
+        'tests/Feature/RME/RmeReportTodayDefaultTest.php',
     ],
 
     /*

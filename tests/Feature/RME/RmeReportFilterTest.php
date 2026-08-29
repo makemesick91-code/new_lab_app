@@ -43,7 +43,7 @@ function rptVisit(Patient $patient, array $overrides = []): ClinicVisit
         'branch_id' => test()->branch->id,
         'patient_id' => $patient->id,
         'doctor_id' => Doctor::factory()->create(['is_active' => true])->id,
-        'visit_date' => now()->toDateString(),
+        'visit_date' => clinicalToday()->toDateString(),
         'status' => ClinicVisit::STATUS_COMPLETED,
     ], $overrides));
 }

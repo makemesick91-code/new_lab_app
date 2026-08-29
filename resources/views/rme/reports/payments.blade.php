@@ -51,9 +51,19 @@
         </div>
         <x-slot:actions>
             <x-ui.button type="submit" variant="primary">Filter</x-ui.button>
-            <x-ui.button variant="secondary" :href="route('rme.reports.payments')">Atur Ulang</x-ui.button>
+            <x-ui.button variant="secondary" :href="route('rme.reports.payments')">Reset ke Hari Ini</x-ui.button>
         </x-slot:actions>
     </x-ui.filter-bar>
+
+    {{-- REVISION-RME-REPORTS-TODAY-DEFAULT-1 — the active period is always
+         stated, so "today only" is never a silent assumption. --}}
+    <div class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <span class="font-medium text-ink">Periode:</span>
+        <span class="text-ink-soft">{{ $filters['period_label'] }}</span>
+        @if ($filters['is_default_today'] ?? false)
+            <span class="text-ink-muted">· Gunakan filter tanggal untuk melihat periode lain.</span>
+        @endif
+    </div>
 
     <div class="mb-4 grid gap-4 sm:grid-cols-3">
         <x-ui.kpi-card label="Total Pasien Hasil Filter" value="{{ number_format($totalFilteredPatients ?? 0) }} pasien" />
@@ -114,7 +124,11 @@
                 @empty
                     <tr>
                         <td colspan="11" class="px-3 py-6">
-                            <x-ui.empty-state title="Belum ada pembayaran RME" description="Tidak ada data yang cocok dengan filter saat ini." />
+                            <x-ui.empty-state
+                                title="Belum ada pembayaran RME"
+                                :description="($filters['is_default_today'] ?? false)
+                                    ? 'Tidak ada data pembayaran RME untuk hari ini. Gunakan filter tanggal untuk melihat periode lain.'
+                                    : 'Tidak ada data yang cocok dengan filter saat ini.'" />
                         </td>
                     </tr>
                 @endforelse

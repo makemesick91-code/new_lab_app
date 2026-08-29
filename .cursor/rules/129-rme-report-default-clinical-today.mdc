@@ -1,0 +1,72 @@
+---
+description: RME report default period is the clinical today; history is opt-in and never widens branch authority
+globs:
+  - "app/Modules/RmeInvoice/**/*.php"
+  - "resources/views/rme/reports/**/*.blade.php"
+  - "tests/Feature/RME/**/*.php"
+alwaysApply: false
+---
+
+# REVISION-RME-REPORTS-TODAY-DEFAULT-1 — RME report default period
+
+Applies to **Laporan Pasien RME** (`rme.reports.patients*`) and **Laporan
+Pembayaran RME** (`rme.reports.payments*`), across all six surfaces: index,
+CSV export and print view for each.
+
+## The contract
+
+```
+no explicit date filter → from = to = clinical today
+explicit valid filter   → the requested period
+reset                   → today, never all history
+```
+
+Explicit filter outranks the default. The period is **always bounded** — no
+input may turn an unfiltered report into an all-history report.
+
+## Non-negotiables
+
+1. **One authority.** `App\Modules\RmeInvoice\Support\RmeReportDateScope` is the
+   only place a report period is decided. Controllers, FormRequests, Blade views
+   and tests must not re-derive it, and must not reintroduce
+   `->when($request->filled('date_from'), ...)` in a report query.
+
+2. **One period per request.** Resolve once and share it between the list, the
+   totals, the CSV export, the print view and the filter summary. The screen may
+   never show "today" while the export returns the archive.
+
+3. **Memoize on the REQUEST, never on the controller.** Laravel caches the
+   controller instance on the `Route`, and the `Router` is a singleton, so a
+   controller property survives between requests under any persistent worker and
+   pins a stale "today" past the clinical midnight (STATELESS-1).
+
+4. **`ClinicalClock` is the only "today".** Never `now()`, `Carbon::today()` or
+   `date()`. `config/app.php` is UTC by design; a UTC default would show the
+   wrong day's patients for eight hours of every day.
+
+5. **Fail closed.** A malformed, partial or empty date bound is treated as
+   absent, and no usable bound means today. Parse strictly through `!Y-m-d` with
+   a round-trip check — `Carbon::parse('2026-13-45')` silently rolls into
+   2027-02-14, which is a different clinical period than the operator typed.
+
+6. **A date filter widens the period, never the branch scope.** Every report
+   query ANDs `authorised branch scope AND date period AND search`.
+   `RmeWorkingBranchScope` stays the branch authority (FIX-04/FIX-09); a request
+   `branch_id` is never authority, only a narrowing filter; the daily branch lock
+   still decides a context-bound Kasir's or Admin Klinik's branch.
+
+7. **Search stays inside the period.** Searching a patient name must not reach
+   back through the whole archive while the period says today. The same applies
+   to any pagination or sorting added later — neither exists today.
+
+8. **Canonical report date is `trx_clinic_visits.visit_date`** for BOTH reports.
+   The payment report already reached it through `clinicVisit`; do not switch it
+   to `paid_at`, and do not collapse visit/payment/invoice dates together.
+
+## Test fixtures
+
+A "today" fixture must be stamped with `clinicalToday()`, never
+`now()->toDateString()`. A UTC-stamped fixture is *clinical yesterday* between
+16:00 and 24:00 UTC and will fail for a third of every day once a report defaults
+to today. Freeze with `Carbon::setTestNow()` (it controls `CarbonImmutable`, and
+therefore `ClinicalClock`) and always reset it afterwards.

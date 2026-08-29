@@ -1,52 +1,56 @@
-# FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1 — Sprint Manifest
+# REVISION-RME-REPORTS-TODAY-DEFAULT-1 — Sprint Manifest
 #
-# WHAT THIS SPRINT IS. Kasir and Admin Klinik pick their working branch once per
-# clinical day. After that first free selection the branch is LOCKED, and moving
-# it requires a Super Admin approval bound to that one user, that one source,
-# that one destination and that one clinical day.
+# Prompt classification: FEATURE_REVISION · RME_REPORTING · DEFAULT_SCOPE ·
+# BRANCH_SECURITY_REGRESSION_SENSITIVE. `type` below is MODULE_SPRINT because
+# that is the closest registered profile in config/sprint_profiles.php —
+# FEATURE_REVISION is not a defined type and inventing one would fail the
+# manifest check rather than describe the work.
 #
-# WHY IT IS NOT A UI SPRINT. Before this sprint a cashier could change branch as
-# often as they liked simply by re-opening the online-context selector — and the
-# financial scope of the cashier workspace followed. A disabled dropdown would
-# have stopped an honest operator and nobody else, so the authority is a durable
-# row in `trx_daily_branch_contexts` that outranks the session-scoped online
-# context. The lock therefore survives logout, a second browser, a raw POST and
-# a tampered context row.
+# WHAT THIS SPRINT IS. Laporan Pasien RME and Laporan Pembayaran RME now default
+# to the CLINICAL today. Historical rows appear only when the operator supplies
+# an explicit date filter.
 #
-# AN APPROVAL IS AN EVENT, NOT A CREDENTIAL. The branch switch is applied inside
-# the approval transaction, so there is no "approved" token to replay. Single-use
-# is a property of the design rather than a counter someone must remember to
-# decrement.
+# WHY IT IS NOT COSMETIC. Both reports applied their date predicate only when a
+# filter was present, so a bare report URL returned every visit and every payment
+# the branch had ever recorded — and the CSV export and print view share those
+# query builders, so one click on Export from a freshly opened report produced a
+# full historical extract. Bounding the default is a data-minimisation change,
+# not a layout change.
 #
-# WHAT IS DELIBERATELY NOT CHANGED. Doctor and Perawat keep their current free
-# branch selection — only the two roles named in the brief are locked. No branch
-# eligibility rule is relaxed: an approval can never grant access to a branch the
-# user could not otherwise work in, and the destination is re-validated under the
-# lock at decision time. No new permission is introduced; approval authority is
-# the canonical Super Admin role. No payment, invoice, consent, room, ledger or
-# clinical rule is touched.
+# WHY IT IS BRANCH-SECURITY-SENSITIVE. The change edits the two report query
+# builders that also carry the FIX-04/FIX-09 branch predicate. Nothing about
+# branch authority changed — RmeWorkingBranchScope is still the only authority
+# and a request branch_id is still only ever narrowing — but a regression here
+# would be a cross-branch data leak, so the branch matrix is re-proven rather
+# than assumed. A date filter widens the PERIOD, never the branch scope.
+#
+# WHAT IS DELIBERATELY NOT CHANGED. No schema, route, permission or policy. No
+# registration, queue, room, consent, RME/odontogram, visit-completion, invoice
+# or payment write behaviour. The payment report's canonical date stays
+# trx_clinic_visits.visit_date — it already resolved through clinicVisit, so the
+# date SEMANTICS are untouched and only the DEFAULT changed.
 
-id: FEATURE-DAILY-BRANCH-CONTEXT-LOCK-1
+id: REVISION-RME-REPORTS-TODAY-DEFAULT-1
 type: MODULE_SPRINT
-module: RmeOnlineContext
-title: 'Daily working-branch lock for Kasir and Admin Klinik, with Super Admin approved mid-day changes'
+module: RmeInvoice
+title: 'RME patient and payment reports default to the clinical today; history is opt-in'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true            # new guard in the online-context service, new approval workflow
-schema_change: true             # two additive tables; no column dropped, no data rewritten
+runtime_change: true            # both report query builders + the filter/summary payloads
+schema_change: false            # no migration, no column, no table
 frontend_change: false          # Blade only; no JS/CSS/Vite/package asset changed
-security_impact: true           # a new persistent authorization boundary + a new gate and policy
-branch_isolation_impact: true   # the working branch is now durable authority for two roles
+security_impact: true           # removes an unbounded historical extract from the default path
+branch_isolation_impact: true   # not CHANGED, but regression-sensitive: the edited queries carry the branch predicate
 ledger_impact: false
-deploy_required: true           # the migration and the lock must reach production to exist
-browser_required: false         # HTTP-level assertions cover both surfaces
+deploy_required: true           # the bounded default only exists in production once deployed
+browser_required: false         # HTTP-level assertions cover screen, CSV and print
 test_profiles:
   - focused
   - permission_regression
-go_tag: feature-daily-branch-context-lock-1-go
+go_tag: revision-rme-reports-today-default-1-go
 
-# Carried forward from the closure manifest this sprint inherits. Not
-# boilerplate: dropping either makes the LegacyRme closure contract fail.
+# Carried forward from the manifests this sprint inherits. Not boilerplate:
+# dropping either makes the LegacyRme closure contract fail.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
