@@ -1,54 +1,65 @@
-# REVISION-RME-REPORTS-TODAY-DEFAULT-1 — Sprint Manifest
+# REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — Sprint Manifest
 #
-# Prompt classification: FEATURE_REVISION · RME_REPORTING · DEFAULT_SCOPE ·
-# BRANCH_SECURITY_REGRESSION_SENSITIVE. `type` below is MODULE_SPRINT because
-# that is the closest registered profile in config/sprint_profiles.php —
-# FEATURE_REVISION is not a defined type and inventing one would fail the
-# manifest check rather than describe the work.
+# Prompt classification: FEATURE_REVISION · NEW_VISIT · PATIENT_SELECTION ·
+# SEARCHABLE_COMBOBOX · PRIVACY_SENSITIVE · BRANCH_SCOPE_SENSITIVE. `type` below
+# is MODULE_SPRINT because that is the closest registered profile in
+# config/sprint_profiles.php — FEATURE_REVISION is not a defined type and
+# inventing one would fail the manifest check rather than describe the work.
 #
-# WHAT THIS SPRINT IS. Laporan Pasien RME and Laporan Pembayaran RME now default
-# to the CLINICAL today. Historical rows appear only when the operator supplies
-# an explicit date filter.
+# WHAT THIS SPRINT IS. "Kunjungan Baru" chooses a registered patient through ONE
+# searchable combobox instead of a filter box plus a native select. The operator
+# types a name or a Nomor RM, the server answers with the patients they are
+# authorized to register, and an explicit choice sets patient_id.
 #
-# WHY IT IS NOT COSMETIC. Both reports applied their date predicate only when a
-# filter was present, so a bare report URL returned every visit and every payment
-# the branch had ever recorded — and the CSV export and print view share those
-# query builders, so one click on Export from a freshly opened report produced a
-# full historical extract. Bounding the default is a data-minimisation change,
-# not a layout change.
+# WHY IT IS NOT COSMETIC. The control it replaces rendered EVERY patient the
+# query returned into the create page as <option> elements — and the option label
+# included each patient's phone number. Worse, the query behind it was
+# `Patient::with('branch')->orderBy('name')` with a doctor-only scope, so for
+# Admin Klinik, Kasir, Perawat, Owner and Supervisor RME it was every patient in
+# every branch, active or not. Collapsing to one control is the visible half; the
+# invisible half is that the estate is no longer serialised into the page and the
+# search now runs inside the canonical working-branch scope.
 #
-# WHY IT IS BRANCH-SECURITY-SENSITIVE. The change edits the two report query
-# builders that also carry the FIX-04/FIX-09 branch predicate. Nothing about
-# branch authority changed — RmeWorkingBranchScope is still the only authority
-# and a request branch_id is still only ever narrowing — but a regression here
-# would be a cross-branch data leak, so the branch matrix is re-proven rather
-# than assumed. A date filter widens the PERIOD, never the branch scope.
+# WHY IT IS BRANCH-SCOPE-SENSITIVE. Branch authority is delegated to
+# RmeWorkingBranchScope — the same authority ClinicVisitPolicy already uses — so
+# a context-bound role (Admin Klinik / Perawat / Kasir) searches only its active
+# working branch and fails closed with no context. This is strictly a NARROWING
+# of what the page previously exposed. The endpoint accepts no branch_id at all,
+# so a crafted query cannot widen or re-point the scope, and the daily branch
+# lock still owns mid-day moves.
 #
-# WHAT IS DELIBERATELY NOT CHANGED. No schema, route, permission or policy. No
-# registration, queue, room, consent, RME/odontogram, visit-completion, invoice
-# or payment write behaviour. The payment report's canonical date stays
-# trx_clinic_visits.visit_date — it already resolved through clinicVisit, so the
-# date SEMANTICS are untouched and only the DEFAULT changed.
+# WHY IT IS PRIVACY-SENSITIVE. The response carries exactly four identity fields
+# (id, name, medical_record_number, branch_label) and is pinned by an exact
+# key-set assertion, so phone / WhatsApp / KTP / address / DOB / email cannot
+# reappear by accident.
+#
+# WHAT IS DELIBERATELY NOT CHANGED. No migration, no schema, no permission, no
+# policy, no route rename. No registration, queue, room, consent, RME/odontogram,
+# visit-completion, invoice or payment behaviour. Inactive patients stay
+# selectable exactly as before — "inactive" is not "unauthorized", and excluding
+# them would be an operational policy change nobody asked for. The legacy
+# x-patient-search-select component stays in place for the dental Lab Order form,
+# which is a different page and out of this sprint's scope.
 
-id: REVISION-RME-REPORTS-TODAY-DEFAULT-1
+id: REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1
 type: MODULE_SPRINT
-module: RmeInvoice
-title: 'RME patient and payment reports default to the clinical today; history is opt-in'
+module: ClinicVisit
+title: 'Kunjungan Baru selects a registered patient through one authorized searchable combobox'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality.
-runtime_change: true            # both report query builders + the filter/summary payloads
+runtime_change: true            # new search endpoint, service, repository methods, submit-time re-validation
 schema_change: false            # no migration, no column, no table
-frontend_change: false          # Blade only; no JS/CSS/Vite/package asset changed
-security_impact: true           # removes an unbounded historical extract from the default path
-branch_isolation_impact: true   # not CHANGED, but regression-sensitive: the edited queries carry the branch predicate
+frontend_change: true           # new Alpine module + Blade component; requires npm run build
+security_impact: true           # removes a full-estate patient preload; adds the submit-time patient boundary
+branch_isolation_impact: true   # patient search is now inside RmeWorkingBranchScope (a narrowing)
 ledger_impact: false
-deploy_required: true           # the bounded default only exists in production once deployed
-browser_required: false         # HTTP-level assertions cover screen, CSV and print
+deploy_required: true           # the single control only exists in production once deployed
+browser_required: false         # the browser-only behaviours are covered by tests/js state-machine tests
 test_profiles:
   - focused
   - permission_regression
-go_tag: revision-rme-reports-today-default-1-go
+go_tag: revision-new-visit-patient-search-combobox-1-go
 
 # Carried forward from the manifests this sprint inherits. Not boilerplate:
 # dropping either makes the LegacyRme closure contract fail.

@@ -6,6 +6,7 @@ use App\Modules\Branch\Interfaces\BranchRepositoryInterface;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
+use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Support\Clinical\ClinicalClock;
 use Carbon\Carbon;
@@ -45,6 +46,22 @@ class StoreClinicVisitRequest extends FormRequest
 
         $this->applyAdminClinicBranchContext();
         $this->applyAdminClinicDoctorContext();
+        $this->clearExistingPatientForNewRegistration();
+    }
+
+    /**
+     * REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — registering a brand-new
+     * patient can never carry a previously selected existing patient.
+     *
+     * The combobox already clears itself when the operator switches to "Pasien
+     * Baru", but a hidden panel still submits its fields, so the server drops the
+     * value rather than trusting the browser to have done it.
+     */
+    private function clearExistingPatientForNewRegistration(): void
+    {
+        if ($this->input('patient_mode') === 'new') {
+            $this->merge(['patient_id' => null]);
+        }
     }
 
     /**
@@ -189,6 +206,7 @@ class StoreClinicVisitRequest extends FormRequest
     {
         $validator->after(function (Validator $validator) {
             $this->validateNewPatientRm($validator);
+            $this->validateExistingPatientSelectable($validator);
             $this->validateFollowUpVisit($validator);
             $this->validateOnlineDoctor($validator);
         });
@@ -248,6 +266,41 @@ class StoreClinicVisitRequest extends FormRequest
 
         if ($rmNumbers->exists($composed)) {
             $validator->errors()->add('new_patient.manual_rm_number', "Nomor RM final {$composed} sudah digunakan.");
+        }
+    }
+
+    /**
+     * REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the server-side patient
+     * boundary for visit creation.
+     *
+     * `Rule::exists` alone only proves the row is real, not that this operator
+     * may register a visit for it. Being offered in the combobox is a UI
+     * convenience; this is the authorization, so a hand-crafted `patient_id`
+     * belonging to another working branch is rejected even though the dropdown
+     * would never have shown it. The scope is the very same
+     * {@see PatientSelectorSearchService} the search uses, so what is selectable
+     * and what is submittable can never drift apart.
+     */
+    private function validateExistingPatientSelectable(Validator $validator): void
+    {
+        if ($validator->errors()->isNotEmpty() || $this->input('patient_mode') === 'new') {
+            return;
+        }
+
+        $patientId = $this->input('patient_id');
+
+        if (! $patientId) {
+            return;
+        }
+
+        $selectable = app(PatientSelectorSearchService::class)
+            ->isSelectable($this->user(), (int) $patientId);
+
+        if (! $selectable) {
+            $validator->errors()->add(
+                'patient_id',
+                'Pasien yang dipilih tidak tersedia pada cabang kerja Anda.'
+            );
         }
     }
 

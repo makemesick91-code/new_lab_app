@@ -1,6 +1,7 @@
 import './bootstrap';
 
 import Alpine from 'alpinejs';
+import { createPatientCombobox } from './patient-combobox';
 
 window.Alpine = Alpine;
 
@@ -513,5 +514,11 @@ Alpine.data('adlmsSidebar', (routeOpen = {}) => ({
         localStorage.setItem('adlms-sidebar-groups', JSON.stringify(this.open));
     },
 }));
+
+// REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the single searchable
+// patient control on "Kunjungan Baru". The state machine lives in its own
+// module so its stale-response and "typed text is not a selection" rules can
+// be unit-tested outside a browser (tests/js/patient-combobox.test.mjs).
+Alpine.data('patientCombobox', (config = {}) => createPatientCombobox(config));
 
 Alpine.start();

@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\ClinicVisit\Requests\AssignRoomRequest;
+use App\Modules\ClinicVisit\Requests\PatientSearchRequest;
 use App\Modules\ClinicVisit\Requests\StoreClinicVisitRequest;
 use App\Modules\ClinicVisit\Requests\TransitionStatusRequest;
 use App\Modules\ClinicVisit\Requests\UpdateClinicVisitRequest;
@@ -17,6 +18,7 @@ use App\Modules\MedicalRecord\Services\MedicalRecordService;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
+use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -171,13 +173,13 @@ class ClinicVisitController extends Controller
             ? $this->onlineContext->activeDoctorsForBranch((int) $selectedBranchId)
             : collect();
 
-        $patientsQuery = Patient::with('branch')->orderBy('name');
-        if ($user !== null) {
-            $patientsQuery = $this->doctorScope->applyPatientScopeForUser($user, $patientsQuery);
-        }
-
+        // REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — the patient list is NOT
+        // preloaded any more. It used to ship every patient row (across every
+        // branch, phone numbers included) into this page's HTML for the browser
+        // to filter. The combobox now asks `rme.visits.patient-search`, which
+        // applies the working-branch scope server-side and returns at most
+        // PatientSelectorSearchService::RESULT_LIMIT identity-only rows.
         return view('rme.visits.create', [
-            'patients' => $patientsQuery->get(),
             'doctors' => $doctors,
             'treatments' => Treatment::where('is_active', true)->orderBy('name')->get(),
             'rmeBranches' => $this->branchService->listRmeEnabled(),
@@ -186,6 +188,22 @@ class ClinicVisitController extends Controller
             'noOnlineDoctors' => $selectedBranchId !== null && $doctors->isEmpty() && $adminBranchId === null,
             'hideDoctorSelection' => $adminBranchId !== null,
         ]);
+    }
+
+    /**
+     * REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — authorized patient lookup
+     * for the single "Kunjungan Baru" combobox.
+     *
+     * Gated by the same `create` ability as the page that uses it, so someone who
+     * may not register a visit cannot enumerate patients through it. Scope and
+     * result ceiling live in {@see PatientSelectorSearchService}; this method
+     * only hands the request's term over and returns what it is given.
+     */
+    public function patientSearch(PatientSearchRequest $request, PatientSelectorSearchService $search): JsonResponse
+    {
+        $this->authorize('create', ClinicVisit::class);
+
+        return response()->json($search->search($request->user(), $request->term()));
     }
 
     public function patientVisitOptions(Request $request): JsonResponse

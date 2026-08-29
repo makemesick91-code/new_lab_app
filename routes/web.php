@@ -614,6 +614,14 @@ Route::middleware('auth')->prefix('rme')->name('rme.')->group(function () {
         Route::get('visits/patient-options', [ClinicVisitController::class, 'patientVisitOptions'])
             ->name('visits.patient-options');
 
+        // REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — authorized, bounded
+        // patient lookup for the single "Kunjungan Baru" combobox. Declared
+        // before the visits resource so it is never captured as `visits/{id}`.
+        // Authorization is the ClinicVisit `create` ability, applied in the
+        // controller; branch scope is server-side and takes no request input.
+        Route::get('visits/patient-search', [ClinicVisitController::class, 'patientSearch'])
+            ->name('visits.patient-search');
+
         Route::get('visits/online-doctors', [ClinicVisitController::class, 'onlineDoctors'])
             ->name('visits.online-doctors');
 

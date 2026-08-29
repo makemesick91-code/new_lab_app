@@ -14,7 +14,6 @@
                 @csrf
                 @include('rme.visits._form', [
                     'visit' => null,
-                    'patients' => $patients,
                     'doctors' => $doctors,
                     'rmeBranches' => $rmeBranches,
                     'prefill' => $prefill ?? [],

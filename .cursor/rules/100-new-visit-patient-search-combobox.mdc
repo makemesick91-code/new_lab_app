@@ -1,0 +1,111 @@
+---
+description: New Visit patient selection — one authorized searchable combobox, never a preloaded patient list
+globs:
+  - "resources/views/rme/visits/**"
+  - "resources/views/components/patient-combobox.blade.php"
+  - "resources/js/patient-combobox.js"
+  - "app/Modules/Patient/Services/PatientSelectorSearchService.php"
+  - "app/Modules/Patient/Repositories/PatientRepository.php"
+  - "app/Modules/ClinicVisit/**"
+alwaysApply: false
+---
+
+# REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1 — durable rules
+
+Source of truth: `docs/sprints/revision-new-visit-patient-search-combobox-1.md`.
+GO tag `revision-new-visit-patient-search-combobox-1-go`.
+
+## 1. One control
+
+"Kunjungan Baru" (`rme.visits.create`) selects a registered patient through
+**exactly one** control: `<x-patient-combobox>`. There is no second dropdown, no
+separate filter box, and no hidden native `<select name="patient_id">`. The only
+`patient_id` field on the form is the component's hidden input.
+
+Pinned by `NewVisitPatientSearchComboboxTest` — the rendered page must contain
+`data-patient-combobox` and `name="patient_id"` exactly once each.
+
+## 2. Server-side search only — never preload the patient set
+
+`ClinicVisitController::create()` must NOT pass a patient collection to the view,
+and no Blade template may iterate patients into `<option>` elements for this
+control. The estate is not serialised into HTML.
+
+Results come from `GET rme/visits/patient-search`
+(`rme.visits.patient-search` → `ClinicVisitController::patientSearch`), gated by
+the ClinicVisit `create` ability.
+
+## 3. Branch scope is `RmeWorkingBranchScope`, never re-derived
+
+`PatientSelectorSearchService` takes its branch set from
+`RmeWorkingBranchScope::branchIdsFor()` — the same canonical authority
+`ClinicVisitPolicy` uses. Consequences that must not regress:
+
+- A context-bound role (Admin Klinik / Perawat / Kasir) searches **only** its
+  active working branch.
+- No valid working context ⇒ **empty** scope, empty results. Fail closed. Never
+  a MAIN or first-branch fallback.
+- Doctors are additionally narrowed by `DoctorPatientScopeService`.
+- Legacy patients with `branch_id` null stay selectable for an in-scope operator.
+- Patients of non-RME branches are never selectable.
+- The daily branch lock still owns mid-day moves; the search follows the working
+  branch only after an approved change.
+
+**The endpoint accepts no `branch_id` and no `limit`.** Do not add either. A
+request value must never widen, re-point, or raise the scope or the ceiling.
+
+## 4. Least disclosure
+
+The search response carries exactly four keys:
+
+```
+id, name, medical_record_number, branch_label
+```
+
+Never phone, WhatsApp, KTP/NIK, address, date of birth, email, occupation, or
+anything clinical. The test asserts the **exact key set**, so adding a field is a
+deliberate act that must be argued, not a silent widening.
+
+## 5. Bounded
+
+`PatientSelectorSearchService::MIN_QUERY_LENGTH` (2) and `RESULT_LIMIT` (15) are
+server constants. Below the minimum the server returns nothing — an empty or
+one-character box can never become a patient dump. LIKE metacharacters in the
+query are escaped, so a typed `%` matches literally.
+
+## 6. Typed text is not a patient
+
+`patient_id` is set **only** by explicitly selecting a returned result. Any
+keystroke after a selection clears it. Switching to "Pasien Baru" clears it
+(browser event `patient-selector-reset`, plus a server-side null in
+`StoreClinicVisitRequest::prepareForValidation`, because a hidden panel still
+submits its inputs).
+
+## 7. A slower earlier response never wins
+
+The combobox carries a monotonic request sequence and an AbortController. Every
+`await` re-checks the sequence, so a late response for an older query is
+discarded. This is unit-tested in `tests/js/patient-combobox.test.mjs`
+(`npm run test:js`) — do not move the state machine back inline into `app.js`,
+where it cannot be tested.
+
+## 8. Visibility is not authorization
+
+`StoreClinicVisitRequest` re-asserts the submitted `patient_id` through
+`PatientSelectorSearchService::isSelectable()` — the **same** scope the search
+uses, so what is selectable and what is submittable cannot drift apart. A crafted
+id for another working branch, or for a non-RME branch, is rejected even though
+the dropdown would never have offered it. `Rule::exists` alone is not enough and
+must not be the only guard again.
+
+## 9. Do not conflate with the cross-branch RM lookup
+
+`CrossBranchPatientLookupService` is the deliberate cross-branch **duplicate
+detection** panel. It returns no patient id and must never become a selection
+source. The two services stay separate.
+
+## 10. Out of scope, deliberately
+
+- The legacy `x-patient-search-select` component still serves the dental Lab
+  Order form. It was not migrated here; that is a different page.
+- Inactive patients remain selectable, exactly as before this revision.
