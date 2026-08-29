@@ -430,6 +430,27 @@ it('never lets a historical date filter widen the Admin Klinik branch scope', fu
         ->assertDontSee('RM-TDF-THEIRSOLD');
 });
 
+it('never echoes a foreign branch name into the printed filter summary', function () {
+    // The row data is protected twice over: RmeWorkingBranchScope::narrow()
+    // re-checks membership even if the controller's allows() guard is removed.
+    // The filter summary is the ONE place a crafted branch_id is not re-checked
+    // downstream, so the guard is load-bearing there and is pinned here.
+    $other = Branch::factory()->create([
+        'code' => 'TDF6', 'name' => 'Cabang Rahasia Enam', 'is_active' => true, 'is_rme_enabled' => true,
+    ]);
+
+    $mine = rtdPatient(['name' => 'Pasien Cetak', 'medical_record_number' => 'RM-TDF-PRINT']);
+    rtdVisit($mine);
+
+    $admin = rmeAdminClinicUser($this->branch);
+
+    $this->actingAs($admin)
+        ->get(route('rme.reports.patients.print', ['branch_id' => $other->id]))
+        ->assertOk()
+        ->assertSee('RM-TDF-PRINT')
+        ->assertDontSee('Cabang Rahasia Enam');
+});
+
 it('keeps the Kasir payment report on its working branch and today', function () {
     $other = Branch::factory()->create([
         'code' => 'TDF4', 'name' => 'Cabang Kasir Lain', 'is_active' => true, 'is_rme_enabled' => true,

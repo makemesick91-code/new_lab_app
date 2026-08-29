@@ -159,7 +159,45 @@ Reported honestly rather than claimed:
 
 Adding any of them later must preserve the normalized period.
 
-## 9. Durable rules
+## 9. Adversarial validation
+
+12 mutations attempted, **10 killed, 0 real survivors**, 2 not applicable.
+
+| # | Mutation | Verdict |
+|---|---|---|
+| M1 | patient report loses the today default | KILLED (9 failed) |
+| M2 | payment report loses the today default | KILLED (6 failed) |
+| M3 | default becomes all-history | KILLED (16 failed) |
+| M4 | search escapes the date scope | KILLED (2 failed) |
+| M5 | pagination drops the date scope | **N/A** — no pagination exists |
+| M6 | export bypasses the today default | KILLED (5 failed) |
+| M7 | export ignores an explicit filter | KILLED (2 failed) |
+| M8 | request `branch_id` becomes authority | KILLED (1 failed) |
+| M9 | reset returns all-history | **equivalent to M3** — a reset *is* the bare URL, same code path |
+| M10 | host UTC date replaces `ClinicalClock` | KILLED (1 failed) |
+| M11 | working-branch scope widened to all RME branches | KILLED (4 failed) |
+| M12 | explicit date filter ignored | KILLED (8 failed) |
+
+Two findings came out of this rather than being assumed:
+
+**M4's first verdict was invalid, not a survivor.** Its mutation regex never
+matched, so the "SURVIVED" result was the harness failing to mutate. Re-run with
+a mutation that actually applied (verified by diffing the file), it was killed.
+A mutation that does not apply must be reported as an invalid run, never as
+coverage.
+
+**M8 was a genuine coverage gap and produced a new test.** Removing the
+controller's `allows()` guard survived the first run because
+`RmeWorkingBranchScope::narrow()` independently re-checks membership — row data
+is protected twice over, so no data assertion could see the difference. But
+`resolveBranchId()` also feeds the print filter summary, which is the one place a
+crafted `branch_id` is *not* re-checked downstream: without the guard, an Admin
+Klinik passing `?branch_id=<foreign>` would print `Cabang: <foreign branch name>`
+above correctly-scoped rows. Branch name only, no patient data — but the guard is
+load-bearing there, so it is now pinned by
+`never echoes a foreign branch name into the printed filter summary`.
+
+## 10. Durable rules
 
 1. RME Patient Report and RME Payment Report default to the **clinical today**.
 2. Historical data requires an **explicit** date filter.
