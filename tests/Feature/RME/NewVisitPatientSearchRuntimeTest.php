@@ -45,6 +45,7 @@ use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
+use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use Carbon\Carbon;
 use Database\Seeders\BranchSeeder;
 use Illuminate\Support\Facades\DB;
@@ -286,6 +287,28 @@ it('rejects a malformed query parameter safely rather than with a runtime error'
     $this->actingAs($this->actor)
         ->getJson(route('rme.visits.patient-search').'?q[]=Jefri')
         ->assertStatus(422);
+});
+
+it('fails closed in the SEARCH ITSELF when a context-bound role has no working branch', function () {
+    // The sibling suite already asserts this end to end, but it accepts a 302
+    // as a pass — and the RME online-context middleware supplies one, so the
+    // search's own fail-closed contract is never actually exercised there. A
+    // mutation that made `authorizedBranchIds()` fail OPEN survived that test
+    // for exactly this reason.
+    //
+    // Bypassing only the context middleware puts the question back where the
+    // service says it answers it: no working branch means no rows, not "every
+    // RME branch".
+    $admin = userInRole('Admin Klinik'); // deliberately no online context
+    $admin->givePermissionTo('manage_clinic_visits');
+
+    $response = $this->actingAs($admin)
+        ->withoutMiddleware(EnsureRmeOnlineContext::class)
+        ->getJson(route('rme.visits.patient-search', ['q' => 'Jefri']));
+
+    $response->assertOk();
+
+    expect($response->json('results'))->toBe([]);
 });
 
 it('still refuses to leak contact or identity fields on a successful search', function () {

@@ -42,6 +42,8 @@ class NewVisitPatientSearchBrowserTest extends DuskTestCase
         $this->seedProbePatient();
 
         $this->browse(function (Browser $browser) {
+            $this->freshSession($browser);
+
             $this->loginAsAdmin($browser)
                 ->visit(route('rme.visits.create'))
                 ->waitForText('Daftar Kunjungan Baru', 15)
@@ -67,6 +69,8 @@ class NewVisitPatientSearchBrowserTest extends DuskTestCase
         $this->seedProbePatient();
 
         $this->browse(function (Browser $browser) {
+            $this->freshSession($browser);
+
             $this->loginAsAdmin($browser)
                 ->visit(route('rme.visits.create'))
                 ->waitForText('Daftar Kunjungan Baru', 15)
@@ -87,6 +91,8 @@ class NewVisitPatientSearchBrowserTest extends DuskTestCase
         // The distinction production lost: an honest "nothing matched" must not
         // be dressed as a transport failure.
         $this->browse(function (Browser $browser) {
+            $this->freshSession($browser);
+
             $this->loginAsAdmin($browser)
                 ->visit(route('rme.visits.create'))
                 ->waitForText('Daftar Kunjungan Baru', 15)
@@ -107,6 +113,8 @@ class NewVisitPatientSearchBrowserTest extends DuskTestCase
         $patient = $this->seedProbePatient();
 
         $this->browse(function (Browser $browser) use ($patient) {
+            $this->freshSession($browser);
+
             $this->loginAsAdmin($browser)
                 ->visit(route('rme.visits.create'))
                 ->waitForText('Daftar Kunjungan Baru', 15)
@@ -120,6 +128,18 @@ class NewVisitPatientSearchBrowserTest extends DuskTestCase
             $browser->assertValue('@patient-select', (string) $patient->id);
             $this->assertRmePageHealthy($browser);
         });
+    }
+
+    /**
+     * Dusk reuses one Chrome profile across the tests in a class, so a session
+     * left behind by an earlier test makes /login redirect straight to the
+     * dashboard — and the login helper then looks for an email field that is no
+     * longer on the page. Each test starts from no cookies at all.
+     */
+    private function freshSession(Browser $browser): void
+    {
+        $browser->visit('/login');
+        $browser->driver->manage()->deleteAllCookies();
     }
 
     /** A patient the logged-in admin is genuinely authorized to find. */
