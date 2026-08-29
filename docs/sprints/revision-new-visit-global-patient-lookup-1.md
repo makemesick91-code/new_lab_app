@@ -203,3 +203,100 @@ by a `NewVisitGlobalPatientLookup` token in both gate variants;
   section 8 re-worded. No contradictory rule is left standing.
 - `CLAUDE.md` — sprint section and canonical rule.
 - `.sprint/current.yml` — manifest.
+
+---
+
+## 9. Performance evidence (§29/§30)
+
+Global search scans more rows than a single-branch search, so the widening was
+measured rather than assumed. Measured on PostgreSQL **16.14** at the ENT-13
+projected pilot scale — **70,022 patients across 4 RME branches**:
+
+| Scope | Plan | Execution time (3 runs) |
+|---|---|---|
+| GLOBAL (this sprint, 4 branches + null) | Seq Scan | 56.2 / 54.3 / 57.4 ms |
+| SINGLE branch (previous rule) | Seq Scan | 15.0 / 15.0 / 15.1 ms |
+| GLOBAL, broad match (11,111 rows matched) | Seq Scan | 55.6 / 54.5 / 54.1 ms |
+| GLOBAL, exact Nomor RM | Seq Scan | 54.9 / 53.2 / 54.5 ms |
+
+Global is ~3.6× the single-branch cost, which is expected: the branch filter no
+longer eliminates ~75% of rows before the `LIKE`. At **57 ms worst case** it sits
+well inside the ENT-2 hotspot contract (**p50 200 ms / p95 300 ms**) with roughly
+4× headroom, so:
+
+```
+DATABASE_MIGRATION_REQUIRED = false
+MIGRATIONS_ADDED            = none
+```
+
+Two honest notes:
+
+- The plan is a **Seq Scan**, and always was. A leading-wildcard `LIKE` on a
+  lowered expression cannot use a btree index; that is inherent to substring
+  search and predates this sprint. What changed is only that the scan covers
+  ~4× more rows.
+- Beyond roughly 200k patients this would want `pg_trgm` GIN indexes. That is a
+  database-performance sprint with its own migration and its own evidence — per
+  §30 it must not be slipped into a business-rule revision.
+
+Production reality today: **21 active patients across 4 branches**, so the live
+query is sub-millisecond.
+
+## 10. Merge, deploy and production verification
+
+```
+CANDIDATE_SHA   = 2d17464503f49ff13131d8ea8f1013e5e28408c9
+CANDIDATE_TREE  = aff72f83ae7539cd02cd400ec30afbd109cba19f
+MERGE_SHA       = d1ce4d3b1f192a786e54d17b9fc8a7336aa0441d   (PR #357, squash)
+MERGE_TREE      = aff72f83ae7539cd02cd400ec30afbd109cba19f   == CANDIDATE_TREE
+VPS_HEAD        = d1ce4d3b1f192a786e54d17b9fc8a7336aa0441d
+VPS_TREE        = aff72f83ae7539cd02cd400ec30afbd109cba19f
+GO_TAG          = revision-new-visit-global-patient-lookup-1-go
+```
+
+CI run **33276776506 = SUCCESS**: Classifier, NSF-R012 Quality, NSF-R011
+Critical, CICD-CTRL Selective Module, NSF-9 Release Safety + Smoke, NSF-10
+Release Evidence all green. The self-hosted NSF-R011 variant was skipped
+(mutually exclusive routing) and **NSF-R011 Full Suite was skipped** under the
+active deferral policy — it was not triggered.
+
+Deployed **inside the VPS** via `bash scripts/deploy-vps-runner.sh start`:
+`exit=0`, `DEPLOY OK`, `DEPLOY_HEAD_TARGET_MATCH=YES`. Canonical domain probes:
+`/login` 200, `/health/live` 200, `/health/ready` 200, `/health/lb` 200,
+`/storage/` 403. `APP_ENV=pilot`, `APP_DEBUG=false`, maintenance off.
+
+The deploy smoke's one WATCH — `SMOKE-HTTP-HEALTH … http://127.0.0.1/login →
+404` — is **pre-existing** and unrelated: the same line appears in the two
+preceding deploy logs. It is the known bare-IP co-tenant nginx shadow; over the
+canonical domain `/login` returns 200.
+
+### Production functional verification
+
+Run on the live pilot inside a transaction that was **always rolled back**, so
+the net data change is zero. It exercised the real service through the real
+`UserOnlineContextService`, and respected the daily branch lock rather than
+fighting it (the operator's existing lock chose the working branch).
+
+| Signal | Value |
+|---|---|
+| operator | real Admin Klinik, context-bound |
+| work branch | 2 (from their existing daily lock) |
+| `lookup_scope_is_global` | **true** (4 branches) |
+| `lookup_scope_equals_work_branch_only` | **false** |
+| results / distinct origin branches | 15 / **3** |
+| `remote_branch_match_present` | **true** |
+| `remote_patient_is_selectable` (branch 1) | **true** |
+| response keys | exactly `id, name, medical_record_number, branch_label` |
+| phone / WhatsApp / KTP / NIK / address / DOB / email leak | all **false** |
+| empty and 1-char query | return nothing |
+| row counts before → after | `3\|5\|32\|43` → `3\|5\|32\|43` (**unchanged**) |
+| operator context after rollback | `null` (untouched) |
+
+No patient name, Nomor RM or contact detail appears anywhere in this evidence.
+
+Production log: **0 new bytes** since the pre-deploy offset (1,350,718 bytes,
+143 ERRORs before and after). No new patient-search, visit-branch or
+authorization errors.
+
+> This evidence commit is documentation only and is deliberately **not**
+> deployed; it lands with the next sprint's deploy, per the estate's convention.
