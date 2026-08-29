@@ -309,3 +309,52 @@ of the seven files the cases touch, so M9's mutation of
 Every verdict after M9 was measured against a weakened baseline. The list is now
 the union of all touched files, each case asserts a clean tree before it runs,
 and a mutation that fails to apply is reported rather than counted as survived.
+
+---
+
+## 16. The PostgreSQL trap SQLite cannot show you
+
+CI failed on the first authoritative run with a single test, in both the Critical
+gate (`1 failed, 2537 passed`) and the Selective Module gate:
+
+```
+SQLSTATE[25P02]: In failed sql transaction: current transaction is aborted,
+commands ignored until end of transaction block
+```
+
+**The rule.** PostgreSQL aborts the ENTIRE transaction the moment any statement
+raises. Every later statement fails with `25P02` until a rollback. SQLite does
+not behave this way, so "catch the unique violation and carry on" — the obvious
+shape, and the one every local run was green on — silently leaves a **poisoned
+connection** on the database production actually runs.
+
+**Two sites, unequal severity.**
+
+* `DailyBranchContextService::assertSelectable()` is the serious one. Its INSERT
+  is already inside `DB::transaction`, so the re-read that decides whether the
+  loser of a first-selection race is idempotent or refused ran on an aborted
+  transaction. **That is the race handler itself, broken on production
+  PostgreSQL.**
+* `BranchChangeApprovalService::request()` is milder: outside a transaction
+  PostgreSQL autocommits and nothing is poisoned, so it only broke when called
+  within an outer transaction — which is every test, and any future caller.
+
+**Why the PostgreSQL concurrency suite missed it.** Its cases are refused by the
+lock check *before* they ever reach the INSERT, so the catch path never executed
+there. The suite that was built to prove concurrency correctness could not reach
+the branch that was wrong.
+
+**The fix.** Both INSERTs are wrapped in a nested `DB::transaction`, which
+Laravel implements as a `SAVEPOINT`. A violation now discards only that
+statement and leaves the enclosing transaction usable.
+
+**Verification.** Reproduced locally against `postgres:16.14` before the fix
+(identical `25P02`, same test), then after: the whole `tests/Feature/AccessControl`
+directory is **108 passed on PostgreSQL, where nothing skips** — strictly more
+coverage than the SQLite run, which reports 9 skipped. Two new tests provoke each
+violation and then keep querying on the same connection, so the trap cannot
+return silently.
+
+**Standing lesson for this repo:** the suite defaults to SQLite; production is
+PostgreSQL 16. Any code that *catches* a database error and continues must be
+exercised against PostgreSQL before it is believed.
