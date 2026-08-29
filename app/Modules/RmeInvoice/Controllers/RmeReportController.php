@@ -8,6 +8,8 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\PaymentMethod\Models\PaymentMethod;
 use App\Modules\RmeInvoice\Models\RmePayment;
+use App\Modules\RmeInvoice\Support\RmeReportDateRange;
+use App\Modules\RmeInvoice\Support\RmeReportDateScope;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\Treatment\Models\Treatment;
 use Illuminate\Contracts\View\View;
@@ -212,6 +214,8 @@ class RmeReportController extends Controller
 
     private function patientReportQuery(Request $request): Builder
     {
+        $range = $this->dateRange($request);
+
         // FIX-04 — always branch-scoped; the filter narrows inside the scope.
         return ClinicVisit::query()
             ->with(['patient:id,name,medical_record_number', 'branch:id,name', 'doctor:id,name'])
@@ -221,8 +225,10 @@ class RmeReportController extends Controller
                 fn (Builder $q) => $q->where('status', $request->input('status')),
                 fn (Builder $q) => $q->where('status', '!=', ClinicVisit::STATUS_CANCELLED),
             )
-            ->when($request->filled('date_from'), fn (Builder $q) => $q->whereDate('visit_date', '>=', $request->input('date_from')))
-            ->when($request->filled('date_to'), fn (Builder $q) => $q->whereDate('visit_date', '<=', $request->input('date_to')))
+            // REVISION-RME-REPORTS-TODAY-DEFAULT-1 — always bounded: an absent
+            // or unusable filter is today, never the whole archive.
+            ->when($range->from !== null, fn (Builder $q) => $q->whereDate('visit_date', '>=', $range->from))
+            ->when($range->to !== null, fn (Builder $q) => $q->whereDate('visit_date', '<=', $range->to))
             ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')));
     }
 
@@ -231,6 +237,7 @@ class RmeReportController extends Controller
         $paymentMethodId = $this->resolveMasterId($request, 'payment_method_id');
         $treatmentId = $this->resolveMasterId($request, 'treatment_id');
         $doctorId = $this->resolveMasterId($request, 'doctor_id');
+        $range = $this->dateRange($request);
 
         // FIX-09 — always branch-scoped; list, totals and export share this scope.
         return RmePayment::query()
@@ -245,13 +252,16 @@ class RmeReportController extends Controller
                     ->whereHas('clinicVisit', fn (Builder $visit) => $visit->where('doctor_id', $doctorId))
                     ->orWhereHas('rmeInvoice.items', fn (Builder $items) => $items->where('doctor_id', $doctorId));
             }))
-            ->when($request->filled('date_from'), fn (Builder $q) => $q->whereHas(
+            // REVISION-RME-REPORTS-TODAY-DEFAULT-1 — the payment report's
+            // canonical date is the VISIT date (unchanged); only the default
+            // changes, from "every payment ever" to "today's patients".
+            ->when($range->from !== null, fn (Builder $q) => $q->whereHas(
                 'clinicVisit',
-                fn (Builder $visit) => $visit->whereDate('visit_date', '>=', $request->input('date_from')),
+                fn (Builder $visit) => $visit->whereDate('visit_date', '>=', $range->from),
             ))
-            ->when($request->filled('date_to'), fn (Builder $q) => $q->whereHas(
+            ->when($range->to !== null, fn (Builder $q) => $q->whereHas(
                 'clinicVisit',
-                fn (Builder $visit) => $visit->whereDate('visit_date', '<=', $request->input('date_to')),
+                fn (Builder $visit) => $visit->whereDate('visit_date', '<=', $range->to),
             ))
             ->when($request->filled('q'), fn (Builder $q) => $this->applyPatientSearch($q, $request->input('q')));
     }
@@ -302,9 +312,15 @@ class RmeReportController extends Controller
      */
     private function patientFilters(Request $request): array
     {
+        $range = $this->dateRange($request);
+
         return [
-            'date_from' => $request->input('date_from'),
-            'date_to' => $request->input('date_to'),
+            // Normalized, not raw: the date inputs show the period actually in
+            // force, so the screen and its Export/Print links always agree.
+            'date_from' => $range->from,
+            'date_to' => $range->to,
+            'period_label' => $range->label(),
+            'is_default_today' => $range->isDefaultToday,
             'status' => $request->input('status'),
             'q' => $request->input('q'),
             'branch_id' => $this->resolveBranchId($request),
@@ -316,9 +332,13 @@ class RmeReportController extends Controller
      */
     private function paymentFilters(Request $request): array
     {
+        $range = $this->dateRange($request);
+
         return [
-            'date_from' => $request->input('date_from'),
-            'date_to' => $request->input('date_to'),
+            'date_from' => $range->from,
+            'date_to' => $range->to,
+            'period_label' => $range->label(),
+            'is_default_today' => $range->isDefaultToday,
             'payment_method_id' => $this->resolveMasterId($request, 'payment_method_id'),
             'treatment_id' => $this->resolveMasterId($request, 'treatment_id'),
             'doctor_id' => $this->resolveMasterId($request, 'doctor_id'),
@@ -340,13 +360,10 @@ class RmeReportController extends Controller
             $summary[] = 'Cabang: '.($branchName ?? $branchId);
         }
 
-        if ($request->filled('date_from')) {
-            $summary[] = 'Tanggal dari: '.$request->input('date_from');
-        }
-
-        if ($request->filled('date_to')) {
-            $summary[] = 'Tanggal sampai: '.$request->input('date_to');
-        }
+        // REVISION-RME-REPORTS-TODAY-DEFAULT-1 — the period is ALWAYS stated on
+        // a printed report. A printout that silently omitted its own date range
+        // could not be audited after the fact.
+        $summary[] = 'Periode: '.$this->dateRange($request)->label();
 
         if ($request->filled('status')) {
             $statusOptions = $this->reportableVisitStatuses();
@@ -399,6 +416,21 @@ class RmeReportController extends Controller
                 ->orWhereRaw('LOWER(COALESCE(manual_rm_number, \'\')) LIKE ?', [$term])
                 ->orWhereRaw('CAST(id AS TEXT) LIKE ?', [$term]);
         });
+    }
+
+    /**
+     * REVISION-RME-REPORTS-TODAY-DEFAULT-1 — the reporting period for THIS
+     * request, resolved once by the canonical {@see RmeReportDateScope}.
+     *
+     * The list, the totals, the CSV export, the print view and the filter
+     * summary all read this one value, which is what makes them provably agree.
+     * The scope memoizes per REQUEST (never on this controller — Laravel caches
+     * the controller on the singleton Router's Route, so a property here would
+     * outlive the request and pin a stale "today").
+     */
+    private function dateRange(Request $request): RmeReportDateRange
+    {
+        return app(RmeReportDateScope::class)->resolve($request);
     }
 
     private function resolveBranchId(Request $request): ?int
