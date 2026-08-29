@@ -114,10 +114,22 @@ whether or not any background job has stamped it `EXPIRED`. Security
 correctness does not wait for a cron.
 
 `BranchChangeRequest::isStaleForClinicalDay()` is evaluated from the row itself
-inside the locked decision, and refuses. The `EXPIRED` bookkeeping is a separate,
-committed step performed *before* the transaction opens — because a write inside
-the decision transaction is rolled back by the very exception that refuses the
-decision. That subtlety was found by a test, not by review.
+inside the locked decision, **before** the status check, and refuses. The
+`EXPIRED` bookkeeping lives only in the queue listing
+(`BranchChangeRequestRepository::expireStale`, called by `index()`).
+
+Both halves of that arrangement were found by testing, not review:
+
+* a write inside the decision transaction is **rolled back by the very exception
+  that refuses the decision**, so the stamp could not live there;
+* moving the stamp to a step *before* the transaction then made the staleness
+  guard **unreachable** — the refusal a test observed actually came from the
+  `isPending()` check a few lines later. Deleting the guard entirely left every
+  test green. Mutation M13 caught it.
+
+The test now asserts the row is still `PENDING` at the moment of the attempt, so
+the refusal can only be the guard, and the housekeeping is asserted separately as
+its own property.
 
 ---
 
@@ -256,5 +268,44 @@ gap: from the following selection onward the lock holds.
 |---|---|
 | `DailyBranchContextLockTest` | first selection free, idempotent re-selection, second branch refused, multi-role hole closed, Doctor/Perawat untouched, WITA day boundary, calendar-day not rolling-window, ineligible branch does not consume the free choice |
 | `BranchChangeApprovalTest` | server-derived bindings, pending leaves the branch alone, atomic apply, re-lock at destination, second switch needs a new approval, rejection, single-use, stale source, previous-day refusal, destination re-validation, self-approval, cancellation, user binding, audit trail |
-| `DailyBranchContextBypassTest` | logout, second session, tampered context row, offline, raw POST, payload tampering, approval authorization over HTTP, operator surface |
+| `DailyBranchContextBypassTest` | logout, second session, tampered context row, offline, deployment-day path, deactivated locked branch fails closed, unlocked role not pinned, raw POST, payload tampering, the approve gate asserted directly, sidebar, operator surface |
 | `DailyBranchContextConcurrencyTest` | first-selection race, DB-level uniqueness, row locks held, approval race, pending-request race (PostgreSQL 16 only) |
+
+---
+
+## 15. Adversarial mutation evidence
+
+Fifteen mutations, each removing one guard, run against the three SQLite suites;
+the lock/transaction one re-run against PostgreSQL 16.
+
+| | |
+|---|---|
+| Attempted | 15 |
+| Killed | **15** |
+| Equivalent | 0 |
+| Real survivors | **0** |
+
+Two of them earned code changes rather than a green tick:
+
+* **M13** (delete the clinical-day staleness guard) survived the first run. The
+  guard was unreachable behind a pre-transaction `EXPIRED` stamp — see §6. Fixed,
+  then killed.
+* **M9** (widen the approve gate to `fn () => true`) survived because
+  `BranchChangeRequestPolicy` refused the action a layer later. Defence in depth
+  is why nothing broke, but the gate is what the **sidebar** reads, so a widened
+  gate would advertise the approver menu to operators who cannot use it and would
+  remove one of two layers with nothing turning red. The gate is now asserted
+  directly for every non-Super-Admin role. Then killed.
+
+**M11** (remove `lockForUpdate`) survives on SQLite, where it compiles to
+nothing, and is killed by `DailyBranchContextConcurrencyTest` on PostgreSQL 16 —
+verified by applying the mutation and watching *"holds a row lock on the daily
+context while a selection is in flight"* fail. It is recorded as killed, not as
+an equivalent mutant.
+
+**The harness itself had a defect worth recording.** Its restore list named five
+of the seven files the cases touch, so M9's mutation of
+`RepositoryServiceProvider.php` was never reverted and stayed live for M10–M15.
+Every verdict after M9 was measured against a weakened baseline. The list is now
+the union of all touched files, each case asserts a clean tree before it runs,
+and a mutation that fails to apply is reported rather than counted as survived.
