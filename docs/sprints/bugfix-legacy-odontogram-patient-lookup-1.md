@@ -220,3 +220,24 @@ docker build -f .github/ci-runtime/Containerfile.php83 -t lodo-php83 .
 # Browser: serve with the capability on, then
 php artisan dusk --pest --filter=LegacyOdontogramPatientLookupBrowserTest
 ```
+
+## 9. Follow-up: the rule and the code disagreed
+
+Post-deploy verification of the live VPS found `store()` still reading
+`$request->integer('patient_id')`. It was **safe** there —
+`StoreLegacyOdontogramImportRequest` enforces `integer` + `exists` before that
+line runs, so nothing could be coerced — but it contradicted rule 131 §4, which
+forbids `intval()`-family coercion on a patient identifier anywhere in this
+module. A durable rule the code violates on day one is worse than no rule.
+
+Fixed by reading the **validated payload** instead
+(`(int) $request->validated('patient_id')`; the cast is explicit because
+`validated()` may return a numeric string and the file is `strict_types`), and
+pinned by a source scanner so the contradiction cannot return.
+
+The scanner strips comments via `token_get_all` before matching: these classes
+deliberately QUOTE the forbidden call in their docblocks to explain the defect,
+and a scanner that could not tell prose from code would either fail on the
+explanation or force it to be deleted. This codebase already learned that once
+with the UI governance scanner. The scanner was verified non-vacuous —
+reintroducing the call makes it fail, restoring the fix makes it pass.

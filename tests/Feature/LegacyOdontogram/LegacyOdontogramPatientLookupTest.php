@@ -637,3 +637,57 @@ it('derives the identifier from the request alone, never from server-side state'
         ->and($request->patientId())->toBeNull()
         ->and($request->identifierSupplied())->toBeFalse();
 });
+
+it('never reads a patient identifier through intval-family coercion', function () {
+    /*
+     * Rule 131 §4, pinned in source rather than left to review.
+     *
+     * `Request::integer()` IS `intval()`, and `intval()` does not fail — it
+     * guesses. That guess is the entire defect this sprint fixes: `'1abc'` and
+     * `patient_id[]=x` both became 1 and silently displayed a different
+     * patient. Even where a FormRequest has already validated the value and the
+     * call is provably safe, allowing it back into this module re-opens the
+     * pattern and contradicts the rule, so the boundary is absolute: patient
+     * identifiers come from the validated payload or from
+     * FILTER_VALIDATE_INT — never from a coercion that cannot fail.
+     */
+    $module = base_path('app/Modules/LegacyOdontogram');
+    $offenders = [];
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($module));
+
+    foreach ($files as $file) {
+        if ($file->isDir() || $file->getExtension() !== 'php') {
+            continue;
+        }
+
+        /*
+         * CODE ONLY — comments are stripped first. These classes deliberately
+         * QUOTE the forbidden call in their docblocks to explain the defect,
+         * and a scanner that cannot tell prose from code would either fail on
+         * the explanation or force the explanation to be deleted. This codebase
+         * has already learned that once, with the UI governance scanner.
+         */
+        $source = '';
+
+        foreach (token_get_all((string) file_get_contents($file->getPathname())) as $token) {
+            if (is_array($token)) {
+                if ($token[0] === T_COMMENT || $token[0] === T_DOC_COMMENT) {
+                    continue;
+                }
+
+                $source .= $token[1];
+
+                continue;
+            }
+
+            $source .= $token;
+        }
+
+        if (preg_match('/(->integer\(|\bintval\s*\()\s*[\'"]?patient_id/i', $source)) {
+            $offenders[] = str_replace(base_path().'/', '', $file->getPathname());
+        }
+    }
+
+    expect($offenders)->toBe([]);
+});
