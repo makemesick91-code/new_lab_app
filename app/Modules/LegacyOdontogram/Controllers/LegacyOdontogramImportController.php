@@ -148,7 +148,14 @@ class LegacyOdontogramImportController extends Controller
          * this id exists and is not soft-deleted, and the branch binding below
          * re-checks that the caller may archive for that patient's branch.
          */
-        $patient = $this->resolvePatient($request->user(), $request->integer('patient_id'));
+        // Read from the VALIDATED payload, never with `Request::integer()`.
+        // It is already safe here — the FormRequest has enforced
+        // `integer` + `exists` before this line runs — but rule 131 §4 forbids
+        // `intval()`-family coercion on a patient identifier anywhere in this
+        // module, and a rule the code contradicts on day one is worse than no
+        // rule. `validated()` may still hand back a numeric string, so the cast
+        // is explicit rather than implicit (this file is strict_types).
+        $patient = $this->resolvePatient($request->user(), (int) $request->validated('patient_id'));
 
         abort_if($patient === null, 404);
 
