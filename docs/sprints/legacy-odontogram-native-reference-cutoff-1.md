@@ -2,6 +2,24 @@
 
 **An empty native odontogram placeholder is not clinical evidence for the legacy odontogram native-reference cutoff.**
 
+> **PARTIALLY SUPERSEDED — read this as a historical record, not as current behaviour.**
+>
+> `REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1` (2026-08-31) **retired the
+> eligibility GATE** described below. `PATIENT_HAS_NO_NATIVE_ODONTOGRAM` no longer
+> exists: a patient with no meaningful native odontogram is a **valid** state to
+> archive against, and every passage below that describes refusing such a patient
+> — including §3.3's "Patient 45 simply joins the 6 patients who already,
+> correctly, receive `PATIENT_HAS_NO_NATIVE_ODONTOGRAM`" — describes behaviour
+> that has since been deliberately removed.
+>
+> **What this document still governs, unchanged:** the chronological **BOUND**,
+> and the `Odontogram::hasRecordedTeeth()` predicate that decides which native
+> rows draw it. With the gate gone that predicate is the *only* remaining
+> direction, so it matters more than when this was written, not less.
+>
+> Current rules: `.cursor/rules/132-legacy-odontogram-native-optional.mdc` and
+> `docs/sprints/revision-legacy-odontogram-native-optional-1.md`.
+
 | | |
 |---|---|
 | Base branch | `feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report` |

@@ -1,5 +1,5 @@
 ---
-description: LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — only a native odontogram carrying clinical evidence gates or bounds a legacy odontogram archive
+description: LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — only a native odontogram carrying clinical evidence bounds a legacy odontogram archive (the eligibility gate was retired by rule 132)
 globs:
   - "app/Modules/LegacyOdontogram/**"
   - "app/Modules/Odontogram/**"
@@ -35,7 +35,7 @@ predicate is the *primary* test. **Never "restore" `whereHas('odontogram')`.**
   persistence placeholder is **not** clinical evidence.
 - The predicate is `Odontogram::hasRecordedTeeth()` — **the one definition**. It is
   the same predicate the doctor's Patient Odontogram History applies, so *a row the
-  doctor is never shown as history can never gate or bound that patient's archive.*
+  doctor is never shown as history can never bound that patient's archive.*
   Do not re-derive it in a service, controller, form request, policy, view or test.
 - A charted tooth counts **regardless of its status, `normal` included**. The
   asymmetry is deliberate: treating real content as empty erases a chronological
@@ -45,29 +45,38 @@ predicate is the *primary* test. **Never "restore" `whereHas('odontogram')`.**
   nothing is still nothing; a `draft` that charts a tooth is evidence. Never
   shortcut this to `status`.
 
-## 2. The cutoff acts in TWO directions — always reason about both
+## 2. The cutoff now acts in ONE direction — and that makes the predicate matter more
 
-`LegacyOdontogramDateRuleService` feeds both from one `resolve()` call:
+`LegacyOdontogramDateRuleService` used to feed **two** decisions from one
+`resolve()` call:
 
-1. **Eligibility GATE** — `null` ⇒ the patient is refused outright
-   (`CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM`).
-2. **Chronological BOUND** — the archive date must be *strictly* earlier.
+1. ~~**Eligibility GATE** — `null` ⇒ the patient is refused outright
+   (`CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM`).~~ **RETIRED** by
+   REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — see
+   `132-legacy-odontogram-native-optional.mdc`. The constant, the config switch
+   and the refusal branch were all **removed**, not merely defaulted off.
+2. **Chronological BOUND** — the archive date must be *strictly* earlier. **This
+   survives unchanged and is now the only direction.**
 
-They move in **opposite** directions when the predicate narrows: a patient whose
-only row is empty loses eligibility, while a patient with an early empty row and a
-later real chart gets a *later* bound and therefore a *wider* window. Any change to
-this predicate must state its effect on **both**, never just the one that suits the
-story.
-
-That refusal for a never-charted patient is **deliberate**, not an oversight, and it
-self-heals: chart a tooth and the patient becomes eligible against a real boundary.
-A bulk capability for never-examined patients is a separate, explicit sprint.
+**Do not read the gate's removal as a reason to relax this predicate.** The two
+directions used to move in *opposite* ways when the predicate narrowed, which is
+why a mistake here used to be partly self-limiting. With only the bound left, a
+wrongly-counted contentless placeholder has exactly one effect: it invents a bound
+on a date where nothing was charted, and refuses a genuinely historical document.
+`hasRecordedTeeth()` is therefore **more** load-bearing after the revision, not
+less. Any change to it must still state its effect explicitly.
 
 ## 3. Impact before eligibility expansion
 
-- Any change that **broadens** legacy odontogram import eligibility must produce a
-  **read-only production impact report before activation** — counts of empty vs
-  meaningful rows, affected patients, and the eligibility delta in both directions.
+- Any change that **broadens legacy odontogram import eligibility**, or that shifts
+  which rows this predicate counts as evidence, must produce a **read-only
+  production impact report before activation** — counts of empty vs meaningful
+  rows, affected patients, and the resulting eligibility/bound delta.
+- This obligation applies to rule 132 as well and was honoured there: retiring the
+  eligibility gate broadened eligibility, so the affected-patient count was
+  measured read-only on production before the change was activated. **A sprint may
+  not narrow this clause to exempt itself** — if a change makes more patients
+  archivable by any mechanism, it owes the report.
 - Run production analysis under `SET default_transaction_read_only = on`, so
   mutation is impossible rather than merely avoided. Never `INSERT`/`UPDATE`/
   `DELETE`/DDL for analysis. Leave no scratch script, SQL file or scratch database

@@ -55,8 +55,19 @@ class PatientEarliestNativeOdontogramDateResolver
 
     /**
      * The earliest native odontogram date, or null when the patient has no
-     * native odontogram at all. Null is meaningful — it is NOT "no restriction",
-     * and in regular mode the date rules refuse on it.
+     * native odontogram at all.
+     *
+     * NULL MEANS "NONE FOUND", AND SINCE
+     * REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 THAT ALLOWS THE ARCHIVE: the
+     * date rules skip the chronological bound rather than refusing. That makes
+     * the next sentence load-bearing rather than merely tidy.
+     *
+     * A FAILED LOOKUP IS NOT AN ABSENT ONE. There is deliberately no try/catch
+     * anywhere on this path: a database fault propagates as an exception. Were
+     * it ever caught and folded into null, a broken query would read as "this
+     * patient has a clean slate" and would file a chart with no bound at all.
+     * Under the previous native-required rule such a bug would merely have
+     * refused; now it would silently accept, so the exception must escape.
      */
     public function resolve(int $patientId): ?CarbonImmutable
     {

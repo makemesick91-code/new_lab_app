@@ -133,9 +133,10 @@
                             </dd>
                             <dd class="text-xs text-ink-muted">Tanggal arsip harus lebih awal dari tanggal ini.</dd>
                         @else
-                            <dd class="mt-1 text-warning-700">Belum ada</dd>
-                            <dd class="text-xs text-warning-700">
-                                Pasien belum memiliki odontogram di sistem, sehingga arsip lama belum dapat diarsipkan.
+                            <dd class="mt-1 font-semibold text-navy">Belum ada</dd>
+                            <dd class="text-xs text-ink-muted">
+                                Pasien belum pernah diperiksa di sistem. Arsip lama tetap dapat diunggah — tidak ada
+                                batas tanggal odontogram sistem untuk pasien ini.
                             </dd>
                         @endif
                     </div>

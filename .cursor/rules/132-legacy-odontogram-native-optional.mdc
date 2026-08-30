@@ -1,0 +1,132 @@
+---
+description: REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — a legacy odontogram is historical evidence and does not require a native odontogram to exist first; when one does exist it still bounds the archive
+globs:
+  - "app/Modules/LegacyOdontogram/**"
+  - "app/Modules/Odontogram/**"
+  - "config/legacy_odontogram.php"
+  - "resources/views/settings/legacy-odontograms/**"
+  - "tests/Feature/LegacyOdontogram/**"
+alwaysApply: false
+---
+
+# REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1
+
+**Product decision.** `LEGACY_ODONTOGRAM_REQUIRES_NATIVE = false`.
+
+A **Legacy Odontogram** is *historical clinical evidence* read off a paper chart.
+A **Native Odontogram** is an *examination this system performed*. They are
+different domain records, and the archive does not need the second in order to
+accept the first. The patients whose paper charts most need archiving are exactly
+the ones this clinic has never examined.
+
+**Supersedes** the eligibility half of
+`111-legacy-odontogram-native-reference-cutoff.mdc` §2 and the corresponding
+clause of `109-rme-exam-consent-odontogram-history.mdc` §5. Both were updated in
+place — the old and the new rule are never simultaneously active.
+
+---
+
+## 1. The canonical rule
+
+```
+IF the patient has no meaningful native odontogram:
+    the archive is ALLOWED and there is NO native cutoff
+ELSE:
+    the EARLIEST meaningful native odontogram date is the cutoff, and the
+    archive date must be STRICTLY earlier than it
+```
+
+- `PATIENT_HAS_NO_NATIVE_ODONTOGRAM` is **retired**. The constant, the
+  `legacy_odontogram.dates.require_native_odontogram_reference` config switch and
+  the refusal branch were **deleted**, not defaulted off. Do not reintroduce any
+  of the three, and do not add an equivalent check in a controller, form request,
+  policy, view or job.
+- **`NATIVE OPTIONAL` is not `NATIVE CUTOFF REMOVED`.** `require_strictly_before_native`
+  stays on. Deleting the bound is a different, unapproved change.
+- **`SAME_DATE_POLICY = REJECT`.** A legacy date **equal** to the earliest native
+  date is refused: equal is the overlap case, so the chart is either that
+  examination or contradicts it. Unchanged by this revision.
+- The bound is always the **EARLIEST** meaningful native odontogram, never the
+  latest — bounding on the latest would admit a document that interleaves with a
+  real examination.
+- A contentless placeholder still does not count as a native odontogram
+  (`Odontogram::hasRecordedTeeth()`, rule 111 §1). Retiring the gate makes that
+  predicate **more** load-bearing, not less.
+
+## 2. Absence is not failure, and failure is not absence
+
+```
+native lookup returns nothing  →  no cutoff  →  ALLOWED   (a valid clinical state)
+native lookup THROWS           →  exception  →  the request fails
+```
+
+- There is deliberately **no `try`/`catch`** on the
+  `PatientEarliestNativeOdontogramDateResolver` →
+  `LegacyOdontogramNativeReferenceRepositoryInterface` path. Never add one, and
+  never coalesce a failure into `null`.
+- Under the old rule a swallowed error merely refused. Now it would read as "this
+  patient has a clean slate" and file a chart with **no chronological bound at
+  all**. This is the single highest-risk regression this sprint can suffer, and it
+  is pinned by a test.
+- Never fabricate a cutoff for a patient who has none — no epoch, no `9999-12-31`,
+  no `now()`. Absence is represented as `null` and nothing else.
+
+## 3. Retiring the gate is not a bypass for the other rules
+
+`LEGACY_DATE_IN_FUTURE`, `LEGACY_DATE_BEFORE_PATIENT_BIRTH` and
+`LEGACY_DATE_INVALID` all still run for a patient with no native odontogram. The
+gate used to short-circuit ahead of them, so a careless removal silently widens
+far more than intended. Each is pinned for the no-native case.
+
+## 4. A patient master is still required
+
+- `PATIENT_MASTER_REQUIRED = true`. Native-optional does **not** mean
+  patient-optional.
+- The import **never** creates, duplicates or edits a patient, and never rewrites
+  a Nomor RM — the Nomor RM is the archive's branch authority, so writing to it
+  would move who can read the record.
+
+## 5. No native side effects — unchanged and non-negotiable
+
+Uploading or publishing a legacy odontogram creates **no** `ClinicVisit`, native
+`Odontogram`, `MedicalRecord`, invoice, payment, prescription, `LabOrder`,
+SATUSEHAT candidate, queue state or cashier state.
+
+**In particular: never satisfy a cutoff by creating an empty native odontogram.**
+That was the tempting "fix" for the old gate and it is expressly forbidden — it
+would write a fake examination into a patient's clinical history.
+
+## 6. A native odontogram may arrive later
+
+- A patient with a published archive may be examined normally afterwards
+  (visit → doctor → consent → odontogram). `FUTURE_NATIVE_VISIT_ALLOWED = true`.
+- The archive is **not** converted to native, **not** deleted, **not** mutated.
+  Legacy and native **coexist** in the patient's history, each read-only where it
+  already was.
+- The newly-arrived native bounds the **next** archive for that patient, and a
+  staged archive is re-evaluated at publish — so a document that stopped being
+  historical while it sat in staging is refused then, not published anyway.
+
+## 7. Everything else about the archive is untouched
+
+Branch derived from the Nomor RM (never `request.branch_id`, never
+`DailyBranchContext`); private disk only; `READY_FOR_REVIEW → REVIEWED →
+PUBLISHED`; published records immutable with VOID + fresh import as the only
+correction; the shared daily import quota; patient lookup returning
+FOUND / NOT_FOUND / TOO_SHORT / TOO_MANY / RUNTIME_ERROR with server-side
+re-validation (rule 131). This revision changed **one** eligibility rule and
+nothing else.
+
+## 8. Testing
+
+- The matrix lives in `tests/Feature/LegacyOdontogram/LegacyOdontogramNativeOptionalTest.php`:
+  no-native, placeholder-only, cutoff present, after-cutoff, same-date, multiple
+  natives, placeholder-before-meaningful, the other rules under no-native,
+  lookup-throws, end-to-end publish, no-side-effects, patient integrity, multiple
+  archives, future native, and the branch/HTTP boundary.
+- `tests/Feature/LegacyOdontogram/*` already reaches CI through the
+  `LegacyOdontogram` alternative in the `--filter=` string of **both** critical-gate
+  variants of `.github/workflows/foundation-evidence-gates.yml`. A suite named
+  outside that prefix needs the filter updated in both.
+- No migration was required and none was added; this is a service-level rule
+  change. A schema change here would mean the design went wrong — stop and report.

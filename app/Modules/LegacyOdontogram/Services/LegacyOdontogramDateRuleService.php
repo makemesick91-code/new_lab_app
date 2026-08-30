@@ -24,48 +24,70 @@ use Illuminate\Validation\ValidationException;
  * describe when a piece of paper was scanned, which says nothing about when the
  * patient was charted.
  *
+ * A NATIVE ODONTOGRAM IS NOT A PRECONDITION
+ * (REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1). A legacy odontogram is
+ * historical clinical evidence; a native odontogram is an examination this
+ * system performed. They are different records, and the archive does not need
+ * the second to accept the first. This service used to refuse any patient with
+ * no native odontogram (`PATIENT_HAS_NO_NATIVE_ODONTOGRAM`), which inverted the
+ * real situation — the paper charts most worth archiving belong to patients who
+ * have never been examined here. Having no native odontogram is a VALID
+ * clinical state, and the code that refused it is gone rather than merely
+ * switched off.
+ *
+ * WHAT THAT DOES NOT MEAN:
+ *
+ *     NATIVE OPTIONAL  !=  NATIVE CUTOFF REMOVED
+ *
+ * When a meaningful native odontogram DOES exist it still bounds the archive,
+ * still at the EARLIEST one, and still STRICTLY. Only the "there must be one at
+ * all" gate was retired.
+ *
  * THE RULES, evaluated in this order, each with a STABLE CODE:
  *
- *  1. PATIENT_HAS_NO_NATIVE_ODONTOGRAM — the patient must already have a native
- *     odontogram. In regular mode there is otherwise no boundary to file behind,
- *     and inventing one (or waving the rule through) is how a legacy chart ends
- *     up interleaved with real examinations. A bulk migration for
- *     never-examined patients is a separate, explicit capability; this is not
- *     it, and the refusal is deliberate rather than an oversight.
+ *  1. LEGACY_DATE_INVALID — the value must be a real calendar date.
  *
- *  2. LEGACY_DATE_INVALID — the value must be a real calendar date.
+ *  2. LEGACY_ODONTOGRAM_DATE_NOT_BEFORE_NATIVE — WHEN the patient has a
+ *     meaningful native odontogram, the date must be STRICTLY earlier than the
+ *     earliest one. Equal is REFUSED, because equal is exactly the overlap
+ *     case: a chart dated the same day as a real examination is either that
+ *     examination or a contradiction of it, and neither belongs in the archive.
+ *     When there is no native odontogram there is simply no bound to apply, and
+ *     none is invented — no epoch, no sentinel, no "now".
  *
- *  3. LEGACY_ODONTOGRAM_DATE_NOT_BEFORE_NATIVE — the date must be STRICTLY
- *     earlier than the earliest native odontogram date. Equal is REFUSED,
- *     because equal is exactly the overlap case: a chart dated the same day as
- *     a real examination is either that examination or a contradiction of it,
- *     and neither belongs in the archive.
- *
- *  4. LEGACY_DATE_IN_FUTURE — the date must be strictly before TODAY. Today
+ *  3. LEGACY_DATE_IN_FUTURE — the date must be strictly before TODAY. Today
  *     itself is refused: an archive is historical by definition, and a chart
- *     drawn today is a native odontogram, not an archive.
+ *     drawn today is a native odontogram, not an archive. This rule runs
+ *     whether or not a native odontogram exists — retiring the gate must not
+ *     become a bypass for the rules that used to run behind it.
  *
- *  5. LEGACY_DATE_BEFORE_PATIENT_BIRTH — the patient's birth date must be <=
+ *  4. LEGACY_DATE_BEFORE_PATIENT_BIRTH — the patient's birth date must be <=
  *     the chosen date. EQUAL to the birth date is ACCEPTED. `date_of_birth` is
  *     nullable by design, and when it is null this rule is SKIPPED — a missing
  *     birth date is never invented, and never silently treated as the epoch.
+ *     Like rule 3, it runs with or without a native odontogram.
+ *
+ * ABSENCE IS NOT FAILURE, AND FAILURE IS NOT ABSENCE. A null cutoff means "this
+ * patient has no native odontogram", which now ALLOWS. A native-reference
+ * lookup that THROWS means the question was not answered, and it must stay an
+ * exception: swallowing it into null would turn a database fault into
+ * permission to file a chart with no chronological bound at all. Neither this
+ * service nor the resolver beneath it catches that exception.
  *
  * An existing legacy row — staged, published or VOID — is never a comparison
  * point for any of these. Only a native examination bounds an archive.
  *
- * TIMEZONE. Only rule 4 consults a clock, and it does so through ClinicalClock
+ * TIMEZONE. Only rule 3 consults a clock, and it does so through ClinicalClock
  * (Asia/Makassar), the single canonical clinical calendar authority — never
  * `now()`, never the PHP/OS timezone. That distinction is load-bearing: between
  * 16:00 and 24:00 UTC the clinic is already living the next calendar day, so a
  * UTC-anchored "today" refuses documents that are genuinely historical and makes
  * the same document produce different answers depending only on the hour it was
- * submitted. Rules 1, 3 and 5 compare stored calendar DATES against each other
+ * submitted. Rules 1, 2 and 4 compare stored calendar DATES against each other
  * and are timezone-invariant by construction.
  */
 class LegacyOdontogramDateRuleService
 {
-    public const CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM = 'PATIENT_HAS_NO_NATIVE_ODONTOGRAM';
-
     public const CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_ODONTOGRAM = 'LEGACY_ODONTOGRAM_DATE_NOT_BEFORE_NATIVE';
 
     public const CODE_LEGACY_DATE_IN_FUTURE = 'LEGACY_ODONTOGRAM_DATE_IN_FUTURE';
@@ -76,7 +98,6 @@ class LegacyOdontogramDateRuleService
 
     /** @var list<string> */
     public const CODES = [
-        self::CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM,
         self::CODE_LEGACY_DATE_NOT_BEFORE_NATIVE_ODONTOGRAM,
         self::CODE_LEGACY_DATE_IN_FUTURE,
         self::CODE_LEGACY_DATE_BEFORE_PATIENT_BIRTH,
@@ -124,13 +145,17 @@ class LegacyOdontogramDateRuleService
             'clinical_timezone' => $this->timezone(),
         ];
 
-        if ($earliestNative === null && $this->requireNativeReference()) {
-            return LegacyOdontogramDateRuleResult::fail(
-                self::CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM,
-                'Pasien ini belum memiliki odontogram di sistem, sehingga arsip odontogram lama belum dapat diarsipkan. Lakukan pemeriksaan odontogram terlebih dahulu.',
-                $context,
-            );
-        }
+        /*
+         * NO NATIVE ODONTOGRAM IS A VALID STATE, so there is deliberately no
+         * refusal here. `$earliestNative === null` simply means this patient has
+         * never been charted in this system, and an archive filed against that
+         * state has nothing to overlap with. The bound below is SKIPPED rather
+         * than replaced by a fabricated date — a sentinel in either direction
+         * would silently accept or reject everything.
+         *
+         * A null here can only mean "none found": the resolver lets a failed
+         * lookup throw rather than reporting it as absence.
+         */
 
         // Strictly earlier. `! lessThan` refuses an EQUAL date on purpose.
         if ($earliestNative !== null
@@ -241,11 +266,6 @@ class LegacyOdontogramDateRuleService
 
         // Compare calendar dates only — never partial-day timestamps.
         return CarbonImmutable::parse($date->toDateString())->startOfDay();
-    }
-
-    private function requireNativeReference(): bool
-    {
-        return (bool) config('legacy_odontogram.dates.require_native_odontogram_reference', true);
     }
 
     private function requireStrictlyBeforeNative(): bool
