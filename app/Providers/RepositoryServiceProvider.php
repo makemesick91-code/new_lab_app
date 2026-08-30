@@ -143,6 +143,7 @@ use App\Modules\LegacyImport\Interfaces\LegacyImportDailyQuotaRepositoryInterfac
 use App\Modules\LegacyImport\Repositories\LegacyImportDailyQuotaRepository;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramNativeReferenceRepositoryInterface;
+use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramPatientRepositoryInterface;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramRecordRepositoryInterface;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramRecord;
@@ -150,6 +151,7 @@ use App\Modules\LegacyOdontogram\Policies\LegacyOdontogramImportPolicy;
 use App\Modules\LegacyOdontogram\Policies\LegacyOdontogramRecordPolicy;
 use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramImportRepository;
 use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramNativeReferenceRepository;
+use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramPatientRepository;
 use App\Modules\LegacyOdontogram\Repositories\LegacyOdontogramRecordRepository;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramAuditService;
 use App\Modules\LegacyRme\Interfaces\LegacyRmeImportRepositoryInterface;
@@ -360,6 +362,8 @@ class RepositoryServiceProvider extends ServiceProvider
         LegacyOdontogramImportRepositoryInterface::class => LegacyOdontogramImportRepository::class,
         LegacyOdontogramRecordRepositoryInterface::class => LegacyOdontogramRecordRepository::class,
         LegacyOdontogramNativeReferenceRepositoryInterface::class => LegacyOdontogramNativeReferenceRepository::class,
+        // BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — the module's only door to mst_patients.
+        LegacyOdontogramPatientRepositoryInterface::class => LegacyOdontogramPatientRepository::class,
 
         // FEATURE-LEGACY-IMPORT-HUB-1 — the cross-capability daily quota
         // ledger. One binding, shared by all three importers, so the

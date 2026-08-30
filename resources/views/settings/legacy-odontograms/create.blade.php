@@ -5,13 +5,22 @@
     server-side from the patient's Nomor RM and is shown here read-only, so an
     operator can see where the archive will land without being able to change it.
 
-    KTP/NIK is never rendered.
+    BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — step 1 asks for the Nomor RM,
+    the identifier actually printed on the chart in the operator's hand. It used
+    to ask for `mst_patients.id`, a number displayed nowhere in DaengtisiaMS, and
+    every failure — an unknown patient, a deleted one, a database fault, or an
+    operator typing the Nomor RM they had — rendered the SAME blank panel the
+    page shows before any input at all. The lookup now reports its state, and
+    each state has its own words.
+
+    KTP/NIK is never rendered. The template receives an identity object carrying
+    four fields, not a Patient model, so there is nothing sensitive here to leak.
 --}}
 <x-settings-shell title="Unggah Arsip Odontogram Lama">
     <div class="space-y-6">
         <x-ui.page-header
             title="Unggah Arsip Odontogram Lama"
-            subtitle="Pilih pasien, tentukan tanggal sesuai yang tertera pada dokumen, lalu unggah hasil pindai odontogram lama dalam format PDF."
+            subtitle="Cari pasien dengan Nomor RM, tentukan tanggal sesuai yang tertera pada dokumen, lalu unggah hasil pindai odontogram lama dalam format PDF."
         >
             <x-slot:breadcrumb>Master Data RME / Impor Arsip Odontogram Lama / Unggah</x-slot:breadcrumb>
 
@@ -25,28 +34,84 @@
             (VOID) arsip disertai alasan, lalu mengunggah ulang dokumen yang benar.
         </x-ui.alert>
 
-        <form method="GET" action="{{ route('settings.rme.legacy-odontograms.create') }}">
-            <x-ui.card title="1. Pilih Pasien">
-                <div class="flex flex-wrap items-end gap-3">
-                    <x-ui.input
-                        name="patient_id"
-                        type="number"
-                        label="ID Pasien"
-                        :value="$patient?->getKey()"
-                        placeholder="Masukkan ID pasien"
-                    />
-                    <x-ui.button type="submit" variant="secondary">Muat Data Pasien</x-ui.button>
+        <x-ui.card title="1. Pilih Pasien" description="Pencarian menggunakan Nomor RM.">
+            <form
+                method="GET"
+                action="{{ route('settings.rme.legacy-odontograms.create') }}"
+                class="flex flex-col gap-3 md:flex-row md:items-end"
+            >
+                <x-ui.input
+                    name="rm"
+                    label="Nomor RM Pasien"
+                    :value="$submittedMedicalRecordNumber"
+                    placeholder="Contoh: DG-TKM1-2024-0001"
+                    class="md:w-96"
+                />
+                <div class="flex gap-2">
+                    <x-ui.button type="submit">Cari Pasien</x-ui.button>
                 </div>
-            </x-ui.card>
-        </form>
+            </form>
 
-        @if ($patient !== null)
+            {{-- One state, one message. Never a shared blank panel. --}}
+            @if ($lookup->isError())
+                <div class="mt-5">
+                    <x-ui.alert variant="danger" title="Pencarian pasien gagal">{{ $lookup->message }}</x-ui.alert>
+                </div>
+            @elseif ($lookup->isAmbiguous())
+                <div class="mt-5 space-y-3">
+                    <x-ui.alert variant="warning">{{ $lookup->message }}</x-ui.alert>
+
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-hairline text-sm">
+                            <thead class="bg-navy-50 text-left text-xs font-semibold uppercase tracking-wide text-ink-soft">
+                                <tr>
+                                    <th class="px-4 py-3">Nama</th>
+                                    <th class="px-4 py-3">Nomor RM</th>
+                                    <th class="px-4 py-3">Cabang</th>
+                                    <th class="px-4 py-3 text-right">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-hairline">
+                                @foreach ($lookup->candidates as $candidate)
+                                    <tr>
+                                        <td class="px-4 py-3 font-semibold text-navy">{{ $candidate->name }}</td>
+                                        <td class="px-4 py-3 text-ink-soft">{{ $candidate->medicalRecordNumber ?? 'Belum ada RM' }}</td>
+                                        <td class="px-4 py-3 text-ink-soft">{{ $candidate->branchLabel }}</td>
+                                        <td class="px-4 py-3 text-right">
+                                            <x-ui.button
+                                                size="sm"
+                                                :href="route('settings.rme.legacy-odontograms.create', [
+                                                    'patient_id' => $candidate->id,
+                                                    'rm' => $submittedMedicalRecordNumber,
+                                                ])"
+                                            >Pilih</x-ui.button>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            @elseif ($lookup->isFound())
+                <div class="mt-5">
+                    <x-ui.alert variant="success">{{ $lookup->message }}</x-ui.alert>
+                </div>
+            @elseif (! $lookup->isIdle())
+                <div class="mt-5">
+                    <x-ui.alert variant="warning">{{ $lookup->message }}</x-ui.alert>
+                </div>
+            @endif
+        </x-ui.card>
+
+        @if ($lookup->isFound())
+            @php($patient = $lookup->identity)
+
             <x-ui.card title="2. Konteks Pasien (ditentukan sistem)">
                 <dl class="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                         <dt class="text-xs uppercase tracking-wide text-ink-muted">Pasien</dt>
                         <dd class="mt-1 font-semibold text-navy">{{ $patient->name }}</dd>
-                        <dd class="text-xs text-ink-muted">{{ $patient->medical_record_number ?? 'Belum ada RM' }}</dd>
+                        <dd class="text-xs text-ink-muted">{{ $patient->medicalRecordNumber ?? 'Belum ada RM' }}</dd>
                     </div>
                     <div>
                         <dt class="text-xs uppercase tracking-wide text-ink-muted">Cabang Arsip</dt>
@@ -83,9 +148,16 @@
                 enctype="multipart/form-data"
             >
                 @csrf
-                <input type="hidden" name="patient_id" value="{{ $patient->getKey() }}">
+                {{--
+                    Carried so the operator does not have to search twice. It is
+                    a convenience, never a credential: the server re-validates
+                    this id, re-derives the branch from the patient's own Nomor
+                    RM and re-checks the operator's scope before anything is
+                    written.
+                --}}
+                <input type="hidden" name="patient_id" value="{{ $patient->id }}">
 
-                <x-ui.card title="3. Dokumen &amp; Tanggal">
+                <x-ui.card title="3. Dokumen & Tanggal">
                     <div class="space-y-4">
                         <x-ui.input
                             name="selected_odontogram_date"
@@ -147,10 +219,10 @@
                     </x-slot:actions>
                 </x-ui.card>
             </form>
-        @else
+        @elseif ($lookup->isIdle())
             <x-ui.empty-state
                 title="Belum ada pasien dipilih"
-                description="Masukkan ID pasien terlebih dahulu untuk melihat cabang arsip dan batas tanggal yang berlaku."
+                description="Masukkan Nomor RM pasien terlebih dahulu untuk melihat cabang arsip dan batas tanggal yang berlaku."
             />
         @endif
     </div>

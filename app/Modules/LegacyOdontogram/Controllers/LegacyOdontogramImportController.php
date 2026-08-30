@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Modules\LegacyOdontogram\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramImportRepositoryInterface;
+use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramPatientRepositoryInterface;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImport;
 use App\Modules\LegacyOdontogram\Models\LegacyOdontogramImportPage;
+use App\Modules\LegacyOdontogram\Requests\LookupLegacyOdontogramPatientRequest;
 use App\Modules\LegacyOdontogram\Requests\PublishLegacyOdontogramImportRequest;
 use App\Modules\LegacyOdontogram\Requests\StoreLegacyOdontogramImportRequest;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramAuditService;
@@ -15,6 +18,7 @@ use App\Modules\LegacyOdontogram\Services\LegacyOdontogramBranchBindingService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramDateRuleService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramFeatureGuard;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramImportService;
+use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPatientLookupService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramProcessingService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramPublishService;
 use App\Modules\LegacyOdontogram\Services\LegacyOdontogramStorageService;
@@ -60,6 +64,8 @@ class LegacyOdontogramImportController extends Controller
         private readonly LegacyOdontogramFeatureGuard $feature,
         private readonly LegacyOdontogramBranchBindingService $branchBinding,
         private readonly LegacyOdontogramDateRuleService $dateRules,
+        private readonly LegacyOdontogramPatientLookupService $patientLookup,
+        private readonly LegacyOdontogramPatientRepositoryInterface $patients,
         // Streaming a staged page emits full-resolution clinical bytes; the read
         // is audited, so this is a dependency of the controller, not an extra.
         private readonly LegacyOdontogramAuditService $audit,
@@ -89,25 +95,43 @@ class LegacyOdontogramImportController extends Controller
         ]);
     }
 
-    public function create(Request $request): View
+    public function create(LookupLegacyOdontogramPatientRequest $request): View
     {
         $this->assertMigrationCapabilityEnabled();
         $this->authorize('create', LegacyOdontogramImport::class);
 
-        $patient = $this->resolvePatient($request->integer('patient_id'));
+        $lookup = $this->patientLookup->lookup(
+            $request->user(),
+            $request->patientId(),
+            $request->medicalRecordNumber(),
+            $request->identifierSupplied(),
+        );
+
         $branchResolution = null;
         $earliestNative = null;
 
-        if ($patient !== null) {
-            // Shown so the operator sees the derived branch and the date ceiling
-            // BEFORE uploading. Both are re-derived server-side on store; this
-            // is guidance, never the decision.
-            $branchResolution = $this->branchBinding->resolveForPatient($patient, $request->user());
-            $earliestNative = $this->dateRules->snapshotCutoff($patient);
+        if ($lookup->isFound()) {
+            // Re-read the row for the two DERIVED facts below. They are shown so
+            // the operator sees the owning branch and the date ceiling BEFORE
+            // uploading; both are re-derived server-side on store, so this is
+            // guidance and never the decision.
+            $patient = $this->resolvePatient($request->user(), $lookup->identity->id);
+
+            if ($patient !== null) {
+                $branchResolution = $this->branchBinding->resolveForPatient($patient, $request->user());
+                $earliestNative = $this->dateRules->snapshotCutoff($patient);
+            }
         }
 
         return view('settings.legacy-odontograms.create', [
-            'patient' => $patient,
+            'lookup' => $lookup,
+            // The RESOLVED patient's Nomor RM wins over whatever was typed: an
+            // explicit `patient_id` takes precedence in the lookup, so echoing
+            // the submitted `rm` unchanged would let a hand-edited URL label one
+            // patient's card with another patient's identifier.
+            'submittedMedicalRecordNumber' => $lookup->isFound()
+                ? $lookup->identity->medicalRecordNumber
+                : $request->medicalRecordNumber(),
             'branchResolution' => $branchResolution,
             'earliestNativeOdontogramDate' => $earliestNative,
         ]);
@@ -117,7 +141,14 @@ class LegacyOdontogramImportController extends Controller
     {
         $this->assertMigrationCapabilityEnabled();
 
-        $patient = $this->resolvePatient($request->integer('patient_id'));
+        /*
+         * Re-resolved from the SUBMITTED id, never from whatever the previous
+         * page happened to display. A patient shown on screen is an aid to the
+         * operator, not a grant: the FormRequest has already re-checked that
+         * this id exists and is not soft-deleted, and the branch binding below
+         * re-checks that the caller may archive for that patient's branch.
+         */
+        $patient = $this->resolvePatient($request->user(), $request->integer('patient_id'));
 
         abort_if($patient === null, 404);
 
@@ -279,22 +310,20 @@ class LegacyOdontogramImportController extends Controller
     }
 
     /**
-     * A patient the caller may actually archive for.
+     * The patient row behind an ALREADY-VALIDATED surrogate key.
      *
-     * The branch binding is the boundary: it derives the branch from the
-     * patient's own Nomor RM and refuses when that branch is outside the
-     * caller's scope, so an id belonging to another branch's patient never
-     * becomes a usable selection.
+     * Routed through the repository rather than `Patient::query()->find()` so
+     * there is exactly one door to `mst_patients` in this module, it projects
+     * identity columns only, and it can never resolve a soft-deleted patient.
+     *
+     * Resolving a patient here is NOT authorization: the owning branch is
+     * derived from the patient's own Nomor RM and re-checked against the
+     * caller's scope by LegacyOdontogramBranchBindingService before anything is
+     * stored.
      */
-    private function resolvePatient(?int $patientId): ?Patient
+    private function resolvePatient(?User $actor, int $patientId): ?Patient
     {
-        if ($patientId === null || $patientId <= 0) {
-            return null;
-        }
-
-        $patient = Patient::query()->find($patientId);
-
-        return $patient instanceof Patient ? $patient : null;
+        return $this->patients->findSelectableById($actor, $patientId);
     }
 
     private function resolvePagePath(LegacyOdontogramImportPage $page, bool $wantsThumbnail): ?string

@@ -1,0 +1,121 @@
+---
+description: BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — the legacy odontogram upload page resolves the identifier an operator actually holds, and says which of FOUND / NOT_FOUND / ERROR happened
+globs:
+  - "app/Modules/LegacyOdontogram/**"
+  - "resources/views/settings/legacy-odontograms/**"
+  - "tests/Feature/LegacyOdontogram/**"
+alwaysApply: false
+---
+
+# BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1
+
+Seven durable rules for the **Import Data Legacy → Unggah Arsip Odontogram Lama**
+patient lookup. They **refine** the legacy odontogram archive rules and weaken
+none of them: the native-odontogram cutoff
+(`111-legacy-odontogram-native-reference-cutoff.mdc`), branch derivation from the
+patient's Nomor RM, the daily quota (`128-legacy-import-hub.mdc`), publication
+immutability and private clinical storage are all untouched.
+
+**The defect this rule exists to prevent, stated plainly.** The page asked for
+`mst_patients.id` — a number DaengtisiaMS displays on no screen and no report.
+The operator typed the identifier they actually had, the Nomor RM,
+`Request::integer()` turned it into `0`, and the page re-rendered the identical
+"Belum ada pasien dipilih" panel it shows before any input at all. HTTP 200,
+nothing logged, no signal of any kind. The same coercion turned `'1abc'` and
+`patient_id[]=…` into `1`, silently displaying whichever patient was row #1.
+
+---
+
+## 1. The lookup accepts the identifier the operator holds
+
+Patient selection on this page is by **canonical Nomor RM** (`rm`). The surrogate
+key (`patient_id`) remains accepted so disambiguation links and existing
+bookmarks keep working, but it is never the only accepted identifier.
+
+**Never** ask an operator for an internal database id as their sole means of
+finding a patient. If a surface needs a patient, it takes the Nomor RM.
+
+## 2. A lookup reports a STATE, never a nullable patient
+
+`LegacyOdontogramPatientLookupService` returns a
+`LegacyOdontogramPatientLookup`, never `?Patient`. The states are distinct and
+each carries its own words:
+
+| state | rendered as |
+|---|---|
+| `IDLE` | "Belum ada pasien dipilih" — **the only blank state** |
+| `FOUND` | "Pasien ditemukan" + the identity panel |
+| `AMBIGUOUS` | a candidate list; a human chooses |
+| `NOT_FOUND` | "Pasien tidak ditemukan" |
+| `TOO_SHORT` / `TOO_MANY` | guidance on narrowing the Nomor RM |
+| `ERROR` | "Gagal mengambil data pasien. Silakan coba lagi." |
+
+**Never** collapse two of these into one panel. "Nothing entered yet" and
+"entered something that resolved to nobody" are different facts and an operator
+must be able to tell them apart.
+
+## 3. A failing lookup is an ERROR, never a NOT_FOUND and never a 500
+
+A thrown lookup is caught, logged **without the identifier** (it is
+patient-identifying), and rendered as the retry state. Reporting a database
+fault as "patient tidak ditemukan" is how a real patient gets registered twice.
+
+## 4. Identifiers are validated, never coerced
+
+`LookupLegacyOdontogramPatientRequest` normalises with
+`filter_var(..., FILTER_VALIDATE_INT)`. `intval()` — and therefore
+`Request::integer()` — is **forbidden** for a patient identifier anywhere in this
+module: it does not fail, it guesses, and on a screen whose output is permanent
+clinical evidence a guess can put one patient's chart into another's history.
+Anything unusable becomes `null`; the request separately records that the
+operator typed *something*, which is what produces `NOT_FOUND` instead of a
+blank page.
+
+## 5. Found is not authorized
+
+`FOUND` means "this is who that is". It is **not** permission to file evidence
+against them. On submit the server re-resolves `patient_id` through the same
+repository, `StoreLegacyOdontogramImportRequest` re-checks it exists and is not
+soft-deleted, `LegacyOdontogramBranchBindingService` re-derives the owning branch
+from the patient's own Nomor RM and re-checks the operator's scope, and the date
+rules run again. **Never** treat a rendered patient panel as a credential.
+
+## 6. Identity is global; the archive is not
+
+Patient IDENTITY is deliberately cross-branch — a chart may belong to a patient
+registered elsewhere and the operator must be able to see who. This does **not**
+adopt the New Visit global-lookup policy wholesale: the ARCHIVE's branch stays
+derived from the Nomor RM and scope-checked. `branch_id` submitted with the
+request is never read, on this page or any other in the module.
+
+## 7. Least disclosure is enforced by the type
+
+The view receives `LegacyOdontogramPatientIdentity` (id, name, Nomor RM, branch
+label) — never a `Patient` model. `LegacyOdontogramPatientRepository` projects a
+fixed column list, so KTP/NIK, phone, WhatsApp, e-mail and address are never
+selected and therefore cannot be rendered or logged by accident.
+
+**Never** add a column to `LegacyOdontogramPatientRepository::IDENTITY_COLUMNS`
+or a field to `LegacyOdontogramPatientIdentity` without a privacy decision.
+
+---
+
+## Reuse boundary
+
+`LegacyOdontogramPatientRepository` reuses `CrossBranchPatientLookupService`'s
+**rules** — its `MIN_SUFFIX_LENGTH` and `DISPLAY_LIMIT` constants are referenced
+rather than re-declared, and the exact-before-suffix order and LIKE escaping
+match it. It does not reuse its **shape**, which resolves the actor through the
+`Auth` facade, runs a per-row `latest_visit_date` query, and omits the surrogate
+key. This mirrors `LegacyOdontogramWorkspaceScope`, which is likewise a dedicated
+scope rather than a reuse of the legacy RME one.
+
+The LIKE escaping deliberately carries **no explicit `ESCAPE` clause**: adding
+one is proven on this codebase to corrupt PDO placeholder binding on PostgreSQL
+under PHP 8.3, the production runtime.
+
+## Recorded, not fixed, by this sprint
+
+A richer patient picker (search by name, type-ahead, a combobox) is a **separate
+UX sprint**. This bugfix restores the existing workflow — one field, one GET
+submit, one full-page render — and adds no JavaScript.
