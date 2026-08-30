@@ -252,7 +252,42 @@ backed end-to-end. The hub's own suite exercises the quota *service* directly an
 never through the odontogram intake, so before this sprint nothing pinned that the
 intake honours the ceiling at all — that gap is now closed too.
 
-## 10. Rules synchronised
+## 10. Security review
+
+Reviewed against the diff, which is five production files: the date rule service,
+two contract docblocks, one config key and one Blade message. No policy, no
+permission, no route, no FormRequest, no repository query and no storage path was
+touched — so most of the surface below is preserved by construction rather than by
+argument, and the mutation matrix is what proves it rather than the diff's size.
+
+| Concern | Outcome | Held by |
+|---|---|---|
+| Authorization / permissions | unchanged | nothing in the diff reaches them |
+| Patient IDOR at submit | **strengthened** | M13 — a real gap, now pinned |
+| Cross-branch patient identity | unchanged (global by design, rule 131 §6) | — |
+| Archive branch authority | unchanged | M12 killed |
+| Submitted `branch_id` tampering | ignored | M12 killed + explicit test |
+| Clinical evidence privacy / public disk | unchanged | M14 killed |
+| Native side effects | none | M3, M10, M11 killed |
+| Cutoff bypass | refused | M6, M7 killed |
+| Placeholder-row semantics | not evidence | M4, M5 killed |
+| Publish immutability / review gate | unchanged | M8, M9, M15b killed |
+| VOID + replacement correction path | unchanged | existing suite |
+| Daily import quota | enforced | M16e killed (both guards) |
+| Mass assignment | no new fillable or validated field | — |
+| Patient master mutation / duplication | none | M17, M18 killed |
+
+**`CRITICAL = 0`, `HIGH = 0`.**
+
+The one genuinely NEW risk this revision creates is the fail-open direction
+described in §4: absence now allows, so a swallowed lookup error would become an
+unbounded archive. It is held by an explicit test and documented at both layers,
+and no `try`/`catch` was added anywhere on that path.
+
+The one real finding — M13, the unpinned actor-scoped re-resolution — was found by
+this sprint's own mutation run and closed inside it rather than recorded for later.
+
+## 11. Rules synchronised
 
 - **New** `.cursor/rules/132-legacy-odontogram-native-optional.mdc` — the canonical
   rule.
