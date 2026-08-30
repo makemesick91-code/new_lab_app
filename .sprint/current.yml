@@ -1,107 +1,62 @@
-# REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1 — Sprint Manifest
+# BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — Sprint Manifest
 #
-# Prompt classification: FEATURE_REVISION · NEW_VISIT ·
-# GLOBAL_PATIENT_IDENTITY_LOOKUP · CROSS_BRANCH_REGISTRATION ·
-# PRIVACY_SENSITIVE · AUTHORIZATION_SENSITIVE. `type` below is MODULE_SPRINT
-# because that is the registered profile in config/sprint_profiles.php that
-# matches a deliberate business-rule change inside one module;
-# FEATURE_REVISION is not a defined type and inventing one would fail the
-# manifest check rather than describe the work.
+# Prompt classification: BUGFIX · PRODUCTION_FUNCTIONAL_DEFECT ·
+# LEGACY_ODONTOGRAM · PATIENT_LOOKUP · PRIVACY_SENSITIVE ·
+# AUTHORIZATION_SENSITIVE · CLINICAL_EVIDENCE. `type` below is RUNTIME_FIX
+# because that is the registered profile in config/sprint_profiles.php for a
+# defect in shipped runtime behaviour; BUGFIX is not a defined type and
+# inventing one would fail the manifest check rather than describe the work.
 #
-# WHAT CHANGES, AND WHY IT IS A REVISION AND NOT A BUG FIX. The predecessor
-# sprint (REVISION-NEW-VISIT-PATIENT-SEARCH-COMBOBOX-1) scoped the "Kunjungan
-# Baru" patient lookup to the operator's working branch. That was the correct
-# reading of the rules as they stood, and it closed a real IDOR. The product
-# rule has now deliberately changed: a patient who first registered at Telkomas
-# and walks into Landak today must be findable by the Landak operator, by name
-# or by Nomor RM, without anybody switching work branch.
+# THE DEFECT. On Import Data Legacy -> Unggah Arsip Odontogram Lama the operator
+# entered the patient identifier and nothing appeared. The page asked for
+# `mst_patients.id`, an internal surrogate key displayed on no DaengtisiaMS
+# screen or report, read through `Request::integer()` — which is `intval()`, and
+# `intval()` does not fail, it guesses. The Nomor RM the operator actually holds
+# became 0; `1abc` and `patient_id[]=…` both became 1 and silently displayed
+# whichever patient was row #1. The view then rendered ONE `@else` for every
+# outcome, so FOUND, NOT_FOUND and ERROR were indistinguishable from "you have
+# not typed anything yet". HTTP 200, nothing logged — confirmed on the pilot,
+# whose 8,718-line laravel.log holds zero legacy-odontogram entries.
 #
-# THE ONE DISTINCTION THIS SPRINT EXISTS TO ESTABLISH:
+# THE DISTINCTION THIS SPRINT ESTABLISHES:
 #
-#     PATIENT IDENTITY  !=  VISIT BRANCH AUTHORITY
+#     PATIENT FOUND  !=  UPLOAD AUTHORIZED
 #
-# Identity lookup for registration becomes global. Visit branch authority does
-# NOT. The new ClinicVisit branch still comes from the operator's authorized
-# daily working context — never from the patient's RM origin branch, never from
-# a request `branch_id`. A cross-branch selection reuses the existing patient
-# master row: no RM rewrite, no duplicate, no branch move, no context change.
+# The lookup answers "who is this?" only. On submit `patient_id` is re-resolved
+# through the same repository, re-validated by StoreLegacyOdontogramImportRequest,
+# and the owning branch is re-derived from the patient's own Nomor RM and
+# re-checked against the operator's scope. A rendered patient panel is never a
+# credential.
 #
-# AND THE DISTINCTION IT REFUSES TO BLUR. Global patient IDENTITY discovery is
-# not global CLINICAL HISTORY access. Nothing in this sprint widens visit
-# history, RME, odontogram or payment authorization. Those endpoints keep the
-# policies they had this morning.
+# WHAT IT DELIBERATELY DOES NOT DO. No searchable name combobox, no type-ahead,
+# no JavaScript of any kind. Same single field, same GET submit, same full-page
+# render. A richer picker is recorded as a separate UX finding. Accepting the
+# canonical Nomor RM is not that redesign — it is the identifier every other
+# patient-selection surface in the product already uses, and without it this
+# workflow cannot be completed at all.
 #
-# WHERE THE CHANGE ACTUALLY LANDS. Exactly one method:
-# PatientSelectorSearchService::authorizedBranchIds(). That service is already
-# registration-specific — the New Visit combobox endpoint, the submit-time
-# `patient_id` re-authorization and the prefill all resolve through it, so
-# search selectability and submit selectability cannot drift apart. The
-# canonical RmeWorkingBranchScope is NOT globally relaxed; every other surface
-# that consumes it (visit list, patient queue, RME reports, cashier, receivables)
-# keeps its working-branch scope untouched.
-#
-# WHAT STAYS CLOSED. The endpoint still requires authentication and the
-# ClinicVisit `create` ability, still takes no branch_id and no limit, still
-# refuses to answer below two characters, still returns at most 15 rows, and
-# still returns exactly four identity fields — id, name, medical_record_number,
-# branch_label. Never phone, WhatsApp, KTP/NIK, address, date of birth, email.
-#
-# AND WHAT STAYS FAIL-CLOSED. A context-bound operator (Admin Klinik, Perawat,
-# Kasir) with NO valid working context still reads nothing. Global means "any
-# branch's patient", not "no authority required": an operator who is not
-# working anywhere cannot register anywhere, so they may not read the registry
-# either. That existing protection is preserved verbatim, which also keeps the
-# enumeration surface from widening to unattached accounts.
-#
-# THE DOCTOR CLINICAL SCOPE IS DELIBERATELY UNTOUCHED. A Doctor holds
-# manage_clinic_visits and is therefore a registration actor, but
-# DoctorPatientScopeService still narrows them to their own RM scope. That is a
-# CLINICAL scope, not a branch scope, and widening it would be exactly the
-# identity-vs-clinical confusion this sprint is written to prevent.
-#
-# WHAT IS DELIBERATELY NOT CHANGED. No migration, no schema, no column, no
-# index. No route, no route rename, no new permission, no policy change, no
-# role change. No queue, cache, session or filesystem driver. The frontend
-# changes by one line of helper copy; the combobox already rendered
-# branch_label and needed no redesign.
-#
-# THE PREDECESSOR RUNTIME FIX IS PRESERVED. LIKE_ESCAPE stays '!' (never a
-# backslash — see BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 for why PDO on PHP
-# 8.3 + pdo_pgsql breaks on one), the placeholder-parity guard suite stays, and
-# both patient-search suites stay declared in critical_gate_mandatory_suites
-# and selected by a token in both critical gate variants.
-#
-# RECORDED, NOT FIXED HERE (out of scope by the sprint's own rule):
-#   - ClinicVisitController::patientVisitOptions lacks a branch check. This
-#     sprint explicitly does NOT use global identity lookup as a justification
-#     to open it; the finding is carried forward unchanged.
-#   - The dental Lab Order form still exposes phone through the retired
-#     x-patient-search-select component. That component does not use this
-#     service and is not affected either way.
-#   - CrossBranchPatientLookupService and LegacyRmePatientResolutionAuditService
-#     escape LIKE with a backslash but emit NO ESCAPE clause.
+# security_impact is true because the fix removes a silent wrong-patient
+# resolution on a clinical-evidence screen and replaces a Patient model in the
+# view with a least-disclosure identity DTO. branch_isolation_impact is false:
+# patient identity was already global here and stays so; the ARCHIVE's branch
+# derivation from the Nomor RM is untouched.
 
-id: REVISION-NEW-VISIT-GLOBAL-PATIENT-LOOKUP-1
-type: MODULE_SPRINT
-module: ClinicVisit
-title: 'New Visit patient lookup is global patient identity; the visit still happens at the operator''s own branch'
+id: BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1
+type: RUNTIME_FIX
+module: LegacyOdontogram
+title: 'The legacy odontogram upload page resolves the identifier the operator actually holds, and says which of FOUND / NOT_FOUND / ERROR happened'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-
-# Impact flags — MUST match reality.
-runtime_change: true            # the branch scope the registration lookup resolves
+runtime_change: true            # request handling, lookup service, repository, controller
 schema_change: false            # no migration, no column, no table, no index
-frontend_change: true           # one helper-copy line in the combobox component
-security_impact: true           # deliberately widens a privacy-bounded lookup's scope
-branch_isolation_impact: true   # identity lookup goes global; visit branch authority does not
+frontend_change: true           # the create Blade view's states; no JS, no asset build
+security_impact: true           # malformed input no longer resolves an arbitrary patient
+branch_isolation_impact: false  # archive branch derivation from Nomor RM is unchanged
 ledger_impact: false
-deploy_required: true           # the rule only takes effect for operators once deployed
-browser_required: true          # cross-branch result must be proven through the real endpoint
+deploy_required: true           # the page is broken for operators until this ships
+browser_required: true          # a blank-screen defect cannot be proven backend-only
 test_profiles:
   - focused
   - permission_regression
-go_tag: revision-new-visit-global-patient-lookup-1-go
-
-# Carried forward from the manifests this sprint inherits. Not boilerplate:
-# dropping either makes the LegacyRme closure contract fail.
+go_tag: bugfix-legacy-odontogram-patient-lookup-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
