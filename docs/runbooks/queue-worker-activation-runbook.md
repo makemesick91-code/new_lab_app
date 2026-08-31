@@ -62,12 +62,18 @@ directly, for every queue rather than only the Legacy RME one:
 php artisan foundation:queue-retry-failed-job-check
 ```
 
-`ENT5-Q009-INSTALLED-WORKER-DRIFT` appears as a **warning** (decision `WATCH`)
-whenever the installed unit does not yet consume a queue the application
-produces. That is the expected state between a unit-changing deploy and this
-re-installation step — the deploy is forbidden from installing a worker, so the
-warning is correct, not a fault. It clears to `GO` once the `cp` +
-`daemon-reload` + `restart` above have run.
+An `Installed worker unit (operational note — does not affect the decision)`
+section appears whenever the installed unit does not yet consume a queue the
+application produces. That is the expected state between a unit-changing deploy
+and this re-installation step, and it clears once the `cp` + `daemon-reload` +
+`restart` above have run.
+
+It is deliberately an observation rather than a check: the deploy is forbidden
+from installing a worker, so this state occurs on **every** unit-changing
+deploy. When it was briefly a warning, ENT-5 went `WATCH`, that cascaded through
+ENT-8/9/10/11, and the deploy — which asserts ENT-11 is `GO` — aborted before it
+could finish, leaving the unit uninstallable. Read the note, run the steps
+above, and confirm with `systemctl cat`.
 
 A **failure** (not a warning) on `ENT5-Q009-PRODUCER-CONSUMER-PARITY` means the
 *tracked* unit is missing a produced queue. That is a repository defect: fix the

@@ -318,18 +318,32 @@ it('suspends the consumer requirement only while the producing feature is off', 
 // Installed-unit drift is operational, never a build failure
 // ---------------------------------------------------------------------------
 
-it('warns without failing when the installed unit lags the tracked one', function () {
+it('reports installed-unit drift without moving the readiness decision', function () {
     config()->set(
         'queue_governance.ent5_retry_failed_job.producer_consumer_contract.installed_worker_unit_file',
         writeUnitFixture('--queue=default,reports,notifications,maintenance,legacy-rme-documents'),
     );
 
-    // The deploy is forbidden from installing or starting a worker (ENT-5), so
-    // a unit-changing deploy MUST be able to complete before the operator
-    // activation step. A failure here would deadlock exactly that sequence.
-    expect(parityStatus())->toBe('passed')
-        ->and(ent5Check('ENT5-Q009-INSTALLED-WORKER-DRIFT')['status'])->toBe('warning')
-        ->and((new QueueRetryFailedJobReadinessService)->collect()['decision'])->toBe('WATCH');
+    $report = (new QueueRetryFailedJobReadinessService)->collect();
+
+    // Reported, so an operator can see the activation step is still pending...
+    expect($report['producer_consumer_contract']['worker_unit']['installed_drift'])->toBeTrue()
+        ->and($report['producer_consumer_contract']['warnings'][0])
+        ->toContain('legacy-odontogram-documents');
+
+    // ...but NOT a check, and therefore not a WATCH.
+    //
+    // This is the shape production rejected. The deploy is forbidden from
+    // installing or starting a worker (ENT5-Q006), so a unit-changing deploy
+    // ALWAYS precedes activation. When drift was a warning, this decision went
+    // WATCH, cascaded through ENT-8/9/10/11, and scripts/deploy-vps.sh — which
+    // asserts ENT-11 is GO — aborted. The deploy could not finish because the
+    // unit was not installed, and the unit could not be installed until the
+    // deploy finished.
+    expect($report['decision'])->toBe('GO')
+        ->and(array_column($report['checks'], 'check_id'))
+        ->not->toContain('ENT5-Q009-INSTALLED-WORKER-DRIFT')
+        ->and(parityStatus())->toBe('passed');
 });
 
 // ---------------------------------------------------------------------------

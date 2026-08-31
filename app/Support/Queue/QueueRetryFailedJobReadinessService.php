@@ -147,15 +147,27 @@ class QueueRetryFailedJobReadinessService
             )
             : $this->fail('ENT5-Q009-PRODUCER-CONSUMER-PARITY', implode('; ', $parityIssues));
 
-        // Drift between the tracked unit and the installed one is an operational
-        // signal, not a repository defect: the deploy never installs or starts a
-        // worker (ENT-5), so a unit-changing deploy legitimately precedes the
-        // operator's activation step. Warning, so the gate reports the truth
-        // without blocking the deploy that has to happen first.
-        foreach ((array) ($contract['warnings'] ?? []) as $warning) {
-            $checks[] = $this->warn('ENT5-Q009-INSTALLED-WORKER-DRIFT', (string) $warning);
-            $warnings[] = (string) $warning;
-        }
+        /*
+         * Drift between the TRACKED unit and the one systemd actually runs is
+         * deliberately NOT a check, and therefore never moves this decision.
+         *
+         * It was one, briefly, and production proved that wrong within minutes.
+         * The deploy is FORBIDDEN from installing or starting a worker (ENT-5
+         * ENT5-Q006), so between a unit-changing deploy and the operator's
+         * activation step the two files legitimately differ — every single time.
+         * Emitting a warning there turned this decision WATCH, which cascaded
+         * through ENT-8, ENT-9, ENT-10 and ENT-11, and `scripts/deploy-vps.sh`
+         * asserts ENT-11 is GO. The result was a deadlock: the deploy aborted
+         * because the unit was not installed, and the unit could not be
+         * installed until the deploy finished.
+         *
+         * The distinction the contract already draws is the right one. CI can
+         * only ever verify the TRACKED unit, and that is what ENT5-Q009 asserts
+         * as a hard failure. The INSTALLED unit is the operator's step, verified
+         * by the activation runbook — so the drift is reported as an operational
+         * observation, in the payload and in this command's own output, and the
+         * readiness decision stays about the repository.
+         */
 
         $directives = (array) ($contract['directive_sections'] ?? []);
         $checks[] = ($directives['ok'] ?? true) === true

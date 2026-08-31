@@ -140,14 +140,20 @@ names compared exactly. A unit that *mentions* a queue in a comment does not
 consume it, and a check that accepted the mention would certify a stalled
 pipeline. `x-archive` never satisfies `x`.
 
-**Installed drift is a WARNING.** `foundation:queue-retry-failed-job-check` exits
-non-zero on FAIL *even without* `--strict` (verified), and
-`scripts/deploy-vps.sh:291` runs it ungated under `set -e`. The deploy is
-forbidden from installing or starting a worker (ENT-5), so failing on
-installed-vs-tracked drift would abort the very deploy that must precede
-operator activation. A unit-changing deploy therefore reports `WATCH` until the
-activation runbook has run — which is *correct*, because production genuinely is
-drifted in that window.
+**Installed drift is an operational observation, not a check — corrected after
+production said so.** It shipped as a `warn()`, and the first deploy of this
+sprint aborted because of it: ENT-5 went `WATCH`, ENT-8/9/10/11 each re-verify
+ENT-5's decision and inherited it, and `scripts/deploy-vps.sh` asserts ENT-11 is
+`GO`. The deploy could not finish because the unit was not installed, and the
+unit could not be installed until the deploy finished — a permanent deadlock for
+every future unit-changing sprint.
+
+The earlier reasoning verified that the *commands* exit 0 without `--strict`, and
+missed the deploy script's explicit `GO` assertion. Drift is now reported in the
+payload and printed under `Installed worker unit (operational note — does not
+affect the decision)`. The hard half is unchanged: ENT5-Q009 still FAILS when the
+**tracked** unit is missing a produced queue. CI can only ever verify the tracked
+unit; the installed unit is the operator's step.
 
 ## Recovery of the stalled document
 
