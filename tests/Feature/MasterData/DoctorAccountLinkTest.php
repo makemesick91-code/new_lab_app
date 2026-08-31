@@ -588,3 +588,76 @@ it('refuses an account still held by a soft-deleted doctor, with a message rathe
     expect($target->fresh()->user_id)->toBeNull()
         ->and(session('errors')->first('user_id'))->toContain('sudah dihapus');
 });
+
+/* -------------------------------------------------------------------------
+ | CLI linker — the SSH path when the UI cannot be used
+ |
+ | It must be the SAME service, so every guard and the audit row hold here too.
+ * ---------------------------------------------------------------------- */
+
+it('links from the CLI only when --apply is passed', function () {
+    $doctor = Doctor::factory()->create(['user_id' => null]);
+    $user = dalDoctorUser();
+
+    $this->artisan('rme:doctor-link-user', ['--doctor' => $doctor->id, '--user' => $user->id])
+        ->assertSuccessful();
+
+    expect($doctor->fresh()->user_id)->toBeNull('dry-run must not write');
+
+    $this->artisan('rme:doctor-link-user', [
+        '--doctor' => $doctor->id,
+        '--user' => $user->id,
+        '--apply' => true,
+    ])->assertSuccessful();
+
+    expect($doctor->fresh()->user_id)->toBe($user->id);
+
+    $audited = AuditLog::query()
+        ->where('entity_type', Doctor::class)
+        ->where('entity_id', $doctor->id)
+        ->pluck('action')
+        ->all();
+
+    expect($audited)->toBe(['DOCTOR_ACCOUNT_LINK']);
+});
+
+it('applies the same eligibility rules from the CLI as from the page', function () {
+    $doctor = Doctor::factory()->create(['user_id' => null]);
+
+    $cashier = User::factory()->create(['is_active' => true]);
+    $cashier->assignRole('Kasir');
+
+    $this->artisan('rme:doctor-link-user', [
+        '--doctor' => $doctor->id,
+        '--user' => $cashier->id,
+        '--apply' => true,
+    ])->assertFailed();
+
+    expect($doctor->fresh()->user_id)->toBeNull();
+
+    // And an existing link is not silently replaced from the CLI either.
+    $first = dalDoctorUser();
+    $second = dalDoctorUser();
+    $doctor->forceFill(['user_id' => $first->id])->save();
+
+    $this->artisan('rme:doctor-link-user', [
+        '--doctor' => $doctor->id,
+        '--user' => $second->id,
+        '--apply' => true,
+    ])->assertFailed();
+
+    expect($doctor->fresh()->user_id)->toBe($first->id);
+});
+
+it('resolves a doctor by code and a user by email from the CLI', function () {
+    $doctor = Doctor::factory()->create(['code' => 'CLI-DOC-1', 'user_id' => null]);
+    $user = dalDoctorUser('cli-linker@example.test');
+
+    $this->artisan('rme:doctor-link-user', [
+        '--doctor' => 'CLI-DOC-1',
+        '--user' => 'cli-linker@example.test',
+        '--apply' => true,
+    ])->assertSuccessful();
+
+    expect($doctor->fresh()->user_id)->toBe($user->id);
+});

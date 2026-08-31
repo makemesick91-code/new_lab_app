@@ -115,3 +115,56 @@ php artisan rme:doctor-performance-access-audit        # read-only estate check
 ```
 
 Production doctors stay **unlinked** until an administrator links them deliberately. No account is auto-linked, and no historical row is rewritten.
+
+---
+
+## 5. The migration order this sprint got wrong
+
+Removing the email fallback and adding the linking UI shipped together. The
+correct order is **link everyone first, then remove the fallback** — and the
+only reason that was not obvious is a measurement error.
+
+Before the change I counted Doctor-role users with:
+
+```sql
+mhr.model_type = 'App\\Models\\User'   -- over-escaped; matches nothing
+```
+
+which returned **0**, and I concluded no account could be resolving by email.
+The real count was **4**. Two of them (users 9 and 12) were already linked by
+`user_id` and were unaffected. The other two were not:
+
+| user | doctor | email match | name match | previously resolved by |
+| --- | --- | --- | --- | --- |
+| 14 | 16 | yes | yes | email fallback only |
+| 15 | 20 | yes | yes | email fallback only |
+
+Both are live accounts — each has online-context history, and doctor 16 has
+visits that exist *because* the fallback was resolving them. Deploying the
+hardening therefore revoked their ability to start a doctor session and open
+their own patients.
+
+The repair was to persist the mapping the system had already been using, with
+the owner's explicit approval, through the same audited service the UI uses —
+not to restore the fallback and not to hand-write SQL.
+
+### `rme:doctor-link-user`
+
+The UI is the normal path. This command exists for the case the UI cannot serve:
+an operator on the pilot over SSH, where `tinker` is barred (psysh writes ERROR
+lines into the application log and pins the monitor to WATCH for a day) and a raw
+`UPDATE` would bypass both the eligibility guards and the audit trail.
+
+```bash
+php artisan rme:doctor-link-user --doctor=16 --user=14            # dry-run (default)
+php artisan rme:doctor-link-user --doctor=16 --user=14 --apply    # persist + audit
+```
+
+It is thin by design — every rule lives in `DoctorAccountLinkService`, so the CLI
+cannot be a weaker door than the page. Accepts id or code for the doctor, id or
+email for the user; `--confirm-relink` is required to replace an existing link.
+
+**Rule for any future sprint that narrows an identity resolver: measure who
+depends on the loose path *before* removing it, and verify the measurement
+returns a non-zero answer somewhere it should.** A query that silently matches
+nothing looks exactly like a clean estate.
