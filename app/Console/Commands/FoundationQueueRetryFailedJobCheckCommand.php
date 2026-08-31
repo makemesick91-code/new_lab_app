@@ -68,6 +68,17 @@ class FoundationQueueRetryFailedJobCheckCommand extends Command
             $s['checks'] ?? 0, $s['passed'] ?? 0, $s['warnings'] ?? 0, $s['errors'] ?? 0, $s['decision'] ?? 'FAIL',
         ));
 
+        // An operational observation about the HOST, not a readiness verdict
+        // about the repository — see the note in QueueRetryFailedJobReadinessService.
+        $drift = (array) ($report['producer_consumer_contract']['warnings'] ?? []);
+        if ($drift !== []) {
+            $this->newLine();
+            $this->line('Installed worker unit (operational note — does not affect the decision):');
+            foreach ($drift as $note) {
+                $this->line('  - '.$note);
+            }
+        }
+
         $nonPassing = array_filter((array) ($report['checks'] ?? []), fn (array $c) => ($c['status'] ?? '') !== 'passed');
         if ($nonPassing !== []) {
             $this->newLine();

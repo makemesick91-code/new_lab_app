@@ -109,22 +109,31 @@ CI can only ever verify the **tracked** unit, so that is what the contract is
 enforced against.
 
 The **installed** unit (`/etc/systemd/system/…`) is what systemd actually runs.
-Drift between the two is reported as a **warning**, never a failure, and is a
-production-only signal:
+Drift between the two is reported as an **operational observation** — in the
+check payload, and printed by the command under `Installed worker unit
+(operational note — does not affect the decision)`. It is deliberately **not a
+check**, so it never moves the ENT-5 decision.
 
-> The deploy is forbidden from installing or starting a worker (ENT-5
-> `no_long_running_worker_started_by_deploy`). Activation is a separate operator
-> step that must happen *after* a successful deploy. A hard failure on installed
-> drift would abort the very deploy that has to precede the activation — a
-> deadlock. `foundation:queue-retry-failed-job-check` exits non-zero on FAIL even
-> without `--strict`, and `scripts/deploy-vps.sh` runs it ungated, so this
-> distinction is load-bearing, not cosmetic.
+That is not a softening. It shipped as a warning, and the very next production
+deploy proved the design wrong:
 
-A unit-changing deploy therefore reports `WATCH` until the operator runs the
-worker activation runbook, and returns to `GO` afterwards. That WATCH is
-**correct**: production genuinely is in a drifted state during that window.
-Suppressing it would be the "reports but does not enforce" weakness this sprint
-exists to remove.
+> The deploy is forbidden from installing or starting a worker (ENT5-Q006), so a
+> unit-changing deploy **always** precedes activation — the warning fired on
+> exactly the deploy meant to enable the fix. ENT-5 went `WATCH`; ENT-8, ENT-9,
+> ENT-10 and ENT-11 each re-verify ENT-5's decision and inherited it; and
+> `scripts/deploy-vps.sh` asserts ENT-11 is `GO`. The deploy aborted because the
+> unit was not installed, and the unit could not be installed until the deploy
+> finished. A permanent deadlock, for every future unit-changing sprint.
+
+The earlier reasoning confirmed the check *commands* exit 0 without `--strict`,
+and missed that the deploy script makes its own `GO` assertion, which no command
+flag affects.
+
+The separation drawn at the top of this section is the right one: **CI can only
+ever verify the tracked unit**, and ENT5-Q009 asserts that as a hard failure —
+the property that would have caught this defect in the first place. The installed
+unit is the operator's step, verified by the worker activation runbook. Reporting
+it without letting it gate the repository keeps both halves honest.
 
 ## Queue order is priority
 
