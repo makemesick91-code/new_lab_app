@@ -16,6 +16,7 @@ use App\Modules\ClinicRoom\Controllers\ClinicRoomController;
 use App\Modules\ClinicVisit\Controllers\ClinicVisitController;
 use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
+use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
@@ -194,6 +195,20 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
         Route::patch('clinics/{clinic}/activate', [ClinicController::class, 'activate'])->name('clinics.activate');
         Route::patch('clinics/{clinic}/deactivate', [ClinicController::class, 'deactivate'])->name('clinics.deactivate');
     });
+
+    // FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1 — Relasi Akun Dokter.
+    // Declared before the doctors resource so the static `account-links` segment
+    // is never shadowed by a wildcard doctor route. Gated by its own narrower
+    // permission: `manage doctors` alone must not confer the right to decide
+    // which account can read which doctor's history and income.
+    Route::middleware('permission:manage_doctor_account_links')
+        ->prefix('doctors/account-links')
+        ->name('doctors.account-links.')
+        ->group(function () {
+            Route::get('/', [DoctorAccountLinkController::class, 'index'])->name('index');
+            Route::post('{doctor}', [DoctorAccountLinkController::class, 'store'])->name('store');
+            Route::delete('{doctor}', [DoctorAccountLinkController::class, 'destroy'])->name('destroy');
+        });
 
     // Doctors (TASK-0202)
     Route::middleware('permission:manage doctors')->group(function () {

@@ -153,6 +153,11 @@ class PermissionSeeder extends Seeder
         // tier sees all doctors; own tier is a linked doctor scoped to self.
         'view_doctor_performance_report',
         'view_own_doctor_performance_report',
+
+        // FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1 — deciding which login
+        // account represents which doctor is narrower than doctor master-data
+        // maintenance, because a wrong link exposes another doctor's income.
+        'manage_doctor_account_links',
         // Sprint 23 Phase 23.7 — Master Data Cabang (RME + Inventory branches)
         'view_branch_master_data',
         'manage_branch_master_data',

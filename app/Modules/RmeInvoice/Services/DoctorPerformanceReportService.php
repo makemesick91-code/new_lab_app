@@ -7,6 +7,7 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\Doctor\Services\DoctorIdentityResolver;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeInvoice\Models\RmeInvoiceItem;
 use App\Modules\RmeInvoice\Models\RmePayment;
@@ -52,6 +53,7 @@ class DoctorPerformanceReportService
 {
     public function __construct(
         private readonly BranchService $branches,
+        private readonly DoctorIdentityResolver $doctorIdentity,
     ) {}
 
     /**
@@ -75,7 +77,11 @@ class DoctorPerformanceReportService
 
         // Own-doctor tier requires BOTH the permission AND a linked doctor record.
         if ($user->can('view_own_doctor_performance_report')) {
-            $ownDoctor = Doctor::query()->where('user_id', $user->id)->first();
+            // FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1 — kinerja and
+            // pendapatan resolve identity through the one canonical resolver, so
+            // this report can never drift onto a different notion of "which
+            // doctor is this user" than the rest of the system.
+            $ownDoctor = $this->doctorIdentity->resolveForUser($user);
 
             if ($ownDoctor !== null) {
                 return [

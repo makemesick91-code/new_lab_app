@@ -1,0 +1,77 @@
+---
+description: Doctor account identity link — how a login user becomes a doctor for Kinerja and Pendapatan
+globs:
+  - "app/Modules/Doctor/**"
+  - "app/Modules/RmeOnlineContext/**"
+  - "app/Modules/RmeInvoice/Services/DoctorPerformanceReportService.php"
+  - "app/Modules/RME/Services/DoctorPatientScopeService.php"
+alwaysApply: false
+---
+
+# DOCTOR ACCOUNT IDENTITY LINK FOUNDATION
+
+Source: FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1
+(`docs/sprints/feature-doctor-account-performance-income-linkage-1.md`).
+
+1. **Authentication identity and doctor clinical identity are separate concepts.**
+   They are joined by exactly one explicit, persisted, unique column:
+   `mst_doctors.user_id`. There is no second linkage mechanism — do not add one.
+
+2. **`App\Modules\Doctor\Services\DoctorIdentityResolver` is the canonical resolver.**
+   Every feature that needs "which doctor is this user?" goes through it.
+   `DoctorUserResolver` (online context) and `DoctorPerformanceReportService`
+   (kinerja + pendapatan) both delegate to it, so the system can never hold two
+   different opinions about a doctor's identity. Do not re-derive the link with
+   an ad-hoc `where('user_id', ...)` query in a controller, policy, Blade view
+   or test.
+
+3. **Identity is never inferred from a display name, email, or phone number.**
+   The historical case-insensitive email fallback in `DoctorUserResolver` was
+   removed precisely because it fed `DoctorPatientScopeService` (which patients
+   and medical records an account may open) and visit doctor attribution. A
+   human may use name/email to *choose* the right record in the linking screen;
+   the system only ever trusts the id.
+
+4. **One account ↔ one doctor.** One login account represents at most one doctor
+   profile, and one doctor profile has at most one active login account. This is
+   enforced in `DoctorAccountLinkService` under a row lock *and* by the unique
+   index on `mst_doctors.user_id`. Frontend validation is never the guarantee.
+
+5. **Doctor self-access derives the doctor server-side from the authenticated
+   user.** A request-supplied `doctor_id` is never authoritative for a doctor's
+   own kinerja or pendapatan; it is ignored. An administrative tier may select a
+   doctor, but only with an explicit executive permission.
+
+6. **An unlinked doctor account fails closed.** It receives a clear, diagnosable
+   403 and never another doctor's performance or income. Never fall back to the
+   first doctor, a name match, or an empty-but-valid-looking report.
+
+7. **Linking never rewrites history.** Visits, medical records, odontograms,
+   invoices, payments and earnings stay attached to the existing doctor
+   identity and simply become reachable through the link. Never migrate
+   `trx_clinic_visits.doctor_id` (or any financial row) to create a link.
+
+8. **Linking never grants a role.** The account must already hold `Doctor`;
+   RBAC stays a separate, deliberate decision.
+
+9. **Link management is security-sensitive.** It is gated by its own permission
+   `manage_doctor_account_links` — deliberately narrower than `manage doctors`,
+   because someone trusted to correct a doctor's phone number is not thereby
+   trusted to redirect who can read another doctor's income. It is granted to no
+   role by default; Super Admin reaches it via `Gate::before`.
+
+10. **Every link, relink and unlink is audited** to `sys_audit_logs`
+    (`DOCTOR_ACCOUNT_LINK` / `_RELINK` / `_UNLINK`) with technical identifiers
+    only — never a name, email, or financial value.
+
+11. **Replacing a link is explicit.** A doctor already linked to another account
+    requires a confirmed relink; the write is one transaction, never a silent
+    overwrite.
+
+12. **Account linkage chooses WHO the doctor is. It does not redefine HOW
+    kinerja or pendapatan is calculated.** Never change an income or performance
+    formula in a linkage sprint.
+
+13. **The management surface lives at Master Data RME → Relasi Akun Dokter**
+    (`settings.doctors.account-links.*`). Sidebar visibility is UX only; route
+    and policy authorization remain mandatory and are tested independently.

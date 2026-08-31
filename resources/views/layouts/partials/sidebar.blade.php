@@ -117,6 +117,7 @@
         'reporting' => request()->routeIs('reports.*'),
         'master-data' => request()->routeIs(
             'settings.doctors.*',
+            'settings.doctors.account-links.*',
             'settings.patients.*',
             'settings.lab-services.*',
             'settings.technicians.*',
@@ -786,7 +787,7 @@
                 <p class="menu-group-title pt-2">Administrasi Sistem</p>
             @endif
 
-            @canany(['manage doctors', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
+            @canany(['manage doctors', 'manage_doctor_account_links', 'manage patients', 'manage lab services', 'manage technicians', 'view_clinic_master_data', 'manage_clinic_master_data', 'view_branch_master_data', 'manage_branch_master_data'])
                 @unless($user?->hasRole('Admin Klinik'))
                 <div class="pt-2">
                     <button type="button" @click="toggle('master-data')" class="{{ $groupToggle }}" :aria-expanded="isOpen('master-data')">
@@ -803,7 +804,11 @@
                     <div data-sidebar-panel="master-data" x-show="isOpen('master-data')" class="mt-1 space-y-0.5 pl-8">
                         @can('manage doctors')
                             <a href="{{ route('settings.doctors.index') }}"
-                               class="menu-subitem {{ request()->routeIs('settings.doctors.*') ? $linkActive : $linkIdle }}">Dokter</a>
+                               class="menu-subitem {{ request()->routeIs('settings.doctors.index') || request()->routeIs('settings.doctors.create') || request()->routeIs('settings.doctors.edit') ? $linkActive : $linkIdle }}">Dokter</a>
+                        @endcan
+                        @can('manage_doctor_account_links')
+                            <a href="{{ route('settings.doctors.account-links.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.doctors.account-links.*') ? $linkActive : $linkIdle }}">Relasi Akun Dokter</a>
                         @endcan
                         @can('manage patients')
                             <a href="{{ route('settings.patients.index') }}"

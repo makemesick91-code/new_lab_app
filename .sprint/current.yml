@@ -1,58 +1,23 @@
-# REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — Sprint Manifest
-#
-# Prompt classification: BUSINESS_RULE_REVISION · MASTER_DATA · MULTI_BRANCH ·
-# MEDICAL_RECORD_NUMBER · LEGACY_IMPORT · LEGACY_RME · LEGACY_ODONTOGRAM ·
-# DATA_MIGRATION_POSSIBLE · BACKWARD_COMPATIBILITY · PRODUCTION_DATA_INTEGRITY.
-# `type` below is MIGRATION_HEAVY because that is the registered profile in
-# config/sprint_profiles.php that matches a sprint whose central artifact is a
-# production data migration; the other labels describe the work but are not
-# defined types, and inventing one fails the manifest check rather than
-# describing anything.
-#
-# THE DECISION. Cabang Telkomas' canonical branch code is TLK1. TKM1 is
-# deprecated: accepted as a historical alias because it is printed on cards
-# patients already carry and on documents already archived, never emitted again.
-#
-# WHAT THE INVENTORY FOUND. This was framed as a rename; it was actually a drift
-# repair. Production mst_branches id 1 had ALREADY been renamed to TLK1 by hand
-# while the repository still said TKM1 — three defects, one live and two latent:
-#
-#   1. RmeBranchSeeder looked Telkomas up by 'TKM1' alone, so the next routine
-#      db:seed --class=RmeBranchSeeder --force would have CREATED A DUPLICATE
-#      "Cabang Telkomas". Branch id is the isolation boundary, so one clinic's
-#      patients would split across two branches.
-#   2. Legacy-archive branch derivation resolved Branch::where('code','TKM1') →
-#      not found, so patient 36 (DG-TKM1-2024-9985) had an UNREACHABLE legacy
-#      RME / odontogram archive. This one was already live.
-#   3. The WAVE-4 allowlist admitted the literal token TKM1 from the environment
-#      while derivation reported TLK1 — locking an approved branch out of its own
-#      wave with an error about admission rather than about a rename.
-#
-# WHY NOT A GLOBAL REPLACE. 727 occurrences across 111 files were classified
-# before anything changed. Most are immutable: published clinical evidence and
-# its stored source RM, sys_audit_logs, issued visit_number values, staging
-# payloads, terminal waves, historical wave/pilot/incident records. A blind
-# replace would also rewrite a TKM1 inside a manual RM sequence, inside an
-# approval reference, and inside a JSON payload. Nomor RM values therefore go
-# through the canonical parser/composer so only the branch-code SEGMENT can
-# change, and the migration enumerates every target instead of scanning columns.
+# DEVFLOW-1 — Sprint Manifest
+# Validated by: php artisan sprint:manifest-check
 
-id: REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1
-type: MIGRATION_HEAVY
-module: Branch
-title: 'Cabang Telkomas canonical branch code becomes TLK1 with TKM1 accepted as a historical alias; closes a latent duplicate-branch seeder hazard, an unreachable legacy archive, and a rollout lockout'
+id: FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1
+type: MODULE_SPRINT
+module: Doctor
+title: "Doctor account identity link — Master Data management UI for the existing mst_doctors.user_id relation, one canonical identity resolver, and removal of the email-matching fallback"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true            # alias policy, RM parsing, patient search, admission
-schema_change: true             # data migration (no DDL): branch code + Nomor RM + live wave rows
-frontend_change: true           # 3 Blade placeholders now show the canonical example
-security_impact: true           # touches RM-derived branch derivation, the isolation boundary
-branch_isolation_impact: true   # a duplicate branch would have split one clinic's patients
-ledger_impact: false            # no inventory movement, invoice or payment touched
-deploy_required: true           # production carries the mismatched allowlist and one TKM1 RM
-browser_required: true          # patient search + legacy import forms are user-facing
-test_profiles:
-  - focused
-  - permission_regression
-go_tag: revision-telkomas-branch-code-tkm1-to-tlk1-1-go
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+
+# Impact flags — MUST match reality; CI + sprint:manifest-check enforce them.
+runtime_change: true          # new routes/controller/service/resolver; DoctorUserResolver behaviour hardened
+schema_change: false          # mst_doctors.user_id already exists (nullable, unique FK) — no migration
+frontend_change: true         # new Blade management page + sidebar entry
+security_impact: true         # new permission, new policy abilities, identity-resolution authority change
+branch_isolation_impact: false # doctor identity is not branch-scoped; existing branch rules untouched
+ledger_impact: false          # no invoice/payment/inventory/earning calculation touched
+
+deploy_required: true
+browser_required: true
+
+test_profiles: []
+
+go_tag: feature-doctor-account-performance-income-linkage-1-go
