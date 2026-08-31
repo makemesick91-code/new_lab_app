@@ -81,11 +81,52 @@ Setiap job/listener baru yang `implements ShouldQueue` wajib salah satu dari:
 3. mendeklarasikan eksplisit `$tries`, `$backoff` (atau method `backoff()`),
    dan `$timeout` dalam batas ENT5-Q003.
 
-Nama queue wajib salah satu dari: `default`, `reports`, `notifications`,
-`maintenance`. Payload job tidak boleh berisi PII/KTP/NIK/secret (aturan
-QUEUE-1 `no_pii_in_queue_payload` tetap berlaku). Scan
+Nama queue wajib terdaftar di `allowed_queue_names` (lihat ENT5-Q009 — daftar
+ini bertambah ketika sebuah modul memerlukan queue khusus, dan penambahannya
+wajib disertai consumer). Payload job tidak boleh berisi PII/KTP/NIK/secret
+(aturan QUEUE-1 `no_pii_in_queue_payload` tetap berlaku). Scan
 `foundation:queue-retry-failed-job-check` menandai kelas yang melanggar sebagai
 FAIL.
+
+### ENT5-Q009 — Setiap queue yang diproduksi wajib punya consumer produksi
+Ditambahkan oleh BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1. Kontrak lengkap:
+`docs/architecture/queue-producer-consumer-contract.md`.
+
+Sebuah nama queue yang bisa di-dispatch aplikasi wajib (a) terdaftar di
+`allowed_queue_names`, DAN (b) muncul pada daftar `--queue` direktif `ExecStart`
+di worker unit yang dilacak repositori. Sebaliknya worker tidak boleh
+mengkonsumsi queue yang tidak terdaftar.
+
+Alasannya bukan teoretis: queue tanpa consumer adalah kegagalan paling senyap
+yang dimiliki sistem ini — `attempts = 0`, `reserved_at` NULL, `failed_jobs`
+kosong, tanpa exception dan tanpa log, sementara status domain tetap `QUEUED`
+sehingga tidak bisa dibedakan dari pekerjaan yang masih berjalan. Hal ini sudah
+terjadi dua kali (`legacy-rme-documents`, lalu `legacy-odontogram-documents`).
+Karena itu pelanggaran adalah **FAIL**, bukan laporan.
+
+Nama queue di-resolve saat runtime dari config key yang menentukannya (semua
+queue khusus di sini bisa ditimpa environment), dan registri produsen diperiksa
+kelengkapannya terhadap pohon sumber — modul baru tidak bisa menambah queue
+khusus tanpa terlihat. Sebuah entri boleh menangguhkan syarat consumer lewat
+`consumer_required_when`, yaitu pembacaan langsung terhadap flag fitur yang sama
+dengan runtime; ini bukan daftar pengecualian, karena mengaktifkan fitur akan
+mengembalikan syarat tersebut dengan sendirinya.
+
+Selisih antara unit yang dilacak dan unit yang terpasang di host dilaporkan
+sebagai **WARNING**, bukan FAIL: deploy dilarang memasang atau menjalankan
+worker (ENT5-Q006), sehingga aktivasi adalah langkah operator setelahnya, dan
+FAIL di sini akan mengunci deploy yang justru harus berjalan lebih dulu.
+
+### ENT5-Q010 — Direktif unit worker wajib berada di section yang dibaca systemd
+Direktif pada unit worker produksi wajib dideklarasikan di section tempat
+systemd benar-benar membacanya. Direktif yang salah section akan diabaikan
+diam-diam, sehingga isi file dan service yang berjalan berbeda tanpa ada yang
+mengungkapkannya.
+
+Produksi membuktikannya: `StartLimitIntervalSec=0` berada di `[Service]`,
+systemd mencatat `Unknown key name 'StartLimitIntervalSec' in section 'Service',
+ignoring`, lalu menerapkan default-nya sendiri — `systemctl show` melaporkan
+`StartLimitIntervalUSec=10s` terhadap file yang meminta `0`.
 
 ## Cara Verifikasi
 

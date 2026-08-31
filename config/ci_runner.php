@@ -255,6 +255,19 @@ return [
         // including one nobody has registered anywhere.
         'tests/Feature/Cicd/CiGateWorkdirOwnershipContractTest.php',
 
+        // BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 — the producer ↔ consumer
+        // contract for dedicated queues.
+        //
+        // Declared here for the reason the entries above record, with a second
+        // production incident behind it rather than one. A queue nobody
+        // consumes produces no error, no failed job and no log line; the only
+        // thing that can catch it is a check that runs. This suite lives under
+        // tests/Feature/Queue, which no existing filter token selected, so
+        // without both this declaration and its token in the filter it would
+        // have been a control that exists and never runs — exactly the shape
+        // this sprint was called in to fix.
+        'tests/Feature/Queue/QueueProducerConsumerParityTest.php',
+
         // FEATURE-LEGACY-IMPORT-HUB-1 — the daily admission ceiling on legacy
         // imports, and its wiring into all three importers.
         //

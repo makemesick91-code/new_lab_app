@@ -18,12 +18,21 @@ use Throwable;
  *  - every ShouldQueue class in app/ inherits the approved defaults
  *    (EnterpriseQueueJob / EnterpriseQueueRetryDefaults) or declares
  *    explicit tries/backoff/timeout values;
+ *  - every queue the application dispatches to is a declared ENT-5 queue name
+ *    AND is consumed by the tracked production worker (ENT5-Q009), with the
+ *    producer registry itself checked for completeness against the source tree;
+ *  - worker unit directives are declared in the section systemd honours
+ *    (ENT5-Q010);
  *  - no destructive queue command is automated inside app code;
  *  - the worker operations runbook exists and workers are never started
  *    by deploy.
  */
 class QueueRetryFailedJobReadinessService
 {
+    public function __construct(
+        private readonly QueueProducerConsumerContractScanner $contract = new QueueProducerConsumerContractScanner,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -110,7 +119,50 @@ class QueueRetryFailedJobReadinessService
             ? $this->pass('ENT5-Q004-IDEMPOTENCY-DOMAINS', count($domains).' critical domain(s) require idempotent jobs before queueing.')
             : $this->fail('ENT5-Q004-IDEMPOTENCY-DOMAINS', 'critical_idempotency_domains must not be empty.');
 
-        return $this->finalize($config, $checks, $warnings, $jobScan);
+        // ENT5-Q009 / ENT5-Q010 — every produced queue has a real consumer, and
+        // the worker unit's directives sit where systemd will honour them.
+        $contract = $this->contract->posture();
+
+        $registry = (array) ($contract['registry_completeness'] ?? []);
+        $checks[] = ($registry['ok'] ?? false) === true
+            ? $this->pass(
+                'ENT5-Q009-PRODUCER-REGISTRY-COMPLETE',
+                (int) ($registry['scanned'] ?? 0).' queue-routing source file(s) are all declared in the producer registry.'
+            )
+            : $this->fail(
+                'ENT5-Q009-PRODUCER-REGISTRY-COMPLETE',
+                'Undeclared queue producer(s): '.implode('; ', (array) ($registry['issues'] ?? []))
+            );
+
+        $parityIssues = array_values(array_filter(
+            (array) ($contract['issues'] ?? []),
+            static fn (string $issue): bool => ! in_array($issue, (array) ($registry['issues'] ?? []), true)
+        ));
+
+        $checks[] = $parityIssues === []
+            ? $this->pass(
+                'ENT5-Q009-PRODUCER-CONSUMER-PARITY',
+                'Every produced queue is a declared ENT-5 queue name with a worker that consumes it ('
+                    .implode(', ', (array) ($contract['produced_queues'] ?? [])).').'
+            )
+            : $this->fail('ENT5-Q009-PRODUCER-CONSUMER-PARITY', implode('; ', $parityIssues));
+
+        // Drift between the tracked unit and the installed one is an operational
+        // signal, not a repository defect: the deploy never installs or starts a
+        // worker (ENT-5), so a unit-changing deploy legitimately precedes the
+        // operator's activation step. Warning, so the gate reports the truth
+        // without blocking the deploy that has to happen first.
+        foreach ((array) ($contract['warnings'] ?? []) as $warning) {
+            $checks[] = $this->warn('ENT5-Q009-INSTALLED-WORKER-DRIFT', (string) $warning);
+            $warnings[] = (string) $warning;
+        }
+
+        $directives = (array) ($contract['directive_sections'] ?? []);
+        $checks[] = ($directives['ok'] ?? true) === true
+            ? $this->pass('ENT5-Q010-WORKER-UNIT-DIRECTIVE-SECTIONS', 'Worker unit directives are declared in the section systemd honours.')
+            : $this->fail('ENT5-Q010-WORKER-UNIT-DIRECTIVE-SECTIONS', implode('; ', (array) ($directives['issues'] ?? [])));
+
+        return $this->finalize($config, $checks, $warnings, $jobScan, $contract);
     }
 
     /**
@@ -241,9 +293,10 @@ class QueueRetryFailedJobReadinessService
      * @param  list<array<string, mixed>>  $checks
      * @param  list<string>  $warnings
      * @param  array<string, mixed>  $jobScan
+     * @param  array<string, mixed>  $contract
      * @return array<string, mixed>
      */
-    private function finalize(array $config, array $checks, array $warnings, array $jobScan): array
+    private function finalize(array $config, array $checks, array $warnings, array $jobScan, array $contract = []): array
     {
         $errors = count(array_filter($checks, fn (array $c) => $c['status'] === 'failed'));
         $warningCount = count(array_filter($checks, fn (array $c) => $c['status'] === 'warning'));
@@ -260,6 +313,14 @@ class QueueRetryFailedJobReadinessService
             'failed_jobs_table_exists' => $this->tableExists((string) ($config['failed_jobs']['required_table'] ?? 'failed_jobs')),
             'retry_standards' => (array) ($config['retry_standards'] ?? []),
             'allowed_queue_names' => (array) ($config['allowed_queue_names'] ?? []),
+            'producer_consumer_contract' => [
+                'ok' => (bool) ($contract['ok'] ?? false),
+                'produced_queues' => (array) ($contract['produced_queues'] ?? []),
+                'produced_queues_requiring_consumer' => (array) ($contract['produced_queues_requiring_consumer'] ?? []),
+                'worker_unit' => (array) ($contract['worker_unit'] ?? []),
+                'issues' => (array) ($contract['issues'] ?? []),
+                'warnings' => (array) ($contract['warnings'] ?? []),
+            ],
             'critical_idempotency_domains' => (array) ($config['critical_idempotency_domains'] ?? []),
             'queued_classes_total' => (int) ($jobScan['total'] ?? 0),
             'queued_classes_compliant' => (array) ($jobScan['compliant'] ?? []),

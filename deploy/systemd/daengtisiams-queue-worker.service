@@ -14,13 +14,21 @@
 Description=DaengtisiaMS Laravel queue worker (conservative, single process)
 After=network.target postgresql.service php8.3-fpm.service
 
+# Restart forever, with no start-rate ceiling. systemd only honours the start
+# limit directives in [Unit]; declared under [Service] they are silently
+# dropped ("Unknown key name ... ignoring") and the 5-starts-in-10s default
+# applies instead — which is how production ended up rate-limiting a worker the
+# file said should never be rate-limited. ENT5-Q010 now pins the section.
+StartLimitIntervalSec=0
+
 [Service]
 Type=simple
 # INFRA-SEC-RUNTIME-1: the worker runs as the dedicated DaengtisiaMS runtime
 # identity, not the shared www-data account. The worker processes clinical
-# documents (legacy-rme-documents) and reads the application secret, so leaving
-# it on the uid shared with the co-tenant application on this host would keep
-# that material reachable from another application. Must match
+# documents (legacy-rme-documents, legacy-odontogram-documents) and reads the
+# application secret, so leaving it on the uid shared with the co-tenant
+# application on this host would keep that material reachable from another
+# application. Must match
 # DMS_RUNTIME_USER / DMS_RUNTIME_GROUP in deploy/runtime-identity.conf;
 # scripts/verify-runtime-isolation.sh fails the deploy if these drift.
 User=daengtisiams
@@ -30,8 +38,18 @@ WorkingDirectory=/var/www/asia-dental-lab-v2
 # Worker command only. Approved queues only (subset of ENT-5
 # allowed_queue_names). tries/backoff/timeout match the ENT-5 retry standard.
 # --max-time recycles the process hourly; --rest keeps it gentle.
+#
+# ORDER IS PRIORITY. Laravel drains this list left to right, so the two document
+# rendering queues stay at the tail: a multi-minute rasterization must never
+# delay interactive work on `default`. New dedicated queues are appended for the
+# same reason.
+#
+# Every name here is verified by ENT5-Q009 against what the application actually
+# dispatches to. Deleting one does not merely change this file — it fails the
+# gate, because a produced queue with no consumer leaves clinical documents
+# stuck at QUEUED with nothing in failed_jobs to notice.
 ExecStart=/usr/bin/php /var/www/asia-dental-lab-v2/artisan queue:work database \
-    --queue=default,reports,notifications,maintenance,legacy-rme-documents \
+    --queue=default,reports,notifications,maintenance,legacy-rme-documents,legacy-odontogram-documents \
     --sleep=3 \
     --tries=3 \
     --backoff=10,60,180 \
@@ -44,7 +62,6 @@ ExecStart=/usr/bin/php /var/www/asia-dental-lab-v2/artisan queue:work database \
 # finishes its current job then exits, and systemd restarts it cleanly.
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=0
 
 # Send SIGTERM and allow the current job to finish before SIGKILL.
 KillSignal=SIGTERM

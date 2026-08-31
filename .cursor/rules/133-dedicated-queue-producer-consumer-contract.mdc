@@ -1,0 +1,89 @@
+---
+description: Dedicated queue producer/consumer contract — mandatory for any new queue, queued job, or worker unit change
+globs:
+alwaysApply: true
+---
+
+# Dedicated Queue Producer ↔ Consumer Contract (LOCKED)
+
+Durable lock: `docs/architecture/queue-producer-consumer-contract.md`.
+Runbook: `docs/runbooks/queue-worker-activation-runbook.md`.
+Gate: `php artisan foundation:queue-retry-failed-job-check --strict`
+(rules **ENT5-Q009**, **ENT5-Q010**).
+Suite: `tests/Feature/Queue/QueueProducerConsumerParityTest.php`.
+
+## The rule
+
+Any queue name DaengtisiaMS can dispatch to must have a **verified consumer**
+before the producing feature may reach GO. For repository-managed workers a
+produced queue must appear in BOTH:
+
+1. `config/queue_governance.php` → `ent5_retry_failed_job.allowed_queue_names`, and
+2. the `ExecStart` `--queue` list of `deploy/systemd/daengtisiams-queue-worker.service`.
+
+CI **fails** when a produced queue has no consumer. Reporting queue names is not
+enough — ENT-5 listed them before this rule existed and the pipeline stalled
+anyway, twice.
+
+## Why (do not re-derive this)
+
+A produced queue with no consumer is silent. `attempts = 0`, `reserved_at =
+NULL`, `failed_jobs` empty, no exception, no log line, domain status stuck at
+`QUEUED` — identical to work still in progress. `legacy-rme-documents` hit it
+(ROLL-2); `legacy-odontogram-documents` hit it again because the ROLL-2 guard was
+scoped to one module instead of to the property.
+
+## Adding a dedicated queue
+
+Register it in `producer_consumer_contract.produced_queues` with the **config
+key** that resolves the name (never a literal — every queue here is
+env-overridable), add it to `allowed_queue_names`, append it to the worker unit
+`--queue` list and to `queue_worker.approved_queues`. Order is priority: append,
+so a long render never delays `default`.
+
+Skipping any of these fails the gate. The registry is also checked for
+completeness against the source tree, so a new queue-routing file that is not
+registered fails outright — you cannot add a dedicated queue invisibly.
+
+## `consumer_required_when`
+
+A producer gated behind a disabled feature flag may suspend the *consumer*
+requirement via `consumer_required_when`. It is a live read of that flag, not an
+exemption list: enabling the feature restores the requirement automatically. The
+queue must still be in `allowed_queue_names`.
+
+## A job stuck at QUEUED is not a failure
+
+If domain status is `QUEUED`, the backend job is pending, `attempts = 0` and
+`reserved_at` is NULL — the job was **never reserved**. Investigate the
+**consumer path**.
+
+**Never** `UPDATE` the domain status by hand. Never retry, redispatch, clone, or
+re-upload to "unstick" it. Restore the consumer and let the existing job drain
+naturally; an unattempted job is fully recoverable, and retrying instead hides
+which side was broken.
+
+## Worker unit rules
+
+- The deploy **never** installs or starts a worker (ENT-5). Editing the tracked
+  unit changes nothing on the host until an operator runs the activation runbook
+  (`cp` → `daemon-reload` → `restart`). Verify with `systemctl cat`, not the repo.
+- Installed-vs-tracked drift is a **WARNING**, never a build failure — a hard
+  failure would abort the deploy that must precede activation.
+- Queue names are compared **exactly**; `x-archive` never satisfies `x`.
+- The `--queue` list is read from the `ExecStart` directive only. A queue named
+  in a comment is not consumed.
+- systemd directives must sit in the section systemd honours (ENT5-Q010).
+  `StartLimitIntervalSec` belongs in `[Unit]`; under `[Service]` it is silently
+  ignored and the default applies.
+
+## Never solve it by
+
+- changing the producer to `default` or another module's queue to avoid touching
+  the worker — the dedicated queue is an intentional isolation boundary;
+- adding `queue:work` to the deploy script (breaks ENT-5
+  `no_long_running_worker_started_by_deploy`);
+- a guard that reports without failing;
+- a test that exists but no required CI gate selects. Declare new queue-contract
+  suites in `config/ci_runner.critical_gate_mandatory_suites` **and** ensure a
+  filter token in every critical variant matches.
