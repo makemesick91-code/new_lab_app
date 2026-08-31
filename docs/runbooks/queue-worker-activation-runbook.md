@@ -53,6 +53,38 @@ systemctl cat daengtisiams-queue-worker.service | grep -- --queue
 `legacy-rme:rollout-readiness` reads the INSTALLED unit first for exactly this
 reason and falls back to the tracked file only when it is absent.
 
+### The signal that tells you re-installation is pending
+
+Since BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 the ENT-5 gate reports this
+directly, for every queue rather than only the Legacy RME one:
+
+```bash
+php artisan foundation:queue-retry-failed-job-check
+```
+
+`ENT5-Q009-INSTALLED-WORKER-DRIFT` appears as a **warning** (decision `WATCH`)
+whenever the installed unit does not yet consume a queue the application
+produces. That is the expected state between a unit-changing deploy and this
+re-installation step — the deploy is forbidden from installing a worker, so the
+warning is correct, not a fault. It clears to `GO` once the `cp` +
+`daemon-reload` + `restart` above have run.
+
+A **failure** (not a warning) on `ENT5-Q009-PRODUCER-CONSUMER-PARITY` means the
+*tracked* unit is missing a produced queue. That is a repository defect: fix the
+unit file, not the host.
+
+### A document stuck at QUEUED
+
+If a legacy import (RME or odontogram) sits at `QUEUED` and its backend job shows
+`attempts = 0` with `reserved_at` NULL and nothing in `failed_jobs`, the job was
+never reserved — no worker consumed its queue.
+
+Restore the consumer using the steps above and let the **existing** job drain
+naturally. Do **not** retry, redispatch, re-upload, or change the domain status
+by hand: an unattempted job is fully recoverable, and retrying destroys the
+evidence of which side was actually broken. Confirm recovery by watching
+`attempts` increment on its own.
+
 ## Restart after a code deploy
 
 The deploy signals a graceful restart; the running worker finishes its current

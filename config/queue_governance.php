@@ -1,5 +1,12 @@
 <?php
 
+use App\Jobs\Foundation\QueueWorkerSmokeJob;
+use App\Modules\LegacyOdontogram\Jobs\ProcessLegacyOdontogramPdfImport;
+use App\Modules\LegacyRme\Jobs\ProcessLegacyRmePdfImport;
+use App\Modules\Satusehat\Jobs\PrepareSatusehatSubmissionBatchJob;
+use App\Modules\Satusehat\Jobs\ReconcileSatusehatItemJob;
+use App\Modules\Satusehat\Jobs\SubmitSatusehatItemJob;
+
 /**
  * QUEUE-1 — Queue, idempotency & outbox foundation governance.
  *
@@ -219,6 +226,124 @@ return [
             // work. A queue the worker does not consume is a silently stuck
             // pipeline, so this list and the worker unit must stay in step.
             'legacy-rme-documents',
+            // BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1: the same dedicated
+            // treatment for legacy odontogram charts. Declaring it here is only
+            // half the contract — see producer_consumer_contract below, which is
+            // what actually proves a worker drains it.
+            'legacy-odontogram-documents',
+            // SATUSEHAT submission jobs resolve this name. It is declared so the
+            // set of names the application can dispatch to is complete and
+            // honest; it is deliberately NOT consumed by the worker while
+            // SATUSEHAT is disabled, and the contract below suspends the
+            // consumer requirement against that same flag rather than by
+            // hard-coding an exception.
+            'satusehat',
+        ],
+
+        /*
+         * BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 — the producer ↔ consumer
+         * contract.
+         *
+         * allowed_queue_names above says which queue names are permitted. It
+         * never said whether anything CONSUMES them, and that gap is not
+         * theoretical: it stalled a production pipeline twice. Legacy RME hit
+         * it first; Legacy Odontogram shipped its own dedicated queue, no
+         * worker took it, and a real clinical document sat at QUEUED with
+         * attempts=0 and an empty failed_jobs table — indistinguishable from
+         * work still in progress.
+         *
+         * This registry is what turns "declared" into "actually drained". Each
+         * entry names the config key that RESOLVES the queue at runtime, so an
+         * environment override is followed rather than a source literal that
+         * production may not use. Entries are held to the tracked worker unit's
+         * ExecStart --queue list, and the registry itself is checked for
+         * completeness against the source tree, so a future module cannot add a
+         * dedicated queue and quietly escape the check.
+         */
+        'producer_consumer_contract' => [
+            'contract_doc' => 'docs/architecture/queue-producer-consumer-contract.md',
+
+            // The repository-tracked production worker. This is the only unit
+            // CI can verify, so it is the one the contract is enforced against.
+            'worker_unit_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
+
+            // What systemd actually runs. Present only on the production host;
+            // drift against the tracked unit is reported as a WARNING, never a
+            // failure, because the deploy is forbidden from installing or
+            // starting a worker (ENT-5) and activation is a later operator step.
+            'installed_worker_unit_file' => '/etc/systemd/system/daengtisiams-queue-worker.service',
+
+            'produced_queues' => [
+                [
+                    'id' => 'legacy-rme-render',
+                    'jobs' => [ProcessLegacyRmePdfImport::class],
+                    'config_key' => 'legacy_rme.processing.queue',
+                    'fallback' => 'legacy-rme-documents',
+                ],
+                [
+                    'id' => 'legacy-odontogram-render',
+                    'jobs' => [ProcessLegacyOdontogramPdfImport::class],
+                    'config_key' => 'legacy_odontogram.processing.queue',
+                    'fallback' => 'legacy-odontogram-documents',
+                ],
+                [
+                    // SATUSEHAT submission is built but deliberately switched
+                    // off: SATUSEHAT-2 is WATCH, no credentials exist, and the
+                    // submission service is fail-closed. Requiring a worker for
+                    // a queue nothing can dispatch to would be noise, so the
+                    // requirement is SUSPENDED — dynamically, against the same
+                    // flag the runtime checks. Enable SATUSEHAT and the
+                    // requirement returns by itself; this is not an exemption
+                    // list someone can park a queue on.
+                    'id' => 'satusehat-submission',
+                    'jobs' => [
+                        PrepareSatusehatSubmissionBatchJob::class,
+                        SubmitSatusehatItemJob::class,
+                        ReconcileSatusehatItemJob::class,
+                    ],
+                    'config_key' => 'satusehat.queue',
+                    'fallback' => 'satusehat',
+                    'consumer_required_when' => 'satusehat.enabled',
+                ],
+                [
+                    'id' => 'foundation-worker-smoke',
+                    'jobs' => [QueueWorkerSmokeJob::class],
+                    'literal' => 'maintenance',
+                ],
+            ],
+
+            /*
+             * Completeness scan — the reason this contract is generic rather
+             * than a list of the queues someone happened to remember.
+             *
+             * Any source file that routes work to a named queue must be covered
+             * by an entry above. The patterns live here, in config, so the
+             * scanner's own source never carries the literals it searches for —
+             * the same discipline unsafe_command_scan uses.
+             */
+            'queue_assignment_scan' => [
+                'paths' => ['app'],
+                'patterns' => [
+                    'onQueue(',
+                    'pushOn(',
+                    'laterOn(',
+                    'public $queue',
+                    'protected $queue',
+                ],
+            ],
+
+            /*
+             * Directives systemd only honours in one section.
+             *
+             * The production unit declared StartLimitIntervalSec under
+             * [Service]; systemd logged "Unknown key name ... ignoring" and
+             * applied its own default. The file and the running service
+             * disagreed, and nothing caught it.
+             */
+            'unit_directive_sections' => [
+                'StartLimitIntervalSec' => 'Unit',
+                'StartLimitBurst' => 'Unit',
+            ],
         ],
 
         // Per-environment queue connection policy. sync is a local/testing

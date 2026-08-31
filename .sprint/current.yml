@@ -1,66 +1,76 @@
-# REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — Sprint Manifest
+# BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 — Sprint Manifest
 #
-# Prompt classification: BUSINESS_RULE_REVISION · LEGACY_ODONTOGRAM ·
-# NATIVE_CUTOFF · CLINICAL_HISTORY · PRIVACY_SENSITIVE ·
-# IMMUTABILITY_SENSITIVE · NO_NATIVE_SIDE_EFFECTS. `type` below is RUNTIME_FIX
-# because that is the registered profile in config/sprint_profiles.php for a
-# change to shipped runtime behaviour; BUSINESS_RULE_REVISION is not a defined
-# type and inventing one would fail the manifest check rather than describe the
-# work.
+# Prompt classification: BUGFIX · PRODUCTION_QUEUE_PIPELINE · LEGACY_ODONTOGRAM ·
+# SYSTEMD_WORKER · PRODUCER_CONSUMER_CONTRACT · GOVERNANCE_GAP ·
+# CLINICAL_EVIDENCE_PIPELINE. `type` below is RUNTIME_FIX because that is the
+# registered profile in config/sprint_profiles.php; the other labels describe the
+# work but are not defined types, and inventing one fails the manifest check
+# rather than describing anything.
 #
-# THE REVISION. The archive refused any patient with no native odontogram
-# (`PATIENT_HAS_NO_NATIVE_ODONTOGRAM`, LegacyOdontogramDateRuleService:127).
-# That inverted the real situation: a legacy odontogram is a paper chart the
-# clinic already holds, and the patients whose charts most need archiving are
-# precisely the ones this system has never examined. Owner decision:
+# THE DEFECT. A legacy odontogram PDF was uploaded to the production pilot. The
+# job was dispatched to `legacy-odontogram-documents`. The production worker
+# consumed default, reports, notifications, maintenance and legacy-rme-documents
+# — not that one. So the job was never reserved: attempts=0, reserved_at NULL,
+# failed_jobs empty, no exception, no log line, and the import sat at QUEUED
+# looking exactly like work still in progress.
 #
-#     LEGACY_ODONTOGRAM_REQUIRES_NATIVE = false
+#     PRODUCER_QUEUE != WORKER_CONSUMED_QUEUE
 #
-# THE DISTINCTION THIS SPRINT PRESERVES:
+# THE PART THAT MATTERS MORE THAN THE FIX. This was the SECOND occurrence.
+# LEGACY-RME-PDF-ROLL-2 hit the identical shape on `legacy-rme-documents` and
+# answered with a queue_contract check inside LegacyRmeRolloutReadinessService —
+# correct, tested, and scoped to one module. Legacy Odontogram shipped its own
+# dedicated queue and inherited none of it. Adding one queue name to one worker
+# would have set up the third occurrence, so the durable deliverable is
+# ENT5-Q009: a module-agnostic producer ↔ consumer contract that fails CI when
+# ANY produced queue has no consumer.
 #
-#     NATIVE OPTIONAL  !=  NATIVE CUTOFF REMOVED
+# WHY NOT A GREP. Every dedicated queue here is env-overridable
+# (LEGACY_ODONTOGRAM_QUEUE, LEGACY_RME_QUEUE, SATUSEHAT_QUEUE). A literal scan
+# would assert the default while production ran another name. The registry names
+# the config key and the check resolves it the way the runtime does. The registry
+# is then checked for COMPLETENESS against the source tree, so a future module
+# cannot add a dedicated queue and stay invisible.
 #
-# When a meaningful native odontogram exists it still bounds the archive, at the
-# EARLIEST one, STRICTLY earlier, with equal still refused. Only the "there must
-# be one at all" gate is gone — the constant, the config switch and the refusal
-# branch were deleted rather than defaulted off, so the retired rule cannot come
-# back through a settings edit.
+# WHAT THE GUARD FOUND THAT NOBODY ASKED ABOUT. Run before the fix, it reported
+# four violations, not one: the odontogram queue was undeclared AND unconsumed;
+# `satusehat` was produced but never declared at all; and
+# enterprise_foundation_runtime_hardening.queue_worker.approved_queues had
+# drifted into decoration — four names against a unit that had consumed five
+# since ROLL-2, with nothing comparing them. A third copy of the same fact.
 #
-# THE SECOND DISTINCTION, WHICH THIS SPRINT MAKES LOAD-BEARING:
+# ENT5-Q010. Production carried StartLimitIntervalSec under [Service]. systemd
+# only honours it in [Unit], logged "Unknown key name ... ignoring", and applied
+# its own default: `systemctl show` reported 10s against a file asking for 0.
+# The file and the running service disagreed and nothing compared them either.
 #
-#     NO NATIVE FOUND  !=  THE NATIVE LOOKUP FAILED
+# WHY INSTALLED-UNIT DRIFT IS A WARNING AND NOT A FAILURE. The deploy is
+# forbidden from installing or starting a worker (ENT-5). Activation is a later
+# operator step. `foundation:queue-retry-failed-job-check` exits non-zero on FAIL
+# even without --strict and scripts/deploy-vps.sh runs it ungated, so failing on
+# drift would abort the very deploy that has to precede activation. Verified, not
+# assumed.
 #
-# Before the revision both outcomes refused, so conflating them was untidy but
-# harmless. Now absence ALLOWS, so folding a database fault into `null` would
-# turn a broken query into permission to file a chart with no chronological
-# bound. The resolver has no try/catch on that path, deliberately, and a test
-# holds it there.
-#
-# security_impact is true because an eligibility rule on a clinical-evidence
-# screen is being widened, and because the fail-closed/fail-open boundary above
-# changes meaning. branch_isolation_impact is false: the archive's branch is
-# still derived from the patient's Nomor RM and a submitted branch_id is still
-# ignored — asserted, not assumed.
-#
-# NO MIGRATION. This is a service-level rule change; a schema change here would
-# have meant the design went wrong.
+# security_impact is true: this restores processing of a clinical-evidence
+# pipeline and changes what the production worker executes. NO MIGRATION — a
+# schema change here would mean the diagnosis was wrong.
 
-id: REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1
+id: BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1
 type: RUNTIME_FIX
 module: LegacyOdontogram
-title: 'A legacy odontogram is historical evidence and no longer requires a native odontogram to exist first; when one does exist it still bounds the archive'
+title: 'The legacy odontogram queue had no consumer, so a real clinical document sat at QUEUED forever; the worker now drains it and CI fails any produced queue that nothing consumes'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true            # date rule service, resolver + repository contracts
+runtime_change: true            # production systemd worker unit + ENT-5 readiness checks
 schema_change: false            # no migration, no column, no table, no index
-frontend_change: true           # the create Blade view's cutoff panel; no JS, no asset build
-security_impact: true           # eligibility widened; fail-open/fail-closed boundary re-stated
-branch_isolation_impact: false  # archive branch derivation from Nomor RM is unchanged
+frontend_change: false          # no Blade, no JS, no CSS, no asset build
+security_impact: true           # restores a clinical-evidence pipeline; changes worker argv
+branch_isolation_impact: false  # the job carries an import id; branch derivation untouched
 ledger_impact: false
-deploy_required: true           # operators cannot archive never-examined patients until this ships
-browser_required: true          # the upload screen told the operator the archive was blocked
+deploy_required: true           # the stalled production document cannot drain until this ships
+browser_required: false         # no user-facing surface changes
 test_profiles:
   - focused
   - permission_regression
-go_tag: revision-legacy-odontogram-native-optional-1-go
+go_tag: bugfix-legacy-odontogram-queue-consumer-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

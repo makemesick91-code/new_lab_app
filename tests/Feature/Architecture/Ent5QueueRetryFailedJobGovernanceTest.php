@@ -15,7 +15,7 @@ it('ships the queue retry & failed job governance doc with all ENT5 rules', func
 
     $doc = file_get_contents($path);
 
-    foreach (range(1, 8) as $n) {
+    foreach (range(1, 10) as $n) {
         $ruleId = sprintf('ENT5-Q%03d', $n);
         expect($doc)->toContain($ruleId);
     }
@@ -107,11 +107,11 @@ it('records ENT-4 deploy evidence and registers ENT-5 completed with governance 
         ->and($ent5['related_shipped_foundations'])->toContain('QUEUE-1');
 });
 
-it('publishes ENT5-Q001..Q008 rules through the governance service', function () {
+it('publishes ENT5-Q001..Q010 rules through the governance service', function () {
     $rules = QueueRetryFailedJobGovernanceService::rules();
     $ids = array_column($rules, 'id');
 
-    foreach (range(1, 8) as $n) {
+    foreach (range(1, 10) as $n) {
         expect($ids)->toContain(sprintf('ENT5-Q%03d', $n));
     }
 

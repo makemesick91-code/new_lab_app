@@ -7,7 +7,7 @@ use App\Support\Queue\QueueRetryFailedJobReadinessService;
 /**
  * ENT-5 — Queue, Retry & Failed Job governance rule catalog.
  *
- * Publishes ENT5-Q001..Q008 into the foundation governance summary as the
+ * Publishes ENT5-Q001..Q010 into the foundation governance summary as the
  * queue_retry_governance section and reports the current runtime readiness
  * signal. Informational only — never wired into the blocking
  * combinedDecision, matching every sibling foundation governance section.
@@ -64,6 +64,16 @@ class QueueRetryFailedJobGovernanceService
                 'id' => 'ENT5-Q008',
                 'title' => 'Every new ShouldQueue class inherits or declares an approved retry policy',
                 'description' => 'Any new job or listener implementing ShouldQueue must extend EnterpriseQueueJob, use EnterpriseQueueRetryDefaults, or explicitly declare tries, backoff, and timeout — and must stay covered by foundation:queue-retry-failed-job-check.',
+            ],
+            [
+                'id' => 'ENT5-Q009',
+                'title' => 'Every produced queue must have a verified production consumer',
+                'description' => 'A queue name the application can dispatch to must be declared in the allowed queue names AND appear in the repository-tracked production worker queue list, and the worker must never consume an undeclared queue. The producer registry is resolved at runtime from the config keys that decide each queue name, and is checked for completeness against the source tree, so a new module cannot introduce a dedicated queue without a verified consumer. A produced queue with no consumer leaves work pending forever with no failed job and no error to notice, so this must fail the build rather than be reported.',
+            ],
+            [
+                'id' => 'ENT5-Q010',
+                'title' => 'Worker unit directives must live in the section systemd honours',
+                'description' => 'Directives in the production worker unit must be declared in the section systemd actually reads them from; a directive placed in the wrong section is silently ignored, leaving the unit file and the running service in disagreement with nothing to reveal it.',
             ],
         ];
     }

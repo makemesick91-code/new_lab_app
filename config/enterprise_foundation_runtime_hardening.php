@@ -125,7 +125,21 @@ return [
             'max_processes' => 1,
         ],
         // Approved queue names must be a subset of ENT-5 allowed_queue_names.
-        'approved_queues' => ['default', 'reports', 'notifications', 'maintenance'],
+        //
+        // BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1: this list had drifted into
+        // decoration. It claimed four queues while the unit had consumed five
+        // since LEGACY-RME-PDF-ROLL-2, and nothing compared the two — a third
+        // copy of the same fact, free to disagree with the other two. It is now
+        // held to the unit's ExecStart list by ENT5-Q009 and must match it
+        // exactly.
+        'approved_queues' => [
+            'default',
+            'reports',
+            'notifications',
+            'maintenance',
+            'legacy-rme-documents',
+            'legacy-odontogram-documents',
+        ],
         // The systemd unit file the runtime scanner validates.
         'service_file' => 'deploy/systemd/daengtisiams-queue-worker.service',
         'service_name' => 'daengtisiams-queue-worker.service',
