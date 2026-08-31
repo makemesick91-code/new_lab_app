@@ -52,7 +52,8 @@ interface DoctorRepositoryInterface
 
     /**
      * The doctor currently linked to this account, optionally ignoring one
-     * doctor id (the one being edited).
+     * doctor id (the one being edited). Includes soft-deleted doctors: the
+     * unique index on `user_id` still counts them.
      */
     public function findLinkedByUserId(int $userId, ?int $excludeDoctorId = null): ?Doctor;
 

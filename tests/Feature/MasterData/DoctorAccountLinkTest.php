@@ -570,3 +570,21 @@ it('declares the permission guard on every account-link route', function () {
             ->toContain('permission:manage_doctor_account_links');
     }
 });
+
+it('refuses an account still held by a soft-deleted doctor, with a message rather than a crash', function () {
+    // The unique index on mst_doctors.user_id ignores deleted_at, so a trashed
+    // doctor still occupies the account. The operator must be told that, not
+    // handed a constraint violation.
+    $user = dalDoctorUser();
+    $removed = Doctor::factory()->create(['name' => 'Dr. Sudah Dihapus', 'user_id' => $user->id]);
+    $removed->delete();
+
+    $target = Doctor::factory()->create(['user_id' => null]);
+
+    $this->actingAs(userWith(['manage_doctor_account_links']))
+        ->post(route('settings.doctors.account-links.store', $target), ['user_id' => $user->id])
+        ->assertSessionHasErrors('user_id');
+
+    expect($target->fresh()->user_id)->toBeNull()
+        ->and(session('errors')->first('user_id'))->toContain('sudah dihapus');
+});

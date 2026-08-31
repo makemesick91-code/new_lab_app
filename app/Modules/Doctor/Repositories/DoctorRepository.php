@@ -119,7 +119,13 @@ class DoctorRepository implements DoctorRepositoryInterface
 
     public function findLinkedByUserId(int $userId, ?int $excludeDoctorId = null): ?Doctor
     {
-        return Doctor::query()
+        // withTrashed on purpose: the unique index on `user_id` does not care
+        // about `deleted_at`, so a soft-deleted doctor still occupies the
+        // account. Querying only live rows would let the service pass its own
+        // conflict check and then die on a constraint violation — a 500 where
+        // the operator deserves a sentence explaining what is holding the
+        // account.
+        return Doctor::withTrashed()
             ->where('user_id', $userId)
             ->when($excludeDoctorId, fn ($query, $excludeDoctorId) => $query->whereKeyNot($excludeDoctorId))
             ->first();

@@ -104,10 +104,11 @@ class DoctorAccountLinkService
             $conflict = $this->doctors->findLinkedByUserId((int) $user->id, (int) $locked->id);
 
             if ($conflict !== null) {
-                $this->reject(
-                    'Akun ini sudah terhubung ke dokter lain ('.$conflict->name.
-                    '). Putuskan hubungan tersebut terlebih dahulu.'
-                );
+                $this->reject($conflict->trashed()
+                    ? 'Akun ini masih terhubung ke data dokter yang sudah dihapus ('.$conflict->name.
+                      '). Pulihkan dokter tersebut lalu putuskan hubungannya terlebih dahulu.'
+                    : 'Akun ini sudah terhubung ke dokter lain ('.$conflict->name.
+                      '). Putuskan hubungan tersebut terlebih dahulu.');
             }
 
             $previousUserId = $locked->user_id === null ? null : (int) $locked->user_id;
