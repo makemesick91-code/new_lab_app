@@ -186,7 +186,7 @@ it('does not render the full KTP number when serving the scan', function () {
 it('excludes the KTP scan document from the patient audit CSV export', function () {
     $this->seed(BranchSeeder::class);
     $branch = Branch::factory()->create([
-        'code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true,
+        'code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true,
     ]);
     $patient = Patient::factory()->create([
         'branch_id' => $branch->id,

@@ -17,7 +17,7 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
 
-    $this->branch = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->branch = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->service = app(PatientDataCompletenessService::class);
 });
 
@@ -26,7 +26,7 @@ function completePatient(Branch $branch, array $overrides = []): Patient
 {
     return Patient::factory()->create(array_merge([
         'branch_id' => $branch->id,
-        'medical_record_number' => 'DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TLK1-2026-0001',
         'name' => 'Pasien Lengkap',
         'gender' => 'Male',
         'date_of_birth' => '1990-01-01',
@@ -75,7 +75,7 @@ it('scores a fully populated patient as complete (100%)', function () {
 it('flags an incomplete patient with its missing fields', function () {
     $patient = Patient::factory()->create([
         'branch_id' => $this->branch->id,
-        'medical_record_number' => 'DG-TKM1-2026-0002',
+        'medical_record_number' => 'DG-TLK1-2026-0002',
         'name' => 'Pasien Kurang',
         'gender' => 'Female',
         'date_of_birth' => null,
@@ -143,8 +143,8 @@ it('only offers active RME-enabled branches in the filter (MAIN excluded when no
 // --- Duplicate risk ------------------------------------------------------------
 
 it('flags duplicate risk for patients sharing the same phone', function () {
-    completePatient($this->branch, ['name' => 'Pasien A', 'phone' => '085200000001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TKM1-2026-1001', 'ktp_number' => '7371010101900011']);
-    completePatient($this->branch, ['name' => 'Pasien B', 'phone' => '0852-0000-0001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TKM1-2026-1002', 'ktp_number' => '7371010101900012']);
+    completePatient($this->branch, ['name' => 'Pasien A', 'phone' => '085200000001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TLK1-2026-1001', 'ktp_number' => '7371010101900011']);
+    completePatient($this->branch, ['name' => 'Pasien B', 'phone' => '0852-0000-0001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TLK1-2026-1002', 'ktp_number' => '7371010101900012']);
 
     $risks = $this->service->detectDuplicateRisks(Patient::all());
 
@@ -153,8 +153,8 @@ it('flags duplicate risk for patients sharing the same phone', function () {
 });
 
 it('flags duplicate risk for same normalized name + birth date', function () {
-    completePatient($this->branch, ['name' => 'Budi Santoso', 'date_of_birth' => '1985-05-05', 'phone' => '081000000001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TKM1-2026-2001', 'ktp_number' => '7371010101900021']);
-    completePatient($this->branch, ['name' => 'budi  santoso', 'date_of_birth' => '1985-05-05', 'phone' => '081000000002', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TKM1-2026-2002', 'ktp_number' => '7371010101900022']);
+    completePatient($this->branch, ['name' => 'Budi Santoso', 'date_of_birth' => '1985-05-05', 'phone' => '081000000001', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TLK1-2026-2001', 'ktp_number' => '7371010101900021']);
+    completePatient($this->branch, ['name' => 'budi  santoso', 'date_of_birth' => '1985-05-05', 'phone' => '081000000002', 'whatsapp_number' => null, 'medical_record_number' => 'DG-TLK1-2026-2002', 'ktp_number' => '7371010101900022']);
 
     $risks = $this->service->detectDuplicateRisks(Patient::all());
 

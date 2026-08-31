@@ -108,7 +108,7 @@ it('reports the safe resting state when the capability is off and nothing is adm
 });
 
 it('distinguishes a batch in progress from a deployment that should be at rest but is not', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(true);
 
     $resting = steadyReport()['resting_state'];
@@ -155,9 +155,9 @@ it('reports the accepted separate-approver risk as a warning rather than a refus
 // ---------------------------------------------------------------------
 
 it('stops the line when a branch is admitted that the approval does not cover', function () {
-    legacyRmeBranch('TKM1');
-    legacyRmeAdmittedBranches(['TKM1', 'LDK2']);
-    legacyRmeApproveWave('OWNER-APPROVAL-1', ['TKM1']);
+    legacyRmeBranch('TLK1');
+    legacyRmeAdmittedBranches(['TLK1', 'LDK2']);
+    legacyRmeApproveWave('OWNER-APPROVAL-1', ['TLK1']);
 
     $report = steadyReport();
     $check = steadyCheck($report, 'admission_approval');
@@ -169,8 +169,8 @@ it('stops the line when a branch is admitted that the approval does not cover', 
 });
 
 it('refuses when branches are admitted with no approval reference recorded', function () {
-    legacyRmeBranch('TKM1');
-    legacyRmeApproveWave('', ['TKM1']);
+    legacyRmeBranch('TLK1');
+    legacyRmeApproveWave('', ['TLK1']);
 
     $check = steadyCheck(steadyReport(), 'admission_approval');
 
@@ -179,8 +179,8 @@ it('refuses when branches are admitted with no approval reference recorded', fun
 });
 
 it('never echoes the approval reference itself into the report', function () {
-    legacyRmeBranch('TKM1');
-    legacyRmeApproveWave('SECRET-TICKET-9911', ['TKM1']);
+    legacyRmeBranch('TLK1');
+    legacyRmeApproveWave('SECRET-TICKET-9911', ['TLK1']);
 
     $encoded = (string) json_encode(steadyReport());
 
@@ -193,7 +193,7 @@ it('never echoes the approval reference itself into the report', function () {
 // ---------------------------------------------------------------------
 
 it('refuses a batch declared under a retired governance identity', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     config()->set('legacy_rme_rollout.admission.wave', 'WAVE-3');
 
     $report = steadyReport();
@@ -205,8 +205,8 @@ it('refuses a batch declared under a retired governance identity', function () {
 });
 
 it('refuses when a batch code is declared but no batch record exists', function () {
-    legacyRmeBranch('TKM1');
-    config()->set('legacy_rme_rollout.admission.wave', 'LRME-TKM1-20260817-01');
+    legacyRmeBranch('TLK1');
+    config()->set('legacy_rme_rollout.admission.wave', 'LRME-TLK1-20260817-01');
 
     $check = steadyCheck(steadyReport(), 'batch_binding');
 
@@ -215,7 +215,7 @@ it('refuses when a batch code is declared but no batch record exists', function 
 });
 
 it('reports a paused batch as not accepting work without calling it a defect', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
     $wave->forceFill(['status' => LegacyRmeWaveStatus::PAUSED])->save();
 
@@ -237,7 +237,7 @@ it('reports a paused batch as not accepting work without calling it a defect', f
 // ---------------------------------------------------------------------
 
 it('warns when the batch has passed its planned end date', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
     $wave->forceFill([
         'planned_start_date' => now()->subDays(10)->toDateString(),
@@ -251,7 +251,7 @@ it('warns when the batch has passed its planned end date', function () {
 });
 
 it('treats the final planned day as still inside the window', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
     $wave->forceFill([
         'planned_start_date' => now()->subDays(3)->toDateString(),
@@ -264,7 +264,7 @@ it('treats the final planned day as still inside the window', function () {
 });
 
 it('warns when a batch declares no end date, so its approval never expires', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $check = steadyCheck(steadyReport(), 'batch_window');
 
@@ -277,7 +277,7 @@ it('warns when a batch declares no end date, so its approval never expires', fun
 // ---------------------------------------------------------------------
 
 it('warns when a batch declares no daily quota, so it is not quota-bounded', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $check = steadyCheck(steadyReport(), 'batch_size_policy');
 
@@ -286,7 +286,7 @@ it('warns when a batch declares no daily quota, so it is not quota-bounded', fun
 });
 
 it('flags a quota above the routine envelope as no longer routine', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
     $wave->forceFill(['daily_quota' => 400])->save();
 
@@ -301,7 +301,7 @@ it('flags a quota above the routine envelope as no longer routine', function () 
 });
 
 it('accepts a quota inside the routine envelope', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
     $wave->forceFill(['daily_quota' => 10])->save();
 
@@ -341,10 +341,10 @@ it('warns rather than refuses when the pre-batch backup requirement is deliberat
 // ---------------------------------------------------------------------
 
 it('reports a branch as READY only when it is approved, admitted, enrolled and clean', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(true);
 
-    $row = collect(steadyReport()['branch_matrix'])->firstWhere('branch_code', 'TKM1');
+    $row = collect(steadyReport()['branch_matrix'])->firstWhere('branch_code', 'TLK1');
 
     expect($row)->not->toBeNull();
     expect($row['approved'])->toBeTrue();
@@ -355,10 +355,10 @@ it('reports a branch as READY only when it is approved, admitted, enrolled and c
 });
 
 it('reports an RME branch that is not admitted as NOT_READY without calling it a fault', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
-    legacyRmeAdmittedBranches(['TKM1']);
-    legacyRmeApproveWave('OWNER-APPROVAL-1', ['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
+    legacyRmeApproveWave('OWNER-APPROVAL-1', ['TLK1']);
 
     $row = collect(steadyReport()['branch_matrix'])->firstWhere('branch_code', 'LDK2');
 
@@ -369,7 +369,7 @@ it('reports an RME branch that is not admitted as NOT_READY without calling it a
 });
 
 it('excludes MAIN from the branch matrix because it can never hold RME history', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $codes = collect(steadyReport()['branch_matrix'])->pluck('branch_code')->all();
 
@@ -377,7 +377,7 @@ it('excludes MAIN from the branch matrix because it can never hold RME history',
 });
 
 it('scopes the branch matrix when one branch is requested', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
 
     $codes = collect(steadyReport(['branch' => 'ldk2'])['branch_matrix'])->pluck('branch_code')->all();
@@ -400,14 +400,14 @@ it('declares multi-branch mode as concurrent branches inside a single sequential
 });
 
 it('runs many branches concurrently inside one batch', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
     legacyRmeArchiveFlag(true);
 
     $matrix = collect(steadyReport()['branch_matrix']);
 
     expect($matrix->where('readiness', 'READY')->pluck('branch_code')->sort()->values()->all())
-        ->toBe(['LDK2', 'TKM1']);
+        ->toBe(['LDK2', 'TLK1']);
 });
 
 // ---------------------------------------------------------------------
@@ -421,7 +421,7 @@ it('exits non-zero when a routine batch may not be opened', function () {
 });
 
 it('exits zero on a clean deployment and non-zero for the same state under --strict', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     config()->set('legacy_rme_operations.require_separate_publisher', true);
     config()->set('legacy_rme_operations.require_separate_approver', false);
 
@@ -437,7 +437,7 @@ it('exits zero on a clean deployment and non-zero for the same state under --str
 });
 
 it('emits a machine-readable report that carries the decision and no patient data', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(true);
 
     Artisan::call('legacy-rme:ops-readiness', ['--skip-monitoring' => true, '--json' => true]);
@@ -452,7 +452,7 @@ it('emits a machine-readable report that carries the decision and no patient dat
 });
 
 it('is read-only — reporting never mutates migration state', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(true);
 
     $before = LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
@@ -467,7 +467,7 @@ it('is read-only — reporting never mutates migration state', function () {
 });
 
 it('never reports ready when the deployment readiness gate itself is NO_GO', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // The clinical calendar is a deployment-level dependency. Breaking it must
     // propagate: a batch cannot be safer than the deployment it runs on.

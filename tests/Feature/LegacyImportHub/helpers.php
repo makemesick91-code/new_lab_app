@@ -41,7 +41,7 @@ if (! function_exists('lihBranch')) {
      * from the branch-code segment of the patient's Nomor RM, so a fixture
      * branch has to be reachable by that code.
      */
-    function lihBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'): Branch
+    function lihBranch(string $code = 'TLK1', string $name = 'Cabang Telkomas'): Branch
     {
         $branch = Branch::withTrashed()->firstOrNew(['code' => $code]);
 

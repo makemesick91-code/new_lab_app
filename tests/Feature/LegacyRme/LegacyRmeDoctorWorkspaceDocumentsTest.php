@@ -50,7 +50,7 @@ beforeEach(function () {
 |--------------------------------------------------------------------------
 */
 
-function lrmedw1Patient(string $branchCode = 'TKM1'): Patient
+function lrmedw1Patient(string $branchCode = 'TLK1'): Patient
 {
     return legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], $branchCode);
 }

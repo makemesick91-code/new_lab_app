@@ -47,7 +47,7 @@ beforeEach(function () {
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
 
     $this->ldk2 = Branch::factory()->create(['code' => 'LDK2', 'name' => 'Cabang Landak', 'is_rme_enabled' => true, 'is_active' => true]);
-    $this->tkm1 = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_rme_enabled' => true, 'is_active' => true]);
+    $this->tkm1 = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->nonRme = Branch::factory()->create(['code' => 'NRME', 'name' => 'Cabang Non RME', 'is_rme_enabled' => false, 'is_active' => true]);
 
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
@@ -75,7 +75,7 @@ beforeEach(function () {
 
     $this->budi = Patient::factory()->create([
         'name' => 'Budi Santoso',
-        'medical_record_number' => 'DG-TKM1-2025-0002',
+        'medical_record_number' => 'DG-TLK1-2025-0002',
         'branch_id' => $this->tkm1->id,
     ]);
 });
@@ -417,7 +417,7 @@ it('accepts a patient from another branch and creates the visit at the operator 
     $this->actingAs($admin)
         ->post(route('rme.visits.store'), [
             'branch_id' => $this->tkm1->id, // crafted: the patient's origin branch
-            'patient_id' => $this->budi->id, // TKM1 patient, served at Landak today
+            'patient_id' => $this->budi->id, // TLK1 patient, served at Landak today
             'initial_treatment_id' => $this->treatment->id,
         ])
         ->assertSessionHasNoErrors();
@@ -427,7 +427,7 @@ it('accepts a patient from another branch and creates the visit at the operator 
     expect($visit)->not->toBeNull()
         ->and($visit->branch_id)->toBe($this->ldk2->id)
         ->and($visit->branch_id)->not->toBe($this->tkm1->id)
-        ->and($this->budi->fresh()->medical_record_number)->toBe('DG-TKM1-2025-0002')
+        ->and($this->budi->fresh()->medical_record_number)->toBe('DG-TLK1-2025-0002')
         ->and($this->budi->fresh()->branch_id)->toBe($this->tkm1->id);
 });
 
@@ -541,7 +541,7 @@ it('prefills a deep-linked patient only when the operator may select it', functi
         ->assertOk()
         ->getContent();
 
-    expect($crossBranch)->toContain('DG-TKM1-2025-0002');
+    expect($crossBranch)->toContain('DG-TLK1-2025-0002');
 
     // SURVIVING HALF: a patient outside the registry still prefills nothing, so
     // a crafted link cannot leak a name the operator may not select.

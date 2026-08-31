@@ -55,7 +55,7 @@ beforeEach(function () {
 |--------------------------------------------------------------------------
 */
 
-function lrwip1Patient(string $branchCode = 'TKM1'): Patient
+function lrwip1Patient(string $branchCode = 'TLK1'): Patient
 {
     return legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], $branchCode);
 }
@@ -557,7 +557,7 @@ it('gives a same-branch doctor with no treating relationship nothing', function 
 });
 
 it('gives a doctor practising in another branch nothing', function () {
-    $patient = lrwip1Patient('TKM1');
+    $patient = lrwip1Patient('TLK1');
     $archive = lrwip1Published($patient, '2020-05-10', 3);
 
     $otherBranch = legacyRmeBranch('LDK2', 'Cabang Landak');

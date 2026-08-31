@@ -65,7 +65,7 @@ it('never touches the MAIN branch', function () {
 
 it('never reconfigures an existing sibling branch (production master data wins)', function () {
     Branch::query()->create([
-        'code' => 'TKM1',
+        'code' => 'TLK1',
         'name' => 'Cabang Telkomas Kustom Produksi',
         'is_active' => true,
         'is_rme_enabled' => false,
@@ -74,12 +74,12 @@ it('never reconfigures an existing sibling branch (production master data wins)'
 
     test()->seed(RmeBranchSeeder::class);
 
-    $tkm1 = Branch::query()->where('code', 'TKM1')->first();
+    $tkm1 = Branch::query()->where('code', 'TLK1')->first();
 
     expect($tkm1->name)->toBe('Cabang Telkomas Kustom Produksi')
         ->and($tkm1->is_rme_enabled)->toBeFalse()
         ->and($tkm1->is_inventory_enabled)->toBeTrue()
-        ->and(Branch::withTrashed()->where('code', 'TKM1')->count())->toBe(1);
+        ->and(Branch::withTrashed()->where('code', 'TLK1')->count())->toBe(1);
 });
 
 it('restores and re-enables a soft-deleted or disabled SUN4 instead of duplicating it', function () {

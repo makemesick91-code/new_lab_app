@@ -335,7 +335,7 @@ it('reports every blocker it can see, not just the first', function () {
 });
 
 it('hides an import outside the actor branch scope behind the same answer as a missing one', function () {
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     $import = LegacyRmeImport::factory()->readyForReview()->create([
         'patient_id' => $patient->getKey(),
         'origin_branch_id' => $patient->branch_id,

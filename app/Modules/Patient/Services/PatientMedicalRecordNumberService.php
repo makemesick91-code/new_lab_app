@@ -2,6 +2,7 @@
 
 namespace App\Modules\Patient\Services;
 
+use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Support\MedicalRecordNumberParts;
 use App\Support\Clinical\ClinicalClock;
@@ -154,10 +155,104 @@ class PatientMedicalRecordNumberService
     /**
      * The branch code encoded in a Nomor RM, or null when the value is not a
      * canonical medical record number.
+     *
+     * REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the returned code is
+     * CANONICAL. A Nomor RM issued under a deprecated branch code (`DG-TKM1-…`)
+     * reports the branch's current code (`TLK1`), because the question every
+     * caller is really asking is "which branch is this?", and the answer is one
+     * branch identity that has not changed. Callers therefore compare a single
+     * spelling against `mst_branches` and against rollout allowlists, and an
+     * unknown code still fails closed — see {@see BranchCodeAlias}.
+     *
+     * The stored Nomor RM itself is NOT rewritten by this call.
      */
     public function branchCodeFrom(?string $medicalRecordNumber): ?string
     {
+        $branchCode = $this->parse($medicalRecordNumber)?->branchCode;
+
+        return $branchCode === null ? null : BranchCodeAlias::canonicalize($branchCode);
+    }
+
+    /**
+     * The branch code EXACTLY as it is spelled in the Nomor RM, without alias
+     * resolution.
+     *
+     * This is the historical fact — what the number literally says — and is used
+     * where the distinction matters: reporting that a value is out of date, and
+     * migrating it. Prefer {@see self::branchCodeFrom()} for "which branch?".
+     */
+    public function literalBranchCodeFrom(?string $medicalRecordNumber): ?string
+    {
         return $this->parse($medicalRecordNumber)?->branchCode;
+    }
+
+    /**
+     * Rewrite ONLY the branch-code segment of a Nomor RM to its canonical form.
+     *
+     * `DG-TKM1-2024-9985` → `DG-TLK1-2024-9985`. The prefix, the year and the
+     * manual sequence are carried through verbatim, so a number is never
+     * regenerated and a sequence is never renumbered.
+     *
+     * This goes through parse()/compose() rather than a string replacement on
+     * purpose. A blind `replace('TKM1','TLK1')` would also rewrite a `TKM1`
+     * appearing INSIDE a manual sequence, and would happily corrupt a value that
+     * is not a Nomor RM at all. Anything that is not exactly
+     * `DG-{KODE}-{TAHUN}-{NOMOR}` returns null and must be left untouched.
+     *
+     * Returns the value unchanged (not null) when it is already canonical, so
+     * the method is idempotent: canonicalize(canonicalize($x)) === canonicalize($x).
+     */
+    public function canonicalizeBranchCode(?string $medicalRecordNumber): ?string
+    {
+        $parts = $this->parse($medicalRecordNumber);
+
+        if ($parts === null) {
+            return null;
+        }
+
+        $canonical = BranchCodeAlias::canonicalize($parts->branchCode);
+
+        if ($canonical === null) {
+            return null;
+        }
+
+        return $this->compose($canonical, $parts->year, $parts->sequence);
+    }
+
+    /**
+     * Every spelling of a Nomor RM that names the same patient record — the
+     * canonical form first, then the deprecated forms.
+     *
+     * A patient's card printed before a branch-code revision carries the old
+     * spelling. Looking that number up must still find them, so search widens
+     * over these values rather than the operator being told the number does not
+     * exist. Non-canonical input yields the trimmed input alone: this never
+     * invents variants for a value it does not understand.
+     *
+     * @return list<string>
+     */
+    public function equivalentNumbers(?string $medicalRecordNumber): array
+    {
+        $value = trim((string) $medicalRecordNumber);
+
+        if ($value === '') {
+            return [];
+        }
+
+        $parts = $this->parse($value);
+
+        if ($parts === null) {
+            return [$value];
+        }
+
+        $numbers = array_map(
+            fn (string $code): string => $this->compose($code, $parts->year, $parts->sequence),
+            BranchCodeAlias::equivalentCodes($parts->branchCode),
+        );
+
+        // The value as supplied always stays in the set: a caller searching for
+        // exactly what the operator typed must never lose that candidate.
+        return array_values(array_unique(array_merge($numbers, [$value])));
     }
 
     /**

@@ -39,7 +39,7 @@
                     name="rm"
                     label="Nomor RM"
                     :value="$rm"
-                    placeholder="Contoh: DG-TKM1-2024-0001"
+                    placeholder="Contoh: DG-TLK1-2024-0001"
                     class="md:w-96"
                 />
                 <div class="flex gap-2">
@@ -201,7 +201,7 @@
                             :value="old('source_rm_raw')"
                             required
                             autocomplete="off"
-                            placeholder="Contoh: DG-TKM1-2019-1234"
+                            placeholder="Contoh: DG-TLK1-2019-1234"
                             help="Masukkan nomor RM persis seperti yang tercantum pada dokumen RME Legacy. Jangan menyalin dari data pasien — nomor ini dipakai untuk memverifikasi bahwa dokumen benar milik pasien yang dipilih."
                         />
 

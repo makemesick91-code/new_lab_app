@@ -157,8 +157,28 @@ class LegacyRmePatientResolutionAuditService
         }
 
         // Exact first — the only form that is identity on its own terms.
+        //
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — "exact" spans every
+        // spelling of the SAME number. When a branch's code is revised, the
+        // patient's stored Nomor RM is migrated to the canonical form, but the
+        // card in their wallet and the number printed on the archived documents
+        // still carry the deprecated one. Matching the literal string alone
+        // would report those numbers as belonging to nobody — and this is the
+        // resolver the legacy-archive write path binds identity with, so a
+        // document would be refused as "wrong patient" on the strength of a
+        // rename. The variants come from PatientMedicalRecordNumberService, so
+        // only the branch-code SEGMENT ever varies; the year and the manual
+        // sequence are matched exactly, and a value that is not a canonical
+        // Nomor RM yields itself alone.
+        //
+        // This does not weaken ambiguity handling: if two patients somehow held
+        // the two spellings, both rows come back and the caller refuses as
+        // EXACT_AMBIGUOUS rather than picking one.
         $exact = $this->rows(
-            Patient::withTrashed()->where('medical_record_number', $query)
+            Patient::withTrashed()->whereIn(
+                'medical_record_number',
+                $this->medicalRecordNumbers->equivalentNumbers($query),
+            )
         );
 
         if ($exact->isNotEmpty()) {

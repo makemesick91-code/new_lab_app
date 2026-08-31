@@ -52,7 +52,10 @@ disagree, **this file wins** (rule 90 items 6, 7 and 12 were updated to match).
 ## Branch is derived from the Nomor RM
 
 13. The archive's branch comes from the branch-code segment of the patient's
-    canonical Nomor RM: `DG-TKM1-2024-9985` → `TKM1` → Cabang Telkomas.
+    canonical Nomor RM: `DG-TLK1-2024-9985` → `TLK1` → Cabang Telkomas. A number
+    issued under a DEPRECATED branch code (`DG-TKM1-2024-9985`) resolves to the
+    same branch and reports the canonical `TLK1` — see rule
+    `92-telkomas-branch-code-canonical.mdc`.
 14. Parse ONLY through `PatientMedicalRecordNumberService::parse()` /
     `branchCodeFrom()` — the inverse of the composer, living beside it. Never
     add a regex for this format to a controller, form request, service or view.

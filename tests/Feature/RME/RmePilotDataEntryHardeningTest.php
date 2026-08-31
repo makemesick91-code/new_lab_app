@@ -46,7 +46,7 @@ beforeEach(function () {
 
     $this->atg3 = Branch::factory()->create(['code' => 'ATG3', 'name' => 'Cabang Antang', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->ldk2 = Branch::factory()->create(['code' => 'LDK2', 'name' => 'Cabang Landak', 'is_active' => true, 'is_rme_enabled' => true]);
-    $this->tkm1 = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->tkm1 = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->inv9 = Branch::factory()->create(['code' => 'INV9', 'name' => 'Cabang Gudang', 'is_active' => true, 'is_rme_enabled' => false, 'is_inventory_enabled' => true]);
 
     $this->doctor = Doctor::factory()->create();
@@ -153,7 +153,7 @@ it('preserves leading zeros in the manual RM number', function () {
         ->assertRedirect();
 
     expect(Patient::firstWhere('name', 'Pasien Nol')->medical_record_number)
-        ->toBe('DG-TKM1-2026-0007');
+        ->toBe('DG-TLK1-2026-0007');
 });
 
 it('rejects MAIN as a new patient branch (not RME-enabled)', function () {
@@ -198,7 +198,7 @@ it('shows a new patient visit in the all-RME visit list', function () {
 
 it('uses the selected Cabang RME as the visit branch for an existing patient', function () {
     rmeMakeDoctorOnline($this->doctor, $this->atg3);
-    $patient = Patient::factory()->create(['branch_id' => $this->tkm1->id, 'medical_record_number' => 'DG-TKM1-2026-0001']);
+    $patient = Patient::factory()->create(['branch_id' => $this->tkm1->id, 'medical_record_number' => 'DG-TLK1-2026-0001']);
 
     $this->actingAs($this->admin)
         ->post(route('rme.visits.store'), [

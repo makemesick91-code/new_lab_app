@@ -52,7 +52,7 @@ beforeEach(function () {
     // that must stay outside the registry even though "global" now means
     // "every branch".
     $this->ldk2 = Branch::factory()->create(['code' => 'LDK2', 'name' => 'Cabang Landak', 'is_rme_enabled' => true, 'is_active' => true]);
-    $this->tkm1 = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_rme_enabled' => true, 'is_active' => true]);
+    $this->tkm1 = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->atg3 = Branch::factory()->create(['code' => 'ATG3', 'name' => 'Cabang Antang', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->sun4 = Branch::factory()->create(['code' => 'SUN4', 'name' => 'Cabang Sunu', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->nonRme = Branch::factory()->create(['code' => 'NRME', 'name' => 'Cabang Non RME', 'is_rme_enabled' => false, 'is_active' => true]);
@@ -70,7 +70,7 @@ beforeEach(function () {
 
     $this->jefriTkm1 = Patient::factory()->create([
         'name' => 'Jefri Bahtiar',
-        'medical_record_number' => 'DG-TKM1-2024-1234',
+        'medical_record_number' => 'DG-TLK1-2024-1234',
         'branch_id' => $this->tkm1->id,
         'phone' => '081234500001',
         'whatsapp_number' => '081234500001',
@@ -133,13 +133,13 @@ it('finds patients of every RME branch by name while the operator works at one b
 it('finds a patient of another branch by exact Nomor RM', function () {
     $admin = globalLookupOperator($this->ldk2);
 
-    expect(globalLookupIds($admin, 'DG-TKM1-2024-1234'))->toContain($this->jefriTkm1->id);
+    expect(globalLookupIds($admin, 'DG-TLK1-2024-1234'))->toContain($this->jefriTkm1->id);
 });
 
 it('finds a patient of another branch by partial Nomor RM', function () {
     $admin = globalLookupOperator($this->ldk2);
 
-    expect(globalLookupIds($admin, 'TKM1-2024'))->toContain($this->jefriTkm1->id)
+    expect(globalLookupIds($admin, 'TLK1-2024'))->toContain($this->jefriTkm1->id)
         ->and(globalLookupIds($admin, 'SUN4'))->toContain($this->jefriSun4->id);
 });
 
@@ -154,7 +154,7 @@ it('finds the same cross-branch patient for a Perawat operator', function () {
 it('labels each result with its origin branch so identical names stay distinguishable', function () {
     $admin = globalLookupOperator($this->ldk2);
 
-    $row = collect(globalLookupSearch($admin, 'DG-TKM1-2024-1234'))->firstWhere('id', $this->jefriTkm1->id);
+    $row = collect(globalLookupSearch($admin, 'DG-TLK1-2024-1234'))->firstWhere('id', $this->jefriTkm1->id);
 
     expect($row)->not->toBeNull()
         ->and($row['branch_label'])->toContain('Telkomas');
@@ -237,7 +237,7 @@ it('still treats LIKE wildcards as literal characters across the global registry
 it('returns only the four identity fields for a cross-branch match', function () {
     $admin = globalLookupOperator($this->ldk2);
 
-    $row = collect(globalLookupSearch($admin, 'DG-TKM1-2024-1234'))->firstWhere('id', $this->jefriTkm1->id);
+    $row = collect(globalLookupSearch($admin, 'DG-TLK1-2024-1234'))->firstWhere('id', $this->jefriTkm1->id);
 
     expect($row)->not->toBeNull()
         ->and(array_keys($row))->toBe(['id', 'name', 'medical_record_number', 'branch_label']);
@@ -450,7 +450,7 @@ it('reuses the existing patient row and never rewrites its RM or branch', functi
     expect(Patient::count())->toBe($before)
         ->and($patient->id)->toBe($this->jefriTkm1->id)
         ->and($patient->medical_record_number)->toBe($originalRm)
-        ->and($patient->medical_record_number)->toStartWith('DG-TKM1-')
+        ->and($patient->medical_record_number)->toStartWith('DG-TLK1-')
         ->and($patient->branch_id)->toBe($this->tkm1->id)
         ->and(Patient::where('medical_record_number', $originalRm)->count())->toBe(1);
 });
@@ -538,7 +538,7 @@ it('prefills a cross-branch selection on the create page', function () {
 
     expect($option)->not->toBeNull()
         ->and($option['id'])->toBe($this->jefriTkm1->id)
-        ->and($option['medical_record_number'])->toBe('DG-TKM1-2024-1234');
+        ->and($option['medical_record_number'])->toBe('DG-TLK1-2024-1234');
 });
 
 // ---------------------------------------------------------------------------
@@ -556,7 +556,7 @@ it('does not open cross-branch clinical history just because identity is global'
     ]);
 
     // Identity discovery: allowed.
-    expect(globalLookupIds($admin, 'DG-TKM1-2024-1234'))->toContain($this->jefriTkm1->id);
+    expect(globalLookupIds($admin, 'DG-TLK1-2024-1234'))->toContain($this->jefriTkm1->id);
 
     // Clinical detail for that other branch's visit: NOT granted by this sprint.
     $show = $this->actingAs($admin)->get(route('rme.visits.show', $remoteVisit));

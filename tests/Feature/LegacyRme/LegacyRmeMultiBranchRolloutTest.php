@@ -92,11 +92,11 @@ function roll3ReadyImport(
 // ---------------------------------------------------------------------------
 
 it('lets two admitted branches migrate independently and files each under its own branch', function () {
-    legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    legacyRmeBranch('TLK1', 'Cabang Telkomas');
     legacyRmeBranch('LDK2', 'Cabang Landak');
-    legacyRmeAdmittedBranches(['TKM1', 'LDK2']);
+    legacyRmeAdmittedBranches(['TLK1', 'LDK2']);
 
-    $first = roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    $first = roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
     $second = roll3ReadyImport('LDK2', 'DG-LDK2-2024-9002');
 
     expect($first->status)->toBe(LegacyRmeImportStatus::READY_FOR_REVIEW)
@@ -107,13 +107,13 @@ it('lets two admitted branches migrate independently and files each under its ow
 });
 
 it('admits one branch of a pair without admitting the other', function () {
-    legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    legacyRmeBranch('TLK1', 'Cabang Telkomas');
     legacyRmeBranch('LDK2', 'Cabang Landak');
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
 
-    roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
 
-    expect(fn () => roll3ReadyImport('LDK2', 'DG-LDK2-2024-9002', '2019-05-01', ['TKM1']))
+    expect(fn () => roll3ReadyImport('LDK2', 'DG-LDK2-2024-9002', '2019-05-01', ['TLK1']))
         ->toThrow(ValidationException::class);
 
     expect(LegacyRmeImport::query()->count())->toBe(1);
@@ -124,9 +124,9 @@ it('admits one branch of a pair without admitting the other', function () {
 // ---------------------------------------------------------------------------
 
 it('still publishes an already-reviewed import after its branch is drained from the wave', function () {
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
 
-    $import = roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    $import = roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
 
     app(LegacyRmePublishService::class)->review($import, superAdmin());
 
@@ -144,9 +144,9 @@ it('still publishes an already-reviewed import after its branch is drained from 
 });
 
 it('preserves every staged artefact when a branch is drained', function () {
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
 
-    $import = roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    $import = roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
     $filesBefore = Storage::disk('legacy_rme_private')->allFiles();
     $pagesBefore = $import->pages()->count();
 
@@ -162,9 +162,9 @@ it('preserves every staged artefact when a branch is drained', function () {
 // ---------------------------------------------------------------------------
 
 it('refuses publish over HTTP when the capability is switched off, unlike a drain', function () {
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
 
-    $import = roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    $import = roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
     app(LegacyRmePublishService::class)->review($import, superAdmin());
 
     // EMERGENCY STOP.
@@ -180,7 +180,7 @@ it('refuses publish over HTTP when the capability is switched off, unlike a drai
 });
 
 it('refuses the operator upload surface entirely when the capability is off', function () {
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
     legacyRmeArchiveFlag(false);
 
     $this->actingAs(superAdmin())
@@ -193,11 +193,11 @@ it('refuses the operator upload surface entirely when the capability is off', fu
 // ---------------------------------------------------------------------------
 
 it('creates no native clinical or billing artefact across a multi-branch wave', function () {
-    legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    legacyRmeBranch('TLK1', 'Cabang Telkomas');
     legacyRmeBranch('LDK2', 'Cabang Landak');
-    legacyRmeAdmittedBranches(['TKM1', 'LDK2']);
+    legacyRmeAdmittedBranches(['TLK1', 'LDK2']);
 
-    $first = roll3ReadyImport('TKM1', 'DG-TKM1-2024-9001');
+    $first = roll3ReadyImport('TLK1', 'DG-TLK1-2024-9001');
     $second = roll3ReadyImport('LDK2', 'DG-LDK2-2024-9002');
 
     foreach ([$first, $second] as $import) {

@@ -60,8 +60,8 @@ it('composes the RM year from the clinical day, not the UTC day, after WITA midn
 
     expect(app(ClinicalClock::class)->todayString())->toBe('2027-01-01')
         ->and(Carbon::now()->toDateString())->toBe('2026-12-31')  // the UTC day it is NOT
-        ->and($this->rmNumbers->composeForRegistration('TKM1', null, '0001'))
-        ->toBe('DG-TKM1-2027-0001');
+        ->and($this->rmNumbers->composeForRegistration('TLK1', null, '0001'))
+        ->toBe('DG-TLK1-2027-0001');
 });
 
 it('still composes the outgoing year one second before WITA midnight', function () {
@@ -69,20 +69,20 @@ it('still composes the outgoing year one second before WITA midnight', function 
     freezeUtc('2026-12-31 15:59:59');
 
     expect(app(ClinicalClock::class)->todayString())->toBe('2026-12-31')
-        ->and($this->rmNumbers->composeForRegistration('TKM1', null, '0001'))
-        ->toBe('DG-TKM1-2026-0001');
+        ->and($this->rmNumbers->composeForRegistration('TLK1', null, '0001'))
+        ->toBe('DG-TLK1-2026-0001');
 });
 
 it('composes the same year on both sides of UTC midnight within one clinical day', function () {
     // 23:30 UTC on 1 Jan and 00:30 UTC on 2 Jan are both 2 January in Makassar,
     // and the UTC day changes between them. The RM year must not notice.
     freezeUtc('2027-01-01 23:30:00');
-    $beforeUtcMidnight = $this->rmNumbers->composeForRegistration('TKM1', null, '0001');
+    $beforeUtcMidnight = $this->rmNumbers->composeForRegistration('TLK1', null, '0001');
 
     freezeUtc('2027-01-02 00:30:00');
-    $afterUtcMidnight = $this->rmNumbers->composeForRegistration('TKM1', null, '0001');
+    $afterUtcMidnight = $this->rmNumbers->composeForRegistration('TLK1', null, '0001');
 
-    expect($beforeUtcMidnight)->toBe('DG-TKM1-2027-0001')
+    expect($beforeUtcMidnight)->toBe('DG-TLK1-2027-0001')
         ->and($afterUtcMidnight)->toBe($beforeUtcMidnight);
 });
 
@@ -140,8 +140,8 @@ it('persists the same RM year the request-time pre-check would have composed', f
 it('honours an explicitly supplied registration date verbatim', function () {
     freezeUtc('2027-03-01 09:00:00');
 
-    expect($this->rmNumbers->composeForRegistration('TKM1', Carbon::parse('2024-08-09'), '9985'))
-        ->toBe('DG-TKM1-2024-9985');
+    expect($this->rmNumbers->composeForRegistration('TLK1', Carbon::parse('2024-08-09'), '9985'))
+        ->toBe('DG-TLK1-2024-9985');
 });
 
 it('never timezone-shifts a supplied registration date across a day boundary', function () {
@@ -165,29 +165,29 @@ it('never timezone-shifts a supplied registration date across a day boundary', f
 */
 
 it('leaves the Nomor RM format and its parser unchanged', function () {
-    $value = $this->rmNumbers->compose('TKM1', 2024, '9985');
+    $value = $this->rmNumbers->compose('TLK1', 2024, '9985');
 
-    expect($value)->toBe('DG-TKM1-2024-9985');
+    expect($value)->toBe('DG-TLK1-2024-9985');
 
     $parts = $this->rmNumbers->parse($value);
 
     expect($parts)->not->toBeNull()
-        ->and($parts->branchCode)->toBe('TKM1')
+        ->and($parts->branchCode)->toBe('TLK1')
         ->and($parts->year)->toBe('2024')
         ->and($parts->sequence)->toBe('9985')
         ->and($parts->toString())->toBe($value)
-        ->and($this->rmNumbers->branchCodeFrom($value))->toBe('TKM1');
+        ->and($this->rmNumbers->branchCodeFrom($value))->toBe('TLK1');
 });
 
 it('still detects an existing medical record number including soft-deleted patients', function () {
-    $patient = Patient::factory()->create(['medical_record_number' => 'DG-TKM1-2026-0001']);
+    $patient = Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2026-0001']);
 
-    expect($this->rmNumbers->exists('DG-TKM1-2026-0001'))->toBeTrue();
+    expect($this->rmNumbers->exists('DG-TLK1-2026-0001'))->toBeTrue();
 
     $patient->delete();
 
-    expect($this->rmNumbers->exists('DG-TKM1-2026-0001'))->toBeTrue()
-        ->and($this->rmNumbers->exists('DG-TKM1-2026-9999'))->toBeFalse();
+    expect($this->rmNumbers->exists('DG-TLK1-2026-0001'))->toBeTrue()
+        ->and($this->rmNumbers->exists('DG-TLK1-2026-9999'))->toBeFalse();
 });
 
 /*

@@ -108,7 +108,7 @@ class LegacyOdontogramPatientLookupBrowserTest extends DuskTestCase
 
             $browser->visit(route('settings.rme.legacy-odontograms.create'))
                 ->waitForText('Unggah Arsip Odontogram Lama', 15)
-                ->type('rm', 'DG-TKM1-1999-0000')
+                ->type('rm', 'DG-TLK1-1999-0000')
                 ->press('Cari Pasien')
                 ->waitForText('Pasien tidak ditemukan', 15);
 

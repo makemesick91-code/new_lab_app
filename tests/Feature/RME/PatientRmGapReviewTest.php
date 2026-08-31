@@ -17,7 +17,7 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
     seedAccessControl();
 
-    $this->branch = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->branch = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
     $this->service = app(PatientRmGapReviewService::class);
 });
 
@@ -33,21 +33,21 @@ function rmPatient(Branch $branch, ?string $rm): Patient
 // --- Suffix parsing ------------------------------------------------------------
 
 it('parses a valid DG suffix and rejects malformed values', function () {
-    expect($this->service->parseSuffix('DG-TKM1-2026-0004'))->toBe(4)
-        ->and($this->service->parseSuffix('DG-TKM1-2026-15'))->toBe(15)
+    expect($this->service->parseSuffix('DG-TLK1-2026-0004'))->toBe(4)
+        ->and($this->service->parseSuffix('DG-TLK1-2026-15'))->toBe(15)
         ->and($this->service->parseSuffix('INVALID'))->toBeNull()
         ->and($this->service->parseSuffix('MRN-ABCD1234'))->toBeNull()
-        ->and($this->service->parseSuffix('DG-TKM1-2026-'))->toBeNull()
+        ->and($this->service->parseSuffix('DG-TLK1-2026-'))->toBeNull()
         ->and($this->service->parseSuffix(null))->toBeNull();
 });
 
 // --- Gap detection -------------------------------------------------------------
 
 it('detects missing sequence numbers for a parseable RM sequence', function () {
-    rmPatient($this->branch, 'DG-TKM1-2026-0001');
-    rmPatient($this->branch, 'DG-TKM1-2026-0002');
-    rmPatient($this->branch, 'DG-TKM1-2026-0004');
-    rmPatient($this->branch, 'DG-TKM1-2026-0007');
+    rmPatient($this->branch, 'DG-TLK1-2026-0001');
+    rmPatient($this->branch, 'DG-TLK1-2026-0002');
+    rmPatient($this->branch, 'DG-TLK1-2026-0004');
+    rmPatient($this->branch, 'DG-TLK1-2026-0007');
 
     $summary = collect($this->service->review())->firstWhere('branch_id', $this->branch->id);
 
@@ -60,8 +60,8 @@ it('detects missing sequence numbers for a parseable RM sequence', function () {
 });
 
 it('does not crash on malformed or null RM values', function () {
-    rmPatient($this->branch, 'DG-TKM1-2026-0001');
-    rmPatient($this->branch, 'DG-TKM1-2026-0003');
+    rmPatient($this->branch, 'DG-TLK1-2026-0001');
+    rmPatient($this->branch, 'DG-TLK1-2026-0003');
     rmPatient($this->branch, 'RANDOM-RM-VALUE');
     rmPatient($this->branch, null);
 
@@ -74,7 +74,7 @@ it('does not crash on malformed or null RM values', function () {
 });
 
 it('reports "Tidak dapat dihitung" when fewer than two RMs are parseable', function () {
-    rmPatient($this->branch, 'DG-TKM1-2026-0001');
+    rmPatient($this->branch, 'DG-TLK1-2026-0001');
     rmPatient($this->branch, 'NOT-A-DG-RM');
 
     $summary = collect($this->service->review())->firstWhere('branch_id', $this->branch->id);
@@ -84,8 +84,8 @@ it('reports "Tidak dapat dihitung" when fewer than two RMs are parseable', funct
 });
 
 it('renders the RM gap section on the audit page without error', function () {
-    rmPatient($this->branch, 'DG-TKM1-2026-0001');
-    rmPatient($this->branch, 'DG-TKM1-2026-0003');
+    rmPatient($this->branch, 'DG-TLK1-2026-0001');
+    rmPatient($this->branch, 'DG-TLK1-2026-0003');
     rmPatient($this->branch, 'BROKEN');
 
     $this->actingAs(userWith(['manage patients']))

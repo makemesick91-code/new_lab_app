@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\LegacyRme\Services;
 
+use App\Modules\Branch\Support\BranchCodeAlias;
 use App\Modules\LegacyRme\Support\LegacyRmeAdmissionDecision;
 use App\Modules\LegacyRme\Support\LegacyRmeBranchResolution;
 use App\Modules\LegacyRme\Support\LegacyRmeFeatureGuard;
@@ -33,9 +34,16 @@ use Illuminate\Validation\ValidationException;
  * advisory again — the exact defect ROLL-3 removes.
  *
  * MATCHING IS EXACT-TOKEN. The allowlist is normalized once, at config-build
- * time, into canonical upper-case tokens. `TKM1` admits `TKM1` and nothing
- * else: `TKM` does not admit `TKM1`, and `TKM1-EXTRA` admits neither. A
- * substring or prefix must never widen a clinical rollout.
+ * time, into CANONICAL upper-case tokens (see BranchCodeAlias). `TLK1` admits
+ * `TLK1` and nothing else: `TLK` does not admit `TLK1`, and `TLK1-EXTRA` admits
+ * neither. A substring or prefix must never widen a clinical rollout.
+ *
+ * A DEPRECATED CODE IS A SPELLING, NOT A DIFFERENT BRANCH. Both sides of the
+ * comparison are canonicalized, so a branch whose code was revised (Cabang
+ * Telkomas, `TKM1` to `TLK1`) is measured as the one branch it has always been
+ * — whichever spelling the declaration or the resolution happens to carry. That
+ * widens nothing: an unknown token is still returned unchanged and still
+ * matches no branch.
  *
  * FAIL CLOSED, ALWAYS. Unset allowlist, blank allowlist, unresolved branch,
  * forbidden branch — every one denies. There is no "probably fine" path.
@@ -84,8 +92,14 @@ class LegacyRmeBranchAdmissionService
 
         // Defence in depth: a hand-edited cached config could hold anything.
         // Re-normalizing costs nothing and keeps the comparison exact.
+        //
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — normalization here is
+        // CANONICALIZATION, matching the config-build step. Upper-casing alone
+        // would leave a deprecated token in a cached or hand-edited config
+        // comparing unequal to the canonical code the resolver now derives, and
+        // a fully approved branch would be denied admission to its own wave.
         return array_values(array_unique(array_filter(
-            array_map(static fn ($code): string => strtoupper(trim((string) $code)), $codes),
+            array_map(static fn ($code): string => (string) (BranchCodeAlias::canonicalize((string) $code) ?? ''), $codes),
             static fn (string $code): bool => $code !== '' && ! in_array($code, self::forbiddenBranchCodes(), true),
         )));
     }
@@ -104,7 +118,7 @@ class LegacyRmeBranchAdmissionService
         }
 
         return array_values(array_map(
-            static fn ($code): string => strtoupper(trim((string) $code)),
+            static fn ($code): string => (string) (BranchCodeAlias::canonicalize((string) $code) ?? ''),
             $forbidden,
         ));
     }
@@ -135,7 +149,7 @@ class LegacyRmeBranchAdmissionService
         }
 
         return array_values(array_unique(array_filter(
-            array_map(static fn ($code): string => strtoupper(trim((string) $code)), $codes),
+            array_map(static fn ($code): string => (string) (BranchCodeAlias::canonicalize((string) $code) ?? ''), $codes),
             static fn (string $code): bool => $code !== '',
         )));
     }
@@ -190,7 +204,13 @@ class LegacyRmeBranchAdmissionService
             );
         }
 
-        $branchCode = strtoupper(trim($resolution->branchCode));
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — canonicalize, do not
+        // merely upper-case. The resolver already reports a canonical code, so
+        // this is defence in depth for any caller that hands over a resolution
+        // built from a stored or transcribed value: a deprecated spelling names
+        // the same branch and must be measured against the allowlist as that
+        // branch, not refused for a rename it had no part in.
+        $branchCode = (string) (BranchCodeAlias::canonicalize($resolution->branchCode) ?? '');
 
         // Enforcement off is a test-environment posture, not a production one.
         // It is checked AFTER resolution so a disabled gate can never rescue an

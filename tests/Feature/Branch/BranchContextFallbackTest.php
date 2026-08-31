@@ -33,7 +33,7 @@ it('falls back to the RME-enabled MAIN branch for the RME module', function () {
 
 it('falls back to the first active RME-enabled branch when MAIN is not RME-enabled', function () {
     $main = Branch::factory()->main()->create(['is_rme_enabled' => false]);
-    $rme = Branch::factory()->create(['code' => 'TKM1', 'is_active' => true, 'is_rme_enabled' => true]);
+    $rme = Branch::factory()->create(['code' => 'TLK1', 'is_active' => true, 'is_rme_enabled' => true]);
 
     expect(app(BranchContext::class)->rmeBranchId())->toBe($rme->id);
 });
@@ -52,7 +52,7 @@ it('throws a clear exception when no RME-enabled branch exists', function () {
 });
 
 it('falls back to the first active branch when MAIN is missing', function () {
-    $branch = Branch::factory()->create(['code' => 'TKM1', 'is_active' => true]);
+    $branch = Branch::factory()->create(['code' => 'TLK1', 'is_active' => true]);
 
     expect(app(BranchContext::class)->id())->toBe($branch->id);
 });

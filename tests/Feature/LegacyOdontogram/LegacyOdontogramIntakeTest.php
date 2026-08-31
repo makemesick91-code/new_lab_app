@@ -39,7 +39,7 @@ it('stages a valid PDF and derives every server-side field', function () {
 
     expect($import->status)->toBe(LegacyOdontogramImportStatus::QUEUED)
         ->and($import->origin_branch_id)->toBe((int) lodoBranch()->id)
-        ->and($import->source_branch_code)->toBe('TKM1')
+        ->and($import->source_branch_code)->toBe('TLK1')
         ->and($import->source_medical_record_number)->toBe($patient->medical_record_number)
         ->and($import->earliest_native_odontogram_date_snapshot?->toDateString())->toBe('2022-03-10')
         ->and($import->mime_type)->toBe('application/pdf')
@@ -91,7 +91,7 @@ it('leaves no orphaned file on disk when intake is refused', function () {
 });
 
 it('derives the branch from the Nomor RM and ignores any submitted branch_id', function () {
-    $tkm = lodoBranch('TKM1', 'Cabang Telkomas');
+    $tkm = lodoBranch('TLK1', 'Cabang Telkomas');
     $ldk = lodoBranch('LDK2', 'Cabang Landak');
 
     $patient = lodoPatient([], 'LDK2');
@@ -158,14 +158,14 @@ it('fails closed on a non-RME branch', function () {
 });
 
 it('fails closed when the derived branch is outside the operators scope', function () {
-    lodoBranch('TKM1');
+    lodoBranch('TLK1');
     $ldk = lodoBranch('LDK2', 'Cabang Landak');
     $patient = lodoPatient([], 'LDK2');
 
     // A read-only holder is NOT governance tier, so they are pinned to their own
     // branch — which here is not LDK2.
     $reader = userWith(['view_legacy_odontogram_archive']);
-    $reader->forceFill(['branch_id' => lodoBranch('TKM1')->id])->save();
+    $reader->forceFill(['branch_id' => lodoBranch('TLK1')->id])->save();
 
     expect(app(LegacyOdontogramBranchBindingService::class)->resolveForPatient($patient, $reader->refresh())->code)
         ->toBe(LegacyRmeBranchResolution::CODE_BRANCH_OUT_OF_SCOPE);
@@ -190,11 +190,11 @@ it('does not admit a branch code that is ambiguous by construction', function ()
     // is unambiguous. This pins that guarantee: a second branch with the same
     // code cannot be created, so BRANCH_AMBIGUOUS stays unreachable rather than
     // silently picking one.
-    lodoBranch('TKM1');
+    lodoBranch('TLK1');
 
     expect(fn () => Branch::query()->create([
         'name' => 'Cabang Kembar',
-        'code' => 'TKM1',
+        'code' => 'TLK1',
         'is_active' => true,
         'is_rme_enabled' => true,
     ]))->toThrow(QueryException::class);

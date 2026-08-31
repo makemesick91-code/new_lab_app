@@ -42,7 +42,7 @@ use Illuminate\Validation\ValidationException;
  * fabricated clinical evidence into real patient histories, which no readiness
  * argument may ever be worth.
  *
- * FOUR BRANCHES, NOT AN ARBITRARY NUMBER. TKM1, LDK2, ATG3 and SUN4 are the
+ * FOUR BRANCHES, NOT AN ARBITRARY NUMBER. TLK1, LDK2, ATG3 and SUN4 are the
  * active, RME-enabled clinic branches. MAIN is excluded because it is not
  * RME-enabled AND is on the permanent forbidden list — a fallback branch may
  * never host a clinical migration.
@@ -50,7 +50,7 @@ use Illuminate\Validation\ValidationException;
 uses(RefreshDatabase::class);
 
 /** The active, RME-enabled clinic branches — the exact admission scope. */
-const ACTIVATION_BRANCHES = ['TKM1', 'LDK2', 'ATG3', 'SUN4'];
+const ACTIVATION_BRANCHES = ['TLK1', 'LDK2', 'ATG3', 'SUN4'];
 
 const ACTIVATION_APPROVAL = 'HUB-1A-OWNER-APPROVAL-TEST';
 
@@ -158,7 +158,7 @@ it('accepts a real document for each eligible branch and files it under that bra
 it('still refuses an eligible branch that the activation deliberately left out', function () {
     // The whole point of an allowlist is that widening it is a decision. Three
     // branches activated must not clear the fourth.
-    $activated = ['TKM1', 'LDK2', 'ATG3'];
+    $activated = ['TLK1', 'LDK2', 'ATG3'];
 
     activateWave($activated);
 
@@ -195,19 +195,19 @@ it('refuses a branch the approval covers but the activation has not admitted yet
     // activation. Every other test in this suite keeps the two sets identical,
     // which leaves the approval-coverage check able to mask a broken allowlist —
     // a surviving mutant proved exactly that.
-    activateWave(['TKM1']);
+    activateWave(['TLK1']);
 
     $patient = legacyRmeArchivablePatient([], 'LDK2');
     legacyRmeNativeVisit($patient, '2024-05-01');
 
     // Approval is DELIBERATELY wider than the admitted set.
-    legacyRmeAdmittedBranches(['TKM1']);
-    legacyRmeApproveWave(ACTIVATION_APPROVAL, ['TKM1', 'LDK2']);
+    legacyRmeAdmittedBranches(['TLK1']);
+    legacyRmeApproveWave(ACTIVATION_APPROVAL, ['TLK1', 'LDK2']);
 
-    $state = app(LegacyRmeActivationStateService::class)->state(['TKM1', 'LDK2']);
+    $state = app(LegacyRmeActivationStateService::class)->state(['TLK1', 'LDK2']);
     $rows = collect($state['branches'])->keyBy('branch_code');
 
-    expect($rows['TKM1']['admitted'])->toBeTrue()
+    expect($rows['TLK1']['admitted'])->toBeTrue()
         ->and($rows['LDK2']['admitted'])->toBeFalse()
         ->and($rows['LDK2']['admission_code'])->toBe('BRANCH_NOT_ADMITTED');
 
@@ -218,7 +218,7 @@ it('refuses a branch the approval covers but the activation has not admitted yet
         $patient->medical_record_number,
         null,
         legacyRmePdfUpload('arsip-ldk2.pdf', 11),
-        activationOperator(['TKM1']),
+        activationOperator(['TLK1']),
     ))->toThrow(ValidationException::class);
 });
 
@@ -249,14 +249,14 @@ it('gives each branch of the activated wave its own daily ceiling of 100', funct
         fn (string $code): array => [$code => (int) Branch::query()->where('code', $code)->value('id')]
     );
 
-    // Fill TKM1 to its ceiling. A shared pool would leave the other three with
+    // Fill TLK1 to its ceiling. A shared pool would leave the other three with
     // nothing; a per-branch ceiling leaves each of them a full 100.
-    $quota->reserve(LegacyImportType::LEGACY_RME, $ids['TKM1'], 100);
+    $quota->reserve(LegacyImportType::LEGACY_RME, $ids['TLK1'], 100);
 
-    expect(fn () => $quota->reserve(LegacyImportType::LEGACY_RME, $ids['TKM1'], 1))
+    expect(fn () => $quota->reserve(LegacyImportType::LEGACY_RME, $ids['TLK1'], 1))
         ->toThrow(ValidationException::class);
 
-    // A shared pool would have been exhausted by TKM1. Each of the other three
+    // A shared pool would have been exhausted by TLK1. Each of the other three
     // taking a full 100 without raising is the per-branch ceiling proving
     // itself; any of them throwing fails the test.
     foreach (['LDK2', 'ATG3', 'SUN4'] as $code) {

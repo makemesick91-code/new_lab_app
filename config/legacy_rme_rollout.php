@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Modules\Branch\Support\BranchCodeAlias;
+
 /*
 |--------------------------------------------------------------------------
 | LEGACY-RME-PDF-ROLL-2 — controlled pilot enablement contract
@@ -84,7 +86,24 @@ declare(strict_types=1);
 $legacyRmeNormalizeBranchCodes = static function (string $declared): array {
     return array_values(array_unique(array_filter(
         array_map(
-            static fn (string $code): string => strtoupper(trim($code)),
+            // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — declared tokens are
+            // CANONICALIZED, not merely upper-cased.
+            //
+            // The allowlist is compared against the branch code DERIVED from a
+            // patient's Nomor RM, and that derivation now reports a branch's
+            // current code. A deployment whose environment still names the
+            // deprecated code (`TKM1`) would therefore compare `TLK1` against
+            // `TKM1` and deny — silently locking a fully approved branch out of
+            // its own wave, with a message about admission rather than about a
+            // rename. Canonicalizing both sides keeps the comparison exact while
+            // making the gate independent of WHICH spelling the operator's
+            // environment happens to hold, so the config edit and the code
+            // deployment do not have to land in the same instant.
+            //
+            // This accepts a historical spelling; it never emits one, and it
+            // never widens the set: an unknown token is still returned as-is and
+            // still matches nothing.
+            static fn (string $code): string => (string) (BranchCodeAlias::canonicalize($code) ?? ''),
             preg_split('/[\s,;]+/', $declared) ?: [],
         ),
         static fn (string $code): bool => $code !== '',
@@ -282,7 +301,12 @@ return [
         // owner APPROVED, so it must match the RM-derived branch of the
         // patients in scope — otherwise the gate would report an approval for
         // one branch while imports land in another.
-        'branch_code' => (string) env('LEGACY_RME_PILOT_BRANCH_CODE', ''),
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — canonicalized for the
+        // reason the paragraph above gives: this value is COMPARED against the
+        // RM-derived branch, and that derivation now reports a branch's current
+        // code. Leaving a deprecated spelling here would make the readiness gate
+        // report an approval/landing mismatch that does not exist.
+        'branch_code' => (string) (BranchCodeAlias::canonicalize(env('LEGACY_RME_PILOT_BRANCH_CODE', '')) ?? ''),
 
         'forbidden_branch_codes' => ['MAIN'],
     ],

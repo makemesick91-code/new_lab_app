@@ -4,6 +4,7 @@ namespace App\Modules\Patient\Repositories;
 
 use App\Modules\Patient\Interfaces\PatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
+use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use Closure;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -11,6 +12,10 @@ use Illuminate\Support\Collection;
 
 class PatientRepository implements PatientRepositoryInterface
 {
+    public function __construct(
+        private readonly PatientMedicalRecordNumberService $medicalRecordNumbers,
+    ) {}
+
     /**
      * BUGFIX-NEW-VISIT-PATIENT-SEARCH-RUNTIME-1 — the LIKE escape character.
      *
@@ -50,9 +55,23 @@ class PatientRepository implements PatientRepositoryInterface
             ->with(['clinic', 'doctor'])
             ->when($search, function ($query, $search) {
                 $term = '%'.mb_strtolower($search).'%';
-                $query->where(function ($q) use ($term) {
-                    $q->whereRaw('LOWER(name) LIKE ?', [$term])
-                        ->orWhereRaw('LOWER(medical_record_number) LIKE ?', [$term]);
+                // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — a full Nomor RM
+                // typed from an old card carries the branch code it was ISSUED
+                // under, which may since have been revised. Each equivalent
+                // spelling is searched so the patient is still found; a term that
+                // is not a canonical Nomor RM yields itself alone, so ordinary
+                // name and partial searches behave exactly as before.
+                $rmTerms = array_map(
+                    static fn (string $value): string => '%'.mb_strtolower($value).'%',
+                    $this->medicalRecordNumbers->equivalentNumbers($search),
+                );
+
+                $query->where(function ($q) use ($term, $rmTerms) {
+                    $q->whereRaw('LOWER(name) LIKE ?', [$term]);
+
+                    foreach ($rmTerms as $rmTerm) {
+                        $q->orWhereRaw('LOWER(medical_record_number) LIKE ?', [$rmTerm]);
+                    }
                 });
             })
             ->when($clinicId, fn ($query, $clinicId) => $query->where('clinic_id', $clinicId))
@@ -100,8 +119,17 @@ class PatientRepository implements PatientRepositoryInterface
                 // See LIKE_ESCAPE for why it must not be a backslash.
                 $escape = " ESCAPE '".self::LIKE_ESCAPE."'";
 
-                $query->whereRaw('LOWER(name) LIKE LOWER(?)'.$escape, [$like])
-                    ->orWhereRaw('LOWER(medical_record_number) LIKE LOWER(?)'.$escape, [$like]);
+                $query->whereRaw('LOWER(name) LIKE LOWER(?)'.$escape, [$like]);
+
+                // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — see the note in
+                // search(): every equivalent spelling of the same Nomor RM is
+                // matched, each escaped through the same helper as the name term.
+                foreach ($this->medicalRecordNumbers->equivalentNumbers($term) as $variant) {
+                    $query->orWhereRaw(
+                        'LOWER(medical_record_number) LIKE LOWER(?)'.$escape,
+                        ['%'.$this->escapeLike($variant).'%'],
+                    );
+                }
             })
             ->orderBy('name')
             ->orderBy('id')

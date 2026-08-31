@@ -6,8 +6,11 @@ alwaysApply: true
 
 # RME-BRANCH-SUN4 — Aturan Permanen
 
-1. **Registry kode cabang canonical** (jangan reuse/renumber): TKM1 = Cabang
-   Telkomas, LDK2 = Cabang Landak, ATG3 = Cabang Antang, **SUN4 = Cabang Sunu**.
+1. **Registry kode cabang canonical** (jangan reuse/renumber): **TLK1 = Cabang
+   Telkomas** (kode lama `TKM1` DEPRECATED — lihat rule
+   `92-telkomas-branch-code-canonical.mdc`; diterima sebagai alias historis,
+   tidak pernah lagi di-generate), LDK2 = Cabang Landak, ATG3 = Cabang Antang,
+   **SUN4 = Cabang Sunu**.
    SUN4 aktif + RME-enabled, BUKAN MAIN, tidak otomatis inventory-enabled.
    ID branch TIDAK BOLEH diasumsikan lintas environment — selalu resolve by `code`.
 2. **Penambahan cabang harus idempotent** via `Database\Seeders\RmeBranchSeeder`

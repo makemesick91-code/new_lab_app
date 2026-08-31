@@ -24,7 +24,7 @@ alwaysApply: false
    empty allowlist migrates nothing.
 
 4. **The RM-derived branch is authoritative.** Admission is always decided on the
-   branch derived from the patient's Nomor RM (`DG-TKM1-2024-9985 → TKM1`), never
+   branch derived from the patient's Nomor RM (`DG-TLK1-2024-9985 → TLK1`), never
    on a submitted `origin_branch_id`, a query string, a session, a `BranchContext`
    selection, or the operator's own branch.
 
@@ -56,8 +56,11 @@ alwaysApply: false
     approval on record named TKM1, and the gate still reported GO.
 
 7. **Matching is exact-token.** The allowlist is normalized once, at config-build
-   time, into canonical upper-case tokens. `TKM` never admits `TKM1`; `TKM1` never
-   admits `TKM1-EXTRA`. Partial, prefix and substring matching are forbidden.
+   time, into CANONICAL upper-case tokens. `TLK` never admits `TLK1`; `TLK1` never
+   admits `TLK1-EXTRA`. Partial, prefix and substring matching are forbidden. A
+   DEPRECATED code is a spelling of the same branch, not a wider match: both sides
+   are canonicalized first (rule `92-telkomas-branch-code-canonical.mdc`), so
+   `TKM1` and `TLK1` both mean Cabang Telkomas and nothing else widens.
 
 8. **Config capture, never runtime `env()`.** The allowlist is read from the
    environment only while `config/legacy_rme_rollout.php` is built, so it survives

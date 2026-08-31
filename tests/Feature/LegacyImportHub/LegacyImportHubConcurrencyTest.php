@@ -225,7 +225,7 @@ it('never exceeds the ceiling when many reservations contend for the last slots'
 });
 
 it('acquires multi-branch buckets in one order so two batches cannot deadlock', function () {
-    $a = lihBranch('TKM1', 'Cabang Telkomas');
+    $a = lihBranch('TLK1', 'Cabang Telkomas');
     $b = lihBranch('LDK2', 'Cabang Landak');
     $type = LegacyImportType::LEGACY_PATIENT;
 

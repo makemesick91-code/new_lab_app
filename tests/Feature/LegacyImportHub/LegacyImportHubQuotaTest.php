@@ -113,7 +113,7 @@ it('names the remaining capacity when it refuses', function () {
 */
 
 it('gives every branch its own ceiling', function () {
-    $a = lihBranch('TKM1', 'Cabang Telkomas');
+    $a = lihBranch('TLK1', 'Cabang Telkomas');
     $b = lihBranch('LDK2', 'Cabang Landak');
     $type = LegacyImportType::LEGACY_RME;
 
@@ -286,7 +286,7 @@ it('refuses a batch whole rather than admitting the part that fits', function ()
 });
 
 it('refuses a multi-branch batch when any one of its branches is over', function () {
-    $a = lihBranch('TKM1', 'Cabang Telkomas');
+    $a = lihBranch('TLK1', 'Cabang Telkomas');
     $b = lihBranch('LDK2', 'Cabang Landak');
     $type = LegacyImportType::LEGACY_PATIENT;
 

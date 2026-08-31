@@ -105,7 +105,7 @@ it('reports an unknown Nomor RM as not found rather than as a blank page', funct
     lodoPatient();
 
     $this->actingAs(lodoOperator())
-        ->get(route('settings.rme.legacy-odontograms.create', ['rm' => 'DG-TKM1-2024-9999']))
+        ->get(route('settings.rme.legacy-odontograms.create', ['rm' => 'DG-TLK1-2024-9999']))
         ->assertOk()
         ->assertSee('Pasien tidak ditemukan')
         ->assertDontSee('Belum ada pasien dipilih');
@@ -469,7 +469,7 @@ it('still refuses an archive dated before the patient was born, through the real
 });
 
 it('keeps the searched Nomor RM out of the log when the lookup fails', function () {
-    $rm = 'DG-TKM1-2024-4242';
+    $rm = 'DG-TLK1-2024-4242';
 
     /*
      * `QueryException::getMessage()` INTERPOLATES the bindings into the SQL it
@@ -626,8 +626,8 @@ it('derives the identifier from the request alone, never from server-side state'
      * itself. An empty identifier must normalise to null even when the session
      * is primed.
      */
-    session(['lodo_last_rm' => 'DG-TKM1-2024-0001']);
-    session(['rm' => 'DG-TKM1-2024-0001']);
+    session(['lodo_last_rm' => 'DG-TLK1-2024-0001']);
+    session(['rm' => 'DG-TLK1-2024-0001']);
 
     $request = LookupLegacyOdontogramPatientRequest::create('/settings/rme/legacy-odontograms/create', 'GET', ['rm' => '']);
     $request->setContainer(app());
