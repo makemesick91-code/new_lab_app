@@ -1,62 +1,66 @@
-# BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1 — Sprint Manifest
+# REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — Sprint Manifest
 #
-# Prompt classification: BUGFIX · PRODUCTION_FUNCTIONAL_DEFECT ·
-# LEGACY_ODONTOGRAM · PATIENT_LOOKUP · PRIVACY_SENSITIVE ·
-# AUTHORIZATION_SENSITIVE · CLINICAL_EVIDENCE. `type` below is RUNTIME_FIX
+# Prompt classification: BUSINESS_RULE_REVISION · LEGACY_ODONTOGRAM ·
+# NATIVE_CUTOFF · CLINICAL_HISTORY · PRIVACY_SENSITIVE ·
+# IMMUTABILITY_SENSITIVE · NO_NATIVE_SIDE_EFFECTS. `type` below is RUNTIME_FIX
 # because that is the registered profile in config/sprint_profiles.php for a
-# defect in shipped runtime behaviour; BUGFIX is not a defined type and
-# inventing one would fail the manifest check rather than describe the work.
+# change to shipped runtime behaviour; BUSINESS_RULE_REVISION is not a defined
+# type and inventing one would fail the manifest check rather than describe the
+# work.
 #
-# THE DEFECT. On Import Data Legacy -> Unggah Arsip Odontogram Lama the operator
-# entered the patient identifier and nothing appeared. The page asked for
-# `mst_patients.id`, an internal surrogate key displayed on no DaengtisiaMS
-# screen or report, read through `Request::integer()` — which is `intval()`, and
-# `intval()` does not fail, it guesses. The Nomor RM the operator actually holds
-# became 0; `1abc` and `patient_id[]=…` both became 1 and silently displayed
-# whichever patient was row #1. The view then rendered ONE `@else` for every
-# outcome, so FOUND, NOT_FOUND and ERROR were indistinguishable from "you have
-# not typed anything yet". HTTP 200, nothing logged — confirmed on the pilot,
-# whose 8,718-line laravel.log holds zero legacy-odontogram entries.
+# THE REVISION. The archive refused any patient with no native odontogram
+# (`PATIENT_HAS_NO_NATIVE_ODONTOGRAM`, LegacyOdontogramDateRuleService:127).
+# That inverted the real situation: a legacy odontogram is a paper chart the
+# clinic already holds, and the patients whose charts most need archiving are
+# precisely the ones this system has never examined. Owner decision:
 #
-# THE DISTINCTION THIS SPRINT ESTABLISHES:
+#     LEGACY_ODONTOGRAM_REQUIRES_NATIVE = false
 #
-#     PATIENT FOUND  !=  UPLOAD AUTHORIZED
+# THE DISTINCTION THIS SPRINT PRESERVES:
 #
-# The lookup answers "who is this?" only. On submit `patient_id` is re-resolved
-# through the same repository, re-validated by StoreLegacyOdontogramImportRequest,
-# and the owning branch is re-derived from the patient's own Nomor RM and
-# re-checked against the operator's scope. A rendered patient panel is never a
-# credential.
+#     NATIVE OPTIONAL  !=  NATIVE CUTOFF REMOVED
 #
-# WHAT IT DELIBERATELY DOES NOT DO. No searchable name combobox, no type-ahead,
-# no JavaScript of any kind. Same single field, same GET submit, same full-page
-# render. A richer picker is recorded as a separate UX finding. Accepting the
-# canonical Nomor RM is not that redesign — it is the identifier every other
-# patient-selection surface in the product already uses, and without it this
-# workflow cannot be completed at all.
+# When a meaningful native odontogram exists it still bounds the archive, at the
+# EARLIEST one, STRICTLY earlier, with equal still refused. Only the "there must
+# be one at all" gate is gone — the constant, the config switch and the refusal
+# branch were deleted rather than defaulted off, so the retired rule cannot come
+# back through a settings edit.
 #
-# security_impact is true because the fix removes a silent wrong-patient
-# resolution on a clinical-evidence screen and replaces a Patient model in the
-# view with a least-disclosure identity DTO. branch_isolation_impact is false:
-# patient identity was already global here and stays so; the ARCHIVE's branch
-# derivation from the Nomor RM is untouched.
+# THE SECOND DISTINCTION, WHICH THIS SPRINT MAKES LOAD-BEARING:
+#
+#     NO NATIVE FOUND  !=  THE NATIVE LOOKUP FAILED
+#
+# Before the revision both outcomes refused, so conflating them was untidy but
+# harmless. Now absence ALLOWS, so folding a database fault into `null` would
+# turn a broken query into permission to file a chart with no chronological
+# bound. The resolver has no try/catch on that path, deliberately, and a test
+# holds it there.
+#
+# security_impact is true because an eligibility rule on a clinical-evidence
+# screen is being widened, and because the fail-closed/fail-open boundary above
+# changes meaning. branch_isolation_impact is false: the archive's branch is
+# still derived from the patient's Nomor RM and a submitted branch_id is still
+# ignored — asserted, not assumed.
+#
+# NO MIGRATION. This is a service-level rule change; a schema change here would
+# have meant the design went wrong.
 
-id: BUGFIX-LEGACY-ODONTOGRAM-PATIENT-LOOKUP-1
+id: REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1
 type: RUNTIME_FIX
 module: LegacyOdontogram
-title: 'The legacy odontogram upload page resolves the identifier the operator actually holds, and says which of FOUND / NOT_FOUND / ERROR happened'
+title: 'A legacy odontogram is historical evidence and no longer requires a native odontogram to exist first; when one does exist it still bounds the archive'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true            # request handling, lookup service, repository, controller
+runtime_change: true            # date rule service, resolver + repository contracts
 schema_change: false            # no migration, no column, no table, no index
-frontend_change: true           # the create Blade view's states; no JS, no asset build
-security_impact: true           # malformed input no longer resolves an arbitrary patient
+frontend_change: true           # the create Blade view's cutoff panel; no JS, no asset build
+security_impact: true           # eligibility widened; fail-open/fail-closed boundary re-stated
 branch_isolation_impact: false  # archive branch derivation from Nomor RM is unchanged
 ledger_impact: false
-deploy_required: true           # the page is broken for operators until this ships
-browser_required: true          # a blank-screen defect cannot be proven backend-only
+deploy_required: true           # operators cannot archive never-examined patients until this ships
+browser_required: true          # the upload screen told the operator the archive was blocked
 test_profiles:
   - focused
   - permission_regression
-go_tag: bugfix-legacy-odontogram-patient-lookup-1-go
+go_tag: revision-legacy-odontogram-native-optional-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

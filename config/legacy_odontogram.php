@@ -70,12 +70,18 @@ return [
         'require_strictly_before_today' => true,
         'allow_same_day_as_birth_date' => true,
 
-        // REGULAR MODE. A patient with no native odontogram has no boundary to
-        // file behind, so the archive refuses rather than guessing one. This is
-        // the deliberate difference from Legacy RME's later relaxation: an
-        // odontogram chart is the exact artefact whose ordering matters, and a
-        // migration-mode escape hatch is a separate, explicit sprint.
-        'require_native_odontogram_reference' => true,
+        /*
+         * REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 removed the former
+         * `require_native_odontogram_reference` switch. A patient with no native
+         * odontogram is a VALID state to archive against — a paper chart is
+         * historical evidence and does not need this system to have examined the
+         * patient first — so there is no longer a setting that could refuse one.
+         *
+         * `require_strictly_before_native` above is a DIFFERENT rule and is
+         * deliberately still on: when a meaningful native odontogram does exist
+         * it still bounds the archive, at the EARLIEST one, strictly.
+         * Native OPTIONAL is not native cutoff REMOVED.
+         */
     ],
 
     'branch_resolution_invariants' => [

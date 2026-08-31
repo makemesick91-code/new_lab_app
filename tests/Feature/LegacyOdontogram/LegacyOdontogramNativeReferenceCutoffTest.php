@@ -4,17 +4,17 @@
  * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — what counts as a NATIVE
  * odontogram for the archive cutoff.
  *
- * The cutoff acts in TWO directions at once, which is why getting it wrong is
- * not a cosmetic problem:
+ * The cutoff used to act in TWO directions at once — as a GATE (a patient with
+ * no native odontogram could not file an archive at all) and as a BOUND (the
+ * archive date must be STRICTLY before the earliest native odontogram date).
  *
- *   1. as a GATE — a patient with no native odontogram cannot file an archive
- *      at all (CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM);
- *   2. as a BOUND — the archive date must be STRICTLY before the earliest
- *      native odontogram date.
- *
- * Counting a contentless placeholder row therefore does two wrong things: it
- * opens the gate on evidence that does not exist, and it draws the bound at a
- * date on which nothing was actually charted.
+ * REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 RETIRED THE GATE. Having no
+ * native odontogram is a valid state to archive against, so only the BOUND
+ * remains — and this file now pins that surviving half. Counting a contentless
+ * placeholder row would still draw that bound at a date on which nothing was
+ * actually charted, which is exactly the defect these tests exist to prevent.
+ * The gate's disappearance makes the predicate MORE load-bearing, not less:
+ * a wrongly-counted placeholder is now the only way a bogus bound can appear.
  *
  * The predicate is deliberately IDENTICAL to the one the doctor's Patient
  * Odontogram History already applies (`Odontogram::hasRecordedTeeth()`), so a
@@ -93,16 +93,17 @@ it('reports NO native reference for a patient whose only odontogram is an empty 
         ->and(lodoCutoff()->hasNativeOdontogram($patient->id))->toBeFalse();
 });
 
-it('refuses the archive for an empty-only patient rather than bounding it on a fake date', function () {
+it('does not let an empty-only patient be bounded on a fake date', function () {
     $patient = lodoPatient();
     lodoEmptyNativeOdontogram($patient, '2024-05-01');
 
-    // Before this sprint the placeholder opened the gate and bounded the
-    // archive at 2024-05-01 — a date on which nothing was charted.
+    // The placeholder charts nothing, so it must not bound the archive at
+    // 2024-05-01. Since the native-required gate was retired, the archive is
+    // accepted with NO bound at all rather than refused.
     $result = lodoDateRules()->evaluate($patient, '2019-01-01');
 
-    expect($result->failed())->toBeTrue()
-        ->and($result->code)->toBe(LegacyOdontogramDateRuleService::CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM);
+    expect($result->passed)->toBeTrue()
+        ->and($result->context['earliest_native_odontogram_date'])->toBeNull();
 });
 
 it('ignores an empty payload whose teeth map is present but empty — the shape SQL cannot portably exclude', function () {
@@ -261,9 +262,11 @@ it('never lets one patient\'s charted odontogram bound another patient', functio
 
     lodoNativeOdontogram($a, '2018-01-01');
 
+    // Patient B is unbounded because B has no odontogram — never bounded by A's.
     expect(lodoCutoff()->resolve($b->id))->toBeNull()
-        ->and(lodoDateRules()->evaluate($b, '2017-01-01')->code)
-        ->toBe(LegacyOdontogramDateRuleService::CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM);
+        ->and(lodoDateRules()->evaluate($b, '2017-01-01')->passed)->toBeTrue()
+        ->and(lodoDateRules()->evaluate($b, '2017-01-01')->context['earliest_native_odontogram_date'])
+        ->toBeNull();
 });
 
 /*

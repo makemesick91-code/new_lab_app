@@ -256,7 +256,12 @@ authorized, consented, in-progress encounter.**
 - The clinical date is **chosen manually** from what the document shows — never
   upload time, `created_at`, file mtime or PDF metadata — and is validated
   against the clinical clock (Asia/Makassar), strictly before the patient's
-  earliest **native odontogram**.
+  earliest **native odontogram** *when the patient has one*.
+  - A patient with **no** meaningful native odontogram is a **valid** state to
+    archive against: there is simply no bound to apply, and none is invented. See
+    `132-legacy-odontogram-native-optional.mdc`
+    (REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1), which retired the former
+    "must already have a native odontogram" gate. The bound itself is unchanged.
   - Do **not** reuse `PatientEarliestNativeRmeDateResolver`: its cutoff is the
     earliest visit owning a MEDICAL RECORD, a different fact, which would let a
     legacy odontogram be filed after a real native odontogram already exists.

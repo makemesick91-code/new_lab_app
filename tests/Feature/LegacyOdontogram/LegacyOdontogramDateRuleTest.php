@@ -29,13 +29,16 @@ function lodoRules(): LegacyOdontogramDateRuleService
     return app(LegacyOdontogramDateRuleService::class);
 }
 
-it('refuses a patient with no native odontogram at all', function () {
+it('accepts a patient with no native odontogram at all, with no bound to apply', function () {
+    // REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — a paper chart is historical
+    // evidence and does not need this system to have examined the patient first.
+    // The full matrix lives in LegacyOdontogramNativeOptionalTest.
     $patient = lodoPatient();
 
     $result = lodoRules()->evaluate($patient, '2015-01-01');
 
-    expect($result->failed())->toBeTrue()
-        ->and($result->code)->toBe(LegacyOdontogramDateRuleService::CODE_PATIENT_HAS_NO_NATIVE_ODONTOGRAM);
+    expect($result->passed)->toBeTrue()
+        ->and($result->context['earliest_native_odontogram_date'])->toBeNull();
 });
 
 it('accepts a date strictly before the earliest native odontogram', function () {

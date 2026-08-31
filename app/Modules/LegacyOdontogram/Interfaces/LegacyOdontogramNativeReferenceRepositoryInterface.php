@@ -22,14 +22,21 @@ interface LegacyOdontogramNativeReferenceRepositoryInterface
 {
     /**
      * The earliest non-cancelled visit that owns a native odontogram CARRYING
-     * CLINICAL CONTENT, or null when the patient has none. Null is meaningful —
-     * it is NOT "no restriction".
+     * CLINICAL CONTENT, or null when the patient has none.
      *
      * LEGACY-ODONTOGRAM-NATIVE-REFERENCE-CUTOFF-1 — "owns an odontogram" used
      * to mean a row exists. A contentless placeholder is not evidence, so it
-     * neither opens the eligibility gate nor draws the chronological bound. The
-     * content test is `Odontogram::hasRecordedTeeth()`, the same predicate the
-     * doctor's Patient Odontogram History applies.
+     * does not draw the chronological bound. The content test is
+     * `Odontogram::hasRecordedTeeth()`, the same predicate the doctor's Patient
+     * Odontogram History applies.
+     *
+     * REVISION-LEGACY-ODONTOGRAM-NATIVE-OPTIONAL-1 — this answer no longer
+     * gates ELIGIBILITY, only the BOUND. A patient with none may still be
+     * archived against; the archive simply has no native history to sit before.
+     *
+     * Null therefore means "none found" and nothing else. An implementation
+     * must never convert a query failure into null: since absence now allows,
+     * that would turn a database fault into an unbounded archive. Let it throw.
      */
     public function earliestVisitWithOdontogramForPatient(int $patientId): ?ClinicVisit;
 }
