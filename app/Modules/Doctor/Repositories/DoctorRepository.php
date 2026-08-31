@@ -2,6 +2,7 @@
 
 namespace App\Modules\Doctor\Repositories;
 
+use App\Models\User;
 use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -82,5 +83,80 @@ class DoctorRepository implements DoctorRepositoryInterface
                 ->values()
                 ->all(),
         );
+    }
+
+    /**
+     * FEATURE-DOCTOR-ACCOUNT-PERFORMANCE-INCOME-LINKAGE-1
+     *
+     * The doctor list for the account-link screen. `user` is eager loaded so the
+     * table can render the linked account without an N+1.
+     */
+    public function paginateWithLinkedAccount(array $filters = [], int $perPage = 15): LengthAwarePaginator
+    {
+        $search = $filters['search'] ?? null;
+        $linkStatus = $filters['link_status'] ?? null;
+
+        return Doctor::query()
+            ->with(['user'])
+            ->when($search, function ($query, $search) {
+                $term = '%'.mb_strtolower($search).'%';
+                $query->where(function ($q) use ($term) {
+                    $q->whereRaw('LOWER(name) LIKE ?', [$term])
+                        ->orWhereRaw('LOWER(code) LIKE ?', [$term]);
+                });
+            })
+            ->when($linkStatus === 'linked', fn ($query) => $query->whereNotNull('user_id'))
+            ->when($linkStatus === 'unlinked', fn ($query) => $query->whereNull('user_id'))
+            ->orderBy('name')
+            ->paginate($perPage)
+            ->withQueryString();
+    }
+
+    public function findForUpdate(int $id): ?Doctor
+    {
+        return Doctor::query()->whereKey($id)->lockForUpdate()->first();
+    }
+
+    public function findLinkedByUserId(int $userId, ?int $excludeDoctorId = null): ?Doctor
+    {
+        // withTrashed on purpose: the unique index on `user_id` does not care
+        // about `deleted_at`, so a soft-deleted doctor still occupies the
+        // account. Querying only live rows would let the service pass its own
+        // conflict check and then die on a constraint violation — a 500 where
+        // the operator deserves a sentence explaining what is holding the
+        // account.
+        return Doctor::withTrashed()
+            ->where('user_id', $userId)
+            ->when($excludeDoctorId, fn ($query, $excludeDoctorId) => $query->whereKeyNot($excludeDoctorId))
+            ->first();
+    }
+
+    public function setLinkedUser(Doctor $doctor, ?int $userId): Doctor
+    {
+        $doctor->user_id = $userId;
+        $doctor->save();
+
+        return $doctor->fresh(['user']);
+    }
+
+    /**
+     * Candidate accounts for linking. The `mst_doctors.user_id` column is owned
+     * by this module, so the "already linked" exclusion is resolved here rather
+     * than leaking doctor-linkage knowledge into the User module.
+     */
+    public function linkableUserCandidates(string $role): Collection
+    {
+        $linkedUserIds = Doctor::query()
+            ->whereNotNull('user_id')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return User::query()
+            ->where('is_active', true)
+            ->whereNotIn('id', $linkedUserIds)
+            ->whereHas('roles', fn ($query) => $query->where('name', $role))
+            ->orderBy('name')
+            ->get();
     }
 }
