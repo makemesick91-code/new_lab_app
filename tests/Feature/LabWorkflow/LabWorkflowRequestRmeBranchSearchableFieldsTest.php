@@ -130,13 +130,13 @@ it('labels patients with their medical record number for RM-number search', func
     Patient::factory()->create([
         'branch_id' => $this->mainBranch->id,
         'name' => 'Pasien Ber-RM',
-        'medical_record_number' => 'DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TLK1-2026-0001',
     ]);
 
     $this->actingAs(userWith(['create_lab_branch_requests']))
         ->get(route('lab-workflow-requests.create'))
         ->assertOk()
-        ->assertSee('DG-TKM1-2026-0001');
+        ->assertSee('DG-TLK1-2026-0001');
 });
 
 it('caps the patient catalog to the bounded local-search limit', function () {

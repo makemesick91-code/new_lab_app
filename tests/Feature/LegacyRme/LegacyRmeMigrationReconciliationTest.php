@@ -49,7 +49,7 @@ function reconWave(string $code = 'TEST-WAVE'): LegacyRmeMigrationWave
     return LegacyRmeMigrationWave::query()->where('code', $code)->firstOrFail();
 }
 
-function reconBranch(string $branchCode = 'TKM1'): LegacyRmeWaveBranch
+function reconBranch(string $branchCode = 'TLK1'): LegacyRmeWaveBranch
 {
     return LegacyRmeWaveBranch::query()->where('branch_code', $branchCode)->firstOrFail();
 }
@@ -88,7 +88,7 @@ function reconGovernor(): User
  * Each upload carries DISTINCT bytes, or the 1B exact-duplicate gate would
  * refuse the second one and a reconciliation test would count the wrong thing.
  */
-function reconUpload(?Patient $patient = null, string $branchCode = 'TKM1'): LegacyRmeImport
+function reconUpload(?Patient $patient = null, string $branchCode = 'TLK1'): LegacyRmeImport
 {
     if ($patient === null) {
         $patient = legacyRmeArchivablePatient([], $branchCode);
@@ -113,7 +113,7 @@ function reconUpload(?Patient $patient = null, string $branchCode = 'TKM1'): Leg
 // ---------------------------------------------------------------------------
 
 it('balances every accepted document into exactly one bucket', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = superAdmin();
 
     $published = reconUpload();
@@ -140,7 +140,7 @@ it('balances every accepted document into exactly one bucket', function () {
 });
 
 it('detects a quota ledger that disagrees with the documents accepted', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     reconUpload();
 
     // Simulate a hand-edited counter, or a future code path that writes a
@@ -155,7 +155,7 @@ it('detects a quota ledger that disagrees with the documents accepted', function
 });
 
 it('attributes documents to the wave that accepted them, never to a later one', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $first = reconUpload();
 
     // A second wave takes over the same branch.
@@ -169,7 +169,7 @@ it('attributes documents to the wave that accepted them, never to a later one', 
     LegacyRmeWaveBranch::query()->create([
         'wave_id' => $laterWave->getKey(),
         'branch_id' => reconBranch()->branch_id,
-        'branch_code' => 'TKM1',
+        'branch_code' => 'TLK1',
         'status' => LegacyRmeWaveBranchStatus::ACTIVE,
     ]);
 
@@ -181,7 +181,7 @@ it('attributes documents to the wave that accepted them, never to a later one', 
 });
 
 it('surfaces a stale PROCESSING document without rewriting its status', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $import = reconUpload();
 
     $import->forceFill([
@@ -202,7 +202,7 @@ it('surfaces a stale PROCESSING document without rewriting its status', function
 // ---------------------------------------------------------------------------
 
 it('refuses to complete a branch while work is still in flight', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     reconUpload();
 
@@ -216,7 +216,7 @@ it('refuses to complete a branch while work is still in flight', function () {
 });
 
 it('refuses to complete a branch with unresolved failures', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     $import = reconUpload();
     $import->forceFill(['status' => LegacyRmeImportStatus::FAILED])->save();
@@ -229,7 +229,7 @@ it('refuses to complete a branch with unresolved failures', function () {
 });
 
 it('completes a branch whose books balance and freezes the reconciliation onto it', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     $import = reconUpload();
     $import->forceFill(['status' => LegacyRmeImportStatus::PUBLISHED])->save();
@@ -253,7 +253,7 @@ it('completes a branch whose books balance and freezes the reconciliation onto i
 });
 
 it('refuses to complete a branch that is still accepting documents', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
 
     // Completion is reachable only from DRAINING: signing off a branch that is
@@ -263,16 +263,16 @@ it('refuses to complete a branch that is still accepting documents', function ()
 });
 
 it('refuses to close a wave while an enrolled branch is unaccounted for', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
     $actor = reconGovernor();
 
     $wave = reconWave();
     reconGovernance()->drain($actor, $wave, 'Mengakhiri gelombang migrasi.');
 
-    // TKM1 is signed off; LDK2 is left hanging.
-    $tkm = reconBranch('TKM1')->fresh();
-    reconGovernance()->completeBranch($actor, $tkm, 'Cabang TKM1 selesai diverifikasi.');
+    // TLK1 is signed off; LDK2 is left hanging.
+    $tkm = reconBranch('TLK1')->fresh();
+    reconGovernance()->completeBranch($actor, $tkm, 'Cabang TLK1 selesai diverifikasi.');
 
     expect(fn () => reconGovernance()->completeWave($actor, $wave->fresh(), 'Menutup gelombang migrasi.'))
         ->toThrow(ValidationException::class);
@@ -281,7 +281,7 @@ it('refuses to close a wave while an enrolled branch is unaccounted for', functi
 });
 
 it('closes a wave once every enrolled branch is accounted for', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
 
     $wave = reconWave();
@@ -299,21 +299,21 @@ it('closes a wave once every enrolled branch is accounted for', function () {
 // ---------------------------------------------------------------------------
 
 it('refuses to register a wave for a branch the deployment approval does not cover', function () {
-    legacyRmeBranch('TKM1');
-    legacyRmeApproveWave('ROLL-4-APPROVAL', ['TKM1']);
+    legacyRmeBranch('TLK1');
+    legacyRmeApproveWave('ROLL-4-APPROVAL', ['TLK1']);
 
     expect(fn () => reconGovernance()->createWave(
         reconGovernor(),
         'WAVE-OUTSIDE',
         'Gelombang di luar persetujuan',
-        ['TKM1', 'LDK2'],
+        ['TLK1', 'LDK2'],
     ))->toThrow(ValidationException::class);
 
     expect(LegacyRmeMigrationWave::query()->where('code', 'WAVE-OUTSIDE')->exists())->toBeFalse();
 });
 
 it('refuses a daily quota above the declarable ceiling', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // A quota is a safety rail; letting someone type a million turns the rail
     // into decoration.
@@ -322,21 +322,21 @@ it('refuses a daily quota above the declarable ceiling', function () {
 });
 
 it('refuses a governance reason that is too short to be an audit trail', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     expect(fn () => reconGovernance()->pause(reconGovernor(), reconWave(), 'ok'))
         ->toThrow(ValidationException::class);
 });
 
 it('enforces approver-is-not-creator when separation of duties is switched on', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     config()->set('legacy_rme_operations.require_separate_approver', true);
 
     $creator = reconGovernor();
     // FIX-LEGACY-RME-ROUTINE-OPS-1 — a batch is time-bounded, so every caller
     // declares its window. Fixed dates keep this deterministic; nothing here
     // depends on where the window sits in time.
-    $wave = reconGovernance()->createWave($creator, 'WAVE-SOD', 'Gelombang SoD', ['TKM1'], null, null, '2026-08-14', '2026-08-20');
+    $wave = reconGovernance()->createWave($creator, 'WAVE-SOD', 'Gelombang SoD', ['TLK1'], null, null, '2026-08-14', '2026-08-20');
 
     expect(fn () => reconGovernance()->approve($creator, $wave))
         ->toThrow(ValidationException::class);
@@ -348,21 +348,21 @@ it('enforces approver-is-not-creator when separation of duties is switched on', 
 });
 
 it('refuses to resume a wave whose approval no longer matches the deployment', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     $wave = reconWave();
 
     reconGovernance()->pause($actor, $wave, 'Dijeda untuk pemeriksaan.');
 
     // A pause is exactly when someone changes the deployment's approval.
-    legacyRmeApproveWave('SOMETHING-ELSE', ['TKM1']);
+    legacyRmeApproveWave('SOMETHING-ELSE', ['TLK1']);
 
     expect(fn () => reconGovernance()->resume($actor, $wave->fresh()))
         ->toThrow(ValidationException::class);
 });
 
 it('refuses to assign an operator who cannot import at all', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // An assignment narrows; it never grants. A record implying an authority the
     // user does not have would be worse than no record.
@@ -375,7 +375,7 @@ it('refuses to assign an operator who cannot import at all', function () {
 });
 
 it('refuses to assign an operator to a branch from a different wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
 
     $otherWave = LegacyRmeMigrationWave::query()->create([
@@ -394,7 +394,7 @@ it('refuses to assign an operator to a branch from a different wave', function (
 });
 
 it('reactivates an existing assignment instead of creating a second row', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     $operator = userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
 
@@ -407,7 +407,7 @@ it('reactivates an existing assignment instead of creating a second row', functi
 });
 
 it('refuses an illegal wave transition', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // ACTIVE cannot jump straight to COMPLETED; it drains first, and the drain
     // is what makes the reconciliation measurable.
@@ -420,14 +420,14 @@ it('refuses an illegal wave transition', function () {
 // ---------------------------------------------------------------------------
 
 it('creates no native clinical artifacts while migrating an archive', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
 
     // The patient and their NATIVE encounter are FIXTURE — they are the
     // reference point the 1A date rules compare against, and they exist before
     // any migration happens. The snapshot is therefore taken AFTER them, so what
     // the deltas measure is the migration itself rather than the setup.
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     legacyRmeNativeVisit($patient, '2024-05-01');
 
     $before = [
@@ -456,11 +456,11 @@ it('creates no native clinical artifacts while migrating an archive', function (
 // ---------------------------------------------------------------------------
 
 it('reports per-branch progress without inventing a completion percentage', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     reconUpload();
 
     $overview = app(LegacyRmeMigrationOperationsService::class)->overview(reconWave());
-    $branch = collect($overview['branches'])->firstWhere('branch_code', 'TKM1');
+    $branch = collect($overview['branches'])->firstWhere('branch_code', 'TLK1');
 
     // Nobody counted the paper archive, so there is no denominator and therefore
     // no percentage. A fabricated one would make the whole panel a fiction.
@@ -470,7 +470,7 @@ it('reports per-branch progress without inventing a completion percentage', func
 });
 
 it('reports a completion percentage once a human has counted the archive', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = reconGovernor();
     reconUpload();
 
@@ -478,14 +478,14 @@ it('reports a completion percentage once a human has counted the archive', funct
     LegacyRmeImport::query()->update(['status' => LegacyRmeImportStatus::PUBLISHED]);
 
     $overview = app(LegacyRmeMigrationOperationsService::class)->overview(reconWave());
-    $branch = collect($overview['branches'])->firstWhere('branch_code', 'TKM1');
+    $branch = collect($overview['branches'])->firstWhere('branch_code', 'TLK1');
 
     expect($branch['planned_document_count'])->toBe(4)
         ->and($branch['completion_percent'])->toBe(25);
 });
 
 it('reports measured storage rather than an estimate', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     reconUpload();
 
     $footprint = app(LegacyRmeMigrationOperationsService::class)->storageFootprint(reconWave());
@@ -497,7 +497,7 @@ it('reports measured storage rather than an estimate', function () {
 });
 
 it('keeps the QA sample free of patient identity', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $import = reconUpload();
 
     LegacyRmeRecord::query()->create([

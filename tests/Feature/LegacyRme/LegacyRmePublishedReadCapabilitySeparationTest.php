@@ -70,7 +70,7 @@ beforeEach(function () {
 |--------------------------------------------------------------------------
 */
 
-function h1aPatient(string $branchCode = 'TKM1'): Patient
+function h1aPatient(string $branchCode = 'TLK1'): Patient
 {
     return legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], $branchCode);
 }
@@ -288,7 +288,7 @@ it('refuses the migration workspace itself while migration is off', function (st
 it('denies branch admission while migration is off', function () {
     h1aPatient();
 
-    $decision = app(LegacyRmeBranchAdmissionService::class)->decideForBranchCode('TKM1');
+    $decision = app(LegacyRmeBranchAdmissionService::class)->decideForBranchCode('TLK1');
 
     expect($decision->admitted)->toBeFalse()
         ->and($decision->code)->toBe(LegacyRmeAdmissionDecision::CODE_FEATURE_DISABLED);
@@ -384,7 +384,7 @@ it('refuses a guest and sends them to the login screen', function () {
 });
 
 it('hides an archive that belongs to another branch behind a 404', function () {
-    $mine = h1aPatient('TKM1');
+    $mine = h1aPatient('TLK1');
     $theirs = h1aPatient('LDK2');
 
     $foreign = h1aPublished($theirs, '2019-04-17');

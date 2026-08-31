@@ -53,7 +53,7 @@ if (! function_exists('lodoBranch')) {
      * branch-code segment of the patient's Nomor RM, so a fixture branch has to
      * be reachable by that code.
      */
-    function lodoBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'): Branch
+    function lodoBranch(string $code = 'TLK1', string $name = 'Cabang Telkomas'): Branch
     {
         $branch = Branch::withTrashed()->firstOrNew(['code' => $code]);
 
@@ -78,7 +78,7 @@ if (! function_exists('lodoPatient')) {
      *
      * @param  array<string, mixed>  $attributes
      */
-    function lodoPatient(array $attributes = [], string $branchCode = 'TKM1'): Patient
+    function lodoPatient(array $attributes = [], string $branchCode = 'TLK1'): Patient
     {
         $branch = lodoBranch($branchCode);
 

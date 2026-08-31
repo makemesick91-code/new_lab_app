@@ -214,6 +214,24 @@ return [
         // exists but is never selected by the gate is not a control.
         'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
 
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
+        // policy and the collision-safe rename that depends on it.
+        //
+        // This meets the bar the STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 entry set,
+        // for the same reason: the failure these pin was LIVE in production, not
+        // hypothetical. Production had already been renamed TKM1 -> TLK1 by hand
+        // while the code had not, so RM-derived branch derivation resolved to no
+        // branch at all and one patient's legacy archive was unreachable — and
+        // nothing in CI asserted otherwise. The same drift would have let the
+        // branch seeder create a SECOND "Cabang Telkomas", splitting one clinic's
+        // patients across two branch ids, which is the isolation boundary.
+        //
+        // Declared here rather than left to the filter token because branch
+        // identity and a collision-safe patient-identifier migration are exactly
+        // the controls that must never quietly stop being selected.
+        'tests/Feature/Branch/TelkomasBranchCodeAliasTest.php',
+        'tests/Feature/Branch/TelkomasBranchCodeMigrationTest.php',
+
         // FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — the Full Suite baseline contract,
         // and the receipt regression that proved it had a hole.
         //

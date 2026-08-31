@@ -44,7 +44,7 @@
                     name="rm"
                     label="Nomor RM Pasien"
                     :value="$submittedMedicalRecordNumber"
-                    placeholder="Contoh: DG-TKM1-2024-0001"
+                    placeholder="Contoh: DG-TLK1-2024-0001"
                     class="md:w-96"
                 />
                 <div class="flex gap-2">

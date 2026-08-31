@@ -77,7 +77,7 @@ class LegacyPatientImportService
         return [
             'header' => array_map(static fn ($c) => $c['label'], self::COLUMNS),
             'example' => [
-                '1', 'LEG-0001', '3201010101010001', 'TKM1', 'Ruang 1',
+                '1', 'LEG-0001', '3201010101010001', 'TLK1', 'Ruang 1',
                 '2024-01-15 09:30:00', '0001', 'drg. Contoh', 'Budi Santoso',
                 '081200000001', '081200000001', 'budi@example.com', 'Laki-laki',
                 '1990-05-20', '34', 'Jl. Contoh No. 1', 'Wiraswasta',

@@ -119,10 +119,10 @@ it('names a missing approval rather than reporting a generic closure', function 
 });
 
 it('names an allowlist widened beyond the approval that covers it', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     // The allowlist grows; the approval does not. Failing closed here is the
     // ROLL-3 lesson, and the report has to say WHICH branch is uncovered.
-    legacyRmeAdmittedBranches(['TKM1', 'LDK2']);
+    legacyRmeAdmittedBranches(['TLK1', 'LDK2']);
 
     $gates = lihoRmeCard()['additional_gates'];
 
@@ -161,7 +161,7 @@ it('names a wave that is registered but not ingesting', function () {
 it('names a wave record that disagrees with the approval on this deployment', function () {
     legacyRmeBranch();
     // The deployment's approval moved on; the governance record did not.
-    legacyRmeApproveWave('ROLL-4-NEW-APPROVAL', ['TKM1']);
+    legacyRmeApproveWave('ROLL-4-NEW-APPROVAL', ['TLK1']);
 
     expect(lihoRmeCard()['additional_gates']['blocker'])
         ->toBe(LegacyRmeActivationStateService::BLOCKER_WAVE_BINDING_MISMATCH);
@@ -174,36 +174,36 @@ it('names a wave record that disagrees with the approval on this deployment', fu
 */
 
 it('takes each per-branch verdict from the real admission gate', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
-    // Only TKM1 stays admitted and approved. LDK2 exists, is RME-enabled and is
+    // Only TLK1 stays admitted and approved. LDK2 exists, is RME-enabled and is
     // visible on the page — and must still be reported as NOT admitted.
-    legacyRmeAdmittedBranches(['TKM1']);
-    legacyRmeApproveWave('ROLL-4-TEST-APPROVAL', ['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
+    legacyRmeApproveWave('ROLL-4-TEST-APPROVAL', ['TLK1']);
 
     $rows = collect(lihoRmeCard()['additional_gates']['branches'])->keyBy('branch_code');
     $gate = app(LegacyRmeBranchAdmissionService::class);
 
-    foreach (['TKM1', 'LDK2'] as $code) {
+    foreach (['TLK1', 'LDK2'] as $code) {
         // The assertion is deliberately a COMPARISON against the live gate, not
         // a hard-coded expectation: it fails the moment the report grows a
         // second, divergent implementation of the allowlist.
         expect($rows[$code]['admitted'])->toBe($gate->decideForBranchCode($code)->admitted);
     }
 
-    expect($rows['TKM1']['admitted'])->toBeTrue()
+    expect($rows['TLK1']['admitted'])->toBeTrue()
         ->and($rows['LDK2']['admitted'])->toBeFalse();
 });
 
 it('never reports MAIN as admitted, whatever the allowlist says', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     // MAIN is not RME-enabled so it never reaches the page, but the state
     // service must refuse it even when asked directly — a forbidden branch can
     // never host a clinical migration.
-    legacyRmeAdmittedBranches(['TKM1', 'MAIN']);
-    legacyRmeApproveWave('ROLL-4-TEST-APPROVAL', ['TKM1', 'MAIN']);
+    legacyRmeAdmittedBranches(['TLK1', 'MAIN']);
+    legacyRmeApproveWave('ROLL-4-TEST-APPROVAL', ['TLK1', 'MAIN']);
 
-    $rows = collect(app(LegacyRmeActivationStateService::class)->state(['TKM1', 'MAIN']))
+    $rows = collect(app(LegacyRmeActivationStateService::class)->state(['TLK1', 'MAIN']))
         ->get('branches');
 
     expect(collect($rows)->firstWhere('branch_code', 'MAIN')['admitted'])->toBeFalse();
@@ -243,7 +243,7 @@ it('gives the unavailable state the same shape a real evaluation has', function 
     // evaluation failed.
     legacyRmeBranch();
 
-    $real = app(LegacyRmeActivationStateService::class)->state(['TKM1']);
+    $real = app(LegacyRmeActivationStateService::class)->state(['TLK1']);
 
     expect(array_keys(LegacyRmeActivationStateService::unavailable()))
         ->toEqualCanonicalizing(array_keys($real));
@@ -308,6 +308,6 @@ it('reports gate state without a patient identifier anywhere in it', function ()
 
     // Branch codes and a wave label are operational labels and are expected.
     // Anything resembling a Nomor RM, a KTP/NIK or a name is not.
-    expect($encoded)->toContain('TKM1')
+    expect($encoded)->toContain('TLK1')
         ->and($encoded)->not->toMatch('/\d{6,}/');
 });

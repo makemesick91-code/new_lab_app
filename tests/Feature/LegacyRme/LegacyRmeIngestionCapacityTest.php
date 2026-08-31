@@ -145,8 +145,8 @@ it('refuses a new upload while the pipeline is saturated, without touching queue
     seedRenderQueue(2);
     $queuedBefore = DB::table('jobs')->count();
 
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
-    legacyRmeAdmittedBranches(['TKM1']);
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
+    legacyRmeAdmittedBranches(['TLK1']);
 
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
@@ -170,8 +170,8 @@ it('records a throttled intake in the audit trail without patient data', functio
 
     seedRenderQueue(2);
 
-    $patient = legacyRmeArchivablePatient(['medical_record_number' => 'DG-TKM1-2024-9985'], 'TKM1');
-    legacyRmeAdmittedBranches(['TKM1']);
+    $patient = legacyRmeArchivablePatient(['medical_record_number' => 'DG-TLK1-2024-9985'], 'TLK1');
+    legacyRmeAdmittedBranches(['TLK1']);
 
     // PRECONDITIONS, asserted rather than assumed. This test's real subject is
     // the audit payload, so it must fail loudly on the SETUP if ambient state
@@ -204,7 +204,7 @@ it('records a throttled intake in the audit trail without patient data', functio
 
     $payload = $rows->map(static fn ($r): string => (string) $r->new_values)->implode(' ');
 
-    expect($payload)->not->toContain('DG-TKM1-2024-9985')
+    expect($payload)->not->toContain('DG-TLK1-2024-9985')
         ->and($payload)->not->toContain((string) $patient->name);
 });
 

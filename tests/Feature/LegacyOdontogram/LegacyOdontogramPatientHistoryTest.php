@@ -85,7 +85,7 @@ it('returns published records oldest clinical date first with the fields the cal
         ->and($first->odontogram_date)->toBeInstanceOf(Carbon::class)
         ->and($first->page_count)->toBe(2)
         ->and($first->branch)->not->toBeNull()
-        ->and($first->branch->code)->toBe('TKM1')
+        ->and($first->branch->code)->toBe('TLK1')
         ->and(route('rme.legacy-odontograms.show', $first->getKey()))->toBeString();
 });
 
@@ -163,7 +163,7 @@ it('returns an EMPTY collection for a patient in another branch', function () {
     lodoPublishFor($theirPatient, '2018-02-03');
 
     $reader = userWith(['view_legacy_odontogram_archive']);
-    $reader->forceFill(['branch_id' => lodoBranch('TKM1')->id])->save();
+    $reader->forceFill(['branch_id' => lodoBranch('TLK1')->id])->save();
 
     expect(app(LegacyOdontogramPatientHistoryService::class)
         ->publishedRecordsFor($reader->refresh(), (int) $theirPatient->id))

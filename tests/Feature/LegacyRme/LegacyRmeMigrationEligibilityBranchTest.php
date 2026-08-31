@@ -72,14 +72,14 @@ function lrmeFixRmParser(): PatientMedicalRecordNumberService
 */
 
 it('parses the pilot Nomor RM into its components', function () {
-    $parts = lrmeFixRmParser()->parse('DG-TKM1-2024-9985');
+    $parts = lrmeFixRmParser()->parse('DG-TLK1-2024-9985');
 
     expect($parts)->not->toBeNull()
         ->and($parts->prefix)->toBe('DG')
-        ->and($parts->branchCode)->toBe('TKM1')
+        ->and($parts->branchCode)->toBe('TLK1')
         ->and($parts->year)->toBe('2024')
         ->and($parts->sequence)->toBe('9985')
-        ->and($parts->toString())->toBe('DG-TKM1-2024-9985');
+        ->and($parts->toString())->toBe('DG-TLK1-2024-9985');
 });
 
 it('round-trips every value the composer can produce', function (string $branchCode, string $year, string $sequence) {
@@ -87,7 +87,7 @@ it('round-trips every value the composer can produce', function (string $branchC
 
     expect(lrmeFixRmParser()->parse($composed)?->toString())->toBe($composed);
 })->with([
-    ['TKM1', '2026', '0001'],
+    ['TLK1', '2026', '0001'],
     ['LDK2', '2026', '25'],
     // Leading zeros are preserved verbatim by the composer, so the parser must
     // not normalise them away either.
@@ -104,12 +104,12 @@ it('returns null for anything that is not a canonical Nomor RM', function (?stri
     ['   '],
     // The placeholder format some fixtures use — deliberately not accepted.
     ['MRN-ABCDEFGH'],
-    ['XX-TKM1-2024-9985'],   // wrong prefix
-    ['DG-TKM1-24-9985'],     // year not four digits
-    ['DG-TKM1-2024'],        // missing sequence
+    ['XX-TLK1-2024-9985'],   // wrong prefix
+    ['DG-TLK1-24-9985'],     // year not four digits
+    ['DG-TLK1-2024'],        // missing sequence
     ['DG--2024-9985'],       // empty branch code
     ['DG-TKM 1-2024-9985'],  // separator inside the branch code
-    ['DG-TKM1-2024-'],       // empty sequence
+    ['DG-TLK1-2024-'],       // empty sequence
 ]);
 
 /*
@@ -118,20 +118,20 @@ it('returns null for anything that is not a canonical Nomor RM', function (?stri
 |--------------------------------------------------------------------------
 */
 
-it('resolves TKM1 on the Nomor RM to Cabang Telkomas', function () {
-    $branch = legacyRmeBranch('TKM1', 'Cabang Telkomas');
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+it('resolves TLK1 on the Nomor RM to Cabang Telkomas', function () {
+    $branch = legacyRmeBranch('TLK1', 'Cabang Telkomas');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
 
     $resolution = lrmeFixResolver()->resolveForPatient($patient);
 
     expect($resolution->resolved)->toBeTrue()
         ->and($resolution->branchId)->toBe($branch->id)
-        ->and($resolution->branchCode)->toBe('TKM1')
+        ->and($resolution->branchCode)->toBe('TLK1')
         ->and($resolution->branchName)->toBe('Cabang Telkomas');
 });
 
 it('fails closed for every unresolvable branch code', function (callable $mutate, string $expectedCode) {
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     $mutate($patient);
 
     $resolution = lrmeFixResolver()->resolveForPatient($patient->refresh());
@@ -154,13 +154,13 @@ it('fails closed for every unresolvable branch code', function (callable $mutate
     ],
     'branch is inactive' => [
         function (Patient $p) {
-            legacyRmeBranch('TKM1')->forceFill(['is_active' => false])->save();
+            legacyRmeBranch('TLK1')->forceFill(['is_active' => false])->save();
         },
         LegacyRmeBranchResolution::CODE_BRANCH_INACTIVE,
     ],
     'branch is not RME enabled' => [
         function (Patient $p) {
-            legacyRmeBranch('TKM1')->forceFill(['is_rme_enabled' => false])->save();
+            legacyRmeBranch('TLK1')->forceFill(['is_rme_enabled' => false])->save();
         },
         LegacyRmeBranchResolution::CODE_BRANCH_NOT_RME_ENABLED,
     ],
@@ -175,10 +175,10 @@ it('fails closed for every unresolvable branch code', function (callable $mutate
 // constraint holds; it is asserted at the unit level below rather than through
 // data the database refuses to create.
 it('cannot produce two branches with the same code', function () {
-    legacyRmeArchivablePatient([], 'TKM1');
+    legacyRmeArchivablePatient([], 'TLK1');
 
     expect(fn () => Branch::factory()->create([
-        'code' => 'TKM1',
+        'code' => 'TLK1',
         'is_active' => true,
         'is_rme_enabled' => true,
     ]))->toThrow(UniqueConstraintViolationException::class);
@@ -191,21 +191,21 @@ it('declares an ambiguity code for the defence-in-depth guard', function () {
     $failure = LegacyRmeBranchResolution::failure(
         LegacyRmeBranchResolution::CODE_BRANCH_AMBIGUOUS,
         'ambiguous',
-        'TKM1',
+        'TLK1',
     );
 
     expect($failure->failed())->toBeTrue()
         ->and($failure->branchId)->toBeNull()
         ->and($failure->auditContext())->toBe([
-            'branch_code' => 'TKM1',
+            'branch_code' => 'TLK1',
             'rule_code' => LegacyRmeBranchResolution::CODE_BRANCH_AMBIGUOUS,
         ]);
 });
 
 it('never falls back to the acting user branch', function () {
-    // The operator sits in LDK2; the patient's RM says TKM1. The old behaviour
+    // The operator sits in LDK2; the patient's RM says TLK1. The old behaviour
     // would have anchored a blank branch to the operator's own.
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     $patient->forceFill(['medical_record_number' => 'DG-ZZZ9-2024-0001'])->save();
 
     $user = userWith(['create_legacy_rme_imports']);
@@ -218,7 +218,7 @@ it('never falls back to the acting user branch', function () {
 });
 
 it('refuses a branch outside the actor scope but resolves it without an actor', function () {
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
 
     $user = userWith(['create_legacy_rme_imports']);
     $user->forceFill(['branch_id' => legacyRmeBranch('LDK2', 'Cabang Landak')->id])->save();
@@ -232,7 +232,7 @@ it('refuses a branch outside the actor scope but resolves it without an actor', 
 });
 
 it('rejects a submitted branch that contradicts the Nomor RM', function () {
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     $other = legacyRmeBranch('LDK2', 'Cabang Landak');
 
     $resolution = lrmeFixResolver()->resolveForPatient($patient);
@@ -253,7 +253,7 @@ it('records a PII-free audit entry when a branch cannot be derived', function ()
     $patient = legacyRmeArchivablePatient([
         'name' => 'Pasien Rahasia',
         'date_of_birth' => '1990-01-01',
-    ], 'TKM1');
+    ], 'TLK1');
     $patient->forceFill(['medical_record_number' => 'DG-ZZZ9-2024-0001'])->save();
 
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
@@ -287,7 +287,7 @@ it('records a PII-free audit entry when a branch cannot be derived', function ()
 */
 
 it('imports for a patient with no native RME without creating any encounter', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
@@ -300,7 +300,7 @@ it('imports for a patient with no native RME without creating any encounter', fu
     );
 
     expect($import->status)->toBe(LegacyRmeImportStatus::QUEUED)
-        ->and($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id)
+        ->and($import->origin_branch_id)->toBe(legacyRmeBranch('TLK1')->id)
         ->and($import->selected_rme_date?->toDateString())->toBe('2024-01-28')
         ->and($import->latest_rme_date?->toDateString())->toBe('2024-08-31')
         // The patient still has no native RME afterwards. Nothing was invented
@@ -323,7 +323,7 @@ function lrmeFixReviewedNoNative(string $earliest = '2024-01-28', ?string $lates
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(2));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages(2));
 
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
@@ -349,7 +349,7 @@ it('publishes a no-native import and carries the declared range onto the record'
         // The representative date is the EARLIEST one.
         ->and($record->rme_date?->toDateString())->toBe('2024-01-28')
         ->and($record->latest_rme_date?->toDateString())->toBe('2024-08-31')
-        ->and($record->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
+        ->and($record->origin_branch_id)->toBe(legacyRmeBranch('TLK1')->id);
 });
 
 // THE RACE THIS CORRECTIVE HAD TO COVER: the import was legitimately staged for
@@ -414,7 +414,7 @@ it('creates no clinical or financial transaction for either kind of patient', fu
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(1));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages(1));
 
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     if ($withNativeRme) {
         legacyRmeNativeVisit($patient, '2025-06-01');
@@ -457,7 +457,7 @@ it('creates no clinical or financial transaction for either kind of patient', fu
 */
 
 it('keeps an archive visible only to operators of the RM-derived branch', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
@@ -469,7 +469,7 @@ it('keeps an archive visible only to operators of the RM-derived branch', functi
     );
 
     $ownBranchOperator = userWith(['view_legacy_rme_imports']);
-    $ownBranchOperator->forceFill(['branch_id' => legacyRmeBranch('TKM1')->id])->save();
+    $ownBranchOperator->forceFill(['branch_id' => legacyRmeBranch('TLK1')->id])->save();
 
     $otherBranchOperator = userWith(['view_legacy_rme_imports']);
     $otherBranchOperator->forceFill(['branch_id' => legacyRmeBranch('LDK2', 'Cabang Landak')->id])->save();
@@ -490,7 +490,7 @@ it('keeps an archive visible only to operators of the RM-derived branch', functi
 */
 
 it('accepts the declared range through the upload endpoint', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     $this->actingAs(superAdmin())
         ->post(route('settings.rme.legacy-imports.store'), [
@@ -509,11 +509,11 @@ it('accepts the declared range through the upload endpoint', function () {
 
     expect($import->selected_rme_date?->toDateString())->toBe('2024-01-28')
         ->and($import->latest_rme_date?->toDateString())->toBe('2024-08-31')
-        ->and($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
+        ->and($import->origin_branch_id)->toBe(legacyRmeBranch('TLK1')->id);
 });
 
 it('rejects a forged origin branch submitted through the upload endpoint', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     $other = legacyRmeBranch('LDK2', 'Cabang Landak');
 
     $this->actingAs(superAdmin())
@@ -533,7 +533,7 @@ it('rejects a forged origin branch submitted through the upload endpoint', funct
 });
 
 it('rejects a reversed range through the upload endpoint', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
 
     $this->actingAs(superAdmin())
         ->post(route('settings.rme.legacy-imports.store'), [

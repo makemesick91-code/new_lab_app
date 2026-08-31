@@ -38,7 +38,7 @@ beforeEach(function () {
  *
  * @return array{record: LegacyOdontogramRecord, patient: Patient}
  */
-function lodoPublished(string $branchCode = 'TKM1'): array
+function lodoPublished(string $branchCode = 'TLK1'): array
 {
     app()->instance(LegacyRmePdfInspectorInterface::class, (new FakeLegacyRmePdfInspector)->withPages(1));
     app()->instance(LegacyRmePdfRasterizerInterface::class, (new FakeLegacyRmePdfRasterizer)->withPages(1));
@@ -73,13 +73,13 @@ it('does not widen legacy RME archive visibility', function () {
 });
 
 it('hides and denies a record from another branch (IDOR)', function () {
-    $mine = lodoPublished('TKM1');
+    $mine = lodoPublished('TLK1');
     $theirs = lodoPublished('LDK2');
 
-    // Pinned to TKM1: holds only the read permission, which is NOT governance
+    // Pinned to TLK1: holds only the read permission, which is NOT governance
     // tier, so the scope resolves to their own branch alone.
     $reader = userWith(['view_legacy_odontogram_archive']);
-    $reader->forceFill(['branch_id' => lodoBranch('TKM1')->id])->save();
+    $reader->forceFill(['branch_id' => lodoBranch('TLK1')->id])->save();
     $reader = $reader->refresh();
 
     // Hidden from the listing…

@@ -32,7 +32,7 @@ beforeEach(function () {
     ]);
 
     $this->rmeBranch = Branch::factory()->create([
-        'code' => 'TKM1',
+        'code' => 'TLK1',
         'name' => 'Cabang Telkomas',
         'is_active' => true,
         'is_rme_enabled' => true,
@@ -70,7 +70,7 @@ it('shows active RME branches as Klinik/Cabang on the patient create form', func
     $this->actingAs($this->admin)
         ->get(route('settings.patients.create'))
         ->assertOk()
-        ->assertSee('TKM1 — Cabang Telkomas');
+        ->assertSee('TLK1 — Cabang Telkomas');
 });
 
 it('does not show MAIN fallback branch on the patient create form', function () {
@@ -125,7 +125,7 @@ it('composes the RM number using the selected RME branch code on patient store',
     $this->assertDatabaseHas('mst_patients', [
         'name' => 'Pasien RME Telkomas',
         'branch_id' => $this->rmeBranch->id,
-        'medical_record_number' => 'DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TLK1-2026-0001',
     ]);
 });
 
@@ -135,7 +135,7 @@ it('shows RME branches as Klinik/Cabang on the visit create form', function () {
     $this->actingAs($this->admin)
         ->get(route('rme.visits.create'))
         ->assertOk()
-        ->assertSee('TKM1 — Cabang Telkomas');
+        ->assertSee('TLK1 — Cabang Telkomas');
 });
 
 it('does not render the legacy clinic master as Klinik options on the visit create form', function () {
@@ -171,7 +171,7 @@ it('stores patient branch_id from the selected RME branch in new-patient mode', 
 
     expect($patient)->not->toBeNull()
         ->and($patient->branch_id)->toBe($this->rmeBranch->id)
-        ->and($patient->medical_record_number)->toBe('DG-TKM1-2026-0009');
+        ->and($patient->medical_record_number)->toBe('DG-TLK1-2026-0009');
 });
 
 it('stores visit branch_id from the selected RME branch in new-patient mode', function () {
@@ -199,7 +199,7 @@ it('stores visit branch_id from the selected RME branch in new-patient mode', fu
 it('uses the selected RME branch for an existing-patient visit', function () {
     $patient = Patient::factory()->create([
         'branch_id' => $this->rmeBranch->id,
-        'medical_record_number' => 'DG-TKM1-2026-0001',
+        'medical_record_number' => 'DG-TLK1-2026-0001',
     ]);
 
     $this->actingAs($this->admin)

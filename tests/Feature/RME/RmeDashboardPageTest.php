@@ -34,7 +34,7 @@ beforeEach(function () {
         'is_active' => true, 'is_rme_enabled' => true,
     ]);
     $this->tkm1 = Branch::factory()->create([
-        'code' => 'TKM1', 'name' => 'Cabang Telkomas',
+        'code' => 'TLK1', 'name' => 'Cabang Telkomas',
         'is_active' => true, 'is_rme_enabled' => true,
     ]);
 

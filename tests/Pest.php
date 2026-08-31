@@ -689,7 +689,7 @@ function legacyRmeArchiveFlag(bool $enabled): void
  * the branch-code segment of the patient's Nomor RM, so a fixture branch has to
  * be reachable by that code.
  */
-function legacyRmeBranch(string $code = 'TKM1', string $name = 'Cabang Telkomas'): Branch
+function legacyRmeBranch(string $code = 'TLK1', string $name = 'Cabang Telkomas'): Branch
 {
     $branch = Branch::withTrashed()->firstOrNew(['code' => $code]);
 
@@ -791,7 +791,7 @@ function legacyRmeMigrationWave(array $branchCodes, string $waveCode = 'TEST-WAV
  * Tests that ingest therefore assign their actor, exactly as an operator would
  * be assigned on a real wave.
  */
-function legacyRmeAssignOperator(User $user, string $branchCode = 'TKM1', string $waveCode = 'TEST-WAVE'): void
+function legacyRmeAssignOperator(User $user, string $branchCode = 'TLK1', string $waveCode = 'TEST-WAVE'): void
 {
     $wave = LegacyRmeMigrationWave::query()->where('code', strtoupper(trim($waveCode)))->first();
     $branch = Branch::query()->where('code', strtoupper(trim($branchCode)))->first();
@@ -831,7 +831,7 @@ function legacyRmeAssignOperator(User $user, string $branchCode = 'TKM1', string
  * AND an assignment, so a fixture that supplies only one of them is testing a
  * denial by accident.
  */
-function legacyRmeOperator(User $user, string $branchCode = 'TKM1'): User
+function legacyRmeOperator(User $user, string $branchCode = 'TLK1'): User
 {
     legacyRmeAssignOperator($user, $branchCode);
 
@@ -903,7 +903,9 @@ function legacyRmeAdmittedBranches(array $codes): void
  * PatientFactory's default (`MRN-XXXXXXXX`) is a generic placeholder and is
  * deliberately left alone — other suites pin it. Real patients, however, carry
  * `DG-{KODE_CABANG}-{TAHUN}-{NOMOR}` (the pilot's own patient is
- * `DG-TKM1-2024-9985`), and that is what the legacy archive reads to decide
+ * `DG-TLK1-2024-9985`; the same patient was issued `DG-TKM1-2024-9985` under
+ * Cabang Telkomas' deprecated branch code, which the alias policy still
+ * resolves), and that is what the legacy archive reads to decide
  * which branch owns the document. A fixture that used the placeholder would be
  * testing a patient shape production does not have.
  *
@@ -923,7 +925,7 @@ function legacyRmeAdmittedBranches(array $codes): void
  * explicit `date_of_birth` (including an explicit `null`, which exercises the
  * "no recorded birth date" path) overrides this default.
  */
-function legacyRmeArchivablePatient(array $attributes = [], string $branchCode = 'TKM1'): Patient
+function legacyRmeArchivablePatient(array $attributes = [], string $branchCode = 'TLK1'): Patient
 {
     $branch = legacyRmeBranch($branchCode);
 

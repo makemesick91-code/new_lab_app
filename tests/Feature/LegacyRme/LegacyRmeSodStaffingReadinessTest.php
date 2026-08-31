@@ -310,7 +310,7 @@ it('does not decide staffing from whatever batch happens to exist', function () 
     // The wave policy also requires a non-terminal wave, so probing it would
     // report "nobody can approve" whenever the last batch was cancelled —
     // which is precisely the state production was left in after
-    // ROUTINE-20260819-TKM1-01 was cancelled. Staffing is a property of the
+    // ROUTINE-20260819-TLK1-01 was cancelled. Staffing is a property of the
     // deployment, not of a row.
     legacyRmeStaffSeparationOfDuties();
 

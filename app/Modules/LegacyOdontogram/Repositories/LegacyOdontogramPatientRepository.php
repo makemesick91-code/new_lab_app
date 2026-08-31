@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Modules\LegacyOdontogram\Interfaces\LegacyOdontogramPatientRepositoryInterface;
 use App\Modules\Patient\Models\Patient;
 use App\Modules\Patient\Services\CrossBranchPatientLookupService;
+use App\Modules\Patient\Services\PatientMedicalRecordNumberService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -72,6 +73,7 @@ class LegacyOdontogramPatientRepository implements LegacyOdontogramPatientReposi
 
     public function __construct(
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly PatientMedicalRecordNumberService $medicalRecordNumbers,
     ) {}
 
     public function findSelectableById(?User $actor, int $patientId): ?Patient
@@ -92,8 +94,17 @@ class LegacyOdontogramPatientRepository implements LegacyOdontogramPatientReposi
         }
 
         // Exact first: a full Nomor RM must never be widened into a suffix scan.
+        //
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — "exact" spans every
+        // spelling of the SAME number. This is the surface an operator uses while
+        // holding a paper odontogram chart, and the branch code printed on an old
+        // chart may be the deprecated one. Matching the literal string alone would
+        // report the patient as not existing for a number the clinic itself issued.
+        // Only the branch-code segment varies (the variants are parsed and
+        // recomposed, never string-replaced), so this stays an exact match on the
+        // year and the manual sequence and never becomes a suffix scan.
         $exact = $this->baseQuery($actor)
-            ->where('medical_record_number', $needle)
+            ->whereIn('medical_record_number', $this->medicalRecordNumbers->equivalentNumbers($needle))
             ->limit(max(1, $limit))
             ->get();
 

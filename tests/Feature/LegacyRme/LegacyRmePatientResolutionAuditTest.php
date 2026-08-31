@@ -191,7 +191,7 @@ it('cannot produce an exactly duplicated Nomor RM, because the schema forbids it
 
 it('refuses to pick a row when a raw manual number is ambiguous across branches', function () {
     mdPatient('DG-LDK2-2026-27541', mdBranch('LDK2'));
-    mdPatient('DG-TKM1-2026-27541', mdBranch('TKM1'));
+    mdPatient('DG-TLK1-2026-27541', mdBranch('TLK1'));
 
     $result = mdAudit()->resolve('27541');
 

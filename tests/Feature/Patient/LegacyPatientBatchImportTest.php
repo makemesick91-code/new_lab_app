@@ -27,7 +27,7 @@ beforeEach(function () {
     Storage::fake('local');
 
     $this->branch = Branch::factory()->create([
-        'code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true,
+        'code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true,
     ]);
     $this->service = app(LegacyPatientImportService::class);
 });
@@ -67,7 +67,7 @@ function legacyCsv(array $rows): UploadedFile
 function validRow(array $overrides = []): array
 {
     return array_merge([
-        'branch' => 'TKM1',
+        'branch' => 'TLK1',
         'manual_rm_number' => '0001',
         'timestamp' => '2024-01-15',
         'name' => 'Budi Santoso',
@@ -126,7 +126,7 @@ it('maps gender labels and preserves leading zeros in the manual RM', function (
     $unknown = LegacyPatientImportRow::where('patient_name', 'Joko')->first();
 
     expect($female->gender)->toBe('Female')
-        ->and($female->generated_medical_record_number)->toBe('DG-TKM1-2024-0007')
+        ->and($female->generated_medical_record_number)->toBe('DG-TLK1-2024-0007')
         ->and($unknown->gender)->toBe('Other')
         ->and($unknown->status)->toBe('warning');
 });
@@ -185,13 +185,13 @@ it('composes the RM as DG-CODE-YEAR-MANUAL with the year from the timestamp', fu
     $batch = stage(legacyCsv([validRow(['timestamp' => '2024-03-09', 'manual_rm_number' => '0042'])]));
 
     expect(LegacyPatientImportRow::first()->generated_medical_record_number)
-        ->toBe('DG-TKM1-2024-0042');
+        ->toBe('DG-TLK1-2024-0042');
 });
 
 // --- Duplicates ---------------------------------------------------------------
 
 it('blocks a composed RM that already exists including soft-deleted patients', function () {
-    $existing = Patient::factory()->create(['medical_record_number' => 'DG-TKM1-2024-0001']);
+    $existing = Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
     $existing->delete();
 
     $batch = stage(legacyCsv([validRow()]));
@@ -259,7 +259,7 @@ it('commit creates patients only, with import_batch_id and composed RM, and no v
     $patient = Patient::first();
     expect(Patient::count())->toBe(1)
         ->and($patient->import_batch_id)->toBe($batch->id)
-        ->and($patient->medical_record_number)->toBe('DG-TKM1-2024-0001')
+        ->and($patient->medical_record_number)->toBe('DG-TLK1-2024-0001')
         ->and($patient->is_active)->toBeTrue()
         ->and(ClinicVisit::count())->toBe(0);
 
@@ -282,11 +282,11 @@ it('skips a row that became a duplicate between preview and commit (lock re-chec
     $batch = stage(legacyCsv([validRow()]));
 
     // Simulate a concurrent registration of the same RM after preview.
-    Patient::factory()->create(['medical_record_number' => 'DG-TKM1-2024-0001']);
+    Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2024-0001']);
 
     $this->service->commit($batch, null);
 
-    expect(Patient::where('medical_record_number', 'DG-TKM1-2024-0001')->count())->toBe(1)
+    expect(Patient::where('medical_record_number', 'DG-TLK1-2024-0001')->count())->toBe(1)
         ->and(LegacyPatientImportRow::first()->status)->toBe('skipped');
 });
 

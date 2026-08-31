@@ -305,7 +305,7 @@ it('derives the origin branch from the patient Nomor RM', function () {
     Storage::fake('legacy_rme_private');
     Bus::fake();
 
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
@@ -317,15 +317,15 @@ it('derives the origin branch from the patient Nomor RM', function () {
         superAdmin(),
     );
 
-    // DG-TKM1-…  →  TKM1  →  Cabang Telkomas. Never null, never the actor's.
-    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
+    // DG-TLK1-…  →  TLK1  →  Cabang Telkomas. Never null, never the actor's.
+    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TLK1')->id);
 });
 
 it('ignores nothing and refuses a submitted branch that contradicts the Nomor RM', function () {
     Storage::fake('legacy_rme_private');
     Bus::fake();
 
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $otherBranch = legacyRmeBranch('LDK2', 'Cabang Landak');
@@ -348,19 +348,19 @@ it('accepts a submitted branch that matches the RM-derived one', function () {
     Storage::fake('legacy_rme_private');
     Bus::fake();
 
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $import = app(LegacyRmeImportService::class)->createFromUpload(
         $patient,
         '2020-05-01',
         $patient->medical_record_number,
-        legacyRmeBranch('TKM1')->id,
+        legacyRmeBranch('TLK1')->id,
         legacyRmePdfUpload(),
         superAdmin(),
     );
 
-    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TKM1')->id);
+    expect($import->origin_branch_id)->toBe(legacyRmeBranch('TLK1')->id);
 });
 
 it('fails closed when the patient Nomor RM names an unknown branch', function () {
@@ -405,9 +405,9 @@ it('fails closed when the RM-derived branch is outside the uploader scope', func
     Storage::fake('legacy_rme_private');
     Bus::fake();
 
-    // The patient belongs to TKM1; the operator is pinned to LDK2. Filing it
+    // The patient belongs to TLK1; the operator is pinned to LDK2. Filing it
     // anyway would hand them a row they could never read back.
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $user = userWith(['create_legacy_rme_imports']);
@@ -424,14 +424,14 @@ it('fails closed when the RM-derived branch is outside the uploader scope', func
 });
 
 it('shows the RM-derived branch read-only on the upload form', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1990-01-01'], 'TLK1');
     legacyRmeNativeVisit($patient, '2022-03-10');
 
     $response = $this->actingAs(superAdmin())
         ->get(route('settings.rme.legacy-imports.create', ['patient_id' => $patient->id]))
         ->assertOk()
         ->assertSee('Cabang Telkomas')
-        ->assertSee('TKM1');
+        ->assertSee('TLK1');
 
     // There is no branch picker any more, and the misleading "just a note" copy
     // is gone: the field is a security property, not operator metadata.

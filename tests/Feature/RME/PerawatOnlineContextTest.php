@@ -35,7 +35,7 @@ beforeEach(function () {
 
     test()->main = Branch::query()->where('code', Branch::MAIN_CODE)->first();
     test()->sun4 = Branch::query()->where('code', 'SUN4')->first();
-    test()->tkm1 = Branch::query()->where('code', 'TKM1')->first();
+    test()->tkm1 = Branch::query()->where('code', 'TLK1')->first();
     test()->ldk2 = Branch::query()->where('code', 'LDK2')->first();
     test()->atg3 = Branch::query()->where('code', 'ATG3')->first();
 
@@ -89,7 +89,7 @@ it('shows every active RME branch including SUN4 and hides MAIN on the selector'
         ->assertSee('Pilih cabang tempat Anda bertugas pada sesi ini.')
         ->assertSee('SUN4')
         ->assertSee('Cabang Sunu')
-        ->assertSee('TKM1')
+        ->assertSee('TLK1')
         ->assertSee('LDK2')
         ->assertSee('ATG3')
         ->assertDontSee(test()->main->name);

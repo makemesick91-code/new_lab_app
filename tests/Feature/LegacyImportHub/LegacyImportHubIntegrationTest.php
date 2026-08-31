@@ -52,8 +52,8 @@ describe('legacy RME', function () {
     beforeEach(function () {
         Storage::fake('legacy_rme_private');
         legacyRmeArchiveFlag(true);
-        legacyRmeAdmittedBranches(['TKM1']);
-        legacyRmeMigrationWave(['TKM1']);
+        legacyRmeAdmittedBranches(['TLK1']);
+        legacyRmeMigrationWave(['TLK1']);
     });
 
     it('charges one slot for an accepted document', function () {
@@ -223,7 +223,7 @@ describe('legacy patient', function () {
      * Built directly rather than through a CSV upload: this suite is about what
      * COMMIT charges, and the parser has its own suite.
      */
-    function lihPatientBatch(int $rows, int $branchId, string $branchCode = 'TKM1'): LegacyPatientImportBatch
+    function lihPatientBatch(int $rows, int $branchId, string $branchCode = 'TLK1'): LegacyPatientImportBatch
     {
         $batch = LegacyPatientImportBatch::query()->create([
             'uuid' => (string) Str::uuid(),
@@ -306,7 +306,7 @@ describe('legacy patient', function () {
     });
 
     it('charges each row to its own branch', function () {
-        $a = lihBranch('TKM1', 'Cabang Telkomas');
+        $a = lihBranch('TLK1', 'Cabang Telkomas');
         $b = lihBranch('LDK2', 'Cabang Landak');
 
         $batch = lihPatientBatch(2, (int) $a->id);
@@ -334,7 +334,7 @@ describe('legacy patient', function () {
         // record.
         Patient::factory()->create([
             'branch_id' => $branch->id,
-            'medical_record_number' => 'DG-TKM1-2024-00001',
+            'medical_record_number' => 'DG-TLK1-2024-00001',
         ]);
 
         app(LegacyPatientImportService::class)->commit($batch, null);

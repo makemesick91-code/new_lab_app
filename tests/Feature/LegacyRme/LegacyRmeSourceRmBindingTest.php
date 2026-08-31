@@ -104,16 +104,32 @@ function srbFootprint(): array
 it('folds transcription noise without changing a single significant character', function (string $input, ?string $expected) {
     expect(app(LegacyRmeSourceRmNormalizer::class)->normalize($input))->toBe($expected);
 })->with([
-    'already canonical' => ['DG-TKM1-2024-9985', 'DG-TKM1-2024-9985'],
-    'outer whitespace' => ['  DG-TKM1-2024-9985  ', 'DG-TKM1-2024-9985'],
-    'spaces around separators' => ['DG - TKM1 - 2024 - 9985', 'DG-TKM1-2024-9985'],
-    'lowercase transcription' => ['dg-tkm1-2024-9985', 'DG-TKM1-2024-9985'],
-    'en dash from a word processor' => ['DG–TKM1–2024–9985', 'DG-TKM1-2024-9985'],
-    'non-breaking space' => ["DG-TKM1-2024-9985\u{00A0}", 'DG-TKM1-2024-9985'],
+    'already canonical' => ['DG-TLK1-2024-9985', 'DG-TLK1-2024-9985'],
+    'outer whitespace' => ['  DG-TLK1-2024-9985  ', 'DG-TLK1-2024-9985'],
+    'spaces around separators' => ['DG - TLK1 - 2024 - 9985', 'DG-TLK1-2024-9985'],
+    'lowercase transcription' => ['dg-tlk1-2024-9985', 'DG-TLK1-2024-9985'],
+    // A deprecated branch code is what the DOCUMENT says. Normalization
+    // recases it; it deliberately does not rewrite it (see the test below).
+    'deprecated branch code is transcribed faithfully' => ['dg-tkm1-2024-9985', 'DG-TKM1-2024-9985'],
+    'en dash from a word processor' => ['DG–TLK1–2024–9985', 'DG-TLK1-2024-9985'],
+    'non-breaking space' => ["DG-TLK1-2024-9985\u{00A0}", 'DG-TLK1-2024-9985'],
     'bare manual number is left alone' => ['9985', '9985'],
     'leading zeros are significant and preserved' => ['0099', '0099'],
     'empty becomes null, not an empty string' => ['   ', null],
 ]);
+
+it('transcribes a DEPRECATED branch code faithfully instead of canonicalizing it', function () {
+    // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the source Nomor RM is what
+    // the paper document ASSERTS, and it is frozen into immutable clinical
+    // evidence at publish. Rewriting `TKM1` to `TLK1` here would make the
+    // archive claim the document says something it does not.
+    //
+    // Reachability is preserved elsewhere, and deliberately so: identity
+    // resolution and branch derivation canonicalize when they MATCH, so this
+    // faithful value still binds to the right patient and the right branch.
+    expect(app(LegacyRmeSourceRmNormalizer::class)->normalize('DG-TKM1-2024-9985'))
+        ->toBe('DG-TKM1-2024-9985');
+});
 
 it('never turns one manual number into a different one', function () {
     $normalizer = app(LegacyRmeSourceRmNormalizer::class);
@@ -170,7 +186,7 @@ it('refuses a document whose printed Nomor RM belongs to a different patient', f
 it('refuses a Nomor RM no patient carries', function () {
     $patient = legacyRmeArchivablePatient();
 
-    expect(srbBinding()->bind('DG-TKM1-2024-999999', $patient)->code)
+    expect(srbBinding()->bind('DG-TLK1-2024-999999', $patient)->code)
         ->toBe(LegacyRmeSourceRmFailure::SOURCE_RM_NOT_FOUND);
 });
 
@@ -209,7 +225,7 @@ it('never binds a near-miss Nomor RM — the RM 27541 regression', function () {
     // 22541 exists, and they are one digit apart. MASTERDATA-1 closed it as
     // DOCUMENT_NOT_ELIGIBLE. It must stay unbindable to ANY patient, forever.
     $neighbour = legacyRmeArchivablePatient();
-    $neighbour->forceFill(['medical_record_number' => 'DG-TKM1-2024-22541'])->save();
+    $neighbour->forceFill(['medical_record_number' => 'DG-TLK1-2024-22541'])->save();
 
     $someoneElse = legacyRmeArchivablePatient();
 
@@ -222,11 +238,11 @@ it('never binds a near-miss Nomor RM — the RM 27541 regression', function () {
     }
 
     // And the full canonical form is no more bindable than the bare one.
-    expect(srbBinding()->bind('DG-TKM1-2024-27541', $neighbour->refresh())->bound)->toBeFalse();
+    expect(srbBinding()->bind('DG-TLK1-2024-27541', $neighbour->refresh())->bound)->toBeFalse();
 });
 
 it('refuses when the branch the document asserts contradicts the patient Nomor RM', function () {
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     legacyRmeBranch('LDK2', 'Cabang Landak');
 
     $manual = explode('-', $patient->medical_record_number, 4)[3];
@@ -284,12 +300,12 @@ it('consumes no migration quota when the binding is refused', function () {
     // WITH A REAL RUNNING WAVE, so the assertion is not vacuous: without one the
     // operations layer is not enforced and no quota bucket is touched by ANY
     // upload, refused or not.
-    $selected = legacyRmeArchivablePatient([], 'TKM1');
-    $other = legacyRmeArchivablePatient([], 'TKM1');
+    $selected = legacyRmeArchivablePatient([], 'TLK1');
+    $other = legacyRmeArchivablePatient([], 'TLK1');
 
     $actor = superAdmin();
-    legacyRmeMigrationWave(['TKM1']);
-    legacyRmeAssignOperator($actor, 'TKM1');
+    legacyRmeMigrationWave(['TLK1']);
+    legacyRmeAssignOperator($actor, 'TLK1');
 
     $consumed = fn (): int => (int) LegacyRmeMigrationQuota::query()->sum('consumed');
 
@@ -444,7 +460,7 @@ it('refuses to review or publish once the binding no longer holds', function (st
     // The patient's Nomor RM is corrected AFTER staging. The stored source RM is
     // immutable, so the document now asserts an identity the master data no
     // longer agrees with.
-    $patient->forceFill(['medical_record_number' => 'DG-TKM1-2024-70001'])->save();
+    $patient->forceFill(['medical_record_number' => 'DG-TLK1-2024-70001'])->save();
 
     $service = app(LegacyRmePublishService::class);
 
@@ -497,7 +513,7 @@ it('refuses a RETRY once the binding no longer holds', function () {
 
     // The patient's Nomor RM is corrected after staging, so the immutable source
     // RM now asserts an identity the master data contradicts.
-    $patient->forceFill(['medical_record_number' => 'DG-TKM1-2024-70004'])->save();
+    $patient->forceFill(['medical_record_number' => 'DG-TLK1-2024-70004'])->save();
 
     // A retry restarts render WORK on a document. Doing that for a document
     // whose subject is now in doubt is the wrong direction — the operator
@@ -522,7 +538,7 @@ it('still allows CANCEL on an import whose binding has gone stale', function () 
         'origin_branch_id' => $patient->branch_id,
     ]);
 
-    $patient->forceFill(['medical_record_number' => 'DG-TKM1-2024-70002'])->save();
+    $patient->forceFill(['medical_record_number' => 'DG-TLK1-2024-70002'])->save();
 
     // Cancel is the SAFETY VALVE the refusals depend on: every "cancel and
     // re-import" instruction this domain gives is a lie if cancel is gated by
@@ -579,7 +595,7 @@ it('refuses a stale binding on the CLI exactly as the browser does', function ()
         'origin_branch_id' => $patient->branch_id,
     ]);
 
-    $patient->forceFill(['medical_record_number' => 'DG-TKM1-2024-70003'])->save();
+    $patient->forceFill(['medical_record_number' => 'DG-TLK1-2024-70003'])->save();
 
     // OPS-CLI-1's whole safety argument is that the command line is an ADAPTER
     // over the same canonical services, never a second set of rules. A new gate
@@ -626,9 +642,9 @@ it('answers the binding question read-only from the command line', function () {
 
 it('normalizes on the command line without consulting patient data', function () {
     $this->artisan('legacy-rme:source-rm-binding-check', [
-        '--source-rm' => ' dg-tkm1-2024-9985 ',
+        '--source-rm' => ' dg-tlk1-2024-9985 ',
         '--normalize-only' => true,
-    ])->expectsOutputToContain('DG-TKM1-2024-9985')->assertSuccessful();
+    ])->expectsOutputToContain('DG-TLK1-2024-9985')->assertSuccessful();
 });
 
 /*
@@ -649,7 +665,7 @@ it('resolves identity with a bounded, constant number of queries', function () {
     $exact = count(DB::getQueryLog());
 
     DB::flushQueryLog();
-    srbBinding()->bind('DG-TKM1-2024-999999', $patient);
+    srbBinding()->bind('DG-TLK1-2024-999999', $patient);
     $miss = count(DB::getQueryLog());
     DB::disableQueryLog();
 

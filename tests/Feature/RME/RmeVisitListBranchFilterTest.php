@@ -40,7 +40,7 @@ beforeEach(function () {
         'is_active' => true, 'is_rme_enabled' => true,
     ]);
     $this->tkm1 = Branch::factory()->create([
-        'code' => 'TKM1', 'name' => 'Cabang Telkomas',
+        'code' => 'TLK1', 'name' => 'Cabang Telkomas',
         'is_active' => true, 'is_rme_enabled' => true,
     ]);
     $this->inventoryOnly = Branch::factory()->create([
@@ -87,7 +87,7 @@ it('shows visits from all active RME branches by default', function () {
         ->assertSee('Pasien Telkomas');
 });
 
-it('shows an ATG3 visit even when the BranchContext fallback is TKM1', function () {
+it('shows an ATG3 visit even when the BranchContext fallback is TLK1', function () {
     // Force the generic fallback away from ATG3 — list scope must not depend on it.
     $this->mock(BranchContext::class, function ($mock) {
         $mock->shouldReceive('id')->andReturn($this->tkm1->id);
@@ -159,7 +159,7 @@ it('filtering by ATG3 shows only ATG3 visits', function () {
         ->assertDontSee('Pasien Telkomas');
 });
 
-it('filtering by TKM1 shows only TKM1 visits', function () {
+it('filtering by TLK1 shows only TLK1 visits', function () {
     visitAt($this->atg3, 'Pasien Antang');
     visitAt($this->tkm1, 'Pasien Telkomas');
 

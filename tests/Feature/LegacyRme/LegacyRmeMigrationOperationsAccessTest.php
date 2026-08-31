@@ -47,7 +47,7 @@ function opsAccessWave(): LegacyRmeMigrationWave
     return LegacyRmeMigrationWave::query()->where('code', 'TEST-WAVE')->firstOrFail();
 }
 
-function opsAccessBranch(string $code = 'TKM1'): LegacyRmeWaveBranch
+function opsAccessBranch(string $code = 'TLK1'): LegacyRmeWaveBranch
 {
     return LegacyRmeWaveBranch::query()->where('branch_code', $code)->firstOrFail();
 }
@@ -94,7 +94,7 @@ function opsAccessDoctor(Patient $patient, bool $treating): User
 // ---------------------------------------------------------------------------
 
 it('404s the operations surface while the migration capability is off', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(false);
 
     // 404 rather than 403: a disabled deployment does not advertise that a
@@ -105,7 +105,7 @@ it('404s the operations surface while the migration capability is off', function
 });
 
 it('denies the operations surface to a user without either operations permission', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $this->actingAs(userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']))
         ->get(route('settings.rme.migration-operations.index'))
@@ -113,7 +113,7 @@ it('denies the operations surface to a user without either operations permission
 });
 
 it('allows a read-only viewer to see the operations dashboard', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $this->actingAs(userWith(['view_legacy_rme_migration_operations']))
         ->get(route('settings.rme.migration-operations.index'))
@@ -121,7 +121,7 @@ it('allows a read-only viewer to see the operations dashboard', function () {
 });
 
 it('denies wave governance to a read-only viewer', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = opsAccessWave();
 
     // Reading the rollout and steering it are different duties.
@@ -136,7 +136,7 @@ it('denies wave governance to a read-only viewer', function () {
 });
 
 it('denies wave approval to someone who may manage but not approve', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = opsAccessWave();
     $wave->forceFill(['status' => LegacyRmeWaveStatus::DRAFT])->save();
 
@@ -155,7 +155,7 @@ it('denies wave approval to someone who may manage but not approve', function ()
 // ---------------------------------------------------------------------------
 
 it('refuses to operate on a branch enrollment that belongs to another wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $wave = opsAccessWave();
     $branch = opsAccessBranch();
 
@@ -178,7 +178,7 @@ it('refuses to operate on a branch enrollment that belongs to another wave', fun
 });
 
 it('refuses to assign an operator onto a branch from another wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $branch = opsAccessBranch();
 
     $otherWave = LegacyRmeMigrationWave::query()->create([
@@ -198,13 +198,13 @@ it('refuses to assign an operator onto a branch from another wave', function () 
 });
 
 it('rejects a wave code that is not a canonical token', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     $this->actingAs(superAdmin())
         ->post(route('settings.rme.migration-operations.store'), [
             'code' => 'WAVE 1; DROP TABLE users',
             'name' => 'Gelombang Tidak Valid',
-            'branch_codes' => ['TKM1'],
+            'branch_codes' => ['TLK1'],
         ])
         ->assertSessionHasErrors('code');
 
@@ -216,7 +216,7 @@ it('rejects a wave code that is not a canonical token', function () {
 // ---------------------------------------------------------------------------
 
 it('keeps a published archive readable to the treating doctor while the wave is paused', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TLK1');
     $record = opsAccessPublished($patient);
     $doctor = opsAccessDoctor($patient, treating: true);
 
@@ -235,7 +235,7 @@ it('keeps a published archive readable to the treating doctor while the wave is 
 });
 
 it('keeps a published archive readable after the branch is drained and the wave closed', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TLK1');
     $record = opsAccessPublished($patient);
     $doctor = opsAccessDoctor($patient, treating: true);
 
@@ -254,7 +254,7 @@ it('keeps a published archive readable after the branch is drained and the wave 
 });
 
 it('still denies a non-treating doctor while the wave is paused', function () {
-    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TKM1');
+    $patient = legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], 'TLK1');
     $record = opsAccessPublished($patient);
     $stranger = opsAccessDoctor($patient, treating: false);
 

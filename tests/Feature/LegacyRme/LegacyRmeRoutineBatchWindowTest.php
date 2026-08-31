@@ -4,7 +4,7 @@
  * FIX-LEGACY-RME-ROUTINE-OPS-1 — a routine batch is time-bounded, and both
  * ways of opening one are bound by the same rule.
  *
- * THE INCIDENT. An operator opened ROUTINE-20260819-TKM1-01 over SSH. It
+ * THE INCIDENT. An operator opened ROUTINE-20260819-TLK1-01 over SSH. It
  * registered with `planned_start_date = null` and `planned_end_date = null`,
  * because `legacy-rme:wave-admin register` had no options to express them —
  * the ordering rule lived in the wave FormRequest, which the CLI never touches.
@@ -36,9 +36,9 @@ beforeEach(function () {
     Storage::fake('legacy_rme_private');
     Bus::fake();
     legacyRmeArchiveFlag(true);
-    legacyRmeBranch('TKM1', 'Cabang Telkomas');
-    legacyRmeApproveWave('ROUTINE-APPROVAL-2026-08-19', ['TKM1']);
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeBranch('TLK1', 'Cabang Telkomas');
+    legacyRmeApproveWave('ROUTINE-APPROVAL-2026-08-19', ['TLK1']);
+    legacyRmeAdmittedBranches(['TLK1']);
 });
 
 function windowGovernance(): LegacyRmeWaveGovernanceService
@@ -192,18 +192,18 @@ it('lets a misconfigured clinical timezone surface as itself, not as a bad date'
 
 it('refuses to register a batch with no window at all', function () {
     // THE REGRESSION, at the layer that now owns it.
-    windowGovernance()->createWave(windowOperator(), 'ROUTINE-NOWINDOW', 'Batch tanpa jendela', ['TKM1'], 25, 25);
+    windowGovernance()->createWave(windowOperator(), 'ROUTINE-NOWINDOW', 'Batch tanpa jendela', ['TLK1'], 25, 25);
 })->throws(ValidationException::class);
 
 it('refuses to register a batch that declares only a start date', function () {
     windowGovernance()->createWave(
-        windowOperator(), 'ROUTINE-HALFOPEN', 'Batch setengah terbuka', ['TKM1'], 25, 25, '2026-08-19', null
+        windowOperator(), 'ROUTINE-HALFOPEN', 'Batch setengah terbuka', ['TLK1'], 25, 25, '2026-08-19', null
     );
 })->throws(ValidationException::class);
 
 it('refuses to register a batch whose window runs backwards', function () {
     windowGovernance()->createWave(
-        windowOperator(), 'ROUTINE-REVERSED', 'Batch terbalik', ['TKM1'], 25, 25, '2026-08-25', '2026-08-19'
+        windowOperator(), 'ROUTINE-REVERSED', 'Batch terbalik', ['TLK1'], 25, 25, '2026-08-25', '2026-08-19'
     );
 })->throws(ValidationException::class);
 
@@ -211,7 +211,7 @@ it('writes nothing when the window is refused', function () {
     // Validation runs before the transaction, so a refusal must leave no row
     // behind for an operator to trip over later.
     try {
-        windowGovernance()->createWave(windowOperator(), 'ROUTINE-ABORTED', 'Batch gagal', ['TKM1'], 25, 25);
+        windowGovernance()->createWave(windowOperator(), 'ROUTINE-ABORTED', 'Batch gagal', ['TLK1'], 25, 25);
     } catch (ValidationException) {
         // expected
     }
@@ -221,7 +221,7 @@ it('writes nothing when the window is refused', function () {
 
 it('persists the window the operator declared', function () {
     $wave = windowGovernance()->createWave(
-        windowOperator(), 'ROUTINE-OK', 'Batch rutin', ['TKM1'], 25, 25, '2026-08-19', '2026-08-19'
+        windowOperator(), 'ROUTINE-OK', 'Batch rutin', ['TLK1'], 25, 25, '2026-08-19', '2026-08-19'
     );
 
     expect($wave->planned_start_date?->toDateString())->toBe('2026-08-19');
@@ -249,7 +249,7 @@ it('leaves batches registered before this rule readable and unbackfilled', funct
 
     // And registering a new, compliant batch does not disturb them.
     windowGovernance()->createWave(
-        windowOperator(), 'ROUTINE-NEXT', 'Batch berikutnya', ['TKM1'], 25, 25, '2026-08-19', '2026-08-20'
+        windowOperator(), 'ROUTINE-NEXT', 'Batch berikutnya', ['TLK1'], 25, 25, '2026-08-19', '2026-08-20'
     );
 
     expect($historical->fresh()->planned_end_date)->toBeNull();
@@ -273,7 +273,7 @@ it('registers a bounded batch from the CLI and persists the window', function ()
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-01',
         '--name' => 'Batch Rutin CLI',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--daily-quota' => 25,
         '--per-branch-daily-quota' => 25,
         '--planned-start-date' => '2026-08-19',
@@ -299,7 +299,7 @@ it('refuses a CLI registration that omits the window', function () {
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-NOWINDOW',
         '--name' => 'Batch tanpa jendela',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--actor' => (string) $operator->getKey(),
         '--apply' => true,
     ]);
@@ -315,7 +315,7 @@ it('refuses a CLI registration whose window runs backwards', function () {
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-REVERSED',
         '--name' => 'Batch terbalik',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--planned-start-date' => '2026-08-25',
         '--planned-end-date' => '2026-08-19',
         '--actor' => (string) $operator->getKey(),
@@ -333,7 +333,7 @@ it('refuses a CLI registration whose window is not a real calendar date', functi
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-BADDATE',
         '--name' => 'Batch tanggal salah',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--planned-start-date' => '2026-02-31',
         '--planned-end-date' => '2026-03-05',
         '--actor' => (string) $operator->getKey(),
@@ -351,7 +351,7 @@ it('reports the intended window on a dry run without writing anything', function
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-DRY',
         '--name' => 'Batch kering',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--planned-start-date' => '2026-08-19',
         '--planned-end-date' => '2026-08-20',
         '--actor' => (string) $operator->getKey(),
@@ -380,7 +380,7 @@ it('leaves the other CLI actions working', function () {
         'action' => 'register',
         '--wave' => 'ROUTINE-CLI-FLOW',
         '--name' => 'Batch alur',
-        '--branches' => 'TKM1',
+        '--branches' => 'TLK1',
         '--planned-start-date' => '2026-08-19',
         '--planned-end-date' => '2026-08-20',
         '--actor' => (string) $operator->getKey(),
@@ -418,7 +418,7 @@ it('registers a bounded batch through the form', function () {
         ->post(route('settings.rme.migration-operations.store'), [
             'code' => 'ROUTINE-HTTP-01',
             'name' => 'Batch Rutin HTTP',
-            'branch_codes' => ['TKM1'],
+            'branch_codes' => ['TLK1'],
             'daily_quota' => 25,
             'per_branch_daily_quota' => 25,
             'planned_start_date' => '2026-08-19',
@@ -440,7 +440,7 @@ it('refuses a form submission with no window and reports it on the field', funct
         ->post(route('settings.rme.migration-operations.store'), [
             'code' => 'ROUTINE-HTTP-NOWINDOW',
             'name' => 'Batch tanpa jendela',
-            'branch_codes' => ['TKM1'],
+            'branch_codes' => ['TLK1'],
         ])
         ->assertSessionHasErrors('planned_start_date');
 
@@ -452,7 +452,7 @@ it('refuses a form submission whose window runs backwards', function () {
         ->post(route('settings.rme.migration-operations.store'), [
             'code' => 'ROUTINE-HTTP-REVERSED',
             'name' => 'Batch terbalik',
-            'branch_codes' => ['TKM1'],
+            'branch_codes' => ['TLK1'],
             'planned_start_date' => '2026-08-25',
             'planned_end_date' => '2026-08-19',
         ])
@@ -468,7 +468,7 @@ it('keeps registration authorization exactly where it was', function () {
         ->post(route('settings.rme.migration-operations.store'), [
             'code' => 'ROUTINE-HTTP-FORBIDDEN',
             'name' => 'Batch terlarang',
-            'branch_codes' => ['TKM1'],
+            'branch_codes' => ['TLK1'],
             'planned_start_date' => '2026-08-19',
             'planned_end_date' => '2026-08-20',
         ])

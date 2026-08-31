@@ -71,7 +71,7 @@ function lodoPublishedRow(Patient $patient, string $date = '2018-02-03'): Legacy
     return LegacyOdontogramRecord::factory()->create([
         'patient_id' => $patient->getKey(),
         'branch_id' => $patient->branch_id,
-        'source_branch_code' => 'TKM1',
+        'source_branch_code' => 'TLK1',
         'odontogram_date' => $date,
         'status' => LegacyOdontogramRecordStatus::PUBLISHED,
         'page_count' => 2,
@@ -130,7 +130,7 @@ it('refuses a doctor account with no linked doctor master record', function () {
 });
 
 it('does not let a read permission widen a doctor to every RME branch', function () {
-    $mine = lodoPatient([], 'TKM1');
+    $mine = lodoPatient([], 'TLK1');
     $theirs = lodoPatient([], 'LDK2');
 
     lodoPublishedRow($mine);

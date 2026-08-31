@@ -25,7 +25,7 @@ beforeEach(function () {
     Carbon::setTestNow(Carbon::parse('2026-06-23 09:00:00'));
 
     $this->atg = Branch::factory()->create(['code' => 'ATG3', 'name' => 'Cabang Antang', 'is_active' => true, 'is_rme_enabled' => true]);
-    $this->tkm = Branch::factory()->create(['code' => 'TKM1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->tkm = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_active' => true, 'is_rme_enabled' => true]);
 
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Uji']);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);

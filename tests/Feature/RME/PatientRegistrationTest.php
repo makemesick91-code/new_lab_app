@@ -12,7 +12,7 @@ beforeEach(function () {
 
     $this->clinic = Clinic::factory()->create();
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
-    $this->branch = Branch::factory()->create(['code' => 'TKM1', 'is_active' => true, 'is_rme_enabled' => true]);
+    $this->branch = Branch::factory()->create(['code' => 'TLK1', 'is_active' => true, 'is_rme_enabled' => true]);
 });
 
 afterEach(fn () => Carbon::setTestNow());
@@ -38,14 +38,14 @@ it('creates a patient with branch + manual RM number and composes the final RM',
 
     $patient = Patient::firstWhere('name', 'Nur Aisyah');
 
-    expect($patient->medical_record_number)->toBe('DG-TKM1-2026-0001')
+    expect($patient->medical_record_number)->toBe('DG-TLK1-2026-0001')
         ->and($patient->branch_id)->toBe($this->branch->id)
         ->and($patient->manual_rm_number)->toBe('0001')
         ->and(optional($patient->registered_at)->format('Y-m-d'))->toBe('2026-06-13');
 });
 
 it('rejects a duplicate final medical record number', function () {
-    Patient::factory()->create(['medical_record_number' => 'DG-TKM1-2026-0001']);
+    Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2026-0001']);
 
     $this->actingAs(userWith(['manage patients']))
         ->post(route('settings.patients.store'), registrationPayload())
@@ -54,7 +54,7 @@ it('rejects a duplicate final medical record number', function () {
 
 it('allows the same manual number on a different branch (final value differs)', function () {
     $other = Branch::factory()->create(['code' => 'LDK2', 'is_active' => true, 'is_rme_enabled' => true]);
-    Patient::factory()->create(['medical_record_number' => 'DG-TKM1-2026-0001']);
+    Patient::factory()->create(['medical_record_number' => 'DG-TLK1-2026-0001']);
 
     $this->actingAs(userWith(['manage patients']))
         ->post(route('settings.patients.store'), registrationPayload(['branch_id' => $other->id, 'name' => 'Ahmad']))

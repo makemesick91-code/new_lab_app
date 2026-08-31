@@ -54,7 +54,7 @@ function opsWave(string $code = 'TEST-WAVE'): LegacyRmeMigrationWave
     return LegacyRmeMigrationWave::query()->where('code', $code)->firstOrFail();
 }
 
-function opsWaveBranch(string $branchCode = 'TKM1'): LegacyRmeWaveBranch
+function opsWaveBranch(string $branchCode = 'TLK1'): LegacyRmeWaveBranch
 {
     return LegacyRmeWaveBranch::query()->where('branch_code', $branchCode)->firstOrFail();
 }
@@ -65,7 +65,7 @@ function opsWaveBranch(string $branchCode = 'TKM1'): LegacyRmeWaveBranch
  * Returns the created import, or throws the ValidationException a refused gate
  * produced — which is what most of these tests assert on.
  */
-function opsUpload(User $actor, ?Patient $patient = null, string $branchCode = 'TKM1'): LegacyRmeImport
+function opsUpload(User $actor, ?Patient $patient = null, string $branchCode = 'TLK1'): LegacyRmeImport
 {
     $patient ??= legacyRmeArchivablePatient([], $branchCode);
     legacyRmeNativeVisit($patient, '2024-05-01');
@@ -97,31 +97,31 @@ it('refuses an admitted branch when no operational wave is registered', function
     // Fail closed: an unregistered wave has no operators, no quota and no
     // completion path, so migrating under it would be uncontrolled by
     // construction.
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     LegacyRmeWaveOperator::query()->delete();
     LegacyRmeWaveBranch::query()->delete();
     LegacyRmeMigrationWave::query()->delete();
 
-    $decision = opsGate()->decide(superAdmin(), 'TKM1');
+    $decision = opsGate()->decide(superAdmin(), 'TLK1');
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_WAVE_NOT_REGISTERED);
 });
 
 it('refuses when config declares no wave at all', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     config()->set('legacy_rme_rollout.admission.wave', '');
 
-    $decision = opsGate()->decide(superAdmin(), 'TKM1');
+    $decision = opsGate()->decide(superAdmin(), 'TLK1');
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_WAVE_NOT_DECLARED);
 });
 
 it('clears an admitted branch under a running, correctly bound wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
-    $decision = opsGate()->decide(superAdmin(), 'TKM1');
+    $decision = opsGate()->decide(superAdmin(), 'TLK1');
 
     expect($decision->cleared)->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_CLEARED)
@@ -133,43 +133,43 @@ it('clears an admitted branch under a running, correctly bound wave', function (
 // ---------------------------------------------------------------------------
 
 it('refuses when the wave records a different approval reference from the deployment', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // The deployment's approval moved on; the governance record did not.
-    legacyRmeApproveWave('ROLL-4-NEW-APPROVAL', ['TKM1']);
+    legacyRmeApproveWave('ROLL-4-NEW-APPROVAL', ['TLK1']);
 
-    $decision = opsGate()->decide(superAdmin(), 'TKM1');
+    $decision = opsGate()->decide(superAdmin(), 'TLK1');
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_WAVE_BINDING_MISMATCH);
 });
 
 it('refuses when the approved branch set is widened without updating the wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $reference = (string) config('legacy_rme_rollout.admission.approval_reference');
 
     // Same reference, wider scope. A reference alone must never stretch to cover
     // a branch set nobody approved in that shape.
-    legacyRmeApproveWave($reference, ['TKM1', 'LDK2']);
+    legacyRmeApproveWave($reference, ['TLK1', 'LDK2']);
 
-    $decision = opsGate()->decide(superAdmin(), 'TKM1');
+    $decision = opsGate()->decide(superAdmin(), 'TLK1');
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_WAVE_BINDING_MISMATCH);
 });
 
 it('treats the approved branch set as a set, not a sequence', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
 
     $wave = opsWave();
     $reference = (string) config('legacy_rme_rollout.admission.approval_reference');
 
     // Same members, reversed order — the same approval, so it must still bind.
-    legacyRmeApproveWave($reference, ['LDK2', 'TKM1']);
-    $wave->forceFill(['approved_branch_codes' => ['TKM1', 'LDK2']])->save();
+    legacyRmeApproveWave($reference, ['LDK2', 'TLK1']);
+    $wave->forceFill(['approved_branch_codes' => ['TLK1', 'LDK2']])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->cleared)->toBeTrue();
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->cleared)->toBeTrue();
 });
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ it('treats the approved branch set as a set, not a sequence', function () {
 // ---------------------------------------------------------------------------
 
 it('refuses a branch that is admitted but never enrolled in the wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
 
     // Admitted and approved by ROLL-3, but its enrollment row is gone.
@@ -190,7 +190,7 @@ it('refuses a branch that is admitted but never enrolled in the wave', function 
 });
 
 it('refuses a paused branch while the rest of the wave keeps running', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
 
     opsWaveBranch('LDK2')->forceFill(['status' => LegacyRmeWaveBranchStatus::PAUSED])->save();
@@ -198,14 +198,14 @@ it('refuses a paused branch while the rest of the wave keeps running', function 
     expect(opsGate()->decide(superAdmin(), 'LDK2')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_BRANCH_PAUSED)
         // Isolation: pausing one clinic must not stop the others.
-        ->and(opsGate()->decide(superAdmin(), 'TKM1')->cleared)->toBeTrue();
+        ->and(opsGate()->decide(superAdmin(), 'TLK1')->cleared)->toBeTrue();
 });
 
 it('refuses a draining branch', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['status' => LegacyRmeWaveBranchStatus::DRAINING])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['status' => LegacyRmeWaveBranchStatus::DRAINING])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->code)
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_BRANCH_DRAINING);
 });
 
@@ -214,34 +214,34 @@ it('refuses a draining branch', function () {
 // ---------------------------------------------------------------------------
 
 it('refuses every branch while the wave is paused', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::PAUSED])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->code)
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_WAVE_PAUSED);
 });
 
 it('refuses new intake while the wave is draining', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::DRAINING])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->code)
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_WAVE_DRAINING);
 });
 
 it('refuses a closed wave', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::COMPLETED])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->code)
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_WAVE_CLOSED);
 });
 
 it('reports a not-yet-started wave distinctly from a paused one', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::APPROVED])->save();
 
-    expect(opsGate()->decide(superAdmin(), 'TKM1')->code)
+    expect(opsGate()->decide(superAdmin(), 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_WAVE_NOT_ACTIVE);
 });
 
@@ -250,63 +250,63 @@ it('reports a not-yet-started wave distinctly from a paused one', function () {
 // ---------------------------------------------------------------------------
 
 it('refuses an intake operator who holds the permission but no assignment', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // Holds create_legacy_rme_imports and nothing else: permitted to migrate,
     // not cleared for THIS branch.
     $operator = userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
 
-    $decision = opsGate()->decide($operator, 'TKM1');
+    $decision = opsGate()->decide($operator, 'TLK1');
 
     expect($decision->denied())->toBeTrue()
         ->and($decision->code)->toBe(LegacyRmeOperationsDecision::CODE_OPERATOR_NOT_ASSIGNED);
 });
 
 it('clears an intake operator once they are assigned to that branch', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $operator = userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
 
-    legacyRmeAssignOperator($operator, 'TKM1');
+    legacyRmeAssignOperator($operator, 'TLK1');
 
-    expect(opsGate()->decide($operator, 'TKM1')->cleared)->toBeTrue();
+    expect(opsGate()->decide($operator, 'TLK1')->cleared)->toBeTrue();
 });
 
 it('confines an assigned operator to the branch they were assigned to', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
 
     $operator = userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
-    legacyRmeAssignOperator($operator, 'TKM1');
+    legacyRmeAssignOperator($operator, 'TLK1');
 
     // The point of the whole mechanism: a permission says "may migrate", an
     // assignment says "may migrate THIS clinic".
-    expect(opsGate()->decide($operator, 'TKM1')->cleared)->toBeTrue()
+    expect(opsGate()->decide($operator, 'TLK1')->cleared)->toBeTrue()
         ->and(opsGate()->decide($operator, 'LDK2')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_OPERATOR_NOT_ASSIGNED);
 });
 
 it('refuses an operator whose assignment has been revoked', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $operator = userWith(['view_legacy_rme_imports', 'create_legacy_rme_imports']);
-    legacyRmeAssignOperator($operator, 'TKM1');
+    legacyRmeAssignOperator($operator, 'TLK1');
 
     LegacyRmeWaveOperator::query()
         ->where('user_id', $operator->getKey())
         ->update(['revoked_at' => now()]);
 
-    expect(opsGate()->decide($operator, 'TKM1')->code)
+    expect(opsGate()->decide($operator, 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_OPERATOR_NOT_ASSIGNED);
 });
 
 it('refuses an unauthenticated actor', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
-    expect(opsGate()->decide(null, 'TKM1')->code)
+    expect(opsGate()->decide(null, 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_OPERATOR_NOT_ASSIGNED);
 });
 
 it('clears a wave governor without a separate assignment, because they can self-assign', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // Documented exemption: a holder of manage_legacy_rme_migration_operations
     // can assign themselves to any enrolled branch unilaterally, so requiring
@@ -318,11 +318,11 @@ it('clears a wave governor without a separate assignment, because they can self-
         'manage_legacy_rme_migration_operations',
     ]);
 
-    expect(opsGate()->decide($governor, 'TKM1')->cleared)->toBeTrue();
+    expect(opsGate()->decide($governor, 'TLK1')->cleared)->toBeTrue();
 });
 
 it('still refuses a wave governor when the wave itself is paused', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $governor = userWith([
         'view_legacy_rme_imports',
         'create_legacy_rme_imports',
@@ -332,7 +332,7 @@ it('still refuses a wave governor when the wave itself is paused', function () {
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::PAUSED])->save();
 
     // The assignment exemption reaches exactly one gate, and not this one.
-    expect(opsGate()->decide($governor, 'TKM1')->code)
+    expect(opsGate()->decide($governor, 'TLK1')->code)
         ->toBe(LegacyRmeOperationsDecision::CODE_WAVE_PAUSED);
 });
 
@@ -341,8 +341,8 @@ it('still refuses a wave governor when the wave itself is paused', function () {
 // ---------------------------------------------------------------------------
 
 it('accepts documents while the branch is below its daily ceiling', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => 2])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => 2])->save();
 
     $import = opsUpload(superAdmin());
 
@@ -351,8 +351,8 @@ it('accepts documents while the branch is below its daily ceiling', function () 
 });
 
 it('refuses a document once the branch daily ceiling is reached', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => 1])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => 1])->save();
 
     $actor = superAdmin();
     opsUpload($actor);
@@ -366,12 +366,12 @@ it('refuses a document once the branch daily ceiling is reached', function () {
 });
 
 it('refuses a document once the wave-wide daily ceiling is reached', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('LDK2');
     opsWave()->forceFill(['daily_quota' => 1])->save();
 
     $actor = superAdmin();
-    opsUpload($actor, null, 'TKM1');
+    opsUpload($actor, null, 'TLK1');
 
     // A different branch, but the same wave-wide budget.
     expect(fn () => opsUpload($actor, null, 'LDK2'))
@@ -381,8 +381,8 @@ it('refuses a document once the wave-wide daily ceiling is reached', function ()
 });
 
 it('treats a null ceiling as unlimited rather than as zero', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => null])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => null])->save();
     opsWave()->forceFill(['daily_quota' => null])->save();
 
     $actor = superAdmin();
@@ -393,8 +393,8 @@ it('treats a null ceiling as unlimited rather than as zero', function () {
 });
 
 it('treats a zero ceiling as closed', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => 0])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => 0])->save();
 
     expect(fn () => opsUpload(superAdmin()))->toThrow(ValidationException::class);
 
@@ -402,8 +402,8 @@ it('treats a zero ceiling as closed', function () {
 });
 
 it('does not charge quota again when a document is retried', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => 1])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => 1])->save();
 
     $actor = superAdmin();
     $import = opsUpload($actor);
@@ -419,10 +419,10 @@ it('does not charge quota again when a document is retried', function () {
 });
 
 it('releases the reserved quota when the staging write rolls back', function () {
-    legacyRmeBranch('TKM1');
-    opsWaveBranch('TKM1')->forceFill(['daily_quota' => 5])->save();
+    legacyRmeBranch('TLK1');
+    opsWaveBranch('TLK1')->forceFill(['daily_quota' => 5])->save();
 
-    $patient = legacyRmeArchivablePatient([], 'TKM1');
+    $patient = legacyRmeArchivablePatient([], 'TLK1');
     legacyRmeNativeVisit($patient, '2024-05-01');
     $actor = superAdmin();
 
@@ -454,7 +454,7 @@ it('releases the reserved quota when the staging write rolls back', function () 
 // ---------------------------------------------------------------------------
 
 it('refuses an upload while the wave is paused and writes no staging row', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     opsWave()->forceFill(['status' => LegacyRmeWaveStatus::PAUSED])->save();
 
     expect(fn () => opsUpload(superAdmin()))->toThrow(ValidationException::class);
@@ -469,7 +469,7 @@ it('refuses an upload while the wave is paused and writes no staging row', funct
 });
 
 it('refuses a retry while the wave is draining', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = superAdmin();
     $import = opsUpload($actor);
 
@@ -483,7 +483,7 @@ it('still allows publishing an already accepted document while the wave is drain
     // NORMAL DRAIN preserves the lifecycle of work already accepted — stranding
     // reviewed clinical evidence in staging is a worse outcome than letting an
     // admitted document finish.
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     $actor = superAdmin();
     $import = opsUpload($actor);
 
@@ -491,7 +491,7 @@ it('still allows publishing an already accepted document while the wave is drain
 
     // The operations gate governs the START of work, so it is not consulted by
     // publish at all.
-    expect(opsGate()->decideForRetry('TKM1')->denied())->toBeTrue()
+    expect(opsGate()->decideForRetry('TLK1')->denied())->toBeTrue()
         ->and($import->fresh()->status)->toBe(LegacyRmeImportStatus::QUEUED);
 });
 
@@ -500,7 +500,7 @@ it('still allows publishing an already accepted document while the wave is drain
 // ---------------------------------------------------------------------------
 
 it('refuses every operational decision once the capability is switched off', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeArchiveFlag(false);
 
     expect(fn () => opsUpload(superAdmin()))->toThrow(ValidationException::class);
@@ -513,7 +513,7 @@ it('refuses every operational decision once the capability is switched off', fun
 // ---------------------------------------------------------------------------
 
 it('cannot rescue a branch that ROLL-3 refuses', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
 
     // LDK2 is fully enrolled and ACTIVE in the running wave, so the operations
     // layer has every reason to say yes.
@@ -526,10 +526,10 @@ it('cannot rescue a branch that ROLL-3 refuses', function () {
     $patient = legacyRmeArchivablePatient([], 'LDK2');
     legacyRmeNativeVisit($patient, '2024-05-01');
 
-    // Now ROLL-3's allowlist is narrowed to TKM1 alone. Admission runs first and
+    // Now ROLL-3's allowlist is narrowed to TLK1 alone. Admission runs first and
     // refuses, and nothing downstream may overturn that.
-    legacyRmeAdmittedBranches(['TKM1']);
-    legacyRmeApproveWave((string) config('legacy_rme_rollout.admission.approval_reference'), ['TKM1']);
+    legacyRmeAdmittedBranches(['TLK1']);
+    legacyRmeApproveWave((string) config('legacy_rme_rollout.admission.approval_reference'), ['TLK1']);
 
     expect(fn () => app(LegacyRmeImportService::class)->createFromUpload(
         $patient,

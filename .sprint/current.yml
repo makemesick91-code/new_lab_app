@@ -1,76 +1,58 @@
-# BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1 — Sprint Manifest
+# REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — Sprint Manifest
 #
-# Prompt classification: BUGFIX · PRODUCTION_QUEUE_PIPELINE · LEGACY_ODONTOGRAM ·
-# SYSTEMD_WORKER · PRODUCER_CONSUMER_CONTRACT · GOVERNANCE_GAP ·
-# CLINICAL_EVIDENCE_PIPELINE. `type` below is RUNTIME_FIX because that is the
-# registered profile in config/sprint_profiles.php; the other labels describe the
-# work but are not defined types, and inventing one fails the manifest check
-# rather than describing anything.
+# Prompt classification: BUSINESS_RULE_REVISION · MASTER_DATA · MULTI_BRANCH ·
+# MEDICAL_RECORD_NUMBER · LEGACY_IMPORT · LEGACY_RME · LEGACY_ODONTOGRAM ·
+# DATA_MIGRATION_POSSIBLE · BACKWARD_COMPATIBILITY · PRODUCTION_DATA_INTEGRITY.
+# `type` below is MIGRATION_HEAVY because that is the registered profile in
+# config/sprint_profiles.php that matches a sprint whose central artifact is a
+# production data migration; the other labels describe the work but are not
+# defined types, and inventing one fails the manifest check rather than
+# describing anything.
 #
-# THE DEFECT. A legacy odontogram PDF was uploaded to the production pilot. The
-# job was dispatched to `legacy-odontogram-documents`. The production worker
-# consumed default, reports, notifications, maintenance and legacy-rme-documents
-# — not that one. So the job was never reserved: attempts=0, reserved_at NULL,
-# failed_jobs empty, no exception, no log line, and the import sat at QUEUED
-# looking exactly like work still in progress.
+# THE DECISION. Cabang Telkomas' canonical branch code is TLK1. TKM1 is
+# deprecated: accepted as a historical alias because it is printed on cards
+# patients already carry and on documents already archived, never emitted again.
 #
-#     PRODUCER_QUEUE != WORKER_CONSUMED_QUEUE
+# WHAT THE INVENTORY FOUND. This was framed as a rename; it was actually a drift
+# repair. Production mst_branches id 1 had ALREADY been renamed to TLK1 by hand
+# while the repository still said TKM1 — three defects, one live and two latent:
 #
-# THE PART THAT MATTERS MORE THAN THE FIX. This was the SECOND occurrence.
-# LEGACY-RME-PDF-ROLL-2 hit the identical shape on `legacy-rme-documents` and
-# answered with a queue_contract check inside LegacyRmeRolloutReadinessService —
-# correct, tested, and scoped to one module. Legacy Odontogram shipped its own
-# dedicated queue and inherited none of it. Adding one queue name to one worker
-# would have set up the third occurrence, so the durable deliverable is
-# ENT5-Q009: a module-agnostic producer ↔ consumer contract that fails CI when
-# ANY produced queue has no consumer.
+#   1. RmeBranchSeeder looked Telkomas up by 'TKM1' alone, so the next routine
+#      db:seed --class=RmeBranchSeeder --force would have CREATED A DUPLICATE
+#      "Cabang Telkomas". Branch id is the isolation boundary, so one clinic's
+#      patients would split across two branches.
+#   2. Legacy-archive branch derivation resolved Branch::where('code','TKM1') →
+#      not found, so patient 36 (DG-TKM1-2024-9985) had an UNREACHABLE legacy
+#      RME / odontogram archive. This one was already live.
+#   3. The WAVE-4 allowlist admitted the literal token TKM1 from the environment
+#      while derivation reported TLK1 — locking an approved branch out of its own
+#      wave with an error about admission rather than about a rename.
 #
-# WHY NOT A GREP. Every dedicated queue here is env-overridable
-# (LEGACY_ODONTOGRAM_QUEUE, LEGACY_RME_QUEUE, SATUSEHAT_QUEUE). A literal scan
-# would assert the default while production ran another name. The registry names
-# the config key and the check resolves it the way the runtime does. The registry
-# is then checked for COMPLETENESS against the source tree, so a future module
-# cannot add a dedicated queue and stay invisible.
-#
-# WHAT THE GUARD FOUND THAT NOBODY ASKED ABOUT. Run before the fix, it reported
-# four violations, not one: the odontogram queue was undeclared AND unconsumed;
-# `satusehat` was produced but never declared at all; and
-# enterprise_foundation_runtime_hardening.queue_worker.approved_queues had
-# drifted into decoration — four names against a unit that had consumed five
-# since ROLL-2, with nothing comparing them. A third copy of the same fact.
-#
-# ENT5-Q010. Production carried StartLimitIntervalSec under [Service]. systemd
-# only honours it in [Unit], logged "Unknown key name ... ignoring", and applied
-# its own default: `systemctl show` reported 10s against a file asking for 0.
-# The file and the running service disagreed and nothing compared them either.
-#
-# WHY INSTALLED-UNIT DRIFT IS A WARNING AND NOT A FAILURE. The deploy is
-# forbidden from installing or starting a worker (ENT-5). Activation is a later
-# operator step. `foundation:queue-retry-failed-job-check` exits non-zero on FAIL
-# even without --strict and scripts/deploy-vps.sh runs it ungated, so failing on
-# drift would abort the very deploy that has to precede activation. Verified, not
-# assumed.
-#
-# security_impact is true: this restores processing of a clinical-evidence
-# pipeline and changes what the production worker executes. NO MIGRATION — a
-# schema change here would mean the diagnosis was wrong.
+# WHY NOT A GLOBAL REPLACE. 727 occurrences across 111 files were classified
+# before anything changed. Most are immutable: published clinical evidence and
+# its stored source RM, sys_audit_logs, issued visit_number values, staging
+# payloads, terminal waves, historical wave/pilot/incident records. A blind
+# replace would also rewrite a TKM1 inside a manual RM sequence, inside an
+# approval reference, and inside a JSON payload. Nomor RM values therefore go
+# through the canonical parser/composer so only the branch-code SEGMENT can
+# change, and the migration enumerates every target instead of scanning columns.
 
-id: BUGFIX-LEGACY-ODONTOGRAM-QUEUE-CONSUMER-1
-type: RUNTIME_FIX
-module: LegacyOdontogram
-title: 'The legacy odontogram queue had no consumer, so a real clinical document sat at QUEUED forever; the worker now drains it and CI fails any produced queue that nothing consumes'
+id: REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1
+type: MIGRATION_HEAVY
+module: Branch
+title: 'Cabang Telkomas canonical branch code becomes TLK1 with TKM1 accepted as a historical alias; closes a latent duplicate-branch seeder hazard, an unreachable legacy archive, and a rollout lockout'
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
-runtime_change: true            # production systemd worker unit + ENT-5 readiness checks
-schema_change: false            # no migration, no column, no table, no index
-frontend_change: false          # no Blade, no JS, no CSS, no asset build
-security_impact: true           # restores a clinical-evidence pipeline; changes worker argv
-branch_isolation_impact: false  # the job carries an import id; branch derivation untouched
-ledger_impact: false
-deploy_required: true           # the stalled production document cannot drain until this ships
-browser_required: false         # no user-facing surface changes
+runtime_change: true            # alias policy, RM parsing, patient search, admission
+schema_change: true             # data migration (no DDL): branch code + Nomor RM + live wave rows
+frontend_change: true           # 3 Blade placeholders now show the canonical example
+security_impact: true           # touches RM-derived branch derivation, the isolation boundary
+branch_isolation_impact: true   # a duplicate branch would have split one clinic's patients
+ledger_impact: false            # no inventory movement, invoice or payment touched
+deploy_required: true           # production carries the mismatched allowlist and one TKM1 RM
+browser_required: true          # patient search + legacy import forms are user-facing
 test_profiles:
   - focused
   - permission_regression
-go_tag: bugfix-legacy-odontogram-queue-consumer-1-go
+go_tag: revision-telkomas-branch-code-tkm1-to-tlk1-1-go
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

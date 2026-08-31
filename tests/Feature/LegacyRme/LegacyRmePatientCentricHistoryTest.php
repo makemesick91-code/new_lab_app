@@ -47,7 +47,7 @@ beforeEach(function () {
 |--------------------------------------------------------------------------
 */
 
-function lrmeh1Patient(string $branchCode = 'TKM1'): Patient
+function lrmeh1Patient(string $branchCode = 'TLK1'): Patient
 {
     return legacyRmeArchivablePatient(['date_of_birth' => '1980-01-01'], $branchCode);
 }
@@ -369,7 +369,7 @@ it('hides the archive from a same-branch doctor with no clinical relationship', 
 });
 
 it('hides the archive from a doctor in another branch', function () {
-    $patient = lrmeh1Patient('TKM1');
+    $patient = lrmeh1Patient('TLK1');
     lrmeh1Published($patient, '2019-01-01');
 
     $otherBranchPatient = lrmeh1Patient('LDK2');
@@ -396,7 +396,7 @@ it('refuses a direct archive URL to a same-branch doctor who does not treat the 
 });
 
 it('refuses a direct archive URL to a doctor from another branch', function () {
-    $patient = lrmeh1Patient('TKM1');
+    $patient = lrmeh1Patient('TLK1');
     $record = lrmeh1Published($patient, '2019-01-01');
     $otherBranchPatient = lrmeh1Patient('LDK2');
 

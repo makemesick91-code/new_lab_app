@@ -259,7 +259,7 @@ it('reports the clinical calendar the ceiling rolls over on', function () {
 */
 
 it('shows a single-branch operator only their own branch', function () {
-    $own = lihBranch('TKM1', 'Cabang Telkomas');
+    $own = lihBranch('TLK1', 'Cabang Telkomas');
     $other = lihBranch('LDK2', 'Cabang Landak');
 
     lihConsume(LegacyImportType::LEGACY_RME, (int) $other->id, 5);
@@ -278,7 +278,7 @@ it('shows a single-branch operator only their own branch', function () {
 });
 
 it('shows the governance tier every RME branch', function () {
-    $a = lihBranch('TKM1', 'Cabang Telkomas');
+    $a = lihBranch('TLK1', 'Cabang Telkomas');
     $b = lihBranch('LDK2', 'Cabang Landak');
 
     $actor = lihOperator(['publish_legacy_rme_imports']);
@@ -291,7 +291,7 @@ it('shows the governance tier every RME branch', function () {
 });
 
 it('never widens beyond one branch for an unplaced non-governance actor', function () {
-    $a = lihBranch('TKM1', 'Cabang Telkomas');
+    $a = lihBranch('TLK1', 'Cabang Telkomas');
     $b = lihBranch('LDK2', 'Cabang Landak');
 
     // An operator with no `branch_id` still resolves through BranchContext's
@@ -310,7 +310,7 @@ it('never widens beyond one branch for an unplaced non-governance actor', functi
 });
 
 it('shows no branch when the resolved one is not RME-enabled', function () {
-    $rme = lihBranch('TKM1', 'Cabang Telkomas');
+    $rme = lihBranch('TLK1', 'Cabang Telkomas');
 
     // MAIN is never an RME branch, and a legacy import can never be charged to
     // it. An actor pinned there sees nothing rather than borrowing the RME set.
@@ -339,7 +339,7 @@ it('shows no branch when the resolved one is not RME-enabled', function () {
 });
 
 it('ignores a branch supplied by the request', function () {
-    $own = lihBranch('TKM1', 'Cabang Telkomas');
+    $own = lihBranch('TLK1', 'Cabang Telkomas');
     $other = lihBranch('LDK2', 'Cabang Landak');
 
     lihConsume(LegacyImportType::LEGACY_RME, (int) $other->id, 9);
@@ -353,7 +353,7 @@ it('ignores a branch supplied by the request', function () {
         ->get(route('settings.legacy-imports.index', ['branch_id' => $other->id]))
         ->assertOk();
 
-    $response->assertSee('TKM1', false);
+    $response->assertSee('TLK1', false);
     $response->assertDontSee('Cabang Landak', false);
 });
 

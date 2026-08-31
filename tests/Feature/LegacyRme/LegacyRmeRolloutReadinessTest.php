@@ -382,8 +382,8 @@ it('stays valid in the closed state with no admitted branches and no wave approv
 });
 
 it('fails the rollout when branches are admitted without a wave approval reference', function () {
-    legacyRmeBranch('TKM1');
-    legacyRmeAdmittedBranches(['TKM1']);
+    legacyRmeBranch('TLK1');
+    legacyRmeAdmittedBranches(['TLK1']);
     legacyRmeApproveWave('', []);
 
     $check = collect(app(LegacyRmeRolloutReadinessService::class)->report()['checks'])
@@ -421,13 +421,13 @@ it('clears branch admission when the wave approval covers every admitted branch'
 });
 
 it('never lets the historical ROLL-2 pilot approval satisfy a different wave in the gate', function () {
-    legacyRmeBranch('TKM1');
+    legacyRmeBranch('TLK1');
     legacyRmeBranch('ATG3', 'Cabang Antang');
 
     // Production state at the Wave-1 checkpoint: ROLL-2's approval is on record.
     config()->set('legacy_rme_rollout.pilot_scope.approved', true);
     config()->set('legacy_rme_rollout.pilot_scope.approval_reference', 'ROLL-2-OWNER-APPROVAL-2026-08-11');
-    config()->set('legacy_rme_rollout.pilot_scope.branch_code', 'TKM1');
+    config()->set('legacy_rme_rollout.pilot_scope.branch_code', 'TLK1');
 
     legacyRmeAdmittedBranches(['ATG3']);
     legacyRmeApproveWave('', []);

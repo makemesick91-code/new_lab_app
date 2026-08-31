@@ -146,12 +146,12 @@ function h1bHistory(User $user, Patient $patient): int
 
 it('lets a treating doctor read a published archive from a branch they practise in', function () {
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
 
     $patient = h1bPatient('LDK2');
     $record = h1bPublished($patient);
 
-    // Production shape: the doctor is standing at TKM1 in principle but also
+    // Production shape: the doctor is standing at TLK1 in principle but also
     // practises at LDK2, where this archive came from, and treats the patient.
     $doctor = h1bDoctor([$tkm1, $ldk2], treating: $patient);
 
@@ -231,13 +231,13 @@ it('refuses a doctor whose master record is inactive', function () {
 */
 
 it('refuses a treating doctor when the origin branch is not one they practise in', function () {
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
     legacyRmeBranch('LDK2', 'Cabang Landak');
 
     $patient = h1bPatient('LDK2');
     $record = h1bPublished($patient);
 
-    // Treats the patient, but practises only at TKM1 — the archive is LDK2.
+    // Treats the patient, but practises only at TLK1 — the archive is LDK2.
     $doctor = h1bDoctor([$tkm1], treating: $patient);
 
     expect($doctor->can('view', $record))->toBeFalse()
@@ -301,7 +301,7 @@ it('accepts a visit with that doctor as the treating relationship', function () 
 */
 
 it('resolves a multi-branch doctor to exactly their assigned branches', function () {
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
     $atg3 = legacyRmeBranch('ATG3', 'Cabang Antang');
 
@@ -319,7 +319,7 @@ it('resolves a multi-branch doctor to exactly their assigned branches', function
 });
 
 it('reads an archive from either of the doctor two practice branches but not a third', function () {
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
     $atg3 = legacyRmeBranch('ATG3', 'Cabang Antang');
 
@@ -375,7 +375,7 @@ it('drops a practice branch that is no longer RME-enabled', function () {
 */
 
 it('ignores an online context branch that is not in the doctor practice set', function () {
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
 
     $patient = h1bPatient('LDK2');
@@ -508,7 +508,7 @@ it('lets the authorized treating doctor print and refuses the non-treating one',
 
 it('leaves a non-doctor operator pinned to their own branch context', function () {
     $ldk2 = legacyRmeBranch('LDK2', 'Cabang Landak');
-    $tkm1 = legacyRmeBranch('TKM1', 'Cabang Telkomas');
+    $tkm1 = legacyRmeBranch('TLK1', 'Cabang Telkomas');
 
     $patient = h1bPatient('LDK2');
     $record = h1bPublished($patient);

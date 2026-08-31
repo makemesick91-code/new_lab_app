@@ -1,0 +1,115 @@
+---
+description: Cabang Telkomas canonical branch code is TLK1; TKM1 is a deprecated historical alias
+globs:
+  - "app/Modules/Branch/**"
+  - "app/Modules/Patient/**"
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/LegacyOdontogram/**"
+  - "config/legacy_rme_rollout.php"
+  - "database/seeders/RmeBranchSeeder.php"
+alwaysApply: false
+---
+
+# TELKOMAS BRANCH CODE FOUNDATION (REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1)
+
+**Cabang Telkomas' canonical branch code is `TLK1`. `TKM1` is DEPRECATED.**
+
+This rule SUPERSEDES every earlier statement that Telkomas' canonical code is
+`TKM1` — including the registry line in rule
+`73-rme-branch-sun4-perawat-online-context.mdc` and the corresponding block in
+`CLAUDE.md`. Where an older rule, sprint record, wave record or audit entry
+mentions `TKM1`, it is a record of the code **at that time** and stays as
+written; it is not a current instruction.
+
+## The rules
+
+1. **One branch identity, one canonical code.** `TKM1` and `TLK1` name the SAME
+   branch — the same `mst_branches` row, the same id, the same patients, the same
+   history. Only the emitted token changed. The branch primary key never moves.
+
+2. **`TLK1` is the only code the application EMITS.** New patients, new Nomor RM
+   values, new visit numbers, new rollout declarations, new reports, new exports,
+   new fixtures and new seed data all carry `TLK1`. No code path may generate
+   `TKM1`.
+
+3. **`TKM1` is ACCEPTED on input, never re-emitted.** It is recognised because it
+   is printed on cards already in patients' wallets, on documents already
+   archived, and stored in identifiers already issued. Accepting it is a
+   compatibility guarantee, not a second canonical form.
+
+4. **The mapping lives in exactly one place:**
+   `App\Modules\Branch\Support\BranchCodeAlias`. Never write
+   `$code === 'TKM1' || $code === 'TLK1'` at a call site. Call
+   `BranchCodeAlias::canonicalize()` before looking a code up or comparing it,
+   and `equivalentCodes()` / `PatientMedicalRecordNumberService::equivalentNumbers()`
+   when matching a STORED value that may hold either spelling.
+
+5. **Nomor RM.** New Telkomas numbers are `DG-TLK1-{TAHUN}-{NOMOR}`.
+   `PatientMedicalRecordNumberService::branchCodeFrom()` reports the CANONICAL
+   code (`DG-TKM1-…` → `TLK1`), so every consumer compares one spelling;
+   `literalBranchCodeFrom()` returns what the number literally says, for the
+   places where the historical fact is the point.
+
+6. **Transform via the parser, never via string replacement.** Only the
+   branch-code SEGMENT may change. `canonicalizeBranchCode()` preserves the
+   prefix, the year and the manual sequence verbatim, returns null for anything
+   that is not `DG-{KODE}-{TAHUN}-{NOMOR}`, and leaves a `TKM1` occurring inside
+   a manual sequence (`DG-LDK2-2024-TKM1`) untouched. A
+   `replace(col,'TKM1','TLK1')` over production data is FORBIDDEN.
+
+7. **Exact-token matching, always.** `TKM` is not `TKM1`; `TKM1-EXTRA` is neither;
+   `XXTKM1YY` is a different branch code that merely contains the substring and
+   is never rewritten. Aliasing widens nothing.
+
+8. **FAIL CLOSED.** An unknown, ambiguous, inactive or non-RME branch code
+   resolves to nothing and is refused. There is no
+   `unknown → Telkomas` fallback, and no fuzzy or typo-tolerant matching.
+
+9. **Historical Nomor RM must keep resolving.** A patient whose stored number was
+   migrated to `DG-TLK1-…` is still found when staff type the `DG-TKM1-…` on their
+   old card. This is done by widening the SEARCH
+   (`CrossBranchPatientLookupService`, `LegacyRmePatientResolutionAuditService`),
+   never by creating a second patient row and never by an alias record.
+
+10. **The source Nomor RM on a legacy document is transcribed FAITHFULLY.**
+    `LegacyRmeSourceRmNormalizer` folds transcription noise (case, spacing, dash
+    variants) and deliberately does NOT canonicalize the branch code: the
+    document really does say `TKM1`, and the archive's job is to say so.
+    Reachability comes from alias-aware matching downstream.
+
+11. **Immutable records are never rewritten to remove `TKM1`:** published legacy
+    RME / odontogram evidence and its stored source RM, file bytes and checksums;
+    `sys_audit_logs`; terminal (COMPLETED / CANCELLED) rollout waves; issued
+    `trx_clinic_visits.visit_number` values; and staging rows recording what a
+    past import generated. An audit trail that is edited to look tidy is false.
+
+12. **Migration is collision-safe and fails closed.** Renaming the branch code or
+    a patient's Nomor RM aborts the whole transaction if the canonical value is
+    already held by a different branch or a different patient. Never overwrite,
+    never merge patients, never delete a duplicate, never auto-renumber — a
+    collision is a master-data decision for a human.
+
+13. **Rollout allowlists canonicalize both sides.** `config/legacy_rme_rollout.php`
+    and `LegacyRmeBranchAdmissionService` canonicalize declared tokens as well as
+    the resolved branch code, so a deployment whose environment still names the
+    deprecated code cannot silently lock an approved branch out of its own wave.
+
+14. **`RmeBranchSeeder` must never create a duplicate Telkomas.** It matches every
+    equivalent code before deciding a branch is missing. Converting a deprecated
+    code to the canonical one is the migration's job, not the seeder's.
+
+15. **Branch identity is still never taken from a request.** This revision changes
+    a label; it does not weaken branch authority. `origin_branch_id` stays
+    RM-derived, and `BranchContext` stays the server-side authority.
+
+## Examples
+
+```text
+DG-TLK1-2024-9985      canonical
+DG-TKM1-2024-9985      HISTORICAL / DEPRECATED ALIAS — accepted, never issued
+
+canonicalize('TKM1')   → 'TLK1'
+canonicalize('TLK1')   → 'TLK1'
+canonicalize('TKM')    → 'TKM'    (unknown → fails closed at branch lookup)
+canonicalize('ZZZ9')   → 'ZZZ9'   (unknown → fails closed at branch lookup)
+```

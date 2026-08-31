@@ -46,6 +46,7 @@ class CrossBranchPatientLookupService
     public function __construct(
         private readonly BranchContext $branchContext,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly PatientMedicalRecordNumberService $medicalRecordNumbers,
     ) {}
 
     /**
@@ -81,9 +82,26 @@ class CrossBranchPatientLookupService
         }
 
         // 1) Exact match first — preserves Sprint 57 full-RM behaviour verbatim.
+        //
+        // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — "exact" means the same
+        // NUMBER, not the same string. When a branch's code is revised the
+        // stored Nomor RM is migrated to the canonical spelling, while the card
+        // the patient hands across the counter still shows the deprecated one.
+        // Matching the literal text alone would answer "no such patient" for a
+        // number the clinic itself issued, and staff would create a duplicate
+        // registration for someone who is already in the system — the exact
+        // outcome this cross-branch lookup exists to prevent.
+        //
+        // Only the branch-code segment varies, and the variants are built by
+        // parsing and recomposing (PatientMedicalRecordNumberService), never by
+        // string replacement: the year and manual sequence still have to match
+        // exactly, and a value that is not a canonical Nomor RM searches for
+        // itself alone. A genuine duplicate across the two spellings still
+        // reports `is_duplicate`, which is what a human needs to see.
         $exact = $this->mapResults(
             $this->scopedPatientQuery()
-                ->where('medical_record_number', $rm) // intentionally no branch filter
+                // intentionally no branch filter
+                ->whereIn('medical_record_number', $this->medicalRecordNumbers->equivalentNumbers($rm))
                 ->with('branch:id,code,name')
                 ->limit(self::DISPLAY_LIMIT)
                 ->get()

@@ -25,7 +25,7 @@ beforeEach(function () {
     ]);
 
     test()->rmeBranch = Branch::factory()->create([
-        'code' => 'TKM1',
+        'code' => 'TLK1',
         'name' => 'Cabang Telkomas',
         'is_active' => true,
         'is_rme_enabled' => true,
@@ -78,7 +78,7 @@ it('shows multi-select Cabang Praktik on doctor create form', function () {
         ->get(route('settings.doctors.create'))
         ->assertOk()
         ->assertSee('Cabang Praktik yang Diizinkan')
-        ->assertSee('TKM1 — Cabang Telkomas');
+        ->assertSee('TLK1 — Cabang Telkomas');
 });
 
 it('does not show legacy single Cabang RME select on doctor create form', function () {
@@ -93,7 +93,7 @@ it('only lists active RME-enabled branches on doctor create form', function () {
     $this->actingAs(test()->admin)
         ->get(route('settings.doctors.create'))
         ->assertOk()
-        ->assertSee('TKM1 — Cabang Telkomas')
+        ->assertSee('TLK1 — Cabang Telkomas')
         ->assertDontSee('INA9 —')
         ->assertDontSee('INV9 —')
         ->assertDontSee('MAIN —');
@@ -183,7 +183,7 @@ it('shows practice branches on doctor index', function () {
         ->get(route('settings.doctors.index'))
         ->assertOk()
         ->assertSee('Cabang Praktik')
-        ->assertSee('TKM1 — Cabang Telkomas')
+        ->assertSee('TLK1 — Cabang Telkomas')
         ->assertSee('BD02 — Cabang Kedua')
         ->assertSee('Dr. Visible Branch');
 });
@@ -303,7 +303,7 @@ it('shows only allowed practice branches on doctor online context select', funct
     $this->actingAs($user)
         ->get(route('rme.online-context.select'))
         ->assertOk()
-        ->assertSee('TKM1 — Cabang Telkomas')
+        ->assertSee('TLK1 — Cabang Telkomas')
         ->assertDontSee('BD02 — Cabang Kedua')
         ->assertDontSee('BD03 — Cabang Ketiga');
 });
@@ -355,6 +355,6 @@ it('filters branch master index to RME-enabled branches only', function () {
         ->get(route('settings.branches.index'))
         ->assertOk()
         ->assertSee('Master Cabang RME')
-        ->assertSee('TKM1')
+        ->assertSee('TLK1')
         ->assertDontSee('INV9 —');
 });
