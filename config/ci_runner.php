@@ -264,6 +264,21 @@ return [
         // the property is only protected if something required asserts it.
         'tests/Feature/Cicd/TempFileSiblingLeakContractTest.php',
 
+        // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the clinical
+        // authorization boundary this revision moves, and the three conditions
+        // it deliberately does NOT move.
+        //
+        // Declared rather than left to a filter token for the exact reason this
+        // registry exists. The suite happens to be selected today by the bare
+        // `Odontogram` token, i.e. by a substring of its filename — the same
+        // "coverage rested on a filename coincidence" failure the docblock above
+        // describes. What it pins is not cosmetic: that charting is permitted
+        // before consent, and that the RME gate, the finish-examination gate,
+        // the actor/branch/patient scope, the examination-started precondition
+        // and the permanent read-only status of historical charts all survive
+        // that change. A future rename must move this coverage, never drop it.
+        'tests/Feature/RME/RmeConsentOdontogramPreConsentEditTest.php',
+
         // FIX-CI-GATE-WORKDIR-TEMPFILE-LEAK-1 — R-22. The registry above is the
         // OWNER, but nothing required that governed test code actually go
         // through it, so two release-gate call sites allocated their workdir
