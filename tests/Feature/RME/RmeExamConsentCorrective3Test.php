@@ -5,17 +5,24 @@
 // The product contract this file pins, end to end:
 //
 //   Pendaftaran -> Antrian -> "Mulai Pemeriksaan" -> in_progress
-//     consent UNSIGNED  : active RME and active Odontogram are READ-ONLY,
-//                         every history stays readable, and the examination
-//                         cannot be finished;
-//     consent SIGNED    : both active workspaces become editable;
+//     consent UNSIGNED  : the active RME is READ-ONLY and the examination
+//                         cannot be finished; every history stays readable;
+//     consent SIGNED    : the active RME becomes editable;
 //     clinical work done: the visit is STILL in_progress — completeness never
 //                         ends an examination;
 //     "Selesai Pemeriksaan" (explicit, authorized) -> cashier_pending
 //     -> and only then is the visit billable.
 //
-// CORRECTIVE-03 supersedes the earlier rule that consent gated only RME
-// authoring and left the active odontogram workflow unchanged.
+// PARTIALLY SUPERSEDED by REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1.
+// CORRECTIVE-03 also made a signed consent a precondition of authoring the
+// ACTIVE ODONTOGRAM. That clause is withdrawn: charting teeth is observation,
+// and it is what the consent form's named treatment is derived FROM, so
+// requiring the signature first made the workflow circular. The active
+// odontogram is now editable from "Mulai Pemeriksaan" onward, and the
+// odontogram cases below assert exactly that. The RME gate, the finish gate,
+// the actor/branch/patient scope and the permanent read-only status of
+// historical charts are all UNCHANGED, and are still pinned here.
+// See tests/Feature/RME/RmeConsentOdontogramPreConsentEditTest.php.
 
 use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
@@ -101,47 +108,53 @@ it('lets an authorized doctor VIEW the active odontogram while consent is unsign
         ->assertOk();
 });
 
-it('denies active odontogram mutation while consent is unsigned', function () {
+// REVISED by REVISION-...-PRECONSENT-EDIT-1: was 'denies active odontogram
+// mutation while consent is unsigned'. Charting is now permitted from
+// "Mulai Pemeriksaan"; the RME and finish gates below are untouched.
+it('allows active odontogram mutation while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
-    expect(fn () => app(OdontogramService::class)
-        ->updatePlaceholder($odontogram, c3ToothPayload(), $this->doctorUser))
-        ->toThrow(ValidationException::class);
+    app(OdontogramService::class)->updatePlaceholder($odontogram, c3ToothPayload(), $this->doctorUser);
 
-    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
+    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
 });
 
-it('denies active odontogram finalization while consent is unsigned', function () {
+// REVISED: was 'denies active odontogram finalization while consent is unsigned'.
+it('allows active odontogram finalization while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
-    expect(fn () => app(OdontogramService::class)->finalize($odontogram, $this->doctorUser))
-        ->toThrow(ValidationException::class);
+    app(OdontogramService::class)->finalize($odontogram, $this->doctorUser);
 
-    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_DRAFT);
+    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
+    // Finalizing a CHART is not finishing the EXAMINATION.
+    expect($visit->fresh()->status)->toBe(ClinicVisit::STATUS_IN_PROGRESS);
 });
 
-it('denies a crafted odontogram PATCH while consent is unsigned', function () {
+// REVISED: was 'denies a crafted odontogram PATCH while consent is unsigned'.
+// The request is no longer "crafted" — it is the ordinary save.
+it('accepts the odontogram PATCH while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->patch(route('rme.odontograms.update', $odontogram), c3ToothPayload())
-        ->assertSessionHasErrors();
+        ->assertSessionHasNoErrors();
 
-    expect($odontogram->fresh()->tooth_map_payload)->toBeNull();
+    expect($odontogram->fresh()->tooth_map_payload['teeth']['11']['conditions'])->toBe(['caries']);
 });
 
-it('denies a crafted odontogram finalize POST while consent is unsigned', function () {
+// REVISED: was 'denies a crafted odontogram finalize POST while consent is unsigned'.
+it('accepts the odontogram finalize POST while consent is unsigned', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
     $odontogram = c3Odontogram($visit);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->post(route('rme.odontograms.finalize', $odontogram))
-        ->assertSessionHasErrors();
+        ->assertSessionHasNoErrors();
 
-    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_DRAFT);
+    expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
 });
 
 it('allows active odontogram authoring once consent is signed', function () {
@@ -162,14 +175,17 @@ it('allows active odontogram finalization once consent is signed', function () {
     expect($odontogram->fresh()->status)->toBe(Odontogram::STATUS_FINALIZED);
 });
 
-it('shows the read-only notice on the odontogram page while consent is unsigned', function () {
+// REVISED: was 'shows the read-only notice on the odontogram page while consent
+// is unsigned'. The page now offers the save controls AND still names the
+// outstanding signature, because it continues to gate the RME and the finish.
+it('shows the pending-consent reminder alongside the save controls', function () {
     $visit = c3Visit(ClinicVisit::STATUS_IN_PROGRESS);
 
     $this->withoutMiddleware(EnsureRmeOnlineContext::class)
         ->get(route('rme.visits.odontogram.show', $visit))
         ->assertOk()
         ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
-        ->assertDontSee('Simpan Odontogram');
+        ->assertSee('Simpan Odontogram');
 });
 
 /*

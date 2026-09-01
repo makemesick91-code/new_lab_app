@@ -119,16 +119,21 @@ class OdontogramController extends Controller
          * the write itself, so a stale or crafted page cannot author anything;
          * this exists so the doctor is told why the controls are absent instead of
          * discovering it on submit.
-         *
-         * Two distinct read-only reasons, kept distinct because the remedy
-         * differs: an unsigned consent on the live encounter is fixed by taking
-         * the signature, while a previous visit's chart is history and no
-         * signature reopens it.
          */
         $consents = app(RmeVisitConsentService::class);
         $odontogramAuthoringAllowed = $consents->canAuthorOdontogramFor($clinicVisit, $request->user());
-        $odontogramConsentRequired = ! $odontogramAuthoringAllowed
-            && $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS
+
+        /*
+         * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — an unsigned consent
+         * no longer blocks THIS page, so the old "you may not chart yet" warning
+         * would now be false. It is replaced by what is still true: the signature
+         * is outstanding, and it still gates the RME and "Selesai Pemeriksaan".
+         *
+         * Saying so here is not decoration. The doctor can now complete the whole
+         * chart without ever meeting the gate, and would otherwise first learn the
+         * visit is stuck when they try to finish it.
+         */
+        $consentPendingForRme = $clinicVisit->status === ClinicVisit::STATUS_IN_PROGRESS
             && ! $consents->hasValidConsent($clinicVisit);
 
         return view('rme.visits.odontogram.show', compact(
@@ -139,7 +144,7 @@ class OdontogramController extends Controller
             'structured',
             'odontogramHistory',
             'odontogramAuthoringAllowed',
-            'odontogramConsentRequired',
+            'consentPendingForRme',
         ));
     }
 

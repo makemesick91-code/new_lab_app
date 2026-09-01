@@ -168,8 +168,10 @@ class RmeVisitConsentService
      * readable regardless: the doctor deciding today's treatment needs the
      * history, and reading harms nobody.
      *
-     * The ACTIVE ODONTOGRAM is deliberately outside this gate; its workflow is
-     * unchanged by this sprint.
+     * The ACTIVE ODONTOGRAM has its own, deliberately weaker authority in
+     * {@see self::assertOdontogramAuthoringAllowed()}: same encounter, actor and
+     * chart-identity conditions, but no signature, because charting is
+     * observation rather than the treatment decision this record states.
      */
     public function resolveAuthorizedEncounter(?int $patientId, ?User $actor = null): ?ClinicVisit
     {
@@ -244,30 +246,45 @@ class RmeVisitConsentService
     */
 
     /**
-     * CORRECTIVE-03 — the SAME positive authority, now covering the ACTIVE
-     * odontogram.
+     * REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the same positive
+     * authority as the RME gate, MINUS the signature.
      *
-     * This supersedes the earlier contract, under which consent gated only RME
-     * authoring and the odontogram workflow was left unchanged. That split was
-     * indefensible: an odontogram is a clinical finding recorded on a patient
-     * during a treatment decision, exactly like the note beside it, so consenting
-     * to one and not the other consents to nothing coherent.
+     * This supersedes the CORRECTIVE-03 clause that made a signed consent the
+     * fourth condition here. CORRECTIVE-03 reasoned that an odontogram is a
+     * clinical finding recorded during a treatment decision, "exactly like the
+     * note beside it". In the clinic it is not: charting teeth is OBSERVATION.
+     * The doctor looks in the mouth and records what is already there, and that
+     * observation is precisely what the patient is then asked to consent to. A
+     * PERSETUJUAN TINDAKAN MEDIS names the treatment, so demanding the signature
+     * before anyone may write down what they saw made the workflow circular —
+     * the form could not be completed until the finding existed, and the finding
+     * could not be recorded until the form was signed.
      *
-     * An odontogram row is bound to ONE visit — unlike handwriting, which Sprint
-     * 64.0.2 stores on the patient's canonical record — so authority here is
-     * stricter than the RME gate and can be exact: the chart being written must
-     * BE the live encounter's chart. That is what keeps history permanently
-     * read-only. A previous visit's chart is evidence of what was found then;
-     * signing a consent today authorises recording today's findings, never
-     * rewriting an earlier encounter's.
+     * What consent still gates is unchanged and deliberate:
      *
-     * All four RME conditions still hold, in this order, so the refusal names the
-     * real reason:
+     *   - the ACTIVE RME    ({@see self::assertRmeAuthoringAllowedForPatient()}),
+     *     because the record states the treatment DECISION, not the observation;
+     *   - FINISHING the examination (ClinicVisitService::transitionStatus),
+     *     because that hands the visit to the cashier as a bill.
      *
-     *   1. the patient HAS a single current `in_progress` encounter;
+     * So charting early can never become a way around either: it writes only
+     * `trx_odontograms`, it signs nothing, and it advances no status.
+     *
+     * The other three conditions are load-bearing and are NOT relaxed. An
+     * odontogram row is bound to ONE visit — unlike handwriting, which Sprint
+     * 64.0.2 stores on the patient's canonical record — so authority here stays
+     * exact: the chart being written must BE the live encounter's chart. That is
+     * what keeps history permanently read-only. A previous visit's chart is
+     * evidence of what was found then, and no event today reopens it.
+     *
+     * Checked in this order, so the refusal names the real reason:
+     *
+     *   1. the patient HAS a single current `in_progress` encounter — i.e. the
+     *      doctor has explicitly clicked "Mulai Pemeriksaan". Charting before an
+     *      examination has started is still refused; the absence of a consent is
+     *      never on its own an authorisation.
      *   2. the actor may work on that encounter (branch + clinical scope);
-     *   3. the odontogram belongs to THAT encounter (else it is history);
-     *   4. a valid signed consent exists for that encounter.
+     *   3. the odontogram belongs to THAT encounter (else it is history).
      */
     public function assertOdontogramAuthoringAllowed(?ClinicVisit $visit, ?User $actor = null): ClinicVisit
     {
@@ -304,12 +321,9 @@ class RmeVisitConsentService
             ]);
         }
 
-        if (! $this->hasValidConsent($encounter)) {
-            throw ValidationException::withMessages([
-                'consent' => 'Odontogram kunjungan ini belum dapat diubah karena Persetujuan Tindakan Medis belum ditandatangani.',
-            ]);
-        }
-
+        // NO consent check. See the docblock: the signature gates the record and
+        // the finish transition, not the observation. Deliberately absent rather
+        // than commented out, so nothing here reads as an oversight.
         return $encounter;
     }
 

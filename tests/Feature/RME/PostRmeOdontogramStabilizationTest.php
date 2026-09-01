@@ -151,8 +151,22 @@ it('switches the save form to the model-bound update route once a chart exists',
         ->assertDontSee('action="'.route('rme.visits.odontogram.store', $visit).'"', false);
 });
 
-it('offers no save form at all while consent is unsigned', function () {
+// REVISED by REVISION-...-PRECONSENT-EDIT-1: was 'offers no save form at all
+// while consent is unsigned'. Charting no longer waits for the signature, so the
+// store form is offered from "Mulai Pemeriksaan" onward. The form-less cases
+// that still exist — a view-only operator, and a visit whose examination has not
+// started — are covered below and in RmeConsentOdontogramPreConsentEditTest.
+it('offers the first-save form while consent is unsigned', function () {
     $visit = stabVisit(ClinicVisit::STATUS_IN_PROGRESS);
+
+    $this->actingAs($this->doctorUser)
+        ->get(route('rme.visits.odontogram.show', $visit))
+        ->assertOk()
+        ->assertSee('action="'.route('rme.visits.odontogram.store', $visit).'"', false);
+});
+
+it('offers no save form before the examination has started', function () {
+    $visit = stabVisit(ClinicVisit::STATUS_WAITING);
 
     $this->actingAs($this->doctorUser)
         ->get(route('rme.visits.odontogram.show', $visit))
@@ -229,12 +243,18 @@ it('submitting the first-save route twice still yields a single chart', function
 
 /*
 |--------------------------------------------------------------------------
-| A REFUSED write leaves no trace — the consent gate now precedes the insert
+| A REFUSED write leaves no trace — the authorisation precedes the insert
 |--------------------------------------------------------------------------
 */
 
-it('refuses the first save while consent is unsigned and creates no row', function () {
-    $visit = stabVisit(ClinicVisit::STATUS_IN_PROGRESS);
+// REVISED by REVISION-...-PRECONSENT-EDIT-1. The PROPERTY these two pin — a
+// refused first save leaves no trace, because the assertion precedes the insert
+// — is unchanged and still exactly the point. Only the trigger moved: an
+// unsigned consent is no longer a refusal, so they now use a refusal that still
+// exists, an examination that has not started. The cancelled-visit case below
+// covers the terminal end of the same property.
+it('refuses the first save before the examination has started and creates no row', function () {
+    $visit = stabVisit(ClinicVisit::STATUS_WAITING);
 
     $this->actingAs($this->doctorUser)
         ->withoutMiddleware(EnsureRmeOnlineContext::class)
@@ -244,8 +264,8 @@ it('refuses the first save while consent is unsigned and creates no row', functi
     expect(stabRowCount($visit))->toBe(0);
 });
 
-it('refuses the service-level first save while consent is unsigned and creates no row', function () {
-    $visit = stabVisit(ClinicVisit::STATUS_IN_PROGRESS);
+it('refuses the service-level first save before the examination has started and creates no row', function () {
+    $visit = stabVisit(ClinicVisit::STATUS_WAITING);
 
     expect(fn () => app(OdontogramService::class)
         ->saveForVisit($visit, stabToothPayload(), $this->doctorUser))

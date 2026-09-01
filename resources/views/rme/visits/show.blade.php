@@ -144,10 +144,17 @@
             @if ($visitSignedConsent === null)
                 <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
                     <div class="flex flex-wrap items-start justify-between gap-3">
+                        {{-- REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — this
+                             used to say "Rekam medis dan odontogram ... belum dapat
+                             ditulis", which is now false: the odontogram is editable
+                             from "Mulai Pemeriksaan". Naming the odontogram here
+                             would send the doctor to take a signature before the
+                             examination that produces its content. --}}
                         <p class="max-w-xl text-sm">
-                            Rekam medis dan odontogram kunjungan ini belum dapat ditulis sampai
-                            Surat Persetujuan Tindakan Medis ditandatangani pasien atau pemberi
-                            persetujuan, dan pemeriksaan belum dapat diselesaikan.
+                            Odontogram kunjungan ini sudah dapat dicatat. Rekam medis belum
+                            dapat ditulis sampai Surat Persetujuan Tindakan Medis
+                            ditandatangani pasien atau pemberi persetujuan, dan pemeriksaan
+                            belum dapat diselesaikan.
                             Riwayat klinis pasien tetap dapat dibaca.
                         </p>
                         @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $visit])

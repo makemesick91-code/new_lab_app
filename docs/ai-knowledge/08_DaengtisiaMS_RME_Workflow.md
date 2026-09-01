@@ -64,6 +64,11 @@ RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; 
 ### Odontogram
 - Table-first editing (Sprint 59)
 - Structured print template (Sprint 63.1)
+- **Odontogram aktif BOLEH diedit sebelum consent ditandatangani**
+  (REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1). Syaratnya tetap: ada
+  SATU kunjungan `in_progress` milik pasien, aktor berwenang (branch + patient
+  scope), dan chart itu milik kunjungan tersebut. Chart kunjungan lama
+  permanen read-only.
 
 ### Kasir
 - Billing hanya jika visit `cashier_pending` + RM finalized
@@ -71,7 +76,13 @@ RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; 
 - Carry-over piutang visit baru (Sprint 62.2) — opt-in, tidak merge invoice
 
 ### Consent
-- Gate pembayaran: TIDAK ada pemeriksaan consent. Consent diambil di awal pemeriksaan dan menggate penulisan RME (`RmeVisitConsentService::assertRmeAuthoringAllowed`)
+- Gate pembayaran: TIDAK ada pemeriksaan consent. Consent diambil di awal
+  pemeriksaan (hanya saat `in_progress`).
+- Consent menggate **penulisan RME** (`RmeVisitConsentService::assertRmeAuthoringAllowedForPatient`)
+  dan **"Selesai Pemeriksaan"** (`ClinicVisitService::transitionStatus`, `in_progress → cashier_pending`).
+- Consent **TIDAK** menggate odontogram aktif — lihat bagian Odontogram di atas.
+  Menyimpan odontogram tidak pernah membuat/menandatangani consent dan tidak
+  pernah memajukan status visit.
 
 ### Lab integration
 - Setelah invoice RME `PAID` → `LabCaseCandidate` idempotent (bukan LabOrder langsung)
@@ -85,12 +96,18 @@ RME adalah modul pilot utama klinik. Handwriting RM adalah input klinis primer; 
 1. Admin/Perawat: daftar pasien (settings.patients) atau kunjungan baru (rme.visits.create)
 2. Antrian: rme.patient-queue.index
 3. Assign ruangan: PATCH rme.visits.assign-room
-4. Dokter: buka RM (rme.visits.medical-record.show) — workspace sheets jika multi-visit
-5. Isi catatan + handwriting canvas + odontogram
-6. Finalize RM → HANYA mengubah status dokumen. Visit TETAP `in_progress`.
-7. Dokter klik "Selesai Pemeriksaan" → transition ke `cashier_pending` (satu-satunya jalur)
-7. Kasir: rme.cashier.create → payment → visit completed
-8. Opsional: print bundle / PDF
+4. Dokter klik "Mulai Pemeriksaan" → visit `in_progress`.
+   Sejak titik ini odontogram aktif SUDAH boleh dicatat, sedangkan RME dan
+   "Selesai Pemeriksaan" masih terkunci sampai consent ditandatangani.
+5. Odontogram (rme.visits.odontogram.show) — boleh diisi sebelum consent
+6. Consent: pasien tanda tangan (rme.visits.consent.create) → RME terbuka
+7. Dokter: buka RM (rme.visits.medical-record.show) — workspace sheets jika multi-visit
+8. Isi catatan + handwriting canvas
+9. Finalize RM → HANYA mengubah status dokumen. Visit TETAP `in_progress`.
+10. Dokter klik "Selesai Pemeriksaan" → transition ke `cashier_pending`
+    (satu-satunya jalur; butuh consent yang sudah ditandatangani)
+11. Kasir: rme.cashier.create → payment → visit completed
+12. Opsional: print bundle / PDF
 ```
 
 ## Struktur Teknis

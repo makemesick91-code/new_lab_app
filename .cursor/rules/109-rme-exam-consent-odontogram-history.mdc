@@ -23,15 +23,20 @@ in force unchanged.
 ```
 Pendaftaran -> Antrian -> Input Ruangan
   -> Dokter "Mulai Pemeriksaan"            -> in_progress
-  -> Persetujuan Tindakan Medis            -> RME AND Odontogram unlocked
+                                           -> ODONTOGRAM EDITABLE
+                                           -> RME locked, Selesai locked
+  -> Persetujuan Tindakan Medis            -> RME unlocked, Selesai unlocked
   -> RME + Odontogram
   -> RME and/or Odontogram complete        -> STILL in_progress
   -> Dokter "Selesai Pemeriksaan"          -> cashier_pending
   -> Kasir / Pembayaran (no consent check) -> completed
 ```
 
-Before the signature, both active clinical workspaces are **viewable but
-READ-ONLY**, and the examination **cannot be finished**.
+**SUPERSEDED IN PART** by REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 —
+see `134-odontogram-pre-consent-authoring.mdc`, which is authoritative wherever
+it and this rule disagree. Before the signature the **active odontogram is
+EDITABLE**; the **active RME stays READ-ONLY** and the examination **cannot be
+finished**. Everything else in this rule stands.
 
 Historical clinical evidence — RME history, Legacy RME, native odontogram
 history, Legacy Odontogram — is **read-only** and readable throughout, signature
@@ -89,25 +94,21 @@ or not.
   fully readable — including when there is no active encounter at all, and when
   the active encounter is unconsented. The doctor deciding today's treatment needs
   the history, and reading harms nobody.
-- **CORRECTIVE-03 — the ACTIVE ODONTOGRAM is gated too.** This SUPERSEDES the
-  earlier rule that the active odontogram workflow was unchanged and carried no
-  consent dependency. A valid signed consent on the live encounter is required
-  before `OdontogramService::updatePlaceholder()` or `::finalize()` may write:
-  setting or changing a tooth condition, diagnosis, treatment, summary notes,
-  additional conditions, or finalizing the chart.
-  - The split was indefensible. An odontogram is a clinical finding recorded on a
-    patient during a treatment decision, exactly like the note beside it, so
-    consenting to one and not the other consents to nothing coherent.
-  - **Opening the page still works, and still creates the empty placeholder row**
-    (`getOrCreateForVisit`) — the doctor must SEE the chart to decide the
-    treatment the patient is being asked to consent to, and an empty draft with no
-    recorded teeth is not a clinical finding. Do not gate the read.
-  - Authority here is **stricter than the RME gate and exact**: an odontogram row
+- **The ACTIVE ODONTOGRAM is NOT consent-gated.** CORRECTIVE-03 made a signed
+  consent a fourth precondition of authoring the live chart; REVISION-RME-CONSENT-
+  ODONTOGRAM-PRECONSENT-EDIT-1 **WITHDREW that clause**, and
+  `134-odontogram-pre-consent-authoring.mdc` is the authority. Charting is
+  observation and is what the consent form's named treatment is derived FROM, so
+  requiring the signature first made the workflow circular.
+  - The other three conditions are UNCHANGED and still exact: an odontogram row
     belongs to ONE visit (unlike handwriting, which Sprint 64.0.2 stores on the
     patient's canonical record), so the chart being written must BE the live
     encounter's chart. `assertOdontogramAuthoringAllowed()` checks, in order:
-    a single `in_progress` encounter exists, the actor may work on it, the chart
-    belongs to THAT encounter, and it has a valid signed consent.
+    a single `in_progress` encounter exists, the actor may work on it, and the
+    chart belongs to THAT encounter.
+  - **Opening the page still works.** Since POST-RME-ODONTOGRAM-STABILIZATION-1 /
+    FIX-01 it no longer creates a row; creation happens on Save. Do not gate the
+    read.
 
 ### 2a. Consent timing — only during the examination
 
@@ -192,14 +193,17 @@ State this precisely; overclaiming is how a control gets trusted for something i
 never did.
 
 **Covered:** `trx_medical_records` and its handwriting pages, structured
-diagnoses, the emergency diagnosis override, the **active odontogram**
-(CORRECTIVE-03), and **finishing the examination** (§1a).
+diagnoses, the emergency diagnosis override, and **finishing the examination**
+(§1a).
 
-**Deliberately NOT covered:** **prescriptions** (out of scope). So do not write
-"a treatment that was recorded at all had consent" without qualification. The
-accurate statement is: **the medical record, its handwriting and the active
-odontogram cannot be written, and the examination cannot be finished, without an
-authorized, consented, in-progress encounter.**
+**Deliberately NOT covered:** **prescriptions** (out of scope), and — since
+REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the **active odontogram**.
+So do not write "a treatment that was recorded at all had consent" without
+qualification. The accurate statement is: **the medical record and its
+handwriting cannot be written, and the examination cannot be finished, without an
+authorized, consented, in-progress encounter.** The active odontogram may be
+charted before the signature, but only inside that same authorized, in-progress,
+same-visit encounter.
 
 ## 3. Consent is not a cashier concern
 
@@ -217,11 +221,13 @@ authorized, consented, in-progress encounter.**
 ## 4. Patient odontogram history is read-only
 
 - The Odontogram page has two separate surfaces: the **ACTIVE odontogram** (the
-  live encounter's chart, editable once consented — §2) and **Riwayat Odontogram
-  Pasien** (previous native odontograms + published Legacy Odontograms,
-  read-only).
-- **CORRECTIVE-03 — a previous visit's chart is permanently read-only, and a
-  consent signed today never reopens it.** This SUPERSEDES the Sprint 59 allowance
+  live encounter's chart, editable from "Mulai Pemeriksaan" onward — §2) and
+  **Riwayat Odontogram Pasien** (previous native odontograms + published Legacy
+  Odontograms, read-only).
+- **CORRECTIVE-03 — a previous visit's chart is permanently read-only, and
+  nothing that happens today reopens it** (a consent signed today did not, and
+  the pre-consent charting permission does not either). This SUPERSEDES the
+  Sprint 59 allowance
   that any odontogram is revisable at any time. What Sprint 59 established still
   stands where it applies: the FINALIZATION lock is gone, so a finalized chart on
   the LIVE encounter is still revisable. What it may no longer do is reach back

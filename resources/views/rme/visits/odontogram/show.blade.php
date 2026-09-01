@@ -10,11 +10,12 @@
         // saved table data; the doctor never draws on the image. Odontogram remains
         // editable after finalization (Sprint 59).
         //
-        // CORRECTIVE-03 — authoring additionally requires a signed Persetujuan
-        // Tindakan Medis on the LIVE encounter. `$odontogramAuthoringAllowed` is
-        // supplied by the controller from RmeVisitConsentService, which is the
-        // authority; this is presentation only, and the server refuses the write
-        // regardless of what is rendered here.
+        // REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — authoring requires a
+        // live, in-scope encounter whose chart this is; it no longer requires a
+        // signed Persetujuan Tindakan Medis (that still gates the RME and Selesai
+        // Pemeriksaan). `$odontogramAuthoringAllowed` is supplied by the controller
+        // from RmeVisitConsentService, which is the authority; this is presentation
+        // only, and the server refuses the write regardless of what is rendered here.
         //
         // POST-RME-ODONTOGRAM-STABILIZATION-1 / FIX-01 — `$odontogram` may be an
         // UNSAVED instance, because opening this page no longer creates a row.
@@ -175,15 +176,16 @@
             </x-slot:actions>
         </x-ui.page-header>
 
-        {{-- CORRECTIVE-03 — why this chart is read-only right now. The page stays
-             open: the doctor needs to SEE the chart to decide the treatment the
-             patient is being asked to consent to. --}}
-        @if (($odontogramConsentRequired ?? false) && (auth()->user()?->can('update', $odontogram) ?? false))
-            <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+        {{-- REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — the signature no
+             longer blocks charting, so this is a REMINDER, not a refusal. It
+             names the two things still waiting on it, because the doctor can now
+             finish the whole chart without ever meeting the gate. --}}
+        @if (($consentPendingForRme ?? false) && ($odontogramAuthoringAllowed ?? false))
+            <x-ui.alert variant="info" title="Persetujuan Tindakan Medis belum ditandatangani">
                 <p class="text-sm">
-                    Odontogram dapat dilihat, tetapi belum dapat diubah.
-                    Pasien harus menandatangani form consent sebelum dokter
-                    dapat mencatat atau mengubah odontogram.
+                    Odontogram sudah dapat dicatat dan disimpan sekarang.
+                    Rekam Medis kunjungan ini dan tombol Selesai Pemeriksaan masih
+                    terkunci sampai pasien menandatangani Persetujuan Tindakan Medis.
                 </p>
                 <div class="mt-3">
                     <x-ui.button variant="secondary" :href="route('rme.visits.show', $clinicVisit)">
@@ -263,7 +265,7 @@
             {{-- FIX-01 — the save target depends on whether a chart exists yet.
                  A saved chart is revised through the model-bound update route;
                  the FIRST save goes to the visit-scoped store route, which
-                 creates the row only after consent passes. Both are PATCH, both
+                 creates the row only after the authorisation passes. Both are PATCH, both
                  sit behind manage_clinic_visits + the room gate, and both carry
                  the identical Alpine payload below. --}}
             <form method="POST"

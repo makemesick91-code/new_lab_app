@@ -1,0 +1,143 @@
+---
+description: Odontogram pre-consent authoring — the active chart is editable from "Mulai Pemeriksaan"; consent still gates the RME and finishing the examination
+globs:
+  - app/Modules/Consent/**
+  - app/Modules/Odontogram/**
+  - app/Modules/MedicalRecord/**
+  - app/Modules/ClinicVisit/**
+  - resources/views/rme/**
+alwaysApply: false
+---
+
+# ODONTOGRAM PRE-CONSENT AUTHORING FOUNDATION
+
+REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1 — durable rules.
+
+This rule is **authoritative** over
+`109-rme-exam-consent-odontogram-history.mdc` wherever the two disagree. It
+withdraws exactly ONE clause of CORRECTIVE-03 — that a signed consent is a
+precondition of authoring the ACTIVE odontogram. Everything else CORRECTIVE-03
+established remains in force, including the parts that make this change safe.
+
+## 1. The rule
+
+After a Doctor explicitly starts the examination, the authorized Doctor may
+author and save the active visit's Native Odontogram **even when the same-visit
+Consent Form has not yet been signed**.
+
+Consent remains mandatory before the Doctor may author or modify the active RME.
+
+Consent remains mandatory before the Doctor may finish the examination.
+
+Pre-consent Native Odontogram authoring does **not** bypass examination-start
+state, Doctor authorization, visit ownership, patient scope, historical Native
+immutability, Legacy immutability, branch scope, or any other clinical
+authorization.
+
+Saving an Odontogram **never** implicitly signs Consent and **never** implicitly
+finishes the examination.
+
+Odontogram data saved before Consent **remains intact** after Consent is
+subsequently signed.
+
+## 2. The matrix
+
+| state | Odontogram | RME | Selesai Pemeriksaan |
+|---|---|---|---|
+| `registered` / `waiting` | **DENY** | DENY | DENY |
+| `in_progress`, consent UNSIGNED | **ALLOW** | DENY | DENY |
+| `in_progress`, consent VALID | ALLOW | ALLOW | ALLOW (other guards apply) |
+| `cashier_pending` | DENY | DENY | n/a |
+| `completed` / `cancelled` | DENY | DENY | n/a |
+| historical native chart (any state) | DENY | DENY | n/a |
+| published Legacy Odontogram | DENY | n/a | n/a |
+
+## 3. Why the odontogram, and only the odontogram
+
+Charting teeth is **observation**. The doctor looks in the mouth and records what
+is already there, and that observation is precisely what the patient is then
+asked to consent to. A `PERSETUJUAN TINDAKAN MEDIS` names the treatment, so
+demanding the signature first made the workflow **circular**: the form could not
+be completed until the finding existed, and the finding could not be recorded
+until the form was signed.
+
+The RME note and the finish transition are different acts and stay gated:
+
+- the RME records the treatment **DECISION**, not the observation;
+- finishing hands the visit to the cashier **as a bill**.
+
+Do not generalise this rule into "clinical authoring no longer needs consent".
+It applies to `trx_odontograms` on the live encounter and to nothing else.
+
+## 4. Where it is enforced
+
+**One authority, one method.** `RmeVisitConsentService::assertOdontogramAuthoringAllowed()`
+is the single place the odontogram rule lives. It checks, in order, so the
+refusal names the real reason:
+
+1. the patient HAS a single current `in_progress` encounter — ambiguity (two
+   `in_progress` visits) fails closed, exactly as for the RME gate;
+2. the actor may work on that encounter (`RmeWorkingBranchScope` +
+   `DoctorPatientScopeService`); an unresolvable actor fails closed;
+3. the chart being written IS that encounter's own chart.
+
+There is deliberately **no fourth condition**. Its absence is documented in the
+method, not merely implied, so nothing there reads as an oversight.
+
+All three write paths funnel through it — `OdontogramService::saveForVisit()`,
+`::updatePlaceholder()`, `::finalize()` — and each asserts **before** the insert,
+so a refused encounter leaves no trace.
+
+- `OdontogramPolicy` is unchanged and still answers only the
+  role/branch/patient-scope question; the refusal carries a clear reason rather
+  than a bare 403.
+- `getOrCreateForVisit()` still has **zero production callers**, still asserts
+  nothing, and must keep having none — pinned by
+  `RepositoryArtifactHygieneTest`.
+
+**Do not add a second consent check anywhere.** Not in the controller, not in a
+FormRequest, not in Blade, not in JavaScript. If the odontogram rule ever needs
+to change again, it changes in that one method.
+
+## 5. Odontogram finalization is not examination completion
+
+`OdontogramService::finalize()` is a **chart-level** lifecycle act. Since Sprint
+59 a finalized chart is still revisable, and finalizing one leaves the visit
+`in_progress`. It routes through the same single assertion as every other
+odontogram write, and is therefore also permitted pre-consent. Splitting it out
+would create a second, divergent consent rule for no clinical gain.
+
+"Selesai Pemeriksaan" (`in_progress -> cashier_pending`) is the **workflow**
+transition, is a different fact, and stays consent-gated in
+`ClinicVisitService::transitionStatus()`.
+
+## 6. The page must agree with the server
+
+`canAuthorOdontogramFor()` is the presentation predicate and delegates to the
+same assertion, so the controls the page renders are the ones the server will
+accept. Never derive editability in Blade.
+
+The odontogram page shows a **pending-consent reminder, not a refusal**, while
+the signature is outstanding: charting is available, and the RME and "Selesai
+Pemeriksaan" are not. This is not decoration — the doctor can now complete the
+whole chart without ever meeting the gate, and would otherwise first learn the
+visit is stuck when they try to finish it.
+
+Any wording that tells a user consent is required before the odontogram may be
+edited is **stale** and must be corrected wherever it is found.
+
+## 7. Testing
+
+- Prove the rule **server-side**: assert the service/HTTP outcome, never the
+  presence or absence of a button.
+- `tests/Feature/RME/RmeConsentOdontogramPreConsentEditTest.php` is the pinned
+  suite and is declared in `config/ci_runner.php` `critical_gate_mandatory_suites`,
+  so a rename must move the coverage and can never silently drop it.
+- Tests that are not about consent may seed one with `rmeSignedConsentFor()`.
+  Tests that ARE about consent must go through `RmeVisitConsentService`.
+- The regression guards matter as much as the new permission. Any change here
+  must keep pinning: RME still blocked pre-consent, finish still blocked
+  pre-consent (including when the chart is complete), charting before
+  "Mulai Pemeriksaan" still refused, non-Doctor and other-Doctor still refused,
+  historical native and published Legacy still immutable, no consent or status
+  side effect from a save, and pre-consent charting surviving the signature.
