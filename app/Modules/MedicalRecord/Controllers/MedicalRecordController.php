@@ -168,7 +168,32 @@ class MedicalRecordController extends Controller
                 'sourceVisit' => $sourceVisit,
                 'addSheetVisit' => $addSheetVisit,
                 'patient' => $addSheetVisit->patient,
+                // Who may manage RME here at all: permission, branch, clinical
+                // scope. NOT "may they write right now" — that is the next key.
                 'canEdit' => auth()->user()?->can('create', [MedicalRecord::class, $workspaceVisit]) ?? false,
+                /*
+                 * BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the empty state
+                 * joins the authority the populated workspace already uses.
+                 *
+                 * `canEdit` alone answered a narrower question than the button
+                 * implied. MedicalRecordPolicy::create says nothing about
+                 * consent, because consent is not a permission: it is a property
+                 * of the encounter. So an in-progress unconsented visit rendered
+                 * an actionable "Buat Halaman RM Pertama" that
+                 * MedicalRecordService::createDraft() then refused — UI ALLOW,
+                 * BACKEND DENY.
+                 *
+                 * Creating the first sheet is a current-RME write like any
+                 * other, so it follows the same single authority the sheet-add
+                 * control follows, under the same key. Presentation only; the
+                 * service asserts the same gate, so a crafted POST is refused
+                 * regardless of what this renders.
+                 */
+                'addSheetConsentRequired' => ! app(RmeVisitConsentService::class)
+                    ->canAuthorRmeForPatient($patientId, $request->user()),
+                // The encounter the doctor is actually in, if any — so the
+                // refusal names the real reason rather than a generic lock.
+                'activeEncounter' => app(ActiveEncounterResolver::class)->currentFor($patientId),
                 // A patient may hold a published legacy archive while having no
                 // native RM sheet yet — the archive is exactly the history the
                 // doctor needs here, so the empty state still shows it.

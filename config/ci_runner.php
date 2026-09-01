@@ -386,6 +386,29 @@ return [
         // forbids it. The suite also carries the branch × date matrix proving a
         // historical filter cannot widen the authorised branch scope.
         'tests/Feature/RME/RmeReportTodayDefaultTest.php',
+
+        // BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — the clinical UI capability
+        // must mirror the server capability for the same act.
+        //
+        // DECLARED ON THE STORAGE-PUBLIC-CLINICAL-EVIDENCE-1 PRECEDENT, which
+        // this entry meets on its own terms: the mismatch it pins was LIVE in
+        // production. A doctor with an unconsented in-progress examination was
+        // offered "Buat Halaman RM Pertama" and the server refused the create,
+        // because the empty state gated on MedicalRecordPolicy::create — a
+        // permission — while the act is gated by
+        // RmeVisitConsentService::canAuthorRmeForPatient(). Nothing in CI
+        // asserted the two agreed, so the drift was invisible for as long as it
+        // existed.
+        //
+        // What makes declaration worth more than the token here is the shape of
+        // the likely regression. The failure mode is a UI that becomes MORE
+        // permissive than the service, and that direction produces no error, no
+        // exception and no log line — only a control that fails when pressed.
+        // The suite also pins the two boundaries a careless "align the UI"
+        // change would take with it: the odontogram stays editable before
+        // consent, and finishing the examination stays refused. Coverage that
+        // nothing required is not coverage.
+        'tests/Feature/RME/RmePreConsentFirstPageUiGateTest.php',
     ],
 
     /*
