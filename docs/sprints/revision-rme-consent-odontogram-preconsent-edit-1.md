@@ -150,6 +150,23 @@ substring of its filename, which is precisely the "coverage rested on a filename
 coincidence" failure that registry exists to prevent. Declaring it makes a
 future rename move the coverage rather than silently drop it.
 
+## An unrelated CI failure fixed on the way through
+
+The first CI run reddened on `InventoryAnalyticsServiceTest > it groups monthly
+outbound value trend by month` — a module this sprint does not touch (`git diff
+base..HEAD -- app/Modules/Inventory tests/Feature/Inventory` is empty).
+
+It is a **calendar flake**, not a regression. The test seeds the current month's
+outbound movement at `now()->startOfMonth()->addDays(2)` but filters the query
+with `date_to = now()`. On the 1st and 2nd of any month that movement is in the
+future, so the current-month row does not exist and `$currentRow` is null —
+"Trying to access array offset on null". Today is the 1st, so every PR opened
+today would have hit it.
+
+Fixed by dating that movement `now()`, which is always inside the window and
+always in the current month. The grouping the test is about, and its expected
+`500.0`, are unchanged. Kept as its own commit so it stays legible as unrelated.
+
 ## Files
 
 - `app/Modules/Consent/Services/RmeVisitConsentService.php` — the one behavioural change

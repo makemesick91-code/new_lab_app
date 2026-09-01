@@ -240,11 +240,19 @@ it('returns ledger derived inventory value by location', function () {
 });
 
 it('groups monthly outbound value trend by month', function () {
+    // The current-month outbound is dated TODAY, not `startOfMonth()->addDays(2)`.
+    //
+    // The query window this test uses ends at `date_to = now()`, so a movement two
+    // days into the month sits in the FUTURE on the 1st and 2nd — the current-month
+    // row then does not exist and `$currentRow` is null. That made this a calendar
+    // flake that failed on the first two days of every month and passed on the
+    // other twenty-eight. Today is still in the current month, so the grouping this
+    // test is actually about is unchanged, and the expected 500.0 is unchanged.
     $location = InventoryLocation::factory()->create(['branch_id' => $this->branch->id]);
     $product = Product::factory()->create(['branch_id' => $this->branch->id, 'average_cost' => 100]);
 
     createMovementWithDate($this->branch, $product, $location, now()->startOfMonth()->toDateString(), qtyIn: 20);
-    createMovementWithDate($this->branch, $product, $location, now()->startOfMonth()->addDays(2)->toDateString(), qtyOut: 5);
+    createMovementWithDate($this->branch, $product, $location, now()->toDateString(), qtyOut: 5);
     createMovementWithDate($this->branch, $product, $location, now()->subMonth()->startOfMonth()->addDays(3)->toDateString(), qtyOut: 3);
 
     $trend = $this->analytics->getMonthlyOutboundValueTrend($this->branch->id, [
