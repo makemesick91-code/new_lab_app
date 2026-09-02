@@ -1,0 +1,110 @@
+---
+description: Doctor device registry (Master Data → Device Dokter) — lifecycle, terminal revocation, branch binding, and the standing rule that device login enforcement is OFF
+globs:
+  - "app/Modules/DoctorDevice/**"
+  - "database/migrations/*doctor_devices*"
+  - "resources/views/settings/doctor-devices/**"
+alwaysApply: false
+---
+
+# FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — durable rules
+
+Phase 2 builds the server-side control plane a future Android Clinic App will
+enrol into. It is **capability only**. Phase 1
+(`.cursor/rules/138-doctor-room-scoped-access-and-print-deny.mdc`) stays fully
+in force and must not be weakened.
+
+## 1. Enforcement is OFF — and structurally so
+
+Nothing in authentication, session handling or any middleware may read
+`DoctorDevice`. A doctor logs in exactly as before, and an **empty registry
+locks nobody out**.
+
+`DoctorDeviceAccessTest` asserts this by scanning the auth surfaces for the
+string `DoctorDevice`. If you are about to add that reference, you are starting
+Phase 4, not fixing a test — get the enforcement decision made first.
+
+Do not add a feature flag "in preparation". The minimum-scope decision was
+deliberate: no flag exists until the phase that actually needs one.
+
+## 2. One authority
+
+`App\Modules\DoctorDevice\Services\DoctorDeviceService` is the ONLY place that
+writes a device row. Controllers stay thin; the repository is a data gateway.
+
+## 3. Status is never a payload
+
+`status`, `identity_state`, `public_key_fingerprint`, `uuid` and every
+`registered_*` / `disabled_*` / `revoked_*` stamp are **outside** the model's
+`$fillable`, and the service writes only explicit allow-listed arrays. A
+request can never drive a lifecycle transition, however it is crafted.
+
+`updateMetadata()` edits safe metadata only. If you add a column, decide
+deliberately whether it belongs in `EDITABLE_METADATA` — the default is no.
+
+## 4. REVOKED is terminal
+
+```
+ACTIVE ⇄ DISABLED        ACTIVE → REVOKED        DISABLED → REVOKED
+REVOKED → (nothing)
+```
+
+`reactivate()` refuses a revoked device. Reusing the physical hardware means a
+**fresh cryptographic identity** in a later phase, never resurrecting the old
+row. Disable and revoke both require a written reason; revoke is deliberately
+high-friction in the UI.
+
+## 5. Never delete a device
+
+There is no `destroy` route, no soft delete, no service method. A device that
+was ever trusted keeps its security history. Withdrawal of trust is REVOKED.
+
+## 6. A typed row is not a proven device
+
+`identity_state` is orthogonal to `status`:
+
+- `unverified` — an administrator typed this in. A database record, nothing more.
+- `cryptographically_verified` — the device answered a server challenge with its
+  hardware-backed key. **Reserved for Phase 3 and unreachable in Phase 2.**
+
+Never let an admin path set the verified state. Misleading trust state is worse
+than no trust state.
+
+## 7. Branch binding is server-authoritative
+
+A device belongs to one branch, which must be an active RME-enabled branch
+(`BranchService::rmeEnabledIds()`). A request may only SELECT from that set;
+`branch_id` is re-validated in the service on create AND on update. Canonical
+branch codes only — `TLK1`, `SPN4`; never the historical `TKM1`/`SUN4` aliases.
+
+## 8. No MAC address, no IMEI
+
+Neither is an authentication authority and neither is stored. The future trust
+anchor is `public_key_fingerprint` — a public key fingerprint, never a private
+key and never a reusable enrolment secret. Any future enrolment token must be
+short-lived, single-use, rate-limited and stored hashed.
+
+## 9. Authorization is Super Admin only
+
+`view_doctor_devices` / `manage_doctor_devices` are seeded but granted to **no
+role**, so only Super Admin reaches them via the single global `Gate::before` —
+the ENT-7 `view_developer_console` precedent. Do not grant them to Doctor,
+Kasir, Admin Klinik, Perawat or Owner without an explicit governance decision.
+
+Read and write are separate abilities: `view_doctor_devices` alone passes the
+route middleware, so the **policy** is what refuses every write.
+
+The sidebar is never the boundary.
+
+## 10. Audit every transition
+
+`DOCTOR_DEVICE_CREATED` / `_UPDATED` / `_DISABLED` / `_REACTIVATED` / `_REVOKED`
+through the shared `AuditLogService` (`sys_audit_logs`). Payload is
+identifiers, status and the operator's reason only — never the key fingerprint,
+never a secret, never patient data.
+
+## 11. Out of scope for Phase 2
+
+No Android app, no enrolment API, no challenge/response endpoint, no session
+binding, no device-aware login. A clean domain boundary beats speculative API
+breadth; build the endpoint in the phase that has a client for it.

@@ -36,6 +36,10 @@ use App\Modules\Doctor\Interfaces\DoctorRepositoryInterface;
 use App\Modules\Doctor\Models\Doctor;
 use App\Modules\Doctor\Policies\DoctorPolicy;
 use App\Modules\Doctor\Repositories\DoctorRepository;
+use App\Modules\DoctorDevice\Interfaces\DoctorDeviceRepositoryInterface;
+use App\Modules\DoctorDevice\Models\DoctorDevice;
+use App\Modules\DoctorDevice\Policies\DoctorDevicePolicy;
+use App\Modules\DoctorDevice\Repositories\DoctorDeviceRepository;
 use App\Modules\Inventory\Interfaces\GoodsReceiptRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryActivityLogRepositoryInterface;
 use App\Modules\Inventory\Interfaces\InventoryAnalyticsRepositoryInterface;
@@ -278,6 +282,7 @@ class RepositoryServiceProvider extends ServiceProvider
         ClinicRepositoryInterface::class => ClinicRepository::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoomRepositoryInterface::class => ClinicRoomRepository::class,
+        DoctorDeviceRepositoryInterface::class => DoctorDeviceRepository::class,
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisitRepositoryInterface::class => ClinicVisitRepository::class,
         TreatmentCategoryRepositoryInterface::class => TreatmentCategoryRepository::class,
@@ -434,6 +439,7 @@ class RepositoryServiceProvider extends ServiceProvider
         Clinic::class => ClinicPolicy::class,
         // Sprint 19 — Clinic Master Data
         ClinicRoom::class => ClinicRoomPolicy::class,
+        DoctorDevice::class => DoctorDevicePolicy::class,
         // Sprint 20 — RME: Clinic Visit Queue
         ClinicVisit::class => ClinicVisitPolicy::class,
         MedicalRecord::class => MedicalRecordPolicy::class,

@@ -1,25 +1,25 @@
-# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1
+# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2
 # Validated by: php artisan sprint:manifest-check
 
-id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-1
+id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-2
 type: MODULE_SPRINT
-module: RME
-title: "Doctor room-scoped active patient isolation + Doctor RME/Odontogram print denial (device-independent half of the trusted-device programme; no Android, no device registry, no login lock)"
+module: DoctorDevice
+title: "Doctor device registry + Master Data → Device Dokter (capability only; device login enforcement stays OFF, no Android app, no auth coupling)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new DoctorRoomScopeService + policy/controller/list-scope guards on live RME surfaces
-schema_change: false            # no migration, no table, no column — room context already exists (trx_user_online_contexts)
-frontend_change: true           # room-worklist Blade drops the room selector for a scoped Doctor (no JS/CSS/Vite entry)
-security_impact: true           # authorization boundary: room isolation, IDOR denial, print denial, audit
-branch_isolation_impact: false  # branch scope untouched; room scope narrows strictly inside the existing branch scope
+runtime_change: true            # new module, routes, policy, sidebar entry — admin surface only
+schema_change: true             # additive migration: mst_doctor_devices
+frontend_change: true           # Blade views + sidebar entry (no JS/CSS/Vite entry)
+security_impact: true           # new authorization surface, device trust lifecycle, audit
+branch_isolation_impact: false  # devices bind to an RME-enabled branch; no BranchContext scope change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # live clinical behaviour change on the VPS pilot
+deploy_required: true           # additive migration + new admin surface on the VPS pilot
 browser_required: false         # server-rendered Blade; covered by feature tests
 
 test_profiles:
-  - rme
   - security
+  - rme
 
 # Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
 # a rolling file, so these inherited facts have to be restated by every sprint
@@ -27,3 +27,8 @@ test_profiles:
 # LegacyRmeProgramClosureContractTest exists to catch.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+
+# Phase 2 is CAPABILITY ONLY. The full feature stays NO-GO: device enforcement
+# is not active, no Android app exists, and the full-feature GO tag
+# `feature-doctor-trusted-android-device-lock-1-go` must NOT be created.
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-1-go

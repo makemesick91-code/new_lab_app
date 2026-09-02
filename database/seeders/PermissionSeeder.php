@@ -170,6 +170,12 @@ class PermissionSeeder extends Seeder
         'view reports',
         // ENT-7 — Developer Assistance Console (Super Admin only by default)
         'view_developer_console',
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — Device Dokter.
+        // Security-administration surface for the clinic device registry.
+        // Granted to NO role in RoleSeeder: only Super Admin reaches it via
+        // the global Gate::before, exactly like view_developer_console.
+        'view_doctor_devices',
+        'manage_doctor_devices',
         // SATUSEHAT-1 — Readiness foundation & controlled submission filter.
         // Separate view/review/send + mapping/settings governance permissions.
         // send is intentionally very restricted (no auto-send exists yet).
