@@ -421,10 +421,14 @@ it('canonicalizes rollout allowlist tokens declared with the deprecated code', f
         }
     };
 
+    // REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 — SUN4 is now a deprecated
+    // alias in its own right, so a stale environment naming BOTH old codes
+    // canonicalizes both. That is the point of a registry: a second renamed
+    // branch needed no new code path here.
     $stale = $build('TKM1,LDK2,ATG3,SUN4', 'TKM1,LDK2,ATG3,SUN4', 'TKM1');
 
-    expect($stale['admission']['admitted_branch_codes'])->toBe(['TLK1', 'LDK2', 'ATG3', 'SUN4'])
-        ->and($stale['admission']['approved_branch_codes'])->toBe(['TLK1', 'LDK2', 'ATG3', 'SUN4'])
+    expect($stale['admission']['admitted_branch_codes'])->toBe(['TLK1', 'LDK2', 'ATG3', 'SPN4'])
+        ->and($stale['admission']['approved_branch_codes'])->toBe(['TLK1', 'LDK2', 'ATG3', 'SPN4'])
         ->and($stale['pilot_scope']['branch_code'])->toBe('TLK1')
         // Admitted must stay covered by the approval — canonicalizing BOTH sides
         // is what keeps that invariant true.

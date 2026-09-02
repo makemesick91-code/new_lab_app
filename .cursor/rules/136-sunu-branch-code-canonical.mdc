@@ -1,0 +1,94 @@
+---
+description: Cabang Sunu canonical branch code is SPN4; SUN4 is a deprecated historical alias
+globs:
+  - "app/Modules/Branch/**"
+  - "app/Modules/Patient/**"
+  - "app/Modules/LegacyRme/**"
+  - "app/Modules/LegacyOdontogram/**"
+  - "config/legacy_rme_rollout.php"
+  - "database/seeders/RmeBranchSeeder.php"
+alwaysApply: false
+---
+
+# SUNU BRANCH CODE FOUNDATION (REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1)
+
+**Cabang Sunu's canonical branch code is `SPN4`. `SUN4` is DEPRECATED.**
+
+This rule SUPERSEDES every earlier statement that Sunu's canonical code is
+`SUN4` — including the registry line in rule
+`73-rme-branch-sun4-perawat-online-context.mdc` and the corresponding block in
+`CLAUDE.md`. Where an older rule, sprint record, wave record or audit entry
+mentions `SUN4`, it is a record of the code **at that time** and stays as
+written; it is not a current instruction. The sprint NAME `RME-BRANCH-SUN4` is a
+historical identifier and is not renamed.
+
+## The canonical registry
+
+A branch rename is now a RECURRING operation, not a one-off. The mechanics are
+therefore registry-wide, not per-branch:
+
+| Clinic          | Canonical | Deprecated alias | Revision |
+| --------------- | --------- | ---------------- | -------- |
+| Cabang Telkomas | `TLK1`    | `TKM1`           | REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 |
+| Cabang Sunu     | `SPN4`    | `SUN4`           | REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 |
+| Cabang Landak   | `LDK2`    | —                | never renamed |
+| Cabang Antang   | `ATG3`    | —                | never renamed |
+
+**Rule `92-telkomas-branch-code-canonical.mdc` states the shared mechanics — all
+15 of them — and they apply to EVERY row in this table, not only to Telkomas.**
+Read `SUN4 → SPN4` wherever it reads `TKM1 → TLK1`: one branch identity per
+canonical code, alias accepted but never re-emitted, one mapping in
+`App\Modules\Branch\Support\BranchCodeAlias`, parser-driven transformation and
+never `replace(col,'SUN4','SPN4')`, exact-token matching, fail closed on unknown
+codes, historical Nomor RM still resolving by widening the SEARCH, faithful
+transcription of a legacy document's source RM, immutable records never
+rewritten, collision-safe migration, allowlists canonicalized on both sides, a
+seeder that can never duplicate the branch, and branch authority never taken
+from a request.
+
+**Adding a renamed branch is adding a row to `BranchCodeAlias::HISTORICAL_ALIASES`
+— never a new code path.** If a change needs a new conditional to support a
+second renamed branch, that is the signal the logic is in the wrong place.
+
+## Sunu-specific facts
+
+1. **Nomor RM.** New Sunu numbers are `DG-SPN4-{TAHUN}-{NOMOR}`.
+   `DG-SUN4-…` is accepted on input, resolves to `SPN4`, and is never issued.
+
+2. **Production was found HALF-MIGRATED, and that is why this sprint exists.**
+   The `mst_branches` row had been renamed to `SPN4` by hand while the
+   application still declared `SUN4`. Two live defects followed:
+
+   - one patient's Nomor RM still read `DG-SUN4-…`, so the branch code encoded
+     in it named NO branch at all and RM-derived resolution failed closed,
+     making that patient's legacy archive unreachable;
+   - the ACTIVE rollout wave still listed `SUN4` while the branch master
+     answered `SPN4`, so an approved branch was locked out of its own wave.
+
+   **Never assume the repository and production agree on a branch code.** Check
+   both before planning a rename, and treat a rename as possible DRIFT REPAIR
+   rather than a clean forward migration. Do not revert production backwards to
+   the deprecated code.
+
+3. **`RmeBranchSeeder` compares against `BranchCodeAlias::SUNU_CANONICAL`, not a
+   literal.** The registry key IS the canonical code, so a hard-coded `'SUN4'`
+   in the restore/re-enable branch turns that block into dead code the moment
+   the code is revised, and a soft-deleted Cabang Sunu would stay unselectable.
+
+4. **Both CI critical-gate variants carry a `SunuBranchCode` filter token** and
+   both suites are declared in `ci_runner.critical_gate_mandatory_suites`. A
+   control the gate does not select is not a control.
+
+## Examples
+
+```text
+DG-SPN4-2026-564       canonical
+DG-SUN4-2026-564       HISTORICAL / DEPRECATED ALIAS — accepted, never issued
+
+canonicalize('SUN4')            → 'SPN4'
+canonicalize('SPN4')            → 'SPN4'
+canonicalize('SUN5')            → 'SUN5'   (unknown → fails closed at lookup)
+canonicalize('SNU4')            → 'SNU4'   (unknown → fails closed at lookup)
+canonicalizeBranchCode('DG-LDK2-2026-SUN4')   → unchanged (sequence, not a code)
+canonicalizeBranchCode('DG-XXSUN4YY-2026-1')  → unchanged (different code)
+```

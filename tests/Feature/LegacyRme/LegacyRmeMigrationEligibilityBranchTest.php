@@ -93,7 +93,7 @@ it('round-trips every value the composer can produce', function (string $branchC
     // not normalise them away either.
     ['ATG3', '2024', '000007'],
     // The manual sequence may itself contain a hyphen.
-    ['SUN4', '2025', '12-34'],
+    ['SPN4', '2025', '12-34'],
 ]);
 
 it('returns null for anything that is not a canonical Nomor RM', function (?string $value) {

@@ -232,6 +232,24 @@ return [
         'tests/Feature/Branch/TelkomasBranchCodeAliasTest.php',
         'tests/Feature/Branch/TelkomasBranchCodeMigrationTest.php',
 
+        // REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 — the same two controls for
+        // the SECOND branch that was renamed, Cabang Sunu.
+        //
+        // Declared explicitly rather than trusted to a filter token, because a
+        // token match is an accident of naming: `Branch` selects these today,
+        // and nothing would tell us the day it stopped. The drift these pin was
+        // live in production for the same reason Telkomas' was — the branch row
+        // read SPN4 while the application still said SUN4, so one patient's
+        // Nomor RM named a branch code that existed nowhere and the ACTIVE
+        // rollout wave listed a spelling the branch master no longer used,
+        // locking an approved branch out of its own wave.
+        //
+        // That this is the second occurrence is the argument, not a reason to
+        // relax: a renamed branch is now a recurring operation, and the alias
+        // registry plus the collision-safe migration are what keep it safe.
+        'tests/Feature/Branch/SunuBranchCodeAliasTest.php',
+        'tests/Feature/Branch/SunuBranchCodeMigrationTest.php',
+
         // FIX-RECEIPT-PDF-TEXT-CONTIGUITY-1 — the Full Suite baseline contract,
         // and the receipt regression that proved it had a hole.
         //

@@ -54,7 +54,7 @@ beforeEach(function () {
     $this->ldk2 = Branch::factory()->create(['code' => 'LDK2', 'name' => 'Cabang Landak', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->tkm1 = Branch::factory()->create(['code' => 'TLK1', 'name' => 'Cabang Telkomas', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->atg3 = Branch::factory()->create(['code' => 'ATG3', 'name' => 'Cabang Antang', 'is_rme_enabled' => true, 'is_active' => true]);
-    $this->sun4 = Branch::factory()->create(['code' => 'SUN4', 'name' => 'Cabang Sunu', 'is_rme_enabled' => true, 'is_active' => true]);
+    $this->sun4 = Branch::factory()->create(['code' => 'SPN4', 'name' => 'Cabang Sunu', 'is_rme_enabled' => true, 'is_active' => true]);
     $this->nonRme = Branch::factory()->create(['code' => 'NRME', 'name' => 'Cabang Non RME', 'is_rme_enabled' => false, 'is_active' => true]);
 
     $this->doctor = Doctor::factory()->create(['clinic_id' => $this->clinic->id]);
@@ -87,7 +87,7 @@ beforeEach(function () {
 
     $this->jefriSun4 = Patient::factory()->create([
         'name' => 'Jefri Darmawan',
-        'medical_record_number' => 'DG-SUN4-2026-0450',
+        'medical_record_number' => 'DG-SPN4-2026-0450',
         'branch_id' => $this->sun4->id,
     ]);
 });
@@ -140,7 +140,7 @@ it('finds a patient of another branch by partial Nomor RM', function () {
     $admin = globalLookupOperator($this->ldk2);
 
     expect(globalLookupIds($admin, 'TLK1-2024'))->toContain($this->jefriTkm1->id)
-        ->and(globalLookupIds($admin, 'SUN4'))->toContain($this->jefriSun4->id);
+        ->and(globalLookupIds($admin, 'SPN4'))->toContain($this->jefriSun4->id);
 });
 
 it('finds the same cross-branch patient for a Perawat operator', function () {

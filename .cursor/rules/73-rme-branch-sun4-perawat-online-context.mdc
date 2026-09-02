@@ -11,6 +11,11 @@ alwaysApply: true
    `92-telkomas-branch-code-canonical.mdc`; diterima sebagai alias historis,
    tidak pernah lagi di-generate), LDK2 = Cabang Landak, ATG3 = Cabang Antang,
    **SUN4 = Cabang Sunu**.
+   [SUPERSEDED 2026-09-02 by REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1: Cabang
+   Sunu's canonical code is now `SPN4`; `SUN4` is DEPRECATED — accepted as a
+   historical alias, never generated again. See
+   `136-sunu-branch-code-canonical.mdc`. The sprint NAME RME-BRANCH-SUN4 is a
+   historical identifier and is not renamed.]
    SUN4 aktif + RME-enabled, BUKAN MAIN, tidak otomatis inventory-enabled.
    ID branch TIDAK BOLEH diasumsikan lintas environment — selalu resolve by `code`.
 2. **Penambahan cabang harus idempotent** via `Database\Seeders\RmeBranchSeeder`

@@ -12,6 +12,11 @@ alwaysApply: false
 
 # TELKOMAS BRANCH CODE FOUNDATION (REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1)
 
+> **The 15 rules below are REGISTRY-WIDE.** Cabang Sunu was renamed the same
+> way (`SUN4` → `SPN4`, REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1), so read
+> them for every renamed branch, not only Telkomas. The current registry and
+> the Sunu-specific facts live in `136-sunu-branch-code-canonical.mdc`.
+
 **Cabang Telkomas' canonical branch code is `TLK1`. `TKM1` is DEPRECATED.**
 
 This rule SUPERSEDES every earlier statement that Telkomas' canonical code is

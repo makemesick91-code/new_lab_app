@@ -9,10 +9,16 @@ use Illuminate\Database\Seeder;
 /**
  * RME-BRANCH-SUN4 — canonical Cabang RME registry.
  *
+ * REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 — Cabang Sunu is registered under its
+ * canonical code `SPN4`. The deprecated `SUN4` is still MATCHED below through
+ * BranchCodeAlias::equivalentCodes(), for exactly the reason Telkomas needed it:
+ * a deployment whose branch row has not been migrated yet must be RECOGNISED,
+ * never duplicated.
+ *
  * Idempotent and non-destructive by design:
  *   - Existing branches (matched by unique `code`, including soft-deleted rows)
  *     are NEVER renamed or reconfigured — production master data stays owned by
- *     Master Data Cabang. The only exception is SUN4, the sprint target: it is
+ *     Master Data Cabang. The only exception is Cabang Sunu (SPN4): it is
  *     restored if soft-deleted and re-asserted active + RME-enabled so a re-run
  *     always converges on a selectable Cabang Sunu.
  *   - New rows are created active + RME-enabled. Inventory participation is a
@@ -33,7 +39,7 @@ class RmeBranchSeeder extends Seeder
         BranchCodeAlias::TELKOMAS_CANONICAL => 'Cabang Telkomas',
         'LDK2' => 'Cabang Landak',
         'ATG3' => 'Cabang Antang',
-        'SUN4' => 'Cabang Sunu',
+        BranchCodeAlias::SUNU_CANONICAL => 'Cabang Sunu',
     ];
 
     public function run(): void
@@ -77,7 +83,12 @@ class RmeBranchSeeder extends Seeder
                 continue;
             }
 
-            if ($code !== 'SUN4') {
+            // REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1 — compare against the
+            // CANONICAL constant, not a literal. The registry key above is the
+            // canonical code, so a hard-coded `SUN4` here would silently stop
+            // matching the moment the code was revised and turn this whole
+            // restore/re-enable block into dead code.
+            if ($code !== BranchCodeAlias::SUNU_CANONICAL) {
                 // Existing sibling branches keep their production configuration.
                 continue;
             }

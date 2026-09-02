@@ -221,7 +221,7 @@ it('does not let another patient consent satisfy this visit', function () {
 });
 
 it('does not let a consent from another branch satisfy this visit', function () {
-    $otherBranch = Branch::factory()->create(['code' => 'SUN4', 'is_rme_enabled' => true]);
+    $otherBranch = Branch::factory()->create(['code' => 'SPN4', 'is_rme_enabled' => true]);
     $other = consentVisit($otherBranch, ClinicVisit::STATUS_IN_PROGRESS);
     signConsentFor($other);
 

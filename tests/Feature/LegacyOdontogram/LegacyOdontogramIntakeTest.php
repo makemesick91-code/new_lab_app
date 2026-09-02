@@ -148,8 +148,8 @@ it('fails closed on an INACTIVE branch', function () {
 });
 
 it('fails closed on a non-RME branch', function () {
-    $branch = lodoBranch('SUN4', 'Cabang Sunu');
-    $patient = lodoPatient([], 'SUN4');
+    $branch = lodoBranch('SPN4', 'Cabang Sunu');
+    $patient = lodoPatient([], 'SPN4');
 
     $branch->forceFill(['is_rme_enabled' => false])->save();
 
