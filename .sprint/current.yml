@@ -1,30 +1,22 @@
-# DEVFLOW-1 — Sprint Manifest
+# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-SUNU-ADD-ROOM-A-B-1
+id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-1
 type: MODULE_SPRINT
-module: ClinicRoom
-title: "Cabang Sunu (SPN4) gets two active operational rooms, Ruangan A and Ruangan B, provisioned idempotently onto the existing branch identity"
+module: RME
+title: "Doctor room-scoped active patient isolation + Doctor RME/Odontogram print denial (device-independent half of the trusted-device programme; no Android, no device registry, no login lock)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-# Impact flags — MUST match reality; CI + sprint:manifest-check enforce them.
-runtime_change: true          # new RmeBranchRoomSeeder + DatabaseSeeder registration; no controller/service/route touched
-schema_change: false          # no migration: mst_clinic_rooms already exists, this is master data only
-frontend_change: false        # no Blade/JS/CSS/Vite change; room selectors already read the master data dynamically
-security_impact: true         # rooms are branch-scoped, and the cross-branch room-assignment boundary is re-pinned
-branch_isolation_impact: true # rooms hang off branch_id; provisioning resolves the branch by code, never by request or display name
-ledger_impact: false          # no invoice/payment/inventory/earning path touched
+runtime_change: true            # new DoctorRoomScopeService + policy/controller/list-scope guards on live RME surfaces
+schema_change: false            # no migration, no table, no column — room context already exists (trx_user_online_contexts)
+frontend_change: true           # room-worklist Blade drops the room selector for a scoped Doctor (no JS/CSS/Vite entry)
+security_impact: true           # authorization boundary: room isolation, IDOR denial, print denial, audit
+branch_isolation_impact: false  # branch scope untouched; room scope narrows strictly inside the existing branch scope
+ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true
-browser_required: false       # no UI change; the room selectors are unmodified and read master data dynamically
+deploy_required: true           # live clinical behaviour change on the VPS pilot
+browser_required: false         # server-rendered Blade; covered by feature tests
 
-test_profiles: []
-
-go_tag: revision-sunu-add-room-a-b-1-go
-
-# Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
-# a rolling file, so these inherited facts have to be restated by every sprint
-# after closure — dropping one is precisely the quiet contradiction
-# LegacyRmeProgramClosureContractTest exists to catch.
-inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
-inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+test_profiles:
+  - rme
+  - security

@@ -10,7 +10,12 @@
         ];
         // Worklist only ever lists active (non-terminal) statuses.
         $worklistStatuses = array_values(array_filter($statuses, fn ($s) => ! in_array($s, ['completed', 'cancelled', 'cashier_pending'], true)));
-        $hasFilter = $filters['search'] || $filters['status'] || $filters['clinic_room_id'];
+        // §16 — a room-scoped Doctor works exactly one room, resolved
+        // server-side, so the room selector (and its "Semua ruangan" option) is
+        // not offered at all. The server-side scope is the authority; this only
+        // removes a control that could never have worked.
+        $roomScoped = $roomScoped ?? false;
+        $hasFilter = $filters['search'] || $filters['status'] || (! $roomScoped && $filters['clinic_room_id']);
     @endphp
 
     <div class="space-y-6">
@@ -29,14 +34,16 @@
                     :value="$filters['search']"
                     placeholder="Cari nama, RM, atau no. kunjungan" />
             </div>
-            <div class="w-full sm:w-auto">
-                <x-ui.select label="Ruangan" id="worklist-room" name="clinic_room_id">
-                    <option value="">Semua ruangan</option>
-                    @foreach ($rooms as $room)
-                        <option value="{{ $room->id }}" @selected((int) $filters['clinic_room_id'] === (int) $room->id)>{{ $room->name }}</option>
-                    @endforeach
-                </x-ui.select>
-            </div>
+            @unless ($roomScoped)
+                <div class="w-full sm:w-auto">
+                    <x-ui.select label="Ruangan" id="worklist-room" name="clinic_room_id">
+                        <option value="">Semua ruangan</option>
+                        @foreach ($rooms as $room)
+                            <option value="{{ $room->id }}" @selected((int) $filters['clinic_room_id'] === (int) $room->id)>{{ $room->name }}</option>
+                        @endforeach
+                    </x-ui.select>
+                </div>
+            @endunless
             <div class="w-full sm:w-auto">
                 <x-ui.select label="Status" id="worklist-status" name="status">
                     <option value="">Semua status</option>

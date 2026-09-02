@@ -1,0 +1,105 @@
+---
+description: Doctor room-scoped ACTIVE patient isolation and Doctor RME/Odontogram print denial — server-side, fail-closed, history-preserving
+globs:
+  - "app/Modules/RME/Services/DoctorRoomScopeService.php"
+  - "app/Modules/ClinicVisit/**"
+  - "app/Modules/Odontogram/**"
+  - "app/Modules/MedicalRecord/**"
+  - "resources/views/rme/visits/**"
+alwaysApply: false
+---
+
+# FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — durable rules
+
+Phase 1 of the trusted-device programme ships the two **device-independent**
+Doctor restrictions. It deliberately contains no Android app, no device
+registry and no login device lock — those are Phases 2–4 and are blocked on
+clinic hardware that does not exist yet.
+
+## 1. One authority
+
+`App\Modules\RME\Services\DoctorRoomScopeService` is the ONLY authority for
+both restrictions. Do not add a parallel room-scope or print-deny check.
+
+"Is this a scoped Doctor" is delegated to
+`DoctorPatientScopeService::shouldApplyDoctorScope()` so there is exactly one
+definition — **Owner / Super Admin / Supervisor RME stay exempt**, and Perawat,
+Admin Klinik and Kasir are never room-scoped by this rule.
+
+## 2. The room is server-side, never a request value
+
+The doctor's current room is read from the live online context
+(`trx_user_online_contexts`, `role_context = doctor`, `status = online`,
+Sprint 66.0 `startDoctorSession`). A context that is offline, inactive,
+non-doctor, or roomless resolves to `null`.
+
+Never trust `clinic_room_id`, `branch_id`, `visit_id` or `patient_id` from the
+request. A scoped Doctor's room/branch list filters are dropped in the
+controller, so there is no "Semua Ruangan" capability.
+
+## 3. The ACTIVE set only — history is never restricted
+
+The restriction applies **only** to `ClinicVisit::PRE_EXAM_STATUSES`
+(`registered` / `waiting` / `in_progress`) — exactly the set the room worklist
+and patient queue show.
+
+`cashier_pending` (post-examination) and `completed` / `cancelled` (historical)
+are **never** room-restricted. A doctor must always be able to read back the
+records they created, so:
+
+- `applyRoomScope()` narrows active rows only and leaves every other status
+  visible. It must NOT emit a bare `where('clinic_room_id', …)`, because the
+  same closure also feeds Daftar Kunjungan (`ClinicVisitService::paginate`),
+  which lists historical visits.
+- `deniesActiveVisitOutsideRoom()` returns false for any non-`PRE_EXAM` status.
+
+These two must stay mirror images of each other: **hiding a row and denying a
+direct URL are the same rule.** If you change one, change both.
+
+## 4. Fail closed, but only on the active set
+
+No resolvable room ⇒ the doctor sees and may open **no ACTIVE visit**
+(`whereNotIn(PRE_EXAM_STATUSES)` in listings, deny in the policy). History
+stays readable. Never fail *open*.
+
+## 5. Denial is server-side; the sidebar and hidden buttons are not security
+
+Room isolation is enforced in `ClinicVisitPolicy` (`view` / `update` /
+`transition` / `print` / `completeExamination`) and `OdontogramPolicy`.
+`MedicalRecordController@show` authorises `view` on the **opened** visit before
+the Sprint 64.0 canonical redirect, so the RME surface is covered without
+touching the patient-centric workspace resolver.
+
+## 6. Doctor may read and edit, never print
+
+`print` is denied for a scoped Doctor on:
+
+- `rme.visits.print`, `rme.visits.pdf` (`ClinicVisitPolicy::print`)
+- `rme.odontograms.print` (`OdontogramPolicy::print`)
+
+Both Blade actions are already wrapped in `@can('print', …)`, so the policy
+denial hides the buttons automatically — do not add a separate UI-only check.
+Prescription printing is **out of scope** and must keep working.
+
+Existing RME/Odontogram read + edit lifecycle (consent gate, room gate,
+finalisation, historical immutability) is unchanged. Non-Doctor roles that can
+print today must keep printing.
+
+## 7. Audit real attempts only, from controllers
+
+Audit from the **controller**, never from a policy: policies are also evaluated
+for `@can` UI gating, and auditing there would record a "rejection" every time a
+button is merely hidden.
+
+Events: `DOCTOR_ROOM_ACCESS_REJECTED`, `DOCTOR_PRINT_RME_REJECTED`,
+`DOCTOR_PRINT_ODONTOGRAM_REJECTED` — written through the shared
+`AuditLogService` (`sys_audit_logs`). Payload is identifiers and status only:
+never patient PII, never KTP/NIK.
+
+## 8. Out of scope for Phase 1 (do not silently add)
+
+Android app, kiosk/Device Owner provisioning, cryptographic device identity,
+`Master Data → Device Dokter`, and the Doctor login device lock. Those need
+real clinic hardware and a signing-key governance decision, and enabling login
+enforcement with zero registered devices would lock every doctor out of the
+live pilot.

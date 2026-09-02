@@ -72,7 +72,13 @@ function scopeVisit(Patient $patient, ?Doctor $doctor = null, array $overrides =
         'branch_id' => test()->rmeBranch->id,
         'patient_id' => $patient->id,
         'doctor_id' => $doctor?->id,
-        'clinic_room_id' => ClinicRoom::factory()->create(['branch_id' => test()->rmeBranch->id]),
+        // The branch's treatment room — the same room `scopeDoctorOnline` puts
+        // the doctor in. These tests are about PATIENT scope (assignment and
+        // visit history), so the encounter belongs in the room the doctor is
+        // actually working; a per-visit throwaway room would silently make them
+        // room-scope tests instead. Pass `clinic_room_id` in $overrides to test
+        // a different room deliberately.
+        'clinic_room_id' => test()->room->id,
         'status' => ClinicVisit::STATUS_IN_PROGRESS,
     ], $overrides));
 }
@@ -245,7 +251,11 @@ it('lets doctor with prior patient visit history access another doctors clinical
     $actor->get(route('rme.visits.odontogram.show', $doctorBVisit))->assertOk();
     $actor->patch(route('rme.odontograms.update', $odontogram), ['summary_notes' => 'odontogram dokter a'])->assertRedirect();
     $actor->post(route('rme.odontograms.finalize', $odontogram))->assertRedirect();
-    $actor->get(route('rme.odontograms.print', $odontogram))->assertOk();
+    // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 (§19): a Doctor may
+    // read and edit the odontogram but may never print it. Shared-patient
+    // access is unchanged for every other action above — only printing is
+    // withdrawn (prescription printing, asserted alongside, still works).
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertForbidden();
 
     $actor->get(route('rme.visits.prescription.show', $doctorBVisit))->assertOk();
     $actor->patch(route('rme.prescriptions.update', $prescription), scopePrescriptionPatchPayload($doctorBVisit))->assertRedirect();
@@ -281,7 +291,11 @@ it('lets doctor with active shared assignment access another doctors clinical ar
     $actor->get(route('rme.visits.odontogram.show', $doctorAVisit))->assertOk();
     $actor->get(route('rme.visits.prescription.show', $doctorAVisit))->assertOk();
     $actor->get(route('rme.prescriptions.print', $prescription))->assertOk();
-    $actor->get(route('rme.odontograms.print', $odontogram))->assertOk();
+    // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 (§19): a Doctor may
+    // read and edit the odontogram but may never print it. Shared-patient
+    // access is unchanged for every other action above — only printing is
+    // withdrawn (prescription printing, asserted alongside, still works).
+    $actor->get(route('rme.odontograms.print', $odontogram))->assertForbidden();
 });
 
 it('forbids doctor with ended shared assignment from accessing another doctors clinical artifacts', function () {
@@ -484,7 +498,7 @@ it('is idempotent when assign room is repeated', function () {
 
 it('lets doctor a and doctor b both see shared patient', function () {
     $patient = scopePatient(['name' => 'Pasien Shared']);
-    scopeVisit($patient, test()->doctorA);
+    $activeVisit = scopeVisit($patient, test()->doctorA);
     test()->assignmentService->assignPatientToDoctor($patient, test()->doctorA, test()->adminUser, test()->rmeBranch);
     test()->assignmentService->sharePatientWithDoctor($patient, test()->doctorB, test()->doctorA, test()->adminUser, test()->rmeBranch);
     scopeDoctorOnline(test()->doctorAUser, test()->doctorA);
@@ -495,6 +509,15 @@ it('lets doctor a and doctor b both see shared patient', function () {
     rmeMakeDoctorOnline(test()->doctorB, test()->rmeBranch, $roomB, test()->doctorBUser);
     test()->doctorBUser->givePermissionTo(['view_clinic_visits', 'manage_clinic_visits']);
 
+    // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 (§16/§17): sharing
+    // still gives both doctors the patient, but an ACTIVE encounter now belongs
+    // to the room it is in. Doctor A is working that room and sees the live
+    // patient; Doctor B is working another room, so the shared patient reaches
+    // them through history — not through someone else's live encounter.
+    $historicVisit = scopeVisit($patient, test()->doctorA, [
+        'status' => ClinicVisit::STATUS_COMPLETED,
+    ]);
+
     $this->actingAs(test()->doctorAUser)
         ->get(route('rme.visits.index'))
         ->assertSee('Pasien Shared');
@@ -502,6 +525,16 @@ it('lets doctor a and doctor b both see shared patient', function () {
     $this->actingAs(test()->doctorBUser)
         ->get(route('rme.visits.index'))
         ->assertSee('Pasien Shared');
+
+    // The sharing guarantee survives for history...
+    $this->actingAs(test()->doctorBUser)
+        ->get(route('rme.visits.show', $historicVisit))
+        ->assertOk();
+
+    // ...while the other room's live encounter stays out of reach.
+    $this->actingAs(test()->doctorBUser)
+        ->get(route('rme.visits.show', $activeVisit))
+        ->assertForbidden();
 });
 
 it('keeps doctor a read access after unassign', function () {

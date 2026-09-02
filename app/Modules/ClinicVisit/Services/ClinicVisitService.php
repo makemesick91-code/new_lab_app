@@ -11,6 +11,7 @@ use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Consent\Services\RmeVisitConsentService;
 use App\Modules\Patient\Services\PatientService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RME\Services\PatientDoctorAssignmentService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
@@ -32,6 +33,7 @@ class ClinicVisitService
         private readonly BranchService $branches,
         private readonly UserOnlineContextService $onlineContext,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly PatientDoctorAssignmentService $patientDoctorAssignments,
         private readonly RmeWorkingBranchScope $workingBranchScope,
         private readonly ClinicalClock $clock,
@@ -583,6 +585,14 @@ class ClinicVisitService
             return null;
         }
 
-        return fn ($query) => $this->doctorScope->applyVisitScopeForUser($user, $query);
+        // Sprint 66.2 doctor-patient scope, then the Phase 1 room scope. This
+        // closure feeds roomWorklist, registeredQueue AND paginate (Daftar
+        // Kunjungan), and the last of those lists historical visits — so the
+        // room scope narrows only ACTIVE rows and leaves history alone (§17).
+        return function ($query) use ($user) {
+            $query = $this->doctorScope->applyVisitScopeForUser($user, $query);
+
+            return $this->doctorRoomScope->applyRoomScope($user, $query);
+        };
     }
 }

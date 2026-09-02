@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Policies;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
@@ -21,6 +22,12 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
@@ -35,6 +42,12 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
@@ -44,13 +57,36 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
+    /**
+     * §18 — a Doctor may read and edit the RME under the existing lifecycle
+     * rules but may never print, export or download it. Denying here also hides
+     * every `@can('print', ...)` action in the Blade views.
+     */
     public function print(User $user, ClinicVisit $visit): Response|bool
     {
+        $print = app(DoctorRoomScopeService::class)->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
         if (! $this->canView($user) || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
             return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
@@ -72,6 +108,12 @@ class ClinicVisitPolicy
     {
         if (! $user->can('complete_rme_examination') || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
             return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);

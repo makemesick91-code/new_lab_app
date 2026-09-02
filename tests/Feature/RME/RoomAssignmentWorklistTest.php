@@ -30,7 +30,14 @@ beforeEach(function () {
     $this->doctor = Doctor::factory()->create(['name' => 'drg. Uji']);
     $this->treatment = Treatment::factory()->create(['is_active' => true]);
     $this->doctorUser = userInRole('Doctor');
-    rmeMakeDoctorOnline($this->doctor, $this->atg, null, $this->doctorUser);
+    // The doctor is online in a real ATG room, and the doctor-facing tests
+    // put their patients in it — a doctor is only ever scoped to the ACTIVE
+    // patients of the room they are currently working.
+    $this->doctorRoom = ClinicRoom::factory()->create([
+        'branch_id' => $this->atg->id,
+        'status' => ClinicRoom::STATUS_ACTIVE,
+    ]);
+    rmeMakeDoctorOnline($this->doctor, $this->atg, $this->doctorRoom, $this->doctorUser);
 
     $this->admin = userWith(['view_clinic_visits', 'manage_clinic_visits']);
 });
@@ -152,7 +159,7 @@ it('forbids a Kasir (no worklist permission) from the worklist', function () {
 // --- C/D. Worklist data rules --------------------------------------------------
 
 it('shows a room-assigned active visit on the worklist', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     worklistVisit($this->atg, $room, 'Pasien Sudah Ruangan');
 
     $this->actingAs($this->doctorUser)
@@ -188,7 +195,7 @@ it('hides terminal visits even when a room is assigned', function () {
 });
 
 it('scopes the worklist by branch filter (no cross-branch leak)', function () {
-    $roomA = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $roomA = $this->doctorRoom;
     $roomB = ClinicRoom::factory()->create(['branch_id' => $this->tkm->id]);
     worklistVisit($this->atg, $roomA, 'Pasien Antang Worklist');
     worklistVisit($this->tkm, $roomB, 'Pasien Telkomas Worklist');
@@ -201,7 +208,7 @@ it('scopes the worklist by branch filter (no cross-branch leak)', function () {
 });
 
 it('does not expose sensitive patient fields on the worklist', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $patient = Patient::factory()->create([
         'branch_id' => $this->atg->id,
         'name' => 'Pasien Privasi',
@@ -232,7 +239,7 @@ it('does not expose sensitive patient fields on the worklist', function () {
 // Odontogram from there.
 
 it('links the worklist action to the visit detail page, not the medical record', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $visit = worklistVisit($this->atg, $room, 'Pasien Detail', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
     $this->actingAs($this->doctorUser)
@@ -246,7 +253,7 @@ it('links the worklist action to the visit detail page, not the medical record',
 });
 
 it('opens the visit detail page from the worklist without a 404 when no medical record exists', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $visit = worklistVisit($this->atg, $room, 'Pasien Tanpa RM Detail', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
     $this->actingAs($this->doctorUser)
@@ -257,7 +264,7 @@ it('opens the visit detail page from the worklist without a 404 when no medical 
 });
 
 it('opens the visit detail page from the worklist without a 404 when a medical record exists', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $patient = Patient::factory()->create(['branch_id' => $this->atg->id, 'name' => 'Pasien Ada RM Detail']);
     $visit = ClinicVisit::factory()->create([
         'branch_id' => $this->atg->id,
@@ -279,7 +286,7 @@ it('opens the visit detail page from the worklist without a 404 when a medical r
 });
 
 it('exposes Rekam Medis access on the visit detail page', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $visit = worklistVisit($this->atg, $room, 'Pasien RM Akses', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
     $this->actingAs($this->doctorUser)
@@ -290,7 +297,7 @@ it('exposes Rekam Medis access on the visit detail page', function () {
 });
 
 it('exposes Odontogram access on the visit detail page', function () {
-    $room = ClinicRoom::factory()->create(['branch_id' => $this->atg->id]);
+    $room = $this->doctorRoom;
     $visit = worklistVisit($this->atg, $room, 'Pasien Odontogram Akses', ['status' => ClinicVisit::STATUS_IN_PROGRESS]);
 
     $this->actingAs($this->doctorUser)
