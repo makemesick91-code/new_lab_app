@@ -5,6 +5,7 @@ namespace App\Modules\ClinicVisit\Policies;
 use App\Models\User;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeOnlineContext\Services\RmeWorkingBranchScope;
 use Illuminate\Auth\Access\Response;
 
@@ -21,6 +22,12 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
@@ -35,6 +42,12 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
@@ -44,13 +57,36 @@ class ClinicVisitPolicy
             return false;
         }
 
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
+        }
+
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
     }
 
+    /**
+     * §18 — a Doctor may read and edit the RME under the existing lifecycle
+     * rules but may never print, export or download it. Denying here also hides
+     * every `@can('print', ...)` action in the Blade views.
+     */
     public function print(User $user, ClinicVisit $visit): Response|bool
     {
+        $print = app(DoctorRoomScopeService::class)->authorizeClinicalPrint($user);
+
+        if ($print !== true) {
+            return $print;
+        }
+
         if (! $this->canView($user) || ! $this->withinWorkingBranchScope($user, $visit->branch_id)) {
             return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+        if ($room !== true) {
+            return $room;
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
@@ -67,6 +103,15 @@ class ClinicVisitPolicy
      * mark an examination finished — by button, by direct POST or by any other
      * caller. The cashier-owned `completed` transition is untouched: it still
      * happens only in RmePaymentService once the invoice is settled.
+     *
+     * FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 deliberately does NOT
+     * add the room guard here. The HTTP path already authorises `transition`
+     * (which is room-guarded) before it reaches this ability, so the boundary is
+     * covered; and this ability is additionally re-checked deep inside
+     * `ClinicVisitService::transitionStatus()` for non-HTTP callers. Guarding it
+     * here as well would mean a doctor whose online context lapsed mid-encounter
+     * could no longer close the examination in front of them — an availability
+     * risk with no security gain.
      */
     public function completeExamination(User $user, ClinicVisit $visit): Response|bool
     {

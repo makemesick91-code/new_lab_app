@@ -12,6 +12,7 @@ use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\Odontogram\Requests\UpdateOdontogramPlaceholderRequest;
 use App\Modules\Odontogram\Services\OdontogramPrintFormatter;
 use App\Modules\Odontogram\Services\OdontogramService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,7 @@ class OdontogramController extends Controller
 
     public function __construct(
         private readonly OdontogramService $service,
+        private readonly DoctorRoomScopeService $doctorRoomScope,
     ) {}
 
     public function show(
@@ -197,6 +199,14 @@ class OdontogramController extends Controller
 
     public function print(Odontogram $odontogram, OdontogramPrintFormatter $formatter): View
     {
+        // §23 — record a genuine Doctor attempt to print an odontogram before
+        // the policy denies it. Controller-side so a hidden button never logs.
+        $user = request()->user();
+
+        if ($user !== null && $this->doctorRoomScope->deniesClinicalPrint($user)) {
+            $this->doctorRoomScope->auditOdontogramPrintRejected($user, $odontogram);
+        }
+
         $this->authorize('print', $odontogram);
 
         $odontogram->load(['clinicVisit.patient', 'clinicVisit.doctor', 'clinicVisit.branch', 'finalizer']);

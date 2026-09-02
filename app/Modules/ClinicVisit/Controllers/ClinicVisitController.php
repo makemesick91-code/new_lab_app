@@ -20,6 +20,7 @@ use App\Modules\Patient\Services\CrossBranchPatientLookupService;
 use App\Modules\Patient\Services\KtpScanService;
 use App\Modules\Patient\Services\PatientSelectorSearchService;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use App\Modules\RmeInvoice\Models\RmeInvoice;
 use App\Modules\RmeOnlineContext\Services\UserOnlineContextService;
 use App\Modules\Treatment\Models\Treatment;
@@ -43,6 +44,7 @@ class ClinicVisitController extends Controller
         private readonly KtpScanService $ktpScans,
         private readonly UserOnlineContextService $onlineContext,
         private readonly DoctorPatientScopeService $doctorScope,
+        private readonly DoctorRoomScopeService $doctorRoomScope,
         private readonly LegacyRmePatientHistoryService $legacyHistory,
     ) {}
 
@@ -105,7 +107,19 @@ class ClinicVisitController extends Controller
             'branch_id' => $request->integer('branch_id') ?: null,
         ];
 
+        // §16 — a scoped Doctor has exactly one room, resolved server-side. Drop
+        // the request-supplied room/branch filters so there is no "Semua
+        // Ruangan" capability and a crafted value cannot widen the listing.
+        // The service-side room scope is the authority either way.
+        $roomScoped = $this->doctorRoomScope->shouldApplyRoomScope($request->user());
+
+        if ($roomScoped) {
+            $filters['clinic_room_id'] = null;
+            $filters['branch_id'] = null;
+        }
+
         return view('rme.visits.room-worklist', [
+            'roomScoped' => $roomScoped,
             'visits' => $this->visits->roomWorklist($filters),
             'filters' => $filters,
             'statuses' => ClinicVisit::STATUSES,
@@ -133,6 +147,10 @@ class ClinicVisitController extends Controller
             'visit_date' => $request->string('visit_date')->toString() ?: null,
             'branch_id' => $request->integer('branch_id') ?: null,
         ];
+
+        if ($this->doctorRoomScope->shouldApplyRoomScope($request->user())) {
+            $filters['branch_id'] = null;
+        }
 
         return view('rme.patient-queue.index', [
             'visits' => $this->visits->registeredQueue($filters),
@@ -288,6 +306,8 @@ class ClinicVisitController extends Controller
 
     public function show(ClinicVisit $clinicVisit): View
     {
+        $this->auditOutOfRoomAttempt($clinicVisit);
+
         $this->authorize('view', $clinicVisit);
         $clinicVisit->load([
             'patient',
@@ -370,6 +390,8 @@ class ClinicVisitController extends Controller
 
     public function print(ClinicVisit $clinicVisit): View
     {
+        $this->auditDeniedPrint($clinicVisit);
+
         $this->authorize('print', $clinicVisit);
 
         return view('rme.visits.print', $this->resolvePrintViewData($clinicVisit));
@@ -377,6 +399,8 @@ class ClinicVisitController extends Controller
 
     public function pdf(ClinicVisit $clinicVisit): Response
     {
+        $this->auditDeniedPrint($clinicVisit);
+
         $this->authorize('print', $clinicVisit);
 
         $data = $this->resolvePrintViewData($clinicVisit);
@@ -424,5 +448,31 @@ class ClinicVisitController extends Controller
             'payment' => $payment,
             'labCaseCandidates' => $paidInvoice?->labCaseCandidates ?? collect(),
         ];
+    }
+
+    /**
+     * §23 — record a genuine attempt to open an ACTIVE visit belonging to
+     * another treatment room. Called from the controller (not the policy) so a
+     * merely hidden `@can` button never manufactures a rejection record.
+     */
+    private function auditOutOfRoomAttempt(ClinicVisit $clinicVisit): void
+    {
+        $user = request()->user();
+
+        if ($user !== null && $this->doctorRoomScope->deniesActiveVisitOutsideRoom($user, $clinicVisit)) {
+            $this->doctorRoomScope->auditRoomAccessRejected($user, $clinicVisit);
+        }
+    }
+
+    /**
+     * §23 — record a genuine Doctor attempt to print/export an RME.
+     */
+    private function auditDeniedPrint(ClinicVisit $clinicVisit): void
+    {
+        $user = request()->user();
+
+        if ($user !== null && $this->doctorRoomScope->deniesClinicalPrint($user)) {
+            $this->doctorRoomScope->auditVisitPrintRejected($user, $clinicVisit);
+        }
     }
 }

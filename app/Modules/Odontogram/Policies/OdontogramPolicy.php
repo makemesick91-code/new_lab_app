@@ -7,6 +7,7 @@ use App\Modules\Branch\Services\BranchService;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Odontogram\Models\Odontogram;
 use App\Modules\RME\Services\DoctorPatientScopeService;
+use App\Modules\RME\Services\DoctorRoomScopeService;
 use Illuminate\Auth\Access\Response;
 
 class OdontogramPolicy
@@ -20,8 +21,18 @@ class OdontogramPolicy
         return $this->authorizePatientForOdontogram($user, $odontogram);
     }
 
+    /**
+     * §19 — a Doctor may read and edit the odontogram under the existing
+     * lifecycle rules but may never print or export it.
+     */
     public function print(User $user, Odontogram $odontogram): Response|bool
     {
+        $printGuard = app(DoctorRoomScopeService::class)->authorizeClinicalPrint($user);
+
+        if ($printGuard !== true) {
+            return $printGuard;
+        }
+
         if (! $this->canView($user) || ! $this->belongsToActiveBranch($odontogram->branch_id)) {
             return false;
         }
@@ -33,6 +44,12 @@ class OdontogramPolicy
     {
         if (! $this->canView($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
             return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $clinicVisit);
+
+        if ($room !== true) {
+            return $room;
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
@@ -56,6 +73,12 @@ class OdontogramPolicy
     {
         if (! $this->canManage($user) || ! $this->belongsToActiveBranch($clinicVisit->branch_id)) {
             return false;
+        }
+
+        $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $clinicVisit);
+
+        if ($room !== true) {
+            return $room;
         }
 
         return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $clinicVisit);
@@ -84,6 +107,12 @@ class OdontogramPolicy
         $visit = $odontogram->clinicVisit;
 
         if ($visit !== null) {
+            $room = app(DoctorRoomScopeService::class)->authorizeActiveVisitRoom($user, $visit);
+
+            if ($room !== true) {
+                return $room;
+            }
+
             return app(DoctorPatientScopeService::class)->authorizeVisitAccess($user, $visit);
         }
 
