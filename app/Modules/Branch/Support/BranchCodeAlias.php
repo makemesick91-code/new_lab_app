@@ -5,13 +5,23 @@ declare(strict_types=1);
 namespace App\Modules\Branch\Support;
 
 /**
- * REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the SINGLE canonical answer to
- * "which branch code is this?".
+ * The SINGLE canonical answer to "which branch code is this?".
  *
- * THE DECISION. Cabang Telkomas' canonical branch code is `TLK1`. `TKM1` is the
- * DEPRECATED historical code. Both name the SAME branch identity — the same row
- * in `mst_branches`, the same patients, the same history. Only the canonical
- * token the application emits changed.
+ * THE DECISIONS, in the order they were taken:
+ *
+ *   REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1
+ *     Cabang Telkomas' canonical branch code is `TLK1`; `TKM1` is DEPRECATED.
+ *
+ *   REVISION-SUNU-BRANCH-CODE-SUN4-TO-SPN4-1
+ *     Cabang Sunu's canonical branch code is `SPN4`; `SUN4` is DEPRECATED.
+ *
+ * In both cases the deprecated and canonical codes name the SAME branch
+ * identity — the same row in `mst_branches`, the same patients, the same
+ * history. Only the canonical token the application emits changed.
+ *
+ * A SECOND REVISION IS WHY THIS IS A REGISTRY AND NOT A PAIR OF CONSTANTS. Each
+ * entry below is one clinic that was renamed; the behaviour is identical for
+ * every one of them, so adding a branch is adding a row, never a code path.
  *
  * WHY A MAP AND NOT A CONDITIONAL. A branch code is read in several places that
  * must agree exactly: the branch-code segment of a Nomor RM, the legacy-archive
@@ -57,6 +67,16 @@ final class BranchCodeAlias
     public const TELKOMAS_HISTORICAL = 'TKM1';
 
     /**
+     * Cabang Sunu's canonical branch code.
+     */
+    public const SUNU_CANONICAL = 'SPN4';
+
+    /**
+     * Cabang Sunu's deprecated historical branch code.
+     */
+    public const SUNU_HISTORICAL = 'SUN4';
+
+    /**
      * DEPRECATED HISTORICAL CODE => CANONICAL CODE.
      *
      * Keys are codes the application must still RECOGNISE because they are
@@ -71,6 +91,7 @@ final class BranchCodeAlias
      */
     private const HISTORICAL_ALIASES = [
         self::TELKOMAS_HISTORICAL => self::TELKOMAS_CANONICAL,
+        self::SUNU_HISTORICAL => self::SUNU_CANONICAL,
     ];
 
     /**

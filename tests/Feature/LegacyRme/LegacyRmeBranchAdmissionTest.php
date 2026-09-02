@@ -352,7 +352,7 @@ it('resolves the allowlist from config rather than reading the environment at ru
 // ---------------------------------------------------------------------------
 // ROLL-3 CORRECTIVE — a wave must carry its OWN approval, bound to its scope.
 //
-// Found during the Wave-1 checkpoint: admitting ATG3/LDK2/SUN4 while the only
+// Found during the Wave-1 checkpoint: admitting ATG3/LDK2/SPN4 while the only
 // approval on record was ROLL-2's single-branch TLK1 pilot produced a GREEN
 // readiness report that misdescribed what was authorized. That is the same
 // "config nobody enforces" defect ROLL-3 exists to remove, one level up.
@@ -392,10 +392,10 @@ it('treats a whitespace-only approval reference as absent', function () {
 
 // (D) admitted + current approval covering it → PASS
 it('admits a branch covered by the current wave approval', function () {
-    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
-    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3', 'LDK2', 'SUN4']);
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SPN4']);
+    legacyRmeApproveWave('ROLL-3-WAVE-1-OWNER-APPROVAL', ['ATG3', 'LDK2', 'SPN4']);
 
-    foreach (['ATG3', 'LDK2', 'SUN4'] as $code) {
+    foreach (['ATG3', 'LDK2', 'SPN4'] as $code) {
         expect(admissionService()->decide(admissionResolutionFor($code))->admitted)->toBeTrue();
     }
 });
@@ -408,10 +408,10 @@ it('never lets the historical ROLL-2 pilot approval authorize a different wave',
     config()->set('legacy_rme_rollout.pilot_scope.branch_code', 'TLK1');
 
     // Wave-1 admits three OTHER branches and records no approval of its own.
-    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SPN4']);
     legacyRmeApproveWave('', []);
 
-    foreach (['ATG3', 'LDK2', 'SUN4'] as $code) {
+    foreach (['ATG3', 'LDK2', 'SPN4'] as $code) {
         expect(admissionService()->decide(admissionResolutionFor($code))->code)
             ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED);
     }
@@ -431,11 +431,11 @@ it('fails closed when the admitted set is widened beyond the approved scope', fu
     expect(admissionService()->decide(admissionResolutionFor('ATG3'))->admitted)->toBeTrue();
 
     // A fourth branch is slipped into the allowlist; the approval is untouched.
-    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SUN4']);
+    legacyRmeAdmittedBranches(['ATG3', 'LDK2', 'SPN4']);
 
-    expect(admissionService()->unapprovedAdmittedBranchCodes())->toBe(['SUN4'])
+    expect(admissionService()->unapprovedAdmittedBranchCodes())->toBe(['SPN4'])
         // The new branch is refused...
-        ->and(admissionService()->decide(admissionResolutionFor('SUN4'))->code)
+        ->and(admissionService()->decide(admissionResolutionFor('SPN4'))->code)
         ->toBe(LegacyRmeAdmissionDecision::CODE_WAVE_NOT_APPROVED)
         // ...while the genuinely approved ones keep working.
         ->and(admissionService()->decide(admissionResolutionFor('ATG3'))->admitted)->toBeTrue();

@@ -34,7 +34,7 @@ beforeEach(function () {
     Branch::query()->where('code', Branch::MAIN_CODE)->update(['is_rme_enabled' => false]);
 
     test()->main = Branch::query()->where('code', Branch::MAIN_CODE)->first();
-    test()->sun4 = Branch::query()->where('code', 'SUN4')->first();
+    test()->sunu = Branch::query()->where('code', 'SPN4')->first();
     test()->tkm1 = Branch::query()->where('code', 'TLK1')->first();
     test()->ldk2 = Branch::query()->where('code', 'LDK2')->first();
     test()->atg3 = Branch::query()->where('code', 'ATG3')->first();
@@ -44,10 +44,10 @@ beforeEach(function () {
 });
 
 /** @param array<string, mixed> $overrides */
-function sun4LabRequestPayload(array $overrides = []): array
+function sunuLabRequestPayload(array $overrides = []): array
 {
-    $doctor = Doctor::factory()->create(['branch_id' => test()->sun4->id]);
-    $patient = Patient::factory()->create(['branch_id' => test()->sun4->id, 'doctor_id' => $doctor->id]);
+    $doctor = Doctor::factory()->create(['branch_id' => test()->sunu->id]);
+    $patient = Patient::factory()->create(['branch_id' => test()->sunu->id, 'doctor_id' => $doctor->id]);
     $service = LabService::factory()->create();
 
     return array_merge([
@@ -56,7 +56,7 @@ function sun4LabRequestPayload(array $overrides = []): array
         'order_date' => now()->toDateString(),
         'due_date' => now()->addDays(5)->toDateString(),
         'priority' => 'NORMAL',
-        'notes' => 'Order Perawat SUN4',
+        'notes' => 'Order Perawat SPN4',
         'items' => [
             ['lab_service_id' => $service->id, 'tooth_number' => '21', 'quantity' => 1, 'unit_price' => 500000],
         ],
@@ -82,12 +82,12 @@ it('sends a perawat to the branch selector as the post-login landing page', func
     ])->assertRedirect(route('rme.online-context.select', absolute: false));
 });
 
-it('shows every active RME branch including SUN4 and hides MAIN on the selector', function () {
+it('shows every active RME branch including SPN4 and hides MAIN on the selector', function () {
     $this->actingAs(test()->perawat)
         ->get(route('rme.online-context.select'))
         ->assertOk()
         ->assertSee('Pilih cabang tempat Anda bertugas pada sesi ini.')
-        ->assertSee('SUN4')
+        ->assertSee('SPN4')
         ->assertSee('Cabang Sunu')
         ->assertSee('TLK1')
         ->assertSee('LDK2')
@@ -106,9 +106,9 @@ it('hides inactive and non-RME branches from the selector', function () {
         ->assertDontSee($nonRme->name);
 });
 
-it('lets a perawat choose SUN4 and stores an online perawat context', function () {
+it('lets a perawat choose SPN4 and stores an online perawat context', function () {
     $this->actingAs(test()->perawat)
-        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sun4->id])
+        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sunu->id])
         ->assertRedirect(route('dashboard'));
 
     $context = UserOnlineContext::query()->where('user_id', test()->perawat->id)->first();
@@ -116,23 +116,23 @@ it('lets a perawat choose SUN4 and stores an online perawat context', function (
     expect($context)->not->toBeNull()
         ->and($context->role_context)->toBe(UserOnlineContext::ROLE_PERAWAT)
         ->and($context->status)->toBe(UserOnlineContext::STATUS_ONLINE)
-        ->and((int) $context->branch_id)->toBe((int) test()->sun4->id)
+        ->and((int) $context->branch_id)->toBe((int) test()->sunu->id)
         ->and($context->clinic_room_id)->toBeNull()
         ->and(test()->onlineContext->isPerawatActive(test()->perawat))->toBeTrue();
 });
 
-it('resolves BranchContext to SUN4 while the perawat context is active even with users.branch_id NULL', function () {
+it('resolves BranchContext to SPN4 while the perawat context is active even with users.branch_id NULL', function () {
     test()->perawat->forceFill(['branch_id' => null])->save();
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
-    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->toBe((int) test()->sun4->id);
+    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->toBe((int) test()->sunu->id);
 });
 
 it('prioritizes the active online context branch over a static users.branch_id pin', function () {
     test()->perawat->forceFill(['branch_id' => test()->tkm1->id])->save();
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
-    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->toBe((int) test()->sun4->id);
+    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->toBe((int) test()->sunu->id);
 });
 
 it('rejects MAIN as a perawat context branch', function () {
@@ -165,11 +165,11 @@ it('rejects the perawat context endpoint for roles that do not require it', func
     $admin = User::factory()->create()->assignRole('Admin Klinik');
 
     $this->actingAs($kasir)
-        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sun4->id])
+        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sunu->id])
         ->assertForbidden();
 
     $this->actingAs($admin)
-        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sun4->id])
+        ->post(route('rme.online-context.perawat'), ['branch_id' => test()->sunu->id])
         ->assertForbidden();
 });
 
@@ -179,7 +179,7 @@ it('never lets a crafted user_id switch another user\'s context', function () {
 
     $this->actingAs(test()->perawat)
         ->post(route('rme.online-context.perawat'), [
-            'branch_id' => test()->sun4->id,
+            'branch_id' => test()->sunu->id,
             'user_id' => $other->id,
         ])
         ->assertRedirect(route('dashboard'));
@@ -187,11 +187,11 @@ it('never lets a crafted user_id switch another user\'s context', function () {
     expect((int) UserOnlineContext::query()->where('user_id', $other->id)->value('branch_id'))
         ->toBe((int) test()->tkm1->id)
         ->and((int) UserOnlineContext::query()->where('user_id', test()->perawat->id)->value('branch_id'))
-        ->toBe((int) test()->sun4->id);
+        ->toBe((int) test()->sunu->id);
 });
 
 it('lets a perawat switch branches the same way as admin klinik without duplicating context rows', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $this->actingAs(test()->perawat)
         ->post(route('rme.online-context.perawat'), ['branch_id' => test()->tkm1->id])
@@ -203,14 +203,14 @@ it('lets a perawat switch branches the same way as admin klinik without duplicat
 });
 
 it('treats a stale perawat context as expired and asks for re-selection', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     UserOnlineContext::query()
         ->where('user_id', test()->perawat->id)
         ->update(['last_seen_at' => now()->subMinutes(UserOnlineContextService::INACTIVITY_MINUTES + 1)]);
 
     expect(test()->onlineContext->isPerawatActive(test()->perawat->fresh()))->toBeFalse()
-        ->and(app(BranchContext::class)->forUser(test()->perawat->fresh()))->not->toBe((int) test()->sun4->id);
+        ->and(app(BranchContext::class)->forUser(test()->perawat->fresh()))->not->toBe((int) test()->sunu->id);
 
     $this->actingAs(test()->perawat)
         ->get(route('dashboard'))
@@ -218,14 +218,14 @@ it('treats a stale perawat context as expired and asks for re-selection', functi
 });
 
 it('no longer resolves BranchContext to the context branch after the branch is deactivated', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
-    test()->sun4->update(['is_active' => false]);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
+    test()->sunu->update(['is_active' => false]);
 
-    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->not->toBe((int) test()->sun4->id);
+    expect(app(BranchContext::class)->forUser(test()->perawat->fresh()))->not->toBe((int) test()->sunu->id);
 });
 
 it('marks the perawat context offline on logout like admin klinik', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $this->actingAs(test()->perawat)->post(route('logout'))->assertRedirect('/');
 
@@ -234,7 +234,7 @@ it('marks the perawat context offline on logout like admin klinik', function () 
 });
 
 it('supports the shared offline action for a perawat', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $this->actingAs(test()->perawat)
         ->post(route('rme.online-context.offline'))
@@ -288,16 +288,16 @@ it('keeps admin klinik branch selection working and feeds BranchContext from its
 
 it('still rejects the admin-clinic endpoint for a perawat', function () {
     $this->actingAs(test()->perawat)
-        ->post(route('rme.online-context.admin-clinic'), ['branch_id' => test()->sun4->id])
+        ->post(route('rme.online-context.admin-clinic'), ['branch_id' => test()->sunu->id])
         ->assertForbidden();
 });
 
 // ---------------------------------------------------------------------------
-// D. Lab Request integration — Klinik follows the SUN4 online context
+// D. Lab Request integration — Klinik follows the SPN4 online context
 // ---------------------------------------------------------------------------
 
-it('locks the lab request Klinik field to SUN4 for a perawat with an active SUN4 context', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+it('locks the lab request Klinik field to SPN4 for a perawat with an active SPN4 context', function () {
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $response = $this->actingAs(test()->perawat)
         ->get(route('lab-workflow-requests.create'))
@@ -306,14 +306,14 @@ it('locks the lab request Klinik field to SUN4 for a perawat with an active SUN4
         ->assertSee('Cabang Sunu')
         ->assertDontSee('Cabang Telkomas');
 
-    expect((int) $response->viewData('branch')->id)->toBe((int) test()->sun4->id);
+    expect((int) $response->viewData('branch')->id)->toBe((int) test()->sunu->id);
 });
 
-it('creates a V2 draft lab order on SUN4 from a perawat context', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+it('creates a V2 draft lab order on SPN4 from a perawat context', function () {
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $this->actingAs(test()->perawat)
-        ->post(route('lab-workflow-requests.store'), sun4LabRequestPayload())
+        ->post(route('lab-workflow-requests.store'), sunuLabRequestPayload())
         ->assertRedirect();
 
     $order = LabOrder::query()->latest('id')->first();
@@ -321,26 +321,26 @@ it('creates a V2 draft lab order on SUN4 from a perawat context', function () {
     expect($order)->not->toBeNull()
         ->and($order->workflow_version)->toBe(LabOrder::WORKFLOW_V2)
         ->and($order->status)->toBe(LabWorkflowState::DRAFT)
-        ->and((int) $order->branch_id)->toBe((int) test()->sun4->id)
+        ->and((int) $order->branch_id)->toBe((int) test()->sunu->id)
         ->and($order->clinic_id)->toBeNull();
 });
 
-it('ignores a crafted branch_id on lab request store and keeps SUN4', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+it('ignores a crafted branch_id on lab request store and keeps SPN4', function () {
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $this->actingAs(test()->perawat)
-        ->post(route('lab-workflow-requests.store'), sun4LabRequestPayload([
+        ->post(route('lab-workflow-requests.store'), sunuLabRequestPayload([
             'branch_id' => test()->tkm1->id,
         ]))
         ->assertRedirect();
 
-    expect((int) LabOrder::query()->latest('id')->first()->branch_id)->toBe((int) test()->sun4->id);
+    expect((int) LabOrder::query()->latest('id')->first()->branch_id)->toBe((int) test()->sunu->id);
 });
 
-it('scopes the lab request patient catalog to SUN4 plus legacy unscoped patients', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+it('scopes the lab request patient catalog to SPN4 plus legacy unscoped patients', function () {
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
-    $sun4Patient = Patient::factory()->create(['branch_id' => test()->sun4->id, 'name' => 'Pasien Sunu Satu']);
+    $sunuPatient = Patient::factory()->create(['branch_id' => test()->sunu->id, 'name' => 'Pasien Sunu Satu']);
     $legacyPatient = Patient::factory()->create(['branch_id' => null, 'name' => 'Pasien Legacy Nol']);
     $tkm1Patient = Patient::factory()->create(['branch_id' => test()->tkm1->id, 'name' => 'Pasien Telkomas Satu']);
 
@@ -348,25 +348,25 @@ it('scopes the lab request patient catalog to SUN4 plus legacy unscoped patients
     $options = app(LabWorkflowRequestService::class)->formOptionsForActiveBranch();
     $patientIds = $options['patients']->pluck('id');
 
-    expect($patientIds)->toContain($sun4Patient->id)
+    expect($patientIds)->toContain($sunuPatient->id)
         ->toContain($legacyPatient->id)
         ->not->toContain($tkm1Patient->id);
 });
 
 it('rejects a crafted patient and doctor from another branch on store', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     $foreignPatient = Patient::factory()->create(['branch_id' => test()->tkm1->id]);
     $foreignDoctor = Doctor::factory()->create(['branch_id' => test()->tkm1->id]);
 
     $this->actingAs(test()->perawat)
-        ->post(route('lab-workflow-requests.store'), sun4LabRequestPayload([
+        ->post(route('lab-workflow-requests.store'), sunuLabRequestPayload([
             'patient_id' => $foreignPatient->id,
         ]))
         ->assertSessionHasErrors('patient_id');
 
     $this->actingAs(test()->perawat)
-        ->post(route('lab-workflow-requests.store'), sun4LabRequestPayload([
+        ->post(route('lab-workflow-requests.store'), sunuLabRequestPayload([
             'doctor_id' => $foreignDoctor->id,
         ]))
         ->assertSessionHasErrors('doctor_id');
@@ -379,9 +379,9 @@ it('rejects a crafted patient and doctor from another branch on store', function
 // ---------------------------------------------------------------------------
 
 it('forces perawat visit registration onto the active context branch and ignores a crafted branch_id', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
-    $patient = Patient::factory()->create(['branch_id' => test()->sun4->id]);
+    $patient = Patient::factory()->create(['branch_id' => test()->sunu->id]);
     $treatment = Treatment::factory()->create(['is_active' => true]);
 
     $this->actingAs(test()->perawat)
@@ -397,12 +397,12 @@ it('forces perawat visit registration onto the active context branch and ignores
     $visit = ClinicVisit::query()->latest('id')->first();
 
     expect($visit)->not->toBeNull()
-        ->and((int) $visit->branch_id)->toBe((int) test()->sun4->id)
+        ->and((int) $visit->branch_id)->toBe((int) test()->sunu->id)
         ->and($visit->doctor_id)->toBeNull();
 });
 
 it('does not grant extra permissions through branch selection', function () {
-    rmeMakePerawatActive(test()->perawat, test()->sun4);
+    rmeMakePerawatActive(test()->perawat, test()->sunu);
 
     // Perawat has no manage_rme_billing / lab admin permissions — the context
     // only selects a branch, it never widens authorization.

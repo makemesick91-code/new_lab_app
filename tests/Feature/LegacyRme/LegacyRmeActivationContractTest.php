@@ -42,7 +42,7 @@ use Illuminate\Validation\ValidationException;
  * fabricated clinical evidence into real patient histories, which no readiness
  * argument may ever be worth.
  *
- * FOUR BRANCHES, NOT AN ARBITRARY NUMBER. TLK1, LDK2, ATG3 and SUN4 are the
+ * FOUR BRANCHES, NOT AN ARBITRARY NUMBER. TLK1, LDK2, ATG3 and SPN4 are the
  * active, RME-enabled clinic branches. MAIN is excluded because it is not
  * RME-enabled AND is on the permanent forbidden list — a fallback branch may
  * never host a clinical migration.
@@ -50,7 +50,7 @@ use Illuminate\Validation\ValidationException;
 uses(RefreshDatabase::class);
 
 /** The active, RME-enabled clinic branches — the exact admission scope. */
-const ACTIVATION_BRANCHES = ['TLK1', 'LDK2', 'ATG3', 'SUN4'];
+const ACTIVATION_BRANCHES = ['TLK1', 'LDK2', 'ATG3', 'SPN4'];
 
 const ACTIVATION_APPROVAL = 'HUB-1A-OWNER-APPROVAL-TEST';
 
@@ -162,11 +162,11 @@ it('still refuses an eligible branch that the activation deliberately left out',
 
     activateWave($activated);
 
-    // Build SUN4's patient BEFORE pinning the scope: legacyRmeArchivablePatient()
+    // Build SPN4's patient BEFORE pinning the scope: legacyRmeArchivablePatient()
     // calls legacyRmeBranch(), which admits and enrols its branch as a fixture
     // convenience. Pinning first and uploading second would silently re-open
-    // SUN4 and make this test pass for the opposite reason.
-    $patient = legacyRmeArchivablePatient([], 'SUN4');
+    // SPN4 and make this test pass for the opposite reason.
+    $patient = legacyRmeArchivablePatient([], 'SPN4');
     legacyRmeNativeVisit($patient, '2024-05-01');
 
     legacyRmeAdmittedBranches($activated);
@@ -183,7 +183,7 @@ it('still refuses an eligible branch that the activation deliberately left out',
         $actor,
     ))->toThrow(ValidationException::class);
 
-    $sun4 = (int) Branch::query()->where('code', 'SUN4')->value('id');
+    $sun4 = (int) Branch::query()->where('code', 'SPN4')->value('id');
 
     expect(LegacyRmeImport::query()->where('origin_branch_id', $sun4)->exists())->toBeFalse();
 });
@@ -259,7 +259,7 @@ it('gives each branch of the activated wave its own daily ceiling of 100', funct
     // A shared pool would have been exhausted by TLK1. Each of the other three
     // taking a full 100 without raising is the per-branch ceiling proving
     // itself; any of them throwing fails the test.
-    foreach (['LDK2', 'ATG3', 'SUN4'] as $code) {
+    foreach (['LDK2', 'ATG3', 'SPN4'] as $code) {
         $quota->reserve(LegacyImportType::LEGACY_RME, $ids[$code], 100);
     }
 

@@ -7,7 +7,7 @@ use Database\Seeders\RmeBranchSeeder;
 /**
  * RME-BRANCH-SUN4 — canonical Cabang RME registry seeder.
  *
- * SUN4 (Cabang Sunu) must exist exactly once, active + RME-enabled, without
+ * SPN4 (Cabang Sunu) must exist exactly once, active + RME-enabled, without
  * touching MAIN or reconfiguring existing sibling branches, and the seeder must
  * be safe to run repeatedly (deploy re-runs, fresh environments).
  */
@@ -15,10 +15,10 @@ beforeEach(function () {
     test()->seed(BranchSeeder::class);
 });
 
-it('creates SUN4 Cabang Sunu as an active RME-enabled non-inventory branch', function () {
+it('creates SPN4 Cabang Sunu as an active RME-enabled non-inventory branch', function () {
     test()->seed(RmeBranchSeeder::class);
 
-    $sun4 = Branch::query()->where('code', 'SUN4')->get();
+    $sun4 = Branch::query()->where('code', 'SPN4')->get();
 
     expect($sun4)->toHaveCount(1)
         ->and($sun4->first()->name)->toBe('Cabang Sunu')
@@ -82,20 +82,20 @@ it('never reconfigures an existing sibling branch (production master data wins)'
         ->and(Branch::withTrashed()->where('code', 'TLK1')->count())->toBe(1);
 });
 
-it('restores and re-enables a soft-deleted or disabled SUN4 instead of duplicating it', function () {
+it('restores and re-enables a soft-deleted or disabled SPN4 instead of duplicating it', function () {
     test()->seed(RmeBranchSeeder::class);
 
-    $sun4 = Branch::query()->where('code', 'SUN4')->first();
+    $sun4 = Branch::query()->where('code', 'SPN4')->first();
     $sun4->update(['is_active' => false, 'is_rme_enabled' => false]);
     $sun4->delete();
 
     test()->seed(RmeBranchSeeder::class);
 
-    $restored = Branch::query()->where('code', 'SUN4')->first();
+    $restored = Branch::query()->where('code', 'SPN4')->first();
 
     expect($restored)->not->toBeNull()
         ->and((int) $restored->id)->toBe((int) $sun4->id)
         ->and($restored->is_active)->toBeTrue()
         ->and($restored->is_rme_enabled)->toBeTrue()
-        ->and(Branch::withTrashed()->where('code', 'SUN4')->count())->toBe(1);
+        ->and(Branch::withTrashed()->where('code', 'SPN4')->count())->toBe(1);
 });
