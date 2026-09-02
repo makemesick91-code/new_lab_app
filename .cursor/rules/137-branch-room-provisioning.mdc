@@ -1,0 +1,93 @@
+---
+description: Branch-scoped clinic room master data — Cabang Sunu's rooms, and the idempotence rules any room provisioning must obey.
+globs:
+  - "database/seeders/RmeBranchRoomSeeder.php"
+  - "database/seeders/ClinicRoomSeeder.php"
+  - "app/Modules/ClinicRoom/**"
+  - "app/Modules/ClinicVisit/Services/ClinicVisitService.php"
+alwaysApply: false
+---
+
+# REVISION-SUNU-ADD-ROOM-A-B-1 — Sunu room foundation & room provisioning
+
+## The Sunu room foundation
+
+Cabang Sunu, whose canonical branch code is `SPN4`, has two active operational
+rooms:
+
+- **Ruangan A** (`SPN-A`)
+- **Ruangan B** (`SPN-B`)
+
+Both belong to the EXISTING Cabang Sunu branch identity — the same
+`mst_branches` row, resolved by code, never a second branch. Cabang Sunu stays
+canonical `SPN4`; `SUN4` remains historical compatibility only and is never
+re-emitted, including inside a room code.
+
+## The schema fact that drives everything
+
+`mst_clinic_rooms` carries `UNIQUE(branch_id, code)` and `UNIQUE(branch_id,
+name)`, and **neither index is conditioned on `deleted_at`**. A soft-deleted
+room therefore still occupies both slots. Inserting over one does not create a
+duplicate — it raises a constraint violation, and in a deploy that is an
+aborted release. Every room lookup in provisioning is `withTrashed()`.
+
+## Provisioning rules
+
+1. **Idempotent.** Re-running a room seeder — first seed, second seed, routine
+   deploy — converges on exactly one logical room. It never duplicates.
+2. **The name is the identity.** `code` is an identifier provisioning ASSIGNS
+   when it creates a room. A room already carrying the right name under an
+   operator-chosen code is adopted as-is; its code is never rewritten. Master
+   data stays owned by Master Data Ruangan.
+3. **Converge only what was decided.** An existing room is restored if trashed
+   and set active if inactive. Its code, type and description are left alone.
+4. **Refuse rather than guess.** If the declared code is held by a differently
+   named room, or code and name resolve to two different rows, provisioning
+   throws. Guessing is how a clinic ends up with two "Ruangan A"s, or with a
+   room silently renamed underneath the queue that references it.
+5. **Resolve the branch by CODE, through `BranchCodeAlias::equivalentCodes()`** —
+   never by display name (Master Data owns and may edit it) and never by the
+   canonical code alone (a deployment not yet migrated must be recognised, not
+   duplicated).
+6. **Never create a branch.** `RmeBranchSeeder` owns branch rows; `DatabaseSeeder`
+   runs it first. Room provisioning throws if the branch is absent.
+7. **Registry membership is a decision.** `RmeBranchRoomSeeder::CANONICAL_BRANCH_ROOMS`
+   declares Cabang Sunu only. Sibling RME branches carry operator-created rooms
+   whose codes were issued under their own history (Telkomas' rooms are still
+   `TKM-*`, from the code it held before `TLK1`). Re-declaring those could only
+   rename production master data or duplicate it.
+8. **`ClinicRoomSeeder` is a different job** and stays: it provisions the default
+   room set for whichever branch `BranchContext` resolves to (in practice MAIN).
+   It cannot express "these rooms belong to Cabang Sunu".
+
+## Room identity is branch-scoped
+
+The same display name may exist on different branches — `Ruangan A` legitimately
+exists under Telkomas, Landak, Antang and Sunu at once, as different rows. What
+must never happen is two `Ruangan A` rows inside the SAME branch.
+
+## Adding rooms changes no history
+
+Introducing rooms never reassigns existing visits, queues, rosters, patients,
+RME, odontograms, invoices or payments. A roomless historical visit stays
+roomless; an assigned one keeps its room. No doctor is auto-assigned to a new
+room.
+
+## The branch boundary on room selection
+
+Where a room is supplied by a client request, the server validates that the room
+exists, is `active`, and that `room.branch_id` equals the server-authoritative
+branch of the visit. A request-supplied `room_id` or `branch_id` is never
+authority for cross-branch room access, and a hidden UI option is never a
+server-side control.
+
+Assignability has a second, pre-existing gate (Sprint 66.1.4): the treating
+doctor is resolved FROM the room, so a room is only assignable while exactly one
+doctor is online in it. Creating a room does not put a doctor in it.
+
+## Testing note
+
+Asserting `toThrow(ValidationException::class)` on room assignment is NOT
+sufficient — mutation testing proved that deleting the branch check still throws,
+from doctor resolution further down. Assert the refusal REASON so the test
+identifies which guard fired.

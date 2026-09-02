@@ -28,6 +28,10 @@ class DatabaseSeeder extends Seeder
             PaymentMethodSeeder::class,
             WaReminderTemplateSeeder::class,
             ClinicRoomSeeder::class,
+            // REVISION-SUNU-ADD-ROOM-A-B-1 — named-branch room registry
+            // (Cabang Sunu). Runs after ClinicRoomSeeder and long after
+            // RmeBranchSeeder, which owns the branch rows it resolves.
+            RmeBranchRoomSeeder::class,
             TariffSeeder::class,
             InventorySeeder::class,
             LabOrderSeeder::class,
