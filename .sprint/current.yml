@@ -20,3 +20,10 @@ browser_required: false         # server-rendered Blade; covered by feature test
 test_profiles:
   - rme
   - security
+
+# Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
+# a rolling file, so these inherited facts have to be restated by every sprint
+# after closure — dropping one is precisely the quiet contradiction
+# LegacyRmeProgramClosureContractTest exists to catch.
+inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
+inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02

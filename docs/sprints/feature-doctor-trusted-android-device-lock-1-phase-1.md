@@ -107,12 +107,21 @@ no patient PII, no KTP/NIK.
 |---|---|
 | `app/Modules/RME/Services/DoctorRoomScopeService.php` | **NEW** — single authority for room scope + print denial + audit |
 | `app/Modules/ClinicVisit/Services/ClinicVisitService.php` | `doctorVisitScope()` composes the room scope |
-| `app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php` | Room guard on `view`/`update`/`transition`/`print`/`completeExamination`; print denial on `print` |
+| `app/Modules/ClinicVisit/Policies/ClinicVisitPolicy.php` | Room guard on `view`/`update`/`transition`/`print`; print denial on `print`. **`completeExamination` deliberately NOT guarded** — see below |
 | `app/Modules/ClinicVisit/Controllers/ClinicVisitController.php` | Drops Doctor room/branch filters; audits real denied attempts |
 | `app/Modules/Odontogram/Policies/OdontogramPolicy.php` | Room guard + print denial |
 | `app/Modules/Odontogram/Controllers/OdontogramController.php` | Audits denied print |
 | `resources/views/rme/visits/room-worklist.blade.php` | Room selector hidden for a scoped Doctor |
-| `tests/Feature/RME/DoctorRoomScopedAccessAndPrintDenyTest.php` | **NEW** — 26 tests |
+| `tests/Feature/RME/DoctorRoomScopedAccessAndPrintDenyTest.php` | **NEW** — 28 tests |
+
+**`completeExamination` is deliberately left unguarded.** The HTTP path authorises
+`transition` (room-guarded) *before* reaching it, so the boundary is already
+covered, and the ability is re-checked inside `ClinicVisitService::transitionStatus()`
+for non-HTTP callers. Guarding it here as well would mean a doctor whose online
+context lapsed mid-encounter could no longer close the examination in front of
+them — an availability risk with no security gain. CI caught this: it broke 8
+`tests/Feature/Pilot/RmeLabCandidateE2EValidationTest` cases that complete an
+examination through the service without an online context.
 
 **No migration. No new permission. No new route. No schema change.**
 `MedicalRecordPolicy` is deliberately untouched: `MedicalRecordController@show`

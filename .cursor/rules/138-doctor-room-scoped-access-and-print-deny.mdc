@@ -65,7 +65,13 @@ stays readable. Never fail *open*.
 ## 5. Denial is server-side; the sidebar and hidden buttons are not security
 
 Room isolation is enforced in `ClinicVisitPolicy` (`view` / `update` /
-`transition` / `print` / `completeExamination`) and `OdontogramPolicy`.
+`transition` / `print`) and `OdontogramPolicy`.
+
+`completeExamination` is deliberately NOT room-guarded: the HTTP path authorises
+`transition` (room-guarded) first, and the ability is re-checked inside
+`ClinicVisitService::transitionStatus()`. Guarding it too would strand a doctor
+whose online context lapsed mid-encounter — availability cost, no security gain.
+Do not "fix" this by adding the guard.
 `MedicalRecordController@show` authorises `view` on the **opened** visit before
 the Sprint 64.0 canonical redirect, so the RME surface is covered without
 touching the patient-centric workspace resolver.
