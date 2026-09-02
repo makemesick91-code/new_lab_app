@@ -214,6 +214,18 @@ return [
         // exists but is never selected by the gate is not a control.
         'tests/Feature/Storage/ClinicalEvidencePrivacyTest.php',
 
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 1 — a Doctor is
+        // confined to the ACTIVE patients of the treatment room they are online
+        // in, and may never print an RME or odontogram.
+        //
+        // Registered under the ClinicalEvidencePrivacy precedent: this is an
+        // authorization boundary, and the only thing standing between a doctor
+        // and another room's live patients is a policy guard plus a query scope.
+        // Without an explicit token the suite matched no critical filter and 24
+        // of its 28 cases ran nowhere in CI — a control nothing selects is not a
+        // control.
+        'tests/Feature/RME/DoctorRoomScopedAccessAndPrintDenyTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //
