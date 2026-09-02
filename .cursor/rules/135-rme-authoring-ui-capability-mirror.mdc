@@ -1,0 +1,133 @@
+---
+description: RME authoring UI capability mirror — every control that writes the active RME must be gated on the same server capability the service asserts, never on a permission alone
+globs:
+  - app/Modules/Consent/**
+  - app/Modules/MedicalRecord/**
+  - app/Modules/ClinicVisit/**
+  - resources/views/rme/**
+alwaysApply: false
+---
+
+# RME PRE-CONSENT UI CAPABILITY FOUNDATION
+
+BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — durable rules.
+
+Companion to `134-odontogram-pre-consent-authoring.mdc`, which owns the
+odontogram side of the same encounter. Rule 134 §6 already required the
+odontogram page to agree with the server. This rule states the same requirement
+for the RME side, where it was not enforced and a live mismatch reached
+production.
+
+## 1. The rule
+
+The active RME authoring UI must mirror the **server-side RME authoring
+capability**.
+
+After a Doctor starts an examination but before a valid same-patient,
+same-visit Consent exists, active RME authoring remains forbidden. When no RME
+page exists in that state, the UI must **not** offer an actionable
+"Buat Halaman RM Pertama" control.
+
+Once a valid same-visit Consent exists, the first-page create action may be
+offered, subject to every other RME authoring guard.
+
+UI visibility is **not** a security boundary. Direct RME creation stays
+protected by the canonical server-side service guard, and remains protected
+whatever the page renders.
+
+This rule does **not** alter the odontogram rule: after examination start the
+authorized Doctor may still author the active Native Odontogram before Consent.
+
+This rule does **not** alter the finish rule: valid Consent remains required
+before "Selesai Pemeriksaan".
+
+## 2. The matrix
+
+Extends the rule 134 matrix with the column that was missing — what the page is
+allowed to OFFER, as distinct from what the server allows.
+
+| state | Odontogram | RME edit | RME first-page CTA | Selesai Pemeriksaan |
+|---|---|---|---|---|
+| `registered` / `waiting` | DENY | DENY | **NOT ACTIONABLE** | DENY |
+| `in_progress`, consent UNSIGNED | ALLOW | DENY | **NOT ACTIONABLE** | DENY |
+| `in_progress`, consent VALID | ALLOW | ALLOW | **ACTIONABLE** | ALLOW (other guards apply) |
+| `cashier_pending` / `completed` | DENY | DENY | NOT ACTIONABLE | n/a |
+| `cancelled` | DENY | DENY | no workspace at all (404) | n/a |
+| historical native sheet | DENY | DENY | NOT ACTIONABLE | n/a |
+| published Legacy RME | DENY | DENY (immutable) | n/a | n/a |
+
+## 3. What went wrong, so it is not repeated
+
+The empty-state workspace derived its create control from
+`can('create', [MedicalRecord::class, $visit])`.
+`MedicalRecordPolicy::create` answers a **narrower** question than the button
+implied: may this user manage RME for this branch and this patient. It says
+nothing about consent — correctly, because **consent is not a permission**. It
+is a property of the encounter, resolved by
+`RmeVisitConsentService::canAuthorRmeForPatient()`.
+
+So the POPULATED workspace and the EMPTY workspace read two different truths
+about one act, and the empty one offered a create the server then refused.
+
+The lesson generalises past this button: **a permission check is not a
+capability check.** Any control whose act is gated by encounter state, consent,
+or workflow status must consult the capability, not only the permission.
+
+## 4. Where it is enforced
+
+`RmeVisitConsentService::assertRmeAuthoringAllowedForPatient()` is the single
+authority for every current-RME write, and
+`canAuthorRmeForPatient()` is its **side-effect-free** presentation twin. Both
+resolve the same four conditions:
+
+1. the patient HAS a single current encounter;
+2. that encounter is `in_progress`;
+3. the actor may work on it (branch scope + clinical scope);
+4. a valid signed consent exists for THAT SAME encounter.
+
+`MedicalRecordService::createDraft()` asserts it, so a crafted POST is refused
+regardless of what any page rendered. The controller passes the predicate to the
+view; the view renders from it.
+
+**Never re-derive the rule in Blade.** A template that writes its own
+`$visit->consent && $visit->consent->signed_at` has created a second rule that
+will drift from the first — which is the failure this sprint exists to close.
+The value arrives as a controller-provided key or it is not used.
+
+## 5. What "not actionable" means
+
+Rendering a **disabled** control alongside the reason is preferred over hiding
+it. The doctor stays oriented — the action exists, it is simply not available
+yet — and learns what to do next rather than discovering the lock by pressing.
+
+What must NOT survive is the submittable path: no `<form>` pointed at the store
+route, and no live submit button. Do not leave an enabled control that relies on
+the backend failing to enforce the rule.
+
+The refusal must name the real reason, matching the populated workspace's
+wording: "Belum ada pemeriksaan yang berjalan" when there is no encounter, and
+"Persetujuan Tindakan Medis belum ditandatangani" when the signature is
+outstanding, with the link to sign it.
+
+## 6. Never resolve a mismatch by weakening the server
+
+When UI and backend disagree about an act, the correct direction is
+**UI DENY + BACKEND DENY**. Relaxing the service so the offered control starts
+working is a clinical-authorization regression wearing the clothes of a
+consistency fix.
+
+## 7. Testing
+
+- Prove the SERVER rule server-side: assert the service/HTTP outcome.
+- Prove the UI claim on the **rendered output**, not on a helper boolean — and
+  assert on the submittable form, never on the label. A disabled button still
+  reads "Buat Halaman RM Pertama", and that is the state we want.
+- `tests/Feature/RME/RmePreConsentFirstPageUiGateTest.php` is the pinned suite.
+  It is declared in `config/ci_runner.php` `critical_gate_mandatory_suites` and
+  carries the `RmePreConsentFirstPageUiGate` token in every critical gate
+  variant, so a rename must move the coverage and can never silently drop it.
+- Any change here must keep pinning the neighbours it could take with it: the
+  odontogram still editable pre-consent, finish still refused pre-consent,
+  before-start still refused, other-Doctor and non-Doctor still refused,
+  historical visits still closed, and another visit's or another patient's
+  consent never unlocking the control.

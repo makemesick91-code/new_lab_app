@@ -85,21 +85,31 @@ class OdontogramPreConsentEditBrowserTest extends DuskTestCase
                 'the pre-consent chart must be persisted server-side',
             );
 
-            // 4. The RME is STILL refused — proven by actually trying it.
+            // 4. The RME is STILL refused.
             //
-            //    The patient has no RM sheet yet, so this page is the workspace
-            //    empty state and the write entry point is "Buat Halaman RM
-            //    Pertama". NOTE (pre-existing, reported, deliberately not fixed
-            //    here): that button is gated on the manage permission only, not
-            //    on consent, so it is offered even though the server refuses.
-            //    Pressing it is therefore the sharpest available proof that the
-            //    RME gate is a SERVER rule and did not travel with the
-            //    odontogram permission.
+            //    SUPERSEDED BY BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1. This
+            //    step used to PRESS "Buat Halaman RM Pertama" and watch the
+            //    server refuse, with a note recording that the button was gated
+            //    on the manage permission only and was therefore offered against
+            //    an act the server would reject. That note described a bug, and
+            //    the bug is now fixed: the control is rendered disabled, so
+            //    there is nothing left to press here.
+            //
+            //    The claim this step makes for THIS sprint is unchanged and is
+            //    still the sharp one — blocking the record did not travel with
+            //    the odontogram permission. It is now made by reading the state
+            //    rather than by provoking a failure.
             $browser->visit(route('rme.visits.medical-record.show', $visit, false))
                 ->assertDontSee('Server Error')
                 ->assertSee('Belum ada halaman RM tulisan tangan')
-                ->press('Buat Halaman RM Pertama')
-                ->waitForText('Persetujuan Tindakan Medis');
+                ->assertSee('Persetujuan Tindakan Medis belum ditandatangani')
+                ->assertPresent('button[disabled]');
+
+            $this->assertStringNotContainsString(
+                'action="'.route('rme.visits.medical-record.store', $visit, false).'"',
+                $browser->driver->getPageSource(),
+                'the empty state must offer no submittable create form before consent',
+            );
 
             $this->assertSame(
                 0,

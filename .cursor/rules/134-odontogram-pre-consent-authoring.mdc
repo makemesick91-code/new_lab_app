@@ -52,6 +52,13 @@ subsequently signed.
 | historical native chart (any state) | DENY | DENY | n/a |
 | published Legacy Odontogram | DENY | n/a | n/a |
 
+The `RME = DENY` cells above are about the SERVER. What the page may OFFER in
+those same states — in particular the "Buat Halaman RM Pertama" control on a
+patient with no sheet yet — is owned by
+`135-rme-authoring-ui-capability-mirror.mdc`, which extends this matrix with
+that column. The two must stay consistent: this rule denies the write, and that
+rule denies the offer.
+
 ## 3. Why the odontogram, and only the odontogram
 
 Charting teeth is **observation**. The doctor looks in the mouth and records what
@@ -125,6 +132,12 @@ visit is stuck when they try to finish it.
 
 Any wording that tells a user consent is required before the odontogram may be
 edited is **stale** and must be corrected wherever it is found.
+
+The RME side of this same requirement was NOT enforced when this rule was
+written, and the gap reached production: the RM workspace empty state offered an
+actionable "Buat Halaman RM Pertama" while the server refused the create. See
+`135-rme-authoring-ui-capability-mirror.mdc`, which closes it and states the
+general form — a permission check is not a capability check.
 
 ## 7. Testing
 

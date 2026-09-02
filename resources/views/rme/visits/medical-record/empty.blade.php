@@ -3,9 +3,15 @@
         Sprint 64.0 / 64.0.2 — patient-centric RM workspace empty state.
 
         The patient has visits but no RM sheet yet. The handwriting RM book is
-        always anchored to the canonical (first) visit. Users who may manage RME
-        get "Buat Halaman RM Pertama" which creates the canonical medical
-        record. KTP / NIK is never rendered.
+        always anchored to the canonical (first) visit. KTP / NIK is never
+        rendered.
+
+        BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — "Buat Halaman RM Pertama"
+        needs BOTH halves: `$canEdit` (may this user manage RME here) and
+        `! $addSheetConsentRequired` (may anyone write this patient's record right
+        now — an authorized, consented examination in progress). Permission alone
+        used to be enough here, which is how the page came to offer a create the
+        server refuses.
     --}}
     <div class="space-y-6">
         <x-ui.page-header
@@ -101,8 +107,67 @@
             </dl>
         </x-ui.card>
 
+        {{-- BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1 — creating the first sheet
+             is a current-RME write, so it waits on the same authority every other
+             RME write waits on: an authorized, consented examination in progress.
+             Before that, the control renders but cannot be submitted, and the
+             reason is named rather than left to a failed POST to explain.
+
+             Presentation only. MedicalRecordService::createDraft() asserts the
+             same gate, so a crafted POST is refused whatever this renders.
+
+             The `?? true` default is deliberate and points the safe way. This is
+             a CAPABILITY flag, so an absent key must mean "assume not allowed",
+             never "assume allowed" — a future render path that forgot to supply
+             it would otherwise silently restore the actionable button over a
+             refused act, which is exactly the regression this sprint closed and
+             exactly the shape that produces no error and no log line. --}}
+        @if ($canEdit && ($addSheetConsentRequired ?? true))
+            @if (($activeEncounter ?? null) === null)
+                <x-ui.alert variant="warning" title="Belum ada pemeriksaan yang berjalan">
+                    <p class="max-w-2xl text-sm">
+                        Rekam medis hanya dapat ditulis saat pasien sedang diperiksa. Mulai
+                        pemeriksaan dari halaman kunjungan terlebih dahulu. Riwayat rekam medis,
+                        arsip RME lama dan odontogram pasien tetap dapat dibaca.
+                    </p>
+                </x-ui.alert>
+            @else
+                <x-ui.alert variant="warning" title="Persetujuan Tindakan Medis belum ditandatangani">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <p class="max-w-2xl text-sm">
+                            Halaman RM pertama untuk pemeriksaan yang sedang berjalan
+                            (Kunjungan #{{ $activeEncounter->visit_number }}) belum dapat dibuat sampai
+                            Surat Persetujuan Tindakan Medis ditandatangani. Odontogram, riwayat rekam
+                            medis dan arsip RME lama pasien tetap dapat diakses.
+                        </p>
+                        @can('create', [\App\Modules\Consent\Models\RmeVisitConsent::class, $activeEncounter])
+                            <x-ui.button variant="primary" :href="route('rme.visits.consent.create', $activeEncounter)">
+                                Pilih Form Consent
+                            </x-ui.button>
+                        @endcan
+                    </div>
+                </x-ui.alert>
+            @endif
+        @endif
+
         <x-ui.card title="Buku RM Tulisan Tangan">
-            @if ($canEdit)
+            @if ($canEdit && ($addSheetConsentRequired ?? true))
+                <x-ui.empty-state
+                    :icon="false"
+                    title="Belum ada halaman RM tulisan tangan untuk pasien ini."
+                    description="Halaman RM pertama dapat dibuat setelah pemeriksaan berjalan dan Persetujuan Tindakan Medis ditandatangani."
+                >
+                    <x-slot:action>
+                        {{-- Deliberately NOT a form. Rendering a disabled control
+                             keeps the doctor oriented — the action exists, it is
+                             simply not available yet — without leaving a live
+                             submit the server would only refuse. --}}
+                        <x-ui.button type="button" variant="primary" disabled>
+                            Buat Halaman RM Pertama
+                        </x-ui.button>
+                    </x-slot:action>
+                </x-ui.empty-state>
+            @elseif ($canEdit)
                 <x-ui.empty-state
                     :icon="false"
                     title="Belum ada halaman RM tulisan tangan untuk pasien ini."

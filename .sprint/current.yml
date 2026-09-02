@@ -1,18 +1,18 @@
 # DEVFLOW-1 — Sprint Manifest
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-RME-CONSENT-ODONTOGRAM-PRECONSENT-EDIT-1
-type: MODULE_SPRINT
-module: Consent
-title: "Odontogram pre-consent authoring — the active chart is editable from Mulai Pemeriksaan; consent still gates the RME and Selesai Pemeriksaan"
+id: BUGFIX-RME-PRECONSENT-FIRST-PAGE-UI-GATE-1
+type: RUNTIME_FIX
+module: MedicalRecord
+title: "The RM workspace empty state stops offering a create the server refuses — first-page CTA follows the canonical RME authoring capability, not the manage permission"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
 # Impact flags — MUST match reality; CI + sprint:manifest-check enforce them.
-runtime_change: true          # RmeVisitConsentService odontogram authority; controller view data
-schema_change: false          # no migration; authorization/service/UI behaviour only
-frontend_change: true         # odontogram page notice replaced (Blade only; no JS/CSS/Vite change)
-security_impact: true         # a clinical authorization condition is withdrawn — deliberately, and only one
-branch_isolation_impact: false # branch scope unchanged and still asserted in the same place
+runtime_change: true          # MedicalRecordController empty-state view data
+schema_change: false          # no migration; view-data + Blade + tests + governance only
+frontend_change: true         # empty.blade.php control state (Blade only; no JS/CSS/Vite change)
+security_impact: true         # a clinical authorization boundary is MIRRORED in the UI; the server gate is unchanged and still authoritative
+branch_isolation_impact: false # branch scope unchanged and still resolved in the same place
 ledger_impact: false          # no invoice/payment/inventory/earning path touched
 
 deploy_required: true
@@ -20,7 +20,7 @@ browser_required: true
 
 test_profiles: []
 
-go_tag: revision-rme-consent-odontogram-preconsent-edit-1-go
+go_tag: bugfix-rme-preconsent-first-page-ui-gate-1-go
 
 # Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
 # a rolling file, so these inherited facts have to be restated by every sprint
