@@ -90,12 +90,18 @@ Forbidden permanently: screen pinning (user-dismissible), launcher replacement
 alone, hidden exit gestures, hard-coded exit PINs. QR provisioning payloads must
 never carry secrets.
 
-## 9. Real-device validation is a Phase 4 blocker
+## 9. Real-device validation is a Phase 4A / 4B blocker
 
 `ANDROID_REAL_DEVICE_VALIDATION=false` until a clinic tablet is validated
 against the acceptance checklist. Hardware-backed and StrongBox results are
 **recorded truthfully**, whatever the device reports — never assumed, never
 rounded up. Emulator results are never described as real-device validation.
+
+Refined by the Phase 4A/4B split (§16): the **app-only** half of that checklist
+belongs to Phase 4A and the **Device Owner / kiosk** half to Phase 4B. Reporting
+either half as the whole is the failure this rule guards against. Device
+*capability* reported by `getprop` or `pm list features` is not per-key
+`KeyInfo` attestation, and the two are never conflated.
 
 ## 10. Device spec is anchored to Android Enterprise Recommended
 
@@ -142,3 +148,47 @@ comments nest.
 
 A guard whose own source contains the string it forbids is a guard that fails on
 itself. Every pattern is declared in `config/android_release.php`.
+
+## 16. Phase 4A is app-only; Phase 4B is Device Owner — and neither softens §3
+
+The original Phase 4 was all-or-nothing because it required Device Owner, which
+on a device that has completed setup or holds any account demands a **factory
+reset**. That put a personal, in-use tablet on the critical path and blocked the
+whole phase. The phase is therefore split:
+
+- **Phase 4A — app-only real-device pilot.** Production-signed APK, real Android
+  Keystore identity, cryptographic enrolment, approval, pilot-scoped enforcement,
+  session/device binding, branch lock, room scope, print denial. An **existing
+  personal tablet is acceptable** here. `DEVICE_OWNER=false` and `KIOSK=false`
+  are declared states, not gaps.
+- **Phase 4B — dedicated-device hardening.** Device Owner, Lock Task, escape
+  blocking, reboot behaviour. Requires a **dedicated, factory-fresh** tablet.
+
+Never factory-reset, wipe, remove accounts from, or set Device Owner on a
+personal or shared device to unblock a phase. If a step requires destructive
+provisioning it is Phase 4B work by definition, and stops.
+
+**Phase 4A does not weaken §3 or §4.** An app-only pilot is still a pilot: it
+needs the real production signing key under recorded custody, and installing a
+debug-signed artifact on a pilot device is forbidden because it validates a
+signing identity production will never use. An install proven against the wrong
+trust anchor is worse than no proof — it reads as evidence. No key → no signed
+APK → no pin → no verified install → no enrolment; the chain is arithmetic, and
+no amount of tooling substitutes for the custody decision at its head.
+
+## 17. The pilot enforcement stage already exists — do not build a second one
+
+`enforcement.stages` already runs `off` → `pilot_branch_or_device` →
+`selected_doctors_approved_device_set` → `all_ready_doctors` →
+`global_doctor_enforcement`, and `global_prerequisites` already scopes the
+real-device-pilot and spare-device conditions to **global** enforcement
+specifically. Pilot enforcement is a governed advance along that ladder, not a
+new abstraction, and a sprint that invents a parallel `OFF/PILOT/GLOBAL` model
+is duplicating shipped governance.
+
+Consequently `may_be_enabled_in_phase` is doing exactly one job: recording that
+an owner has accepted the pilot's clinical risk. Editing it is a **sign-off
+decision, never a code change**, and it moves only with
+`requires_owner_signoff` satisfied and a rollback owner named before start. The
+pilot Doctor, pilot branch and rollback owner are supplied explicitly by the
+owner and are **never guessed, never defaulted to the first Doctor found**.
