@@ -464,6 +464,13 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
             ->name('doctor-devices.reactivate');
         Route::post('doctor-devices/{doctorDevice}/revoke', [DoctorDeviceController::class, 'revoke'])
             ->name('doctor-devices.revoke');
+
+        // Phase 3 — Android pairing approval lives on the SAME device surface,
+        // never a second admin screen.
+        Route::post('doctor-device-enrollments/{enrollment}/approve', [DoctorDeviceController::class, 'approveEnrollment'])
+            ->name('doctor-device-enrollments.approve');
+        Route::post('doctor-device-enrollments/{enrollment}/reject', [DoctorDeviceController::class, 'rejectEnrollment'])
+            ->name('doctor-device-enrollments.reject');
     });
 
     Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {

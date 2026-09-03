@@ -1433,3 +1433,86 @@ jobs:
           name: nsf-r011-full-suite-gate
           path: storage/ci-evidence/nsf-r011-full-suite.*
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3 — Android Clinic App.
+  #
+  # Builds and unit-tests the Android shell. The security-critical logic (WebView
+  # origin policy, startup state machine, canonical signed message, TLS-cancel
+  # contract) is deliberately pure Kotlin so it runs here without an emulator.
+  #
+  # Instrumentation tests (real AndroidKeyStore) and Device Owner / Lock Task
+  # provisioning need a booted emulator and are run locally; they are NOT
+  # silently skipped and then called green here.
+  # ---------------------------------------------------------------------------
+  android_clinic_app_gate:
+    name: Phase 3 Android Clinic App Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Android unit tests
+        shell: bash
+        working-directory: android/daengtisia-clinic
+        run: |
+          set -eo pipefail
+          ./gradlew :app:testDebugUnitTest --no-daemon 2>&1 | tee /tmp/android-unit.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Android lint
+        shell: bash
+        working-directory: android/daengtisia-clinic
+        run: |
+          set -eo pipefail
+          ./gradlew :app:lintDebug --no-daemon 2>&1 | tee /tmp/android-lint.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Android assemble debug
+        shell: bash
+        working-directory: android/daengtisia-clinic
+        run: |
+          set -eo pipefail
+          ./gradlew :app:assembleDebug --no-daemon 2>&1 | tee /tmp/android-assemble.log
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Assert the security contracts actually ran
+        shell: bash
+        working-directory: android/daengtisia-clinic
+        run: |
+          set -eo pipefail
+          # A green build that silently ran zero tests is not evidence.
+          for suite in UrlAllowlistTest DeviceStateMachineTest DeviceProofMessageTest SecureWebViewClientTlsTest; do
+            test -f "app/build/test-results/testDebugUnitTest/TEST-com.daengtisia.clinic.${suite}.xml" \
+              || { echo "MISSING RESULT: ${suite}"; exit 1; }
+          done
+          python3 - <<'PYEOF'
+          import glob, xml.etree.ElementTree as ET
+          t = f = 0
+          for p in glob.glob('app/build/test-results/testDebugUnitTest/*.xml'):
+              r = ET.parse(p).getroot()
+              t += int(r.get('tests', 0))
+              f += int(r.get('failures', 0)) + int(r.get('errors', 0))
+          print(f"android_unit_tests={t} failures={f}")
+          raise SystemExit(1 if (f or t == 0) else 0)
+          PYEOF
+
+      - name: Upload Android gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3-android-clinic-app-gate
+          path: |
+            android/daengtisia-clinic/app/build/test-results/testDebugUnitTest/*.xml
+            android/daengtisia-clinic/app/build/reports/lint-results-debug.*
+          retention-days: 30

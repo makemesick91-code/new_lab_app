@@ -8,6 +8,7 @@ use Database\Factories\DoctorDeviceFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — clinic device registry.
@@ -47,6 +48,26 @@ class DoctorDevice extends Model
      */
     public const IDENTITY_CRYPTOGRAPHICALLY_VERIFIED = 'cryptographically_verified';
 
+    /**
+     * Phase 3 enrolment protocol state. Deliberately SEPARATE from `status`:
+     * `status` is the administrative decision, this is where the device sits in
+     * the pairing protocol. The proof endpoint requires BOTH.
+     */
+    public const ENROLLMENT_NOT_ENROLLED = 'not_enrolled';
+
+    public const ENROLLMENT_PENDING = 'pending';
+
+    public const ENROLLMENT_VERIFIED = 'verified';
+
+    public const ENROLLMENT_REJECTED = 'rejected';
+
+    public const ENROLLMENT_STATUSES = [
+        self::ENROLLMENT_NOT_ENROLLED,
+        self::ENROLLMENT_PENDING,
+        self::ENROLLMENT_VERIFIED,
+        self::ENROLLMENT_REJECTED,
+    ];
+
     public const IDENTITY_STATES = [
         self::IDENTITY_UNVERIFIED,
         self::IDENTITY_CRYPTOGRAPHICALLY_VERIFIED,
@@ -79,6 +100,10 @@ class DoctorDevice extends Model
             'revoked_by' => 'integer',
             'registered_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'verified_by' => 'integer',
+            'enrollment_requested_at' => 'datetime',
+            'verified_at' => 'datetime',
+            'last_verified_at' => 'datetime',
             'disabled_at' => 'datetime',
             'revoked_at' => 'datetime',
         ];
@@ -136,6 +161,21 @@ class DoctorDevice extends Model
         }
 
         return substr($this->public_key_fingerprint, 0, 12);
+    }
+
+    public function enrollments(): HasMany
+    {
+        return $this->hasMany(DoctorDeviceEnrollment::class, 'doctor_device_id');
+    }
+
+    public function verifiedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'verified_by');
+    }
+
+    public function isEnrollmentVerified(): bool
+    {
+        return $this->enrollment_status === self::ENROLLMENT_VERIFIED;
     }
 
     protected static function newFactory(): DoctorDeviceFactory
