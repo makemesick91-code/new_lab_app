@@ -24,6 +24,14 @@ This document exists because the attempt produced one genuinely durable result �
 a real-hardware capability audit — and four blockers that the next attempt should
 not have to rediscover.
 
+> **Continuation, 2026-09-04.** The Phase 4A/4B split agreed in §6 was
+> attempted the same day. The app-only re-scoping cleared blocker **B2** — a
+> personal tablet is acceptable for Phase 4A because Device Owner is deferred
+> — but **B1 (signing custody) and B4 (owner sign-off, pilot subject) remain
+> open**, so Phase 4A is also `BLOCKED / NO-GO`. Nothing in this record is
+> superseded or corrected; see
+> `docs/sprints/feature-doctor-trusted-android-device-lock-1-phase-4a-blocked.md`.
+
 ---
 
 ## 1. Authority resolved
