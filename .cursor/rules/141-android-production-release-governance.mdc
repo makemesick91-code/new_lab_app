@@ -1,0 +1,133 @@
+---
+description: Android production signing, distribution, device management and release governance for the DaengtisiaMS Clinic app
+globs: android/**,config/android_release.php,app/Support/Android/**,docs/governance/android-*,docs/runbooks/android-*
+alwaysApply: false
+---
+
+# FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5 — durable rules
+
+Decision: `docs/adr/0009-android-production-signing-distribution-and-device-management.md`.
+Config: `config/android_release.php`. Gate: `php artisan android:release-readiness --strict`.
+Supersedes rule 11 of `140-android-clinic-device-identity.mdc` ("production
+signing is UNRESOLVED"). Rules 1–10 and 12–14 of 140 are unchanged.
+
+## 1. Enforcement is STILL off
+
+Phase 3.5 changed no runtime behaviour. `DEVICE_ENFORCEMENT_ACTIVE=false`,
+`DOCTOR_BROWSER_LOGIN_DENIED=false`, and **no feature flag exists**. Phase 2
+decided the flag is created by the phase that needs one; creating it "in
+preparation" is how a half-wired switch gets flipped by someone who assumes it
+is finished. If you are adding one, you are starting Phase 5.
+
+## 2. Signing authority
+
+Play App Signing. Google KMS holds the app signing key; the clinic holds only an
+**upload** key. The reason is one property: an upload key is **resettable**, an
+app signing key is not. Do not move an unrecoverable key into clinic custody.
+
+## 3. Never create a production key to make a sprint green
+
+A production signing identity is created only under recorded custody with named
+custodian roles. An irreplaceable key generated on an ephemeral context that
+nobody owns is worse than no key — Phase 3.5 shipped with **no** production key
+rather than an unowned one. Rehearse procedures with a **disposable** key and
+destroy it afterwards.
+
+Never report a disposable-key drill as production-key verification. The honest
+pair is `SIGNING_RECOVERY_RUNBOOK_TESTED_WITH_DISPOSABLE_KEY=true` /
+`PRODUCTION_KEY_RECOVERY_VERIFIED=false`.
+
+## 4. Never debug-sign a release
+
+The debug key is a publicly known identity — anyone can sign an update over it.
+The `release` build type must not reference debug signing. Gate:
+`release_not_debug_signed`.
+
+## 5. Key material never enters the repository or PR CI
+
+Checked against the **git index**, not the working tree: an ignored file on disk
+says nothing about history. Pull-request CI executes untrusted code, so a key it
+can reach makes every contributor a release authority. `android:release-readiness`
+is deliberately safe on a fork PR because it holds nothing.
+
+## 6. versionCode is monotonic, and rollback is forward
+
+Play refuses a versionCode that is not strictly greater, and Android blocks the
+downgrade install. "Reinstall the previous APK" is not an available operation.
+Rollback = **halt the rollout**, then ship the older code under a **higher**
+versionCode. Halting does not recall: devices that already updated stay on the
+bad version until a fix ships. The **first** release on a track cannot be halted
+at all.
+
+## 7. Distribution is Managed Google Play private app
+
+Organisation-restricted, AAB, staged rollout. The package name is **permanent
+from first publish** — deleting a private app does not release it.
+
+The pilot exception is bounded and written down: **one** device, owner sign-off,
+and the artifact must be the **Play-signed** one downloaded from Play Console.
+Side-loading a *locally* signed build validates a signing identity production
+never uses, which is worse than not testing.
+
+## 8. Kiosk is Device Owner, and at scale the DPC is the owner
+
+Two supported models: self-owned Device Owner (pilot) and EMM dedicated device
+(fleet, ≥5 devices). Under the EMM model **our app is not the Device Owner** —
+the DPC is, and it lock-task-allowlists our package.
+
+Forbidden permanently: screen pinning (user-dismissible), launcher replacement
+alone, hidden exit gestures, hard-coded exit PINs. QR provisioning payloads must
+never carry secrets.
+
+## 9. Real-device validation is a Phase 4 blocker
+
+`ANDROID_REAL_DEVICE_VALIDATION=false` until a clinic tablet is validated
+against the acceptance checklist. Hardware-backed and StrongBox results are
+**recorded truthfully**, whatever the device reports — never assumed, never
+rounded up. Emulator results are never described as real-device validation.
+
+## 10. Device spec is anchored to Android Enterprise Recommended
+
+AER is the authority because it binds an OEM to a published security-update end
+date. The AER directory is checked **at purchase time** — devices are archived
+from it when an OEM stops shipping updates, so a model list frozen into config
+becomes a procurement trap. Dated candidates live in the procurement doc; config
+holds criteria only.
+
+## 11. Enforcement never precedes spares
+
+Before global enforcement: pilot passed, **every** enforced Doctor has an ACTIVE
+device, a spare per branch, the device-loss runbook rehearsed, and rollback to
+browser login proven. Browser login is the fallback — removing that door before
+spares exist is how a clinic loses a day.
+
+## 12. Lost or stolen device: REVOKE, immediately
+
+Revocation is terminal by design. An administrator who is unsure should revoke:
+being wrong costs five minutes of re-enrolment, and the other error is a trusted
+device in someone else's hands. Never delete a device row — it is the security
+history.
+
+## 13. A server deploy must not brick an un-updated tablet
+
+No minimum-client-version hard block is implemented, deliberately. Breaking
+device API changes take a **new path**; the old one survives the grace period.
+Ship the tolerant server first, then the client, then retire the old path.
+
+## 14. Source-scanning guards: comment-aware, literal-**aware**, never vacuous
+
+Rule 13 of 140 says strip comments so a guard stops matching the prose
+explaining it. Do not over-apply it: the forbidden token here is
+`signingConfigs.getByName("debug")`, which **contains a string literal**. Blank
+the strings and the token becomes unmatchable and the guard passes on a
+genuinely debug-signed release. Literal awareness means "a `//` inside a string
+does not open a comment" — not "delete the string".
+
+Keep a presence assertion beside every absence assertion, so a stripper that
+removes too much fails loudly instead of passing on nothing. Kotlin block
+comments nest.
+
+## 15. Forbidden literals live in config, never in the scanner
+
+A guard whose own source contains the string it forbids is a guard that fails on
+itself. Every pattern is declared in `config/android_release.php`.
