@@ -127,7 +127,8 @@
             'settings.tariffs.*',
             'settings.payment-methods.*',
             'settings.wa-reminder-templates.*',
-            'settings.branches.*'
+            'settings.branches.*',
+            'settings.doctor-devices.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
     ];
@@ -839,6 +840,13 @@
                         @canany(['view_branch_master_data', 'manage_branch_master_data'])
                             <a href="{{ route('settings.branches.index') }}"
                                class="menu-subitem {{ request()->routeIs('settings.branches.*') ? $linkActive : $linkIdle }}">Master Cabang RME</a>
+                        @endcanany
+                        {{-- FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2.
+                             Visibility follows the permission, but the sidebar is
+                             never the boundary: the route itself is gated. --}}
+                        @canany(['view_doctor_devices', 'manage_doctor_devices'])
+                            <a href="{{ route('settings.doctor-devices.index') }}"
+                               class="menu-subitem {{ request()->routeIs('settings.doctor-devices.*') ? $linkActive : $linkIdle }}">Device Dokter</a>
                         @endcanany
                     </div>
                 </div>

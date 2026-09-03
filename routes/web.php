@@ -18,6 +18,7 @@ use App\Modules\Consent\Controllers\RmeVisitConsentController;
 use App\Modules\Delivery\Controllers\DeliveryController;
 use App\Modules\Doctor\Controllers\DoctorAccountLinkController;
 use App\Modules\Doctor\Controllers\DoctorController;
+use App\Modules\DoctorDevice\Controllers\DoctorDeviceController;
 use App\Modules\Inventory\Controllers\GoodsReceiptController;
 use App\Modules\Inventory\Controllers\InventoryActivityLogController;
 use App\Modules\Inventory\Controllers\InventoryAlertController;
@@ -441,6 +442,30 @@ Route::middleware('auth')->prefix('settings')->name('settings.')->group(function
     | Group gated by either permission; write actions are further restricted
     | to manage_clinic_master_data via ClinicRoomPolicy.
     */
+    /*
+    |----------------------------------------------------------------------
+    | FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — Device Dokter
+    |----------------------------------------------------------------------
+    | The clinic device registry a future Android Clinic App will enrol into.
+    | CAPABILITY ONLY: nothing in the authentication path reads it, so an empty
+    | registry can never lock a doctor out. Gated by dedicated permissions that
+    | RoleSeeder grants to no role, so only Super Admin reaches it via the
+    | global Gate::before. There is deliberately NO destroy route — trust is
+    | withdrawn with `revoke`, never by deleting security history.
+    */
+    Route::middleware('permission:view_doctor_devices|manage_doctor_devices')->group(function () {
+        Route::resource('doctor-devices', DoctorDeviceController::class)
+            ->except(['destroy'])
+            ->parameters(['doctor-devices' => 'doctorDevice']);
+
+        Route::post('doctor-devices/{doctorDevice}/disable', [DoctorDeviceController::class, 'disable'])
+            ->name('doctor-devices.disable');
+        Route::post('doctor-devices/{doctorDevice}/reactivate', [DoctorDeviceController::class, 'reactivate'])
+            ->name('doctor-devices.reactivate');
+        Route::post('doctor-devices/{doctorDevice}/revoke', [DoctorDeviceController::class, 'revoke'])
+            ->name('doctor-devices.revoke');
+    });
+
     Route::middleware('permission:view_clinic_master_data|manage_clinic_master_data')->group(function () {
         Route::resource('clinic-rooms', ClinicRoomController::class)
             ->except(['show'])

@@ -226,6 +226,18 @@ return [
         // control.
         'tests/Feature/RME/DoctorRoomScopedAccessAndPrintDenyTest.php',
 
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2 — the clinic
+        // device registry: lifecycle, terminal revocation, branch binding,
+        // audit, and the guarantee that authentication is NOT coupled to the
+        // registry while enforcement is off.
+        //
+        // Same precedent as the sibling entries above: this is an
+        // authorization surface plus a standing no-enforcement contract, and
+        // Phase 1 already proved that a suite no filter token selects is a
+        // control nothing enforces.
+        'tests/Feature/DoctorDevice/DoctorDeviceRegistryTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceAccessTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //
