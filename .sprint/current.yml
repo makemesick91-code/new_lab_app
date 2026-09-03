@@ -1,35 +1,44 @@
-# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3
+# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5
 # Validated by: php artisan sprint:manifest-check
 
-id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-3
+id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-3-5
 type: MODULE_SPRINT
 module: DoctorDevice
-title: "Android Clinic App + cryptographic device enrolment capability (Keystore identity, challenge/response, secure WebView, kiosk; device login enforcement stays OFF)"
+title: "Android production readiness and governance: signing custody, distribution, device management, rollback and the Phase 4 pilot plan (device login enforcement stays OFF)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # enrolment/proof services + stateless device API routes
-schema_change: true             # additive: enrolment + challenge tables, enrolment columns on the registry
-frontend_change: true           # pending-enrolment approval UI on the existing Device Dokter screen
-security_impact: true           # cryptographic device identity, challenge/response, WebView origin + TLS policy
+runtime_change: true            # read-only governance scanner + android:release-readiness command
+schema_change: false            # no migration; nothing in this phase touches the database
+frontend_change: false          # no Blade, no JS, no asset build
+security_impact: true           # signing custody, release trust chain, standing enforcement-off contract
 branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # additive migrations + device API on the VPS pilot
-browser_required: false         # server-rendered Blade; Android validated on emulator
+deploy_required: true           # new config + command ship to the VPS pilot
+browser_required: false         # no UI surface added
+
+# The READINESS tag for this phase. Deliberately NOT the full-feature tag —
+# see the carried-forward note below.
+go_tag: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 
 test_profiles:
   - security
-  - rme
 
 # Carried forward from the preceding sprint's manifest. `.sprint/current.yml` is
 # a rolling file, so these inherited facts have to be restated by every sprint
 # after closure — dropping one is precisely the quiet contradiction
-# LegacyRmeProgramClosureContractTest exists to catch.
+# LegacyRmeProgramClosureContractTest exists to catch. It caught this sprint's
+# first draft, which is the contract working.
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-go
 
-# Phase 3 is CAPABILITY ONLY. The full feature stays NO-GO: device enforcement is
-# not active, real-device validation has NOT been performed, production signing
-# governance is UNRESOLVED, and the full-feature GO tag
+# Phase 3.5 is READINESS AND GOVERNANCE ONLY. The full feature stays NO-GO:
+# device enforcement is not active, Doctor browser login is not denied,
+# real-device validation has NOT been performed, no production signing key has
+# been provisioned, and the full-feature GO tag
 # `feature-doctor-trusted-android-device-lock-1-go` must NOT be created.
-inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-2-go
+#
+# What Phase 3.5 DOES change is the Phase 3 posture line "production signing
+# governance is UNRESOLVED" — that is now RESOLVED by ADR 0009. Deciding how to
+# sign is not signing: the key itself is a Phase 4 input.

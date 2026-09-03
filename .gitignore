@@ -79,3 +79,13 @@ android/**/*.apk
 android/**/*.aab
 android/**/*.jks
 android/**/*.keystore
+
+# Phase 3.5 — the rest of the key-material surface. The upload keystore lives
+# in custodian custody (docs/governance/android-production-signing-governance.md);
+# nothing here may ever be staged. Signing credentials in a properties file are
+# the same secret as the keystore, and a keystore beside its password is a
+# keystore with no password.
+android/**/*.p12
+android/**/*.pfx
+android/**/keystore.properties
+android/**/signing.properties

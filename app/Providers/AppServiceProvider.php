@@ -6,6 +6,8 @@ use App\Modules\Prescription\Gateways\CloudApiWhatsAppGateway;
 use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
 use App\Modules\Prescription\Gateways\WhatsAppGatewayInterface;
+use App\Support\Android\AndroidReleaseGovernanceScanner;
+use App\Support\Android\KotlinSourceScanner;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
@@ -26,6 +28,14 @@ class AppServiceProvider extends ServiceProvider
         // DEVFLOW-1 read-only scanners need the repository base path.
         $this->app->bind(DevflowScanner::class, fn () => new DevflowScanner(base_path()));
         $this->app->bind(SharedFoundationScanner::class, fn () => new SharedFoundationScanner(base_path()));
+
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5 — same shape:
+        // a read-only scanner that reads the repository, so it needs the base
+        // path rather than guessing one.
+        $this->app->bind(
+            AndroidReleaseGovernanceScanner::class,
+            fn ($app) => new AndroidReleaseGovernanceScanner($app->make(KotlinSourceScanner::class), base_path()),
+        );
 
         // DEVFLOW-FIX-BASE-REF-1 — the canonical base authority. Bound per
         // resolution (not shared) so each command invocation pins its own base

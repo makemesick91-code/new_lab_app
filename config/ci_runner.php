@@ -245,6 +245,18 @@ return [
         'tests/Feature/DoctorDevice/DoctorDeviceEnrollmentProtocolTest.php',
         'tests/Feature/DoctorDevice/DoctorDeviceApiAndNoEnforcementTest.php',
 
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5 — the release
+        // governance that stands between a clinic tablet and a debug-signed,
+        // unrecoverably-keyed, un-rollback-able production app.
+        //
+        // Declared rather than left to the `DoctorDevice` filter token for the
+        // reason Phase 1 established: a token match is an accident of naming,
+        // and nothing would tell us the day it stopped selecting. What this
+        // pins is not hypothetical — a debug-signed release ships a publicly
+        // known signing identity, and a lost app signing key destroys every
+        // device enrolment in the fleet.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidReleaseGovernanceTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //

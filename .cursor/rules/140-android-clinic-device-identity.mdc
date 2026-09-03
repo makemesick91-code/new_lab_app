@@ -112,13 +112,19 @@ than implying protection it lacks. No hard-coded exit PIN and no secret gesture
 The app adds no native print/PDF path for a Doctor. Phase 1's server-side denial
 remains the authority; the WebView simply receives it.
 
-## 11. Production signing is UNRESOLVED
+## 11. Production signing — SUPERSEDED by rule 141
 
-No production signing identity exists and none may be invented. Release builds
-declare **no** `signingConfig`; debug/test artifacts are for emulator and CI
-only and must never be described as a production release. Custody, backup,
-rotation, distribution and disaster recovery must be decided by a human owner
-before any production Android release — this blocks Phase 4.
+> **Phase 3.5 resolved this.** Custody, backup, rotation, distribution and
+> disaster recovery are decided in
+> `docs/adr/0009-android-production-signing-distribution-and-device-management.md`
+> and enforced by `.cursor/rules/141-android-production-release-governance.mdc`.
+> Read 141 for the current rule.
+
+What survives unchanged: no production signing identity has been **created**,
+and none may be invented. Release builds declare **no** `signingConfig` and must
+never fall back to the debug key. Debug/test artifacts are for emulator and CI
+only and must never be described as a production release. Deciding how to sign
+is not signing — the key itself is a Phase 4 input.
 
 ## 12. Real-device validation is a Phase 4 blocker
 
