@@ -1,28 +1,35 @@
-# Runbook — Android release, distribution and rollback
+# Runbook — Android release, distribution and recovery
 
-**FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5.**
-Authority: [ADR 0009](../adr/0009-android-production-signing-distribution-and-device-management.md) ·
+**REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1.**
+Authority: [ADR 0010](../adr/0010-android-direct-apk-signing-and-distribution.md) ·
 [signing governance](../governance/android-production-signing-governance.md) ·
 `config/android_release.php`.
 
-Audience: the release operator. Assumes the Play Developer account exists and
-Play App Signing is enrolled.
+Audience: the **signing custodian / release operator**. The installer's half is
+in [direct APK installation](android-direct-apk-installation.md).
+
+> **Google Play is NOT used.** Managed Google Play, Play App Signing and a Play
+> Developer account are **not required**. The release artifact is a signed
+> **APK**, published to an access-controlled internal source.
 
 ---
 
-## 0. One-time setup (not yet done as of Phase 3.5)
+## 0. One-time setup (not yet done)
 
 | Step | Owner | Done? |
 |---|---|---|
-| Create the Play Developer account (a **role account**, not a personal one) | Play Console admin | ☐ |
-| Publish the app privately once to reserve `com.daengtisia.clinic` | Play Console admin | ☐ |
-| Enrol in Play App Signing | Play Console admin | ☐ |
-| Generate the upload keystore per the [backup & recovery runbook](android-signing-key-backup-and-recovery.md) | signing custodian | ☐ |
-| Register the upload certificate in Play Console | Play Console admin | ☐ |
-| Record custodians in the operations register | clinic owner | ☐ |
+| Designate 3 signing custodians in the operations register | clinic owner | ☐ |
+| Prepare the designated signing workstation | signing custodian | ☐ |
+| Generate the production signing key per the [key runbook](android-signing-key-backup-and-recovery.md) | signing custodian | ☐ |
+| Create 3 encrypted backups (1 offsite, 1 sealed cold) | custodians | ☐ |
+| Pass the restore drill | signing custodian | ☐ |
+| Record the certificate SHA-256 fingerprint as the canonical signer identity | signing custodian | ☐ |
+| Create the access-controlled release source | Admin/IT | ☐ |
 
-> The package name is **permanent from first publish** — deleting a private app
-> does not release its name. Publish `com.daengtisia.clinic` deliberately, once.
+> The package name `com.daengtisia.clinic` and the signing certificate together
+> are the update identity. Neither can change after the first install without an
+> uninstall that erases app data — and that destroys every device's enrolment.
+> Publish the first release deliberately.
 
 ---
 
@@ -35,112 +42,100 @@ php artisan android:release-readiness --strict     # must exit 0
 ```
 
 - required CI green on the exact commit being released
-- `versionCode` strictly greater than the last published value
+- `versionCode` **strictly greater** than the last published value
 - `versionName` updated and meaningful
 
-### 1.2 Build
+**Android only enforces `>=`.** The strictly-greater rule is ours, and nothing
+else enforces it now that Play is out of the chain. Two builds sharing a
+`versionCode` would install over each other silently and "which build is on that
+tablet?" would stop having an answer.
 
-In the **protected release environment**, with manual approval:
+### 1.2 Build and sign
+
+On the **designated signing workstation**, under manual approval:
 
 ```bash
 cd android/daengtisia-clinic
-./gradlew :app:bundleRelease
+./gradlew :app:assembleRelease
+# then sign with the DaengtisiaMS production key (see the key runbook)
 ```
 
-Signed with the **upload key**. Google re-signs with the app signing key.
+Rename to the canonical pattern:
 
-### 1.3 Record the manifest
+```
+DaengtisiaMS-Clinic-v1.0.0.apk
+```
+
+### 1.3 Generate the release manifest
 
 ```json
 {
+  "package_name": "com.daengtisia.clinic",
   "version_name": "1.0.0",
   "version_code": 2,
   "git_commit": "<full sha>",
   "ci_run_id": "<run id>",
-  "artifact_sha256": "<sha256 of the aab>",
-  "signing_certificate_fingerprint_sha256": "<from Play Console app signing>",
-  "release_channel": "managed_google_play_private"
+  "build_variant": "release",
+  "apk_filename": "DaengtisiaMS-Clinic-v1.0.0.apk",
+  "artifact_sha256": "<sha256 of the apk>",
+  "signing_certificate_fingerprint_sha256": "<from apksigner --print-certs>",
+  "release_channel": "direct_admin_managed_apk",
+  "approval_status": "approved"
 }
 ```
 
+Save beside the APK as `DaengtisiaMS-Clinic-v1.0.0.release.json`.
+
+### 1.4 Verify before publishing
+
 ```bash
-php artisan android:release-readiness --manifest=release-manifest.json --strict
+php artisan android:verify-release \
+  DaengtisiaMS-Clinic-v1.0.0.apk \
+  DaengtisiaMS-Clinic-v1.0.0.release.json
 ```
 
-Keep it with the release evidence. It is what makes "is this the build we
-tested?" answerable later.
+Non-zero exit means do not publish. The installer runs the identical command
+before installing — verifying twice, at both ends of the channel, is the point.
 
-### 1.4 Publish
+### 1.5 Publish
 
-Managed Google Play → private app → new release → upload the `.aab` → staged
-rollout. Do not go to 100% on the first day of a version.
+Upload both files to the access-controlled release source (a protected GitHub
+Release artifact using infrastructure the project already operates). The source
+must carry artifact identity, release metadata, a published SHA-256, access
+control and version history.
+
+**Not permitted:** chat, email, an unauthenticated public bucket, or a shared
+drive with no access control. Those channels cannot answer "is this the artifact
+we published?".
 
 ---
 
 ## 2. Distribution
 
-| Fleet | Channel |
-|---|---|
-| Phase 4 pilot (1 device) | ADB side-load of the **Play-signed** artifact |
-| Production fleet | Managed Google Play private app |
-
-### 2.1 The pilot exception
-
-A self-owned Device Owner tablet has no Google account, so it cannot install
-from Managed Google Play. For the pilot device only:
-
-1. Play Console → **App bundle explorer** → the release → download the signed
-   universal APK (or use **Internal app sharing**).
-2. `adb install -r <play-signed>.apk`
-
-The artifact is signed by the **production authority**. Side-loading a *locally*
-signed build is not this exception and is forbidden — it would validate a
-signing identity production never uses.
-
-Bounded in config: `distribution.pilot_exception.max_devices = 1`, owner
-sign-off required.
+Direct installation by authorised Admin/IT — the full procedure is in the
+[direct APK installation runbook](android-direct-apk-installation.md). Pilot and
+fleet use the **same path**; there is no special case.
 
 ---
 
-## 3. Rollback
+## 3. Recovery from a bad release
 
-**Read this before you need it. The server intuition is backwards here.**
+**There is no production downgrade.** Installing an older `versionCode` requires
+an uninstall, which erases app data, which destroys the Keystore device identity
+and forces re-enrolment. `adb install -d` bypasses the block only for
+**debuggable** builds. Trading a bad app version for a lost fleet enrolment is
+not a rollback.
 
-You cannot decrement a `versionCode`. Play refuses an upload that is not
-strictly greater, and Android blocks a downgrade install. *There is no
-"reinstall the previous APK" operation.*
+1. **Stop distribution** — remove the artifact from the release source so no
+   further device receives it.
+2. **Fix forward** — revert, bump `versionCode` up, sign, verify, publish.
+3. **Install the fix** on affected devices.
+4. Devices already updated stay on the bad version until the fix reaches them.
+   The fallback meanwhile is **browser login**, which is never denied.
 
-### 3.1 Bad release already rolled out
-
-1. **Halt the rollout** in Play Console. New and existing users stop receiving
-   the bad version; new installs fall back to the previous release.
-   → Devices that already updated **stay on the bad version** until you ship a
-   fix. Halting protects the ones that have not moved yet; it does not recall.
-2. **Forward-fix**: revert the code, bump `versionCode` **up**, release again.
-3. If the clinic is blocked meanwhile, fall back to browser login — Doctor
-   browser login is not denied, precisely so this door stays open.
-
-### 3.2 During staged rollout
-
-Halt the staged rollout. Same forward-fix path.
-
-### 3.3 The one-way door
-
-**The first release on a track cannot be halted** — there is nothing to fall
-back to. The pilot's first build is unrecallable, which is a reason the pilot is
-one device.
-
-### 3.4 Pilot device (side-loaded)
-
-```bash
-adb uninstall com.daengtisia.clinic     # destroys the device identity
-adb install -r <previous-play-signed>.apk
-```
-
-Then **re-enrol**, and revoke the stale device row in Master Data → Device
-Dokter. Uninstall wipes app data, so the Keystore identity is gone; a fresh
-install generates a new keypair no administrator has approved yet. That is the
-design working, not a fault.
+This is the same shape as the Play-era "halt the rollout then forward-fix" —
+minus the halt, which was a Play Console button. What remains rests on platform
+behaviour and survives the distribution change intact.
 
 ---
 
@@ -149,11 +144,14 @@ design working, not a fault.
 A server deploy must not brick a tablet that has not updated.
 
 - No minimum-client-version hard block is implemented, deliberately. Adding one
-  now is the fastest way to lock a clinic out of its own records.
+  is the fastest way to lock a clinic out of its own records.
 - Device API breaking changes take a **new path**; the old path keeps working
   for the grace period (30 days).
-- Sequence: ship the tolerant server first, then the client, then retire the old
-  path once telemetry shows no device on it.
+- Sequence: tolerant server first, then the client, then retire the old path
+  once no device is on it.
+
+With manual installation, client rollout is slower than a Play staged rollout
+and more uneven. Bias the compatibility window wider, not narrower.
 
 ---
 
@@ -166,6 +164,9 @@ A server deploy must not brick a tablet that has not updated.
 - branch and room mismatch rejections
 - server 4xx/5xx on the device API paths
 
+There is no Play vitals dashboard. These signals are what replaces it, and the
+installed-version record from the install log is the only inventory there is.
+
 Never log key material, full KTP/NIK, or clinical content into release
 telemetry.
 
@@ -175,7 +176,8 @@ telemetry.
 
 | Situation | Who | Where |
 |---|---|---|
-| Upload key lost/compromised | signing custodian | [backup & recovery](android-signing-key-backup-and-recovery.md) |
+| Signing key lost/compromised | signing custodian | [key backup & recovery](android-signing-key-backup-and-recovery.md) |
 | Tablet lost/stolen | clinic owner → Super Admin | [device loss](android-device-loss-replacement-and-decommission.md) |
 | Bad release in the field | release operator | §3 above |
+| Install or update refused | Admin/IT installer | [direct APK installation](android-direct-apk-installation.md) §4–§6 |
 | Device cannot enrol | Super Admin | [provisioning](android-clinic-device-provisioning.md) |

@@ -4,6 +4,32 @@
 
 ---
 
+> ### ⚠ Distribution decision superseded (2026-09-03)
+>
+> **Status:** **SUPERSEDED** — signing and distribution only; see below.
+>
+> This sprint's **signing and distribution** decision — Play App Signing plus a
+> Managed Google Play private app — is **SUPERSEDED** by
+> **REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1**
+> ([ADR 0010](../adr/0010-android-direct-apk-signing-and-distribution.md)).
+>
+> Google Play, Managed Google Play and Play App Signing are **NOT used** and are
+> **not required**. Distribution is a signed APK installed directly by
+> authorised DaengtisiaMS Admin/IT, signed by a self-managed DaengtisiaMS
+> production key. The "pilot exception" described below is **deleted** — with
+> direct installation canonical, the pilot and the fleet use the same path.
+>
+> The Phase 3.5 **readiness GO remains valid and is not withdrawn**: release
+> governance, versionCode discipline, custody thinking, Device Owner runbook
+> concepts, procurement requirements, pilot acceptance gates and the device-loss
+> runbook all survive the revision. Only the Google-Play-specific signing and
+> distribution assumptions were replaced.
+>
+> Everything below is preserved as the historical record of what was decided
+> then. Do not read it as current authority.
+
+---
+
 ## 1. Status
 
 | | |

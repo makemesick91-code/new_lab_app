@@ -257,6 +257,13 @@ return [
         // device enrolment in the fleet.
         'tests/Feature/DoctorDevice/DoctorDeviceAndroidReleaseGovernanceTest.php',
 
+        // REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 — the
+        // direct-APK release contract. With Google Play out of the chain,
+        // nothing between the build and a clinic tablet checks that the
+        // artifact is the one DaengtisiaMS signed except this verifier, so the
+        // gate has to select the suite that pins it.
+        'tests/Feature/DoctorDevice/DoctorDeviceAndroidDirectApkReleaseTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //

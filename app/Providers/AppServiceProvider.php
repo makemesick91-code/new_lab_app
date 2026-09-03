@@ -7,7 +7,9 @@ use App\Modules\Prescription\Gateways\DisabledWhatsAppGateway;
 use App\Modules\Prescription\Gateways\FakeWhatsAppGateway;
 use App\Modules\Prescription\Gateways\WhatsAppGatewayInterface;
 use App\Support\Android\AndroidReleaseGovernanceScanner;
+use App\Support\Android\ApksignerFingerprintResolver;
 use App\Support\Android\KotlinSourceScanner;
+use App\Support\Android\SignerFingerprintResolver;
 use App\Support\DeveloperConsole\SensitiveValueMasker;
 use App\Support\Devflow\CanonicalBaseRefResolver;
 use App\Support\Devflow\DevflowScanner;
@@ -36,6 +38,11 @@ class AppServiceProvider extends ServiceProvider
             AndroidReleaseGovernanceScanner::class,
             fn ($app) => new AndroidReleaseGovernanceScanner($app->make(KotlinSourceScanner::class), base_path()),
         );
+
+        // REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 — the
+        // release verifier reads the signer certificate through this seam, so
+        // a test can drive it without shipping a signed APK into the repo.
+        $this->app->bind(SignerFingerprintResolver::class, ApksignerFingerprintResolver::class);
 
         // DEVFLOW-FIX-BASE-REF-1 — the canonical base authority. Bound per
         // resolution (not shared) so each command invocation pins its own base

@@ -39,39 +39,69 @@ function androidCheck(string $id): array
 // The five decisions Phase 3 left open
 // ---------------------------------------------------------------------------
 
-it('records a signing authority that keeps the unrecoverable key out of clinic custody', function () {
-    // Play App Signing is not a preference. An upload key is resettable and an
-    // app signing key is not, and losing the latter destroys every device
-    // enrolment on the forced reinstall.
-    expect(config('android_release.signing.app_signing_authority'))->toBe('play_app_signing');
+it('records a self-managed signing authority and names the risk it accepted', function () {
+    // REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 supersedes the
+    // Play App Signing decision. ADR 0009's argument — an upload key is
+    // resettable, an app signing key is not — was NOT refuted; it was accepted
+    // as a cost. The config has to say so, because every custody rule (three
+    // custodians, three copies, a 90-day drill) exists because of it.
+    expect(config('android_release.signing.app_signing_authority'))->toBe('self_managed_daengtisiams');
+    expect(config('android_release.signing.key_loss_recoverable'))->toBeFalse();
+
     expect(androidCheck('signing_authority_decided')['status'])->toBe('PASS');
-    expect(androidCheck('upload_key_custody_decided')['status'])->toBe('PASS');
+    expect(androidCheck('production_key_custody_decided')['status'])->toBe('PASS');
+    expect(androidCheck('signing_authority_is_self_managed')['status'])->toBe('PASS');
 });
 
-it('requires more than one signing custodian', function () {
-    // One custodian is not custody, it is a single laptop.
-    expect(config('android_release.signing.minimum_custodians'))->toBeGreaterThanOrEqual(2);
+it('requires three signing custodians, not the Play-era two', function () {
+    // Two was enough while a lost upload key could be reset. Nothing can reset
+    // this one, so two simultaneous losses would be terminal.
+    expect(config('android_release.signing.minimum_custodians'))->toBeGreaterThanOrEqual(3);
+    expect(config('android_release.signing.backup.copies'))->toBeGreaterThanOrEqual(3);
+    expect(config('android_release.signing.backup.restore_test_cadence_days'))->toBeLessThanOrEqual(90);
 });
 
-it('records a distribution authority and bounds the pilot exception', function () {
-    expect(config('android_release.distribution.canonical_channel'))
-        ->toBe('managed_google_play_private_app');
+it('records direct admin-managed APK distribution with no Google Play dependency', function () {
+    expect(config('android_release.distribution.canonical_channel'))->toBe('direct_admin_managed_apk');
 
-    // The exception exists because a self-owned Device Owner tablet has no
-    // Google account and therefore cannot install from Managed Google Play.
-    // It is bounded so it cannot grow into the distribution strategy.
-    expect(config('android_release.distribution.pilot_exception.max_devices'))->toBe(1);
-    expect(config('android_release.distribution.pilot_exception.requires_owner_signoff'))->toBeTrue();
+    // An .aab is a Play UPLOAD format that Google converts into device APKs.
+    // With no Play in the chain nothing performs that conversion, so a bundle
+    // is not installable and cannot be the release artifact.
+    expect(config('android_release.distribution.artifact_format'))->toBe('apk');
 
-    // Side-loading a LOCALLY signed build would validate a signing identity
-    // production never uses — worse than not testing at all.
-    expect(config('android_release.distribution.pilot_exception.artifact_source'))
-        ->toBe('play_console_signed_universal_apk');
+    // Explicit negatives. Prose cannot satisfy these, which is the point:
+    // the documents necessarily NAME Play in order to reject it.
+    foreach (config('android_release.scanner.required_distribution_negatives') as $key) {
+        expect(config('android_release.distribution.'.$key))
+            ->toBeFalse("android_release.distribution.{$key} must be false");
+    }
+
+    // The Phase 3.5 pilot exception is DELETED, not widened. It existed only
+    // because a Device Owner tablet has no Google account and so could not
+    // install from Managed Google Play; with direct install canonical there is
+    // no mismatch to except.
+    expect(config('android_release.distribution.pilot_exception'))->toBeNull();
+
+    expect(androidCheck('apk_is_canonical_release_artifact')['status'])->toBe('PASS');
+    expect(androidCheck('google_play_not_required')['status'])->toBe('PASS');
+});
+
+it('keeps the release source access-controlled rather than a chat attachment', function () {
+    expect(config('android_release.distribution.public_unauthenticated_artifact_hosting_permitted'))->toBeFalse();
+    expect(config('android_release.distribution.release_source_requirements'))
+        ->toContain('sha256_published')
+        ->toContain('access_controlled')
+        ->toContain('version_history');
 });
 
 it('records a device management model and refuses dismissible kiosk mechanisms', function () {
     expect(config('android_release.device_management.pilot_model'))->toBe('self_owned_device_owner');
-    expect(config('android_release.device_management.scale_model'))->toBe('emm_managed_dedicated_device');
+    // The Phase-3.5 "EMM required at 5 devices" rule was a Managed Google Play
+    // dependency wearing a device costume — it came from the distribution
+    // channel, not from kiosk needs. Advisory now, and never mandatory.
+    expect(config('android_release.device_management.fleet_model'))->toBe('self_owned_device_owner');
+    expect(config('android_release.device_management.mdm_required'))->toBeFalse();
+    expect(config('android_release.device_management.scale_model_required_at_devices'))->toBeNull();
 
     // Screen pinning is dismissible by the user, so it is not a security
     // control. A hard-coded exit PIN is a shared secret on every device.
@@ -83,21 +113,33 @@ it('records a device management model and refuses dismissible kiosk mechanisms',
     expect(config('android_release.device_management.qr_provisioning_may_carry_secrets'))->toBeFalse();
 });
 
-it('records a rollback mechanism that matches what Play actually permits', function () {
-    // Play refuses a versionCode that is not strictly greater and Android
-    // blocks the downgrade install, so "reinstall the previous APK" is not an
-    // available operation. Anyone reaching for a rollback with server instincts
-    // will do the wrong thing unless this is written down.
+it('records a recovery mechanism that matches what the PLATFORM permits', function () {
+    // "Halt the rollout" was a Play Console button and there is no Play
+    // Console. The forward-fix half survives because it rests on platform
+    // behaviour rather than on Play.
     expect(config('android_release.versioning.rollback_mechanism'))
-        ->toBe('halt_rollout_then_forward_fix_with_higher_version_code');
+        ->toBe('stop_distribution_then_forward_fix_with_higher_version_code');
+
+    // The precision the Play-era wording hid, and which matters more now:
+    // Android enforces >=, Play additionally enforced strictly >. Removing
+    // Play removed that enforcement, so it has to be OURS explicitly — or two
+    // different builds could share a versionCode and Android would install one
+    // over the other without complaint.
+    expect(config('android_release.versioning.platform_version_code_rule'))
+        ->toBe('update_must_be_greater_or_equal');
+    expect(config('android_release.versioning.governance_version_code_rule'))
+        ->toBe('new_release_must_be_strictly_greater');
+
     expect(config('android_release.versioning.version_code_decrement_permitted'))->toBeFalse();
     expect(config('android_release.versioning.version_code_reuse_permitted'))->toBeFalse();
+
+    // There is no supported production downgrade: it needs an uninstall, and
+    // uninstall erases the app data that holds the device identity.
+    expect(config('android_release.versioning.production_downgrade_supported'))->toBeFalse();
+    expect(config('android_release.versioning.uninstall_destroys_device_identity'))->toBeTrue();
+
     expect(androidCheck('version_code_policy_monotonic')['status'])->toBe('PASS');
 });
-
-// ---------------------------------------------------------------------------
-// Release safety
-// ---------------------------------------------------------------------------
 
 it('never lets the release build type fall back to the debug signing identity', function () {
     // The debug key is publicly known: anyone can sign an update over a
@@ -454,15 +496,19 @@ it('validates a release manifest for the provenance a rollback needs', function 
     expect($scanner->verifyReleaseManifest([])['status'])->toBe('FAIL');
 
     $complete = [
+        'package_name' => 'com.daengtisia.clinic',
         'version_name' => '1.0.0',
         'version_code' => 2,
+        'build_variant' => 'release',
+        'apk_filename' => 'DaengtisiaMS-Clinic-v1.0.0.apk',
+        'approval_status' => 'approved',
         'git_commit' => str_repeat('a', 40),
         'ci_run_id' => '123456',
         'artifact_sha256' => str_repeat('b', 64),
         // A certificate fingerprint is a public identifier, not a secret. It is
         // how "is this the build we tested?" stays answerable months later.
         'signing_certificate_fingerprint_sha256' => str_repeat('c', 64),
-        'release_channel' => 'managed_google_play_private',
+        'release_channel' => 'direct_admin_managed_apk',
     ];
 
     expect($scanner->verifyReleaseManifest($complete)['status'])->toBe('PASS');
@@ -489,13 +535,17 @@ it('rejects structurally junk provenance rather than counting the key as present
     // A digest field must look like a digest. "abcd" is present, non-empty and
     // scalar — and identifies nothing.
     $shortDigest = [
+        'package_name' => 'com.daengtisia.clinic',
         'version_name' => '1.0.0',
         'version_code' => 2,
+        'build_variant' => 'release',
+        'apk_filename' => 'DaengtisiaMS-Clinic-v1.0.0.apk',
+        'approval_status' => 'approved',
         'git_commit' => str_repeat('a', 40),
         'ci_run_id' => '123456',
         'artifact_sha256' => 'abcd',
         'signing_certificate_fingerprint_sha256' => str_repeat('c', 64),
-        'release_channel' => 'managed_google_play_private',
+        'release_channel' => 'direct_admin_managed_apk',
     ];
 
     $result = $scanner->verifyReleaseManifest($shortDigest);

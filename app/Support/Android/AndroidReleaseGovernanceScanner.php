@@ -35,6 +35,7 @@ class AndroidReleaseGovernanceScanner
             $this->wrapperChecks(),
             $this->documentChecks(),
             $this->governanceDecisionChecks(),
+            $this->directApkDistributionChecks(),
             $this->enforcementChecks(),
         );
 
@@ -295,11 +296,210 @@ class AndroidReleaseGovernanceScanner
      * The five decisions Phase 3 left open. Each must be an explicit value, not
      * an absence — "unset" is how an unresolved decision passes for a made one.
      */
+    /**
+     * REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1.
+     *
+     * Google Play must not be a prerequisite for anything, and the APK must be
+     * the canonical installable artifact.
+     *
+     * Note carefully what is NOT done here: a term scan over the active docs.
+     * The prose explaining why Play was dropped necessarily names Play, so a
+     * term scan would go red on a repository that already obeys the rule —
+     * the same trap that bit the Phase 3 TLS guard and the Phase 3.5 read
+     * guard. The load-bearing assertion is the machine-readable negatives,
+     * which prose cannot satisfy; the term scan only requires that a file
+     * naming Play also acknowledges it is superseded or not required, which is
+     * what a quiet reintroduction would fail to do.
+     */
+    private function directApkDistributionChecks(): array
+    {
+        $checks = [];
+
+        $channel = config('android_release.distribution.canonical_channel');
+        $format = config('android_release.distribution.artifact_format');
+
+        $checks[] = $this->check(
+            'apk_is_canonical_release_artifact',
+            $channel === 'direct_admin_managed_apk' && $format === 'apk' ? 'PASS' : 'FAIL',
+            $channel === 'direct_admin_managed_apk' && $format === 'apk'
+                ? 'Distribution is direct admin-managed APK installation.'
+                : "Canonical channel is '{$channel}' with artifact format '{$format}'; expected direct APK.",
+        );
+
+        // The armed set, declared in config rather than hardcoded here — the
+        // Phase 3.5 lesson about a guard that covers a subset of what it claims.
+        $required = (array) config('android_release.scanner.required_distribution_negatives');
+        $stillRequired = [];
+
+        foreach ($required as $key) {
+            if (config('android_release.distribution.'.$key) !== false) {
+                $stillRequired[] = $key;
+            }
+        }
+
+        $checks[] = $this->check(
+            'google_play_not_required',
+            $required !== [] && $stillRequired === [] ? 'PASS' : 'FAIL',
+            $required === []
+                ? 'No distribution negatives declared; the check would pass on nothing.'
+                : ($stillRequired === []
+                    ? 'Google Play, Play App Signing and Managed Google Play are all declared unused.'
+                    : 'Still declaring a Google Play dependency: '.implode(', ', $stillRequired)),
+        );
+
+        $checks[] = $this->check(
+            'signing_authority_is_self_managed',
+            config('android_release.signing.app_signing_authority') === 'self_managed_daengtisiams' ? 'PASS' : 'FAIL',
+            config('android_release.signing.app_signing_authority') === 'self_managed_daengtisiams'
+                ? 'The production signing key is owned by DaengtisiaMS, and its loss is declared unrecoverable.'
+                : 'Signing authority is not the self-managed DaengtisiaMS key.',
+        );
+
+        $checks[] = $this->markerScanCheck(
+            'active_authority_acknowledges_supersession',
+            (array) config('android_release.scanner.play_scan_paths'),
+            (array) config('android_release.scanner.play_negation_markers'),
+            'active',
+        );
+
+        $checks[] = $this->historicalSupersessionCheck();
+
+        return $checks;
+    }
+
+    /**
+     * A historical record must DECLARE its supersession, not merely mention it.
+     *
+     * Mutant M11 survived a check that accepted the marker anywhere in the
+     * file: it rewrote ADR 0009's status line to "Accepted, current authority"
+     * while an incidental body paragraph still contained the word, so a
+     * document asserting it was live authority passed the supersession check.
+     * A header window would not have caught it either — that paragraph is near
+     * the top as well. The marker has to sit on a status or heading line.
+     *
+     * @return array<string,mixed>
+     */
+    private function historicalSupersessionCheck(): array
+    {
+        $paths = (array) config('android_release.scanner.play_historical_paths');
+        $pattern = (string) config('android_release.scanner.supersession_declaration_pattern');
+
+        if ($paths === [] || $pattern === '') {
+            return $this->check('historical_authority_marked_superseded', 'FAIL', 'Supersession check is unarmed (no historical paths or no declaration pattern).');
+        }
+
+        $undeclared = [];
+        $unreadable = [];
+
+        foreach ($paths as $relative) {
+            $contents = $this->readBounded($this->basePath.'/'.$relative);
+
+            if ($contents === null) {
+                $unreadable[] = $relative;
+
+                continue;
+            }
+
+            if (preg_match($pattern, $contents) !== 1) {
+                $undeclared[] = $relative;
+            }
+        }
+
+        $ok = $unreadable === [] && $undeclared === [];
+
+        return $this->check(
+            'historical_authority_marked_superseded',
+            $ok ? 'PASS' : 'FAIL',
+            $unreadable !== []
+                ? 'Historical authority files are unreadable: '.implode(', ', $unreadable)
+                : ($ok
+                    ? count($paths).' historical records declare their supersession on a status or heading line.'
+                    : 'Supersession is not DECLARED (only mentioned, or absent) in: '.implode(', ', $undeclared)),
+        );
+    }
+
+    /**
+     * Every listed file that names a Play term must also carry one of the
+     * markers. A file that names none is fine; a file that names one without a
+     * marker is a live Play dependency reintroduced in silence.
+     *
+     * @param  array<int,string>  $paths
+     * @param  array<int,string>  $markers
+     * @return array<string,mixed>
+     */
+    private function markerScanCheck(string $id, array $paths, array $markers, string $kind): array
+    {
+        $terms = (array) config('android_release.scanner.play_dependency_terms');
+
+        if ($paths === [] || $terms === [] || $markers === []) {
+            return $this->check($id, 'FAIL', 'Play scan is unarmed (no paths, terms or markers declared).');
+        }
+
+        $offenders = [];
+        $missing = [];
+        $scanned = 0;
+
+        foreach ($paths as $relative) {
+            $contents = $this->readBounded($this->basePath.'/'.$relative);
+
+            if ($contents === null) {
+                $missing[] = $relative;
+
+                continue;
+            }
+
+            $scanned++;
+
+            $namesPlay = false;
+
+            foreach ($terms as $term) {
+                if (str_contains($contents, $term)) {
+                    $namesPlay = true;
+
+                    break;
+                }
+            }
+
+            if (! $namesPlay) {
+                continue;
+            }
+
+            $acknowledged = false;
+
+            foreach ($markers as $marker) {
+                if (str_contains($contents, $marker)) {
+                    $acknowledged = true;
+
+                    break;
+                }
+            }
+
+            if (! $acknowledged) {
+                $offenders[] = $relative;
+            }
+        }
+
+        // Presence assertion: a scan over zero readable files proves nothing.
+        $ok = $scanned > 0 && $offenders === [] && $missing === [];
+
+        return $this->check(
+            $id,
+            $ok ? 'PASS' : 'FAIL',
+            $missing !== []
+                ? 'Declared '.$kind.' authority files are unreadable: '.implode(', ', $missing)
+                : ($scanned === 0
+                    ? 'No '.$kind.' authority files were scanned; the check would be vacuous.'
+                    : ($offenders === []
+                        ? $scanned.' '.$kind.' authority files scanned; every Play mention is acknowledged as superseded or unused.'
+                        : 'Unacknowledged Google Play dependency in: '.implode(', ', $offenders))),
+        );
+    }
+
     private function governanceDecisionChecks(): array
     {
         $decisions = [
             'signing_authority_decided' => config('android_release.signing.app_signing_authority'),
-            'upload_key_custody_decided' => config('android_release.signing.upload_key_authority'),
+            'production_key_custody_decided' => config('android_release.signing.production_key_custody'),
             'distribution_authority_decided' => config('android_release.distribution.canonical_channel'),
             'device_management_decided' => config('android_release.device_management.pilot_model'),
             'rollback_mechanism_decided' => config('android_release.versioning.rollback_mechanism'),
@@ -328,8 +528,8 @@ class AndroidReleaseGovernanceScanner
             'version_code_policy_monotonic',
             $monotonic ? 'PASS' : 'FAIL',
             $monotonic
-                ? 'versionCode is monotonic; rollback is halt-then-forward-fix.'
-                : 'versionCode policy permits reuse or decrement, which Play rejects.',
+                ? 'versionCode is strictly monotonic; recovery is stop-distribution then forward-fix.'
+                : 'versionCode policy permits reuse or decrement. Android only enforces >=, so nothing else would catch this.',
         );
 
         $noPrCiSigning = config('android_release.signing.pull_request_ci_may_sign') === false;

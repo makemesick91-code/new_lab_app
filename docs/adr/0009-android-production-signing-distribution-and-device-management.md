@@ -1,6 +1,22 @@
 # ADR 0009 — Android production signing, distribution and device management
 
-**Status:** Accepted (FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5, 2026-09-03)
+**Status:** **SUPERSEDED** (2026-09-03) by
+[ADR 0010 — Direct admin-managed APK distribution with self-managed signing](0010-android-direct-apk-signing-and-distribution.md).
+
+> **This record is historical.** It was accurate when Phase 3.5 was GO-tagged and
+> is preserved unedited below so the reasoning of that decision survives.
+>
+> **Decisions 1 and 2 (Play App Signing, Managed Google Play) are SUPERSEDED.**
+> Google Play, Managed Google Play, Play App Signing and a Play Developer
+> account are **NOT used** and are **not required** by DaengtisiaMS.
+> Decision 3 (device management) and Decision 4 (rollback) are **revised** by
+> ADR 0010, not discarded.
+>
+> Decision 1's central argument — that an upload key is resettable and an app
+> signing key is not — was **not refuted**. ADR 0010 accepts that risk
+> deliberately and compensates with stricter custody. Read both.
+
+**Originally accepted:** FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3.5, 2026-09-03
 **Supersedes:** the "UNRESOLVED" posture recorded in
 `docs/sprints/feature-doctor-trusted-android-device-lock-1-phase-3.md` §6 and
 rule 11 of `.cursor/rules/140-android-clinic-device-identity.mdc`.

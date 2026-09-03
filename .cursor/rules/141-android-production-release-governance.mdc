@@ -19,11 +19,18 @@ decided the flag is created by the phase that needs one; creating it "in
 preparation" is how a half-wired switch gets flipped by someone who assumes it
 is finished. If you are adding one, you are starting Phase 5.
 
-## 2. Signing authority
+## 2. Signing authority — SUPERSEDED by rule 142
 
-Play App Signing. Google KMS holds the app signing key; the clinic holds only an
-**upload** key. The reason is one property: an upload key is **resettable**, an
-app signing key is not. Do not move an unrecoverable key into clinic custody.
+> **REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1 replaced this.**
+> Play App Signing is **NOT used**. DaengtisiaMS owns the production app signing
+> key outright, and its loss is **unrecoverable** — see
+> `.cursor/rules/142-android-direct-apk-signing-distribution.mdc` §2 and
+> `docs/adr/0010-android-direct-apk-signing-and-distribution.md`.
+>
+> What survives from the original clause is its warning, which was accurate:
+> holding the app signing key yourself means nobody can restore it. Rule 142
+> answers that with three custodians, three encrypted copies and a 90-day
+> restore drill.
 
 ## 3. Never create a production key to make a sprint green
 
@@ -54,20 +61,24 @@ is deliberately safe on a fork PR because it holds nothing.
 
 Play refuses a versionCode that is not strictly greater, and Android blocks the
 downgrade install. "Reinstall the previous APK" is not an available operation.
-Rollback = **halt the rollout**, then ship the older code under a **higher**
-versionCode. Halting does not recall: devices that already updated stay on the
-bad version until a fix ships. The **first** release on a track cannot be halted
-at all.
+Recovery = **stop distribution**, then ship the older code under a **higher**
+versionCode. ("Halt the rollout" was a Play Console button; see rule 142 §8.)
+Devices that already updated stay on the bad version until a fix reaches them.
 
-## 7. Distribution is Managed Google Play private app
+Rule 142 §7 adds a precision this clause hid: the **platform** rule is `>=`,
+and only Play enforced strictly `>`. That stricter half is now ours to enforce.
 
-Organisation-restricted, AAB, staged rollout. The package name is **permanent
-from first publish** — deleting a private app does not release it.
+## 7. Distribution — SUPERSEDED by rule 142
 
-The pilot exception is bounded and written down: **one** device, owner sign-off,
-and the artifact must be the **Play-signed** one downloaded from Play Console.
-Side-loading a *locally* signed build validates a signing identity production
-never uses, which is worse than not testing.
+> **Managed Google Play is NOT used.** Distribution is a signed **APK**
+> installed directly by authorised DaengtisiaMS Admin/IT; the artifact is an
+> APK, not an App Bundle; and the Phase-3.5 "pilot exception" is **deleted**
+> rather than widened, because with direct installation canonical the pilot and
+> the fleet use the same path. See rule 142 §1, §4 and §5.
+>
+> The clause below that still holds: the package name is permanent from first
+> install — now for a platform reason (package + certificate are the update
+> identity) rather than a Play one.
 
 ## 8. Kiosk is Device Owner, and at scale the DPC is the owner
 
