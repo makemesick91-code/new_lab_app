@@ -260,3 +260,14 @@ Validated on a clean `google_apis` (non-Play) emulator image:
 - production signing on a real device
 
 Never describe emulator results as real-device validation.
+
+**Partially closed on real hardware, 2026-09-04.** A read-only audit of a Galaxy
+Tab A9+ (`SM-X236B`, Android 16) confirmed the *capability*:
+`android.hardware.hardware_keystore=300` present, StrongBox absent — recorded
+truthfully, and not a blocker, since the procurement specification marks
+StrongBox preferred rather than mandatory. The **key-level** measurement — an
+identity key actually reporting `TRUSTED_ENVIRONMENT` through `KeyInfo` —
+remains unproven, as do the other three bullets above. A feature flag is a
+capability claim, not a measurement. That attempt closed BLOCKED / NO-GO on four
+prerequisites; evidence and entry checklist:
+[Phase 4 blocked](../sprints/feature-doctor-trusted-android-device-lock-1-phase-4-blocked.md).
