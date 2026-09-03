@@ -238,6 +238,13 @@ return [
         'tests/Feature/DoctorDevice/DoctorDeviceRegistryTest.php',
         'tests/Feature/DoctorDevice/DoctorDeviceAccessTest.php',
 
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3 — the
+        // cryptographic enrolment protocol and the device HTTP channel,
+        // including the standing proof that authentication is NOT coupled to
+        // the device registry while enforcement is off.
+        'tests/Feature/DoctorDevice/DoctorDeviceEnrollmentProtocolTest.php',
+        'tests/Feature/DoctorDevice/DoctorDeviceApiAndNoEnforcementTest.php',
+
         // REVISION-TELKOMAS-BRANCH-CODE-TKM1-TO-TLK1-1 — the branch-code alias
         // policy and the collision-safe rename that depends on it.
         //

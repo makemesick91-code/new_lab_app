@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cleartext is refused globally and for the clinic host explicitly.
+     Belt and braces with android:usesCleartextTraffic="false": a future
+     manifest edit cannot silently re-enable http. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">daengtisia.online</domain>
+    </domain-config>
+</network-security-config>

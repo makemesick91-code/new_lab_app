@@ -67,3 +67,15 @@ backup_working_changes_*.patch
 # It cannot be a *.sqlite / *.db pattern: the file has no extension.
 # The PostgreSQL database NAME of the same spelling is untouched by this.
 /asia_dental_lab
+
+# FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3 — Android build outputs.
+# Sources and the Gradle wrapper are tracked; build products and local SDK
+# pointers are not. No APK is committed: it is a build artifact, and a debug
+# APK must never be mistaken for a release under production signing governance.
+android/**/build/
+android/**/.gradle/
+android/**/local.properties
+android/**/*.apk
+android/**/*.aab
+android/**/*.jks
+android/**/*.keystore

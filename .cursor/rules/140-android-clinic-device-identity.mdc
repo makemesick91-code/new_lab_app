@@ -1,0 +1,149 @@
+---
+description: Android Clinic App, cryptographic device identity, enrolment challenge/response, secure WebView and kiosk — and the standing rule that device login enforcement is still OFF
+globs:
+  - "android/**"
+  - "app/Modules/DoctorDevice/**"
+  - "routes/device_api.php"
+alwaysApply: false
+---
+
+# FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3 — durable rules
+
+Phase 3 builds the Android Clinic App and the cryptographic device channel.
+Rules 138 (Phase 1 room scope + print denial) and 139 (Phase 2 device registry)
+stay fully in force and must not be weakened.
+
+## 1. Enforcement is STILL off — and structurally so
+
+Nothing in authentication, session handling or web middleware may reference
+`DoctorDevice`, and no web route may carry a device middleware.
+`DoctorDeviceApiAndNoEnforcementTest` asserts both: a source scan of the auth
+surfaces, and a sweep of every registered route's middleware.
+
+A passing "a doctor can still log in" test does NOT prove this — a coupling that
+has not fired yet still passes. If you are about to add that reference, you are
+starting Phase 4/5; get the decision made first.
+
+## 2. Device identity ≠ user session
+
+A successful proof means exactly **"this request came from registered clinic
+hardware"**. It does not authenticate a Doctor, and the API says so in its own
+response body. Merging the two concepts is Phase 4/5 work with its own review.
+
+## 3. Private key custody
+
+The keypair is generated **inside the Android Keystore** and the private key is
+non-exportable. It is never transmitted, never written to SharedPreferences,
+never handed to the WebView, and never logged. There is deliberately no
+`exportPrivateKey` anywhere — `DeviceIdentityManager.signChallenge()` uses the
+key by reference and returns only a signature.
+
+StrongBox is requested **opportunistically** and falls back to the TEE-backed
+Keystore: many legitimate clinic tablets have no StrongBox, and a hard
+requirement would refuse acceptable hardware.
+
+Clearing app data destroys the identity — intended. That is also why copying the
+APK to another device grants nothing: the new install generates a different key
+that no administrator has approved.
+
+## 4. Never weak device identity
+
+MAC address, IMEI, Android ID, serial, User-Agent, a hidden HTTP field, a cookie
+or an installation UUID are **never** trust authority — alone or combined.
+Possession of the Keystore private key is the only authority. Claimed device
+metadata (platform/model/os/app version) is advisory context for the approving
+administrator and nothing more.
+
+## 5. The canonical signed message
+
+    daengtisiams-device-proof|v1|<purpose>|<nonce>|<fingerprint>
+
+Fixed, pipe-delimited and versioned — never JSON, whose key ordering and
+whitespace are not guaranteed across platforms. `DeviceProofMessage` exists in
+BOTH the server (`app/Modules/DoctorDevice/Support`) and the app
+(`identity/DeviceProofMessage.kt`) and they must stay byte-identical. Changing
+the format is a protocol version bump on both sides, not an edit.
+
+It binds purpose + nonce + fingerprint, so a signature cannot be replayed across
+devices or across purposes.
+
+## 6. Challenge/response invariants
+
+- Nonce: 32 CSPRNG bytes, unique, short-lived, bound to ONE device.
+- **The nonce is burned in its own committed transaction BEFORE verification.**
+  Doing the burn and the verification in one transaction is a real
+  vulnerability: a denial throws, the transaction rolls back, the burn is undone
+  and the attacker may retry signatures against a fixed nonce forever. A test
+  pins this. Keep the two phases separate.
+- Every denial returns the SAME opaque error; the reason lives only in the audit
+  trail, so the endpoint cannot enumerate the device estate.
+- Verification is delegated to OpenSSL. Never hand-roll a primitive.
+
+## 7. Administrative status outranks cryptography
+
+A proof succeeds only when ALL hold: registered · key bound · challenge is for
+that device · challenge unexpired and unconsumed · signature verifies · status
+is ACTIVE. Status is checked before issuing a challenge, after the signature
+check, and again under lock before the write. REVOKED stays terminal.
+
+## 8. Secure WebView
+
+HTTPS only; the clinic host (or a subdomain) only; cleartext disabled in the
+manifest **and** the network security config; `onReceivedSslError` **always**
+cancels — never `proceed()`, not even in debug; file/content/universal file
+access off; no `addJavascriptInterface` anywhere; WebView debugging enabled only
+in debug builds. External links are **blocked, not handed to Chrome** — a
+dedicated clinic device is not a browsing device.
+
+`UrlAllowlist` is pure Kotlin so it is unit-tested directly, including the
+suffix-match trap (`notdaengtisia.online`) and the userinfo trick
+(`https://daengtisia.online@evil.com`).
+
+## 9. Kiosk is Device Owner, not screen pinning
+
+Screen pinning is user-dismissible and is not a security control. Lock Task
+under Device Owner is the mechanism. Not-provisioned is a **supported** state:
+the app still runs, it simply does not lock, and it reports that honestly rather
+than implying protection it lacks. No hard-coded exit PIN and no secret gesture
+— exit is a management action.
+
+## 10. Doctor print denial is not bypassable from the app
+
+The app adds no native print/PDF path for a Doctor. Phase 1's server-side denial
+remains the authority; the WebView simply receives it.
+
+## 11. Production signing is UNRESOLVED
+
+No production signing identity exists and none may be invented. Release builds
+declare **no** `signingConfig`; debug/test artifacts are for emulator and CI
+only and must never be described as a production release. Custody, backup,
+rotation, distribution and disaster recovery must be decided by a human owner
+before any production Android release — this blocks Phase 4.
+
+## 12. Real-device validation is a Phase 4 blocker
+
+Emulator validation does not prove hardware-backed Keystore, real Device Owner
+provisioning on clinic hardware, or field behaviour. Never describe emulator
+results as real-device validation.
+
+## 13. Source-scanning guards must be comment-aware
+
+Several controls here are enforced by scanning Kotlin source for a forbidden
+call, because the Android framework classes involved have no meaningful JVM
+substitute. A plain substring scan matches the comment that explains why the
+call is forbidden — the prose is byte-identical to the code — so the guard goes
+red on a codebase that already obeys it. That trains people to delete the guard.
+
+Strip comments (string- and char-literal aware; Kotlin block comments nest)
+before matching, and keep a presence assertion alongside every absence assertion
+so a stripper that removes too much fails loudly instead of passing vacuously.
+
+## 14. The Gradle wrapper is committed executable
+
+Git records only mode 100644 or 100755. `android/daengtisia-clinic/gradlew` must
+be 100755 **in the index**; a wrapper that is executable only on a developer's
+disk checks out non-executable in CI and the gate dies at exit 126 before a
+single test runs. Assert the index mode, never the working tree.
+
+Verify Android changes from a clean extraction of the staged tree, not from the
+working tree — one gate failure readily hides another.

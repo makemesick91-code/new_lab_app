@@ -19,6 +19,13 @@ use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        // FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3 — the Android
+        // Clinic App's device channel. Registered as an API group on purpose:
+        // stateless, no session cookie, no CSRF token, because the caller is
+        // hardware proving possession of a key rather than a logged-in human.
+        // These routes never authenticate a Doctor; enforcement stays OFF.
+        api: __DIR__.'/../routes/device_api.php',
+        apiPrefix: 'device-api',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )

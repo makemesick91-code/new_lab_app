@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Minimum policies for a dedicated clinic device. No wipe-data, no password
+     policy, no camera disable: the app needs Lock Task, not control over the
+     clinician's device beyond that. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

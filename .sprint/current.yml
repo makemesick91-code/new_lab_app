@@ -1,21 +1,21 @@
-# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 2
+# Active sprint manifest — FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1 Phase 3
 # Validated by: php artisan sprint:manifest-check
 
-id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-2
+id: FEATURE-DOCTOR-TRUSTED-ANDROID-DEVICE-LOCK-1-PHASE-3
 type: MODULE_SPRINT
 module: DoctorDevice
-title: "Doctor device registry + Master Data → Device Dokter (capability only; device login enforcement stays OFF, no Android app, no auth coupling)"
+title: "Android Clinic App + cryptographic device enrolment capability (Keystore identity, challenge/response, secure WebView, kiosk; device login enforcement stays OFF)"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # new module, routes, policy, sidebar entry — admin surface only
-schema_change: true             # additive migration: mst_doctor_devices
-frontend_change: true           # Blade views + sidebar entry (no JS/CSS/Vite entry)
-security_impact: true           # new authorization surface, device trust lifecycle, audit
-branch_isolation_impact: false  # devices bind to an RME-enabled branch; no BranchContext scope change
+runtime_change: true            # enrolment/proof services + stateless device API routes
+schema_change: true             # additive: enrolment + challenge tables, enrolment columns on the registry
+frontend_change: true           # pending-enrolment approval UI on the existing Device Dokter screen
+security_impact: true           # cryptographic device identity, challenge/response, WebView origin + TLS policy
+branch_isolation_impact: false  # no BranchContext / branch-scoped query change
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # additive migration + new admin surface on the VPS pilot
-browser_required: false         # server-rendered Blade; covered by feature tests
+deploy_required: true           # additive migrations + device API on the VPS pilot
+browser_required: false         # server-rendered Blade; Android validated on emulator
 
 test_profiles:
   - security
@@ -28,7 +28,8 @@ test_profiles:
 inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 
-# Phase 2 is CAPABILITY ONLY. The full feature stays NO-GO: device enforcement
-# is not active, no Android app exists, and the full-feature GO tag
+# Phase 3 is CAPABILITY ONLY. The full feature stays NO-GO: device enforcement is
+# not active, real-device validation has NOT been performed, production signing
+# governance is UNRESOLVED, and the full-feature GO tag
 # `feature-doctor-trusted-android-device-lock-1-go` must NOT be created.
-inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-1-go
+inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-2-go
