@@ -125,3 +125,25 @@ before any production Android release — this blocks Phase 4.
 Emulator validation does not prove hardware-backed Keystore, real Device Owner
 provisioning on clinic hardware, or field behaviour. Never describe emulator
 results as real-device validation.
+
+## 13. Source-scanning guards must be comment-aware
+
+Several controls here are enforced by scanning Kotlin source for a forbidden
+call, because the Android framework classes involved have no meaningful JVM
+substitute. A plain substring scan matches the comment that explains why the
+call is forbidden — the prose is byte-identical to the code — so the guard goes
+red on a codebase that already obeys it. That trains people to delete the guard.
+
+Strip comments (string- and char-literal aware; Kotlin block comments nest)
+before matching, and keep a presence assertion alongside every absence assertion
+so a stripper that removes too much fails loudly instead of passing vacuously.
+
+## 14. The Gradle wrapper is committed executable
+
+Git records only mode 100644 or 100755. `android/daengtisia-clinic/gradlew` must
+be 100755 **in the index**; a wrapper that is executable only on a developer's
+disk checks out non-executable in CI and the gate dies at exit 126 before a
+single test runs. Assert the index mode, never the working tree.
+
+Verify Android changes from a clean extraction of the staged tree, not from the
+working tree — one gate failure readily hides another.

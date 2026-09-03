@@ -73,7 +73,7 @@ Master Data → Device Dokter → key bound → challenge → signature → veri
 - Every denial returns the **same opaque error**; the reason lives only in the
   audit trail, so the endpoint cannot enumerate the device estate.
 
-## 3. Three findings worth keeping
+## 3. Five findings worth keeping
 
 **A real vulnerability, caught by a test.** The first cut burned the challenge
 nonce *inside* the verification transaction. A denial throws → the transaction
@@ -89,6 +89,29 @@ disabled" from "trust permanently withdrawn". A test now pins that, and M6 dies.
 
 **AGP 9 ships Kotlin support.** Declaring `org.jetbrains.kotlin.android`
 alongside AGP 9.0.1 is a hard error, not a redundancy.
+
+**Git stores 644 or 755 — nothing else.** The Android gate died at
+`./gradlew: Permission denied` (exit 126) before running a single test, because
+the wrapper was committed 100644. It was executable on the developer disk, which
+is exactly why nothing local caught it. The contract test asserts the **git index
+mode**, not the working tree: reading the working tree would pass on the machine
+where the file happens to be chmod'ed and prove nothing.
+
+**A source scanner that matches its own documentation is worse than none.**
+Behind the wrapper failure sat two red TLS tests. Both scan source for a
+forbidden call, and both were matching the comments that explain why the call is
+forbidden — the prose is byte-identical to the code. The app was already correct;
+the guard was firing on its own reasoning. A control that goes red on a codebase
+that obeys it teaches people to delete the control, so the scan now strips Kotlin
+comments (string- and char-literal aware, nesting block comments) first. Prose
+may name the danger; only real code trips it. Three mutants pin this: a real
+`proceed()` call, a real `addJavascriptInterface(..)` call, and a stripper
+returning `""` (caught by the presence assertion, so the scan can never pass
+vacuously).
+
+The second finding only surfaced because a clean checkout was simulated from the
+staged tree rather than trusting a green working tree — one gate failure was
+hiding another.
 
 ## 4. Enforcement is off — structurally
 
@@ -108,10 +131,10 @@ response body.
 | Server device suites | 77 passed |
 | RME + Pilot + AccessControl + DoctorDevice | **1729 passed / 0 failed** (Phase 1 + 2 intact) |
 | PostgreSQL 16.14 parity | 76 passed; FKs, unique nonce, unique pairing-code hash and all 7 new columns verified |
-| Android unit tests | 28 passed (UrlAllowlist, DeviceStateMachine, DeviceProofMessage, TLS contract) |
+| Android unit tests | 28 passed (UrlAllowlist, DeviceStateMachine, DeviceProofMessage, TLS contract) — verified from a clean checkout of the staged tree, not just the working tree |
 | Android instrumentation (real AndroidKeyStore, emulator) | 7 passed |
 | Emulator Device Owner + Lock Task | provisioned; `mLockTaskModeState=LOCKED` |
-| Mutation matrix | **15 mutants / 15 killed / 0 survivors** |
+| Mutation matrix | **18 mutants / 18 killed / 0 survivors** |
 
 ## 6. Limits — stated plainly
 
