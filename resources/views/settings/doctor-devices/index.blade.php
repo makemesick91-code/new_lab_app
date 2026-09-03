@@ -1,11 +1,13 @@
 <x-settings-shell title="Device Dokter">
     @php
         $statusLabels = [
+            'pending_approval' => 'Menunggu Persetujuan',
             'active' => 'Aktif',
             'disabled' => 'Nonaktif',
             'revoked' => 'Dicabut',
         ];
         $statusTone = [
+            'pending_approval' => 'warning',
             'active' => 'success',
             'disabled' => 'warning',
             'revoked' => 'danger',

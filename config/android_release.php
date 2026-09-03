@@ -544,7 +544,28 @@ return [
     'enforcement' => [
         'active' => false,
         'doctor_browser_login_denied' => false,
-        'flag_exists' => false,
+
+        /*
+        | REVISED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.
+        |
+        | Phase 2 ruled that "the flag is created by the phase that needs one",
+        | and Phase 3.5 therefore recorded `flag_exists => false`. That revision
+        | is the phase that needs one: it ships the complete app-only gate, the
+        | doctor/device authorization domain and session binding, and a
+        | capability with no switch is a capability that can only be released by
+        | editing code under pressure.
+        |
+        | The rule the Phase 2 stance was actually protecting — "no half-wired
+        | switch waiting for someone who assumes it is finished" — is preserved
+        | and made STRONGER: the flag is fully wired, and `flag_default_off` is
+        | verified against the real feature-flag registry rather than against
+        | this file, so this configuration cannot claim an off state the
+        | application does not have.
+        */
+        'flag_exists' => true,
+        'flag_key' => 'doctor.trusted_device_enforcement',
+        'flag_default_off' => true,
+
         'may_be_enabled_in_phase' => 5,
 
         'stages' => [
@@ -787,5 +808,28 @@ return [
         // that obeys the rule — the failure mode that trains people to delete
         // the check.
         'enforcement_coupling_token' => 'DoctorDevice',
+
+        /*
+        | REVISED by REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1.
+        |
+        | Phase 3.5 asserted that NO authentication surface referenced the
+        | device registry. An app-only gate cannot exist under that rule — the
+        | login path has to be able to ask "may this doctor's session exist?".
+        |
+        | So the check narrows to what was really being protected: the auth path
+        | may consult exactly ONE gate, by name, and may never grow its own copy
+        | of the device rules. Anything outside this allow-list — a proof
+        | service, a direct authorization query, a second flag read — is still a
+        | FAIL, because a second decision point is how enforcement starts
+        | disagreeing with itself.
+        |
+        | `DoctorDevice` alone is the module namespace segment, not a decision.
+        */
+        'enforcement_coupling_allowed_symbols' => [
+            'DoctorDevice',
+            'DoctorAppLoginGate',
+            'DoctorDeviceSessionService',
+            'EnsureDoctorDeviceSession',
+        ],
     ],
 ];

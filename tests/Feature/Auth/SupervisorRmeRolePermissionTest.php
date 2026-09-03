@@ -26,6 +26,13 @@ const SUPERVISOR_RME_PERMISSIONS = [
     'view_rme_payment_reports',
     // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
     'view_doctor_performance_report',
+    // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the operational
+    // approver for "may this doctor use this device?". Note the two that are
+    // deliberately NOT here: `view_doctor_devices` and `manage_doctor_devices`.
+    // Deciding doctor access is not the same authority as administering the
+    // physical device estate, and this exact-list pin is what keeps them apart.
+    'view_doctor_device_authorizations',
+    'manage_doctor_device_authorizations',
     // SATUSEHAT-1 — RME operational owner of the controlled submission filter
     // + mapping/identifier governance. (The exact-list pin below was stale
     // since SATUSEHAT-1; repinned in SATUSEHAT-4A.)

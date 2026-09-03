@@ -1,23 +1,23 @@
-# Active sprint manifest — REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1
+# Active sprint manifest — REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
 # Validated by: php artisan sprint:manifest-check
 
-id: REVISION-DOCTOR-ANDROID-DIRECT-APK-SIGNING-DISTRIBUTION-1
+id: REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
 type: MODULE_SPRINT
 module: DoctorDevice
-title: "Supersede Play App Signing and Managed Google Play with a self-managed DaengtisiaMS signing key and direct admin-managed APK installation (device login enforcement stays OFF)"
+title: "Automatic doctor/device authorization request on first Clinic App login, an Approval Device Dokter inbox, the app-only login gate and session/device binding — with enforcement shipped OFF"
 base_branch: feature/sprint-26-phase-26-8-stabilization-closure-go-watch-no-go-report
 
-runtime_change: true            # release verifier + android:verify-release command + scanner checks
-schema_change: false            # no migration; nothing here touches the database
-frontend_change: false          # no Blade, no JS, no asset build
-security_impact: true           # signing authority, release trust chain, artifact verification
-branch_isolation_impact: false  # no BranchContext / branch-scoped query change
+runtime_change: true            # auth gate, device-channel login endpoints, session binding middleware
+schema_change: true             # 3 additive tables: authorizations, login tickets, login challenges
+frontend_change: true           # Approval sidebar group + approval views (Blade only, no asset build)
+security_impact: true           # authentication path, device trust, approval authority, session lifetime
+branch_isolation_impact: false  # BranchContext untouched; device branch is server-resolved, never requested
 ledger_impact: false            # no inventory ledger / billing / payment behaviour change
 
-deploy_required: true           # new config + command ship to the VPS pilot
-browser_required: false         # no UI surface added
+deploy_required: true           # migration + permission and role seeding ship to the VPS pilot
+browser_required: false         # server-rendered Blade; verified through feature tests, not a browser driver
 
-go_tag: revision-doctor-android-direct-apk-signing-distribution-1-go
+go_tag: revision-doctor-auto-device-approval-app-only-login-1-go
 
 test_profiles:
   - security
@@ -30,15 +30,30 @@ inherits_closure: LEGACY-RME-PROGRAM-CLOSURE-1
 inherits_hold: FIX-CLINIC-OPS-BRANCH-CONTEXT-WA-1/FIX-02
 inherits_phase: feature-doctor-trusted-android-device-lock-1-phase-3-5-readiness-go
 
-# This is a DISTRIBUTION AND SIGNING revision, not a phase advance. Google Play,
-# Managed Google Play and Play App Signing are NOT used and NOT required; the
-# release artifact is a signed APK installed directly by authorised Admin/IT.
+# THIS IS A CAPABILITY REVISION, NOT A PHASE ADVANCE.
 #
-# The full feature stays NO-GO: device enforcement is not active, Doctor browser
-# login is not denied, real-device validation has NOT been performed, no
-# production signing key has been provisioned, and the full-feature GO tag
-# `feature-doctor-trusted-android-device-lock-1-go` must NOT be created.
+# The complete doctor trusted-device lock now exists: automatic PENDING requests
+# from a cryptographically proven device, the approval inbox, the app-only login
+# gate and per-request session/device binding. All of it is behind
+# `doctor.trusted_device_enforcement`, which defaults to FALSE and stays false in
+# production.
 #
-# Phase 3.5's readiness GO is NOT withdrawn. Its Google-Play signing and
-# distribution decision is SUPERSEDED by ADR 0010; everything else it
-# established still stands.
+# So after this revision: DEVICE_ENFORCEMENT_ACTIVE=false and
+# DOCTOR_BROWSER_LOGIN_DENIED=false. Doctors keep logging in exactly as they do
+# today, and an empty authorization table locks nobody out.
+#
+# The full feature stays NO-GO. Real-device validation has NOT been performed,
+# no production signing key has been provisioned, Phase 4 has NOT started, and
+# the full-feature GO tag `feature-doctor-trusted-android-device-lock-1-go` must
+# NOT be created.
+#
+# Google Play, Managed Google Play and Play App Signing remain unused (ADR 0010).
+# Phase 1 room isolation, RME/odontogram print denial, Phase 2 device lifecycle
+# and Phase 3 cryptographic identity are all preserved.
+#
+# ONE PRIOR CONTRACT IS DELIBERATELY NARROWED, WITH ITS OWN REVIEW: Phase 2/3
+# asserted that NO authentication surface may reference the device registry, and
+# said in its own comment that "Phase 4 is where that changes, deliberately and
+# with its own review". An app-only gate cannot exist under that rule. The rule
+# is therefore narrowed — not dropped — to "the auth path may consult exactly ONE
+# gate, by name", and the enforcement-OFF behaviour is pinned by its own suite.

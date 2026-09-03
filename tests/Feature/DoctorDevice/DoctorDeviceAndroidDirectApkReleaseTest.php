@@ -408,13 +408,14 @@ it('keeps the historical Play decision readable but marked superseded', function
 });
 
 it('keeps device enforcement off across the distribution change', function () {
-    // This revision changed distribution, not authentication.
+    // That revision changed distribution, not authentication, and enforcement
+    // is STILL off after REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
+    // shipped the gate — which is the whole point of asserting it here again.
     expect(config('android_release.enforcement.active'))->toBeFalse();
     expect(config('android_release.enforcement.doctor_browser_login_denied'))->toBeFalse();
-    expect(config('android_release.enforcement.flag_exists'))->toBeFalse();
 
     expect(androidCheck('enforcement_off')['status'])->toBe('PASS');
-    expect(androidCheck('authentication_not_coupled_to_device_registry')['status'])->toBe('PASS');
+    expect(androidCheck('authentication_coupled_only_through_the_gate')['status'])->toBe('PASS');
 });
 
 it('registers the direct-APK suite in the critical gate so something selects it', function () {

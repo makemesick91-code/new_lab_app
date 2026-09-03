@@ -1,0 +1,170 @@
+---
+description: Doctor↔device authorization, automatic request on first Clinic App login, the Approval Device Dokter inbox, the app-only login gate and session/device binding — and the standing rule that enforcement is OFF until Phase 4
+globs:
+  - "app/Modules/DoctorDevice/**"
+  - "app/Http/Controllers/Auth/**"
+  - "app/Http/Requests/Auth/**"
+  - "app/Services/Auth/**"
+  - "database/migrations/*doctor_device*"
+  - "resources/views/doctor-device-authorizations/**"
+  - "android/daengtisia-clinic/**"
+alwaysApply: false
+---
+
+# REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — durable rules
+
+Builds on, and does not weaken:
+`138-doctor-room-scoped-access-and-print-deny` (Phase 1),
+`139-doctor-device-registry` (Phase 2),
+`140-android-clinic-device-identity` (Phase 3),
+`141-android-production-release-governance`,
+`142-android-direct-apk-signing-distribution`.
+
+**Rule 139 §1 is SUPERSEDED in one specific way and in no other.** It said no
+authentication surface may reference `DoctorDevice` at all. The app-only gate
+cannot exist under that rule, so the narrower rule below replaces it. Everything
+else in 139 stands.
+
+## 1. Enforcement is OFF, and that is a shipped fact
+
+`doctor.trusted_device_enforcement` (config/feature_flags.php) defaults to
+**false** and must stay false in production until an approved Phase 4 pilot on
+real hardware.
+
+While it is off:
+
+* the login gate returns before touching the database;
+* the session middleware returns on its first line;
+* **no login ticket is ever minted**, and redemption is refused outright.
+
+A doctor logs in through an ordinary browser exactly as before, and an empty
+authorization table locks nobody out. `DoctorDeviceEnforcementGateTest` pins the
+whole "off" contract, and those cases matter more than the "on" ones: turning
+this on without an enrolled, approved fleet is a clinical lockout.
+
+## 2. One gate, read in one place
+
+Only `App\Modules\DoctorDevice\Services\DoctorAppLoginGate` reads the flag or
+decides whether a doctor session may exist. Authentication surfaces may
+reference **only** `DoctorAppLoginGate`, `DoctorDeviceSessionService` and
+`EnsureDoctorDeviceSession`.
+
+A proof service, a direct `DoctorDeviceAuthorization::` query or a second flag
+read inside an auth surface is a failure — enforcement that lives in two places
+eventually disagrees with itself, and the disagreement is found by a doctor who
+cannot see their patients.
+
+## 3. Device and authorization are different things
+
+```
+Doctor ──┐
+         ├── DoctorDeviceAuthorization ── DoctorDevice (physical, cryptographic)
+Doctor ──┘
+```
+
+One physical tablet gets **one** `DoctorDevice` row and serves many doctors.
+Never create a device row per doctor. `UNIQUE(doctor_id, doctor_device_id)` is
+the idempotency guarantee — not an application check, which two concurrent
+logins would both pass.
+
+## 4. The order of operations is the security property
+
+1. the device signs a server-issued nonce → cryptographic possession
+2. the nonce is burned in its **own committed transaction**
+3. the signature is verified against the enrolled public key
+4. credentials are validated, **without creating a session**
+5. the account resolves to a linked, active Doctor (`mst_doctors.user_id` only)
+6. the device row is resolved, or provisioned as `pending_approval`
+7. the (doctor, device) authorization is resolved or requested
+8. a ticket is minted **only** if enforcement is on and everything is ACTIVE
+
+A wrong password creates nothing. A forged signature creates nothing. A
+non-doctor account creates nothing. Step 2 stays separate from step 3: burning
+the nonce inside the verification transaction lets a denial roll the burn back,
+and the attacker grinds against one fixed nonce forever.
+
+## 5. Trust is a signature, never a claim
+
+Never accept as evidence of the Clinic App: `User-Agent`, `Referer`, any static
+`X-` header, a cookie alone, a MAC address, an IMEI, an Android ID or an
+installation UUID. The private key never leaves the Android Keystore.
+
+The web login ticket is a server-minted, hashed-at-rest, single-use, 60-second
+credential bound to user + doctor + device + authorization, re-asserted at
+redemption. It is a receipt for a decision the server already made, not a claim
+the client asserts.
+
+## 6. Lifecycle
+
+```
+(none) ──► PENDING ──► ACTIVE ──► REVOKED   (terminal)
+              └──────► REJECTED ──┐
+                                  │ allow re-request (privileged)
+                       PENDING ◄──┘
+```
+
+* **REJECTED never reopens itself.** The next login reports it and writes
+  nothing. Only an explicit `allowReRequest` makes the pair requestable, and the
+  doctor still has to try again.
+* The allowance names the rejection it forgives
+  (`re_request_allowed_for_rejected_at`), so a later rejection spends it. Do
+  **not** rewrite this as "allowance newer than rejection": same-second
+  timestamps make a strict `>` refuse the legitimate path.
+* **REVOKED is terminal.** No login attempt and no approve button returns it to
+  ACTIVE. A fresh lifecycle is required.
+* Reject and revoke require a written reason. No decision is ever erased.
+
+## 7. `pending_approval` is a device status that trusts nothing
+
+Auto-provisioned hardware is `DoctorDevice::STATUS_PENDING_APPROVAL`: registered,
+key-proven, trusted by nothing. It is **strictly less privileged** than every
+status that came before it — `isActive()` is false, so the Phase 3 proof
+endpoint, `isTrustworthy()` and ticket minting all still refuse it.
+
+`identity_state` may still be `cryptographically_verified`, because that records
+a fact (this hardware holds the key), and a fact is not a permission.
+
+Approving the authorization promotes the device in the same transaction — that
+is the single operator decision. `reactivate` accepts **only** `disabled`, so it
+can never become a side door that admits hardware nobody approved.
+
+## 8. Approval authority
+
+`view_doctor_device_authorizations` and `manage_doctor_device_authorizations`.
+Super Admin via the global `Gate::before`; Supervisor RME because RoleSeeder
+grants exactly these two. **Never** compare role names in code.
+
+Supervisor RME gains this capability and nothing else — in particular **not**
+`view_doctor_devices` / `manage_doctor_devices`, and no enforcement or
+production authority. Doctor, Kasir, Admin Klinik, Perawat, Owner and Admin Lab
+are refused at the route, not merely hidden in the sidebar.
+
+`Approval → Approval Device Dokter` stays a separate surface from
+`Master Data → Device Dokter`. One is an operational inbox, the other is device
+security administration.
+
+## 9. Sessions die when the trust behind them does
+
+Under enforcement, every protected doctor request re-verifies the binding.
+Revoking a device or an authorization stops the session that is open **now** —
+a login-time check alone would leave a lost tablet working until someone logged
+out. Invalidation is scoped to that one session; there is no global logout.
+
+## 10. Everything Phase 1–3.5 established still holds
+
+Daily Branch Lock, room isolation (no "Semua Ruangan" for a doctor), RME and
+odontogram print/PDF denial, terminal device revocation, challenge/response
+replay defence, the opaque device channel, direct signed-APK distribution, and
+Google Play remaining unused.
+
+## 11. Blade traps in this work (both cost real debugging time)
+
+* `resources/views/layouts/partials/sidebar.blade.php` uses the **inline** php
+  directive at line ~759, which has no closing token. Adding a closing token
+  anywhere below it — **including inside a comment** — hands that opener a
+  partner and turns ~170 lines into an uncompiled raw block. Keep the badge
+  count a single inline expression, and do not write those two tokens in a
+  comment there.
+* Feature-flag keys contain dots, so `config()->set('feature_flags.flags.a.b')`
+  builds a structure nothing reads. Rewrite the whole `feature_flags.flags`
+  array, as `tests/Pest.php` documents.

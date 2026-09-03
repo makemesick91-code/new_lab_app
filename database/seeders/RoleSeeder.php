@@ -414,6 +414,17 @@ class RoleSeeder extends Seeder
             'view_rme_payment_reports',
             // FIX-PRE-68-45 Scope C — Supervisor RME (executive) sees doctor income.
             'view_doctor_performance_report',
+            // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the
+            // operational approver for "may this doctor use this device?".
+            //
+            // Note what is deliberately ABSENT: `view_doctor_devices` and
+            // `manage_doctor_devices`. Supervisor RME decides doctor access, not
+            // the physical device registry, and it gains no enforcement and no
+            // production authority from these two. That split is the whole
+            // reason the approval inbox is a separate surface from Master Data
+            // -> Device Dokter.
+            'view_doctor_device_authorizations',
+            'manage_doctor_device_authorizations',
             // SATUSEHAT-1 — RME operational owner of the controlled submission
             // filter + mapping/identifier governance (view/review/send/manage).
             'view_satusehat_submissions',

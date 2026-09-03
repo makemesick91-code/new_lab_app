@@ -41,4 +41,38 @@ Route::prefix('v1')->name('device-api.v1.')->group(function () {
         Route::post('proof', [DoctorDeviceApiController::class, 'proof'])
             ->name('proof');
     });
+
+    /*
+    | REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — doctor login.
+    |
+    | The Clinic App collects credentials natively and proves its key here.
+    | NOTHING on this channel establishes a session: the only thing that can is
+    | redeeming a ticket at `device-login/{ticket}`, and no ticket is minted
+    | while enforcement is off.
+    |
+    | These use NAMED rate limiters (see AppServiceProvider), not `throttle:n,1`.
+    | An anonymous throttle signature is derived from the domain and the IP, not
+    | the URI, so every anonymously-throttled route shares one counter per caller
+    | and the strictest limit governs them all. A strict inline limit here would
+    | therefore have tightened enrolment, polling, challenge and proof to the
+    | same budget — an outage for a clinic behind one NAT address, not a control.
+    |
+    | `doctor/login` is the one surface that both accepts a password and can
+    | create a row an approver has to look at, so it is what a credential stuffer
+    | would grind and what would be used to flood the approval inbox. Its own
+    | bucket is the tight one.
+    */
+    Route::middleware('throttle:doctor-app-login-challenge')->group(function () {
+        Route::post('doctor/challenge', [DoctorDeviceApiController::class, 'loginChallenge'])
+            ->name('doctor.challenge');
+
+        Route::get('doctor/authorization/{uuid}/status',
+            [DoctorDeviceApiController::class, 'doctorAuthorizationStatus'])
+            ->name('doctor.authorization.status');
+    });
+
+    Route::middleware('throttle:doctor-app-login')->group(function () {
+        Route::post('doctor/login', [DoctorDeviceApiController::class, 'doctorLogin'])
+            ->name('doctor.login');
+    });
 });

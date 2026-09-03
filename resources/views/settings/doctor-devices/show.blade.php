@@ -1,7 +1,9 @@
 <x-settings-shell title="Detail Perangkat">
     @php
-        $statusLabels = ['active' => 'Aktif', 'disabled' => 'Nonaktif', 'revoked' => 'Dicabut'];
-        $statusTone = ['active' => 'success', 'disabled' => 'warning', 'revoked' => 'danger'];
+        $statusLabels = ['pending_approval' => 'Menunggu Persetujuan',
+            'active' => 'Aktif', 'disabled' => 'Nonaktif', 'revoked' => 'Dicabut'];
+        $statusTone = ['pending_approval' => 'warning',
+            'active' => 'success', 'disabled' => 'warning', 'revoked' => 'danger'];
         $canManage = auth()->user()?->can('manageLifecycle', $device) ?? false;
     @endphp
 

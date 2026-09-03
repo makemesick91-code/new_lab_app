@@ -8,6 +8,9 @@ use App\Modules\DoctorDevice\Models\DoctorDeviceEnrollment;
 use App\Modules\DoctorDevice\Requests\DeviceChallengeRequest;
 use App\Modules\DoctorDevice\Requests\DeviceEnrollmentRequest;
 use App\Modules\DoctorDevice\Requests\DeviceProofRequest;
+use App\Modules\DoctorDevice\Requests\DoctorAppLoginChallengeRequest;
+use App\Modules\DoctorDevice\Requests\DoctorAppLoginRequest;
+use App\Modules\DoctorDevice\Services\DoctorAppLoginService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceEnrollmentService;
 use App\Modules\DoctorDevice\Services\DoctorDeviceProofService;
 use Illuminate\Http\JsonResponse;
@@ -32,6 +35,7 @@ class DoctorDeviceApiController extends Controller
     public function __construct(
         private readonly DoctorDeviceEnrollmentService $enrollments,
         private readonly DoctorDeviceProofService $proofs,
+        private readonly DoctorAppLoginService $logins,
     ) {}
 
     /** Step 1 — pairing request. The pairing code is returned exactly once. */
@@ -134,6 +138,89 @@ class DoctorDeviceApiController extends Controller
             ],
             // Said plainly so no client author mistakes device trust for a login.
             'note' => 'Device identity verified. This does not authenticate a user session.',
+        ]);
+    }
+
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — a nonce for a
+     * doctor login attempt.
+     *
+     * Separate from `challenge` above because the first login from new hardware
+     * happens before any device row exists, so this one is keyed by the public
+     * key fingerprint. Same opaque-denial discipline: unknown, revoked and
+     * malformed all answer identically.
+     */
+    public function loginChallenge(DoctorAppLoginChallengeRequest $request): JsonResponse
+    {
+        try {
+            $challenge = $this->logins->issueChallenge($request->validated()['fingerprint']);
+        } catch (ValidationException) {
+            return $this->opaqueDenial();
+        }
+
+        return response()->json([
+            'nonce' => $challenge->nonce,
+            'purpose' => $challenge->purpose,
+            'expires_at' => $challenge->expires_at?->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * A doctor login attempt from the Clinic App.
+     *
+     * WHAT THIS RESPONSE IS NOT: a session. No cookie is set and no guard is
+     * logged in. `login_ticket` appears only when enforcement is on and the
+     * doctor/device pair is already ACTIVE, and it is a single-use, seconds-long
+     * receipt the WebView redeems — never a credential the client asserts.
+     *
+     * The doctor's own name is echoed so the app can show who it is waiting for.
+     * Nothing clinical, no KTP/NIK, no key material, no other doctor's data.
+     */
+    public function doctorLogin(DoctorAppLoginRequest $request): JsonResponse
+    {
+        try {
+            $result = $this->logins->attempt($request->validated());
+        } catch (ValidationException) {
+            return $this->opaqueDenial();
+        }
+
+        return response()->json([
+            'outcome' => $result['outcome'],
+            'authorization_uuid' => $result['authorization']->uuid,
+            'doctor' => ['name' => $result['doctor']->name],
+            'device' => [
+                'uuid' => $result['device']->uuid,
+                'device_name' => $result['device']->device_name,
+                'status' => $result['device']->status,
+                'branch' => $result['device']->branch?->name,
+            ],
+            // Said plainly so no client author mistakes capability for rollout.
+            'enforcement_active' => $result['enforcement_active'],
+            'login_ticket' => $result['login_ticket'],
+            'login_ticket_expires_at' => $result['login_ticket_expires_at']?->toIso8601String(),
+        ]);
+    }
+
+    /**
+     * The app polls its own authorization by its unguessable uuid. Coarse state
+     * only — enough to choose a screen, never enough to learn about anyone else.
+     */
+    public function doctorAuthorizationStatus(string $uuid): JsonResponse
+    {
+        $authorization = $this->logins->statusByUuid($uuid);
+
+        if ($authorization === null) {
+            return response()->json(['message' => 'Otorisasi tidak ditemukan.'], 404);
+        }
+
+        return response()->json([
+            'authorization_uuid' => $authorization->uuid,
+            'status' => $authorization->status,
+            'device' => $authorization->device === null ? null : [
+                'uuid' => $authorization->device->uuid,
+                'device_name' => $authorization->device->device_name,
+                'status' => $authorization->device->status,
+            ],
         ]);
     }
 

@@ -12,11 +12,14 @@ use App\Modules\Branch\Models\Branch;
 use App\Modules\ClinicRoom\Models\ClinicRoom;
 use App\Modules\ClinicVisit\Models\ClinicVisit;
 use App\Modules\Doctor\Models\Doctor;
+use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
 use App\Modules\DoctorDevice\Models\DoctorDevice;
 use App\Modules\DoctorDevice\Models\DoctorDeviceEnrollment;
+use App\Modules\DoctorDevice\Services\DoctorAppLoginGate;
 use App\Modules\DoctorDevice\Support\DeviceKeyMaterial;
 use App\Modules\DoctorDevice\Support\DeviceProofMessage;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
+use App\Services\Foundation\FeatureFlagService;
 use Database\Factories\DoctorDeviceEnrollmentFactory;
 
 use function Pest\Laravel\actingAs;
@@ -182,10 +185,17 @@ it('denies enrollment approval to a non-super-admin', function () {
 // NON-NEGOTIABLE — enforcement is still OFF (the Phase 2 M7 contract, extended)
 // ---------------------------------------------------------------------------
 
-it('keeps authentication completely decoupled from the device registry', function () {
-    // Building a device channel must not have leaked into the auth path. A
-    // passing login test would not prove this — a coupling that has not fired
-    // yet still passes — so the assertion is structural.
+it('couples authentication to the device registry through exactly one gate', function () {
+    // PHASE 3 asserted that NO auth surface mentioned the device registry at
+    // all, and said in its own comment that "Phase 4 is where that changes,
+    // deliberately and with its own review". REVISION-DOCTOR-AUTO-DEVICE-
+    // APPROVAL-APP-ONLY-LOGIN-1 is that review: the app-only gate has to be
+    // reachable from the login path to exist at all.
+    //
+    // The contract is therefore narrowed, not dropped, and what remains is the
+    // part that was actually protecting us: the auth path may consult ONE
+    // gate, by name, and may not grow its own copy of the device rules. A
+    // second decision point is how enforcement starts disagreeing with itself.
     $authSurfaces = array_merge(
         glob(base_path('app/Http/Controllers/Auth/*.php')) ?: [],
         glob(base_path('app/Http/Middleware/*.php')) ?: [],
@@ -193,30 +203,77 @@ it('keeps authentication completely decoupled from the device registry', functio
         [base_path('app/Http/Requests/Auth/LoginRequest.php')],
     );
 
+    // `DoctorDevice` alone is the module namespace segment in a `use`
+    // statement, not a decision point.
+    $allowed = ['DoctorDevice', 'DoctorAppLoginGate', 'DoctorDeviceSessionService', 'EnsureDoctorDeviceSession'];
+
     foreach ($authSurfaces as $file) {
         if (! is_file($file)) {
             continue;
         }
-        expect(file_get_contents($file))
-            ->not->toContain('DoctorDevice')
-            ->not->toContain('DeviceProof');
+
+        $contents = file_get_contents($file);
+        $relative = str_replace(base_path().'/', '', $file);
+
+        // No auth surface may query the registry, verify a proof, or read the
+        // enforcement flag for itself.
+        expect($contents)
+            ->not->toContain('DoctorDeviceProofService', "{$relative} must not verify device proofs")
+            ->not->toContain('DoctorDeviceAuthorization::', "{$relative} must not query authorizations directly")
+            ->not->toContain("'doctor.trusted_device_enforcement'", "{$relative} must not read the flag itself");
+
+        // Any DoctorDevice reference that IS present must be one of the two
+        // sanctioned collaborators.
+        // Whole identifiers: a prefix match would report the fragment
+        // `DoctorDeviceSession` for `EnsureDoctorDeviceSession` and no
+        // allow-list entry could ever match the symbol in the file.
+        preg_match_all('/[A-Za-z_]*DoctorDevice[A-Za-z_]*/', $contents, $matches);
+
+        foreach (array_unique($matches[0]) as $symbol) {
+            expect($symbol)->toBeIn($allowed, "{$relative} references {$symbol}");
+        }
     }
 });
 
-it('never gates a web route behind device proof', function () {
-    // No web/session route may carry a device middleware. Phase 4 is where that
-    // changes, deliberately and with its own review.
+it('still leaves the doctor login path untouched while enforcement is off', function () {
+    // The behavioural half of the contract above, and the one that matters on
+    // the day this ships: the gate exists, and it changes nothing.
+    expect(app(FeatureFlagService::class)
+        ->enabled(DoctorAppLoginGate::ENFORCEMENT_FLAG))
+        ->toBeFalse();
+});
+
+it('gates web routes behind device trust only through a middleware that is off by default', function () {
+    // PHASE 3 asserted that no web route carried ANY device middleware. The
+    // session/device binding this revision adds has to be on the web stack —
+    // a revoked tablet must stop working everywhere, and an enumerated list of
+    // protected routes is a list somebody eventually forgets to extend.
+    //
+    // So the contract becomes: exactly ONE device middleware may appear, it is
+    // the binding check, and it is a no-op while enforcement is off. The
+    // second assertion is the one with teeth, and it is behavioural rather
+    // than structural — see the "does not require a device binding on any
+    // protected doctor request" case in DoctorDeviceEnforcementGateTest.
+    $allowed = EnsureDoctorDeviceSession::class;
+
     foreach (app('router')->getRoutes() as $route) {
-        $middleware = implode(' ', $route->gatherMiddleware());
+        $middleware = $route->gatherMiddleware();
         $uri = $route->uri();
 
         if (str_starts_with($uri, 'device-api')) {
             continue; // the device channel itself is allowed to be device-aware
         }
 
-        expect($middleware)->not->toContain('DoctorDevice')
-            ->not->toContain('device.proof')
-            ->not->toContain('trusted.device');
+        foreach ($middleware as $entry) {
+            if (! is_string($entry)) {
+                continue;
+            }
+
+            if (str_contains($entry, 'DoctorDevice') || str_contains($entry, 'device.proof')
+                || str_contains($entry, 'trusted.device')) {
+                expect($entry)->toBe($allowed, "unexpected device middleware on {$uri}");
+            }
+        }
     }
 });
 

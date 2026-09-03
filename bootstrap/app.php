@@ -7,6 +7,7 @@ use App\Console\Commands\PruneInventoryAnalyticsSummaryCommand;
 use App\Console\Commands\RefreshInventoryAnalyticsSummaryCommand;
 use App\Http\Middleware\AttachRequestCorrelationContext;
 use App\Modules\ClinicVisit\Middleware\EnsureVisitRoomAssigned;
+use App\Modules\DoctorDevice\Middleware\EnsureDoctorDeviceSession;
 use App\Modules\RmeOnlineContext\Middleware\EnsureRmeOnlineContext;
 use App\Modules\RmeOnlineContext\Middleware\TouchOnlineContextLastSeen;
 use Illuminate\Foundation\Application;
@@ -57,6 +58,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             TouchOnlineContextLastSeen::class,
             EnsureRmeOnlineContext::class,
+            // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — session
+            // to device binding. A NO-OP while enforcement is off: its first
+            // line reads one config value and returns, so no protected route
+            // requires device proof today. Registered globally rather than on a
+            // route group because a revoked tablet has to stop working
+            // EVERYWHERE, and an enumerated list of protected routes is a list
+            // somebody eventually forgets to extend.
+            EnsureDoctorDeviceSession::class,
         ]);
 
         $middleware->alias([
@@ -67,6 +76,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'visit.room' => EnsureVisitRoomAssigned::class,
             // Sprint 66.0 — doctor/admin online context gate (alias for selective use).
             'rme.online-context' => EnsureRmeOnlineContext::class,
+            // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — the same
+            // binding check, aliased so a future controlled pilot can scope it
+            // to specific routes without editing the global stack.
+            'doctor.device.session' => EnsureDoctorDeviceSession::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

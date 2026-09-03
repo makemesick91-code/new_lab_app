@@ -22,6 +22,13 @@ object DeviceProofMessage {
     const val PURPOSE_ENROLLMENT = "enrollment"
     const val PURPOSE_DEVICE_PROOF = "device_proof"
 
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — a doctor login
+     * attempt. A DISTINCT purpose so a signature captured from an ongoing
+     * device proof cannot be replayed as a login, or the other way round.
+     */
+    const val PURPOSE_DOCTOR_LOGIN = "doctor_login"
+
     fun build(purpose: String, nonce: String, fingerprint: String): String =
         listOf(PREFIX, VERSION, purpose, nonce, fingerprint).joinToString("|")
 }

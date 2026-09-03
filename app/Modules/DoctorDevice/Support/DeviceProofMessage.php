@@ -34,6 +34,17 @@ final class DeviceProofMessage
 
     public const PURPOSE_DEVICE_PROOF = 'device_proof';
 
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — a doctor login
+     * attempt from the Clinic App.
+     *
+     * A DISTINCT purpose on purpose. Because the purpose is part of the signed
+     * bytes, a signature captured from an ongoing device proof cannot be
+     * replayed as a login attempt, and vice versa. Reusing `device_proof` here
+     * would have made those two interchangeable.
+     */
+    public const PURPOSE_DOCTOR_LOGIN = 'doctor_login';
+
     public static function build(string $purpose, string $nonce, string $fingerprint): string
     {
         return implode('|', [

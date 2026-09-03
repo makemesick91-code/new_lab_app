@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Foundation\FeatureFlagService;
 use App\Support\Android\AndroidReleaseGovernanceScanner;
 use App\Support\Android\KotlinSourceScanner;
 use Illuminate\Support\Facades\Process;
@@ -447,18 +448,28 @@ it('returns null for an unbalanced block rather than a truncated one', function 
 // Enforcement stays off
 // ---------------------------------------------------------------------------
 
-it('ends phase 3.5 with device enforcement off and no flag to flip', function () {
+it('keeps device enforcement off, now with a real switch that defaults to false', function () {
     expect(config('android_release.enforcement.active'))->toBeFalse();
     expect(config('android_release.enforcement.doctor_browser_login_denied'))->toBeFalse();
-
-    // Phase 2 decided the flag is created by the phase that needs one. A flag
-    // added "in preparation" is a half-wired switch waiting for someone who
-    // assumes it is finished.
-    expect(config('android_release.enforcement.flag_exists'))->toBeFalse();
     expect(config('android_release.enforcement.current_stage'))->toBe('off');
 
+    // PHASE 2 decided "the flag is created by the phase that needs one", and
+    // Phase 3.5 therefore pinned `flag_exists => false`.
+    // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 is that phase: it
+    // ships the whole app-only gate, and a capability with no switch can only
+    // be released by editing code under pressure.
+    //
+    // The rule that stance protected — no half-wired switch — is kept and
+    // strengthened. The flag is fully wired, and its OFF state is asserted
+    // against the real feature-flag registry, not against a config file that
+    // could claim anything.
+    expect(config('android_release.enforcement.flag_exists'))->toBeTrue();
+
+    expect(app(FeatureFlagService::class)
+        ->enabled((string) config('android_release.enforcement.flag_key')))->toBeFalse();
+
     expect(androidCheck('enforcement_off')['status'])->toBe('PASS');
-    expect(androidCheck('authentication_not_coupled_to_device_registry')['status'])->toBe('PASS');
+    expect(androidCheck('authentication_coupled_only_through_the_gate')['status'])->toBe('PASS');
 });
 
 it('never claims a production key or a real device it does not have', function () {

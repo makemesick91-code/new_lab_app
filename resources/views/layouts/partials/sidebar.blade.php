@@ -131,6 +131,8 @@
             'settings.doctor-devices.*'
         ),
         'settings' => request()->routeIs('settings.users.*', 'settings.roles.*', 'settings.permissions.*'),
+        // REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1
+        'approval' => request()->routeIs('doctor-device-authorizations.*'),
     ];
 
     $linkActive = 'menu-subitem-active';
@@ -899,6 +901,66 @@
                                    class="menu-subitem {{ request()->routeIs('settings.rme.legacy-odontograms.*') ? $linkActive : $linkIdle }}">Upload Legacy Odontogram</a>
                             @endif
                         @endcanany
+                    </div>
+                </div>
+            @endcanany
+
+            {{-- REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — APPROVAL.
+
+                 A top-level group of its own, separate from Master Data → Device
+                 Dokter. That screen is the physical device registry and its
+                 security lifecycle; this is the day-to-day inbox answering
+                 "may this doctor use this device?". Merging them would have
+                 buried an operational queue inside a Super Admin surface.
+
+                 The badge counts only PENDING requests the current approver can
+                 actually act on — putting a number in front of someone that no
+                 action clears is worse than showing nothing. It is one indexed
+                 COUNT, not a per-row query.
+
+                 THE SIDEBAR IS NOT THE SECURITY BOUNDARY: every route below
+                 carries permission middleware and every write re-authorizes
+                 through the policy. Hiding a link is a courtesy. --}}
+            @canany(['view_doctor_device_authorizations', 'manage_doctor_device_authorizations'])
+                {{-- The count is computed with the INLINE php directive, not a
+                     php/endphp BLOCK — and this comment deliberately avoids
+                     writing those two tokens with their at-sign for the same
+                     reason.
+
+                     Line 759 of this file uses the inline form, which has no
+                     closing token. Blade extracts raw blocks with a non-greedy
+                     match from an opening php directive to the next closing one
+                     BEFORE it compiles or strips anything else, so introducing a
+                     closing token further down — even inside a comment — hands
+                     that lone opener a partner and turns ~170 lines of sidebar
+                     into a raw block. It then fails as an "undefined variable",
+                     or a parse error, a long way from the cause. Keep this a
+                     single inline expression. --}}
+                @php($doctorDeviceApprovalCount = \App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization::query()->where('status', \App\Modules\DoctorDevice\Models\DoctorDeviceAuthorization::STATUS_PENDING)->count())
+                <div class="pt-2">
+                    <button type="button" @click="toggle('approval')" class="{{ $groupToggle }}" :aria-expanded="isOpen('approval')">
+                        <span class="flex items-center gap-3">
+                            <svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 12.75l2.25 2.25L15 9.75" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M12 3l7.5 3v6c0 4.5-3 7.5-7.5 9-4.5-1.5-7.5-4.5-7.5-9V6L12 3z" />
+                            </svg>
+                            <span>Approval</span>
+                            @if ($doctorDeviceApprovalCount > 0)
+                                <span class="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-warning-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-warning-700">{{ $doctorDeviceApprovalCount }}</span>
+                            @endif
+                        </span>
+                        <svg class="h-4 w-4 shrink-0 text-ink-muted transition-transform duration-150" :class="{ 'rotate-180': isOpen('approval') }" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.24 4.5a.75.75 0 01-1.08 0l-4.24-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <div data-sidebar-panel="approval" x-show="isOpen('approval')" class="mt-1 space-y-0.5 pl-8">
+                        <a href="{{ route('doctor-device-authorizations.index') }}"
+                           class="menu-subitem {{ request()->routeIs('doctor-device-authorizations.*') ? $linkActive : $linkIdle }}">
+                            Approval Device Dokter
+                            @if ($doctorDeviceApprovalCount > 0)
+                                <span class="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-warning-100 px-1.5 py-0.5 text-[0.65rem] font-semibold text-warning-700">{{ $doctorDeviceApprovalCount }}</span>
+                            @endif
+                        </a>
                     </div>
                 </div>
             @endcanany

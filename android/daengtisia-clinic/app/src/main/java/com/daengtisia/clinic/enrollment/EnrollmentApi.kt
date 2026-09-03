@@ -73,6 +73,60 @@ class EnrollmentApi(private val baseUrl: String) {
         return Challenge(nonce = nonce, purpose = json.optString("purpose"))
     }
 
+    /**
+     * REVISION-DOCTOR-AUTO-DEVICE-APPROVAL-APP-ONLY-LOGIN-1 — a nonce for a
+     * doctor login attempt. Separate from `requestChallenge` because the first
+     * login from new hardware happens before the server has a device row.
+     */
+    fun requestLoginChallenge(fingerprint: String): Challenge? {
+        val json = post("device-api/v1/doctor/challenge", JSONObject().put("fingerprint", fingerprint))
+            ?: return null
+        val nonce = json.optString("nonce")
+        if (nonce.isBlank()) return null
+
+        return Challenge(nonce = nonce, purpose = json.optString("purpose"))
+    }
+
+    /**
+     * A doctor login attempt: credentials PLUS a signature over a server-issued
+     * nonce.
+     *
+     * The password is passed straight through and never stored — not in
+     * SharedPreferences, not in a field that outlives the call. If approval is
+     * still pending the doctor types it again later; one extra tap is cheaper
+     * than a credential at rest on a tablet.
+     */
+    fun doctorLogin(
+        email: String,
+        password: String,
+        nonce: String,
+        signatureBase64: String,
+    ): DoctorLoginResult? {
+        val body = JSONObject()
+            .put("email", email)
+            .put("password", password)
+            .put("nonce", nonce)
+            .put("signature", signatureBase64)
+
+        val json = post("device-api/v1/doctor/login", body) ?: return null
+
+        return DoctorLoginResult(
+            outcome = json.optString("outcome").ifBlank { null },
+            authorizationUuid = json.optString("authorization_uuid").ifBlank { null },
+            doctorName = json.optJSONObject("doctor")?.optString("name")?.ifBlank { null },
+            deviceName = json.optJSONObject("device")?.optString("device_name")?.ifBlank { null },
+            enforcementActive = json.optBoolean("enforcement_active", false),
+            loginTicket = json.optString("login_ticket").ifBlank { null },
+        )
+    }
+
+    /** Poll an authorization the doctor already raised. Coarse status only. */
+    fun doctorAuthorizationStatus(uuid: String): String? {
+        val json = get("device-api/v1/doctor/authorization/$uuid/status") ?: return null
+
+        return json.optString("status").ifBlank { null }
+    }
+
     /** Submit the signature. True only on an explicit server-side `verified`. */
     fun submitProof(nonce: String, signatureBase64: String): Boolean {
         val json = post(
